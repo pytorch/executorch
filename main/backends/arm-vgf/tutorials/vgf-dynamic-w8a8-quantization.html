@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device &#8212; ExecuTorch main documentation</title>
+    <title>Dynamic W8A8 Quantization with the Arm VGF Backend &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -50,19 +50,19 @@
     <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="../../../_static/copybutton.js?v=f281be69"></script>
     <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/vulkan/tutorials/etvk-llama-tutorial';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/vulkan/tutorials/etvk-llama-tutorial.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization.html" />
     <link rel="icon" href="../../../_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
-    <link rel="next" title="Qualcomm AI Engine Backend" href="../../../android-qualcomm.html" />
-    <link rel="prev" title="Executing and profiling an ExecuTorch Vulkan model on device" href="etvk-profiling-tutorial.html" />
+    <link rel="next" title="PyTorch operator support for the VGF backend" href="../VGF_op_support.html" />
+    <link rel="prev" title="Arm VGF Troubleshooting" href="../arm-vgf-troubleshooting.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -682,7 +682,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../vulkan-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../vulkan/vulkan-overview.html">
                   Vulkan Backend
                 </a>
               </li>
@@ -718,7 +718,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../../arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
@@ -1287,7 +1287,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../vulkan-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../../vulkan/vulkan-overview.html">
                   Vulkan Backend
                 </a>
               </li>
@@ -1323,7 +1323,7 @@ document.write(`
               </li>
             
               <li class=" ">
-                <a class="nav-link dropdown-item nav-internal" href="../../arm-vgf/arm-vgf-overview.html">
+                <a class="nav-link dropdown-item nav-internal" href="../arm-vgf-overview.html">
                   Arm VGF Backend
                 </a>
               </li>
@@ -1785,14 +1785,14 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="../../mlx/mlx-op-support.html">Op Support</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="../vulkan-overview.html">Vulkan Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="../vulkan-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../vulkan-quantization.html">Quantization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../vulkan-op-support.html">Operator Support</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../vulkan-troubleshooting.html">Troubleshooting</a></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="vulkan-tutorials.html">Vulkan Backend Tutorials</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3"><a class="reference internal" href="etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../vulkan/vulkan-overview.html">Vulkan Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../vulkan/vulkan-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../vulkan/vulkan-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../vulkan/vulkan-op-support.html">Operator Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../vulkan/vulkan-troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../vulkan/tutorials/vulkan-tutorials.html">Vulkan Backend Tutorials</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../vulkan/tutorials/etvk-profiling-tutorial.html">Executing and profiling an ExecuTorch Vulkan model on device</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../vulkan/tutorials/etvk-llama-tutorial.html">Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device</a></li>
 </ul>
 </details></li>
 </ul>
@@ -1813,13 +1813,13 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../arm-cortex-m/arm-cortex-m-overview.html">Arm Cortex-M Backend</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../arm-vgf/arm-vgf-overview.html">Arm VGF Backend</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../arm-vgf/arm-vgf-partitioner.html">Partitioner API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../arm-vgf/arm-vgf-quantization.html">Quantization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../arm-vgf/arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../arm-vgf/tutorials/vgf-getting-started.html">Getting Started Tutorial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../arm-vgf/tutorials/vgf-dynamic-w8a8-quantization.html">Dynamic W8A8 Quantization with the Arm VGF Backend</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../arm-vgf/VGF_op_support.html">PyTorch operator support for the VGF backend</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../arm-vgf-overview.html">Arm VGF Backend</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf-partitioner.html">Partitioner API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf-quantization.html">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../arm-vgf-troubleshooting.html">Arm VGF Troubleshooting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="vgf-getting-started.html">Getting Started Tutorial</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Dynamic W8A8 Quantization with the Arm VGF Backend</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../VGF_op_support.html">PyTorch operator support for the VGF backend</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../build-run-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
@@ -1872,8 +1872,6 @@ document.write(`
 
 
 
-
-
 <nav aria-label="Breadcrumb" class="d-print-none">
   <ul class="bd-breadcrumbs">
     
@@ -1883,15 +1881,12 @@ document.write(`
       </a>
     </li>
     
-    <li class="breadcrumb-item"><a href="../../../edge-platforms-section.html" class="nav-link">Edge</a></li>
+    <li class="breadcrumb-item"><a href="../../../backends-section.html" class="nav-link">Backends</a></li>
     
     
-    <li class="breadcrumb-item"><i class="fa-solid fa-ellipsis"></i></li>
+    <li class="breadcrumb-item"><a href="../arm-vgf-overview.html" class="nav-link">Arm VGF Backend</a></li>
     
-    
-    <li class="breadcrumb-item"><a href="vulkan-tutorials.html" class="nav-link">Vulkan Backend Tutorials</a></li>
-    
-    <li class="breadcrumb-item active" aria-current="page">Exporting...</li>
+    <li class="breadcrumb-item active" aria-current="page">Dynamic...</li>
   </ul>
 </nav>
 </div>
@@ -1933,38 +1928,20 @@ document.write(`
   <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="../../../edge-platforms-section.html">
-      <meta itemprop="name" content="Edge">
+      <link itemprop="item" href="../../../backends-section.html">
+      <meta itemprop="name" content="Backends">
       <meta itemprop="position" content="1">
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="../../../android-section.html">
-      <meta itemprop="name" content="Android">
+      <link itemprop="item" href="../arm-vgf-overview.html">
+      <meta itemprop="name" content="Arm VGF Backend">
       <meta itemprop="position" content="2">
     </div>
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="../../../android-backends.html">
-      <meta itemprop="name" content="Backends">
+      <meta itemprop="name" content="Dynamic W8A8 Quantization with the Arm VGF Backend">
       <meta itemprop="position" content="3">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="../../../android-vulkan.html">
-      <meta itemprop="name" content="Vulkan Backend">
-      <meta itemprop="position" content="4">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <link itemprop="item" href="vulkan-tutorials.html">
-      <meta itemprop="name" content="Vulkan Backend Tutorials">
-      <meta itemprop="position" content="5">
-    </div>
-    
-    <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device">
-      <meta itemprop="position" content="6">
     </div>
   </div>
 
@@ -1977,144 +1954,505 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="exporting-llama-3-2-1b-3b-instruct-to-executorch-vulkan-and-running-on-device">
-<h1>Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device<a class="headerlink" href="#exporting-llama-3-2-1b-3b-instruct-to-executorch-vulkan-and-running-on-device" title="Link to this heading">#</a></h1>
-<p>This tutorial assumes that you have a working local copy of the ExecuTorch repo,
-and have gone through the steps to install the executorch pip package or have
-installed it by building from source.</p>
-<p>This tutorial also assumes that you have the Android SDK tools installed and
-that you are able to connect to an Android device via <code class="docutils literal notranslate"><span class="pre">adb</span></code>.</p>
-<p>Finally, the Android NDK should also be installed, and your environment should
-have a variable <code class="docutils literal notranslate"><span class="pre">ANDROID_NDK</span></code> that points to the root directory of the NDK.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
+  <section id="dynamic-w8a8-quantization-with-the-arm-vgf-backend">
+<h1>Dynamic W8A8 Quantization with the Arm VGF Backend<a class="headerlink" href="#dynamic-w8a8-quantization-with-the-arm-vgf-backend" title="Link to this heading">#</a></h1>
+<p>Tutorial we recommend you complete before this:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="vgf-getting-started.html"><span class="std std-doc">VGF Getting Started Tutorial</span></a></p></li>
+</ul>
+<section id="what-you-will-learn-in-this-tutorial">
+<h2>What you will learn in this tutorial:<a class="headerlink" href="#what-you-will-learn-in-this-tutorial" title="Link to this heading">#</a></h2>
+<p>In this tutorial you will learn how to use dynamic W8A8 quantization for
+Linear layers with the ExecuTorch Arm VGF backend, lower the quantized model
+to VGF, and run the resulting <code class="docutils literal notranslate"><span class="pre">.pte</span></code>.</p>
+<p>Dynamic W8A8 quantization keeps model weights statically quantized to INT8
+while computing activation quantization parameters from the input tensor at
+runtime.</p>
+<p>This can be useful when activation ranges vary significantly between inputs.
+Unlike static activation quantization, the activation scale is not fixed from
+calibration data. Instead, it is recomputed when the model executes.</p>
+<p>For a dynamically quantized Linear operation, the VGF lowering conceptually
+performs:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>FP32 activation
+      |
+      v
+choose runtime scale
+      |
+      v
+quantize to INT8
+      |
+      v
+ INT8 MATMUL &lt;---- static INT8 weight
+      |
+    INT32 &lt;--- accumulator
+      |
+      v
+* activation_scale
+* weight_scale
+      |
+      v
+    FP32
+      |
+ + FP32 bias
+      |
+      v
+ FP32 output
 </pre></div>
 </div>
-<section id="download-the-llama-3-2-1b-3b-instruct-model-checkpoint-and-tokenizer">
-<h2>Download the Llama 3.2 1B/3B Instruct model checkpoint and tokenizer<a class="headerlink" href="#download-the-llama-3-2-1b-3b-instruct-model-checkpoint-and-tokenizer" title="Link to this heading">#</a></h2>
-<p>The model checkpoint and tokenizer can be downloaded from the
-<a class="reference external" href="https://www.llama.com/llama-downloads/">Meta Llama website</a>.</p>
-<p>The model files should be downloaded to <code class="docutils literal notranslate"><span class="pre">~/.llama/checkpoints/Llama3.2-1B-Instruct</span></code>.</p>
-</section>
-<section id="export-the-llama-3-2-1b-3b-model">
-<h2>Export the Llama 3.2 1B/3B model<a class="headerlink" href="#export-the-llama-3-2-1b-3b-model" title="Link to this heading">#</a></h2>
-<p>First, navigate to the root of the ExecuTorch repo.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="c1"># Navigate to executorch root</span>
-<span class="nb">cd</span><span class="w"> </span>~/executorch
-</pre></div>
-</div>
-<p>Then, set some environment variables to describe how the model should be
-exported. Feel free to tune the values to your preferences.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LLM_NAME</span><span class="o">=</span>Llama3.2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">LLM_SIZE</span><span class="o">=</span>1B<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">LLM_SUFFIX</span><span class="o">=</span><span class="s2">"-Instruct"</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">QUANT</span><span class="o">=</span>8da4w<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">BACKEND</span><span class="o">=</span>vulkan<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">GROUP_SIZE</span><span class="o">=</span><span class="m">64</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">CONTEXT_LENGTH</span><span class="o">=</span><span class="m">2048</span>
-</pre></div>
-</div>
-<p>Then, export the Llama 3.2 1B/3B Instruct model to ExecuTorch Vulkan. Note that
-the <code class="docutils literal notranslate"><span class="pre">--vulkan-force-fp16</span></code> flag is set, which will improve model inference
-latency at the cost of model accuracy. Feel free to remove this flag.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama.export_llama<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-c<span class="w"> </span><span class="nv">$HOME</span>/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/consolidated.00.pth<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-p<span class="w"> </span><span class="nv">$HOME</span>/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/params.json<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-d<span class="w"> </span>fp32<span class="w"> </span>--<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span><span class="w"> </span>--vulkan-force-fp16<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-qmode<span class="w"> </span><span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span><span class="w"> </span>-G<span class="w"> </span><span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--max_seq_length<span class="w"> </span><span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--max_context_length<span class="w"> </span><span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-kv<span class="w"> </span>--use_sdpa_with_kv_cache<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--metadata<span class="w"> </span><span class="s1">'{"append_eos_to_prompt": 0, "get_bos_id":128000, "get_eos_ids":[128009, 128001]}'</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--model<span class="w"> </span><span class="s2">"llama3_2"</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output_name<span class="w"> </span><span class="nv">$HOME</span>/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte
-</pre></div>
-</div>
-<p>After exporting the model, push the exported <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file and the tokenizer to
-your device.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/llama<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-adb<span class="w"> </span>push<span class="w"> </span>~/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/tokenizer.model<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_tokenizer.model<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-adb<span class="w"> </span>push<span class="w"> </span>~/.llama/checkpoints/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte
-</pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Dynamic W8A8 support currently targets the dynamic quantization pattern used
+by <code class="docutils literal notranslate"><span class="pre">Linear</span></code>/<code class="docutils literal notranslate"><span class="pre">AddMM</span></code>.</p>
+<p>Activations use per-tensor symmetric INT8 quantization with the range
+<code class="docutils literal notranslate"><span class="pre">[-127,</span> <span class="pre">127]</span></code> and zero point <code class="docutils literal notranslate"><span class="pre">0</span></code>. Weights are statically quantized and can use
+either per-tensor or per-channel symmetric INT8 quantization.</p>
 </div>
 </section>
-<section id="build-core-executorch-components">
-<h2>Build Core Executorch Components<a class="headerlink" href="#build-core-executorch-components" title="Link to this heading">#</a></h2>
-<p>To be able to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file on device, first the core libraries,
-including the Vulkan backend, must be compiled for Android.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>.<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out-android-so<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--preset<span class="w"> </span><span class="s2">"android-arm64-v8a"</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-28<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_PAL_DEFAULT<span class="o">=</span>posix<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_LLAMA_JNI<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_TESTS<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-out-android-so<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-android-so<span class="w"> </span>-j<span class="k">$((</span><span class="w"> </span><span class="k">$(</span>nproc<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span>sysctl<span class="w"> </span>-n<span class="w"> </span>hw.ncpu<span class="k">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="k">))</span><span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+<section id="static-w8a8-and-dynamic-w8a8">
+<h2>Static W8A8 and Dynamic W8A8<a class="headerlink" href="#static-w8a8-and-dynamic-w8a8" title="Link to this heading">#</a></h2>
+<p>The main difference is when activation quantization parameters are determined.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p>Static W8A8</p></th>
+<th class="head"><p>Dynamic W8A8</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Weight quantization</p></td>
+<td><p>Static</p></td>
+<td><p>Static</p></td>
+</tr>
+<tr class="row-odd"><td><p>Activation quantization</p></td>
+<td><p>Static</p></td>
+<td><p>Dynamic</p></td>
+</tr>
+<tr class="row-even"><td><p>Activation scale</p></td>
+<td><p>Determined during calibration</p></td>
+<td><p>Computed at runtime</p></td>
+</tr>
+<tr class="row-odd"><td><p>Activation zero point</p></td>
+<td><p>Fixed</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">0</span></code> for the supported symmetric configuration</p></td>
+</tr>
+<tr class="row-even"><td><p>Linear accumulation</p></td>
+<td><p>INT32</p></td>
+<td><p>INT32</p></td>
+</tr>
+<tr class="row-odd"><td><p>Linear bias</p></td>
+<td><p>Quantized according to the static configuration</p></td>
+<td><p>Applied in FP32 after accumulator rescaling</p></td>
+</tr>
+<tr class="row-even"><td><p>Useful when</p></td>
+<td><p>Activation ranges are predictable</p></td>
+<td><p>Activation ranges vary between inputs</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
+<section id="hardware">
+<h3>Hardware<a class="headerlink" href="#hardware" title="Link to this heading">#</a></h3>
+<p>To follow the VGF flow you need a Linux machine with an <code class="docutils literal notranslate"><span class="pre">aarch64</span></code> or <code class="docutils literal notranslate"><span class="pre">x86_64</span></code>
+processor architecture, or a macOS machine with Apple Silicon.</p>
+<p>This tutorial can use the ML SDK for Vulkan emulation layer, so physical
+VGF-capable target hardware is not required.</p>
+</section>
+<section id="software">
+<h3>Software<a class="headerlink" href="#software" title="Link to this heading">#</a></h3>
+<p>Install ExecuTorch and the VGF dependencies as described in the
+<a class="reference internal" href="vgf-getting-started.html"><span class="std std-doc">VGF Getting Started Tutorial</span></a>.</p>
+<p>From the ExecuTorch repository, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--i-agree-to-the-contained-eula<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--disable-ethos-u-deps<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--enable-mlsdk-deps
+</pre></div>
+</div>
+<p>Source the generated environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">source</span><span class="w"> </span>examples/arm/arm-scratch/setup_path.sh
+</pre></div>
+</div>
+<p>Verify the Ahead-of-Time environment:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--aot
 </pre></div>
 </div>
 </section>
-<section id="build-and-push-the-llama-runner-binary-to-android">
-<h2>Build and push the llama runner binary to Android<a class="headerlink" href="#build-and-push-the-llama-runner-binary-to-android" title="Link to this heading">#</a></h2>
-<p>Then, build a binary that can be used to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>examples/models/llama<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out-android-so<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w">  </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-28<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-out-android-so/examples/models/llama<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-android-so/examples/models/llama<span class="w"> </span>-j<span class="k">$((</span><span class="w"> </span><span class="k">$(</span>nproc<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span>sysctl<span class="w"> </span>-n<span class="w"> </span>hw.ncpu<span class="k">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="k">))</span><span class="w"> </span>--config<span class="w"> </span>Release
+</section>
+<section id="quantize-a-linear-layer-with-dynamic-w8a8">
+<h2>Quantize a Linear Layer with Dynamic W8A8<a class="headerlink" href="#quantize-a-linear-layer-with-dynamic-w8a8" title="Link to this heading">#</a></h2>
+<p>We first use a small Linear model to demonstrate the quantization flow.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">LinearModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">LinearModel</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">16</span><span class="p">),)</span>
 </pre></div>
 </div>
-<p>Once the binary is built, it can be pushed to your Android device.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>/data/local/tmp/etvk/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-adb<span class="w"> </span>push<span class="w"> </span>cmake-out-android-so/examples/models/llama/llama_main<span class="w"> </span>/data/local/tmp/etvk/
+<p>Export the model before applying PT2E quantization:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">(</span><span class="n">check_guards</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+<section id="configure-the-vgf-quantizer">
+<h3>Configure the VGF quantizer<a class="headerlink" href="#configure-the-vgf-quantizer" title="Link to this heading">#</a></h3>
+<p>Create a <code class="docutils literal notranslate"><span class="pre">VgfQuantizer</span></code> and configure dynamic W8A8 for Linear layers:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">VgfQuantizer</span><span class="p">,</span>
+    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfCompileSpec</span>
+
+
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">VgfCompileSpec</span><span class="p">()</span>
+
+<span class="n">dynamic_w8a8_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span>
+    <span class="n">is_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">is_dynamic</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">act_qmin</span><span class="o">=-</span><span class="mi">127</span><span class="p">,</span>
+    <span class="n">act_qmax</span><span class="o">=</span><span class="mi">127</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">VgfQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+
+<span class="c1"># Leave operators in floating point by default.</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+
+<span class="c1"># Apply dynamic W8A8 to Linear operations.</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">dynamic_w8a8_config</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">is_dynamic=True</span></code> enables runtime activation quantization.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">[-127,</span> <span class="pre">127]</span></code> activation range selects the symmetric dynamic INT8
+representation supported by the Arm backend.</p>
+<p><code class="docutils literal notranslate"><span class="pre">is_per_channel=True</span></code> selects per-channel weight quantization. Per-tensor
+weight quantization can instead be selected by setting <code class="docutils literal notranslate"><span class="pre">is_per_channel=False</span></code>.</p>
+<p>Using <code class="docutils literal notranslate"><span class="pre">set_global(None)</span></code> and explicitly configuring <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> limits
+dynamic quantization to the operation currently supported by the dynamic W8A8
+lowering.</p>
+</section>
+<section id="prepare-and-convert-the-model">
+<h3>Prepare and convert the model<a class="headerlink" href="#prepare-and-convert-the-model" title="Link to this heading">#</a></h3>
+<p>Use the standard PT2E quantization flow:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">convert_pt2e</span><span class="p">,</span>
+    <span class="n">prepare_pt2e</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+
+<span class="c1"># Run representative inputs so static weight observers are populated.</span>
+<span class="n">prepared_model</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The weights are statically quantized, while activation quantization parameters
+are computed dynamically. The activation range observed from <code class="docutils literal notranslate"><span class="pre">example_inputs</span></code>
+does not become a fixed activation range for inference.</p>
+<p>You can inspect the converted graph with:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">quantized_model</span><span class="o">.</span><span class="n">graph</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For a dynamically quantized Linear operation, the graph contains dynamic
+qparam calculation followed by quantize/dequantize operations. Conceptually,
+this includes:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>choose_qparams_symmetric
+quantize_per_tensor
+dequantize_per_tensor
+linear
+</pre></div>
+</div>
+<p>These operations are recognized and lowered by the Arm backend during
+delegation.</p>
+</section>
+</section>
+<section id="lower-the-model-to-vgf">
+<h2>Lower the Model to VGF<a class="headerlink" href="#lower-the-model-to-vgf" title="Link to this heading">#</a></h2>
+<p>Export the quantized model again:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">quantized_exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span>
+    <span class="n">quantized_model</span><span class="p">,</span>
+    <span class="n">example_inputs</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Create the VGF partitioner and lower the model:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EdgeCompileConfig</span><span class="p">,</span>
+    <span class="n">ExecutorchBackendConfig</span><span class="p">,</span>
+    <span class="n">to_edge_transform_and_lower</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.export_util.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_pte_program</span>
+
+
+<span class="n">partitioner</span> <span class="o">=</span> <span class="n">VgfPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+
+<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">quantized_exported_program</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
+    <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span>
+        <span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">),</span>
+<span class="p">)</span>
+
+<span class="n">executorch_program_manager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+    <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
+        <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">save_pte_program</span><span class="p">(</span>
+    <span class="n">executorch_program_manager</span><span class="p">,</span>
+    <span class="s2">"dynamic_w8a8_linear.pte"</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The generated <code class="docutils literal notranslate"><span class="pre">dynamic_w8a8_linear.pte</span></code> contains the VGF delegated program.</p>
+<p>During Arm lowering, the dynamic PT2E representation is converted
+approximately as follows:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>choose_qparams_symmetric(x)
+              |
+              v
+ scale = max(amax(abs(x)) / 127, eps)
+              |
+              v
+       INT8 activation
+              |
+              v
+        INT8 MATMUL
+              |
+              v
+       INT32 accumulator
+              |
+              v
+      FP32 rescaling
+              |
+              v
+       FP32 bias add
+</pre></div>
+</div>
+<p>The activation scale remains a runtime graph value rather than becoming a
+compile-time constant.</p>
+</section>
+<section id="using-dynamic-w8a8-with-deit-tiny">
+<h2>Using Dynamic W8A8 with DeiT-Tiny<a class="headerlink" href="#using-dynamic-w8a8-with-deit-tiny" title="Link to this heading">#</a></h2>
+<p>Dynamic activation quantization can be useful for transformer models where
+activation distributions can change between inputs and between transformer
+blocks.</p>
+<p>The same flow can be applied to DeiT-Tiny.</p>
+<p>Install <code class="docutils literal notranslate"><span class="pre">timm</span></code> if it is not already available:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>timm
+</pre></div>
+</div>
+<p>Replace the small example model with:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">timm</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">timm</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">deit</span><span class="o">.</span><span class="n">deit_tiny_patch16_224</span><span class="p">(</span>
+    <span class="n">pretrained</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Keep the same Linear-specific quantizer configuration:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">dynamic_w8a8_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span>
+    <span class="n">is_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">is_dynamic</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">act_qmin</span><span class="o">=-</span><span class="mi">127</span><span class="p">,</span>
+    <span class="n">act_qmax</span><span class="o">=</span><span class="mi">127</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">VgfQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span>
+    <span class="n">dynamic_w8a8_config</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Then run the same sequence:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>torch.export
+    |
+    v
+prepare_pt2e
+    |
+    v
+convert_pt2e
+    |
+    v
+torch.export
+    |
+    v
+VgfPartitioner
+    |
+    v
+to_edge_transform_and_lower
+    |
+    v
+to_executorch
+    |
+    v
+.pte
+</pre></div>
+</div>
+<p>The Arm dynamic W8A8 implementation has been validated with the rank-3
+transformer Linear operations used by DeiT-Tiny, including query, key, value,
+attention projection, and MLP Linear operations.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>For model accuracy evaluation, use the normal DeiT/ImageNet preprocessing and
+compare the quantized model against the FP32 reference over a representative
+validation dataset.</p>
+<p>A random tensor such as the one above is sufficient for demonstrating export
+and compilation, but it is not suitable for measuring model accuracy.</p>
+</div>
+</section>
+<section id="why-dynamic-quantization-can-help">
+<h2>Why Dynamic Quantization Can Help<a class="headerlink" href="#why-dynamic-quantization-can-help" title="Link to this heading">#</a></h2>
+<p>With static activation quantization, the activation scale is determined from
+calibration data.</p>
+<p>For example, suppose calibration observed values approximately in:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[-1, 1]
+</pre></div>
+</div>
+<p>but a runtime input produces values in:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[-20, 20]
+</pre></div>
+</div>
+<p>A static scale derived from the smaller range can cause substantial clipping
+or quantization error.</p>
+<p>Dynamic W8A8 instead computes a new scale from the current tensor:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>scale = max(amax(abs(x)) / 127, eps)
+</pre></div>
+</div>
+<p>The quantization range therefore adapts to the current activation values.</p>
+<p>This requires additional runtime work for calculating the activation scale, so
+dynamic and static quantization represent different performance and accuracy
+trade-offs.</p>
+</section>
+<section id="build-the-vgf-runtime">
+<h2>Build the VGF Runtime<a class="headerlink" href="#build-the-vgf-runtime" title="Link to this heading">#</a></h2>
+<p>If you have not already built the runtime while completing the VGF Getting
+Started Tutorial, configure it with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_VGF<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-Bcmake-out<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Build the executor runner:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner
 </pre></div>
 </div>
 </section>
-<section id="execute-the-llama-runner-binary">
-<h2>Execute the llama runner binary<a class="headerlink" href="#execute-the-llama-runner-binary" title="Link to this heading">#</a></h2>
-<p>Finally, we can execute the lowered <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file on your device.</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/etvk/llama_main<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--model_path<span class="o">=</span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_<span class="si">${</span><span class="nv">BACKEND</span><span class="si">}</span>_<span class="si">${</span><span class="nv">QUANT</span><span class="si">}</span>_g<span class="si">${</span><span class="nv">GROUP_SIZE</span><span class="si">}</span>_c<span class="si">${</span><span class="nv">CONTEXT_LENGTH</span><span class="si">}</span>.pte<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--tokenizer_path<span class="o">=</span>/data/local/tmp/llama/<span class="si">${</span><span class="nv">LLM_NAME</span><span class="si">}</span>-<span class="si">${</span><span class="nv">LLM_SIZE</span><span class="si">}${</span><span class="nv">LLM_SUFFIX</span><span class="si">}</span>_tokenizer.model<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--temperature<span class="o">=</span><span class="m">0</span><span class="w"> </span>--seq_len<span class="o">=</span><span class="m">400</span><span class="w"> </span>--warmup<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--prompt<span class="o">=</span><span class="se">\"\&lt;\|</span>begin_of_text<span class="se">\|\&gt;\&lt;\|</span>start_header_id<span class="se">\|\&gt;</span>system<span class="se">\&lt;\|</span>end_header_id<span class="se">\|\&gt;</span>Write<span class="w"> </span>me<span class="w"> </span>a<span class="w"> </span>short<span class="w"> </span>poem.<span class="se">\&lt;\|</span>eot_id<span class="se">\|\&gt;\&lt;\|</span>start_header_id<span class="se">\|\&gt;</span>assistant<span class="se">\&lt;\|</span>end_header_id<span class="se">\|\&gt;\"</span>
+<section id="run-the-model">
+<h2>Run the Model<a class="headerlink" href="#run-the-model" title="Link to this heading">#</a></h2>
+<p>Using the ML SDK for Vulkan emulation environment, run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-model_path<span class="w"> </span>dynamic_w8a8_linear.pte
 </pre></div>
 </div>
-<p>Here is some sample output captured from a Galaxy S24:</p>
-<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>&lt;<span class="p">|</span>begin_of_text<span class="p">|</span>&gt;&lt;<span class="p">|</span>start_header_id<span class="p">|</span>&gt;system&lt;<span class="p">|</span>end_header_id<span class="p">|</span>&gt;Write<span class="w"> </span>me<span class="w"> </span>a<span class="w"> </span>short<span class="w"> </span>poem.&lt;<span class="p">|</span>eot_id<span class="p">|</span>&gt;&lt;<span class="p">|</span>start_header_id<span class="p">|</span>&gt;assistant&lt;<span class="p">|</span>end_header_id<span class="p">|</span>&gt;
-
-Here<span class="w"> </span>is<span class="w"> </span>a<span class="w"> </span>short<span class="w"> </span>poem<span class="w"> </span>I<span class="w"> </span>came<span class="w"> </span>up<span class="w"> </span>with:
-
-<span class="s2">"Moonlight whispers secrets to the night</span>
-<span class="s2">A gentle breeze that rustles the light</span>
-<span class="s2">The stars up high, a twinkling show</span>
-<span class="s2">A peaceful world, where dreams grow slow"</span>
-
-I<span class="w"> </span>hope<span class="w"> </span>you<span class="w"> </span>enjoy<span class="w"> </span>it!&lt;<span class="p">|</span>eot_id<span class="p">|</span>&gt;
-
-PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">"prompt_tokens"</span>:14,<span class="s2">"generated_tokens"</span>:54,<span class="s2">"model_load_start_ms"</span>:1760077800721,<span class="s2">"model_load_end_ms"</span>:1760077802998,<span class="s2">"inference_start_ms"</span>:1760077802998,<span class="s2">"inference_end_ms"</span>:1760077804187,<span class="s2">"prompt_eval_end_ms"</span>:1760077803162,<span class="s2">"first_token_ms"</span>:1760077803162,<span class="s2">"aggregate_sampling_time_ms"</span>:19,<span class="s2">"SCALING_FACTOR_UNITS_PER_SECOND"</span>:1000<span class="o">}</span>
-<span class="w">        </span>Prompt<span class="w"> </span>Tokens:<span class="w"> </span><span class="m">14</span><span class="w">    </span>Generated<span class="w"> </span>Tokens:<span class="w"> </span><span class="m">54</span>
-<span class="w">        </span>Model<span class="w"> </span>Load<span class="w"> </span>Time:<span class="w">                </span><span class="m">2</span>.277000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span>
-<span class="w">        </span>Total<span class="w"> </span>inference<span class="w"> </span>time:<span class="w">           </span><span class="m">1</span>.189000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span><span class="w">               </span>Rate:<span class="w">  </span><span class="m">45</span>.416316<span class="w"> </span><span class="o">(</span>tokens/second<span class="o">)</span>
-<span class="w">                </span>Prompt<span class="w"> </span>evaluation:<span class="w">      </span><span class="m">0</span>.164000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span><span class="w">               </span>Rate:<span class="w">  </span><span class="m">85</span>.365854<span class="w"> </span><span class="o">(</span>tokens/second<span class="o">)</span>
-<span class="w">                </span>Generated<span class="w"> </span><span class="m">54</span><span class="w"> </span>tokens:<span class="w">    </span><span class="m">1</span>.025000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span><span class="w">               </span>Rate:<span class="w">  </span><span class="m">52</span>.682927<span class="w"> </span><span class="o">(</span>tokens/second<span class="o">)</span>
-<span class="w">        </span>Time<span class="w"> </span>to<span class="w"> </span>first<span class="w"> </span>generated<span class="w"> </span>token:<span class="w">  </span><span class="m">0</span>.164000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span>
-<span class="w">        </span>Sampling<span class="w"> </span><span class="nb">time</span><span class="w"> </span>over<span class="w"> </span><span class="m">68</span><span class="w"> </span>tokens:<span class="w">   </span><span class="m">0</span>.019000<span class="w"> </span><span class="o">(</span>seconds<span class="o">)</span>
+<p>For an application integrating ExecuTorch directly, load and execute the
+<code class="docutils literal notranslate"><span class="pre">.pte</span></code> in the same way as other VGF delegated models. Dynamic activation
+qparams are evaluated as part of execution and do not require
+application-side quantization.</p>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">#</a></h2>
+<section id="choose-qparams-symmetric-is-not-present-in-the-converted-graph">
+<h3><code class="docutils literal notranslate"><span class="pre">choose_qparams_symmetric</span></code> is not present in the converted graph<a class="headerlink" href="#choose-qparams-symmetric-is-not-present-in-the-converted-graph" title="Link to this heading">#</a></h3>
+<p>Check that the quantization configuration uses all of:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">is_dynamic</span><span class="o">=</span><span class="kc">True</span>
+<span class="n">act_qmin</span><span class="o">=-</span><span class="mi">127</span>
+<span class="n">act_qmax</span><span class="o">=</span><span class="mi">127</span>
 </pre></div>
 </div>
+<p>The supported dynamic W8A8 activation representation is symmetric INT8.</p>
+</section>
+<section id="linear-is-not-dynamically-quantized">
+<h3>Linear is not dynamically quantized<a class="headerlink" href="#linear-is-not-dynamically-quantized" title="Link to this heading">#</a></h3>
+<p>Make sure the dynamic configuration is assigned to the Linear operation:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">quantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span>
+    <span class="n">dynamic_w8a8_config</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>If <code class="docutils literal notranslate"><span class="pre">set_global(None)</span></code> is used, operators without an explicit override remain
+in floating point.</p>
+</section>
+<section id="only-part-of-the-model-is-delegated">
+<h3>Only part of the model is delegated<a class="headerlink" href="#only-part-of-the-model-is-delegated" title="Link to this heading">#</a></h3>
+<p>Dynamic W8A8 support does not by itself make every operator in a model
+VGF-compatible. Delegation of the rest of the graph still depends on normal
+VGF operator support.</p>
+<p>See <a class="reference internal" href="../VGF_op_support.html"><span class="std std-doc">VGF operator support</span></a> for the currently supported
+operations.</p>
+</section>
+<section id="vgf-environment-validation-fails">
+<h3>VGF environment validation fails<a class="headerlink" href="#vgf-environment-validation-fails" title="Link to this heading">#</a></h3>
+<p>Run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.backends.arm.vgf.check_env<span class="w"> </span>--aot
+</pre></div>
+</div>
+<p>and verify that the TOSA serialization tools and ML SDK Model Converter are
+available in the environment.</p>
+<p>You can also check:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>which<span class="w"> </span>model-converter
+</pre></div>
+</div>
+</section>
+</section>
+<section id="takeaways">
+<h2>Takeaways<a class="headerlink" href="#takeaways" title="Link to this heading">#</a></h2>
+<p>In this tutorial you learned how to:</p>
+<ul class="simple">
+<li><p>configure the VGF quantizer for dynamic W8A8;</p></li>
+<li><p>dynamically quantize Linear activations while keeping weights statically
+INT8 quantized;</p></li>
+<li><p>use per-channel or per-tensor INT8 weight quantization;</p></li>
+<li><p>export the PT2E dynamic quantization representation;</p></li>
+<li><p>lower dynamic Linear operations through the Arm/TOSA pipeline to VGF;</p></li>
+<li><p>generate a VGF-backed ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code>;</p></li>
+<li><p>apply the same flow to transformer models such as DeiT-Tiny.</p></li>
+</ul>
+<p>Dynamic W8A8 is useful when runtime activation ranges vary enough that a
+single calibration-derived activation scale is not appropriate. The
+activation scale is recomputed from the runtime tensor while the model weights
+remain statically quantized.</p>
+<p>For additional information about VGF quantization options, see
+<a class="reference internal" href="../arm-vgf-quantization.html"><span class="std std-doc">VGF Quantization</span></a>.</p>
+<p>If you encounter any bugs or issues following this tutorial, please file an
+issue on the
+<a class="reference external" href="https://github.com/pytorch/executorch/issues/new">ExecuTorch GitHub repository</a>.</p>
 </section>
 </section>
 
@@ -2161,20 +2499,20 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="etvk-profiling-tutorial.html"
+       href="../arm-vgf-troubleshooting.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Executing and profiling an ExecuTorch Vulkan model on device</p>
+        <p class="prev-next-title">Arm VGF Troubleshooting</p>
       </div>
     </a>
     <a class="right-next"
-       href="../../../android-qualcomm.html"
+       href="../VGF_op_support.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Qualcomm AI Engine Backend</p>
+        <p class="prev-next-title">PyTorch operator support for the VGF backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2200,20 +2538,20 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="etvk-profiling-tutorial.html"
+       href="../arm-vgf-troubleshooting.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Executing and profiling an ExecuTorch Vulkan model on device</p>
+        <p class="prev-next-title">Arm VGF Troubleshooting</p>
       </div>
     </a>
     <a class="right-next"
-       href="../../../android-qualcomm.html"
+       href="../VGF_op_support.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Qualcomm AI Engine Backend</p>
+        <p class="prev-next-title">PyTorch operator support for the VGF backend</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -2235,11 +2573,31 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#download-the-llama-3-2-1b-3b-instruct-model-checkpoint-and-tokenizer">Download the Llama 3.2 1B/3B Instruct model checkpoint and tokenizer</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#export-the-llama-3-2-1b-3b-model">Export the Llama 3.2 1B/3B model</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-core-executorch-components">Build Core Executorch Components</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-and-push-the-llama-runner-binary-to-android">Build and push the llama runner binary to Android</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#execute-the-llama-runner-binary">Execute the llama runner binary</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-will-learn-in-this-tutorial">What you will learn in this tutorial:</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#static-w8a8-and-dynamic-w8a8">Static W8A8 and Dynamic W8A8</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hardware">Hardware</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#software">Software</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quantize-a-linear-layer-with-dynamic-w8a8">Quantize a Linear Layer with Dynamic W8A8</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#configure-the-vgf-quantizer">Configure the VGF quantizer</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#prepare-and-convert-the-model">Prepare and convert the model</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lower-the-model-to-vgf">Lower the Model to VGF</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-dynamic-w8a8-with-deit-tiny">Using Dynamic W8A8 with DeiT-Tiny</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#why-dynamic-quantization-can-help">Why Dynamic Quantization Can Help</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-the-vgf-runtime">Build the VGF Runtime</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#run-the-model">Run the Model</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#troubleshooting">Troubleshooting</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#choose-qparams-symmetric-is-not-present-in-the-converted-graph"><code class="docutils literal notranslate"><span class="pre">choose_qparams_symmetric</span></code> is not present in the converted graph</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#linear-is-not-dynamically-quantized">Linear is not dynamically quantized</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#only-part-of-the-model-is-delegated">Only part of the model is delegated</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#vgf-environment-validation-fails">VGF environment validation fails</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#takeaways">Takeaways</a></li>
 </ul>
   </nav></div>
     
@@ -2247,7 +2605,7 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/vulkan/tutorials/etvk-llama-tutorial.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -2261,7 +2619,7 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="../../../_sources/backends/vulkan/tutorials/etvk-llama-tutorial.md.txt">
+      <a href="../../../_sources/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2461,11 +2819,11 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device",
-       "headline": "Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device",
+       "name": "Dynamic W8A8 Quantization with the Arm VGF Backend",
+       "headline": "Dynamic W8A8 Quantization with the Arm VGF Backend",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/backends/vulkan/tutorials/etvk-llama-tutorial.html",
-       "articleBody": "Exporting Llama 3.2 1B/3B Instruct to ExecuTorch Vulkan and running on device# This tutorial assumes that you have a working local copy of the ExecuTorch repo, and have gone through the steps to install the executorch pip package or have installed it by building from source. This tutorial also assumes that you have the Android SDK tools installed and that you are able to connect to an Android device via adb. Finally, the Android NDK should also be installed, and your environment should have a variable ANDROID_NDK that points to the root directory of the NDK. export ANDROID_NDK=\u003cpath_to_ndk\u003e Download the Llama 3.2 1B/3B Instruct model checkpoint and tokenizer# The model checkpoint and tokenizer can be downloaded from the Meta Llama website. The model files should be downloaded to ~/.llama/checkpoints/Llama3.2-1B-Instruct. Export the Llama 3.2 1B/3B model# First, navigate to the root of the ExecuTorch repo. # Navigate to executorch root cd ~/executorch Then, set some environment variables to describe how the model should be exported. Feel free to tune the values to your preferences. export LLM_NAME=Llama3.2 \u0026\u0026 \\ export LLM_SIZE=1B \u0026\u0026 \\ export LLM_SUFFIX=\"-Instruct\" \u0026\u0026 \\ export QUANT=8da4w \u0026\u0026 \\ export BACKEND=vulkan \u0026\u0026 \\ export GROUP_SIZE=64 \u0026\u0026 \\ export CONTEXT_LENGTH=2048 Then, export the Llama 3.2 1B/3B Instruct model to ExecuTorch Vulkan. Note that the --vulkan-force-fp16 flag is set, which will improve model inference latency at the cost of model accuracy. Feel free to remove this flag. python -m examples.models.llama.export_llama \\ -c $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/consolidated.00.pth \\ -p $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/params.json \\ -d fp32 --${BACKEND} --vulkan-force-fp16 \\ -qmode ${QUANT} -G ${GROUP_SIZE} \\ --max_seq_length ${CONTEXT_LENGTH} \\ --max_context_length ${CONTEXT_LENGTH} \\ -kv --use_sdpa_with_kv_cache \\ --metadata \u0027{\"append_eos_to_prompt\": 0, \"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}\u0027 \\ --model \"llama3_2\" \\ --output_name $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte After exporting the model, push the exported .pte file and the tokenizer to your device. adb shell mkdir -p /data/local/tmp/llama \u0026\u0026 \\ adb push ~/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/tokenizer.model \\ /data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_tokenizer.model \u0026\u0026 \\ adb push ~/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte \\ /data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte Build Core Executorch Components# To be able to run the .pte file on device, first the core libraries, including the Vulkan backend, must be compiled for Android. cmake . \\ -DCMAKE_INSTALL_PREFIX=cmake-out-android-so \\ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \\ -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \\ --preset \"android-arm64-v8a\" \\ -DANDROID_PLATFORM=android-28 \\ -DPYTHON_EXECUTABLE=python \\ -DCMAKE_BUILD_TYPE=Release \\ -DEXECUTORCH_PAL_DEFAULT=posix \\ -DEXECUTORCH_BUILD_LLAMA_JNI=ON \\ -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \\ -DEXECUTORCH_BUILD_VULKAN=ON \\ -DEXECUTORCH_BUILD_TESTS=OFF \\ -Bcmake-out-android-so \u0026\u0026 \\ cmake --build cmake-out-android-so -j$(( $(nproc 2\u003e/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release Build and push the llama runner binary to Android# Then, build a binary that can be used to run the .pte file. cmake examples/models/llama \\ -DCMAKE_INSTALL_PREFIX=cmake-out-android-so \\ -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \\ -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \\ -DEXECUTORCH_ENABLE_LOGGING=ON \\ -DANDROID_ABI=arm64-v8a \\ -DANDROID_PLATFORM=android-28 \\ -DCMAKE_BUILD_TYPE=Release \\ -DPYTHON_EXECUTABLE=python \\ -Bcmake-out-android-so/examples/models/llama \u0026\u0026 \\ cmake --build cmake-out-android-so/examples/models/llama -j$(( $(nproc 2\u003e/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release Once the binary is built, it can be pushed to your Android device. adb shell mkdir /data/local/tmp/etvk/ \u0026\u0026 \\ adb push cmake-out-android-so/examples/models/llama/llama_main /data/local/tmp/etvk/ Execute the llama runner binary# Finally, we can execute the lowered .pte file on your device. adb shell /data/local/tmp/etvk/llama_main \\ --model_path=/data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_${BACKEND}_${QUANT}_g${GROUP_SIZE}_c${CONTEXT_LENGTH}.pte \\ --tokenizer_path=/data/local/tmp/llama/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}_tokenizer.model \\ --temperature=0 --seq_len=400 --warmup \\ --prompt=\\\"\\\u003c\\|begin_of_text\\|\\\u003e\\\u003c\\|start_header_id\\|\\\u003esystem\\\u003c\\|end_header_id\\|\\\u003eWrite me a short poem.\\\u003c\\|eot_id\\|\\\u003e\\\u003c\\|start_header_id\\|\\\u003eassistant\\\u003c\\|end_header_id\\|\\\u003e\\\" Here is some sample output captured from a Galaxy S24: \u003c|begin_of_text|\u003e\u003c|start_header_id|\u003esystem\u003c|end_header_id|\u003eWrite me a short poem.\u003c|eot_id|\u003e\u003c|start_header_id|\u003eassistant\u003c|end_header_id|\u003e Here is a short poem I came up with: \"Moonlight whispers secrets to the night A gentle breeze that rustles the light The stars up high, a twinkling show A peaceful world, where dreams grow slow\" I hope you enjoy it!\u003c|eot_id|\u003e PyTorchObserver {\"prompt_tokens\":14,\"generated_tokens\":54,\"model_load_start_ms\":1760077800721,\"model_load_end_ms\":1760077802998,\"inference_start_ms\":1760077802998,\"inference_end_ms\":1760077804187,\"prompt_eval_end_ms\":1760077803162,\"first_token_ms\":1760077803162,\"aggregate_sampling_time_ms\":19,\"SCALING_FACTOR_UNITS_PER_SECOND\":1000} Prompt Tokens: 14 Generated Tokens: 54 Model Load Time: 2.277000 (seconds) Total inference time: 1.189000 (seconds) Rate: 45.416316 (tokens/second) Prompt evaluation: 0.164000 (seconds) Rate: 85.365854 (tokens/second) Generated 54 tokens: 1.025000 (seconds) Rate: 52.682927 (tokens/second) Time to first generated token: 0.164000 (seconds) Sampling time over 68 tokens: 0.019000 (seconds)",
+       "url": "/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization.html",
+       "articleBody": "Dynamic W8A8 Quantization with the Arm VGF Backend# Tutorial we recommend you complete before this: VGF Getting Started Tutorial What you will learn in this tutorial:# In this tutorial you will learn how to use dynamic W8A8 quantization for Linear layers with the ExecuTorch Arm VGF backend, lower the quantized model to VGF, and run the resulting .pte. Dynamic W8A8 quantization keeps model weights statically quantized to INT8 while computing activation quantization parameters from the input tensor at runtime. This can be useful when activation ranges vary significantly between inputs. Unlike static activation quantization, the activation scale is not fixed from calibration data. Instead, it is recomputed when the model executes. For a dynamically quantized Linear operation, the VGF lowering conceptually performs: FP32 activation | v choose runtime scale | v quantize to INT8 | v INT8 MATMUL \u003c---- static INT8 weight | INT32 \u003c--- accumulator | v * activation_scale * weight_scale | v FP32 | + FP32 bias | v FP32 output Note Dynamic W8A8 support currently targets the dynamic quantization pattern used by Linear/AddMM. Activations use per-tensor symmetric INT8 quantization with the range [-127, 127] and zero point 0. Weights are statically quantized and can use either per-tensor or per-channel symmetric INT8 quantization. Static W8A8 and Dynamic W8A8# The main difference is when activation quantization parameters are determined. Static W8A8 Dynamic W8A8 Weight quantization Static Static Activation quantization Static Dynamic Activation scale Determined during calibration Computed at runtime Activation zero point Fixed 0 for the supported symmetric configuration Linear accumulation INT32 INT32 Linear bias Quantized according to the static configuration Applied in FP32 after accumulator rescaling Useful when Activation ranges are predictable Activation ranges vary between inputs Prerequisites# Hardware# To follow the VGF flow you need a Linux machine with an aarch64 or x86_64 processor architecture, or a macOS machine with Apple Silicon. This tutorial can use the ML SDK for Vulkan emulation layer, so physical VGF-capable target hardware is not required. Software# Install ExecuTorch and the VGF dependencies as described in the VGF Getting Started Tutorial. From the ExecuTorch repository, run: ./examples/arm/setup.sh \\ --i-agree-to-the-contained-eula \\ --disable-ethos-u-deps \\ --enable-mlsdk-deps Source the generated environment: source examples/arm/arm-scratch/setup_path.sh Verify the Ahead-of-Time environment: python -m executorch.backends.arm.vgf.check_env --aot Quantize a Linear Layer with Dynamic W8A8# We first use a small Linear model to demonstrate the quantization flow. import torch class LinearModel(torch.nn.Module): def __init__(self): super().__init__() self.linear = torch.nn.Linear(16, 8) def forward(self, x): return self.linear(x) model = LinearModel().eval() example_inputs = (torch.randn(2, 16),) Export the model before applying PT2E quantization: exported_program = torch.export.export(model, example_inputs) graph_module = exported_program.module(check_guards=False) Configure the VGF quantizer# Create a VgfQuantizer and configure dynamic W8A8 for Linear layers: from executorch.backends.arm.quantizer import ( VgfQuantizer, get_symmetric_quantization_config, ) from executorch.backends.arm.vgf import VgfCompileSpec compile_spec = VgfCompileSpec() dynamic_w8a8_config = get_symmetric_quantization_config( is_per_channel=True, is_dynamic=True, act_qmin=-127, act_qmax=127, ) quantizer = VgfQuantizer(compile_spec) # Leave operators in floating point by default. quantizer.set_global(None) # Apply dynamic W8A8 to Linear operations. quantizer.set_module_type(torch.nn.Linear, dynamic_w8a8_config) is_dynamic=True enables runtime activation quantization. The [-127, 127] activation range selects the symmetric dynamic INT8 representation supported by the Arm backend. is_per_channel=True selects per-channel weight quantization. Per-tensor weight quantization can instead be selected by setting is_per_channel=False. Using set_global(None) and explicitly configuring torch.nn.Linear limits dynamic quantization to the operation currently supported by the dynamic W8A8 lowering. Prepare and convert the model# Use the standard PT2E quantization flow: from torchao.quantization.pt2e.quantize_pt2e import ( convert_pt2e, prepare_pt2e, ) prepared_model = prepare_pt2e(graph_module, quantizer) # Run representative inputs so static weight observers are populated. prepared_model(*example_inputs) quantized_model = convert_pt2e(prepared_model) The weights are statically quantized, while activation quantization parameters are computed dynamically. The activation range observed from example_inputs does not become a fixed activation range for inference. You can inspect the converted graph with: print(quantized_model.graph) For a dynamically quantized Linear operation, the graph contains dynamic qparam calculation followed by quantize/dequantize operations. Conceptually, this includes: choose_qparams_symmetric quantize_per_tensor dequantize_per_tensor linear These operations are recognized and lowered by the Arm backend during delegation. Lower the Model to VGF# Export the quantized model again: quantized_exported_program = torch.export.export( quantized_model, example_inputs, ) Create the VGF partitioner and lower the model: from executorch.backends.arm.vgf import VgfPartitioner from executorch.exir import ( EdgeCompileConfig, ExecutorchBackendConfig, to_edge_transform_and_lower, ) from executorch.extension.export_util.utils import save_pte_program partitioner = VgfPartitioner(compile_spec) edge_program_manager = to_edge_transform_and_lower( quantized_exported_program, partitioner=[partitioner], compile_config=EdgeCompileConfig( _check_ir_validity=False, ), ) executorch_program_manager = edge_program_manager.to_executorch( config=ExecutorchBackendConfig( extract_delegate_segments=False, ) ) save_pte_program( executorch_program_manager, \"dynamic_w8a8_linear.pte\", ) The generated dynamic_w8a8_linear.pte contains the VGF delegated program. During Arm lowering, the dynamic PT2E representation is converted approximately as follows: choose_qparams_symmetric(x) | v scale = max(amax(abs(x)) / 127, eps) | v INT8 activation | v INT8 MATMUL | v INT32 accumulator | v FP32 rescaling | v FP32 bias add The activation scale remains a runtime graph value rather than becoming a compile-time constant. Using Dynamic W8A8 with DeiT-Tiny# Dynamic activation quantization can be useful for transformer models where activation distributions can change between inputs and between transformer blocks. The same flow can be applied to DeiT-Tiny. Install timm if it is not already available: pip install timm Replace the small example model with: import timm import torch model = timm.models.deit.deit_tiny_patch16_224( pretrained=True ).eval() example_inputs = ( torch.randn(1, 3, 224, 224), ) Keep the same Linear-specific quantizer configuration: dynamic_w8a8_config = get_symmetric_quantization_config( is_per_channel=True, is_dynamic=True, act_qmin=-127, act_qmax=127, ) quantizer = VgfQuantizer(compile_spec) quantizer.set_global(None) quantizer.set_module_type( torch.nn.Linear, dynamic_w8a8_config, ) Then run the same sequence: torch.export | v prepare_pt2e | v convert_pt2e | v torch.export | v VgfPartitioner | v to_edge_transform_and_lower | v to_executorch | v .pte The Arm dynamic W8A8 implementation has been validated with the rank-3 transformer Linear operations used by DeiT-Tiny, including query, key, value, attention projection, and MLP Linear operations. Tip For model accuracy evaluation, use the normal DeiT/ImageNet preprocessing and compare the quantized model against the FP32 reference over a representative validation dataset. A random tensor such as the one above is sufficient for demonstrating export and compilation, but it is not suitable for measuring model accuracy. Why Dynamic Quantization Can Help# With static activation quantization, the activation scale is determined from calibration data. For example, suppose calibration observed values approximately in: [-1, 1] but a runtime input produces values in: [-20, 20] A static scale derived from the smaller range can cause substantial clipping or quantization error. Dynamic W8A8 instead computes a new scale from the current tensor: scale = max(amax(abs(x)) / 127, eps) The quantization range therefore adapts to the current activation values. This requires additional runtime work for calculating the activation scale, so dynamic and static quantization represent different performance and accuracy trade-offs. Build the VGF Runtime# If you have not already built the runtime while completing the VGF Getting Started Tutorial, configure it with: cmake \\ -DCMAKE_INSTALL_PREFIX=cmake-out \\ -DCMAKE_BUILD_TYPE=Debug \\ -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \\ -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \\ -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \\ -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \\ -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \\ -DEXECUTORCH_BUILD_XNNPACK=OFF \\ -DEXECUTORCH_BUILD_VULKAN=ON \\ -DEXECUTORCH_BUILD_VGF=ON \\ -DEXECUTORCH_ENABLE_LOGGING=ON \\ -DPYTHON_EXECUTABLE=python \\ -Bcmake-out . Build the executor runner: cmake --build cmake-out --target executor_runner Run the Model# Using the ML SDK for Vulkan emulation environment, run: ./cmake-out/executor_runner \\ -model_path dynamic_w8a8_linear.pte For an application integrating ExecuTorch directly, load and execute the .pte in the same way as other VGF delegated models. Dynamic activation qparams are evaluated as part of execution and do not require application-side quantization. Troubleshooting# choose_qparams_symmetric is not present in the converted graph# Check that the quantization configuration uses all of: is_dynamic=True act_qmin=-127 act_qmax=127 The supported dynamic W8A8 activation representation is symmetric INT8. Linear is not dynamically quantized# Make sure the dynamic configuration is assigned to the Linear operation: quantizer.set_module_type( torch.nn.Linear, dynamic_w8a8_config, ) If set_global(None) is used, operators without an explicit override remain in floating point. Only part of the model is delegated# Dynamic W8A8 support does not by itself make every operator in a model VGF-compatible. Delegation of the rest of the graph still depends on normal VGF operator support. See VGF operator support for the currently supported operations. VGF environment validation fails# Run: python -m executorch.backends.arm.vgf.check_env --aot and verify that the TOSA serialization tools and ML SDK Model Converter are available in the environment. You can also check: which model-converter Takeaways# In this tutorial you learned how to: configure the VGF quantizer for dynamic W8A8; dynamically quantize Linear activations while keeping weights statically INT8 quantized; use per-channel or per-tensor INT8 weight quantization; export the PT2E dynamic quantization representation; lower dynamic Linear operations through the Arm/TOSA pipeline to VGF; generate a VGF-backed ExecuTorch .pte; apply the same flow to transformer models such as DeiT-Tiny. Dynamic W8A8 is useful when runtime activation ranges vary enough that a single calibration-derived activation scale is not appropriate. The activation scale is recomputed from the runtime tensor while the model weights remain statically quantized. For additional information about VGF quantization options, see VGF Quantization. If you encounter any bugs or issues following this tutorial, please file an issue on the ExecuTorch GitHub repository.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2474,7 +2832,7 @@ PyTorchObserver<span class="w"> </span><span class="o">{</span><span class="s2">
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/backends/vulkan/tutorials/etvk-llama-tutorial.html"
+         "@id": "/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
