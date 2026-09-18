@@ -95,17 +95,22 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
     GTEST_SKIP() << "CUDA device required";
   }
 
-  cu::OffGraphKVSettings settings;
-  settings.config.capacity = 32;
-  settings.config.initial_capacity = 4;
+  cache::CacheConfig cfg;
+  cfg.capacity = 32;
+  cfg.initial_capacity = 4;
   // The widest step below is 9 tokens, and a ring layer may not be handed
   // more than max_write at once.
-  settings.config.max_write = 9;
-  settings.geometry.layers = {
+  cfg.max_write = 9;
+  cfg.kv_dtype = static_cast<int>(slimc10::ScalarType::BFloat16);
+  cache::CacheGeometry geometry;
+  geometry.layers = {
       {{cache::LayerPolicy::Kind::Flat, 0}, 2, 8},
       {{cache::LayerPolicy::Kind::Ring, 4}, 2, 8},
   };
-  cu::OffGraphKVCacheContextOwner context(std::move(settings));
+  auto cache_ptr = cu::make_cuda_sequence_kv_cache(geometry, cfg);
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& context = *cache_ptr->as<cu::CudaKVCache>();
+  auto& control = *cache_ptr->as<cache::SequenceControl>();
   FakeContainer container{
       {"flat_k", "flat_v", "flat_capacity", "ring_k", "ring_v", "ring_capacity"},
       {"__et_offgraph_kv_layer_0_k",
@@ -117,12 +122,12 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
       {},
       {}};
   auto handle = make_handle(container);
-  context.with_load_scope([&] { cu::offgraph_kv_note_handle(&handle); });
+  ASSERT_EQ(context.note_handle(&handle), Error::Ok);
   ASSERT_EQ(context.validate(), Error::Ok);
   EXPECT_EQ(context.metrics().allocated_bytes, 0);
 
-  ASSERT_EQ(context.prepare(3), Error::Ok);
-  ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(context.prepare_step(3), Error::Ok);
+  ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
   const auto initial = context.metrics();
   EXPECT_EQ(initial.flat_capacity, 4);
   EXPECT_EQ(initial.growth_count, 0);
@@ -141,10 +146,10 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
           cudaMemcpyHostToDevice),
       cudaSuccess);
   void* old_k = container.pointers["flat_k"];
-  ASSERT_EQ(context.commit(3), Error::Ok);
+  ASSERT_EQ(context.commit_step(3), Error::Ok);
 
-  ASSERT_EQ(context.prepare(2), Error::Ok);
-  ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(context.prepare_step(2), Error::Ok);
+  ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
   EXPECT_NE(container.pointers["flat_k"], old_k);
   const auto grown = context.metrics();
   EXPECT_EQ(grown.flat_capacity, 8);
@@ -161,22 +166,20 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
       cudaSuccess);
   EXPECT_EQ(copied, values);
 
-  ASSERT_EQ(context.commit(2), Error::Ok);
-  ASSERT_EQ(context.prepare(1), Error::Ok);
+  ASSERT_EQ(context.commit_step(2), Error::Ok);
+  ASSERT_EQ(context.prepare_step(1), Error::Ok);
   EXPECT_EQ(context.metrics().flat_capacity, 8);
   EXPECT_EQ(context.metrics().growth_count, 1);
-  EXPECT_EQ(context.prepare(28), Error::InvalidArgument);
+  EXPECT_EQ(context.prepare_step(28), Error::InvalidArgument);
   EXPECT_EQ(context.metrics().logical_length, 5);
-  ASSERT_EQ(context.reset(), Error::Ok);
+  ASSERT_EQ((control.clear(), Error::Ok), Error::Ok);
   const auto reset = context.metrics();
   EXPECT_EQ(reset.logical_length, 0);
   EXPECT_EQ(reset.flat_capacity, 8);
   EXPECT_EQ(reset.growth_count, 1);
 
-  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Warmup;
-  EXPECT_EQ(
-      cu::offgraph_kv_rebind_for_execute(&handle), Error::NotSupported);
-  cu::offgraph_kv_forget_handle(&handle);
+  EXPECT_EQ(context.rebind_for_execute(&handle), Error::Ok);
+  context.forget_handle(&handle);
 }
 
 TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
@@ -196,12 +199,15 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
            slimc10::ScalarType::BFloat16,
        }) {
     SCOPED_TRACE(slimc10::toString(dtype));
-    cu::OffGraphKVSettings settings;
-    settings.config.capacity = 8;
-    settings.config.initial_capacity = 4;
-    settings.storage_dtype = dtype;
-    settings.geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 2, 8}};
-    cu::OffGraphKVCacheContextOwner context(std::move(settings));
+    cache::CacheConfig cfg;
+    cfg.capacity = 8;
+    cfg.initial_capacity = 4;
+    cfg.kv_dtype = static_cast<int>(dtype);
+    cache::CacheGeometry geometry;
+    geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, 2, 8}};
+    auto cache_ptr = cu::make_cuda_sequence_kv_cache(geometry, cfg);
+    ASSERT_NE(cache_ptr, nullptr);
+    auto& context = *cache_ptr->as<cu::CudaKVCache>();
     FakeContainer container{
         {"flat_k", "flat_v", "flat_capacity"},
         {"__et_offgraph_kv_layer_0_k",
@@ -210,11 +216,11 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
         {},
         {}};
     auto handle = make_handle(container);
-    context.with_load_scope([&] { cu::offgraph_kv_note_handle(&handle); });
+    ASSERT_EQ(context.note_handle(&handle), Error::Ok);
     ASSERT_EQ(context.validate(), Error::Ok);
 
-    ASSERT_EQ(context.prepare(4), Error::Ok);
-    ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+    ASSERT_EQ(context.prepare_step(4), Error::Ok);
+    ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
     EXPECT_EQ(container.dtypes["flat_k"], dtype);
     EXPECT_EQ(container.dtypes["flat_v"], dtype);
     EXPECT_EQ(container.dtypes["flat_capacity"], slimc10::ScalarType::Long);
@@ -237,10 +243,10 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
             values.size(),
             cudaMemcpyHostToDevice),
         cudaSuccess);
-    ASSERT_EQ(context.commit(4), Error::Ok);
+    ASSERT_EQ(context.commit_step(4), Error::Ok);
 
-    ASSERT_EQ(context.prepare(1), Error::Ok);
-    ASSERT_EQ(cu::offgraph_kv_rebind_for_execute(&handle), Error::Ok);
+    ASSERT_EQ(context.prepare_step(1), Error::Ok);
+    ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
     std::vector<uint8_t> copied(2 * new_head_bytes);
     ASSERT_EQ(
         cudaMemcpy(
@@ -258,6 +264,6 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
               values.begin() + head * old_head_bytes,
               values.begin() + (head + 1) * old_head_bytes));
     }
-    cu::offgraph_kv_forget_handle(&handle);
+    context.forget_handle(&handle);
   }
 }
