@@ -51,7 +51,7 @@ class EagerCortexMModel(torch.nn.Module):
         quantized = quantized.clamp(
             self.input_info["quant_min"], self.input_info["quant_max"]
         ).to(torch.int8)
-        output = self.module(quantized.to(memory_format=torch.channels_last))
+        output = self.module(quantized)
         return (output.to(torch.float32) - self.output_zero_point) * self.output_scale
 
 
@@ -123,9 +123,8 @@ def main() -> None:
         eager_model,
         loader,
         torch.device("cpu"),
-        5,
-        2,
-        set_eval_mode=False,
+        manifest["model"]["grid_size"],
+        manifest["model"]["num_boxes"],
     )
     print(f"Validated {args.pte} and {args.eager}.")
     print(f"Open Images Person AP@0.5: {accuracy:.3%}")

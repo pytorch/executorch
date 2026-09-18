@@ -74,11 +74,13 @@ def load_model(checkpoint_path: Path = PRUNED_PATH) -> MicroYolo:
 
 def export_cortex_m(model: MicroYolo):
     """Quantize and lower a µYOLO model for Cortex-M."""
-    example_input = torch.ones(1, 3, 128, 128).to(memory_format=torch.channels_last)
+    example_input = torch.ones(1, 3, 128, 128)
     captured = torch.export.export(model, (example_input,))
 
     # Quantize
-    prepared = prepare_pt2e(captured.module(check_guards=False), CortexMQuantizer())
+    prepared = prepare_pt2e(
+        captured.module(check_guards=False), CortexMQuantizer(use_explicit_layout=True)
+    )
     calibration_loader = DataLoader(
         MicroYoloDataset("train", training=False),
         batch_size=1,
@@ -87,7 +89,7 @@ def export_cortex_m(model: MicroYolo):
     )
 
     for index, (images, _) in enumerate(calibration_loader, start=1):
-        prepared(images.to(memory_format=torch.channels_last))
+        prepared(images)
         print(f"Calibrating {index}/{CALIBRATION_SAMPLES}", end="\r", flush=True)
         if index == CALIBRATION_SAMPLES:
             break
@@ -102,8 +104,8 @@ def export_cortex_m(model: MicroYolo):
     )
     pass_manager = CortexMPassManager(
         edge.exported_program(),
-        CortexMPassManager.pass_list,
         target_config=CortexMTargetConfig(cpu=CortexM.M55),
+        use_explicit_layout=True,
     )
     edge._edge_programs["forward"] = pass_manager.transform()
 
