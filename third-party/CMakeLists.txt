@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -117,6 +118,16 @@ endif()
 
 # MARK: - flatcc
 
+# flatcc writes build artifacts into its source directory. Use a private source
+# copy so independent ExecuTorch build trees cannot overwrite each other's
+# artifacts.
+set(_flatcc_source_dir ${CMAKE_CURRENT_BINARY_DIR}/flatcc-src)
+file(
+  COPY ${PROJECT_SOURCE_DIR}/third-party/flatcc/
+  DESTINATION ${_flatcc_source_dir}
+  PATTERN .git EXCLUDE
+)
+
 if(WIN32)
   # For some reason, when configuring the external project during build
   # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set. To
@@ -140,7 +151,7 @@ else()
 ExternalProject_Add(
   flatcc_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
-  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
+  SOURCE_DIR ${_flatcc_source_dir}
   BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
   CMAKE_ARGS
     -DFLATCC_RTONLY=OFF
@@ -159,7 +170,6 @@ ExternalProject_Add(
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
-file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_ep)
@@ -198,7 +208,7 @@ set(FLATCC_INSTALL
     OFF
     CACHE BOOL ""
 )
-add_subdirectory(flatcc)
+add_subdirectory(${_flatcc_source_dir} flatcc)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
    AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 15
 )
