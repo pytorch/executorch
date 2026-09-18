@@ -109,7 +109,7 @@ endif()
 project(executorch_mv2_ethosu)
 
 set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -Wall -Wno-switch -Wno-float-conversion -Wno-double-promotion -ffunction-sections -fdata-sections"
+    "${CMAKE_CXX_FLAGS} -Wall -Wno-switch -Wno-float-conversion -ffunction-sections -fdata-sections"
 )
 
 if(NOT DEFINED EXECUTORCH_DIR)

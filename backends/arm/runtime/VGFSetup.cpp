@@ -4146,7 +4146,11 @@ void VgfRepr::free_vgf() {
     vk_execute_fence = VK_NULL_HANDLE;
   }
 
-  vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+  // Also safe for initialization failures and repeated free_vgf().
+  if (vk_execute_cmd != VK_NULL_HANDLE) {
+    vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+    vk_execute_cmd = VK_NULL_HANDLE;
+  }
   vector<VkDeviceMemory> owned_memory;
   auto remember_owned_memory = [&](VkDeviceMemory memory) {
     if (memory == VK_NULL_HANDLE) {
@@ -4244,6 +4248,7 @@ void VgfRepr::free_vgf() {
   for (auto memory : intermediates) {
     vkFreeMemory(vk_device, memory, nullptr);
   }
+  intermediates.clear();
 }
 
 static uint32_t get_format_size(VkFormat format) {
