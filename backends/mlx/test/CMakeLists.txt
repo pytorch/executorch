@@ -115,8 +115,6 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
 endif()
 add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
 
-# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
-# links GTest + executorch_core and registers the ctest target.
 # Lazy-graph evaluation threshold (kEvalThresholdBytesKey). Drives the
 # interpreter over hand-built programs; no model/tokenizer needed.
 et_cxx_test(
@@ -141,6 +139,8 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   )
 endif()
 
+# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
+# links GTest + executorch_core and registers the ctest target.
 et_cxx_test(
   mlx_sequence_cache_test
   SOURCES
