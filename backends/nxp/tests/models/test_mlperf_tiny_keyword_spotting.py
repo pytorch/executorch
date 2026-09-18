@@ -6,6 +6,8 @@
 from functools import partial
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.tests.dataset_creator import (
