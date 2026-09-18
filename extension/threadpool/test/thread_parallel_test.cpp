@@ -15,6 +15,7 @@
 #include <executorch/runtime/platform/platform.h>
 
 using namespace ::testing;
+using ::executorch::extension::get_thread_count;
 using ::executorch::extension::parallel_for;
 
 class ParallelTest : public ::testing::TestWithParam<bool> {
@@ -228,6 +229,10 @@ TEST_P(ParallelTest, TestChunkSizeTooLarge) {
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], i);
   }
+}
+
+TEST(ThreadParallelInterfaceTest, GetThreadCount) {
+  EXPECT_GT(get_thread_count(), 0);
 }
 
 INSTANTIATE_TEST_SUITE_P(
