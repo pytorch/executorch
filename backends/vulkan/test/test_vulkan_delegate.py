@@ -1314,6 +1314,55 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_redundant_view_to_output(self):
+        # Returning a value and a redundant view of it: once the view is
+        # removed, both outputs are the same node. The serializer must still
+        # emit two output ids, or the runtime's argument count check fails.
+        class RedundantViewToOutputModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                return y, y.view(2, 48)
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            RedundantViewToOutputModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_duplicate_output(self):
+        # The same guarantee without any view involved: `all_input_nodes`
+        # de-duplicates, so this loses an output slot too.
+        class DuplicateOutputModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                return y, y
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            DuplicateOutputModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_view_chain_collapsing_to_input_shape(self):
+        # A chain of views whose net effect is the original shape. Fusing the
+        # chain leaves a view onto the shape it started from, which the
+        # redundant-op sweep then removes; the output count must survive both
+        # rewrites.
+        class ViewChainModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                z = y.view(4, 24).view(8, 12).view(2, 48)
+                return y, z
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ViewChainModule(),
+            sample_inputs,
+        )
+
     def test_vulkan_backend_view_int(self):
         class ViewModule(torch.nn.Module):
             def __init__(self):

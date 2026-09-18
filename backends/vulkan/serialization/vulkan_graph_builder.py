@@ -490,8 +490,26 @@ class VkGraphBuilder:
     def process_getattr_node(self, node: Node) -> None:
         self.create_node_value(node)
 
+    def _output_nodes_in_order(self, node: Node) -> List[Node]:
+        """
+        The graph outputs in order, duplicates included.
+
+        `node.all_input_nodes` de-duplicates, so a graph that returns the same
+        value twice (`return y, y`, or `return y, y.view(...)` once a redundant
+        view is removed) would serialize one output id for two outputs and fail
+        the runtime's argument count check.
+        """
+        args = node.args[0] if len(node.args) == 1 else node.args
+        if isinstance(args, Node):
+            args = (args,)
+        out_nodes: List[Node] = []
+        for arg in args:
+            if isinstance(arg, Node):
+                out_nodes.append(arg)
+        return out_nodes
+
     def process_output_node(self, node: Node) -> None:
-        for out_node in node.all_input_nodes:
+        for out_node in self._output_nodes_in_order(node):
             if out_node not in self.node_to_value_ids:
                 raise AssertionError(
                     "Cannot find input to output node in node_to_value_ids. This means "
