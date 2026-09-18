@@ -8,6 +8,7 @@
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 
 namespace executorch {
 namespace backends {
@@ -50,7 +51,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     num_graphs = binaryinfo->contextBinaryInfoV2.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV2.graphs;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
     num_graphs = binaryinfo->contextBinaryInfoV3.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV3.graphs;
@@ -66,7 +67,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV1_t>(graphs[i].graphInfoV1);
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_2) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV2_t>(graphs[i].graphInfoV2);
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_3) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV3_t>(graphs[i].graphInfoV3);
 #endif
@@ -78,6 +79,53 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   }
 
   return Error::Ok;
+}
+Error QnnBackendCache::GetQnnGraphInfoFromDlc() {
+#if QNN_EXECUTORCH_SUPPORTS_FCB
+  const QnnSystemInterface& qnn_sys_interface =
+      qnn_sys_impl_->GetQnnSystemInterface();
+  QnnSystemDlc_RecordHandle_t* records = nullptr;
+  uint32_t count = 0;
+  auto error = qnn_sys_interface.qnn_system_dlc_create_from_binary(
+      nullptr,
+      static_cast<const uint8_t*>(qnn_context_blob_.buffer),
+      qnn_context_blob_.nbytes,
+      &fcb_dlc_handle_);
+  if (error != QNN_SUCCESS) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "[FCB] class=MalformedDlc error=%d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  error = qnn_sys_interface.qnn_system_dlc_get_records_by_type(
+      fcb_dlc_handle_,
+      QNN_SYSTEM_DLC_RECORD_PREFIX_HTP_CACHE_RECORD,
+      1,
+      &records,
+      &count);
+  if (error != QNN_SUCCESS || count != 1) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "[FCB] class=OffListSoc records=%u error=%d",
+        count,
+        QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  const uint8_t* context_binary = nullptr;
+  uint64_t context_binary_size = 0;
+  error = qnn_sys_interface.qnn_system_dlc_read_record_data_memory_mapped(
+      records[0], &context_binary, &context_binary_size);
+  if (error != QNN_SUCCESS || context_binary_size > UINT32_MAX) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "[FCB] class=MetadataIncompat error=%d", QNN_GET_ERROR_CODE(error));
+    return Error::Internal;
+  }
+  return GetQnnGraphInfoFromBinary(
+      const_cast<uint8_t*>(context_binary),
+      static_cast<uint32_t>(context_binary_size));
+#else
+  QNN_EXECUTORCH_LOG_ERROR(
+      "FCB is not supported by this QNN SDK; Compilation with QAIRT SDK 2.48 or newer is required.");
+  return Error::NotSupported;
+#endif
 }
 
 Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
@@ -115,24 +163,34 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
     qnn_context_blob_.nbytes = context_size;
   }
 
-  status = GetQnnGraphInfoFromBinary(
-      static_cast<uint8_t*>(qnn_context_blob_.buffer),
-      qnn_context_blob_.nbytes);
+  status = is_fcb_ ? GetQnnGraphInfoFromDlc()
+                   : GetQnnGraphInfoFromBinary(
+                         static_cast<uint8_t*>(qnn_context_blob_.buffer),
+                         qnn_context_blob_.nbytes);
+
+  if (status != Error::Ok && is_fcb_) {
+    QNN_EXECUTORCH_LOG_ERROR("Failed to get Graph Info from input FCB DLC");
+    return status;
+  }
 
   if (status == Error::Internal) {
-    // online prepare
     state_ = ONLINE_PREPARE;
   }
   return Error::Ok;
 }
 
 QnnBackendCache::~QnnBackendCache() {
-  Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  const QnnSystemInterface& qnn_sys_interface =
+      qnn_sys_impl_->GetQnnSystemInterface();
+  if (fcb_dlc_handle_ != nullptr) {
+    if (qnn_sys_interface.qnn_system_dlc_free(fcb_dlc_handle_) != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_WARN("[FCB] Failed to free DLC handle.");
+    }
+    fcb_dlc_handle_ = nullptr;
+  }
   if (sys_context_handle_ != nullptr) {
-    const QnnSystemInterface& qnn_sys_interface =
-        qnn_sys_impl_->GetQnnSystemInterface();
-    error = qnn_sys_interface.qnn_system_context_free(sys_context_handle_);
-    if (error != QNN_SUCCESS) {
+    if (qnn_sys_interface.qnn_system_context_free(sys_context_handle_) !=
+        QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_WARN("Failed to free QNN system context.");
     }
     sys_context_handle_ = nullptr;
