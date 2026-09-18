@@ -6,22 +6,19 @@
 
 import torch
 
-from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.remove_noop_pass import _DEQUANT_OPS, eliminate_dq_q
 from torch.fx.passes.infra.pass_base import PassResult
 
 
-class FoldRedundantDequantizeQuantizePass(NeutronEdgePass):
-    """Fold redundant ``dequantize -> quantize`` pairs with identical qparams.
+class FoldRedundantDequantizeQuantizePass(ExportPass):
+    """Fold adjacent ``dequantize -> quantize`` pairs using the shared qparam matcher.
 
-    A dequantize immediately followed by a quantize at identical qparams is the
-    identity on the already-quantized value, so this pass reuses the shared
-    ``eliminate_dq_q`` helper to rewire each such quantize's consumers to the
-    dequantize's quantized input, removing the island and letting the neighboring
-    clusters delegate as a single subgraph.
+    Decomposition can erase a quantized no-op, such as eval-mode dropout, leaving
+    its surrounding dequantize and quantize nodes adjacent.
     """
 
-    def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         dequant_nodes = [
             node
             for node in graph_module.graph.nodes
@@ -32,5 +29,8 @@ class FoldRedundantDequantizeQuantizePass(NeutronEdgePass):
         eliminate_dq_q(graph_module, dequant_nodes)
         graph_module.graph.eliminate_dead_code()
         modified = len(graph_module.graph.nodes) != num_nodes_before
+        if modified:
+            graph_module.graph.lint()
+            graph_module.recompile()
 
         return PassResult(graph_module, modified)

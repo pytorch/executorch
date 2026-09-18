@@ -1133,5 +1133,7 @@ jobs:
         # Test models
         # TODO: Switch to run_tests.py once CI device provisioning is stable
         # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
-        pip install evaluate
+        # accelerate is for test_mobilebert_qat, whose TrainingArguments needs it;
+        # transformers reports the same error when it is absent and when it is too old.
+        pip install evaluate 'accelerate>=1.1.0'
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"
