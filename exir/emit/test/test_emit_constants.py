@@ -116,6 +116,48 @@ class TestEmitConstants(unittest.TestCase):
                 [7, 1],
             )
 
+    def test_independent_dynamic_batches(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.ones((x.shape[0], 1)), torch.zeros((y.shape[0], 1))
+
+        model = Model()
+        inputs = (torch.zeros(2, 3), torch.zeros(2, 3))
+        program = to_edge(
+            export(
+                model,
+                inputs,
+                dynamic_shapes={
+                    "x": {0: torch.export.Dim("batch_x", min=1, max=5)},
+                    "y": {0: torch.export.Dim("batch_y", min=1, max=5)},
+                },
+                strict=True,
+            )
+        ).to_executorch()
+        plan = deserialize_pte_binary(program.buffer).program.execution_plan[0]
+        shape_ids = [
+            instruction.instr_args.args[0]
+            for instruction in plan.chains[0].instructions
+            if plan.operators[instruction.instr_args.op_index].name == "aten::full"
+        ]
+        self.assertEqual(len(shape_ids), 2)
+        self.assertNotEqual(shape_ids[0], shape_ids[1])
+        shapes = [plan.values[index].val.items for index in shape_ids]
+        self.assertEqual([len(shape) for shape in shapes], [2, 2])
+        self.assertNotEqual(shapes[0][0], shapes[1][0])
+        self.assertEqual(shapes[0][1], shapes[1][1])
+        self.assertNotIn(shapes[0][1], (shapes[0][0], shapes[1][0]))
+        self.assertEqual(plan.values[shapes[0][1]].val, Int(1))
+
+        runtime = _load_for_executorch_from_buffer(program.buffer)
+        for batch_x, batch_y in ((2, 2), (5, 2), (5, 3), (1, 3), (1, 1), (2, 2)):
+            with self.subTest(batch_x=batch_x, batch_y=batch_y):
+                inputs = (torch.zeros(batch_x, 3), torch.zeros(batch_y, 3))
+                outputs = runtime.forward(inputs)
+                self.assertEqual(len(outputs), 2)
+                for actual, expected in zip(outputs, model(*inputs)):
+                    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
     def test_opaque_arguments_do_not_enter_pool(self):
         emitter = self.make_emitter()
         values = emitter.emitter_state.values
