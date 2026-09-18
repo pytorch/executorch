@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import final, List, Optional, Tuple, Union
 
 import torch
@@ -52,6 +52,7 @@ from torchao.quantization.pt2e import (
     FusedMovingAvgObsFakeQuantize,
     HistogramObserver,
     MinMaxObserver,
+    PerChannelMinMaxObserver,
 )
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
@@ -99,6 +100,16 @@ wgt_qspec_sym8s = QuantizationSpec(
     qscheme=torch.per_tensor_symmetric,
     is_dynamic=False,
     observer_or_fake_quant_ctr=MinMaxObserver,
+)
+
+wgt_qspec_sym8s_per_channel = QuantizationSpec(
+    dtype=torch.int8,
+    quant_min=-128,
+    quant_max=127,
+    qscheme=torch.per_channel_symmetric,
+    ch_axis=0,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
 )
 
 bias_qspec: Optional[QuantizationSpec] = None
@@ -158,6 +169,13 @@ qconfig_A8W8sym_qat = QuantizationConfig(
     None,
 )
 
+qconfig_A8W8sym_per_channel = QuantizationConfig(
+    act_qspec_asym8s,
+    act_qspec_asym8s,
+    wgt_qspec_sym8s_per_channel,
+    None,
+)
+
 qconfig_A16 = QuantizationConfig(
     act_qspec_asym16s,
     act_qspec_asym16s,
@@ -171,6 +189,49 @@ qconfig_A32W8sym = QuantizationConfig(
     weight=wgt_qspec_sym8s,
     bias=wgt_qspec_sym8s,
 )
+
+
+def _align_derived_bias_specs(
+    biases: List[Tuple[fx.Node, int]],
+    weight_qspec: Optional[QuantizationSpec],
+) -> List[Tuple[fx.Node, int]]:
+    """Make derived bias specs follow the granularity of the weight spec.
+
+    Patterns build the bias ``DerivedQuantizationSpec`` as
+    ``bias_scale = act_scale * weight_scale`` and declare it per-tensor, because
+    a pattern has no view of the quantization config and so cannot know how the
+    weight will be observed. As soon as the weight observer is per-channel that
+    product becomes a vector while the spec still says per-tensor, and
+    ``convert_pt2e`` takes the per-tensor branch and dies calling ``float()`` on
+    a vector.
+
+    The quantizer is the one place that holds both, so the alignment happens
+    here rather than being duplicated into every pattern that has a bias.
+    """
+    if weight_qspec is None or weight_qspec.qscheme not in (
+        torch.per_channel_symmetric,
+        torch.per_channel_affine,
+    ):
+        return biases
+
+    aligned = []
+    for entry in biases:
+        if len(entry) == 3 and isinstance(entry[2], DerivedQuantizationSpec):
+            aligned.append(
+                (
+                    entry[0],
+                    entry[1],
+                    replace(
+                        entry[2],
+                        qscheme=weight_qspec.qscheme,
+                        ch_axis=weight_qspec.ch_axis,
+                    ),
+                )
+            )
+        else:
+            aligned.append(entry)
+    # pyre-ignore[7]: the 3-tuple form is what PartitionAnchors.biases allows
+    return aligned
 
 
 class CadenceAtenQuantizer(Quantizer):
@@ -261,8 +322,12 @@ class CadenceAtenQuantizer(Quantizer):
             # pyre-ignore[6]: incompatible parameter type
             annotate_inputs(anchors.inputs, input_act_qspec)
             annotate_weights_or_biases(anchors.weights, weight_qspec)
-            # pyre-ignore[6]: incompatible parameter type
-            annotate_weights_or_biases(anchors.biases, bias_qspec)
+            annotate_weights_or_biases(
+                # pyre-ignore[6]: incompatible parameter type
+                _align_derived_bias_specs(anchors.biases, weight_qspec),
+                # pyre-ignore[6]: incompatible parameter type
+                bias_qspec,
+            )
         return model
 
     def validate(self, model: fx.GraphModule) -> None:

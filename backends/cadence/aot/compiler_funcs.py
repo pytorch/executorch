@@ -13,8 +13,12 @@ from typing import Any, cast, Optional, Union
 
 import torch
 
+from executorch.backends.cadence.aot.quantizer.pattern_utils import (
+    EXPORTED_PROGRAM_META_KEY,
+)
 from executorch.backends.transforms.permute_pass_utils import get_arg
 from torch._inductor.decomposition import remove_decompositions
+from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e
@@ -714,26 +718,41 @@ class QuantFusionPass(PassBase):
     """
     Iterates patterns, finds anchor ops in the converted graph, and calls
     pattern.fuse() to replace dq-op-q subgraphs with fused ops.
+
+    ``exported_program`` is optional but required for per-channel weights:
+    fusion has to read the weight scale vector and materialize the derived
+    qparam tensors, and by this point both live in the program's constants
+    rather than in the graph.
     """
 
-    def __init__(self, patterns: Sequence[object]) -> None:
+    def __init__(
+        self,
+        patterns: Sequence[object],
+        exported_program: Optional[ExportedProgram] = None,
+    ) -> None:
         super().__init__()
         self.patterns = patterns
+        self.exported_program = exported_program
 
     def call(self, graph_module: GraphModule) -> Optional[PassResult]:
         changed = False
-        for pattern in self.patterns:
-            pattern_changed = False
-            for target in pattern.anchor_ops():  # pyre-ignore[16]
-                for node in graph_module.graph.find_nodes(
-                    op="call_function", target=target
-                ):
-                    result = pattern.fuse(graph_module, node)  # pyre-ignore[16]
-                    if result is not None:
-                        changed = True
-                        pattern_changed = True
-            if pattern_changed:
-                graph_module.graph.eliminate_dead_code()
+        if self.exported_program is not None:
+            graph_module.meta[EXPORTED_PROGRAM_META_KEY] = self.exported_program
+        try:
+            for pattern in self.patterns:
+                pattern_changed = False
+                for target in pattern.anchor_ops():  # pyre-ignore[16]
+                    for node in graph_module.graph.find_nodes(
+                        op="call_function", target=target
+                    ):
+                        result = pattern.fuse(graph_module, node)  # pyre-ignore[16]
+                        if result is not None:
+                            changed = True
+                            pattern_changed = True
+                if pattern_changed:
+                    graph_module.graph.eliminate_dead_code()
+        finally:
+            graph_module.meta.pop(EXPORTED_PROGRAM_META_KEY, None)
         if changed:
             graph_module.recompile()
         return PassResult(graph_module, changed)

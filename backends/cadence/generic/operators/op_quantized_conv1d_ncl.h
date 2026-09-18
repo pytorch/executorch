@@ -20,23 +20,6 @@ using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
 // NCL format (N=batch, C=channels, L=length)
-::executorch::aten::Tensor& quantized_conv1d_ncl_out(
-    KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t input_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    const Tensor& out_multiplier,
-    const Tensor& out_shift,
-    Tensor& out);
 
 ::executorch::aten::Tensor& quantized_conv1d_ncl_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -54,6 +37,24 @@ using ::executorch::runtime::KernelRuntimeContext;
     int64_t output_zero_point,
     int64_t out_multiplier,
     int64_t out_shift,
+    Tensor& out);
+
+::executorch::aten::Tensor& quantized_conv1d_ncl_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t input_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
     Tensor& out);
 
 } // namespace native
