@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 from functools import partial
 
 import numpy as np
@@ -20,20 +21,20 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     ClassificationAccuracyOutputComparator,
     NumericalStatsOutputComparator,
 )
-
 from executorch.backends.nxp.tests.nsys_testing import (
+    get_test_name,
     lower_run_compare,
     lower_run_compare_ptq_qat,
-    ReferenceModel,
+    OUTPUTS_DIR,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
-from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
-    MLPerfTinyImageClassification,
+from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_anomaly_detection import (
+    MLPerfTinyAnomalyDetection,
 )
 
 BOUNDS_MSE = {
-    "PTQ": {"channels-last": 1.859e-05, "channels-first": 7.432e-09},
-    "QAT": {"channels-last": 2.751e-07, "channels-first": 5.205e-06},
+    "PTQ": 1.4e-08,
+    "QAT": 5.205e-06,
 }
 
 
@@ -43,42 +44,31 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize("channels_last", [False, True])
-def test_mlperf_tiny_classification_mse_cpu_vs_npu(
-    mocker, request, channels_last, use_qat
+def test_mlperf_tiny_anomaly_detection_mse_cpu_vs_npu(
+    mocker,
+    request,
+    use_qat,
 ):
-    # 10 samples per class
     num_samples = 60
 
-    img_classification = MLPerfTinyImageClassification(
+    anomaly_detection = MLPerfTinyAnomalyDetection(
         num_samples=num_samples, use_random_dataset=True
     )
-    model = img_classification.get_eager_model()
-    dataset = img_classification.dataset
-    labels = img_classification.labels
+    model = anomaly_detection.get_eager_model()
+    dataset = anomaly_detection.dataset
+    labels = anomaly_detection.labels
 
     dataset_creator = FromCalibrationDataDatasetCreator(
         dataset, num_examples=num_samples, idx_to_label=labels
     )
 
-    input_spec = ModelInputSpec(img_classification.input_shape)
-    if channels_last:
-        model.to(memory_format=torch.channels_last)
-        input_spec.dim_order = torch.channels_last
-
+    input_spec = ModelInputSpec(anomaly_detection.input_shape)
     quant_type_key = "QAT" if use_qat else "PTQ"
-    format_key = "channels-last" if channels_last else "channels-first"
 
-    mse = BOUNDS_MSE[quant_type_key][format_key]
-    comparator = NumericalStatsOutputComparator(
-        max_mse_error=mse, use_softmax=True, is_classification_task=True
-    )
+    mse = BOUNDS_MSE[quant_type_key]
+    comparator = NumericalStatsOutputComparator(max_mse_error=mse)
     model_verifier = BaseGraphVerifier(1, [])
-    train_fn = (
-        partial(img_classification.train_model_fn, channels_last=channels_last)
-        if use_qat
-        else None
-    )
+    train_fn = anomaly_detection.train_model_fn if use_qat else None
 
     lower_run_compare(
         model,
@@ -87,31 +77,43 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
-        reference_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
     )
 
 
-def test_mlperf_tiny_image_classification_ptq_qat_equivalence(request):
-    # 10 samples per class
+def test_mlperf_tiny_anomaly_detection_ptq_qat_equivalence(request):
     num_samples = 60
 
-    img_classification = MLPerfTinyImageClassification(
+    anomaly_detection = MLPerfTinyAnomalyDetection(
         num_samples=num_samples, use_random_dataset=True
     )
 
-    model = img_classification.get_eager_model()
-    dataset = img_classification.dataset
-    labels = img_classification.labels
+    model = anomaly_detection.get_eager_model()
+    dataset = anomaly_detection.dataset
+    labels = anomaly_detection.labels
 
     dataset_creator = FromCalibrationDataDatasetCreator(
         dataset, num_examples=num_samples, idx_to_label=labels
     )
-    comparator = ClassificationAccuracyOutputComparator(class_dict=labels)
 
-    input_spec = ModelInputSpec(img_classification.input_shape)
+    test_name = get_test_name(request)
+    input_parent_path = os.path.join(
+        OUTPUTS_DIR,
+        test_name,
+        "dataset/calibration/",
+    )
+
+    comparator = ClassificationAccuracyOutputComparator(
+        class_dict=labels,
+        postprocess_fn=partial(
+            anomaly_detection.get_class_from_reconstruction_error,
+            input_parent_path=input_parent_path,
+        ),
+    )
+
+    input_spec = ModelInputSpec(anomaly_detection.input_shape)
     model_verifier = BaseGraphVerifier(1, [])
 
     lower_run_compare_ptq_qat(
@@ -119,7 +121,7 @@ def test_mlperf_tiny_image_classification_ptq_qat_equivalence(request):
         [input_spec],
         model_verifier,
         request,
-        train_fn=img_classification.train_model_fn,
+        train_fn=anomaly_detection.train_model_fn,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
     )

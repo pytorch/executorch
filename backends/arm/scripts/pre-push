@@ -80,6 +80,7 @@ run_op_support_checks() {
     local backend_name="$2"
     local output="$3"
     local coverage_output
+    local FAILED=0
 
     echo -e "${INFO} Generating ${backend_name} operator support documentation"
 
@@ -104,6 +105,7 @@ run_op_support_checks() {
     else
         echo -e "${SUCCESS} ${backend_name} operator support coverage OK"
     fi
+    return "$FAILED"
 }
 
 wait_public_api_validator() {
@@ -126,7 +128,7 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
 "Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax|Format|Don't|"\
-"Consolidate|Review|Run"
+"Consolidate|Review|Run|Parallelize"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -160,10 +162,10 @@ if [ -z "$COMMITS" ]; then
     exit 0
 fi
 
-manifest_output=$(mktemp) || exit 1
-trap 'rm -f "${manifest_output}"' EXIT
+check_output_dir=$(mktemp -d) || exit 1
+trap 'rm -rf "${check_output_dir}"' EXIT
 backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh \
-    > "${manifest_output}" 2>&1 &
+    > "${check_output_dir}/manifest" 2>&1 &
 manifest_pid=$!
 
 for COMMIT in ${COMMITS}; do
@@ -360,11 +362,15 @@ else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
 
-run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT"
-run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT"
-run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT"
+run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/u55" 2>&1 &
+u55_pid=$!
+run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT" || FAILED=1
+wait "$u55_pid" || FAILED=1
+cat "${check_output_dir}/u55"
+run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT" || FAILED=1
 wait_public_api_validator
-cat "${manifest_output}"
+cat "${check_output_dir}/manifest"
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\
