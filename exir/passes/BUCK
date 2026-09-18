@@ -13,6 +13,7 @@ fbcode_target(_kind = runtime.python_library,
         ":convert_constant_dim_order_pass",
         ":debug_handle_generator_pass",
         ":external_constants_pass",
+        ":fold_redundant_qdq_pass",
         ":init_mutable_pass",
         ":insert_write_back_for_buffers_pass",
         ":legalize_portable_dim_order_pass",
@@ -230,6 +231,18 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:pass_base",
         "//executorch/exir:tensor",
         "//executorch/exir/operator:convert",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "fold_redundant_qdq_pass",
+    srcs = [
+        "fold_redundant_qdq_pass.py",
+    ],
+    deps = [
+        ":remove_noop_pass",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
     ],
 )
 
