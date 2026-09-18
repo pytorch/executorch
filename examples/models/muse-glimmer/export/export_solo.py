@@ -100,6 +100,13 @@ def export_and_lower(
             vision_fp32_mm=vision_fp32_mm,
         )
     elif backend == "mlx":
+        # The off-graph cache is lowered by the CUDA backend only, and dropping
+        # the flag silently would hand back an in-graph model that looks like
+        # what was asked for.
+        if use_offgraph_kv_cache:
+            raise ValueError(
+                "--use-offgraph-kv-cache is not supported by the mlx backend"
+            )
         _export_mlx(
             model,
             config,
