@@ -341,6 +341,44 @@ class TestExportRecipeCombine(unittest.TestCase):
             combined.lowering_recipe.edge_transform_passes, [first, second]
         )
 
+    def test_new_hooks_do_not_change_existing_positional_arguments(self) -> None:
+        recipe = ExportRecipe(None, None, None, True)
+
+        self.assertTrue(recipe.source_transform_in_place)
+        self.assertIsNone(recipe.source_transform_passes)
+        self.assertIsNone(recipe.pre_trace_hooks)
+
+    def test_preserves_source_transform_passes_and_pre_trace_hooks(self) -> None:
+        first_source_transform = Mock()
+        second_source_transform = Mock()
+        first_pre_trace_hook = Mock()
+        second_pre_trace_hook = Mock()
+
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(
+                    source_transform_passes=[first_source_transform],
+                    pre_trace_hooks=[first_pre_trace_hook],
+                    source_transform_in_place=True,
+                ),
+                ExportRecipe(
+                    source_transform_passes=[second_source_transform],
+                    pre_trace_hooks=[second_pre_trace_hook],
+                    source_transform_in_place=True,
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            combined.source_transform_passes,
+            [first_source_transform, second_source_transform],
+        )
+        self.assertEqual(
+            combined.pre_trace_hooks,
+            [first_pre_trace_hook, second_pre_trace_hook],
+        )
+        self.assertTrue(combined.source_transform_in_place)
+
 
 # ---------------------------------------------------------------------------
 # Helpers shared by combine-recipe tests

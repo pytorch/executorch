@@ -16,6 +16,7 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
 def _fake_tensor(shape: tuple[int, ...], dtype: torch.dtype = torch.float32):
@@ -152,3 +153,33 @@ def test_rejects_index_tensor_mask(dtype: torch.dtype) -> None:
     )
 
     assert not checker.is_node_supported({}, node)
+
+
+@pytest.mark.parametrize(
+    "dynamic_values, dynamic_index", [(True, False), (False, True)]
+)
+def test_rejects_index_tensor_data_dependent_shapes(
+    dynamic_values: bool, dynamic_index: bool
+) -> None:
+    shape_env = ShapeEnv()
+    count = shape_env.create_unbacked_symint()
+    shape_env.constrain_symbol_range(count.node.expr, compiler_min=0, compiler_max=512)
+    graph = torch.fx.Graph()
+    values = graph.placeholder("values")
+    index = graph.placeholder("index")
+    with FakeTensorMode(shape_env=shape_env):
+        values.meta["val"] = torch.empty((count if dynamic_values else 8, 4))
+        index.meta["val"] = torch.empty(
+            (count if dynamic_index else 3,), dtype=torch.int32
+        )
+        node = graph.call_function(exir_ops.edge.aten.index.Tensor, (values, [index]))
+        node.meta["val"] = torch.empty((count if dynamic_index else 3, 4))
+
+    reporter = WhyNoPartitionReporter()
+    checker = IndexTensorSupported(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+INT+shape"), reporter
+    )
+
+    assert not checker.is_node_supported({}, node)
+    assert "Symbolic value or index shapes" in reporter.get_table_report()
+    assert not shape_env.guards

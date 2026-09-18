@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,13 +19,13 @@ from executorch.backends.cortex_m.passes.aten_to_cortex_m_pass import (
     _get_activation_replacement,
     AtenToCortexMPass,
 )
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.quantizer.quantizer_support import (
+    ACTIVATION_OP_PATTERNS,
+)
+from executorch.backends.cortex_m.utils import (
     _ACTIVATION_FNS,
     _round_half_away_from_zero,
     build_activation_lut,
-)
-from executorch.backends.cortex_m.quantizer.quantizer_support import (
-    ACTIVATION_OP_PATTERNS,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 

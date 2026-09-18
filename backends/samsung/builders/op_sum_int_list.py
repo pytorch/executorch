@@ -34,6 +34,7 @@ class SumDimIntListVisitor(NodeVisitor):
 
         keep_dims = cast(bool, node.args[2]) if len(node.args) > 2 else False
         params = {"keep_dims": keep_dims, "axis": reduce_axes}
+        self._update_params_qdtype(node, params)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
         enn_graph.define_op(node.name, "REDUCESUM", [input_id], [output_id], params)

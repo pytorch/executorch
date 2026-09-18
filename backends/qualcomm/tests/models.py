@@ -3016,16 +3016,18 @@ class Unflatten(torch.nn.Module):
 
 
 class Unfold(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding=0):
         super().__init__()
-        self.patch_height = 2
-        self.patch_width = 2
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
 
     def forward(self, x):
         unfold = torch.nn.functional.unfold(
             x,
-            kernel_size=(self.patch_height, self.patch_width),
-            stride=(self.patch_height, self.patch_width),
+            kernel_size=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
         )
         return unfold
 

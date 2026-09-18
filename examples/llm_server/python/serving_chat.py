@@ -33,6 +33,7 @@ from .protocol import (
     ChunkChoice,
     DeltaMessage,
     FunctionCall,
+    PromptTokensDetails,
     ResponseMessage,
     ToolCall,
     Usage,
@@ -138,8 +139,11 @@ class ServingChat:
 
     @staticmethod
     def _return_reasoning(req: ChatCompletionRequest) -> bool:
+        # Default ON: thinking models bill reasoning tokens either way;
+        # return them unless the client explicitly opts out, matching
+        # SGLang/llama.cpp. Explicit {"return_reasoning": False} opts out.
         kwargs = req.chat_template_kwargs or {}
-        value = kwargs.get("return_reasoning", False)
+        value = kwargs.get("return_reasoning", True)
         return value if isinstance(value, bool) else False
 
     @staticmethod
@@ -580,6 +584,9 @@ class ServingChat:
                 prompt_tokens=stats.prompt_tokens,
                 completion_tokens=stats.completion_tokens,
                 total_tokens=stats.prompt_tokens + stats.completion_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=stats.reused_prompt_tokens
+                ),
             ),
         )
 
@@ -763,6 +770,9 @@ class ServingChat:
                     prompt_tokens=stats.prompt_tokens,
                     completion_tokens=stats.completion_tokens,
                     total_tokens=stats.prompt_tokens + stats.completion_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=stats.reused_prompt_tokens
+                    ),
                 ),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"
