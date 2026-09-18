@@ -44,7 +44,10 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -53,6 +56,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
+from torch._export.utils import _get_shape_env_from_gm
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.experimental.symbolic_shapes import statically_known_true
@@ -93,7 +97,7 @@ class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
         input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
         return can_decompose_large_stride_maxpool2d(
             node.args[1],
-            node.args[2] if len(node.args) >= 3 else node.args[1],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
             node.args[3] if len(node.args) >= 4 else (0, 0),
             node.args[4] if len(node.args) >= 5 else (1, 1),
             node.args[5] if len(node.args) >= 6 else False,
@@ -788,9 +792,12 @@ class TOSAPartitioner(Partitioner):
         )
 
         reporter = WhyNoPartitionReporter()
-        tags = self._tag_module(
-            exported_program.graph_module, exported_program, reporter
-        )
+        with TosaLoweringContext(
+            self.tosa_spec, _get_shape_env_from_gm(exported_program.graph_module)
+        ):
+            tags = self._tag_module(
+                exported_program.graph_module, exported_program, reporter
+            )
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
