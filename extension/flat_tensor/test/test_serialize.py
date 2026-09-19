@@ -9,11 +9,15 @@
 import dataclasses
 import math
 import os
+import runpy
 import tempfile
 import unittest
+from pathlib import Path
 
 from typing import Dict, List, Optional
 from unittest import mock
+
+import executorch.extension.flat_tensor.serialize.serialize as serialize_module
 
 import torch
 
@@ -30,6 +34,7 @@ from executorch.exir._serialize.padding import aligned_size
 from executorch.exir.schema import ScalarType
 from executorch.exir.tensor_layout import TensorLayout
 
+from executorch.extension.flat_tensor.serialize import load_ptd, save_ptd
 from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
     _FLAT_TENSOR_VERSION,
@@ -349,6 +354,198 @@ class TestSerialize(unittest.TestCase):
                 bytes(serializer.serialize(bytes_payload)),
                 bytes(serializer.serialize(payload)),
             )
+
+    def test_save_and_load_ptd(self) -> None:
+        weight = (
+            torch.arange(48, dtype=torch.float32)
+            .reshape(2, 2, 3, 4)
+            .contiguous(memory_format=torch.channels_last)[1:]
+        )
+        tensor_map = {
+            "weight": torch.nn.Parameter(weight),
+            "bias": torch.tensor([1, -2, 3], dtype=torch.int64),
+            "empty": torch.empty((0, 3), dtype=torch.float64),
+            "negative_view": torch._neg_view(
+                torch.tensor([1.0, -2.0], dtype=torch.float32)
+            ),
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "state.ptd"
+            save_ptd(path, tensor_map)
+            loaded_tensor_map = load_ptd(path)
+
+        self.assertEqual(loaded_tensor_map.keys(), tensor_map.keys())
+        for name, expected in tensor_map.items():
+            with self.subTest(name=name):
+                actual = loaded_tensor_map[name]
+                self.assertEqual(actual.device.type, "cpu")
+                self.assertEqual(actual.dtype, expected.dtype)
+                self.assertEqual(actual.shape, expected.shape)
+                self.assertEqual(actual.stride(), expected.stride())
+                torch.testing.assert_close(actual, expected)
+
+        loaded_tensor_map["bias"].add_(1)
+        torch.testing.assert_close(loaded_tensor_map["bias"], tensor_map["bias"] + 1)
+
+    def test_save_and_load_empty_ptd(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "empty.ptd"
+            save_ptd(path, {})
+            self.assertEqual(load_ptd(path), {})
+
+    def test_save_ptd_aligns_segments(self) -> None:
+        tensor_map = {
+            "odd_sized": torch.ones(3, dtype=torch.int8),
+            "weight": torch.ones(5, dtype=torch.float32),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "aligned.ptd"
+            save_ptd(path, tensor_map)
+            serialized_data = path.read_bytes()
+
+        header = FlatTensorHeader.from_bytes(
+            serialized_data[8 : FlatTensorHeader.EXPECTED_LENGTH + 8]
+        )
+        flat_tensor = _deserialize_to_flat_tensor(
+            serialized_data[: header.flatbuffer_offset + header.flatbuffer_size]
+        )
+        self.assertEqual(len(flat_tensor.segments), len(tensor_map))
+        segment_alignment = FlatTensorConfig().segment_alignment
+        for segment in flat_tensor.segments:
+            self.assertEqual(
+                (header.segment_base_offset + segment.offset) % segment_alignment, 0
+            )
+
+    def test_save_and_load_additional_ptd_dtypes(self) -> None:
+        tensor_map = {
+            "bits16": torch.tensor([1, 2], dtype=torch.uint16).view(torch.bits16),
+            "float8_e4m3fn": torch.tensor([1, -2], dtype=torch.float8_e4m3fn),
+            "float8_e4m3fnuz": torch.tensor([1, -2], dtype=torch.float8_e4m3fnuz),
+            "float8_e5m2fnuz": torch.tensor([1, -2], dtype=torch.float8_e5m2fnuz),
+            "uint64": torch.tensor([1, 2**63], dtype=torch.uint64),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "additional_dtypes.ptd"
+            save_ptd(path, tensor_map)
+            loaded_tensor_map = load_ptd(path)
+
+        for name, expected in tensor_map.items():
+            with self.subTest(name=name):
+                actual = loaded_tensor_map[name]
+                self.assertEqual(actual.dtype, expected.dtype)
+                self.assertTrue(
+                    torch.equal(actual.view(torch.uint8), expected.view(torch.uint8))
+                )
+
+    def test_import_without_optional_dtypes(self) -> None:
+        missing_dtypes = {
+            ScalarType.UINT16: "uint16",
+            ScalarType.UINT32: "uint32",
+            ScalarType.UINT64: "uint64",
+            ScalarType.BITS16: "bits16",
+            ScalarType.FLOAT8E5M2: "float8_e5m2",
+            ScalarType.FLOAT8E4M3FN: "float8_e4m3fn",
+            ScalarType.FLOAT8E5M2FNUZ: "float8_e5m2fnuz",
+            ScalarType.FLOAT8E4M3FNUZ: "float8_e4m3fnuz",
+            ScalarType.QUINT4x2: "quint4x2",
+            ScalarType.QUINT2x4: "quint2x4",
+        }
+        with mock.patch.dict(torch.__dict__):
+            for name in missing_dtypes.values():
+                torch.__dict__.pop(name, None)
+            module = runpy.run_path(serialize_module.__file__)
+            for scalar_type in missing_dtypes:
+                self.assertNotIn(scalar_type, module["_PTD_TO_TORCH_DTYPE"])
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                path = Path(temp_dir) / "state.ptd"
+                expected = torch.tensor([1.0, -2.0])
+                module["save_ptd"](path, {"weight": expected})
+                torch.testing.assert_close(module["load_ptd"](path)["weight"], expected)
+
+    def test_save_ptd_normalizes_unsupported_layouts(self) -> None:
+        tensor_map = {
+            "transposed": torch.arange(12, dtype=torch.float32).reshape(3, 4).t(),
+            "expanded": torch.arange(3, dtype=torch.float32).expand(4, 3),
+            "channels_last_3d": torch.arange(120, dtype=torch.float32)
+            .reshape(1, 2, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last_3d),
+            "empty_channels_last": torch.empty(
+                (2, 0, 3, 4), memory_format=torch.channels_last
+            ),
+            "empty_channels_last_3d": torch.empty(
+                (2, 0, 3, 4, 5), memory_format=torch.channels_last_3d
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "normalized_layouts.ptd"
+            save_ptd(path, tensor_map)
+            loaded_tensor_map = load_ptd(path)
+
+        for name, expected in tensor_map.items():
+            with self.subTest(name=name):
+                actual = loaded_tensor_map[name]
+                self.assertTrue(actual.is_contiguous())
+                torch.testing.assert_close(actual, expected)
+
+    def test_save_ptd_rejects_unsupported_tensors(self) -> None:
+        unsupported_tensors = {
+            "complex": (
+                torch.tensor([1 + 2j], dtype=torch.complex64),
+                "torch.complex64",
+            ),
+            "quantized": (
+                torch.quantize_per_tensor(
+                    torch.tensor([1.0]), scale=0.5, zero_point=0, dtype=torch.qint8
+                ),
+                "torch.qint8",
+            ),
+            "sparse": (
+                torch.tensor([1.0]).to_sparse(),
+                "must use a strided layout",
+            ),
+            "meta": (
+                torch.empty(1, device="meta"),
+                "must be on CPU",
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "unsupported.ptd"
+            for name, (tensor, error) in unsupported_tensors.items():
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, error):
+                    save_ptd(path, {name: tensor})
+
+    def test_load_ptd_rejects_invalid_tensor_data(self) -> None:
+        invalid_payloads = {
+            "opaque": DataPayload(
+                buffers=[b"data"],
+                named_data={
+                    "opaque": DataEntry(buffer_index=0, alignment=1, tensor_layout=None)
+                },
+            ),
+            "short": DataPayload(
+                buffers=[b"\x00" * 4],
+                named_data={
+                    "short": DataEntry(
+                        buffer_index=0,
+                        alignment=1,
+                        tensor_layout=TensorLayout(
+                            scalar_type=ScalarType.FLOAT,
+                            sizes=[2],
+                            dim_order=[0],
+                        ),
+                    )
+                },
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "invalid.ptd"
+            for name, payload in invalid_payloads.items():
+                serialized_data = FlatTensorSerializer().serialize(payload)
+                path.write_bytes(bytes(serialized_data))
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    load_ptd(path)
 
     def test_deserialize_to_named_data_store_output(self) -> None:
         store = NamedDataStore()
