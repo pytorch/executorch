@@ -643,8 +643,8 @@ Error read_input_files(
     if (buffer == nullptr) {
       ET_LOG(
           Error,
-          "Reading input tensor %zu from file %s failed.",
-          i + 1,
+          "Reading input tensor %lu from file %s failed.",
+          static_cast<unsigned long>(i + 1),
           input_filenames[i]);
       return Error::AccessFailed;
     }
