@@ -11,54 +11,81 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.exir import to_edge_transform_and_lower
 
 
-class ArangeFloatModule(torch.nn.Module):
-    """fp32 arange folded into the graph via an add against the input."""
+class ArangeModule(torch.nn.Module):
+    """x + arange(start, end, step, dtype).
+
+    The arange is baked into the graph as a constant-producing node; adding it to
+    the input keeps the result dependent on it so the value is actually checked.
+    `dtype=None` follows torch's own defaulting: float literals give fp32, integer
+    literals give int64 (which the pipeline downcasts to int32 on device).
+    """
+
+    def __init__(self, start, end, step, dtype=None) -> None:
+        super().__init__()
+        self.start = start
+        self.end = end
+        self.step = step
+        self.dtype = dtype
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + torch.arange(0.0, 16.0, 1.0)
+        a = torch.arange(self.start, self.end, self.step, dtype=self.dtype)
+        return x + a.to(torch.float32)
 
 
-class ArangeIntModule(torch.nn.Module):
-    """Integer arange — the shape the ViT positional-encoding path produces."""
+def _delegated(et) -> bool:
+    return any(
+        d.id == "VulkanBackend"
+        for plan in et.executorch_program.execution_plan
+        for d in plan.delegates
+    )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + torch.arange(0, 16, 1).to(torch.float32)
 
+def _op_delegated(edge, op_substr: str) -> bool:
+    # The op must be absorbed into a delegate: absent from the top-level graph AND
+    # present inside a lowered submodule reached by an executorch_call_delegate node
+    # (a bare absence check also passes for an empty graph or a renamed op).
+    from executorch.exir.lowered_backend_module import get_lowered_submodules
 
-class ArangeStepModule(torch.nn.Module):
-    """Non-unit step, to cover the start + i * step arithmetic."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + torch.arange(3.0, 35.0, 2.0)
+    gm = edge.exported_program().graph_module
+    if any(op_substr in str(getattr(n, "target", "")) for n in gm.graph.nodes):
+        return False
+    return any(
+        op_substr in str(getattr(dn, "target", ""))
+        for _, lowered, _ in get_lowered_submodules(gm)
+        for dn in lowered.original_module.graph_module.graph.nodes
+    )
 
 
 class TestArange(unittest.TestCase):
     """aten.arange.start_step export tests — uses VulkanPartitioner since the
-    WebGPU runtime directly consumes the Vulkan delegate (VK00 FlatBuffer)."""
+    WebGPU runtime directly consumes the Vulkan delegate (VK00 FlatBuffer).
+    Numeric coverage lives in the op_tests suite, which executes on device."""
 
-    def _export_and_check(self, model, example_inputs) -> None:
+    def _check(self, model, example_inputs) -> None:
         ep = torch.export.export(model, example_inputs)
-        et_program = to_edge_transform_and_lower(
-            ep, partitioner=[VulkanPartitioner()]
-        ).to_executorch()
-
-        found_vulkan = False
-        for plan in et_program.executorch_program.execution_plan:
-            for delegate in plan.delegates:
-                if delegate.id == "VulkanBackend":
-                    found_vulkan = True
-                    break
-        self.assertTrue(found_vulkan, "Expected VulkanBackend delegate in .pte")
-        self.assertGreater(len(et_program.buffer), 100)
+        edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+        et = edge.to_executorch()
+        self.assertTrue(_delegated(et), "Expected a VulkanBackend delegate")
+        self.assertTrue(
+            _op_delegated(edge, "arange"),
+            "Expected aten.arange to be absorbed into the delegate, not left on CPU",
+        )
 
     def test_arange_float(self) -> None:
-        self._export_and_check(ArangeFloatModule(), (torch.randn(16),))
+        self._check(ArangeModule(0.0, 16.0, 1.0), (torch.randn(16),))
 
-    def test_arange_int(self) -> None:
-        self._export_and_check(ArangeIntModule(), (torch.randn(16),))
+    def test_arange_int32(self) -> None:
+        # Explicit int32 — exercises the i32 shader variant directly.
+        self._check(ArangeModule(0, 16, 1, torch.int32), (torch.randn(16),))
+
+    def test_arange_int_default(self) -> None:
+        # Integer literals without dtype trace as int64; the pipeline downcasts
+        # to int32 on device. This is the shape DINOv2's positional-encoding
+        # path actually produces, so cover it alongside the explicit case.
+        self._check(ArangeModule(0, 16, 1), (torch.randn(16),))
 
     def test_arange_step(self) -> None:
-        self._export_and_check(ArangeStepModule(), (torch.randn(16),))
+        self._check(ArangeModule(3.0, 35.0, 2.0), (torch.randn(16),))
 
 
 if __name__ == "__main__":
