@@ -13,11 +13,13 @@ fbcode_target(_kind = runtime.python_library,
         ":partitioner_graphs",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition/config:xnnpack_partitioner_configs",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/passes:constant_prop_pass",
     ],
 )
 
