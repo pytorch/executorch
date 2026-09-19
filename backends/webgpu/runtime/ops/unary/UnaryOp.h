@@ -26,6 +26,10 @@ void add_unary_op(
     uint32_t wg_size_x,
     const char* op_name,
     float min = kUnaryDummyFloat,
-    float max = kUnaryDummyFloat);
+    float max = kUnaryDummyFloat,
+    // Opt-in for ops with an int32 shader variant (min/max are then
+    // reinterpreted as i32). Defaults off so every other unary op keeps
+    // rejecting int operands it would otherwise read as f32.
+    bool int_variant = false);
 
 } // namespace executorch::backends::webgpu

@@ -12,6 +12,9 @@
 
 #include <webgpu/webgpu.h>
 
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -28,6 +31,27 @@ struct UnaryParams {
   uint32_t _pad;
 };
 
+// Reinterpret the f32 min/max slots as i32 for the integer shader variants.
+// Saturates, so a None bound (represented as +/-inf) maps to the int32 limits.
+void set_int_bounds(UnaryParams* params, float min, float max) {
+  auto to_i32 = [](float v, int32_t fallback) -> int32_t {
+    if (std::isnan(v)) {
+      return fallback;
+    }
+    if (v <= static_cast<float>(INT32_MIN)) {
+      return INT32_MIN;
+    }
+    if (v >= static_cast<float>(INT32_MAX)) {
+      return INT32_MAX;
+    }
+    return static_cast<int32_t>(v);
+  };
+  const int32_t lo = to_i32(min, INT32_MIN);
+  const int32_t hi = to_i32(max, INT32_MAX);
+  std::memcpy(&params->min, &lo, sizeof(int32_t));
+  std::memcpy(&params->max, &hi, sizeof(int32_t));
+}
+
 } // namespace
 
 void add_unary_op(
@@ -38,16 +62,22 @@ void add_unary_op(
     uint32_t wg_size_x,
     const char* op_name,
     float min,
-    float max) {
+    float max,
+    bool int_variant) {
   WGPUDevice device = graph.device();
 
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
   // 4-byte (fp32) alignment guard on both operands (null + size checks too).
   utils::check_elementwise_fp32_io(in_tensor, out_tensor, op_name);
-  // fp32-only backend: reject int operands (would be read as f32).
-  if (in_tensor.is_int || out_tensor.is_int) {
+  // fp32-only backend: reject int operands (would be read as f32) unless the
+  // caller supplied an int32 shader variant.
+  if (!int_variant && (in_tensor.is_int || out_tensor.is_int)) {
     throw std::runtime_error(std::string(op_name) + ": int dtype unsupported");
+  }
+  if (int_variant && in_tensor.is_int != out_tensor.is_int) {
+    throw std::runtime_error(
+        std::string(op_name) + ": mixed int/fp32 operands");
   }
 
   uint32_t num_elements =
@@ -66,6 +96,9 @@ void add_unary_op(
   params.num_elements = num_elements;
   params.min = min;
   params.max = max;
+  if (int_variant) {
+    set_int_bounds(&params, min, max);
+  }
 
   WGPUBuffer uniform_buffer =
       utils::make_uniform(device, &params, sizeof(UnaryParams));
@@ -99,7 +132,7 @@ void add_unary_op(
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,
-      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max](
+      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max, int_variant](
           WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const uint64_t numel = utils::numel_of(d);
@@ -108,6 +141,9 @@ void add_unary_op(
         p.num_elements = static_cast<uint32_t>(numel);
         p.min = min;
         p.max = max;
+        if (int_variant) {
+          set_int_bounds(&p, min, max);
+        }
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         const utils::WgCount wgc = utils::compute_2d_workgroup_count(
             g.device(), static_cast<uint32_t>(numel), wg_size, "unary(resize)");

@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/clamp_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
@@ -104,15 +105,19 @@ void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.clamp.default args: [in, min, max, out]; min/max None -> +/-inf.
   const float lo = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
   const float hi = get_val_or_inf(graph, args.at(2), /*is_max=*/true);
+  // Index arithmetic (e.g. ViT positional-encoding interpolation) clamps int
+  // tensors, so bind the i32 shader when the operands are integral.
+  const bool is_int = graph.get_tensor(args.at(0)).is_int;
   add_unary_op(
       graph,
       args.at(0),
       args.at(3),
-      kClampWGSL,
-      kClampWorkgroupSizeX,
+      is_int ? kClampIntWGSL : kClampWGSL,
+      is_int ? kClampIntWorkgroupSizeX : kClampWorkgroupSizeX,
       "clamp",
       lo,
-      hi);
+      hi,
+      is_int);
 }
 
 void hardtanh_impl(WebGPUGraph& graph, const std::vector<int>& args) {

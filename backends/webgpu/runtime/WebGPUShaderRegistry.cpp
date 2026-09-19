@@ -129,6 +129,7 @@
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_float_to_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_int_to_float_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/clamp_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
@@ -153,7 +154,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 136> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -307,6 +308,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kClampWorkgroupSizeX,
         kClampWorkgroupSizeY,
         kClampWorkgroupSizeZ,
+    },
+    {
+        "clamp_int",
+        kClampIntWGSL,
+        kClampIntWorkgroupSizeX,
+        kClampIntWorkgroupSizeY,
+        kClampIntWorkgroupSizeZ,
     },
     {
         "compare",
