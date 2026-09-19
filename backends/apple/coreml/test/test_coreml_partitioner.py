@@ -473,6 +473,138 @@ class TestCoreMLPartitioner(unittest.TestCase):
             # raised during lowering, not carried in the result.
             self.assertIsNotNone(delegated.to_executorch())
 
+    def test_quantize_gather_tables_opt_in(self):
+        """
+        A float gather table is exempt from op_linear_quantizer_config by default and
+        compressed when the caller opts in, so the opt-in model is the smaller one.
+        """
+
+        class Embed(torch.nn.Module):
+            def __init__(self, vocab=4096, dim=128):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(vocab, dim)
+
+            def forward(self, ids):
+                return self.embedding(ids).sum(dim=1)
+
+        ids = torch.zeros(1, 4, dtype=torch.long)
+        exported = torch.export.export(Embed().eval(), (ids,), strict=True)
+
+        sizes = {}
+        for opt_in in (False, True):
+            compile_specs = CoreMLBackend.generate_compile_specs(
+                minimum_deployment_target=ct.target.iOS18,
+                compute_precision=ct.precision(ct.precision.FLOAT16.value),
+                op_linear_quantizer_config={
+                    "mode": "linear_symmetric",
+                    "dtype": "int8",
+                    "granularity": "per_channel",
+                },
+                quantize_gather_tables=opt_in,
+            )
+            delegated = executorch.exir.to_edge_transform_and_lower(
+                exported,
+                partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            )
+            sizes[opt_in] = len(delegated.to_executorch().buffer)
+
+        self.assertLess(sizes[True], sizes[False])
+
+    def test_quantize_gather_tables_keeps_pass_names_positional(self):
+        """
+        quantize_gather_tables is the last parameter, so a caller that already passed
+        pass_names positionally still binds it to pass_names rather than to the new flag.
+        """
+        specs = CoreMLBackend.generate_compile_specs(
+            ct.ComputeUnit.ALL,
+            ct.target.iOS18,
+            ct.precision(ct.precision.FLOAT16.value),
+            CoreMLBackend.MODEL_TYPE.MODEL,
+            None,
+            ["remove_redundant_ops"],
+        )
+        pipeline = [
+            spec.value.decode("utf-8") for spec in specs if spec.key == "pass_pipeline"
+        ]
+        self.assertEqual(pipeline, ['["remove_redundant_ops"]'])
+        self.assertFalse(CoreMLBackend.quantize_gather_tables_from_compile_specs(specs))
+
+    def test_quantize_gather_tables_defaults_to_off(self):
+        """
+        Absent the spec, float gather tables stay exempt. Covers models lowered by
+        callers that predate the option.
+        """
+        self.assertFalse(CoreMLBackend.quantize_gather_tables_from_compile_specs([]))
+        specs = CoreMLBackend.generate_compile_specs(
+            op_linear_quantizer_config={
+                "mode": "linear_symmetric",
+                "dtype": "int8",
+                "granularity": "per_channel",
+            },
+        )
+        self.assertFalse(CoreMLBackend.quantize_gather_tables_from_compile_specs(specs))
+        opted_in = CoreMLBackend.generate_compile_specs(
+            op_linear_quantizer_config={
+                "mode": "linear_symmetric",
+                "dtype": "int8",
+                "granularity": "per_channel",
+            },
+            quantize_gather_tables=True,
+        )
+        self.assertTrue(
+            CoreMLBackend.quantize_gather_tables_from_compile_specs(opted_in)
+        )
+
+    def test_quantize_gather_tables_skips_integer_tables(self):
+        """
+        The opt-in names only float gather tables. A model that also indexes an integer
+        buffer still lowers, and still gets smaller, which is what pins the dtype filter:
+        naming the integer table would abort the conversion instead.
+
+        The integer table is two dimensional on purpose. Run against the quantizer
+        directly, a 2-D integer table raises and takes the conversion down, while a 1-D
+        one is skipped by the quantizer itself, so a 1-D table here would pass with the
+        dtype filter deleted and pin nothing.
+        """
+
+        class MixedTables(torch.nn.Module):
+            def __init__(self, vocab=4096, dim=128, codes=8):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(vocab, dim)
+                self.register_buffer(
+                    "codebook", torch.randint(0, 255, (vocab, codes), dtype=torch.uint8)
+                )
+
+            def forward(self, ids):
+                floats = self.embedding(ids).sum(dim=1)
+                ints = (
+                    self.codebook[ids].to(torch.float32).sum(dim=(1, 2)).unsqueeze(-1)
+                )
+                return floats + ints
+
+        ids = torch.zeros(1, 4, dtype=torch.long)
+        exported = torch.export.export(MixedTables().eval(), (ids,), strict=True)
+
+        sizes = {}
+        for opt_in in (False, True):
+            compile_specs = CoreMLBackend.generate_compile_specs(
+                minimum_deployment_target=ct.target.iOS18,
+                compute_precision=ct.precision(ct.precision.FLOAT16.value),
+                op_linear_quantizer_config={
+                    "mode": "linear_symmetric",
+                    "dtype": "int8",
+                    "granularity": "per_channel",
+                },
+                quantize_gather_tables=opt_in,
+            )
+            delegated = executorch.exir.to_edge_transform_and_lower(
+                exported,
+                partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            )
+            sizes[opt_in] = len(delegated.to_executorch().buffer)
+
+        self.assertLess(sizes[True], sizes[False])
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.
