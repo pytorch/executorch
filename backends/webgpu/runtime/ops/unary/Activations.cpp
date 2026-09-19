@@ -50,27 +50,37 @@ float get_val_or_inf(WebGPUGraph& graph, int id, bool is_max) {
 // integer and saturates, so large bounds survive exactly -- get_val_or_inf
 // would round anything above 2^24 on its way through float.
 int32_t get_int_bound_or_limit(WebGPUGraph& graph, int id, bool is_max) {
+  constexpr int32_t kMin = std::numeric_limits<int32_t>::min();
+  constexpr int32_t kMax = std::numeric_limits<int32_t>::max();
   const auto t = graph.get_value_type(id);
   if (t == WebGPUGraph::ValueType::Null) {
-    return is_max ? std::numeric_limits<int32_t>::max()
-                  : std::numeric_limits<int32_t>::min();
+    return is_max ? kMax : kMin;
   }
-  int64_t v = 0;
   if (t == WebGPUGraph::ValueType::Int) {
-    v = graph.get_int(id);
-  } else if (t == WebGPUGraph::ValueType::Double) {
+    const int64_t v = graph.get_int(id);
+    if (v < kMin) {
+      return kMin;
+    }
+    return v > kMax ? kMax : static_cast<int32_t>(v);
+  }
+  if (t == WebGPUGraph::ValueType::Double) {
+    // Saturate in the double domain first: casting an out-of-range or
+    // non-finite double to an integer is undefined, so a range check after the
+    // cast would be too late.
     const double d = graph.get_double(id);
-    v = static_cast<int64_t>(is_max ? std::floor(d) : std::ceil(d));
-  } else {
-    throw std::runtime_error("clamp bound must be a scalar or None");
+    if (std::isnan(d)) {
+      throw std::runtime_error("clamp bound must not be NaN");
+    }
+    if (d <= static_cast<double>(kMin)) {
+      return kMin;
+    }
+    if (d >= static_cast<double>(kMax)) {
+      return kMax;
+    }
+    // Round toward the interior so a fractional bound never widens the range.
+    return static_cast<int32_t>(is_max ? std::floor(d) : std::ceil(d));
   }
-  if (v < std::numeric_limits<int32_t>::min()) {
-    return std::numeric_limits<int32_t>::min();
-  }
-  if (v > std::numeric_limits<int32_t>::max()) {
-    return std::numeric_limits<int32_t>::max();
-  }
-  return static_cast<int32_t>(v);
+  throw std::runtime_error("clamp bound must be a scalar or None");
 }
 
 void abs_impl(WebGPUGraph& graph, const std::vector<int>& args) {

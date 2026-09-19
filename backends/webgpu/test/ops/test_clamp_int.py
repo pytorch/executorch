@@ -36,12 +36,13 @@ class ClampIntMaxOnlyModule(torch.nn.Module):
 
 
 class ClampIntLargeBoundModule(torch.nn.Module):
-    """Bound above 2^24, which float cannot represent exactly. Pins that the i32
-    bounds reach the shader without a detour through float."""
+    """Bound above 2^24, which float cannot represent exactly (16777217 rounds to
+    16777216). The input straddles the bound so it is actually active: if the
+    bound were routed through float, the clamped values would differ by one."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1, dtype=torch.int32)
-        return x + torch.clamp(idx, 0, 16777217).to(torch.float32)
+        idx = torch.arange(16777210, 16777226, 1, dtype=torch.int32)
+        return (torch.clamp(idx, 16777213, 16777217) - 16777210).to(torch.float32) + x
 
 
 def _delegated(et) -> bool:
