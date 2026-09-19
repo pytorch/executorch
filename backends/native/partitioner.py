@@ -18,6 +18,7 @@ from typing import Callable, final, List, Mapping, Optional, Tuple
 # Registers torch.ops.torchao.dequantize_gguf, referenced in _SUPPORTED_NON_CORE_OPS.
 import executorch.extension.llm.export.gguf  # noqa: F401
 import torch
+from executorch.backends.native.custom_ops import rope_op
 from executorch.backends.native.passes import backend_inplace_aten_variants
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -43,6 +44,7 @@ _SUPPORTED_NON_CORE_OPS = [
     # GGUF weight dequantize stays in the delegate; the serializer folds it into a
     # PackedQuant weight on the consuming op.
     torch.ops.torchao.dequantize_gguf.default,
+    rope_op,
     torch.ops.aten.rms_norm.default,
 ]
 
