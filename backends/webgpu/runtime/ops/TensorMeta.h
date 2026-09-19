@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 
 namespace executorch::backends::webgpu {
 
@@ -89,6 +90,44 @@ inline void fill_tensor_meta_broadcast(
     numel *= sz;
   }
   m->numel = numel;
+}
+
+// Validate the operands of an elementwise binary op and report whether the i32
+// shader variant is required.
+//
+// Integer operands must never reach an f32 shader. Both dtypes are 4 bytes, so
+// a size-only check lets int data through, and the f32 shader then reinterprets
+// the bit pattern: a small integer becomes a denormal, so the result is
+// silently ~0 rather than visibly wrong. Mixed int/float operands and integer
+// widths the shaders cannot address (bool, int8, and non-downcast int64) are
+// rejected outright.
+inline bool binary_operands_are_int(
+    const WebGPUTensor& in1,
+    const WebGPUTensor& in2,
+    const WebGPUTensor& out,
+    const TensorMeta& in1_meta,
+    const TensorMeta& in2_meta,
+    const TensorMeta& out_meta,
+    const char* op_name) {
+  const std::string name(op_name);
+  const bool is_int = out.is_int;
+  if (in1.is_int != is_int || in2.is_int != is_int) {
+    throw std::runtime_error(name + ": mixed integer and float operands");
+  }
+  if (is_int &&
+      (in1.is_bool || in2.is_bool || out.is_bool || in1.is_int8 ||
+       in2.is_int8 || out.is_int8)) {
+    throw std::runtime_error(name + ": bool and int8 operands are unsupported");
+  }
+  // 4 bytes per element for both f32 and i32; an 8-byte int64 that was not
+  // downcast by the AoT stack lands here and is rejected.
+  if (out.nbytes != static_cast<size_t>(out_meta.numel) * 4u ||
+      in1.nbytes != static_cast<size_t>(in1_meta.numel) * 4u ||
+      in2.nbytes != static_cast<size_t>(in2_meta.numel) * 4u) {
+    throw std::runtime_error(
+        name + ": operand is not 4 bytes per element (nbytes != numel * 4)");
+  }
+  return is_int;
 }
 
 } // namespace executorch::backends::webgpu

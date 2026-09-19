@@ -10,11 +10,13 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
+#include <executorch/backends/webgpu/runtime/ops/add/binary_add_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -63,14 +65,10 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   fill_tensor_meta_broadcast(in1_tensor, out_ndim, &in1_meta);
   fill_tensor_meta_broadcast(in2_tensor, out_ndim, &in2_meta);
 
-  // fp32-only: nbytes must equal numel * 4 for every operand.
-  if (out_tensor.nbytes !=
-          static_cast<size_t>(out_meta.numel) * sizeof(float) ||
-      in1_tensor.nbytes !=
-          static_cast<size_t>(in1_meta.numel) * sizeof(float) ||
-      in2_tensor.nbytes !=
-          static_cast<size_t>(in2_meta.numel) * sizeof(float)) {
-    throw std::runtime_error("add: non-fp32 operand (nbytes != numel * 4)");
+  const bool is_int = binary_operands_are_int(
+      in1_tensor, in2_tensor, out_tensor, in1_meta, in2_meta, out_meta, "add");
+  if (is_int && alpha != std::floor(alpha)) {
+    throw std::runtime_error("add: non-integer alpha with integer operands");
   }
 
   uint32_t wg_size =
@@ -95,7 +93,7 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
-      kBinaryAddWGSL,
+      is_int ? kBinaryAddIntWGSL : kBinaryAddWGSL,
       {
           {0,
            WGPUBufferBindingType_ReadOnlyStorage,
