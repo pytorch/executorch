@@ -215,6 +215,16 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "remove_unused_constants_pass",
+        srcs = ["remove_unused_constants_pass.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
         name = "mean_to_sum_div",
         srcs = ["mean_to_sum_div.py"],
         visibility = [
