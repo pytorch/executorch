@@ -24,7 +24,7 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.program import to_edge
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -579,3 +579,64 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
         new_input = self._find_input_node(new_graph_module)
 
         self.assertNotEqual(self._symbolic_input_shape(new_input), original_snapshot)
+
+
+class TestPassBaseFakeModeSelection(unittest.TestCase):
+    """ExportPass must not mint a second FakeTensorMode for constant-only graphs.
+
+    inputs() unwraps a placeholder's FakeTensor to its materialized .constant, so
+    a submodule whose placeholders are all lifted constants yields no FakeTensor
+    to scan. Creating a fresh mode there leaves the retraced nodes in a different
+    mode from the untouched placeholders, which later trips detect_fake_mode.
+
+    Seen in the wild partitioning DINOv2 for Vulkan/WebGPU: the error surfaced as
+    "An error occurred when running the 'FuseBatchNormPass' pass" on a model with
+    no batch norm, because that pass is simply the first one to retrace.
+    """
+
+    class _ConstOnly(torch.nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor([1.0, 2.0]) + torch.tensor([3.0, 4.0])
+
+    def _graph_module_with_constant_placeholders(self) -> torch.fx.GraphModule:
+        ep = export(self._ConstOnly(), ())
+        graph_module = to_edge(ep).exported_program().graph_module
+        # Materialize .constant the way the partitioner path does.
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            val = node.meta.get("val", None)
+            if isinstance(val, FakeTensor) and val.constant is None:
+                val.constant = torch.ones(val.shape, dtype=val.dtype)
+        return graph_module
+
+    @staticmethod
+    def _fake_modes(graph_module: torch.fx.GraphModule) -> set:
+        return {
+            id(node.meta["val"].fake_mode)
+            for node in graph_module.graph.nodes
+            if isinstance(node.meta.get("val", None), FakeTensor)
+        }
+
+    def test_constant_only_placeholders_keep_single_fake_mode(self) -> None:
+        graph_module = self._graph_module_with_constant_placeholders()
+        self.assertEqual(len(self._fake_modes(graph_module)), 1)
+
+        result = ExportPass()(graph_module)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(self._fake_modes(result.graph_module)), 1)
+
+    def test_helper_returns_none_when_placeholders_disagree(self) -> None:
+        from executorch.exir.pass_base import _ExportPassBase
+
+        graph_module = self._graph_module_with_constant_placeholders()
+        placeholders = [n for n in graph_module.graph.nodes if n.op == "placeholder"]
+        self.assertGreaterEqual(len(placeholders), 2)
+
+        # A second, unrelated mode on one placeholder must defeat reuse.
+        with FakeTensorMode() as other_mode:
+            placeholders[0].meta["val"] = other_mode.from_tensor(torch.ones(2))
+
+        self.assertIsNone(
+            _ExportPassBase._get_fake_mode_from_placeholders(graph_module)
+        )
