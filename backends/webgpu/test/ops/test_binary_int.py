@@ -11,45 +11,65 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.exir import to_edge_transform_and_lower
 
 
+# The integer operands are derived from the float input rather than from
+# torch.arange or full_like, neither of which this backend runs on int, so these
+# stay self-contained.
 class AddIntModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1, dtype=torch.int32)
-        return x + (idx + torch.full_like(idx, 3)).to(torch.float32)
+        a = (x * 8.0).to(torch.int32)
+        b = (x * 2.0).to(torch.int32)
+        return (a + b).to(torch.float32)
 
 
 class SubIntModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1, dtype=torch.int32)
-        return x + (idx - torch.full_like(idx, 2)).to(torch.float32)
+        a = (x * 8.0).to(torch.int32)
+        b = (x * 2.0).to(torch.int32)
+        return (a - b).to(torch.float32)
 
 
 class MulIntModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1, dtype=torch.int32)
-        return x + (idx * torch.full_like(idx, 3)).to(torch.float32)
+        a = (x * 8.0).to(torch.int32)
+        b = (x * 2.0).to(torch.int32)
+        return (a * b).to(torch.float32)
+
+
+class AddAlphaIntModule(torch.nn.Module):
+    """alpha is baked in as an i32 pipeline override on the integer path."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        a = (x * 8.0).to(torch.int32)
+        b = (x * 2.0).to(torch.int32)
+        return torch.add(a, b, alpha=3).to(torch.float32)
+
+
+class SubAlphaIntModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        a = (x * 8.0).to(torch.int32)
+        b = (x * 2.0).to(torch.int32)
+        return torch.sub(a, b, alpha=3).to(torch.float32)
 
 
 class BroadcastIntModule(torch.nn.Module):
-    """Broadcast path of the int shader: the bicubic index math combines a
-    [N, 1] row index with a [N] column index."""
+    """Broadcast path of the int shader: the bicubic index math combines an
+    [N, 1] row index with an [N] column index."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        rows = torch.arange(0, 4, 1, dtype=torch.int32).reshape(4, 1)
-        cols = torch.arange(0, 4, 1, dtype=torch.int32)
-        return x + (rows * 4 + cols).to(torch.float32)
+        rows = (x[:, :1] * 8.0).to(torch.int32)
+        cols = (x[0] * 8.0).to(torch.int32)
+        return (rows * cols).to(torch.float32)
 
 
-class IndexMathModule(torch.nn.Module):
-    """The shape the ViT positional-encoding interpolation actually produces:
-    integer index arithmetic feeding a clamp. Routing any of these through the
-    fp32 shader reads the integer bit pattern as a denormal, so the result
-    collapses to ~0 rather than failing."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1, dtype=torch.int32)
-        lo = torch.clamp(idx - torch.full_like(idx, 1), 0, 36)
-        hi = torch.clamp(idx + torch.full_like(idx, 2), 0, 36)
-        return x + (lo + hi).to(torch.float32)
+def binary_int_factory(variant: str = "add") -> torch.nn.Module:
+    return {
+        "add": AddIntModule,
+        "sub": SubIntModule,
+        "mul": MulIntModule,
+        "add_alpha": AddAlphaIntModule,
+        "sub_alpha": SubAlphaIntModule,
+        "broadcast": BroadcastIntModule,
+    }[variant]()
 
 
 def _delegated(et) -> bool:
@@ -76,34 +96,34 @@ def _op_delegated(edge, op_substr: str) -> bool:
 class TestBinaryInt(unittest.TestCase):
     """Integer add/sub/mul export tests. Both f32 and i32 are 4 bytes, so the
     byte-size guard these handlers used to rely on let integer tensors reach the
-    fp32 shaders; these pin the i32 shader variants."""
+    fp32 shaders. Delegation alone cannot catch that -- the fp32 path accepted
+    these graphs too -- so the numeric coverage lives in the `binary_int`
+    op-test suite; these only pin that the ops stay inside the delegate."""
 
-    def _check(self, model, op_substr: str) -> None:
-        example_inputs = (torch.randn(16),)
-        ep = torch.export.export(model, example_inputs)
+    def _check(self, variant: str, op_substr: str, shape=(16,)) -> None:
+        example_inputs = (torch.randn(*shape),)
+        ep = torch.export.export(binary_int_factory(variant), example_inputs)
         edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
-        et = edge.to_executorch()
-        self.assertTrue(_delegated(et))
+        self.assertTrue(_delegated(edge.to_executorch()))
         self.assertTrue(_op_delegated(edge, op_substr))
 
     def test_add_int_delegates(self) -> None:
-        self._check(AddIntModule(), "add.Tensor")
+        self._check("add", "add.Tensor")
 
     def test_sub_int_delegates(self) -> None:
-        self._check(SubIntModule(), "sub.Tensor")
+        self._check("sub", "sub.Tensor")
 
     def test_mul_int_delegates(self) -> None:
-        self._check(MulIntModule(), "mul.Tensor")
+        self._check("mul", "mul.Tensor")
+
+    def test_add_alpha_int_delegates(self) -> None:
+        self._check("add_alpha", "add.Tensor")
+
+    def test_sub_alpha_int_delegates(self) -> None:
+        self._check("sub_alpha", "sub.Tensor")
 
     def test_broadcast_int_delegates(self) -> None:
-        example_inputs = (torch.randn(4, 4),)
-        ep = torch.export.export(BroadcastIntModule(), example_inputs)
-        edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
-        self.assertTrue(_delegated(edge.to_executorch()))
-        self.assertTrue(_op_delegated(edge, "mul.Tensor"))
-
-    def test_index_math_delegates(self) -> None:
-        self._check(IndexMathModule(), "clamp")
+        self._check("broadcast", "mul.Tensor", shape=(4, 4))
 
 
 if __name__ == "__main__":

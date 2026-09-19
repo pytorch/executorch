@@ -37,6 +37,7 @@ from executorch.backends.webgpu.test.ops.test_argmax import (
     ArgminModule,
 )
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
+from executorch.backends.webgpu.test.ops.test_binary_int import binary_int_factory
 from executorch.backends.webgpu.test.ops.test_bitwise import (
     BITWISE_NOT_SHAPES,
     BitwiseAndModule,
@@ -2194,6 +2195,27 @@ def _argmin_suite() -> WebGPUTestSuite:
             Case(name="2d", inputs=((M1, M2),)),
             Case(name="3d", inputs=((S, S1, S2),)),
             Case(name="tie", inputs=(InputSpec(shape=(3, 6), gen=argmin_tie_gen),)),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("binary_int")
+def _binary_int_suite() -> WebGPUTestSuite:
+    # Numeric coverage for the i32 add/sub/mul variants. Delegation alone cannot
+    # catch this class of bug: the fp32 shaders also accepted these graphs and
+    # silently returned ~0, so only executing the program distinguishes them.
+    return WebGPUTestSuite(
+        module_factory=binary_int_factory,
+        cases=[
+            Case(name="add", construct={"variant": "add"}, inputs=((16,),)),
+            Case(name="sub", construct={"variant": "sub"}, inputs=((16,),)),
+            Case(name="mul", construct={"variant": "mul"}, inputs=((16,),)),
+            Case(name="add_alpha", construct={"variant": "add_alpha"}, inputs=((16,),)),
+            Case(name="sub_alpha", construct={"variant": "sub_alpha"}, inputs=((16,),)),
+            Case(
+                name="broadcast", construct={"variant": "broadcast"}, inputs=((4, 4),)
+            ),
         ],
         golden_dtype="float32",
     )

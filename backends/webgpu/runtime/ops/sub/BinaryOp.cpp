@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -62,8 +64,18 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const bool is_int = binary_operands_are_int(
       in1_tensor, in2_tensor, out_tensor, in1_meta, in2_meta, out_meta, "sub");
-  if (is_int && alpha != std::floor(alpha)) {
-    throw std::runtime_error("sub: non-integer alpha with integer operands");
+  // alpha becomes an i32 pipeline override, so it must be an exact int32.
+  // Checking in double keeps the bounds exact: (float)INT32_MAX rounds up to
+  // 2^31, which would let an overflowing alpha through. std::floor also
+  // leaves inf unchanged, so finiteness needs its own check.
+  if (is_int) {
+    const double a = static_cast<double>(alpha);
+    if (!std::isfinite(a) || a != std::floor(a) ||
+        a < static_cast<double>(std::numeric_limits<int32_t>::min()) ||
+        a > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+      throw std::runtime_error(
+          "sub: alpha must be an exact int32 with integer operands");
+    }
   }
 
   uint32_t wg_size =
