@@ -46,6 +46,33 @@ float get_val_or_inf(WebGPUGraph& graph, int id, bool is_max) {
                 : -std::numeric_limits<float>::infinity();
 }
 
+// Integer bound arg, or the int32 limit when None. Reads the scalar as an
+// integer and saturates, so large bounds survive exactly -- get_val_or_inf
+// would round anything above 2^24 on its way through float.
+int32_t get_int_bound_or_limit(WebGPUGraph& graph, int id, bool is_max) {
+  const auto t = graph.get_value_type(id);
+  if (t == WebGPUGraph::ValueType::Null) {
+    return is_max ? std::numeric_limits<int32_t>::max()
+                  : std::numeric_limits<int32_t>::min();
+  }
+  int64_t v = 0;
+  if (t == WebGPUGraph::ValueType::Int) {
+    v = graph.get_int(id);
+  } else if (t == WebGPUGraph::ValueType::Double) {
+    const double d = graph.get_double(id);
+    v = static_cast<int64_t>(is_max ? std::floor(d) : std::ceil(d));
+  } else {
+    throw std::runtime_error("clamp bound must be a scalar or None");
+  }
+  if (v < std::numeric_limits<int32_t>::min()) {
+    return std::numeric_limits<int32_t>::min();
+  }
+  if (v > std::numeric_limits<int32_t>::max()) {
+    return std::numeric_limits<int32_t>::max();
+  }
+  return static_cast<int32_t>(v);
+}
+
 void abs_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_unary_op(
       graph, args.at(0), args.at(1), kAbsWGSL, kAbsWorkgroupSizeX, "abs");
@@ -108,6 +135,11 @@ void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Index arithmetic (e.g. ViT positional-encoding interpolation) clamps int
   // tensors, so bind the i32 shader when the operands are integral.
   const bool is_int = graph.get_tensor(args.at(0)).is_int;
+  UnaryIntBounds int_bounds{};
+  if (is_int) {
+    int_bounds.min = get_int_bound_or_limit(graph, args.at(1), false);
+    int_bounds.max = get_int_bound_or_limit(graph, args.at(2), true);
+  }
   add_unary_op(
       graph,
       args.at(0),
@@ -117,7 +149,7 @@ void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       "clamp",
       lo,
       hi,
-      is_int);
+      is_int ? &int_bounds : nullptr);
 }
 
 void hardtanh_impl(WebGPUGraph& graph, const std::vector<int>& args) {

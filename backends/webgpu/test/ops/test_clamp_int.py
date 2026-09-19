@@ -15,24 +15,57 @@ class ClampIntModule(torch.nn.Module):
     """Integer clamp with both bounds, as index arithmetic produces."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1)
+        idx = torch.arange(0, 16, 1, dtype=torch.int32)
         return x + torch.clamp(idx, 2, 11).to(torch.float32)
 
 
 class ClampIntMinOnlyModule(torch.nn.Module):
-    """Only a lower bound; the upper becomes +inf and must saturate to INT32_MAX."""
+    """Only a lower bound; the upper becomes None and must saturate to INT32_MAX."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1)
+        idx = torch.arange(0, 16, 1, dtype=torch.int32)
         return x + torch.clamp(idx, min=5).to(torch.float32)
 
 
 class ClampIntMaxOnlyModule(torch.nn.Module):
-    """Only an upper bound; the lower becomes -inf and must saturate to INT32_MIN."""
+    """Only an upper bound; the lower becomes None and must saturate to INT32_MIN."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        idx = torch.arange(0, 16, 1)
+        idx = torch.arange(0, 16, 1, dtype=torch.int32)
         return x + torch.clamp(idx, max=9).to(torch.float32)
+
+
+class ClampIntLargeBoundModule(torch.nn.Module):
+    """Bound above 2^24, which float cannot represent exactly. Pins that the i32
+    bounds reach the shader without a detour through float."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        idx = torch.arange(0, 16, 1, dtype=torch.int32)
+        return x + torch.clamp(idx, 0, 16777217).to(torch.float32)
+
+
+def _delegated(et) -> bool:
+    return any(
+        d.id == "VulkanBackend"
+        for plan in et.executorch_program.execution_plan
+        for d in plan.delegates
+    )
+
+
+def _op_delegated(edge, op_substr: str) -> bool:
+    # The op must be absorbed into a delegate: absent from the top-level graph AND
+    # present inside a lowered submodule reached by an executorch_call_delegate node
+    # (a bare absence check also passes for an empty graph or a renamed op).
+    from executorch.exir.lowered_backend_module import get_lowered_submodules
+
+    gm = edge.exported_program().graph_module
+    if any(op_substr in str(getattr(n, "target", "")) for n in gm.graph.nodes):
+        return False
+    return any(
+        op_substr in str(getattr(dn, "target", ""))
+        for _, lowered, _ in get_lowered_submodules(gm)
+        for dn in lowered.original_module.graph_module.graph.nodes
+    )
 
 
 class TestClampInt(unittest.TestCase):
@@ -40,29 +73,27 @@ class TestClampInt(unittest.TestCase):
     declarative unary suite; these pin the int32 shader variant, which the ViT
     positional-encoding path needs."""
 
-    def _export_and_check(self, model, example_inputs) -> None:
+    def _check(self, model, example_inputs) -> None:
         ep = torch.export.export(model, example_inputs)
-        et_program = to_edge_transform_and_lower(
-            ep, partitioner=[VulkanPartitioner()]
-        ).to_executorch()
-
-        found_vulkan = False
-        for plan in et_program.executorch_program.execution_plan:
-            for delegate in plan.delegates:
-                if delegate.id == "VulkanBackend":
-                    found_vulkan = True
-                    break
-        self.assertTrue(found_vulkan, "Expected VulkanBackend delegate in .pte")
-        self.assertGreater(len(et_program.buffer), 100)
+        edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+        et = edge.to_executorch()
+        self.assertTrue(_delegated(et), "Expected a VulkanBackend delegate")
+        self.assertTrue(
+            _op_delegated(edge, "clamp"),
+            "Expected aten.clamp to be absorbed into the delegate, not left on CPU",
+        )
 
     def test_clamp_int_both_bounds(self) -> None:
-        self._export_and_check(ClampIntModule(), (torch.randn(16),))
+        self._check(ClampIntModule(), (torch.randn(16),))
 
     def test_clamp_int_min_only(self) -> None:
-        self._export_and_check(ClampIntMinOnlyModule(), (torch.randn(16),))
+        self._check(ClampIntMinOnlyModule(), (torch.randn(16),))
 
     def test_clamp_int_max_only(self) -> None:
-        self._export_and_check(ClampIntMaxOnlyModule(), (torch.randn(16),))
+        self._check(ClampIntMaxOnlyModule(), (torch.randn(16),))
+
+    def test_clamp_int_bound_above_float_precision(self) -> None:
+        self._check(ClampIntLargeBoundModule(), (torch.randn(16),))
 
 
 if __name__ == "__main__":

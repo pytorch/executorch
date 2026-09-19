@@ -31,25 +31,11 @@ struct UnaryParams {
   uint32_t _pad;
 };
 
-// Reinterpret the f32 min/max slots as i32 for the integer shader variants.
-// Saturates, so a None bound (represented as +/-inf) maps to the int32 limits.
-void set_int_bounds(UnaryParams* params, float min, float max) {
-  auto to_i32 = [](float v, int32_t fallback) -> int32_t {
-    if (std::isnan(v)) {
-      return fallback;
-    }
-    if (v <= static_cast<float>(INT32_MIN)) {
-      return INT32_MIN;
-    }
-    if (v >= static_cast<float>(INT32_MAX)) {
-      return INT32_MAX;
-    }
-    return static_cast<int32_t>(v);
-  };
-  const int32_t lo = to_i32(min, INT32_MIN);
-  const int32_t hi = to_i32(max, INT32_MAX);
-  std::memcpy(&params->min, &lo, sizeof(int32_t));
-  std::memcpy(&params->max, &hi, sizeof(int32_t));
+// Bit-copy exact i32 bounds into the f32 min/max slots, which the integer
+// shader variants read as i32.
+void set_int_bounds(UnaryParams* params, const UnaryIntBounds& b) {
+  std::memcpy(&params->min, &b.min, sizeof(int32_t));
+  std::memcpy(&params->max, &b.max, sizeof(int32_t));
 }
 
 } // namespace
@@ -63,7 +49,8 @@ void add_unary_op(
     const char* op_name,
     float min,
     float max,
-    bool int_variant) {
+    const UnaryIntBounds* int_bounds) {
+  const bool int_variant = int_bounds != nullptr;
   WGPUDevice device = graph.device();
 
   const auto& in_tensor = graph.get_tensor(in_id);
@@ -75,9 +62,19 @@ void add_unary_op(
   if (!int_variant && (in_tensor.is_int || out_tensor.is_int)) {
     throw std::runtime_error(std::string(op_name) + ": int dtype unsupported");
   }
-  if (int_variant && in_tensor.is_int != out_tensor.is_int) {
-    throw std::runtime_error(
-        std::string(op_name) + ": mixed int/fp32 operands");
+  if (int_variant) {
+    if (in_tensor.is_int != out_tensor.is_int) {
+      throw std::runtime_error(
+          std::string(op_name) + ": mixed int/fp32 operands");
+    }
+    // is_int also covers 1-byte (int8/bool) and 8-byte (int64) tensors.
+    // The shader binds array<i32> and derives the element count from
+    // nbytes / 4, so anything but a 4-byte element would be mis-strided.
+    if (in_tensor.elem_size != sizeof(int32_t) ||
+        out_tensor.elem_size != sizeof(int32_t)) {
+      throw std::runtime_error(
+          std::string(op_name) + ": int32 (4-byte) tensors required");
+    }
   }
 
   uint32_t num_elements =
@@ -97,7 +94,7 @@ void add_unary_op(
   params.min = min;
   params.max = max;
   if (int_variant) {
-    set_int_bounds(&params, min, max);
+    set_int_bounds(&params, *int_bounds);
   }
 
   WGPUBuffer uniform_buffer =
@@ -132,8 +129,16 @@ void add_unary_op(
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,
-      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max, int_variant](
-          WebGPUGraph& g) {
+      [in_id,
+       out_id,
+       wg_size,
+       dispatch_idx,
+       params_buf,
+       min,
+       max,
+       int_variant,
+       // By value: int_bounds points at the caller's local.
+       ib = int_variant ? *int_bounds : UnaryIntBounds{}](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const uint64_t numel = utils::numel_of(d);
         g.set_cur_dims(out_id, d);
@@ -142,7 +147,7 @@ void add_unary_op(
         p.min = min;
         p.max = max;
         if (int_variant) {
-          set_int_bounds(&p, min, max);
+          set_int_bounds(&p, ib);
         }
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         const utils::WgCount wgc = utils::compute_2d_workgroup_count(
