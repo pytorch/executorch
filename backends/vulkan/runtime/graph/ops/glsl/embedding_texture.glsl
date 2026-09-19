@@ -50,6 +50,12 @@ int load_embedding_idx(const TensorIndex4D out_tidx) {
   return in_texel[elem_pos.comp];
 }
 
+T load_weight_element(const int embedding_idx, const int dim_idx) {
+  return T(t_weight[embedding_idx * int(width(weight)) + dim_idx]);
+}
+
+// Loads 4 consecutive elements of the embedding dim from a single weight row.
+// Only valid when the output texel packs along the embedding (width) dim.
 VEC4_T load_weight_texel(const int embedding_idx, const int dim_idx) {
   int buf_i = embedding_idx * int(width(weight)) + dim_idx;
   VEC4_T weight_texel;
@@ -66,11 +72,34 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx =
+  const TensorIndex4D out_tidx =
       texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
-  const int embedding_idx = load_embedding_idx(out_tidx);
 
-  const VEC4_T weight_texel = load_weight_texel(embedding_idx, out_tidx.data.x);
+  const int packed_dim = get_packed_dim(out_layout);
+
+  VEC4_T weight_texel = VEC4_T(0);
+  if (packed_dim == 0) {
+    // The texel packs 4 consecutive elements of the embedding dim, so every
+    // component reads from the same weight row.
+    const int embedding_idx = load_embedding_idx(out_tidx);
+    weight_texel = load_weight_texel(embedding_idx, out_tidx.data.x);
+  } else {
+    // The texel packs 4 consecutive elements of an index dim, so every
+    // component reads a different weight row at the same embedding dim.
+    const int packed_dim_limit = safe_idx(outp.sizes, packed_dim);
+    const int packed_dim_start = safe_idx(out_tidx.data, packed_dim);
+    const int dim_idx = out_tidx.data.x;
+
+    TensorIndex4D lane_tidx = out_tidx;
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      const int packed_idx = packed_dim_start + i;
+      if (packed_idx < packed_dim_limit) {
+        safe_set(lane_tidx.data, packed_dim, packed_idx);
+        weight_texel[i] =
+            load_weight_element(load_embedding_idx(lane_tidx), dim_idx);
+      }
+    }
+  }
 
   imageStore(t_out, out_pos, weight_texel);
 }
