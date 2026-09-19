@@ -42,14 +42,18 @@ static_assert(
     sizeof(ArangeParams) % 16u == 0u,
     "WebGPU parameter blocks must have a 16-byte-aligned size");
 
-// start/end/step arrive as static Int or Double scalars. A SymInt would make
+// start/end/step arrive as static Int or Double scalars, or as Null when the
+// caller omitted them, in which case aten's defaults apply. A SymInt would make
 // the output length dynamic, which the fixed dispatch below cannot honor.
-double read_scalar(WebGPUGraph& graph, int id, const char* what) {
+double
+read_scalar(WebGPUGraph& graph, int id, const char* what, double if_omitted) {
   switch (graph.get_value_type(id)) {
     case WebGPUGraph::ValueType::Int:
       return static_cast<double>(graph.get_int(id));
     case WebGPUGraph::ValueType::Double:
       return graph.get_double(id);
+    case WebGPUGraph::ValueType::Null:
+      return if_omitted;
     default:
       throw std::runtime_error(
           std::string("arange: dynamic/unsupported ") + what);
@@ -79,8 +83,8 @@ void arange_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
   const bool is_int = out_tensor.is_int;
 
-  const double start = read_scalar(graph, args.at(0), "start");
-  const double step = read_scalar(graph, args.at(2), "step");
+  const double start = read_scalar(graph, args.at(0), "start", 0.0);
+  const double step = read_scalar(graph, args.at(2), "step", 1.0);
   if (step == 0.0) {
     throw std::runtime_error("arange: step must be non-zero");
   }
