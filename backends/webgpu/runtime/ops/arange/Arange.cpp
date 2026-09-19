@@ -45,15 +45,24 @@ static_assert(
 // start/end/step arrive as static Int or Double scalars, or as Null when the
 // caller omitted them, in which case aten's defaults apply. A SymInt would make
 // the output length dynamic, which the fixed dispatch below cannot honor.
-double
-read_scalar(WebGPUGraph& graph, int id, const char* what, double if_omitted) {
+// if_omitted == nullptr marks an argument that has no default and must be
+// present.
+double read_scalar(
+    WebGPUGraph& graph,
+    int id,
+    const char* what,
+    const double* if_omitted) {
   switch (graph.get_value_type(id)) {
     case WebGPUGraph::ValueType::Int:
       return static_cast<double>(graph.get_int(id));
     case WebGPUGraph::ValueType::Double:
       return graph.get_double(id);
     case WebGPUGraph::ValueType::Null:
-      return if_omitted;
+      if (if_omitted == nullptr) {
+        throw std::runtime_error(
+            std::string("arange: ") + what + " is required");
+      }
+      return *if_omitted;
     default:
       throw std::runtime_error(
           std::string("arange: dynamic/unsupported ") + what);
@@ -83,8 +92,15 @@ void arange_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
   const bool is_int = out_tensor.is_int;
 
-  const double start = read_scalar(graph, args.at(0), "start", 0.0);
-  const double step = read_scalar(graph, args.at(2), "step", 1.0);
+  constexpr double kStartDefault = 0.0;
+  constexpr double kStepDefault = 1.0;
+  const double start = read_scalar(graph, args.at(0), "start", &kStartDefault);
+  const double step = read_scalar(graph, args.at(2), "step", &kStepDefault);
+  // end does not feed the dispatch (the length comes from the output tensor),
+  // but it must still be static: a SymInt end changes the live length, and
+  // nothing here recomputes the output dims the way Vulkan's resize does, so a
+  // dynamic end would silently keep emitting the max-sized output.
+  (void)read_scalar(graph, args.at(1), "end", nullptr);
   if (step == 0.0) {
     throw std::runtime_error("arange: step must be non-zero");
   }
