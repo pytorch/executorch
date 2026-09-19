@@ -201,6 +201,7 @@ class QnnExecuTorchHtpBackendOptions:
     use_multi_contexts: bool = False
     use_weight_sharing: bool = False
     use_slc_allocator: bool = False
+    use_graph_splitting: bool = False
 
 
 @unique
