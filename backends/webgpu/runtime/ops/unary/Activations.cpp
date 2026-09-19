@@ -22,6 +22,7 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/sqrt_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/tanh_wgsl.h>
 
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <vector>
