@@ -558,13 +558,16 @@ def make_image_input(image_tensor: torch.Tensor) -> MultimodalInput:
     Create an image input from a torch tensor.
 
     Args:
-        image_tensor: Torch tensor with shape (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)
+        image_tensor: Contiguous uint8 or float32 tensor with shape (H, W, C),
+            (1, H, W, C), (C, H, W), or (1, C, H, W). HWC inputs are
+            converted to CHW internally.
 
     Returns:
         A MultimodalInput containing the image
 
     Raises:
-        RuntimeError: If the tensor has invalid dimensions or number of channels
+        RuntimeError: If the tensor has invalid dimensions, layout, dtype, or
+            number of channels
     """
     ...
 
