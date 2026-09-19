@@ -10,7 +10,6 @@ green=`tput setaf 2`
 
 EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../")
 CADENCE_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/cadence"
-HIFI_DIR_PATH="$CADENCE_DIR_PATH/hifi/third-party/nnlib/nnlib-hifi4"
 FUSION_DIR_PATH="$CADENCE_DIR_PATH/fusion_g3/third-party/nnlib/nnlib-FusionG3"
 FACTO_DIR_PATH="$CADENCE_DIR_PATH/utils/FACTO"
 
@@ -18,20 +17,24 @@ cd "$EXECUTORCH_ROOT_PATH"
 
 ## HiFi
 
-rm -rf "$HIFI_DIR_PATH"
-mkdir -p "$HIFI_DIR_PATH"
+targets=(hifi4 hifi5)
 
-echo "${green}ExecuTorch: Cloning hifi nnlib"
-git clone "https://github.com/foss-xtensa/nnlib-hifi4.git" $HIFI_DIR_PATH
-cd $HIFI_DIR_PATH
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to clone hifi nnlib."
-    exit 1
-fi
+for target in ${targets[@]};
+do
+    TARGET_DIR_PATH="$CADENCE_DIR_PATH/hifi/third-party/nnlib/nnlib-$target"
 
-git checkout 64d73d729797388b0e346794d7a2e408374a74de
+    rm -rf "$TARGET_DIR_PATH"
+    mkdir -p "$TARGET_DIR_PATH"
 
+    echo "${green}ExecuTorch: Cloning $target nnlib"
+    git clone "https://github.com/foss-xtensa/nnlib-$target.git" $TARGET_DIR_PATH
+    cd $TARGET_DIR_PATH
+    STATUS=$?
+    if [ $STATUS -ne 0 ]; then
+        echo "${red}ExecuTorch: Failed to clone $target nnlib."
+        exit 1
+    fi
+done
 
 ## Fusion G3
 
