@@ -10,6 +10,7 @@
 
 #include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 
 #include <memory>
 #include <vector>
@@ -90,7 +91,7 @@ class LpaiGraph : public QnnGraph {
     lpai_prepare_.emplace_back(
         std::make_unique<QnnLpaiGraph_CustomConfigPrepare_t>());
     lpai_prepare_.back()->enablePerLayer = 0;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 29)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 29)
     lpai_prepare_.back()->enableCoreSelection = nullptr;
 #endif
     return lpai_prepare_.back().get();
