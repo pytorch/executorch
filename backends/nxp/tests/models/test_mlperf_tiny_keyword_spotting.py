@@ -31,11 +31,11 @@ from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_key
 
 BOUNDS_MSE = {
     "PTQ": {
-        "channels-last": np.inf,
+        "channels-last": 3.5e-4,
         "channels-first": 5.5e-7,
     },
     "QAT": {
-        "channels-last": np.inf,
+        "channels-last": 3.5e-4,
         "channels-first": 3.3e-5,
     },
 }
@@ -47,19 +47,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize(
-    "channels_last",
-    [
-        False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="EIEX-1082, don't forget to readjust bounds when it start working",
-                strict=True,
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("channels_last", [False, True])
 def test_mlperf_tiny_kws_mse_cpu_vs_npu(mocker, request, channels_last, use_qat):
     # approx. 5 samples per class
     num_samples = 60
@@ -89,16 +77,6 @@ def test_mlperf_tiny_kws_mse_cpu_vs_npu(mocker, request, channels_last, use_qat)
         partial(kws.train_model_fn, channels_last=channels_last) if use_qat else None
     )
 
-    # This model does not work in channels-last format when running with portable kernels.
-    # See more information below.
-    # Github issue: https://github.com/pytorch/executorch/issues/22520
-    # NXP internal issue ID: EIEX-1074
-    ref_model = (
-        ReferenceModel.QUANTIZED_EDGE_PYTHON
-        if channels_last
-        else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
-    )
-
     lower_run_compare(
         model,
         [input_spec],
@@ -107,7 +85,7 @@ def test_mlperf_tiny_kws_mse_cpu_vs_npu(mocker, request, channels_last, use_qat)
         dataset_creator=dataset_creator,
         output_comparator=comparator,
         mocker=mocker,
-        reference_model=ref_model,
+        reference_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
         use_qat=use_qat,
         train_fn=train_fn,
     )

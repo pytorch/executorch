@@ -2034,7 +2034,7 @@ class _TopLevelEmitter(_Emitter):
 
                 spec.storage = real_tensor.untyped_storage()
                 spec.stride = real_tensor.stride()
-                spec.dim_order = dim_order_from_stride(spec.stride)
+                spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))
             # User inputs and mutable buffers are not constants, other buffers or parameters are.
             if initialize_buffer and is_mutable_buffer:
                 spec.const = True
