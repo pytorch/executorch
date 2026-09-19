@@ -14,10 +14,7 @@ from typing import List, Tuple
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 import torch
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
-    VulkanPartitioner,
-)
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.serialization import (
     vulkan_graph_builder as graph_builder_module,
 )
@@ -38,6 +35,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
     VulkanDelegateHeader,
 )
+from executorch.exir import to_edge_transform_and_lower
 
 
 class TestSerialization(unittest.TestCase):
@@ -193,9 +191,9 @@ class TestSerialization(unittest.TestCase):
                 captured: List[int] = []
                 original = graph_builder_module.VkGraphBuilder.build_graph
 
-                def spy(builder_self, _original=original):
+                def spy(builder_self, _original=original, _captured=captured):
                     graph = _original(builder_self)
-                    captured.append(len(graph.output_ids))
+                    _captured.append(len(graph.output_ids))
                     return graph
 
                 graph_builder_module.VkGraphBuilder.build_graph = spy
