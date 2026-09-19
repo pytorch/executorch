@@ -76,6 +76,7 @@ SKIP_LIFT_OPS = {
     aten.scalar_tensor.default,
     aten.elu.default,
     aten.hardtanh.default,
+    aten.scatter.value,
 }
 
 

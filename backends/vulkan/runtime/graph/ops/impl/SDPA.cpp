@@ -143,7 +143,7 @@ void resize_sdpa_out_node(
 // Shader dispatch pick functions
 //
 
-utils::uvec3 kv_cache_update_global_wg_size(
+GlobalWorkGrid kv_cache_update_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -157,7 +157,8 @@ utils::uvec3 kv_cache_update_global_wg_size(
   const uint32_t num_heads = graph->size_at<uint32_t>(-2, projected);
   const uint32_t seq_len = graph->size_at<uint32_t>(-3, projected);
 
-  return {utils::div_up_4(head_dim_size), seq_len, num_heads};
+  return GlobalWorkGrid(
+      {utils::div_up_4(head_dim_size), seq_len, num_heads}, kTiledWorkGrid);
 }
 
 // resize_args layout for SDPA dispatch pickers mirrors the node creation
@@ -264,12 +265,11 @@ vkapi::ShaderInfo pick_sdpa_qk_shader(
   }
 }
 
-utils::uvec3 pick_sdpa_qk_global_wg_size(
+GlobalWorkGrid pick_sdpa_qk_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)shader;
   (void)args;
   const SDPAMode mode = mode_of(resize_args);
   const ValueRef q = resize_args.at(0);
@@ -280,30 +280,30 @@ utils::uvec3 pick_sdpa_qk_global_wg_size(
   // Dispatch grid: (context_len tiles, S tiles, H * B).
   const uint32_t N4 = utils::div_up_4(static_cast<uint32_t>(d.context_len));
   const uint32_t M4 = utils::div_up_4(static_cast<uint32_t>(d.S));
-  return {N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  const utils::uvec3 extents{N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  if (shader.kernel_name.find("_coop") != std::string::npos) {
+    return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(1u, 64u, 1u));
+  }
+  return GlobalWorkGrid(extents, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_sdpa_qk_local_wg_size(
+LocalWorkGroup pick_sdpa_qk_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  if (gwg.required_lwg_size().is_valid()) {
+    return pick_required_lwg(graph, shader, gwg, args, resize_args);
+  }
   const SDPAMode mode = mode_of(resize_args);
   if (mode == SDPAMode::LLM) {
-    const bool use_coop_algorithm =
-        shader.kernel_name.find("_coop") != std::string::npos;
-    if (use_coop_algorithm) {
-      return {1, 64, 1};
-    }
-    return pick_hw_square_wg_size(
-        graph, shader, global_workgroup_size, args, resize_args);
+    return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
   }
-  return default_pick_local_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
 
-utils::uvec3 pick_sdpa_softmax_global_wg_size(
+GlobalWorkGrid pick_sdpa_softmax_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -321,24 +321,12 @@ utils::uvec3 pick_sdpa_softmax_global_wg_size(
       : graph->size_at<int64_t>(-2, q);
   const int64_t B =
       (mode == SDPAMode::LLM) ? 1 : graph->size_at<int64_t>(-4, q);
-  return {
-      1,
-      static_cast<uint32_t>(seq_len),
-      static_cast<uint32_t>(num_q_heads * B)};
-}
-
-utils::uvec3 pick_sdpa_softmax_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64, 1, 1};
+  return GlobalWorkGrid(
+      {1u,
+       static_cast<uint32_t>(seq_len),
+       static_cast<uint32_t>(num_q_heads * B)},
+      kTiledWorkGrid,
+      LocalWorkGroup(64u, 1u, 1u));
 }
 
 vkapi::ShaderInfo pick_sdpa_av_shader(
@@ -371,7 +359,7 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
         // consistent win on Adreno (AV ~1.14-1.63x) but a regression on Mali at
         // common decode contexts (~0.67-0.86x, interleaved median), so it is
         // selected vendor-adaptively (tests can pin it via shader_override; see
-        // resolve_use_tile2). pick_sdpa_av_global_wg_size keys the x-dim
+        // resolve_use_tile2). pick_sdpa_av_gwg keys the x-dim
         // collapse off this same _tile2 suffix.
         if (resolve_use_tile2(graph, shader_override)) {
           shader_name += "_tile2";
@@ -397,7 +385,7 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
   }
 }
 
-utils::uvec3 pick_sdpa_av_global_wg_size(
+GlobalWorkGrid pick_sdpa_av_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -425,30 +413,33 @@ utils::uvec3 pick_sdpa_av_global_wg_size(
         shader.kernel_name.find("_tile2") != std::string::npos
         ? utils::div_up(N4, 2u)
         : N4;
-    return {x_dim, M4, static_cast<uint32_t>(num_kv_heads * d.B)};
+    return GlobalWorkGrid(
+        {x_dim, M4, static_cast<uint32_t>(num_kv_heads * d.B)},
+        kTiledWorkGrid,
+        LocalWorkGroup(1u, 64u, 1u));
   }
 
-  return {N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  const utils::uvec3 extents{N4, M4, static_cast<uint32_t>(d.H * d.B)};
+  if (shader.kernel_name.find("_coop") != std::string::npos) {
+    return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(1u, 64u, 1u));
+  }
+  return GlobalWorkGrid(extents, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_sdpa_av_local_wg_size(
+LocalWorkGroup pick_sdpa_av_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  if (gwg.required_lwg_size().is_valid()) {
+    return pick_required_lwg(graph, shader, gwg, args, resize_args);
+  }
   const SDPAMode mode = mode_of(resize_args);
   if (mode == SDPAMode::LLM) {
-    const bool use_coop_algorithm =
-        shader.kernel_name.find("_coop") != std::string::npos;
-    if (use_coop_algorithm) {
-      return {1, 64, 1};
-    }
-    return pick_hw_square_wg_size(
-        graph, shader, global_workgroup_size, args, resize_args);
+    return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
   }
-  return default_pick_local_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
@@ -473,8 +464,8 @@ void add_sdpa_kv_cache_update_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      kv_cache_update_global_wg_size,
-      default_pick_local_wg_size,
+      kv_cache_update_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{cache, vkapi::kWrite}, {projected, vkapi::kRead}},
       // Shader param buffers
@@ -522,8 +513,8 @@ void add_sdpa_compute_attn_weights_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_sdpa_qk_shader,
-      pick_sdpa_qk_global_wg_size,
-      pick_sdpa_qk_local_wg_size,
+      pick_sdpa_qk_gwg,
+      pick_sdpa_qk_lwg,
       // Inputs and Outputs
       {{attn_weights, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader param buffers
@@ -574,8 +565,8 @@ void add_sdpa_attn_weights_softmax_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(shader_name),
-      pick_sdpa_softmax_global_wg_size,
-      pick_sdpa_softmax_local_wg_size,
+      pick_sdpa_softmax_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{attn_weights_softmax, vkapi::kWrite}, {attn_weights, vkapi::kRead}},
       // Shader param buffers
@@ -633,8 +624,8 @@ void add_sdpa_compute_out_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_sdpa_av_shader,
-      pick_sdpa_av_global_wg_size,
-      pick_sdpa_av_local_wg_size,
+      pick_sdpa_av_gwg,
+      pick_sdpa_av_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{attn_weights_softmax, v}, vkapi::kRead}},
       // Shader param buffers

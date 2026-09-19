@@ -36,7 +36,7 @@ class MoveActivationBeforeConcat(PassBase):
     def __init__(self, neutron_target_spec: NeutronTargetSpec):
         self.neutron_target_spec = neutron_target_spec
 
-    def call(self, module: GraphModule) -> bool:
+    def call(self, module: GraphModule) -> PassResult:
         def _is_concat(node_: Node) -> bool:
             return (
                 node_.op == "call_function"

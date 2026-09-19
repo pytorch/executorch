@@ -25,6 +25,14 @@ __attribute__((weak)) int fprintf(FILE* stream, const char* fmt, ...) {
     return 0;
 }
 
+// The Zephyr core builds against picolibc but pulls math from newlib's
+// libm_nano, which calls __errno(). Nothing in picolibc provides it. Kernels
+// never read errno, so backing it with fixed storage is sufficient.
+__attribute__((weak)) int* __errno(void) {
+    static int errno_storage;
+    return &errno_storage;
+}
+
 #if defined(__ARM_EABI__)
 // Use double intermediate to avoid the compiler lowering (long long)f back
 // into a call to __aeabi_f2lz, which would cause infinite recursion.

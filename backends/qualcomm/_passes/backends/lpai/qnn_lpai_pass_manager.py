@@ -51,17 +51,18 @@ class QnnLpaiPassManager(QnnPassManager):
             {
                 DecomposeHardsigmoid: [RemoveRedundancy],
                 DecomposeReciprocal: [RemoveRedundancy],
-                LpaiPartitionFallbackSupport: [TagQuantIO],
-                ResolveDebugHandle: [LpaiPartitionFallbackSupport],
+                LpaiPartitionFallbackSupport: [TagQuantIO, ResolveDebugHandle],
             }
         )
         return deps
 
     def _validate_edge_passes(self) -> None:
-        super()._validate_edge_passes()
         assert isinstance(
-            self.passes[-2], LpaiPartitionFallbackSupport
-        ), "Please ensure LpaiPartitionFallbackSupport is the last edge pass before ResolveDebugHandle."
+            self.passes[-2], ResolveDebugHandle
+        ), "Please ensure ResolveDebugHandle is the last edge pass before LpaiPartitionFallbackSupport."
+        assert isinstance(
+            self.passes[-1], LpaiPartitionFallbackSupport
+        ), "Please ensure LpaiPartitionFallbackSupport is the last pass."
 
     @classmethod
     def get_annotation_passes(cls):
@@ -70,14 +71,11 @@ class QnnLpaiPassManager(QnnPassManager):
         return passes
 
     @classmethod
-    def get_export_passes(
-        cls,
-        convert_linear_to_conv2d: bool = False,
-    ):
+    def get_export_passes(cls):
         # Both DecomposeHardSigmoid and DecomposeReciprocal should be placed in the export
         # pipeline, as they rely on LiftConstantScalarOperands to lift the scalar operand.
         passes = [DecomposeHardsigmoid, DecomposeReciprocal]
-        passes.extend(super().get_export_passes(convert_linear_to_conv2d))
+        passes.extend(super().get_export_passes())
         return passes
 
     @classmethod

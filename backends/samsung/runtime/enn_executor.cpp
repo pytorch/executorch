@@ -7,12 +7,12 @@
  *
  */
 #include <executorch/backends/samsung/runtime/enn_executor.h>
+#include <executorch/backends/samsung/runtime/enn_shared_memory_manager.h>
 #include <executorch/backends/samsung/runtime/logging.h>
 #include <executorch/backends/samsung/runtime/profile.hpp>
-#include <inttypes.h>
 
-#include <fstream>
-#include <string>
+#include <inttypes.h>
+#include <cstring>
 #include <vector>
 
 namespace torch {
@@ -21,21 +21,39 @@ namespace enn {
 
 Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   EXYNOS_ATRACE_FUNCTION_LINE();
+  auto sm_instance = executorch::backends::enn::shared_memory_manager::
+      SharedMemoryManager::getInstance();
   const EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
-  auto ret = enn_api_inst->EnnInitialize();
   ET_CHECK_OR_RETURN_ERROR(
-      ret == ENN_RET_SUCCESS, Internal, "Enn initialize failed.");
+      enn_api_inst->isInitialized(), Internal, "Enn initialize failed.");
+  EnnReturn ret = ENN_RET_SUCCESS;
 
-  ET_LOG(Info, "Start to open model %p, %ld", binary_buf_addr, buf_size);
-  ret = enn_api_inst->EnnOpenModelFromMemory(
-      binary_buf_addr, buf_size, &model_id_);
+  ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);
 
+  EnnBufferPtr shared_buffer = nullptr;
+  if (sm_instance->query(&shared_buffer, binary_buf_addr, buf_size)) {
+    int32_t fd;
+    if (shared_buffer->va == binary_buf_addr &&
+        !enn_api_inst->EnnGetFileDescriptorFromEnnBuffer(shared_buffer, &fd)) {
+      ret = enn_api_inst->EnnOpenModelFromFd(fd, &model_id_);
+      if (ret == ENN_RET_SUCCESS) {
+        ET_LOG(Info, "Opened model from file descriptor, so fd is closed");
+        sm_instance->free(shared_buffer->va);
+      }
+    }
+  }
+  if (!model_id_) {
+    ET_LOG(Info, "Open model from memory");
+    ret = enn_api_inst->EnnOpenModelFromMemory(
+        binary_buf_addr, buf_size, &model_id_);
+  }
   ET_CHECK_OR_RETURN_ERROR(
       ret == ENN_RET_SUCCESS,
       Internal,
       "Failed to load Enn model from buffer %d",
       (int)ret);
   ET_LOG(Info, "Open successfully.");
+
   NumberOfBuffersInfo buffers_info;
   ret = enn_api_inst->EnnAllocateAllBuffersWithSessionId(
       model_id_, &alloc_buffer_, &buffers_info, 0, true);

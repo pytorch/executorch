@@ -247,7 +247,6 @@ std::vector<float> conv2d_ref_xnnpack(
       out_min,
       out_max,
       /*flags=*/0,
-      /*code_cache=*/nullptr,
       /*weights_cache=*/nullptr,
       &op);
   if (create_status != xnn_status_success || op == nullptr) {
@@ -267,7 +266,6 @@ std::vector<float> conv2d_ref_xnnpack(
       static_cast<size_t>(H_in),
       static_cast<size_t>(W_in),
       &workspace_size,
-      &workspace_alignment,
       &out_h,
       &out_w,
       /*threadpool=*/nullptr);

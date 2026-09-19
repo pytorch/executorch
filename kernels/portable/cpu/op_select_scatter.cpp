@@ -37,6 +37,8 @@ Tensor& select_scatter_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, src, out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   // Account for negative indices
   if (dim < 0) {
     dim += in.dim();

@@ -451,6 +451,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.split_copy.Tensor,
         torch.ops.aten.tile.default,
         torch.ops.aten.flip.default,
+        torch.ops.aten.roll.default,
         torch.ops.aten.index_select.default,
         torch.ops.aten.index_put.default,
         torch.ops.aten.index_put_.default,
@@ -461,6 +462,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.cat.default,
+        torch.ops.aten.concat.default,
         torch.ops.aten.concatenate.default,
         torch.ops.aten.stack.default,
         torch.ops.aten.dropout.default,
@@ -792,10 +794,29 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         )
         return
 
+    def _annotate_graph_outputs(self, model: torch.fx.GraphModule) -> None:
+        for output_node in model.graph.nodes:
+            if output_node.op != "output" or self._is_annotated(output_node):
+                continue
+
+            input_qspec_map = {
+                input_node: input_node.meta[Q_ANNOTATION_KEY].output_qspec
+                for input_node in output_node.all_input_nodes
+                if is_output_annotated(input_node)
+            }
+            if input_qspec_map:
+                _mark_node_as_quantized(
+                    output_node,
+                    input_qspec_map,
+                    None,
+                    is_quantized=True,
+                )
+
     def annotate(self, model: torch.fx.GraphModule) -> None:  # type: ignore[override]
         for node in model.graph.nodes:
             if node.target in self.targets and not self._is_annotated(node):
                 self._annotate_shared_cluster(node)
+        self._annotate_graph_outputs(model)
 
     def validate(self, model: torch.fx.GraphModule) -> bool:  # type: ignore[override]
         return True

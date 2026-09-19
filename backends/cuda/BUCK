@@ -93,10 +93,10 @@ fbcode_target(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
+        "target_smem.py",
+        "cuda_weight_collector.py",
     ],
-    visibility = [
-        "//executorch/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":cuda_passes",
         ":triton_replacement_pass",
@@ -111,13 +111,27 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "merge_ptes",
+    srcs = [
+        "merge_ptes.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":cuda_backend",
+        "//caffe2:torch",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir:schema",
+        "//executorch/extension/flat_tensor/serialize:serialize",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_partitioner",
     srcs = [
         "cuda_partitioner.py",
     ],
-    visibility = [
-        "//executorch/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/aoti:aoti_partitioner",

@@ -5,8 +5,15 @@ def get_backend_mode():
     """Get the supported backend mode of slimtensor."""
     return ["cuda", "cpu"]
 
-def define_common_targets():
-    """Define test targets for SlimTensor factory module."""
+def define_common_targets(is_fbcode = False):
+    """Define test targets for SlimTensor factory module.
+
+    Uses fbcode-only kwargs (keep_gpu_sections, re_test_utils.remote_execution)
+    so we early-return outside fbcode to preserve pre-migration behavior
+    (this dir was originally TARGETS-only, never evaluated by xplat).
+    """
+    if not is_fbcode:
+        return
 
     # GPU empty test with CUDA support
     for backend_mode in get_backend_mode():

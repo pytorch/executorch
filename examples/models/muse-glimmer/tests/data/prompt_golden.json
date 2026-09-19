@@ -1,0 +1,378 @@
+{
+  "cases": {
+    "harmony_multi_turn": {
+      "ids_sha256": "2f61b1b3483b9324e99fb2a51317960c1972eaa8d2bac7ad1d5fcf1782c6c304",
+      "num_soft_tokens": 0,
+      "num_tokens": 33,
+      "prompt": "<|start|>system<|message|>You are a helpful AI assistant.<|eot|><|start|>user<|message|>Hi.<|eot|><|start|>assistant<|message|>Hello.<|eot|><|start|>user<|message|>And again?<|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          11,
+          200008,
+          1
+        ],
+        [
+          12,
+          200022,
+          1
+        ],
+        [
+          14,
+          200023,
+          1
+        ],
+        [
+          17,
+          200008,
+          1
+        ],
+        [
+          18,
+          200022,
+          1
+        ],
+        [
+          20,
+          200023,
+          1
+        ],
+        [
+          23,
+          200008,
+          1
+        ],
+        [
+          24,
+          200022,
+          1
+        ],
+        [
+          26,
+          200023,
+          1
+        ],
+        [
+          30,
+          200008,
+          1
+        ],
+        [
+          31,
+          200022,
+          1
+        ]
+      ]
+    },
+    "harmony_reasoning_then_answer": {
+      "ids_sha256": "b0b15fbc6ff88f37de110f5ea626bcbbd6372bd987abf2f54c9abc56cf6a02e9",
+      "num_soft_tokens": 0,
+      "num_tokens": 16,
+      "prompt": "<|start|>assistant to=self<|message|>Thinking.<|eom|><|start|>assistant<|message|>Answer.<|eot|>",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          5,
+          200023,
+          1
+        ],
+        [
+          9,
+          200007,
+          1
+        ],
+        [
+          10,
+          200022,
+          1
+        ],
+        [
+          12,
+          200023,
+          1
+        ],
+        [
+          15,
+          200008,
+          1
+        ]
+      ]
+    },
+    "harmony_single_turn": {
+      "ids_sha256": "9c48a3a06773b9db3748feddcf6d9f2940fa51ec25cf149ad48d2bcf861836af",
+      "num_soft_tokens": 0,
+      "num_tokens": 15,
+      "prompt": "<|start|>user<|message|>What is 17 * 23?<|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          12,
+          200008,
+          1
+        ],
+        [
+          13,
+          200022,
+          1
+        ]
+      ]
+    },
+    "harmony_with_system": {
+      "ids_sha256": "8153652af10601ff43368325ab9cc02977991559579a57e1e82ed3191e9222b3",
+      "num_soft_tokens": 0,
+      "num_tokens": 22,
+      "prompt": "<|start|>system<|message|>You are a helpful AI assistant.<|eot|><|start|>user<|message|>Name three primes.<|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          11,
+          200008,
+          1
+        ],
+        [
+          12,
+          200022,
+          1
+        ],
+        [
+          14,
+          200023,
+          1
+        ],
+        [
+          19,
+          200008,
+          1
+        ],
+        [
+          20,
+          200022,
+          1
+        ]
+      ]
+    },
+    "image_large": {
+      "ids_sha256": "506abf60a1505f948ee5842b6f0c7ef88e3ae200e888804419a6a5e2d31647d4",
+      "num_soft_tokens": 256,
+      "num_tokens": 268,
+      "prompt": "<|start|>user<|message|>Describe this image: <img><|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          9,
+          200092,
+          256
+        ],
+        [
+          265,
+          200008,
+          1
+        ],
+        [
+          266,
+          200022,
+          1
+        ]
+      ]
+    },
+    "image_small": {
+      "ids_sha256": "0335689d8708398a95c51637c63c75411308d7619b028945074927210aca8830",
+      "num_soft_tokens": 4,
+      "num_tokens": 16,
+      "prompt": "<|start|>user<|message|>Describe this image: <img><|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          9,
+          200092,
+          4
+        ],
+        [
+          13,
+          200008,
+          1
+        ],
+        [
+          14,
+          200022,
+          1
+        ]
+      ]
+    },
+    "readme_minimal_user": {
+      "ids_sha256": "f155e8ffe8ef139f05ddfb2906424f988d52d6707035a70e674ede1ddc4b65eb",
+      "num_soft_tokens": 0,
+      "num_tokens": 14,
+      "prompt": "<|start|>user<|message|>What is the meaning of life?<|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          11,
+          200008,
+          1
+        ],
+        [
+          12,
+          200022,
+          1
+        ]
+      ]
+    },
+    "readme_target_only": {
+      "ids_sha256": "ffb960a85bd36683430209f378193c1425820187e4833fbec3b0b03fce3dfdbd",
+      "num_soft_tokens": 0,
+      "num_tokens": 24,
+      "prompt": "<|start|>system<|message|>You are a helpful assistant.<|eot|><|start|>user<|message|>What is the meaning of life?<|eot|><|start|>assistant",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ],
+        [
+          1,
+          200022,
+          1
+        ],
+        [
+          3,
+          200023,
+          1
+        ],
+        [
+          10,
+          200008,
+          1
+        ],
+        [
+          11,
+          200022,
+          1
+        ],
+        [
+          13,
+          200023,
+          1
+        ],
+        [
+          21,
+          200008,
+          1
+        ],
+        [
+          22,
+          200022,
+          1
+        ]
+      ]
+    },
+    "text_plain": {
+      "ids_sha256": "7494d47019eb24fc44194578794b9abf3ebb36652d45e142bfec377b47d20d4c",
+      "num_soft_tokens": 0,
+      "num_tokens": 6,
+      "prompt": "The meaning of life is",
+      "special_runs": [
+        [
+          0,
+          200000,
+          1
+        ]
+      ]
+    }
+  },
+  "comment": "Regenerate with tests/gen_prompt_golden.py. Commits that change these numbers must say why.",
+  "tokenizer_sha256": "c9dbee66967b58f31a7c27f723c3760da3526ccd0427578e8905b0abb0031c4d"
+}

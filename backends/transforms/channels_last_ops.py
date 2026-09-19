@@ -40,8 +40,17 @@ def _conv(
 
 
 def _avg_pool2d(
-    input, kernel_size, stride, padding, ceil_mode, count_include_pad, divisor_override
+    input,
+    kernel_size,
+    stride=None,
+    padding=0,
+    ceil_mode=False,
+    count_include_pad=True,
+    divisor_override=None,
 ):
+    if stride is None:
+        stride = []  # Default value of avg_pool2d.
+
     nchw = input.permute(0, 3, 1, 2)
     out = torch.ops.aten.avg_pool2d(
         nchw,
@@ -75,7 +84,12 @@ def _upsample_nearest2d(input, output_size, scale_factors):
     return out.permute(0, 2, 3, 1).contiguous()
 
 
-def _max_pool2d_with_indices(input, kernel_size, stride, padding, dilation, ceil_mode):
+def _max_pool2d_with_indices(
+    input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False
+):
+    if stride is None:
+        stride = []  # Default value of max_pool2d_with_indices.
+
     nchw = input.permute(0, 3, 1, 2)
     values, indices = torch.ops.aten.max_pool2d_with_indices(
         nchw, kernel_size, stride, padding, dilation, ceil_mode
@@ -83,6 +97,19 @@ def _max_pool2d_with_indices(input, kernel_size, stride, padding, dilation, ceil
     values = values.permute(0, 2, 3, 1).contiguous()
     indices = indices.permute(0, 2, 3, 1).contiguous()
     return values, indices
+
+
+def _max_pool2d(
+    input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False
+):
+    if stride is None:
+        stride = []  # Default value of max_pool2d.
+
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.max_pool2d.default(
+        nchw, kernel_size, stride, padding, dilation, ceil_mode
+    )
+    return out.permute(0, 2, 3, 1).contiguous()
 
 
 def _grid_sampler_2d(input, grid, interpolation_mode, padding_mode, align_corners):
@@ -106,8 +133,8 @@ lib.impl("convolution", _conv, "CompositeExplicitAutograd")
 register_fake("channels_last::convolution", _conv, lib=lib)
 
 lib.define(
-    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride, int[2] padding, "
-    "bool ceil_mode, bool count_include_pad, int? divisor_override) -> Tensor"
+    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=0, "
+    "bool ceil_mode=False, bool count_include_pad=True, int? divisor_override=None) -> Tensor"
 )
 lib.impl("avg_pool2d", _avg_pool2d, "CompositeExplicitAutograd")
 register_fake("channels_last::avg_pool2d", _avg_pool2d, lib=lib)
@@ -131,8 +158,8 @@ lib.impl("upsample_nearest2d", _upsample_nearest2d, "CompositeExplicitAutograd")
 register_fake("channels_last::upsample_nearest2d", _upsample_nearest2d, lib=lib)
 
 lib.define(
-    "max_pool2d_with_indices(Tensor input, int[2] kernel_size, int[2] stride, "
-    "int[2] padding, int[2] dilation, bool ceil_mode) -> (Tensor, Tensor)"
+    "max_pool2d_with_indices(Tensor input, int[2] kernel_size, int[2] stride=[], "
+    "int[2] padding=0, int[2] dilation=1, bool ceil_mode=False) -> (Tensor, Tensor)"
 )
 lib.impl(
     "max_pool2d_with_indices", _max_pool2d_with_indices, "CompositeExplicitAutograd"
@@ -140,6 +167,13 @@ lib.impl(
 register_fake(
     "channels_last::max_pool2d_with_indices", _max_pool2d_with_indices, lib=lib
 )
+
+lib.define(
+    "max_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], "
+    "int[2] padding=0, int[2] dilation=1, bool ceil_mode=False) -> Tensor"
+)
+lib.impl("max_pool2d", _max_pool2d, "CompositeExplicitAutograd")
+register_fake("channels_last::max_pool2d", _max_pool2d, lib=lib)
 
 lib.define(
     "grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, "

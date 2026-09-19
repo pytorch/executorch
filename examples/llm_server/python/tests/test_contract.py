@@ -32,7 +32,17 @@ def _sse_chunks(text):
 
 def test_health(make_client):
     client, _ = make_client()
-    assert client.get("/health").json() == {"status": "ok"}
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_health_reports_unavailable_worker(make_client):
+    client, worker = make_client()
+    worker.healthy = False
+    response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
 
 
 def test_models_listing_shape(make_client):
@@ -61,6 +71,35 @@ def test_chat_nonstreaming_shape(make_client):
     assert body["usage"]["total_tokens"] == (
         body["usage"]["prompt_tokens"] + body["usage"]["completion_tokens"]
     )
+
+
+def test_usage_reports_cached_tokens(make_client):
+    # Warm-resume accounting must be visible in-band (SGLang-compatible
+    # `prompt_tokens_details.cached_tokens`), not just in server logs, so
+    # benches can measure reuse without scraping.
+    client, _ = make_client(tokens=["Hello"], reuse=3)
+    body = client.post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+    ).json()
+    assert body["usage"]["prompt_tokens_details"]["cached_tokens"] == 3
+
+
+def test_streaming_usage_reports_cached_tokens(make_client):
+    client, _ = make_client(tokens=["a"], reuse=2)
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        },
+    )
+    chunks, _ = _sse_chunks(resp.text)
+    usage_chunks = [c for c in chunks if c.get("usage")]
+    assert usage_chunks, "expected a chunk carrying usage"
+    assert usage_chunks[-1]["usage"]["prompt_tokens_details"]["cached_tokens"] == 2
 
 
 def test_unknown_model_is_rejected(make_client):
@@ -95,8 +134,88 @@ def test_chat_streaming_protocol(make_client):
     assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "options,returns_reasoning",
+    [
+        ({}, True),
+        ({"chat_template_kwargs": {}}, True),
+        ({"chat_template_kwargs": {"return_reasoning": True}}, True),
+        ({"chat_template_kwargs": {"return_reasoning": False}}, False),
+    ],
+    ids=["default", "empty-kwargs", "enabled", "disabled"],
+)
+def test_reasoning_response_contract(make_client, stream, options, returns_reasoning):
+    def split_reasoning(text):
+        reasoning, _, content = text.partition("ANSWER:")
+        return reasoning, content
+
+    client, _ = make_client(
+        tokens=["my plan", "ANSWER:", "visible text"],
+        reasoning_extractor=split_reasoning,
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": stream,
+            **options,
+        },
+    )
+    assert response.status_code == 200
+    if stream:
+        assert response.headers["content-type"].startswith("text/event-stream")
+        chunks, done = _sse_chunks(response.text)
+        assert done
+        messages = [chunk["choices"][0]["delta"] for chunk in chunks]
+        assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    else:
+        choice = response.json()["choices"][0]
+        messages = [choice["message"]]
+        assert choice["finish_reason"] == "stop"
+    assert "".join(message.get("content", "") for message in messages) == "visible text"
+    if returns_reasoning:
+        assert (
+            "".join(message.get("reasoning_content", "") for message in messages)
+            == "my plan"
+        )
+    else:
+        assert all("reasoning_content" not in message for message in messages)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("has_extractor", [False, True])
+@pytest.mark.parametrize("value", ["true", "false", 0, 1, 1.0, None, [], {}])
+def test_return_reasoning_rejects_non_boolean_before_generation(
+    make_client, stream, has_extractor, value
+):
+    client, fake = make_client(
+        max_named_sessions=1,
+        reasoning_extractor=(lambda text: (None, text)) if has_extractor else None,
+    )
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "session_id": "validation",
+            "stream": stream,
+            "chat_template_kwargs": {"return_reasoning": value},
+        },
+    )
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/json")
+    error = response.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["code"] == "invalid_value"
+    assert "chat_template_kwargs.return_reasoning" in error["message"]
+    assert fake.opened_log == []
+    assert fake.captured_config is None
+
+
 def test_request_params_forwarded_to_generation(make_client):
-    # Contract behavior: the server must honor max_tokens/temperature.
+    # Contract behavior: the server must honor all supported sampling controls.
     client, fake = make_client()
     client.post(
         "/v1/chat/completions",
@@ -105,10 +224,16 @@ def test_request_params_forwarded_to_generation(make_client):
             "messages": [{"role": "user", "content": "hi"}],
             "max_tokens": 7,
             "temperature": 0.1,
+            "top_p": 0.8,
+            "top_k": 32,
+            "seed": 123,
         },
     )
     assert fake.captured_config.max_new_tokens == 7
     assert abs(fake.captured_config.temperature - 0.1) < 1e-6
+    assert abs(fake.captured_config.top_p - 0.8) < 1e-6
+    assert fake.captured_config.top_k == 32
+    assert fake.captured_config.seed == 123
 
 
 def test_special_tokens_forwarded_to_worker_as_stops(make_client):

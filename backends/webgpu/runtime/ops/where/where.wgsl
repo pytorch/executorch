@@ -6,8 +6,8 @@
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(4) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(5) var<uniform> cond_meta: TensorMeta;
@@ -34,11 +34,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var la: u32 = 0u;
     var lb: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        lc = lc + min(coord, cond_meta.sizes[d] - 1u) * cond_meta.strides[d];
-        la = la + min(coord, a_meta.sizes[d] - 1u) * a_meta.strides[d];
-        lb = lb + min(coord, b_meta.sizes[d] - 1u) * b_meta.strides[d];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        lc = lc + min(coord, cond_meta.sizes[d >> 2u][d & 3u] - 1u) * cond_meta.strides[d >> 2u][d & 3u];
+        la = la + min(coord, a_meta.sizes[d >> 2u][d & 3u] - 1u) * a_meta.strides[d >> 2u][d & 3u];
+        lb = lb + min(coord, b_meta.sizes[d >> 2u][d & 3u] - 1u) * b_meta.strides[d >> 2u][d & 3u];
     }
 
     if (cond_is_true(lc)) {

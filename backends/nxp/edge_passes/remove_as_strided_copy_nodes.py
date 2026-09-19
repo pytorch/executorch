@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from executorch.backends.nxp.backend.ops_aliases import AsStridedCopy, MeanDim
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassResult
 
 
 class RemoveUselessAsStridedCopyNodes(NeutronEdgePass):
@@ -18,12 +18,12 @@ class RemoveUselessAsStridedCopyNodes(NeutronEdgePass):
     def gen_pattern_as_strided_copy(self, graph_module: GraphModule):
         # Unedited method taken from `backends/samsung/_passes/remove_useless_ops.py`.
         for node in list(graph_module.graph.nodes):  # noqa: C416
-            if node.target != exir_ops.edge.aten.mean.dim:
+            if node.target != MeanDim:
                 continue
             if len(node.users) != 1:
                 continue
             successor = list(node.users.keys())[0]
-            if successor.target != exir_ops.edge.aten.as_strided_copy.default:
+            if successor.target != AsStridedCopy:
                 continue
             is_pattern = True
             count = 0
@@ -57,7 +57,7 @@ class RemoveUselessAsStridedCopyNodes(NeutronEdgePass):
 
         return made_changes
 
-    def run(self, graph_module: GraphModule):
+    def run(self, graph_module: GraphModule) -> PassResult:
         made_changes = self._fold_as_strided_copy(graph_module)
 
         graph_module.recompile()

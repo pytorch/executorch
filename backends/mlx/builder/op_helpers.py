@@ -359,6 +359,27 @@ def emit_ceil_div(
     return P.to_int_or_vid(out_slot)
 
 
+def emit_floordiv(
+    P: "MLXProgramBuilder",
+    a: "IntOrVid",
+    b: "IntOrVid",
+) -> "IntOrVid":
+    """Emit ``a // b`` (floor division), folding when both operands are
+    static.
+    """
+    from executorch.backends.mlx.serialization.mlx_graph_schema import (
+        FloorDivideIntNode,
+        IntOrVid,
+    )
+
+    if not a.is_vid and not b.is_vid:
+        return IntOrVid.from_literal(a.literal // b.literal)
+
+    _, out_slot = P.make_tmp_value_slot()
+    P.emit(FloorDivideIntNode(a=a, b=b, out=P.slot_to_vid(out_slot)))
+    return P.to_int_or_vid(out_slot)
+
+
 def emit_if_else(
     P: "MLXProgramBuilder",
     cond: "IntOrVid",
@@ -513,6 +534,28 @@ def emit_quantized_gather(
     )
 
 
+def mlx_qparams_supported(
+    in_features: int, num_groups: int, group_size: int, bits: int
+) -> bool:
+    """Whether to_mlx_qparams + regroup_affine_scales can consume this layout.
+
+    Mirrors their asserts using shape metadata only, so a handler can answer
+    "would I lower this?" without reading (and repacking) the weight:
+
+    * to_mlx_qparams packs a row into whole uint32 words, so
+      ``in_features * bits`` must be a multiple of 32.
+    * regroup_affine_scales repeat-interleaves, which only ever splits a group
+      finer, so the weight's own group must be a whole multiple of the
+      MLX-legal ``group_size``.
+    """
+    if in_features <= 0 or num_groups <= 0 or in_features % num_groups != 0:
+        return False
+    if (in_features * bits) % 32 != 0:
+        return False
+    weight_group_size = in_features // num_groups
+    return weight_group_size >= group_size and weight_group_size % group_size == 0
+
+
 def to_mlx_qparams(
     qdata: torch.Tensor,
     scale: torch.Tensor,
@@ -654,6 +697,35 @@ def parse_dequant_nvfp4_node(
         output_dtype = node.kwargs["output_dtype"]
 
     return qdata, scale, per_tensor_scale, output_dtype
+
+
+def parse_dequant_mx_node(
+    node: Node,
+) -> Optional[Tuple[Node, Node, torch.dtype, int, torch.dtype]]:
+    """Parse a torchao.dequantize_mx node.
+
+    Returns (qdata, scale, elem_dtype, block_size, output_dtype) or None if not a
+    dequantize_mx node or the custom op is not registered. MX has no per-tensor
+    scale and no affine zero-point; the block scale is always E8M0.
+    """
+    target = get_aten_target(node.target)
+    try:
+        import executorch.extension.llm.export.mx  # noqa: F401
+    except ImportError:
+        return None
+
+    if target is not torch.ops.torchao.dequantize_mx.default:
+        return None
+
+    qdata, scale, elem_dtype, block_size = node.args[0:4]
+
+    output_dtype = torch.float32
+    if len(node.args) > 4:
+        output_dtype = node.args[4]
+    elif "output_dtype" in node.kwargs:
+        output_dtype = node.kwargs["output_dtype"]
+
+    return qdata, scale, elem_dtype, int(block_size), output_dtype
 
 
 def parse_dequant_int4_node(

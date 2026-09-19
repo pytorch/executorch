@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/ArmEthosUSDK.cmake)
+
 function(patch_ethos_u_repo REPO_PATH BASE_REV PATCH_DIR ET_DIR_PATH)
   execute_process(
     COMMAND
@@ -25,41 +27,50 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  set(ethos_u_base_tag "26.02")
+  # The umbrella repository has no 26.08 tag, so pin its release commit.
+  set(ethos_u_base_rev "5ae010a083c6fa9f3a4d1d71b90db5742c87cc08")
+  set(ethos_u_manifest_version "26.08")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
       https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u.git
-    GIT_TAG ${ethos_u_base_tag}
-    SOURCE_DIR
-    ${ETHOS_SDK_PATH}
-    BINARY_DIR
-    ${ETHOS_SDK_PATH}
-    SUBBUILD_DIR
-    ${ETHOS_SDK_PATH}/../ethos_u-subbuild
-    SOURCE_SUBDIR
-    none
+    GIT_TAG ${ethos_u_base_rev}
+    SOURCE_DIR ${ETHOS_SDK_PATH} BINARY_DIR ${ETHOS_SDK_PATH}
+    # Keep the generator-specific population project local to this build.
+    SOURCE_SUBDIR none
   )
   FetchContent_MakeAvailable(ethos_u)
-  # Patch manifest to remove unused projects.
+  # Remove projects not used by ExecuTorch from the manifest.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-  set(ethos_u_base_rev "26.02")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
   )
 
-  # Get ethos_u externals only if core driver headers do not already exist.
-  if(NOT EXISTS
-     "${ETHOS_SDK_PATH}/core_software/core_driver/include/ethosu_driver.h"
-  )
+  # Retry incomplete downloads even when the core driver is already present.
+  arm_ethos_u_content_ready("${ETHOS_SDK_PATH}" _arm_ethos_ready)
+  if(NOT _arm_ethos_ready)
     execute_process(
       COMMAND ${Python3_EXECUTABLE} fetch_externals.py -c
-              ${ethos_u_base_tag}.json fetch
+              ${ethos_u_manifest_version}.json fetch
       WORKING_DIRECTORY ${ETHOS_SDK_PATH}
+      RESULT_VARIABLE fetch_result
     )
+    if(NOT "${fetch_result}" STREQUAL "0")
+      message(
+        FATAL_ERROR
+          "Failed to fetch Ethos-U externals into ${ETHOS_SDK_PATH} (${fetch_result}). Inspect the logs above and retry with FETCH_ETHOS_U_CONTENT=ON."
+      )
+    endif()
+    arm_ethos_u_content_ready("${ETHOS_SDK_PATH}" _arm_ethos_ready)
+    if(NOT _arm_ethos_ready)
+      message(
+        FATAL_ERROR
+          "Ethos-U externals are incomplete in ${ETHOS_SDK_PATH} after fetching. Inspect the logs above."
+      )
+    endif()
   endif()
-  # Patch core_software to remove unused projects.
-  set(core_software_base_rev "26.02")
+  # Patch core_software to remove unused projects. Core software 26.08.
+  set(core_software_base_rev "b5ffdb34fd5ad8004231eeed647fbafe58760683")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -70,15 +81,104 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # HardFault handler so the Corstone-300 target source compiles for older
   # Cortex-M cores. Once the equivalent guards land upstream in
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
-  # commits, delete the 0002 and 0003 patches.
-  set(core_platform_base_rev "26.02")
+  # commits, delete the 0002 and 0003 patches. Core platform 26.08.
+  set(core_platform_base_rev "cec1a0ae3f05b2cf9a1518c7087cda96aed322a0")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
   )
 endfunction()
 
-function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+function(set_ethosu_dedicated_sram_fast_scratch_size OUT_VAR MEMORY_MODE)
+  if("${MEMORY_MODE}" STREQUAL "Dedicated_Sram")
+    set(${OUT_VAR}
+        0x60000
+        PARENT_SCOPE
+    )
+    return()
+  endif()
+
+  if(NOT "${MEMORY_MODE}" MATCHES "^Dedicated_Sram_([0-9]+)(KB|MB)$")
+    message(
+      FATAL_ERROR
+        "Unsupported Dedicated_Sram MEMORY_MODE ${MEMORY_MODE}. Expected Dedicated_Sram_<size>KB, Dedicated_Sram_<size>MB, or Dedicated_Sram."
+    )
+  endif()
+
+  set(_fast_scratch_value "${CMAKE_MATCH_1}")
+  set(_fast_scratch_unit "${CMAKE_MATCH_2}")
+  if(_fast_scratch_unit STREQUAL "KB")
+    math(EXPR _fast_scratch_size "${_fast_scratch_value} * 1024")
+  else()
+    math(EXPR _fast_scratch_size "${_fast_scratch_value} * 1024 * 1024")
+  endif()
+
+  set(${OUT_VAR}
+      ${_fast_scratch_size}
+      PARENT_SCOPE
+  )
+endfunction()
+
+#[[
+Return the linker script used by the Corstone FVP for SYSTEM_CONFIG.
+]]
+function(get_corstone_linker_script OUT_VAR SYSTEM_CONFIG)
+  if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
+    set(_linker_script "Corstone-300.ld")
+  elseif(SYSTEM_CONFIG MATCHES "Ethos_U85")
+    set(_linker_script "Corstone-320.ld")
+  else()
+    message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
+  endif()
+  set(${OUT_VAR}
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../cmake/linker_scripts/${_linker_script}"
+      PARENT_SCOPE
+  )
+endfunction()
+
+function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH MEMORY_MODE)
+  if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
+    # Both model and scratch in DRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA dram)
+  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+    # Model in DRAM, scratch in SRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA sram)
+  else()
+    message(
+      FATAL_ERROR
+        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
+    )
+  endif()
+
+  # Set ETHOSU_MODEL/ARENA to 0 or 1 depending on MEMORY_MODEL/ARENA: sram -> 0,
+  # dram -> 1.
+  set(_ethosu_memory_regions sram dram)
+  list(FIND _ethosu_memory_regions "${MEMORY_MODEL}" ETHOSU_MODEL)
+  list(FIND _ethosu_memory_regions "${MEMORY_ARENA}" ETHOSU_ARENA)
+
+  # Make sure each value is visible to its consumer. core_platform declares
+  # MEMORY_* as cache variables. Parent-scope linker-script preprocessing reads
+  # ETHOSU_* after this function returns.
+
+  set(ETHOSU_MODEL
+      ${ETHOSU_MODEL}
+      PARENT_SCOPE
+  )
+  set(ETHOSU_ARENA
+      ${ETHOSU_ARENA}
+      PARENT_SCOPE
+  )
+  set(MEMORY_MODEL
+      "${MEMORY_MODEL}"
+      CACHE STRING "Memory config for model" FORCE
+  )
+  set(MEMORY_ARENA
+      "${MEMORY_ARENA}"
+      CACHE STRING "Memory config for arena" FORCE
+  )
+
   if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
     add_subdirectory(
       ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target
@@ -89,20 +189,6 @@ function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
     )
   else()
     message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
-  endif()
-  if(MEMORY_MODE MATCHES "Dedicated_Sram")
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=1
-    )
-  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=0
-    )
-  else()
-    message(
-      FATAL_ERROR
-        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
-    )
   endif()
 endfunction()
 
@@ -341,7 +427,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
                   ETHOSU_TA_HISTBIN_1=0
                   ETHOSU_TA_HISTCNT_1=0
       )
-    elseif(MEMORY_MODE MATCHES "Dedicated_Sram")
+    elseif(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
       target_compile_definitions(
         ethosu_target_common
         INTERFACE # Configure NPU architecture timing adapters This is just
@@ -389,7 +475,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
         "corstone-320"
         PARENT_SCOPE
     )
-    if(MEMORY_MODE MATCHES "Dedicated_Sram")
+    if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
       target_compile_definitions(
         ethosu_target_common
         INTERFACE # Configure NPU architecture timing adapters This is just
@@ -465,7 +551,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
         "corstone-320"
         PARENT_SCOPE
     )
-    if(MEMORY_MODE MATCHES "Dedicated_Sram")
+    if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
       target_compile_definitions(
         ethosu_target_common
         INTERFACE # Configure NPU architecture timing adapters This is just
@@ -577,7 +663,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
               NPU_REGIONCFG_6=0
               NPU_REGIONCFG_7=0
     )
-  elseif(MEMORY_MODE MATCHES "Dedicated_Sram")
+  elseif(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
     target_compile_definitions(
       ethosu_core_driver
       PRIVATE NPU_QCONFIG=3

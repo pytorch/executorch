@@ -45,12 +45,10 @@ scratch_dir_set=false
 toolchain="arm-none-eabi-gcc"
 select_ops_list="aten::_softmax.out"
 select_ops_list_overridden=false
-qdq_fusion_op=false
 model_explorer=false
 perf_overlay=false
 visualize_tosa=false
 visualize_pte=false
-model_converter=false
 specify_ethosu_scratch=false
 extra_build_flags=""
 preset_file="${et_root_dir}/tools/cmake/preset/arm_baremetal.cmake"
@@ -89,7 +87,6 @@ function help() {
     echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scratch dir if you not using default ${arm_scratch_dir}"
-    echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
     echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
     echo "                                            NOTE: If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags includes -i for TOSA dumps."
@@ -126,7 +123,6 @@ for arg in "$@"; do
       --specify_ethosu_scratch) specify_ethosu_scratch=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
-      --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
       --visualize_tosa) visualize_tosa=true ;;
@@ -143,6 +139,10 @@ fi
 
 if [ "$perf_overlay" = true ] && [ "$model_explorer" != true ]; then
     echo "Error: --perf_overlay requires --model_explorer" >&2
+    exit 1
+fi
+if [ "$perf_overlay" = true ] && [ "$visualize_tosa" != true ]; then
+    echo "Error: --perf_overlay requires --visualize_tosa" >&2
     exit 1
 fi
 
@@ -165,10 +165,6 @@ arm_scratch_dir=$(realpath "${arm_scratch_dir}")
 ethos_u_root_dir="${arm_scratch_dir}/ethos-u"
 mkdir -p "${ethos_u_root_dir}"
 ethos_u_root_dir=$(realpath "${ethos_u_root_dir}")
-cmsis_nn_local_path=""
-if [[ -d "${ethos_u_root_dir}/core_software/cmsis-nn" ]]; then
-    cmsis_nn_local_path=$(realpath "${ethos_u_root_dir}/core_software/cmsis-nn")
-fi
 setup_path_script=${arm_scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
@@ -257,10 +253,9 @@ function check_setup () {
         hash arm-none-eabi-gcc \
             || { echo "Could not find arm-none-eabi-gcc on PATH, ${_setup_msg}"; return 1; }
     elif [[ ${target} =~ "vgf" ]]; then
-        model_converter=$(which model-converter || true)
-        echo "${model_converter}"
-        [[ -z "${model_converter}" || "${model_converter}" == "model-converter not found" ]] \
-            && { echo "Could not find model-converter, ${_setup_msg}"; return 1; }
+        if ! python3 -m executorch.backends.arm.vgf.check_env --aot; then
+            return 1
+        fi
     fi
 
     return 0
@@ -333,9 +328,6 @@ configure_runner_build_dir() {
         -DETHOS_SDK_PATH:PATH="${ethos_u_root_dir}"
         -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}"
     )
-    if [[ -n "${cmsis_nn_local_path}" ]]; then
-        cmake_cmd+=(-DCMSIS_NN_LOCAL_PATH:PATH="${cmsis_nn_local_path}")
-    fi
     cmake_cmd+=(-DET_PTE_FILE_PATH:PATH="${pte_source}")
     if [[ "${pte_placement}" == "elf" ]]; then
         cmake_cmd+=(-DET_MODEL_PTE_ADDR=)
@@ -623,17 +615,12 @@ cd "${et_root_dir}"
 
 bundleio_flag=""
 etrecord_flag_template=""
-qdq_fusion_op_flag=""
 if [ "$build_with_etdump" = true ] ; then
     etrecord_flag_template="--etrecord"
 fi
 
 if [ "$bundleio" = true ] ; then
     bundleio_flag="--bundleio"
-fi
-
-if [ "$qdq_fusion_op" = true ] ; then
-    qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
 if [[ "${auto_configure}" == true ]]; then
@@ -761,7 +748,7 @@ for i in "${!test_model[@]}"; do
     fi
 
     model_etrecord_flag="${etrecord_flag_template}"
-    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${model_etrecord_flag} --config=${config} $qdq_fusion_op_flag"
+    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${model_etrecord_flag} --config=${config}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 

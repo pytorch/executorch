@@ -164,19 +164,33 @@ def _iter_safetensors(path: str) -> Iterable[Pair]:
             unflatten_tensor_state_dict,
         )
 
+        # Use exact data keys and per-tensor metadata to avoid O(N²) checkpoint loading.
         for name in tensor_names:
+            tensor_metadata = json.loads(metadata[name])
+            tensor_type = tensor_metadata.get("_type")
             parts = name.rsplit(".", 1)
             module_fqn = parts[0] if len(parts) > 1 else ""
             weight_name = parts[-1]
             prefix = (
                 f"{module_fqn}._{weight_name}_" if module_fqn else f"_{weight_name}_"
             )
+            if tensor_type in ("Tensor", "torch.Tensor"):
+                data_keys = [name]
+            else:
+                data_keys = [
+                    prefix + suffix
+                    for suffix in tensor_metadata.get("_tensor_data_names", [])
+                ]
             partial = {
-                key: handle.get_tensor(key)
-                for key, handle in key_to_handle.items()
-                if key == name or key.startswith(prefix)
+                key: key_to_handle[key].get_tensor(key)
+                for key in data_keys
+                if key in key_to_handle
             }
-            result, _ = unflatten_tensor_state_dict(partial, metadata)
+            single_metadata = {
+                "tensor_names": json.dumps([name]),
+                name: metadata[name],
+            }
+            result, _ = unflatten_tensor_state_dict(partial, single_metadata)
             for fqn, value in result.items():
                 yield fqn, value
 

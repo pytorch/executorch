@@ -153,6 +153,24 @@ def _supports_quantized_grid_custom(qparams: QuantArgs) -> bool:
     return not qparams.per_channel and qparams.dtype == torch.int8
 
 
+def _permute_to_nhwc(
+    graph: torch.fx.Graph,
+    tensor: torch.fx.Node,
+    from_node: torch.fx.Node,
+) -> torch.fx.Node:
+    nhwc_tensor = create_node(
+        graph,
+        op_target=exir_ops.edge.aten.permute_copy.default,
+        args=(tensor, list(NHWC_ORDER)),
+        from_node=from_node,
+    )
+    _set_fake_tensor_meta(
+        nhwc_tensor,
+        exir_ops.edge.aten.permute_copy.default(tensor.meta["val"], list(NHWC_ORDER)),
+    )
+    return nhwc_tensor
+
+
 class RewriteGridSamplerToTosaCustomPass(ArmPass):
     """Rewrite ``aten.grid_sampler_2d`` nodes to ``tosa.CUSTOM``."""
 
@@ -260,28 +278,44 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
     def _pad_c3_input_to_c4(
         graph_module: torch.fx.GraphModule,
         input_tensor: torch.fx.Node,
+        input_qparams: QuantArgs | None = None,
     ) -> torch.fx.Node:
         input_val = input_tensor.meta["val"]
-        first_channel = create_node(
-            graph_module.graph,
-            op_target=exir_ops.edge.aten.slice_copy.Tensor,
-            args=(input_tensor, 1, 0, 1, 1),
-            from_node=input_tensor,
-        )
-        first_channel_val = exir_ops.edge.aten.slice_copy.Tensor(input_val, 1, 0, 1, 1)
-        _set_fake_tensor_meta(first_channel, first_channel_val)
-
         padded_input = create_node(
             graph_module.graph,
-            op_target=exir_ops.edge.aten.cat.default,
-            args=([input_tensor, first_channel], 1),
+            op_target=exir_ops.edge.aten.constant_pad_nd.default,
+            args=(input_tensor, [0, 0, 0, 0, 0, 1], 0),
             from_node=input_tensor,
+            inherit_qparams=True,
         )
+        pad_qparams = input_qparams
+        if pad_qparams is None:
+            try:
+                pad_qparams = next(iter(get_output_qparams(input_tensor).values()))
+            except ValueError:
+                try:
+                    pad_qparams = next(iter(get_input_qparams(input_tensor).values()))
+                except ValueError:
+                    pad_qparams = None
+        if pad_qparams is not None:
+            padded_input.meta["input_qparams"] = {0: pad_qparams}
+            padded_input.meta["output_qparams"] = {0: pad_qparams}
         _set_fake_tensor_meta(
             padded_input,
-            exir_ops.edge.aten.cat.default([input_val, first_channel_val], 1),
+            exir_ops.edge.aten.constant_pad_nd.default(
+                input_val, [0, 0, 0, 0, 0, 1], 0
+            ),
         )
         return padded_input
+
+    @staticmethod
+    def _get_optional_input_qparams(
+        node: torch.fx.Node, input_index: int
+    ) -> QuantArgs | None:
+        try:
+            return get_input_qparams(node).get(input_index)
+        except ValueError:
+            return None
 
     @staticmethod
     def _slice_c4_output_to_c3(
@@ -354,7 +388,11 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
 
             with graph_module.graph.inserting_before(node):
                 custom_input = (
-                    self._pad_c3_input_to_c4(graph_module, input_tensor)
+                    self._pad_c3_input_to_c4(
+                        graph_module,
+                        input_tensor,
+                        input_qparams=self._get_optional_input_qparams(node, 0),
+                    )
                     if pad_c3_for_sampler
                     else input_tensor
                 )
@@ -374,20 +412,12 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                         else None
                     ),
                 )
-                nhwc_input = create_node(
+                nhwc_input = _permute_to_nhwc(
                     graph_module.graph,
-                    op_target=exir_ops.edge.aten.permute_copy.default,
-                    args=(custom_input, list(NHWC_ORDER)),
-                    from_node=custom_input,
+                    custom_input,
+                    custom_input,
                 )
-                _set_fake_tensor_meta(
-                    nhwc_input,
-                    exir_ops.edge.aten.permute_copy.default(
-                        custom_input.meta["val"], list(NHWC_ORDER)
-                    ),
-                )
-                custom_grid = grid
-                custom_inputs = [nhwc_input, custom_grid]
+                custom_inputs = [nhwc_input, grid]
                 if grid_qparam_constants is not None:
                     custom_inputs.extend(grid_qparam_constants)
                 custom_node = create_node(

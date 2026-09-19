@@ -87,6 +87,16 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    python_unittest(
+        name = "vgf_neural_statistics_test",
+        srcs = ["vgf_neural_statistics_test.py"],
+        deps = [
+            "//executorch/devtools/inspector:inspector",
+            "//executorch/devtools/inspector:lib",
+            "//executorch/devtools/inspector:vgf_neural_statistics",
+        ],
+    )
+
     runtime.python_library(
         name = "inspector_test_utils",
         srcs = [

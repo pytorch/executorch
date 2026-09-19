@@ -24,3 +24,18 @@ binary_scalar_buffer:
     - NAME: eq_scalar_buffer
       OPERATOR: X == Y
       IS_COMPARISON_OP: true
+    - NAME: ne_scalar_buffer
+      OPERATOR: X != Y
+      IS_COMPARISON_OP: true
+    - NAME: lt_scalar_buffer
+      OPERATOR: X < Y
+      IS_COMPARISON_OP: true
+    - NAME: le_scalar_buffer
+      OPERATOR: X <= Y
+      IS_COMPARISON_OP: true
+    - NAME: gt_scalar_buffer
+      OPERATOR: X > Y
+      IS_COMPARISON_OP: true
+    - NAME: ge_scalar_buffer
+      OPERATOR: X >= Y
+      IS_COMPARISON_OP: true

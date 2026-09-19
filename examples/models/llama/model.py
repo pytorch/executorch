@@ -308,19 +308,25 @@ class Llama2Model(EagerModelBase):
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
+        backend = self.llm_config.backend
+        token_dtype = (
+            torch.int32
+            if (backend.ethosu.enabled or backend.tosa.enabled or backend.vgf.enabled)
+            else torch.long
+        )
         if self.enable_dynamic_shape:
             return (
-                torch.tensor([[2, 3, 4]], dtype=torch.long),
-                {"input_pos": torch.tensor([0], dtype=torch.long)},
+                torch.tensor([[2, 3, 4]], dtype=token_dtype),
+                {"input_pos": torch.tensor([0], dtype=token_dtype)},
             )
         else:
             return (
                 torch.tensor(
-                    [[1]], dtype=torch.long
+                    [[1]], dtype=token_dtype
                 ),  # tokens, with kv cache our input token length is always just 1 token.
                 {
                     "input_pos": torch.tensor(
-                        [0], dtype=torch.long
+                        [0], dtype=token_dtype
                     )  # start_pos, what token of output are we on.
                 },
             )

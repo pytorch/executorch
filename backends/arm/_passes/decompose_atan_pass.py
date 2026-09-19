@@ -19,6 +19,7 @@ from executorch.exir.pass_base import ExportPass
 
 
 edge_atan = exir_ops.edge.aten.atan.default  # MI case
+logger = logging.getLogger(__name__)
 
 
 def _get_atan_ops(op):
@@ -50,6 +51,17 @@ class DecomposeAtanPass(ArmOpTargetedPass):
         ReplaceScalarWithTensorByProfilePass,
     }
     target_ops = (edge_atan,)
+
+    def call(self, graph_module):
+        self._approximated = 0
+        result = super().call(graph_module)
+        if self._approximated:
+            logger.info(
+                "DecomposeAtanPass: approximated %d atan operator(s); "
+                "small numerical errors may be introduced.",
+                self._approximated,
+            )
+        return result
 
     def _rational_approximation(self, z, ops, meta):
         """Creates a (2,1) Padé approximation for atan(x) on [-1, 1]."""
@@ -85,9 +97,7 @@ class DecomposeAtanPass(ArmOpTargetedPass):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
-        logging.info(
-            f"Approximating atan. This may introduce small numerical errors. For details, see {__file__}."
-        )
+        self._approximated += 1
 
         ops = _get_atan_ops(op)
         (

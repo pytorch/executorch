@@ -19,8 +19,9 @@ from torch.nn import Parameter
 
 
 class AddTensorConverter(NodeConverter):
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
@@ -46,7 +47,7 @@ class AddTensorConverter(NodeConverter):
         if len(node.args) != 2:
             return False
 
-        if hasattr(node.kwargs, "alpha"):
+        if node.kwargs.get("alpha", 1) != 1:
             return False
 
         return True

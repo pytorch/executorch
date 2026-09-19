@@ -28,6 +28,8 @@ ${layout_declare_ubo(B, "ivec4", "x_sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 void main() {
   // dW[N, K] = sum_m d_out[m, N] * x[m, K]; contraction over the flattened M.
   const int N = dout_sizes.x;
@@ -38,7 +40,7 @@ void main() {
   const int nkt = (K + TILE_K - 1) / TILE_K;
   const int tiles = nnt * nkt;
 
-  const int tile_idx = int(gl_GlobalInvocationID.x);
+  const int tile_idx = int(linear_idx_from_gid());
   if (tile_idx >= tiles) {
     return;
   }

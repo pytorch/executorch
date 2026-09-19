@@ -604,6 +604,29 @@ TEST_F(OpAddOutKernelTest, BroadcastBToA) {
   EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastLastDimRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({3, 4}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor b = tf.make({1, 3, 1}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 3, 4});
+
+  Tensor expected = tf.make(
+      {1, 3, 4}, /*data=*/{11, 12, 13, 14, 25, 26, 27, 28, 39, 40, 41, 42});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+  EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+}
+
+TEST_F(OpAddOutKernelTest, Broadcast2dBy1dRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({2, 3}, /*data=*/{1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 1, 3}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 2, 3});
+
+  Tensor expected = tf.make({1, 2, 3}, /*data=*/{11, 22, 33, 14, 25, 36});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+  EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+}
+
 //
 // Death Tests
 //

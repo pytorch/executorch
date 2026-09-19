@@ -37,6 +37,8 @@ ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 #define NUM_INPUTS ${NUM_INPUTS}
 
 /*
@@ -45,7 +47,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * be inserted along the output's concat_dim starting at concat_offset.
  */
 void main() {
-  const int tid = int(gl_GlobalInvocationID.x);
+  const int tid = int(linear_idx_from_gid());
 
   // The 1-3 input tensors are interpreted as one concatenated tensor ("volume")
   // along the concat_dim for the purposes of tensor indexing. Each thread is
