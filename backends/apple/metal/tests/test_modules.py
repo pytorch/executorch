@@ -279,6 +279,53 @@ MODULE_REGISTRY["linear_bias_batch1"] = {
 
 
 # -------------------------------------------------------------------------
+# Views with a storage offset. The chunks below are views into the first
+# linear's output; the second chunk starts partway into that buffer.
+# -------------------------------------------------------------------------
+class LinearChunkLastDim(nn.Module):
+    """Chunking the last dim gives a non-packed view (its row stride is still
+    the parent's), which reinterpret_tensor has to materialize."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(8, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_last_dim"] = {
+    "model_class": LinearChunkLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second last-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkFirstDim(nn.Module):
+    """Chunking the first dim gives a packed view that only differs from its
+    parent by the storage offset."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_first_dim"] = {
+    "model_class": LinearChunkFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second first-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
 class LinearNoBiasInt4(nn.Module):
     def __init__(self):
         super().__init__()

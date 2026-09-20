@@ -399,6 +399,7 @@ static bool is_packed_strides(
 // returned buffer. On failure returns nullptr.
 static void* materialize_packed(
     void* src,
+    bool src_is_device,
     const std::vector<aten::SizesType>& sizes,
     const std::vector<aten::StridesType>& strides,
     size_t element_size) {
@@ -412,8 +413,10 @@ static void* materialize_packed(
   if (!dst)
     return nullptr;
 
-  // Ensure pending GPU writes to the source buffer are complete
-  if (metal_is_device_pointer(src)) {
+  // Ensure pending GPU writes to the source buffer are complete. `src` may
+  // point partway into that buffer, so the caller tells us where it lives: only
+  // a buffer's base address is registered as a device pointer.
+  if (src_is_device) {
     auto* stream = getCurrentMetalStream();
     if (stream) {
       stream->synchronize(SyncType::COMMIT_AND_WAIT);
@@ -534,8 +537,12 @@ AOTITorchError aoti_torch__reinterpret_tensor(
         Debug,
         "aoti_torch__reinterpret_tensor: non-packed strides, "
         "materializing to packed buffer");
-    tensor_data =
-        materialize_packed(adjusted_data, sizes, strides, element_size);
+    tensor_data = materialize_packed(
+        adjusted_data,
+        metal_is_device_pointer(data_ptr),
+        sizes,
+        strides,
+        element_size);
     ET_CHECK_OR_RETURN_ERROR(
         tensor_data != nullptr,
         MemoryAllocationFailed,
@@ -577,6 +584,17 @@ AOTITorchError aoti_torch__reinterpret_tensor(
           storage_offset,
           element_size,
           adjusted_data);
+
+      // The view gets its own MTLBuffer over the parent's memory. Metal tracks
+      // hazards per buffer object, so it cannot see that work reading this one
+      // depends on work still pending on the parent and may run them out of
+      // order. Let the parent's writes finish first.
+      if (metal_is_device_pointer(data_ptr)) {
+        auto* stream = getCurrentMetalStream();
+        if (stream) {
+          stream->synchronize(SyncType::COMMIT_AND_WAIT);
+        }
+      }
 
       ET_CHECK_OR_RETURN_ERROR(
           metal_buffer_nocopy(adjusted_data, tensor->nbytes(), true),
