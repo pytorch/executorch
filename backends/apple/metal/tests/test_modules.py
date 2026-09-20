@@ -374,6 +374,29 @@ MODULE_REGISTRY["linear_chunk_cat_first_dim"] = {
 
 
 # -------------------------------------------------------------------------
+class LinearNestedChunk(nn.Module):
+    """A view of a view: the last quarter of the first linear's output, taken
+    as the second chunk of its second chunk."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        _, last = second.chunk(2, dim=0)
+        return self.linear2(last)
+
+
+MODULE_REGISTRY["linear_nested_chunk"] = {
+    "model_class": LinearNestedChunk,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a chunk of a chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
 class LinearNoBiasInt4(nn.Module):
     def __init__(self):
         super().__init__()
