@@ -306,8 +306,10 @@ AOTITorchError aoti_torch_mps_convolution(
       // Create cache key for this convolution
       GraphCacheKey cache_key;
       cache_key.op_name = "conv";
+      // The layouts and the bias change the graph's topology, not just its
+      // shapes, so they have to be part of the key.
       cache_key.shape_params = {N, C_in, H_in, W_in, C_out, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, dil_h, dil_w, groups,
-                                input_channels_last, weight_channels_last};
+                                input_channels_last, weight_channels_last, bias_tensor != nullptr};
       cache_key.dtype = dtype;
       cache_key.transpose_flag = (transposed != 0);
 
