@@ -74,7 +74,7 @@ class ProfilerETDumpTest : public ::testing::Test {
       ETDumpGen* gen,
       TensorFactory<ScalarType::Float>& tf) {
     ET_EXPECT_DEATH(
-        gen->log_intermediate_output_delegate(
+        (void)gen->log_intermediate_output_delegate(
             "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2})),
         "failed to write tensor to debug buffer");
   }
@@ -282,15 +282,15 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
       void* ptr = malloc(debug_buf_size);
 
       EValue evalue_int((int64_t)5);
-      etdump_gen[i]->log_evalue(evalue_int);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue_int).ok());
 
       EValue evalue_double((double)1.5);
-      etdump_gen[i]->log_evalue(evalue_double);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue_double).ok());
 
       EValue evalue_bool(true);
-      etdump_gen[i]->log_evalue(evalue_bool);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue_bool).ok());
 
-      etdump_gen[i]->log_evalue(evalue_bool);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue_bool).ok());
 
       TensorFactory<ScalarType::Float> tf;
       EValue evalue_tensor(tf.ones({3, 2}));
@@ -302,11 +302,11 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 
       if (j == 0) {
         ET_EXPECT_DEATH(
-            etdump_gen[i]->log_evalue(evalue_tensor),
+            (void)etdump_gen[i]->log_evalue(evalue_tensor),
             "failed to write tensor to debug buffer");
 
         // Set debug buffer with span
-        etdump_gen[i]->set_debug_buffer(buffer);
+        ASSERT_TRUE(etdump_gen[i]->set_debug_buffer(buffer).ok());
       } else {
         // Reset ETDumpGen to trigger ET_EXPECT_DEATH before setting data sink
         delete etdump_gen[i];
@@ -316,7 +316,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
         etdump_gen[i]->create_event_block("test_block");
 
         ET_EXPECT_DEATH(
-            etdump_gen[i]->log_evalue(evalue_tensor),
+            (void)etdump_gen[i]->log_evalue(evalue_tensor),
             "failed to write tensor to debug buffer");
 
         if (j == 1) {
@@ -328,9 +328,11 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
         }
       }
 
-      etdump_gen[i]->log_evalue(evalue_tensor);
-      etdump_gen[i]->log_evalue(
-          evalue_tensor, LoggedEValueType::kProgramOutput);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue_tensor).ok());
+      ASSERT_TRUE(
+          etdump_gen[i]->log_evalue(
+              evalue_tensor, LoggedEValueType::kProgramOutput)
+              .ok());
 
       free(ptr);
     }
@@ -360,7 +362,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
 
       // using span to record debug data
       if (j == 0) {
-        etdump_gen[i]->set_debug_buffer(buffer);
+        ASSERT_TRUE(etdump_gen[i]->set_debug_buffer(buffer).ok());
       }
       // using buffer data sink to record debug data
       else if (j == 1) {
@@ -371,7 +373,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
         etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
-      etdump_gen[i]->log_evalue(evalue);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue).ok());
 
       free(ptr);
     }
@@ -394,7 +396,7 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
 
       // using span to record debug data
       if (j == 0) {
-        etdump_gen[i]->set_debug_buffer(buffer);
+        ASSERT_TRUE(etdump_gen[i]->set_debug_buffer(buffer).ok());
       }
       // using buffer data sink to record debug data
       else if (j == 1) {
@@ -405,8 +407,10 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
         etdump_gen[i]->set_data_sink(&file_data_sink.get());
       }
 
-      etdump_gen[i]->log_evalue(evalue);
-      etdump_gen[i]->log_evalue(evalue, LoggedEValueType::kProgramOutput);
+      ASSERT_TRUE(etdump_gen[i]->log_evalue(evalue).ok());
+      ASSERT_TRUE(
+          etdump_gen[i]->log_evalue(evalue, LoggedEValueType::kProgramOutput)
+              .ok());
 
       ETDumpResult result = etdump_gen[i]->get_etdump_data();
       ASSERT_TRUE(result.buf != nullptr);
@@ -620,7 +624,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
         expect_log_intermediate_delegate_death(etdump_gen[i], tf);
 
         // Set debug buffer with span
-        etdump_gen[i]->set_debug_buffer(buffer);
+        ASSERT_TRUE(etdump_gen[i]->set_debug_buffer(buffer).ok());
       } else {
         // Reset ETDumpGen to trigger ET_EXPECT_DEATH before setting data sink
         delete etdump_gen[i];
@@ -679,26 +683,41 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
       // Now we check log intermediate output delegate with valid args
 
       // Log a tensor
-      etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2}));
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(
+                  "test_event_tensor", kUnsetDelegateDebugIntId, tf.ones({3, 2}))
+              .ok());
 
       // Log a tensor list
-      etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist",
-          kUnsetDelegateDebugIntId,
-          ArrayRef<Tensor>(tensors.data(), tensors.size()));
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(
+                  "test_event_tensorlist",
+                  kUnsetDelegateDebugIntId,
+                  ArrayRef<Tensor>(tensors.data(), tensors.size()))
+              .ok());
 
       // Log an int
-      etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist", kUnsetDelegateDebugIntId, 10);
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(
+                  "test_event_tensorlist", kUnsetDelegateDebugIntId, 10)
+              .ok());
 
       // Log a double
-      etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist", kUnsetDelegateDebugIntId, 20.75);
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(
+                  "test_event_tensorlist", kUnsetDelegateDebugIntId, 20.75)
+              .ok());
 
       // Log a bool
-      etdump_gen[i]->log_intermediate_output_delegate(
-          "test_event_tensorlist", kUnsetDelegateDebugIntId, true);
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(
+                  "test_event_tensorlist", kUnsetDelegateDebugIntId, true)
+              .ok());
 
       ETDumpResult result = etdump_gen[i]->get_etdump_data();
       ASSERT_TRUE(result.buf != nullptr);
@@ -728,7 +747,7 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
 
       // using span to record debug data
       if (j == 0) {
-        etdump_gen[i]->set_debug_buffer(buffer);
+        ASSERT_TRUE(etdump_gen[i]->set_debug_buffer(buffer).ok());
       }
       // using buffer data sink to record debug data
       else if (j == 1) {
@@ -740,11 +759,15 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
       }
 
       // Event 0
-      etdump_gen[i]->log_intermediate_output_delegate(
-          nullptr, 257, tf.ones({3, 4}));
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(nullptr, 257, tf.ones({3, 4}))
+              .ok());
       // Event 1
-      etdump_gen[i]->log_intermediate_output_delegate(
-          nullptr, 258, tf.ones({5, 6}));
+      ASSERT_TRUE(
+          etdump_gen[i]
+              ->log_intermediate_output_delegate(nullptr, 258, tf.ones({5, 6}))
+              .ok());
 
       ETDumpResult result = etdump_gen[i]->get_etdump_data();
       ASSERT_TRUE(result.buf != nullptr);

@@ -81,7 +81,7 @@ TEST_F(ETDumpDeviceTest, LogTensorOnDeviceCopiesItBackToHost) {
 
   etdump_gen_->create_event_block("test_block");
   etdump_gen_->set_data_sink(&buffer_data_sink.get());
-  etdump_gen_->log_evalue(EValue(tensor));
+  ASSERT_TRUE(etdump_gen_->log_evalue(EValue(tensor)).ok());
 
   EXPECT_EQ(g_mock_cuda.d2h_count_, 1);
   EXPECT_EQ(g_mock_cuda.last_d2h_size_, sizeof(device_data));
@@ -135,7 +135,7 @@ TEST_F(ETDumpDeviceTest, LogTensorOnCpuDoesNotStageThroughTheAllocator) {
 
   etdump_gen_->create_event_block("test_block");
   etdump_gen_->set_data_sink(&buffer_data_sink.get());
-  etdump_gen_->log_evalue(EValue(tensor));
+  ASSERT_TRUE(etdump_gen_->log_evalue(EValue(tensor)).ok());
 
   EXPECT_EQ(g_mock_cuda.d2h_count_, 0);
 
