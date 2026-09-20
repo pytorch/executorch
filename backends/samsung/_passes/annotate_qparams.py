@@ -42,6 +42,8 @@ class AnnotateQparamsPass(ExportPass):
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.expand_copy.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.contiguous.default,
     }
 
     def __init__(self, edge_program: ExportedProgram):
@@ -84,40 +86,151 @@ class AnnotateQparamsPass(ExportPass):
             _impl(user, res_list)
         return res_list
 
+    def _walk_qdq_chain_to_terminals(self, cur: Node) -> List[Node]:
+        r"""Walk forward from a Q/DQ node `cur` through the Q-DQ chain,
+        returning every terminal node (last Q/DQ node before a non-Q/DQ
+        consumer). Handles fan-out: the SAME quantized tensor is commonly
+        dequantized into multiple branches (e.g. one Q feeding two DQs for
+        two independent consumers) -- each branch is walked and its own
+        terminal is collected, instead of the chain silently stopping at
+        `cur` when it has more than one Q/DQ child.
+
+        Mirrors the DFS shape of `_get_last_dqs`, applied starting from a
+        single Q/DQ node rather than its non-Q/DQ source.
+        """
+        next_nodes = [
+            u
+            for u in cur.users
+            if u.target in QuantConstants.QUANT_OPS_KEY_MAP
+            or u.target in QuantConstants.DEQUANT_OPS_KEY_MAP
+        ]
+        if not next_nodes:
+            return [cur]
+        terminals: List[Node] = []
+        for nxt in next_nodes:
+            terminals.extend(self._walk_qdq_chain_to_terminals(nxt))
+        return terminals
+
+    def _collect_dq_nodes(self, node: Node) -> List[Node]:
+        """For each user of `node`, resolve it to a propagate candidate: a
+        non-Q user is used directly, a Q user is walked through its Q-DQ
+        chain (including fan-out) to find every terminal node."""
+        dq_nodes: List[Node] = []
+        for user in node.users:
+            if user.target not in QuantConstants.QUANT_OPS_KEY_MAP:
+                # If user is a direct propagate node (not Q), collect it too
+                dq_nodes.append(user)
+                continue
+            # user is a Q node: walk through the Q-DQ chain (including any
+            # fan-out branches) to find every terminal node.
+            dq_nodes.extend(self._walk_qdq_chain_to_terminals(user))
+        return dq_nodes
+
+    def _is_propagatable(self, candidate: Node) -> bool:
+        """True if `candidate` is a SharedQuant propagate node that is safe
+        to annotate with quantize_attrs and recurse into: it must be a
+        propagate node, and if it has exactly one user, that user must not
+        be a Q/DQ (a Q/DQ boundary already carries its own quant params)."""
+        if candidate.target not in self.propagate_nodes:
+            return False
+        if len(candidate.users) == 1:
+            only_user = next(iter(candidate.users))
+            if (
+                only_user.target in QuantConstants.QUANT_OPS_KEY_MAP
+                or only_user.target in QuantConstants.DEQUANT_OPS_KEY_MAP
+            ):
+                return False
+        return True
+
+    def _propagate_into_dequant_users(self, dq_node: Node, user_attrs) -> None:
+        """dq_node is a DQ: propagate to each of its users that is itself an
+        eligible (non-Q/DQ) propagate node."""
+        for op_user in dq_node.users:
+            if (
+                op_user.target in QuantConstants.QUANT_OPS_KEY_MAP
+                or op_user.target in QuantConstants.DEQUANT_OPS_KEY_MAP
+            ):
+                continue
+            if not self._is_propagatable(op_user):
+                continue
+            op_user.meta["quantize_attrs"] = user_attrs
+            self._propagate_quant_params(op_user)
+
     def _propagate_quant_params(self, node: Node):
         assert (
             quantize_attrs := node.meta.get("quantize_attrs")
         ), "Must be annotated node."
         requantize_map: Dict[Node, Node] = node.meta.get("requantize", {})
-        while node.users:
-            if len(node.users) != 1:
-                break
-            user = list(node.users.keys())[0]
-            if (
-                user.target not in QuantConstants.QUANT_OPS_KEY_MAP
-                and user.target not in QuantConstants.DEQUANT_OPS_KEY_MAP
-            ):
-                break
-            node = user
-        # Case1: ...-q-dq(cur)-propagate_node-node(not d-dq)
-        # Case2: propagate_node(propagateed)-propagate_node-node(not q-dq)
-        for idx, user in enumerate(node.users.keys()):
+        # Walk through Q-DQ chains, handling multiple Q-DQ branches.
+        # For node->Q->DQ->op1 and node->Q->DQ->op3, we collect all last DQ nodes.
+        dq_nodes = self._collect_dq_nodes(node)
+        # Case1: ...-q-dq(cur)-propagate_node-node(not q-dq)
+        # Case2: propagate_node(propagated)-propagate_node-node(not q-dq)
+        for idx, dq_node in enumerate(dq_nodes):
             # For the branch who need to be requantized, we propagate the requantize params
             user_attrs = requantize_map.get(idx, quantize_attrs)
-            if user.target not in self.propagate_nodes:
+            if dq_node.target in QuantConstants.DEQUANT_OPS_KEY_MAP:
+                self._propagate_into_dequant_users(dq_node, user_attrs)
+            elif self._is_propagatable(dq_node):
+                # dq_node is not a DQ but a propagate node directly connected to source
+                dq_node.meta["quantize_attrs"] = user_attrs
+                self._propagate_quant_params(dq_node)
+
+    def _backward_propagate(self, node: Node):
+        """Walk backward from `node`, copying its quantize_attrs into unannotated
+        single-input upstream ops.
+
+        Handles patterns like `DQ → SiLU → chunk → Q` where forward propagation
+        cannot populate SiLU's quantize_attrs because SiLU is not in
+        `propagate_nodes` (its input/output scales differ in general). But when
+        the downstream is a SharedQuant op (chunk/split/view/permute/...) whose
+        input scale must equal its output scale, the intermediate op's output
+        scale is fully determined by the downstream shared scale, so backward
+        propagation is safe.
+
+        Stops at:
+          - already-annotated upstream (respect forward pass results)
+          - Q/DQ boundaries (scale is defined by the Q/DQ params themselves)
+          - non-call_function nodes (placeholders, get_attr, output)
+          - multi-input upstream ops (ambiguous which input to follow)
+        """
+        quant_attrs = node.meta.get("quantize_attrs")
+        if not quant_attrs:
+            return
+        inputs = node.all_input_nodes
+        if len(inputs) != 1:
+            return
+        upstream = inputs[0]
+        if upstream.meta.get("quantize_attrs"):
+            return
+        if upstream.target in QuantConstants.QUANT_OPS_KEY_MAP:
+            return
+        if upstream.target in QuantConstants.DEQUANT_OPS_KEY_MAP:
+            return
+        if upstream.op != "call_function":
+            return
+        upstream.meta["quantize_attrs"] = quant_attrs
+        self._backward_propagate(upstream)
+
+    def _propagate_quant_params_backward_all(self, graph_module: GraphModule):
+        """For every SharedQuant propagate node with annotated quantize_attrs,
+        walk backward and fill in unannotated single-input upstream ops.
+
+        Multi-input propagate ops (cat/concat) are excluded because their
+        upstream is ambiguous — different input branches may legitimately have
+        different scales, and picking one to backward-propagate would corrupt
+        the others.
+        """
+        single_input_shared = self.propagate_nodes - {
+            exir_ops.edge.aten.concat.default,
+            exir_ops.edge.aten.cat.default,
+        }
+        for node in graph_module.graph.nodes:
+            if node.target not in single_input_shared:
                 continue
-            if len(user.users) == 1:
-                # Possibily no need for checking len(users)>1
-                user_of_user = list(user.users)[0]
-                # node-q-dq-propagate-q-dq not need for propagatey
-                if (
-                    user_of_user.target in QuantConstants.QUANT_OPS_KEY_MAP
-                    or user_of_user.target in QuantConstants.DEQUANT_OPS_KEY_MAP
-                ):
-                    continue
-            # propagate quant for node-q-dq-propagate_node-node(not qdq)
-            user.meta["quantize_attrs"] = user_attrs
-            self._propagate_quant_params(user)
+            if not node.meta.get("quantize_attrs"):
+                continue
+            self._backward_propagate(node)
 
     def _annotate_requantize(self, node: Node):
         assert (
@@ -185,12 +298,13 @@ class AnnotateQparamsPass(ExportPass):
             ):
                 # Currently, don't add quant info for d_qd node here.
                 continue
-            elif source_node.target == operator.getitem:
-                source_node.meta["quantize_attrs"] = quant_attrs
-                source_node = source_node.args[0]
-
             source_node.meta["quantize_attrs"] = quant_attrs
-            self._annotate_requantize(source_node)
+            if source_node.target == operator.getitem:
+                source_node.args[0].meta["quantize_attrs"] = quant_attrs
+                self._annotate_requantize(source_node.args[0])
+            else:
+                self._annotate_requantize(source_node)
+
             self._propagate_quant_params(source_node)
 
     def _annotate_in_quantize_attrs(self, graph_module: GraphModule):
@@ -244,6 +358,7 @@ class AnnotateQparamsPass(ExportPass):
 
     def call(self, graph_module: GraphModule):
         self._annotate(graph_module)
+        self._propagate_quant_params_backward_all(graph_module)
         self._annotate_decomposed_mm(graph_module)
         self._annotate_in_quantize_attrs(graph_module)
         graph_module.recompile()
