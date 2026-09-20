@@ -62,8 +62,13 @@ class Sum(torch.nn.Module):
         "dim_None_bf16": lambda: (torch.rand(6, 2, dtype=torch.bfloat16), None, False),
     }
 
-    def forward(self, x: torch.Tensor, dim: int, keepdim: bool):
-        return x.sum(dim=dim, keepdim=keepdim)
+    def __init__(self, dim, keepdim: bool):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor):
+        return x.sum(dim=self.dim, keepdim=self.keepdim)
 
 
 class ScalarSum(torch.nn.Module):
@@ -84,8 +89,8 @@ def test_sum_dim_intlist_scalar_input_tosa_FP_not_delegated():
 
 def test_sum_bool_tosa_INT() -> None:
     pipeline = TosaPipelineINT(
-        Sum(),
-        (torch.ones(1, dtype=torch.bool), [], False),
+        Sum([], False),
+        (torch.ones(1, dtype=torch.bool),),
         aten_op,
         exir_op=[],
     )
@@ -97,16 +102,16 @@ def test_sum_bool_tosa_INT() -> None:
     Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
 )
 def test_sum_dim_intlist_tosa_FP(test_data: input_t1):
-    test_data = test_data()
-    match test_data[0].dtype:
+    test_tensor, dim, keepdim = test_data()
+    match test_tensor.dtype:
         case torch.bfloat16:
             rtol = 1e-2
         case _:
             rtol = 1e-3
 
     pipeline = TosaPipelineFP[input_t1](
-        Sum(),
-        test_data,
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         exir_op=[],
         tosa_extensions=["bf16"],
@@ -117,42 +122,36 @@ def test_sum_dim_intlist_tosa_FP(test_data: input_t1):
 
 @common.parametrize("test_data", Sum.test_parameters)
 def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
+    test_tensor, dim, keepdim = test_data()
     pipeline = TosaPipelineINT[input_t1](
-        Sum(),
-        test_data(),
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         exir_op=[],
     )
     pipeline.run()
 
 
-# dim=None cases skipped: executorch.devtools.bundled_program.config rejects
-# None as a model input (cannot be serialized into the bundled program).
-_DIM_NONE_SKIP_REASON = "bundled_program cannot serialize None as a model input"
-_dim_none_skips = {
-    "dim_None": _DIM_NONE_SKIP_REASON,
-    "dim_None_4d_tensor": _DIM_NONE_SKIP_REASON,
-}
-
-
-@common.parametrize("test_data", Sum.test_parameters, skips=_dim_none_skips)
+@common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone300
 def test_sum_u55_INT_1_0(test_data: Tuple):
+    test_tensor, dim, keepdim = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
-        Sum(),
-        test_data(),
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         exir_ops=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters, skips=_dim_none_skips)
+@common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone320
 def test_sum_u85_INT_1_0(test_data: Tuple):
+    test_tensor, dim, keepdim = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
-        Sum(),
-        test_data(),
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         exir_ops=[],
     )
@@ -165,8 +164,8 @@ def test_sum_u85_INT_1_0(test_data: Tuple):
 )
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
-    data = test_data()
-    match data[0].dtype:
+    test_tensor, dim, keepdim = test_data()
+    match test_tensor.dtype:
         case torch.bfloat16:
             atol = 1e-1
             rtol = 1e-1
@@ -174,8 +173,8 @@ def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
             atol = 1e-3
             rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
-        Sum(),
-        data,
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         run_on_vulkan_runtime=True,
         quantize=False,
@@ -188,9 +187,10 @@ def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
 @common.parametrize("test_data", Sum.test_parameters)
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_quant(test_data: input_t1):
+    test_tensor, dim, keepdim = test_data()
     pipeline = VgfPipeline[input_t1](
-        Sum(),
-        test_data(),
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         run_on_vulkan_runtime=True,
         quantize=True,
@@ -207,9 +207,10 @@ reject_inputs = {
 
 @common.parametrize("test_data", reject_inputs)
 def test_sum_u55_INT_failure_set(test_data: Tuple):
+    test_tensor, dim, keepdim = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
-        Sum(),
-        test_data(),
+        Sum(dim, keepdim),
+        (test_tensor,),
         aten_op,
         exir_ops=[],
         run_on_fvp=False,  # Run fails since we are missing a non partitioned sum op
