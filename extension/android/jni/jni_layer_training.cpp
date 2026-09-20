@@ -30,16 +30,16 @@ using namespace torch::executor;
 namespace executorch::extension {
 
 // Forward declarations from jni_layer.cpp
-class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
+class JTensor : public facebook::jni::JavaClass<JTensor> {
  public:
   constexpr static const char* kJavaDescriptor =
       "Lorg/pytorch/executorch/Tensor;";
 
-  static facebook::jni::local_ref<TensorHybrid::javaobject>
-  newJTensorFromTensor(const executorch::aten::Tensor& tensor);
+  static facebook::jni::local_ref<JTensor::javaobject> newJTensorFromTensor(
+      const executorch::aten::Tensor& tensor);
 
   static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor);
+      facebook::jni::alias_ref<JTensor::javaobject> jtensor);
 };
 
 class JEValue : public facebook::jni::JavaClass<JEValue> {
@@ -166,8 +166,7 @@ class ExecuTorchTrainingJni
     return jresult;
   }
 
-  facebook::jni::local_ref<
-      facebook::jni::JMap<jstring, TensorHybrid::javaobject>>
+  facebook::jni::local_ref<facebook::jni::JMap<jstring, JTensor::javaobject>>
   namedParameters(facebook::jni::alias_ref<jstring> methodName) {
     auto method = methodName->toStdString();
     auto result = module_->named_parameters(method);
@@ -178,19 +177,18 @@ class ExecuTorchTrainingJni
       return {};
     }
     facebook::jni::local_ref<
-        facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>>
-        parameters = facebook::jni::
-            JHashMap<jstring, TensorHybrid::javaobject>::create();
+        facebook::jni::JHashMap<jstring, JTensor::javaobject>>
+        parameters =
+            facebook::jni::JHashMap<jstring, JTensor::javaobject>::create();
     for (auto& [layer, tensor] : result.get()) {
       parameters->put(
           facebook::jni::make_jstring(layer.data()),
-          TensorHybrid::newJTensorFromTensor(tensor));
+          JTensor::newJTensorFromTensor(tensor));
     }
     return parameters;
   }
 
-  facebook::jni::local_ref<
-      facebook::jni::JMap<jstring, TensorHybrid::javaobject>>
+  facebook::jni::local_ref<facebook::jni::JMap<jstring, JTensor::javaobject>>
   namedGradients(facebook::jni::alias_ref<jstring> methodName) {
     auto method = methodName->toStdString();
     auto result = module_->named_gradients(method);
@@ -201,13 +199,13 @@ class ExecuTorchTrainingJni
       return {};
     }
     facebook::jni::local_ref<
-        facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>>
-        gradients = facebook::jni::JHashMap<jstring, TensorHybrid::javaobject>::
-            create();
+        facebook::jni::JHashMap<jstring, JTensor::javaobject>>
+        gradients =
+            facebook::jni::JHashMap<jstring, JTensor::javaobject>::create();
     for (auto& [layer, tensor] : result.get()) {
       gradients->put(
           facebook::jni::make_jstring(layer.data()),
-          TensorHybrid::newJTensorFromTensor(tensor));
+          JTensor::newJTensorFromTensor(tensor));
     }
     return gradients;
   }
@@ -234,8 +232,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
       facebook::jni::alias_ref<
-          facebook::jni::JMap<jstring, TensorHybrid::javaobject>>
-          namedParameters,
+          facebook::jni::JMap<jstring, JTensor::javaobject>> namedParameters,
       jdouble learningRate,
       jdouble momentum,
       jdouble dampening,
@@ -252,8 +249,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
 
   SGDHybrid(
       facebook::jni::alias_ref<
-          facebook::jni::JMap<jstring, TensorHybrid::javaobject>>
-          namedParameters,
+          facebook::jni::JMap<jstring, JTensor::javaobject>> namedParameters,
       jdouble learningRate,
       jdouble momentum,
       jdouble dampening,
@@ -273,7 +269,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
       auto value = iterator->second;
 
       std::string paramName = key->toStdString();
-      TensorPtr tensor = TensorHybrid::newTensorFromJTensor(value);
+      TensorPtr tensor = JTensor::newTensorFromJTensor(value);
 
       // Store the parameter name and tensor
       parameterNames_.push_back(paramName);
@@ -290,9 +286,8 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
         std::make_unique<optimizer::SGD>(cppNamedParameters, options);
   }
 
-  void
-  step(facebook::jni::alias_ref<
-       facebook::jni::JMap<jstring, TensorHybrid::javaobject>> namedGradients) {
+  void step(facebook::jni::alias_ref<
+            facebook::jni::JMap<jstring, JTensor::javaobject>> namedGradients) {
     std::map<std::string_view, executorch::aten::Tensor> cppNamedGradients;
     std::vector<std::string> gradientNames;
     std::vector<TensorPtr> tensorKeepalives;
@@ -308,7 +303,7 @@ class SGDHybrid : public facebook::jni::HybridClass<SGDHybrid> {
       auto value = iterator->second;
 
       std::string gradName = key->toStdString();
-      TensorPtr tensor = TensorHybrid::newTensorFromJTensor(value);
+      TensorPtr tensor = JTensor::newTensorFromJTensor(value);
 
       // Store the gradient name and tensor
       gradientNames.push_back(gradName);
