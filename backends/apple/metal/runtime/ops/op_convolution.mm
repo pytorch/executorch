@@ -307,9 +307,13 @@ AOTITorchError aoti_torch_mps_convolution(
       GraphCacheKey cache_key;
       cache_key.op_name = "conv";
       // The layouts and the bias change the graph's topology, not just its
-      // shapes, so they have to be part of the key.
+      // shapes, and a transposed convolution's output padding changes its
+      // descriptor, so they all have to be part of the key.
+      const int64_t key_output_pad_h = transposed && output_padding && output_padding_len_ > 0 ? output_padding[0] : 0;
+      const int64_t key_output_pad_w = transposed && output_padding && output_padding_len_ > 1 ? output_padding[1] : 0;
       cache_key.shape_params = {N, C_in, H_in, W_in, C_out, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, dil_h, dil_w, groups,
-                                input_channels_last, weight_channels_last, bias_tensor != nullptr};
+                                input_channels_last, weight_channels_last, bias_tensor != nullptr,
+                                key_output_pad_h, key_output_pad_w};
       cache_key.dtype = dtype;
       cache_key.transpose_flag = (transposed != 0);
 
