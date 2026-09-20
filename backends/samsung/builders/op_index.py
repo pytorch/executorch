@@ -27,17 +27,8 @@ class IndexVisitor(NodeVisitor):
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
-        axis = 0
-        valid_indices_node_count = 0
-        target_indices_node = None
-        for indices_node in node.args[1]:
-            if indices_node is not None:
-                target_indices_node = indices_node
-                valid_indices_node_count += 1
-                if valid_indices_node_count > 1:
-                    raise NotImplementedError("Not support multi indices node.")
-            if target_indices_node is None:
-                axis += 1
+        axis = len(node.args[1]) - 1
+        target_indices_node = node.args[1][axis]
 
         indices_id = self.define_tensor(target_indices_node, enn_graph, vals_to_ids)
 
