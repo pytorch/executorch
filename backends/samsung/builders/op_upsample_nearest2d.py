@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 from typing import cast, Dict, List
 
 import torch
@@ -32,13 +31,10 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
         in_shape = get_shape(input)
-        output_size = cast(List[int], node.args[1])
-        if output_size is None:
-            logging.warning("output is None for this case.")
-            return False
+        out_shape = get_shape(node)
         scale_factor = [
-            output_size[0] * 1.0 / in_shape[-2],
-            output_size[1] * 1.0 / in_shape[-1],
+            out_shape[0] * 1.0 / in_shape[-2],
+            out_shape[1] * 1.0 / in_shape[-1],
         ]
 
         if len(node.args) > 2 and node.args[2]:
