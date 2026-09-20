@@ -437,9 +437,14 @@ AOTITorchError aoti_torch_mps_convolution(
                                                     dataType:mps_dtype
                                                         name:@"bias"];
 
-          // Add bias to convolution output
+          // Add bias to convolution output. MPSGraph broadcasts from the
+          // trailing dimension, so the rank-1 bias has to be shaped to line up
+          // with the channels of the NCHW result rather than with its width.
+          MPSGraphTensor* biasPerChannel = [mpsGraph reshapeTensor:biasPlaceholder
+                                                         withShape:@[@1, @(C_out), @1, @1]
+                                                              name:@"bias_per_channel"];
           finalOutput = [mpsGraph additionWithPrimaryTensor:convOutput
-                                            secondaryTensor:biasPlaceholder
+                                            secondaryTensor:biasPerChannel
                                                         name:@"add_bias"];
 
           ET_LOG(Debug, "aoti_torch_mps_convolution: Added bias placeholder to graph");
