@@ -9,7 +9,6 @@
 package org.pytorch.executorch
 
 import android.util.Log
-import com.facebook.jni.HybridData
 import com.facebook.jni.annotations.DoNotStrip
 import java.nio.Buffer
 import java.nio.ByteBuffer
@@ -50,8 +49,6 @@ abstract class Tensor internal constructor(shape: LongArray) {
   }
 
   @DoNotStrip @JvmField protected val shape: LongArray = shape.copyOf()
-
-  @DoNotStrip private var mHybridData: HybridData? = null
 
   /** Returns the number of elements in this tensor. */
   fun numel(): Long = numel(shape)
@@ -698,21 +695,17 @@ abstract class Tensor internal constructor(shape: LongArray) {
         data: ByteBuffer,
         shape: LongArray,
         dtype: Int,
-        hybridData: HybridData,
     ): Tensor {
-      val tensor =
-          when {
-            DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape)
-            DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape)
-            DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape)
-            DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape)
-            DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape)
-            DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape)
-            DType.INT8.jniCode == dtype -> Tensor_int8(data, shape)
-            else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype))
-          }
-      tensor.mHybridData = hybridData
-      return tensor
+      return when {
+        DType.FLOAT.jniCode == dtype -> Tensor_float32(data.asFloatBuffer(), shape)
+        DType.HALF.jniCode == dtype -> Tensor_float16(data.asShortBuffer(), shape)
+        DType.INT32.jniCode == dtype -> Tensor_int32(data.asIntBuffer(), shape)
+        DType.INT64.jniCode == dtype -> Tensor_int64(data.asLongBuffer(), shape)
+        DType.DOUBLE.jniCode == dtype -> Tensor_float64(data.asDoubleBuffer(), shape)
+        DType.UINT8.jniCode == dtype -> Tensor_uint8(data, shape)
+        DType.INT8.jniCode == dtype -> Tensor_int8(data, shape)
+        else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype))
+      }
     }
 
     /**
