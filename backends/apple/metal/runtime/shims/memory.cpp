@@ -238,6 +238,8 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
     int32_t ref_count = memory_it->second;
 
     if (ref_count == NOT_OWN) {
+      // No-op unless this tensor is a view into a Metal buffer.
+      metal_unregister_view(data_ptr);
       tensors.erase(it);
       ET_LOG(
           Debug,
@@ -585,23 +587,19 @@ AOTITorchError aoti_torch__reinterpret_tensor(
           element_size,
           adjusted_data);
 
-      // The view gets its own MTLBuffer over the parent's memory. Metal tracks
-      // hazards per buffer object, so it cannot see that work reading this one
-      // depends on work still pending on the parent and may run them out of
-      // order. Let the parent's writes finish first.
+      // The view shares its parent's Metal buffer and is bound at an offset.
+      // It must not get an MTLBuffer of its own: Metal would treat the two as
+      // unrelated, and inductor both reads views of a buffer another op is
+      // still writing and fills a buffer (e.g. the result of a cat) by writing
+      // through views of it.
       if (metal_is_device_pointer(data_ptr)) {
-        auto* stream = getCurrentMetalStream();
-        if (stream) {
-          stream->synchronize(SyncType::COMMIT_AND_WAIT);
-        }
+        ET_CHECK_OR_RETURN_ERROR(
+            metal_register_view(adjusted_data, data_ptr),
+            Internal,
+            "Failed to register adjusted_data=%p as a view of %p",
+            adjusted_data,
+            data_ptr);
       }
-
-      ET_CHECK_OR_RETURN_ERROR(
-          metal_buffer_nocopy(adjusted_data, tensor->nbytes(), true),
-          Internal,
-          "metal_buffer_nocopy failed for adjusted_data=%p, nbytes=%zu",
-          adjusted_data,
-          static_cast<size_t>(tensor->nbytes()));
 
       memory_to_n_tensor[adjusted_data] = NOT_OWN;
     }

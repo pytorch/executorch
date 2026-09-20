@@ -17,12 +17,35 @@ CacheStats cache_stats;
 
 id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* tensor_name) {
   void* data_ptr = tensor->mutable_data_ptr();
-  auto it = ptr_to_mtl_buffer.find(data_ptr);
-  if (it == ptr_to_mtl_buffer.end()) {
+  id<MTLBuffer> buffer = nil;
+  size_t offset = 0;
+  if (!metal_resolve_buffer(data_ptr, &buffer, &offset)) {
     ET_LOG(Error, "%s: %s tensor not found in Metal buffer mapping", op_name, tensor_name);
     throw std::runtime_error(std::string(tensor_name) + " tensor not found in Metal buffer mapping");
   }
-  return it->second;
+  if (offset == 0) {
+    return buffer;
+  }
+
+  // The tensor is a view that starts partway into `buffer`. MPSGraphTensorData
+  // cannot address into a buffer, so the graph needs an MTLBuffer that begins at
+  // the view, over the same memory. Metal does not relate that alias to
+  // `buffer`, and work using one does not see pending work on the other, so the
+  // memory has to be settled on both sides of the graph: wait for what was
+  // already encoded, and have the stream wait again once the graph has run.
+  ETMetalStream* stream = getCurrentMetalStream();
+  stream->synchronize(SyncType::COMMIT_AND_WAIT);
+  stream->syncAfterNextGraph();
+
+  id<MTLBuffer> alias = [get_metal_device() newBufferWithBytesNoCopy:data_ptr
+                                                              length:tensor->nbytes()
+                                                             options:MTLResourceStorageModeShared
+                                                         deallocator:nil];
+  if (!alias) {
+    ET_LOG(Error, "%s: failed to wrap the %s view in a Metal buffer", op_name, tensor_name);
+    throw std::runtime_error(std::string(tensor_name) + " view could not be wrapped in a Metal buffer");
+  }
+  return [alias autorelease];
 }
 
 id<MTLBuffer> allocate_mtl_buffer(void** data_ptr, size_t size_bytes) {

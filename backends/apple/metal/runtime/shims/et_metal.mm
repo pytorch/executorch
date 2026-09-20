@@ -81,6 +81,32 @@ void dispatch_sync_with_rethrow(dispatch_queue_t queue, void (^block)()) {
 // Global Metal buffer mapping - accessible for MPS shim
 std::unordered_map<void*, id<MTLBuffer>> ptr_to_mtl_buffer;
 
+namespace {
+// A view's address mapped to the address of the buffer it lives in, counted
+// because several tensors can be views of the same address.
+struct MetalView {
+    void* base;
+    int32_t count;
+};
+std::unordered_map<void*, MetalView> ptr_to_view;
+} // namespace
+
+bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
+    void* base = ptr;
+    auto view = ptr_to_view.find(ptr);
+    if (view != ptr_to_view.end()) {
+        base = view->second.base;
+    }
+
+    auto it = ptr_to_mtl_buffer.find(base);
+    if (it == ptr_to_mtl_buffer.end()) {
+        return false;
+    }
+    *buffer = it->second;
+    *offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(base);
+    return true;
+}
+
 // Metal buffer pool with best-fit matching and LRU eviction.
 // On free, buffers are recycled into a sorted pool. On alloc, the smallest
 // buffer >= requested size is returned (if within the headroom bound). When the
@@ -266,6 +292,7 @@ void metal_cleanup_resources() {
         [pair.second release];
     }
     ptr_to_mtl_buffer.clear();
+    ptr_to_view.clear();
     get_metal_buffer_pool().clear();
 }
 
@@ -287,8 +314,36 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
     return true;
 }
 
+bool metal_register_view(void* view_ptr, void* base_ptr) {
+    // A view of a view lives in the same buffer as its parent.
+    auto parent = ptr_to_view.find(base_ptr);
+    void* base = parent != ptr_to_view.end() ? parent->second.base : base_ptr;
+    if (ptr_to_mtl_buffer.find(base) == ptr_to_mtl_buffer.end()) {
+        ET_LOG(Error, "metal_register_view: %p is not inside a Metal buffer", base_ptr);
+        return false;
+    }
+
+    auto it = ptr_to_view.find(view_ptr);
+    if (it == ptr_to_view.end()) {
+        ptr_to_view[view_ptr] = {base, 1};
+    } else {
+        it->second.base = base;
+        it->second.count++;
+    }
+    return true;
+}
+
+void metal_unregister_view(void* view_ptr) {
+    auto it = ptr_to_view.find(view_ptr);
+    if (it != ptr_to_view.end() && --it->second.count <= 0) {
+        ptr_to_view.erase(it);
+    }
+}
+
 bool metal_is_device_pointer(void* ptr) {
-    return ptr_to_mtl_buffer.find(ptr) != ptr_to_mtl_buffer.end();
+    id<MTLBuffer> buffer = nil;
+    size_t offset = 0;
+    return metal_resolve_buffer(ptr, &buffer, &offset);
 }
 
 int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_device, bool dst_is_device) {
@@ -300,16 +355,13 @@ int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_dev
     @autoreleasepool {
         // Case 1: Device-to-device copy - use GPU blit encoder (most efficient)
         if (src_is_device && dst_is_device) {
-            auto src_it = ptr_to_mtl_buffer.find(const_cast<void*>(src));
-            auto dst_it = ptr_to_mtl_buffer.find(dst);
+            id<MTLBuffer> srcBuffer = nil;
+            id<MTLBuffer> dstBuffer = nil;
+            size_t srcOffset = 0;
+            size_t dstOffset = 0;
 
-            if (src_it != ptr_to_mtl_buffer.end() && dst_it != ptr_to_mtl_buffer.end()) {
-                id<MTLBuffer> srcBuffer = src_it->second;
-                id<MTLBuffer> dstBuffer = dst_it->second;
-
-                // Calculate offsets relative to buffer base
-                size_t srcOffset = static_cast<const uint8_t*>(src) - static_cast<const uint8_t*>([srcBuffer contents]);
-                size_t dstOffset = static_cast<uint8_t*>(dst) - static_cast<uint8_t*>([dstBuffer contents]);
+            if (metal_resolve_buffer(const_cast<void*>(src), &srcBuffer, &srcOffset) &&
+                metal_resolve_buffer(dst, &dstBuffer, &dstOffset)) {
 
                 // Use Metal's blit encoder for GPU-accelerated copy
                 ETMetalStream* stream = getCurrentMetalStream();
@@ -514,11 +566,11 @@ void ETMetalKernelFunction::setArg(unsigned idx, const executorch::runtime::eten
     void* data_ptr = tensor.mutable_data_ptr();
     size_t totalSize = tensor.numel() * tensor.element_size();
 
-    auto it = ptr_to_mtl_buffer.find(data_ptr);
-    if (it != ptr_to_mtl_buffer.end()) {
-        // Use existing Metal buffer
-        id<MTLBuffer> mtlBuffer = it->second;
-        [encoder_ setBuffer:mtlBuffer offset:0 atIndex:idx];
+    id<MTLBuffer> mtlBuffer = nil;
+    size_t bufferOffset = 0;
+    if (metal_resolve_buffer(data_ptr, &mtlBuffer, &bufferOffset)) {
+        // Use existing Metal buffer; a view binds its parent at an offset
+        [encoder_ setBuffer:mtlBuffer offset:bufferOffset atIndex:idx];
         ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set Metal buffer at index %u (size: %zu)", idx, totalSize);
     } else {
         // Handle CPU tensor data
@@ -1185,6 +1237,11 @@ void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSD
                         executionDescriptor:nil];
         }
     });
+
+    if (syncAfterNextGraph_) {
+        syncAfterNextGraph_ = false;
+        synchronize(SyncType::COMMIT_AND_WAIT);
+    }
 }
 
 // =======================

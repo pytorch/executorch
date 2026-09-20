@@ -297,6 +297,12 @@ class ETMetalStream {
       NSDictionary_t results,
       SyncType syncType = SyncType::COMMIT_ADAPTIVE);
 
+  // Makes the next executeMPSGraph() wait for the GPU before returning. See
+  // get_mtl_buffer(): needed when a graph was handed an aliasing buffer.
+  void syncAfterNextGraph() {
+    syncAfterNextGraph_ = true;
+  }
+
   // Command buffer lifecycle management
   void commitCommandBuffer(MTLCommandBuffer_t commandBuffer);
   void flush();
@@ -338,6 +344,7 @@ class ETMetalStream {
 
   // Configuration
   bool enableCommitAndContinue_;
+  bool syncAfterNextGraph_ = false;
   int flushInterval_; // 0 = disabled, >0 = flush every N dispatches
   std::atomic<int> dispatchCount_; // dispatches since last flush
 
@@ -389,6 +396,14 @@ int metal_copy_memory(
 void metal_cleanup_resources();
 bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 
+// Records that `view_ptr` points inside the Metal buffer that owns `base_ptr`,
+// so the view is bound as that buffer plus an offset. Giving a view its own
+// MTLBuffer over the same memory does not work: Metal treats the two buffers as
+// unrelated, and a write through one is not seen by a read of the other in the
+// same command buffer. Registrations nest; unregister once per register.
+bool metal_register_view(void* view_ptr, void* base_ptr);
+void metal_unregister_view(void* view_ptr);
+
 // Helper functions to access Metal objects
 MTLDevice_t get_metal_device();
 MTLCommandQueue_t get_metal_command_queue();
@@ -399,6 +414,11 @@ MTLCommandQueue_t get_metal_command_queue();
 // C++ only - expose the Metal buffer mapping
 #ifdef __OBJC__
 extern std::unordered_map<void*, MTLBuffer_t> ptr_to_mtl_buffer;
+
+// Finds the Metal buffer holding `ptr` and how far into it `ptr` is. Handles
+// both a buffer's own address and a registered view. Returns false for memory
+// Metal does not own.
+bool metal_resolve_buffer(void* ptr, MTLBuffer_t* buffer, size_t* offset);
 #endif
 
 #endif
