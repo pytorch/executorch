@@ -9,7 +9,6 @@
 package org.pytorch.executorch
 
 import android.util.Log
-import com.facebook.jni.HybridData
 import com.facebook.jni.annotations.DoNotStrip
 import java.nio.Buffer
 import java.nio.ByteBuffer
@@ -50,8 +49,6 @@ abstract class Tensor internal constructor(shape: LongArray) {
   }
 
   @DoNotStrip @JvmField protected val shape: LongArray = shape.copyOf()
-
-  @DoNotStrip private var mHybridData: HybridData? = null
 
   /** Returns the number of elements in this tensor. */
   fun numel(): Long = numel(shape)
@@ -698,7 +695,6 @@ abstract class Tensor internal constructor(shape: LongArray) {
         data: ByteBuffer,
         shape: LongArray,
         dtype: Int,
-        hybridData: HybridData,
     ): Tensor {
       val tensor =
           when {
@@ -711,7 +707,6 @@ abstract class Tensor internal constructor(shape: LongArray) {
             DType.INT8.jniCode == dtype -> Tensor_int8(data, shape)
             else -> Tensor_unsupported(data, shape, DType.fromJniCode(dtype))
           }
-      tensor.mHybridData = hybridData
       return tensor
     }
 
