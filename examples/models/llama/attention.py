@@ -457,6 +457,12 @@ class AttentionMHA(Attention):
                 device="cpu",
             )
         )
+        # Sliding-window layers: additionally mask out positions outside the window.
+        if self.is_sliding and args.sliding_window:
+            window = args.sliding_window
+            row_idx = torch.arange(self.max_context_len).unsqueeze(1)
+            col_idx = torch.arange(self.max_context_len).unsqueeze(0)
+            causal_mask = causal_mask & ((row_idx - col_idx) < window)
         self.register_buffer("mask", causal_mask, persistent=False)
 
         if self.use_kv_cache:

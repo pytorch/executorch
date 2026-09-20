@@ -115,12 +115,11 @@ def test_spark_x2_5_architecture_configs_match_expected_shapes() -> None:
         )
 
 
-def test_spark_x2_5_mlx_config_enables_mlx_backend() -> None:
-    cfg = OmegaConf.load(CONFIG_DIR / "spark_x2_5_mlx_4w.yaml")
+def test_spark_x2_5_xnnpack_q8da4w_config_enables_xnnpack_backend() -> None:
+    cfg = OmegaConf.load(CONFIG_DIR / "spark_x2_5_xnnpack_q8da4w.yaml")
     assert cfg.base.metadata == '{"get_bos_id": 0, "get_eos_ids":[1]}'
     assert cfg.model.use_kv_cache is True
     assert cfg.model.use_sdpa_with_kv_cache is True
-    assert cfg.model.dtype_override == "bf16"
-    assert cfg.quantization.qmode == "4w"
-    assert cfg.quantization.group_size == 64
-    assert cfg.backend.mlx.enabled is True
+    assert cfg.model.dtype_override == "fp32"
+    assert cfg.quantization.qmode == "8da4w"
+    assert cfg.backend.xnnpack.enabled is True

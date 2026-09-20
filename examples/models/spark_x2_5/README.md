@@ -42,27 +42,28 @@ python -m extension.llm.export.export_llm \
   +export.output_name="spark_x2_5_4b_8da4w.pte"
 ```
 
-Export Spark-X2.5-1.7B to MLX on Apple Silicon, 4-bit weights:
-```
-python -m extension.llm.export.export_llm \
-  --config examples/models/spark_x2_5/config/spark_x2_5_mlx_4w.yaml \
-  +base.model_class="spark_x2_5_1_7b" \
-  +base.params="examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json" \
-  +export.output_name="spark_x2_5_1_7b_mlx_4w.pte"
-```
-
-To export with extended context (e.g., 2048 tokens):
+To export with extended context (up to 1024 tokens, bounded by the sliding-window ring cache):
 ```
 python -m extension.llm.export.export_llm \
   --config examples/models/spark_x2_5/config/spark_x2_5_xnnpack_q8da4w.yaml \
   +base.model_class="spark_x2_5_1_7b" \
   +base.params="examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json" \
-  +export.max_seq_length=2048 \
-  +export.max_context_length=2048 \
+  +export.max_seq_length=1024 \
+  +export.max_context_length=1024 \
   +export.output_name="spark_x2_5_1_7b_8da4w.pte"
 ```
 
+Note: the sliding-window attention layers use a ring buffer sized `2 * sliding_window` = 1024 slots, so prefill is bounded to 1024 tokens regardless of `max_seq_length`. The full-attention layers can attend to the full `max_context_length`.
+
 ### Example run
+
+Spark-X2.5 uses the following chat template:
+```
+<｜start▁of▁sentence｜><|System|>
+you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|User|>Who are you?<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|></think>
+```
+
+> The special tokens `<｜start▁of▁sentence｜>` and `<｜end▁of▁sentence｜>` use the Unicode lower-one-eighth block character (`▁`, U+2581).
 
 With ExecuTorch pybindings:
 ```
@@ -71,7 +72,8 @@ python -m examples.models.llama.runner.native \
   --pte spark_x2_5_1_7b_8da4w.pte \
   --tokenizer ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer.json \
   --tokenizer_config ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer_config.json \
-  --prompt="<|user|>\nWho are you?<|end|>\n<|assistant|>\n" \
+  --prompt="<｜start▁of▁sentence｜><|System|>
+you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|User|>Who are you?<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|></think>" \
   --params examples/models/spark_x2_5/config/spark_x2_5_1_7b_config.json \
   --max_len 128 \
   -kv \
@@ -83,7 +85,8 @@ With ExecuTorch's sample C++ runner:
 cmake-out/examples/models/llama/llama_main \
   --model_path spark_x2_5_1_7b_8da4w.pte \
   --tokenizer_path ~/.cache/huggingface/hub/models--XHToken--Spark-X2.5-1.7B/snapshots/<snapshot>/tokenizer.json \
-  --prompt="<|user|>\nWho are you?<|end|>\n<|assistant|>\n" \
+  --prompt="<｜start▁of▁sentence｜><|System|>
+you are a helpful assistant.<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|User|>Who are you?<｜end▁of▁sentence｜><｜start▁of▁sentence｜><|Bot|></think>" \
   --temperature 0.3
 ```
 
