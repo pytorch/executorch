@@ -616,6 +616,32 @@ MODULE_REGISTRY["conv2d_stack"] = {
 
 
 # -------------------------------------------------------------------------
+class Conv2dSingleChannel(nn.Module):
+    """With one channel, contiguous and channels-last strides describe the same
+    memory, so the layout cannot be read off the tensor. The first conv takes a
+    single-channel input, the second produces a single-channel output that the
+    third consumes."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(8, 1, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3 = nn.Conv2d(1, 6, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        return self.conv3(x)
+
+
+MODULE_REGISTRY["conv2d_single_channel"] = {
+    "model_class": Conv2dSingleChannel,
+    "input_shapes": [(2, 1, 16, 12)],
+    "description": "Conv2d layers with single-channel inputs and outputs",
+}
+
+
+# -------------------------------------------------------------------------
 # Attention (SDPA) Modules
 # -------------------------------------------------------------------------
 
