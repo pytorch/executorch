@@ -994,12 +994,20 @@ jobs:
   llm-server:
     needs: [changed-files, run-decision]
     if: |
-      contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
-      contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
-      contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
-      needs.run-decision.outputs.is-full-run == 'true'
+      github.event_name != 'pull_request' && (
+        contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/serving') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/tests') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse_glimmer') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_ci-run-decision.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: ./.github/workflows/_llm_server.yml
     permissions:
       id-token: write
@@ -1133,5 +1141,7 @@ jobs:
         # Test models
         # TODO: Switch to run_tests.py once CI device provisioning is stable
         # python -m executorch.backends.samsung.test.utils.run_tests --chipset E9955
-        pip install evaluate
+        # accelerate is for test_mobilebert_qat, whose TrainingArguments needs it;
+        # transformers reports the same error when it is absent and when it is too old.
+        pip install evaluate 'accelerate>=1.1.0'
         python -m unittest discover -s backends/samsung/test/models -p "test_*.py"

@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import datasets.config
+
 import evaluate
 import numpy as np
 import requests
@@ -16,7 +18,6 @@ import requests
 import torch
 import torch.nn as nn
 import torchao
-
 from datasets import ClassLabel, DatasetDict, load_dataset
 
 from executorch.backends.samsung.quantizer import EnnQuantizer, Precision
@@ -140,6 +141,14 @@ class MobileBertFinetune:
 
         print("Preprocessing data...")
         tokenized_datasets = raw_datasets.map(preprocess_function, batched=True)
+        # datasets' torch formatter does `from torchvision.io import VideoReader`
+        # whenever torchvision merely imports, but OSS torchvision ships that symbol
+        # only in Meta-internal builds -- its io/__init__ swallows the import with
+        # `except ImportError: pass`. timm puts torchvision in sys.modules, so
+        # collating the tensors below raises ImportError. This dataset is text only
+        # and never decodes an image or a video, so the torchvision path is dead
+        # weight here. Drop the two lines once datasets guards that import.
+        datasets.config.TORCHVISION_AVAILABLE = False
         tokenized_datasets.set_format(
             type="torch", columns=["input_ids", "attention_mask", "label"]
         )
