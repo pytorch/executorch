@@ -416,8 +416,8 @@ static void* materialize_packed(
     return nullptr;
 
   // Ensure pending GPU writes to the source buffer are complete. `src` may
-  // point partway into that buffer, so the caller tells us where it lives: only
-  // a buffer's base address is registered as a device pointer.
+  // point partway into that buffer, at an address that is not itself known as
+  // a device pointer, so the caller tells us where the memory lives.
   if (src_is_device) {
     auto* stream = getCurrentMetalStream();
     if (stream) {

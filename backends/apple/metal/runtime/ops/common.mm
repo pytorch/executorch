@@ -35,7 +35,6 @@ id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* te
   // already encoded, and have the stream wait again once the graph has run.
   ETMetalStream* stream = getCurrentMetalStream();
   stream->synchronize(SyncType::COMMIT_AND_WAIT);
-  stream->syncAfterNextGraph();
 
   id<MTLBuffer> alias = [get_metal_device() newBufferWithBytesNoCopy:data_ptr
                                                               length:tensor->nbytes()
@@ -45,6 +44,9 @@ id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* te
     ET_LOG(Error, "%s: failed to wrap the %s view in a Metal buffer", op_name, tensor_name);
     throw std::runtime_error(std::string(tensor_name) + " view could not be wrapped in a Metal buffer");
   }
+  // Only once the alias exists: a failure above must not leave the next,
+  // unrelated graph waiting.
+  stream->syncAfterNextGraph();
   return [alias autorelease];
 }
 
