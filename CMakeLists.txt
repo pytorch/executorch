@@ -1198,6 +1198,22 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
 
 endif()
 
+if(TARGET cpublas
+   AND TARGET kleidiai
+   AND TARGET cpuinfo
+)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
+     OR ANDROID_ABI STREQUAL "arm64-v8a"
+     OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"
+  )
+    target_compile_definitions(cpublas PRIVATE ET_BUILD_WITH_KLEIDIAI)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_NEON_BF16)
+    endif()
+    target_link_libraries(cpublas PRIVATE kleidiai)
+  endif()
+endif()
+
 # The shared build ships the profiler as one of its libraries, and the Python
 # extension records a hard dependency on it, and the Apple ETDump extension
 # links it, so the target has to exist whenever any of those is being built
