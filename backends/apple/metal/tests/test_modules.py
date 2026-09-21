@@ -347,10 +347,43 @@ MODULE_REGISTRY["linear_chunk_cat_last_dim"] = {
     "model_class": LinearChunkCatLastDim,
     "input_shapes": [(12, 7)],
     "description": "Linear on a last-dim cat assembled from chunks of another linear's output",
-    # The slices of a last-dim cat are non-packed views, which
-    # aoti_torch__reinterpret_tensor materializes into a copy. Writes through
-    # them land in the copy and never reach the cat buffer.
-    "skip": "Writes through a non-packed view are lost (view is materialized)",
+}
+
+
+# -------------------------------------------------------------------------
+class PointwiseC2f(nn.Module):
+    """The C2f block of the YOLO models, with 1x1 convs so that it only needs
+    matmuls. Inductor lays the activations out channels-last, where a chunk
+    along C is a view that is not densely packed, and fills the cat by writing
+    through four such views of it. With two inner blocks, generated kernels both
+    read and write views like that."""
+
+    class Inner(nn.Module):
+        def __init__(self, channels: int):
+            super().__init__()
+            self.conv1 = nn.Conv2d(channels, channels, kernel_size=1)
+            self.conv2 = nn.Conv2d(channels, channels, kernel_size=1)
+
+        def forward(self, x):
+            return x + self.conv2(torch.relu(self.conv1(x)))
+
+    def __init__(self):
+        super().__init__()
+        self.conv_in = nn.Conv2d(16, 16, kernel_size=1)
+        self.inner = nn.ModuleList(PointwiseC2f.Inner(8) for _ in range(2))
+        self.conv_out = nn.Conv2d(32, 16, kernel_size=1)
+
+    def forward(self, x):
+        parts = list(self.conv_in(x).chunk(2, dim=1))
+        for block in self.inner:
+            parts.append(block(parts[-1]))
+        return self.conv_out(torch.cat(parts, dim=1))
+
+
+MODULE_REGISTRY["pointwise_c2f"] = {
+    "model_class": PointwiseC2f,
+    "input_shapes": [(2, 16, 8, 8)],
+    "description": "C2f block whose cat is filled through non-packed channels-last views",
 }
 
 

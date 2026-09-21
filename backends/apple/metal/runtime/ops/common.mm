@@ -16,6 +16,21 @@ std::unordered_map<GraphCacheKey, CachedGraph, GraphCacheKeyHash> graph_cache;
 CacheStats cache_stats;
 
 id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* tensor_name) {
+  // MPSGraph reads its inputs as dense tensors. A strided view is handed over
+  // as a packed copy; a graph cannot write its result through one.
+  if (metal_is_strided_view(tensor)) {
+    if (std::strcmp(tensor_name, "out") == 0) {
+      ET_LOG(Error, "%s: the out tensor is a view that is not densely packed, which is unsupported", op_name);
+      throw std::runtime_error("out tensor is a non-packed view");
+    }
+    id<MTLBuffer> packed = metal_packed_copy_of_strided_view(*tensor);
+    if (!packed) {
+      ET_LOG(Error, "%s: failed to make a packed copy of the %s view", op_name, tensor_name);
+      throw std::runtime_error(std::string(tensor_name) + " view could not be packed");
+    }
+    return packed;
+  }
+
   void* data_ptr = tensor->mutable_data_ptr();
   id<MTLBuffer> buffer = nil;
   size_t offset = 0;

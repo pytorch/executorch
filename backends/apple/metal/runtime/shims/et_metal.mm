@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
+#include <cstring>
 #include <list>
 #include <map>
 #include <optional>
@@ -89,6 +90,13 @@ struct MetalView {
     int32_t count;
 };
 std::unordered_map<void*, MetalView> ptr_to_view;
+
+// Real sizes and strides of the strided views, by tensor.
+struct StridedView {
+    std::vector<int64_t> sizes;
+    std::vector<int64_t> strides;
+};
+std::unordered_map<const void*, StridedView> strided_views;
 } // namespace
 
 bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
@@ -105,6 +113,69 @@ bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
     *buffer = it->second;
     *offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(base);
     return true;
+}
+
+void metal_record_strided_view(
+    const void* tensor,
+    std::vector<int64_t> sizes,
+    std::vector<int64_t> strides) {
+    strided_views[tensor] = {std::move(sizes), std::move(strides)};
+}
+
+void metal_share_strided_view(const void* from, const void* to) {
+    auto it = strided_views.find(from);
+    if (it != strided_views.end()) {
+        StridedView view = it->second;
+        strided_views[to] = std::move(view);
+    }
+}
+
+void metal_forget_strided_view(const void* tensor) {
+    strided_views.erase(tensor);
+}
+
+bool metal_is_strided_view(const void* tensor) {
+    return strided_views.find(tensor) != strided_views.end();
+}
+
+id<MTLBuffer> metal_packed_copy_of_strided_view(
+    const executorch::runtime::etensor::Tensor& tensor) {
+    auto it = strided_views.find(&tensor);
+    if (it == strided_views.end()) {
+        return nil;
+    }
+    const StridedView& view = it->second;
+
+    // The copy is made on the CPU, so what the GPU still has to write into the
+    // view has to be there first.
+    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+
+    const size_t element_size = tensor.element_size();
+    const size_t numel = tensor.numel();
+    id<MTLBuffer> packed = [get_metal_device() newBufferWithLength:std::max<size_t>(numel * element_size, 1)
+                                                           options:MTLResourceStorageModeShared];
+    if (!packed) {
+        return nil;
+    }
+
+    const char* src = static_cast<const char*>(tensor.const_data_ptr());
+    char* dst = static_cast<char*>([packed contents]);
+    const size_t ndim = view.sizes.size();
+    std::vector<int64_t> coord(ndim, 0);
+    for (size_t flat = 0; flat < numel; flat++) {
+        int64_t src_index = 0;
+        for (size_t d = 0; d < ndim; d++) {
+            src_index += coord[d] * view.strides[d];
+        }
+        std::memcpy(dst + flat * element_size, src + src_index * element_size, element_size);
+        for (size_t d = ndim; d-- > 0;) {
+            if (++coord[d] < view.sizes[d]) {
+                break;
+            }
+            coord[d] = 0;
+        }
+    }
+    return [packed autorelease];
 }
 
 // Metal buffer pool with best-fit matching and LRU eviction.
@@ -293,6 +364,7 @@ void metal_cleanup_resources() {
     }
     ptr_to_mtl_buffer.clear();
     ptr_to_view.clear();
+    strided_views.clear();
     get_metal_buffer_pool().clear();
 }
 
@@ -564,10 +636,21 @@ void ETMetalKernelFunction::startEncoding() {
     }
 }
 
-void ETMetalKernelFunction::setArg(unsigned idx, const executorch::runtime::etensor::Tensor& tensor) {
+void ETMetalKernelFunction::setArg(
+    unsigned idx,
+    const executorch::runtime::etensor::Tensor& tensor,
+    bool strided_view_in_place) {
     if (!encoder_) {
         ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
         return;
+    }
+
+    if (!strided_view_in_place) {
+        id<MTLBuffer> packed = metal_packed_copy_of_strided_view(tensor);
+        if (packed) {
+            [encoder_ setBuffer:packed offset:0 atIndex:idx];
+            return;
+        }
     }
 
     void* data_ptr = tensor.mutable_data_ptr();
