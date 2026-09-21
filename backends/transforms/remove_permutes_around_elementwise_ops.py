@@ -661,6 +661,20 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return None
         return len(val.shape)
 
+    def _constant_view_shape(
+        self, node: torch.fx.Node, permutation: list[int]
+    ) -> list[int] | None:
+        """Return a safe lower-rank view after applying ``permutation``."""
+        original_shape = self._concrete_shape(node)
+        if original_shape is None or len(original_shape) >= len(permutation):
+            return None
+        rank_difference = len(permutation) - len(original_shape)
+        padded_shape = [1] * rank_difference + original_shape
+        permuted_shape = [padded_shape[dim] for dim in permutation]
+        if any(dim != 1 for dim in permuted_shape[:rank_difference]):
+            return None
+        return permuted_shape[rank_difference:]
+
     @staticmethod
     def _is_pointwise(target) -> bool:
         """Check if a target op is tagged as pointwise in ATen."""
@@ -758,6 +772,21 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     if len(perm) != len(inp.meta["val"].shape):
                         return False
 
+        # Dropping the leading dimensions added for broadcast alignment is
+        # valid only when the permutation leaves all of them as singletons.
+        for const_node, user_node in subgraph.constant_edges_in:
+            const_rank = self._get_node_rank(const_node)
+            node_end_perm = subgraph.node_end_permute.get(
+                user_node, subgraph.end_permute
+            )
+            if const_rank is None:
+                return False
+            if (
+                const_rank < len(node_end_perm)
+                and self._constant_view_shape(const_node, node_end_perm) is None
+            ):
+                return False
+
         # Handle dimension related node arguments FIRST, before
         # bypassing permutes (which changes node inputs/metadata).
         for node in subgraph.nodes:
@@ -825,10 +854,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     and const_rank < permute_rank
                     and const_node.meta.get("val") is not None
                 ):
-                    original_shape = list(const_node.meta["val"].shape)
-                    padded = [1] * (permute_rank - const_rank) + original_shape
-                    target_shape = [padded[d] for d in node_end_perm]
-                    target_shape = target_shape[permute_rank - const_rank :]
+                    target_shape = self._constant_view_shape(const_node, node_end_perm)
+                    assert target_shape is not None
                     new_node = graph.create_node(
                         "call_function",
                         exir_ops.edge.aten.view_copy.default,
