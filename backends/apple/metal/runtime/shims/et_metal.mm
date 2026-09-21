@@ -333,6 +333,13 @@ bool metal_register_view(void* view_ptr, void* base_ptr) {
     return true;
 }
 
+void metal_retain_view(void* view_ptr) {
+    auto it = ptr_to_view.find(view_ptr);
+    if (it != ptr_to_view.end()) {
+        it->second.count++;
+    }
+}
+
 void metal_unregister_view(void* view_ptr) {
     auto it = ptr_to_view.find(view_ptr);
     if (it != ptr_to_view.end() && --it->second.count <= 0) {

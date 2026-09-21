@@ -400,8 +400,13 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 // so the view is bound as that buffer plus an offset. Giving a view its own
 // MTLBuffer over the same memory does not work: Metal treats the two buffers as
 // unrelated, and a write through one is not seen by a read of the other in the
-// same command buffer. Registrations nest; unregister once per register.
+// same command buffer. Registrations are counted: every tensor handle at
+// `view_ptr` holds one, taken with metal_register_view when the view is created
+// or with metal_retain_view when another handle is made for the same address,
+// and gives it back with metal_unregister_view. metal_retain_view does nothing
+// for an address that is not a registered view.
 bool metal_register_view(void* view_ptr, void* base_ptr);
+void metal_retain_view(void* view_ptr);
 void metal_unregister_view(void* view_ptr);
 
 // Helper functions to access Metal objects

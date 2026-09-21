@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <vector>
 
+#include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
@@ -57,6 +58,57 @@ class MetalMemoryTest : public ::testing::Test {
         /*opaque_metadata_size=*/0);
   }
 
+  // Allocates an 8-element Metal buffer and a view of its last 4 elements.
+  void createBaseAndView(AOTITensorHandle* base, AOTITensorHandle* view) {
+    const int64_t base_size = 8;
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            1, &base_size, &kStride, kFloat32, kDeviceMps, 0, base),
+        Error::Ok);
+    ASSERT_EQ(
+        aoti_torch__reinterpret_tensor(
+            *base, 1, &kViewSize, &kStride, /*storage_offset=*/4, view),
+        Error::Ok);
+    ASSERT_NE((*view)->mutable_data_ptr(), (*base)->mutable_data_ptr());
+    ASSERT_TRUE(metal_is_device_pointer((*view)->mutable_data_ptr()));
+  }
+
+  // A second handle at the address of `view`, made the way inductor's wrapper
+  // makes one: by copying the handle, or by reinterpreting at offset 0.
+  Error createAlias(
+      AOTITensorHandle view,
+      bool by_reinterpret,
+      AOTITensorHandle* alias) {
+    if (by_reinterpret) {
+      return aoti_torch__reinterpret_tensor(
+          view, 1, &kViewSize, &kStride, /*storage_offset=*/0, alias);
+    }
+    return aoti_torch_new_tensor_handle(view, alias);
+  }
+
+  // Deleting one of two handles to the same view must leave the view bound to
+  // its parent's Metal buffer for the other handle.
+  void expectViewOutlivesDeletedHandle(bool by_reinterpret, bool delete_view) {
+    AOTITensorHandle base = nullptr;
+    AOTITensorHandle view = nullptr;
+    createBaseAndView(&base, &view);
+    AOTITensorHandle alias = nullptr;
+    ASSERT_EQ(createAlias(view, by_reinterpret, &alias), Error::Ok);
+    void* view_ptr = view->mutable_data_ptr();
+    ASSERT_EQ(alias->mutable_data_ptr(), view_ptr);
+
+    ASSERT_EQ(
+        aoti_torch_delete_tensor_object(delete_view ? view : alias), Error::Ok);
+    EXPECT_TRUE(metal_is_device_pointer(view_ptr));
+
+    ASSERT_EQ(
+        aoti_torch_delete_tensor_object(delete_view ? alias : view), Error::Ok);
+    EXPECT_FALSE(metal_is_device_pointer(view_ptr));
+  }
+
+  static constexpr int64_t kViewSize = 4;
+  static constexpr int64_t kStride = 1;
+
   std::vector<float> blob_ = std::vector<float>(4, 1.0f);
 };
 
@@ -90,4 +142,24 @@ TEST_F(MetalMemoryTest, CleanupLeavesNoTrackedMemory) {
 
   EXPECT_TRUE(tensors.empty());
   EXPECT_TRUE(memory_to_n_tensor.empty());
+}
+
+TEST_F(MetalMemoryTest, ViewOutlivesDeletedOriginalOfCopiedHandle) {
+  expectViewOutlivesDeletedHandle(
+      /*by_reinterpret=*/false, /*delete_view=*/true);
+}
+
+TEST_F(MetalMemoryTest, ViewOutlivesDeletedCopiedHandle) {
+  expectViewOutlivesDeletedHandle(
+      /*by_reinterpret=*/false, /*delete_view=*/false);
+}
+
+TEST_F(MetalMemoryTest, ViewOutlivesDeletedOriginalOfSameAddressReinterpret) {
+  expectViewOutlivesDeletedHandle(
+      /*by_reinterpret=*/true, /*delete_view=*/true);
+}
+
+TEST_F(MetalMemoryTest, ViewOutlivesDeletedSameAddressReinterpret) {
+  expectViewOutlivesDeletedHandle(
+      /*by_reinterpret=*/true, /*delete_view=*/false);
 }

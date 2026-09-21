@@ -602,6 +602,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       }
 
       memory_to_n_tensor[adjusted_data] = NOT_OWN;
+    } else {
+      // Another handle at the address of `self`. If `self` is a view, deleting
+      // either handle must leave the view registered for the other one.
+      metal_retain_view(data_ptr);
     }
 
     // Increment the reference count for this memory address only if it is owned
@@ -694,6 +698,10 @@ AOTITorchError aoti_torch_new_tensor_handle(
   tensors[tensor.get()] = tensor;
 
   *new_handle = tensor.get();
+
+  // If the original is a view into a Metal buffer, the new handle is one too,
+  // and deleting either must leave the view registered for the other one.
+  metal_retain_view(data_ptr);
 
   // Increment the reference count for this memory address only if it is owned
   // by tensor
