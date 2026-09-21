@@ -4478,6 +4478,12 @@ class AdvancedIndexTest(OpTestCase):
     name = "advanced_index"
     rtol = 1e-4
     atol = 1e-4
+    expected_node_counts = {
+        "GatherNode": 1,
+        "ReshapeNode": 1,
+        "TransposeNode": 0,
+        "SymSizeNode": 0,
+    }
 
     def __init__(
         self,
@@ -4519,12 +4525,12 @@ class AdvancedIndexTest(OpTestCase):
 
 
 class DynamicAdvancedIndexModel(nn.Module):
-    def __init__(self, leading_singleton: bool):
+    def __init__(self, has_leading_dim: bool):
         super().__init__()
-        self.leading_singleton = leading_singleton
+        self.has_leading_dim = has_leading_dim
 
     def forward(self, x, rows, columns):
-        if self.leading_singleton:
+        if self.has_leading_dim:
             return x[:, rows, columns]
         return x[rows, columns]
 
@@ -4540,16 +4546,22 @@ class DynamicAdvancedIndexTest(OpTestCase):
     def __init__(
         self,
         trailing_dim: bool = False,
-        leading_singleton: bool = False,
+        leading_dim: Optional[int] = None,
         test_rows: int = 4,
         test_columns: int = 5,
     ):
         self.trailing_dim = trailing_dim
-        self.leading_singleton = leading_singleton
+        self.leading_dim = leading_dim
+        self.expected_node_counts = {
+            "GatherNode": 1,
+            "ReshapeNode": 1,
+            "TransposeNode": int(leading_dim is not None and leading_dim > 1),
+            "SymSizeNode": 2,
+        }
         self.test_rows = test_rows
         self.test_columns = test_columns
         self.name = (
-            f"dynamic_advanced_index_tail{trailing_dim}_leading{leading_singleton}"
+            f"dynamic_advanced_index_tail{trailing_dim}_leading{leading_dim}"
             f"_runtime{test_rows}x{test_columns}"
         )
 
@@ -4558,21 +4570,27 @@ class DynamicAdvancedIndexTest(OpTestCase):
         return [
             cls(
                 trailing_dim=trailing,
-                leading_singleton=leading,
+                leading_dim=leading,
                 test_rows=rows,
                 test_columns=columns,
             )
-            for trailing, leading in ((False, False), (True, False), (True, True))
+            for trailing, leading in (
+                (False, None),
+                (True, None),
+                (True, 1),
+                (False, 2),
+                (True, 2),
+            )
             for rows, columns in ((4, 5), (3, 2))
         ]
 
     def create_model(self) -> nn.Module:
-        return DynamicAdvancedIndexModel(self.leading_singleton)
+        return DynamicAdvancedIndexModel(self.leading_dim is not None)
 
     def _inputs(self, rows, columns):
         shape = (6, 7) + ((4,) if self.trailing_dim else ())
-        if self.leading_singleton:
-            shape = (1,) + shape
+        if self.leading_dim is not None:
+            shape = (self.leading_dim,) + shape
         return (
             torch.randn(shape),
             torch.arange(rows).reshape(-1, 1),
@@ -4591,6 +4609,58 @@ class DynamicAdvancedIndexTest(OpTestCase):
             "rows": {0: Dim("rows", min=2, max=4)},
             "columns": {1: Dim("columns", min=2, max=5)},
         }
+
+
+class AdvancedIndexLayoutModel(nn.Module):
+    def __init__(self, axes: Tuple[int, int]):
+        super().__init__()
+        self.axes = axes
+
+    def forward(self, x, rows, columns):
+        indices = [None] * x.ndim
+        indices[self.axes[0]] = rows
+        indices[self.axes[1]] = columns
+        return torch.ops.aten.index.Tensor(x, indices)
+
+
+@register_test
+class AdvancedIndexLayoutTest(OpTestCase):
+    """Preserve index ordering without transposing singleton or separated blocks."""
+
+    name = "advanced_index_layout"
+
+    def __init__(self, input_shape, axes, index_shape, expected_transposes):
+        self.input_shape = input_shape
+        self.axes = axes
+        self.index_shape = index_shape
+        self.name = f"advanced_index_layout_{input_shape}_{axes}_{index_shape}"
+        self.expected_node_counts = {
+            "GatherNode": 1,
+            "ReshapeNode": 1,
+            "TransposeNode": expected_transposes,
+            "SymSizeNode": 0,
+        }
+
+    @classmethod
+    def get_test_configs(cls) -> List["AdvancedIndexLayoutTest"]:
+        return [
+            cls((2, 6, 7), (1, 2), (2, 3), 1),
+            cls((2, 3, 6, 7, 4), (2, 3), (2, 3), 1),
+            cls((1, 1, 6, 7), (2, 3), (2, 3), 0),
+            cls((2, 6, 7), (1, 2), (), 0),
+            cls((2, 6, 7), (1, 2), (1, 1), 0),
+            cls((2, 6, 4, 7, 3), (1, 3), (2, 3), 0),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AdvancedIndexLayoutModel(self.axes)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(self.input_shape),
+            torch.randint(self.input_shape[self.axes[0]], self.index_shape),
+            torch.randint(self.input_shape[self.axes[1]], self.index_shape),
+        )
 
 
 class IndexUpdateModel(nn.Module):
