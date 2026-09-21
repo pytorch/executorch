@@ -5,41 +5,42 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/gpu_shared/runtime/SharedGpuContext.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContext.h>
 
 #include <algorithm>
 #include <utility>
 
 namespace executorch {
 namespace backends {
-namespace gpu_shared {
+namespace vulkan_shared {
 
-SharedGpuContext::SharedGpuContext(SharedGpuContextCreateInfo create_info)
+SharedVulkanContext::SharedVulkanContext(
+    SharedVulkanContextCreateInfo create_info)
     : create_info_(std::move(create_info)) {}
 
-SharedGpuContext::~SharedGpuContext() = default;
+SharedVulkanContext::~SharedVulkanContext() = default;
 
-const SharedGpuContextKey& SharedGpuContext::key() const {
+const SharedVulkanContextKey& SharedVulkanContext::key() const {
   return create_info_.key;
 }
 
-VkInstance SharedGpuContext::instance() const {
+VkInstance SharedVulkanContext::instance() const {
   return create_info_.instance;
 }
 
-VkPhysicalDevice SharedGpuContext::physical_device() const {
+VkPhysicalDevice SharedVulkanContext::physical_device() const {
   return create_info_.physical_device;
 }
 
-VkDevice SharedGpuContext::device() const {
+VkDevice SharedVulkanContext::device() const {
   return create_info_.device;
 }
 
-uint32_t SharedGpuContext::queue_family_index() const {
+uint32_t SharedVulkanContext::queue_family_index() const {
   return create_info_.queue_family_index;
 }
 
-bool SharedGpuContext::has_device_extension(
+bool SharedVulkanContext::has_device_extension(
     std::string_view extension_name) const {
   return std::any_of(
       create_info_.enabled_device_extensions.begin(),
@@ -49,7 +50,7 @@ bool SharedGpuContext::has_device_extension(
       });
 }
 
-bool SharedGpuContext::is_valid() const {
+bool SharedVulkanContext::is_valid() const {
   return create_info_.key.valid() && create_info_.instance != VK_NULL_HANDLE &&
       create_info_.physical_device != VK_NULL_HANDLE &&
       create_info_.device != VK_NULL_HANDLE &&
@@ -58,6 +59,6 @@ bool SharedGpuContext::is_valid() const {
       create_info_.lifetime_anchor != nullptr;
 }
 
-} // namespace gpu_shared
+} // namespace vulkan_shared
 } // namespace backends
 } // namespace executorch

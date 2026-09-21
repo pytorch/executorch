@@ -5,13 +5,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/gpu_shared/runtime/SharedGpuRuntimeConfig.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanRuntimeConfig.h>
 
 #include <cstring>
 
 namespace executorch {
 namespace backends {
-namespace gpu_shared {
+namespace vulkan_shared {
 namespace {
 
 runtime::Result<SharedContextMode> parse_context_mode(const char* value) {
@@ -38,15 +38,16 @@ runtime::Result<SharedContextMode> parse_context_mode(const char* value) {
 // This API is consumed by the Vulkan/VGF delegate integration follow-up PRs.
 // The phase-2 runtime library intentionally has no production caller yet.
 // cppcheck-suppress unusedFunction
-runtime::Result<SharedGpuRuntimeConfig> parse_shared_gpu_runtime_config(
+runtime::Result<SharedVulkanRuntimeConfig> parse_shared_vulkan_runtime_config(
     const runtime::BackendInitContext& context) {
-  SharedGpuRuntimeConfig config;
+  SharedVulkanRuntimeConfig config;
 
-  auto token = context.get_runtime_spec<const char*>(kSharedContextTokenOption);
-  if (token.ok()) {
-    config.token = token.get();
-  } else if (token.error() != runtime::Error::NotFound) {
-    return token.error();
+  auto context_name =
+      context.get_runtime_spec<const char*>(kSharedContextNameOption);
+  if (context_name.ok()) {
+    config.context_name = context_name.get();
+  } else if (context_name.error() != runtime::Error::NotFound) {
+    return context_name.error();
   }
 
   auto mode = context.get_runtime_spec<const char*>(kSharedContextModeOption);
@@ -67,13 +68,13 @@ runtime::Result<SharedGpuRuntimeConfig> parse_shared_gpu_runtime_config(
     return group_id.error();
   }
 
-  if (config.enabled() && config.token.empty()) {
+  if (config.enabled() && config.context_name.empty()) {
     return runtime::Error::InvalidArgument;
   }
 
   return config;
 }
 
-} // namespace gpu_shared
+} // namespace vulkan_shared
 } // namespace backends
 } // namespace executorch

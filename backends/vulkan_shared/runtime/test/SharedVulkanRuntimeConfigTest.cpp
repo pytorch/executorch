@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/gpu_shared/runtime/SharedGpuRuntimeConfig.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanRuntimeConfig.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/span.h>
 
@@ -15,11 +15,11 @@
 #define TEST(test_suite_name, test_name) void test_suite_name##_##test_name()
 #endif
 
-using executorch::backends::gpu_shared::kSharedContextModeOption;
-using executorch::backends::gpu_shared::kSharedContextTokenOption;
-using executorch::backends::gpu_shared::kSharedGroupIdOption;
-using executorch::backends::gpu_shared::parse_shared_gpu_runtime_config;
-using executorch::backends::gpu_shared::SharedContextMode;
+using executorch::backends::vulkan_shared::kSharedContextModeOption;
+using executorch::backends::vulkan_shared::kSharedContextNameOption;
+using executorch::backends::vulkan_shared::kSharedGroupIdOption;
+using executorch::backends::vulkan_shared::parse_shared_vulkan_runtime_config;
+using executorch::backends::vulkan_shared::SharedContextMode;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
@@ -36,79 +36,79 @@ BackendInitContext make_context(BackendOptions<N>& options) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST(SharedGpuRuntimeConfigTest, UsesPersistentSharedDefaults) {
+TEST(SharedVulkanRuntimeConfigTest, UsesPersistentSharedDefaults) {
   BackendInitContext context(nullptr);
 
-  auto result = parse_shared_gpu_runtime_config(context);
+  auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_TRUE(result.ok());
-  EXPECT_EQ(result->token, "default");
+  EXPECT_EQ(result->context_name, "default");
   EXPECT_EQ(result->group_id, 0);
   EXPECT_EQ(result->context_mode, SharedContextMode::kLookupOrCreate);
 }
 
 // cppcheck-suppress unusedFunction
-TEST(SharedGpuRuntimeConfigTest, ParsesRuntimeOptions) {
+TEST(SharedVulkanRuntimeConfigTest, ParsesRuntimeOptions) {
   BackendOptions<3> options;
-  ASSERT_EQ(options.set_option(kSharedContextTokenOption, "scene0"), Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedContextNameOption, "scene0"), Error::Ok);
   ASSERT_EQ(
       options.set_option(kSharedContextModeOption, "lookup_only"), Error::Ok);
   ASSERT_EQ(options.set_option(kSharedGroupIdOption, 7), Error::Ok);
   auto context = make_context(options);
 
-  auto result = parse_shared_gpu_runtime_config(context);
+  auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_TRUE(result.ok());
-  EXPECT_EQ(result->token, "scene0");
+  EXPECT_EQ(result->context_name, "scene0");
   EXPECT_EQ(result->group_id, 7);
   EXPECT_TRUE(result->lookup_only());
 }
 
 // cppcheck-suppress unusedFunction
-TEST(SharedGpuRuntimeConfigTest, ParsesDisabledMode) {
+TEST(SharedVulkanRuntimeConfigTest, ParsesDisabledMode) {
   BackendOptions<1> options;
   ASSERT_EQ(
       options.set_option(kSharedContextModeOption, "disabled"), Error::Ok);
   auto context = make_context(options);
 
-  auto result = parse_shared_gpu_runtime_config(context);
+  auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_TRUE(result.ok());
   EXPECT_FALSE(result->enabled());
 }
 
 // cppcheck-suppress unusedFunction
-TEST(SharedGpuRuntimeConfigTest, RejectsUnknownMode) {
+TEST(SharedVulkanRuntimeConfigTest, RejectsUnknownMode) {
   BackendOptions<1> options;
   ASSERT_EQ(
       options.set_option(kSharedContextModeOption, "automatic"), Error::Ok);
   auto context = make_context(options);
 
-  auto result = parse_shared_gpu_runtime_config(context);
+  auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::InvalidArgument);
 }
 
 // cppcheck-suppress unusedFunction
-TEST(SharedGpuRuntimeConfigTest, RejectsWrongRuntimeOptionType) {
+TEST(SharedVulkanRuntimeConfigTest, RejectsWrongRuntimeOptionType) {
   BackendOptions<1> options;
   ASSERT_EQ(options.set_option(kSharedGroupIdOption, "seven"), Error::Ok);
   auto context = make_context(options);
 
-  auto result = parse_shared_gpu_runtime_config(context);
+  auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::InvalidArgument);
 }
 
 // cppcheck-suppress unusedFunction
-TEST(SharedGpuRuntimeConfigTest, RejectsEmptyTokenWhenEnabled) {
+TEST(SharedVulkanRuntimeConfigTest, RejectsEmptyTokenWhenEnabled) {
   BackendOptions<1> options;
-  ASSERT_EQ(options.set_option(kSharedContextTokenOption, ""), Error::Ok);
+  ASSERT_EQ(options.set_option(kSharedContextNameOption, ""), Error::Ok);
   auto context = make_context(options);
 
-  auto result = parse_shared_gpu_runtime_config(context);
+  auto result = parse_shared_vulkan_runtime_config(context);
 
   ASSERT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::InvalidArgument);

@@ -12,15 +12,16 @@ endif()
 include(GNUInstallDirs)
 find_package(Threads REQUIRED)
 
-set(GPU_SHARED_VULKAN_HEADERS_PATH
+set(VULKAN_SHARED_HEADERS_PATH
     ${EXECUTORCH_ROOT}/backends/vulkan/third-party/Vulkan-Headers
 )
 
-if(NOT EXISTS "${GPU_SHARED_VULKAN_HEADERS_PATH}/include/vulkan/vulkan.h")
+if(NOT EXISTS "${VULKAN_SHARED_HEADERS_PATH}/include/vulkan/vulkan.h")
   message(
     FATAL_ERROR
-      "The shared GPU runtime requires the vendored Vulkan-Headers submodule. "
-      "Run from the repository root:\n" "  git submodule update --init "
+      "The shared Vulkan runtime requires the vendored Vulkan-Headers submodule. "
+      "Run from the repository root:\n"
+      "  git submodule update --init "
       "backends/vulkan/third-party/Vulkan-Headers"
   )
 endif()
@@ -29,33 +30,35 @@ endif()
 # observe one process-wide registry. A static copy in each DSO would create
 # independent registries and defeat context sharing.
 add_library(
-  executorch_gpu_shared_runtime SHARED
-  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedGpuContext.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedGpuContextRegistry.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedGpuRuntimeConfig.cpp
+  executorch_vulkan_shared_runtime SHARED
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanContext.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanContextRegistry.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/SharedVulkanRuntimeConfig.cpp
 )
-add_library(executorch::gpu_shared_runtime ALIAS executorch_gpu_shared_runtime)
+add_library(
+  executorch::vulkan_shared_runtime ALIAS executorch_vulkan_shared_runtime
+)
 
 target_compile_definitions(
-  executorch_gpu_shared_runtime PRIVATE EXECUTORCH_GPU_SHARED_BUILDING
+  executorch_vulkan_shared_runtime PRIVATE EXECUTORCH_VULKAN_SHARED_BUILDING
 )
 
 target_include_directories(
-  executorch_gpu_shared_runtime
+  executorch_vulkan_shared_runtime
   PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
          $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/runtime/core/portable_type/c10>
-         $<BUILD_INTERFACE:${GPU_SHARED_VULKAN_HEADERS_PATH}/include>
+         $<BUILD_INTERFACE:${VULKAN_SHARED_HEADERS_PATH}/include>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(
-  executorch_gpu_shared_runtime
+  executorch_vulkan_shared_runtime
   PUBLIC executorch_core
   PRIVATE Threads::Threads
 )
 
 set_target_properties(
-  executorch_gpu_shared_runtime
+  executorch_vulkan_shared_runtime
   PROPERTIES CXX_STANDARD 17
              CXX_STANDARD_REQUIRED YES
              CXX_VISIBILITY_PRESET hidden
@@ -63,7 +66,7 @@ set_target_properties(
 )
 
 install(
-  TARGETS executorch_gpu_shared_runtime
+  TARGETS executorch_vulkan_shared_runtime
   EXPORT ExecuTorchTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -74,17 +77,18 @@ install(
 
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/runtime/
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/gpu_shared/runtime
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/vulkan_shared/runtime
   FILES_MATCHING
   PATTERN "*.h"
   PATTERN "test" EXCLUDE
 )
 
-# SharedGpuContext.h is a public installed header and includes
+# SharedVulkanContext.h is a public installed header and includes
 # <vulkan/vulkan.h>. Install the same vendored headers used by the build so an
 # installed ExecuTorch package does not depend on an unrelated system Vulkan
 # SDK.
-install(DIRECTORY ${GPU_SHARED_VULKAN_HEADERS_PATH}/include/
+install(DIRECTORY ${VULKAN_SHARED_HEADERS_PATH}/include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 

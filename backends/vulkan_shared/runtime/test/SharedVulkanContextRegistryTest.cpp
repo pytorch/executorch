@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/gpu_shared/runtime/SharedGpuContextRegistry.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContextRegistry.h>
 
 #include <gtest/gtest.h>
 // Cppcheck's lint environment may not expand the gtest macros.
@@ -26,11 +26,11 @@
 #include <utility>
 #include <vector>
 
-using executorch::backends::gpu_shared::SharedGpuContext;
-using executorch::backends::gpu_shared::SharedGpuContextCreateInfo;
-using executorch::backends::gpu_shared::SharedGpuContextKey;
-using executorch::backends::gpu_shared::SharedGpuContextPtr;
-using executorch::backends::gpu_shared::SharedGpuContextRegistry;
+using executorch::backends::vulkan_shared::SharedVulkanContext;
+using executorch::backends::vulkan_shared::SharedVulkanContextCreateInfo;
+using executorch::backends::vulkan_shared::SharedVulkanContextKey;
+using executorch::backends::vulkan_shared::SharedVulkanContextPtr;
+using executorch::backends::vulkan_shared::SharedVulkanContextRegistry;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
 
@@ -41,10 +41,10 @@ Handle fake_handle(uintptr_t value) {
   return reinterpret_cast<Handle>(value);
 }
 
-SharedGpuContextCreateInfo make_create_info(
-    SharedGpuContextKey key,
+SharedVulkanContextCreateInfo make_create_info(
+    SharedVulkanContextKey key,
     uintptr_t handle_base = 1) {
-  SharedGpuContextCreateInfo info;
+  SharedVulkanContextCreateInfo info;
   info.key = std::move(key);
   info.instance = fake_handle<VkInstance>(handle_base);
   info.physical_device = fake_handle<VkPhysicalDevice>(handle_base + 1);
@@ -66,7 +66,7 @@ struct RegistryLookupProbeState final {
 class RegistryLookupLifetimeAnchor final {
  public:
   RegistryLookupLifetimeAnchor(
-      SharedGpuContextKey lookup_key,
+      SharedVulkanContextKey lookup_key,
       std::shared_ptr<RegistryLookupProbeState> state,
       std::atomic<bool>* lookup_completed_during_destruction)
       : lookup_key_(std::move(lookup_key)),
@@ -80,7 +80,7 @@ class RegistryLookupLifetimeAnchor final {
     // returns and unregister_context() releases the mutex. The timeout prevents
     // the regression test itself from deadlocking on the buggy implementation.
     std::thread([lookup_key = lookup_key_, state = state_]() {
-      (void)SharedGpuContextRegistry::Get().lookup(lookup_key);
+      (void)SharedVulkanContextRegistry::Get().lookup(lookup_key);
       {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->complete = true;
@@ -97,25 +97,25 @@ class RegistryLookupLifetimeAnchor final {
   }
 
  private:
-  SharedGpuContextKey lookup_key_;
+  SharedVulkanContextKey lookup_key_;
   std::shared_ptr<RegistryLookupProbeState> state_;
   std::atomic<bool>* lookup_completed_during_destruction_;
 };
 
-class SharedGpuContextRegistryTest : public ::testing::Test {
+class SharedVulkanContextRegistryTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    SharedGpuContextRegistry::Get().clear_for_testing();
+    SharedVulkanContextRegistry::Get().clear_for_testing();
   }
 
   void TearDown() override {
-    SharedGpuContextRegistry::Get().clear_for_testing();
+    SharedVulkanContextRegistry::Get().clear_for_testing();
   }
 };
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, RegistryOwnsPersistentContext) {
-  const SharedGpuContextKey key{"scene0", 3};
+TEST_F(SharedVulkanContextRegistryTest, RegistryOwnsPersistentContext) {
+  const SharedVulkanContextKey key{"scene0", 3};
   std::weak_ptr<int> owner_weak;
 
   {
@@ -124,23 +124,25 @@ TEST_F(SharedGpuContextRegistryTest, RegistryOwnsPersistentContext) {
     auto info = make_create_info(key);
     info.lifetime_anchor = owner;
 
-    auto registered = SharedGpuContextRegistry::Get().register_external_context(
-        std::move(info));
+    auto registered =
+        SharedVulkanContextRegistry::Get().register_external_context(
+            std::move(info));
     ASSERT_TRUE(registered.ok());
   }
 
   EXPECT_FALSE(owner_weak.expired());
-  EXPECT_NE(SharedGpuContextRegistry::Get().lookup(key), nullptr);
-  EXPECT_EQ(SharedGpuContextRegistry::Get().unregister_context(key), Error::Ok);
+  EXPECT_NE(SharedVulkanContextRegistry::Get().lookup(key), nullptr);
+  EXPECT_EQ(
+      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
   EXPECT_TRUE(owner_weak.expired());
 }
 
 // cppcheck-suppress unusedFunction
 TEST_F(
-    SharedGpuContextRegistryTest,
+    SharedVulkanContextRegistryTest,
     UnregisterDestroysLifetimeAnchorOutsideRegistryLock) {
-  const SharedGpuContextKey key{"scene0", 9};
-  const SharedGpuContextKey probe_key{"probe", 9};
+  const SharedVulkanContextKey key{"scene0", 9};
+  const SharedVulkanContextKey probe_key{"probe", 9};
   std::atomic<bool> lookup_completed_during_destruction{false};
   auto probe_state = std::make_shared<RegistryLookupProbeState>();
 
@@ -149,15 +151,17 @@ TEST_F(
     info.lifetime_anchor = std::make_shared<RegistryLookupLifetimeAnchor>(
         probe_key, probe_state, &lookup_completed_during_destruction);
 
-    auto registered = SharedGpuContextRegistry::Get().register_external_context(
-        std::move(info));
+    auto registered =
+        SharedVulkanContextRegistry::Get().register_external_context(
+            std::move(info));
     ASSERT_TRUE(registered.ok());
   }
 
-  // The registry is now the only owner of the SharedGpuContext. Unregistering
-  // therefore destroys its lifetime anchor. The probe must be able to acquire
-  // the registry mutex before that destruction returns.
-  EXPECT_EQ(SharedGpuContextRegistry::Get().unregister_context(key), Error::Ok);
+  // The registry is now the only owner of the SharedVulkanContext.
+  // Unregistering therefore destroys its lifetime anchor. The probe must be
+  // able to acquire the registry mutex before that destruction returns.
+  EXPECT_EQ(
+      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
   EXPECT_TRUE(lookup_completed_during_destruction.load());
 
   // On a broken implementation the probe only completes after unregister has
@@ -171,15 +175,15 @@ TEST_F(
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
-  const SharedGpuContextKey key{"scene0", 4};
+TEST_F(SharedVulkanContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
+  const SharedVulkanContextKey key{"scene0", 4};
   std::atomic<int> create_count{0};
   std::mutex creator_mutex;
   std::condition_variable creator_cv;
   bool creator_entered = false;
   bool allow_creator_to_finish = false;
 
-  auto create_fn = [&]() -> Result<SharedGpuContextPtr> {
+  auto create_fn = [&]() -> Result<SharedVulkanContextPtr> {
     ++create_count;
     {
       std::unique_lock<std::mutex> lock(creator_mutex);
@@ -187,18 +191,18 @@ TEST_F(SharedGpuContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
       creator_cv.notify_all();
       creator_cv.wait(lock, [&]() { return allow_creator_to_finish; });
     }
-    return std::make_shared<SharedGpuContext>(make_create_info(key));
+    return std::make_shared<SharedVulkanContext>(make_create_info(key));
   };
 
   constexpr size_t kThreadCount = 8;
-  std::vector<SharedGpuContextPtr> results(kThreadCount);
+  std::vector<SharedVulkanContextPtr> results(kThreadCount);
   std::vector<Error> errors(kThreadCount, Error::Internal);
   std::vector<std::thread> threads;
   threads.reserve(kThreadCount);
   for (size_t i = 0; i < kThreadCount; ++i) {
     threads.emplace_back([&, i]() {
       auto result =
-          SharedGpuContextRegistry::Get().lookup_or_create(key, create_fn);
+          SharedVulkanContextRegistry::Get().lookup_or_create(key, create_fn);
       errors[i] = result.error();
       if (result.ok()) {
         results[i] = result.get();
@@ -225,40 +229,42 @@ TEST_F(SharedGpuContextRegistryTest, LookupOrCreateRunsCreatorOnce) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, RejectsDifferentDuplicateContext) {
-  const SharedGpuContextKey key{"scene0", 5};
-  auto first = std::make_shared<SharedGpuContext>(make_create_info(key, 10));
-  auto second = std::make_shared<SharedGpuContext>(make_create_info(key, 20));
+TEST_F(SharedVulkanContextRegistryTest, RejectsDifferentDuplicateContext) {
+  const SharedVulkanContextKey key{"scene0", 5};
+  auto first = std::make_shared<SharedVulkanContext>(make_create_info(key, 10));
+  auto second =
+      std::make_shared<SharedVulkanContext>(make_create_info(key, 20));
 
-  EXPECT_EQ(SharedGpuContextRegistry::Get().register_context(first), Error::Ok);
   EXPECT_EQ(
-      SharedGpuContextRegistry::Get().register_context(second),
+      SharedVulkanContextRegistry::Get().register_context(first), Error::Ok);
+  EXPECT_EQ(
+      SharedVulkanContextRegistry::Get().register_context(second),
       Error::AlreadyLoaded);
-  EXPECT_EQ(SharedGpuContextRegistry::Get().lookup(key), first);
+  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(key), first);
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, ValidatesContextIdentity) {
-  const SharedGpuContextKey requested_key{"scene0", 6};
-  const SharedGpuContextKey returned_key{"other", 6};
+TEST_F(SharedVulkanContextRegistryTest, ValidatesContextIdentity) {
+  const SharedVulkanContextKey requested_key{"scene0", 6};
+  const SharedVulkanContextKey returned_key{"other", 6};
 
-  auto result = SharedGpuContextRegistry::Get().lookup_or_create(
-      requested_key, [&]() -> Result<SharedGpuContextPtr> {
-        return std::make_shared<SharedGpuContext>(
+  auto result = SharedVulkanContextRegistry::Get().lookup_or_create(
+      requested_key, [&]() -> Result<SharedVulkanContextPtr> {
+        return std::make_shared<SharedVulkanContext>(
             make_create_info(returned_key));
       });
 
   ASSERT_FALSE(result.ok());
   EXPECT_EQ(result.error(), Error::InvalidArgument);
-  EXPECT_EQ(SharedGpuContextRegistry::Get().lookup(requested_key), nullptr);
+  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(requested_key), nullptr);
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, ReportsDeclaredDeviceExtensions) {
-  const SharedGpuContextKey key{"scene0", 7};
+TEST_F(SharedVulkanContextRegistryTest, ReportsDeclaredDeviceExtensions) {
+  const SharedVulkanContextKey key{"scene0", 7};
   auto info = make_create_info(key);
   info.enabled_device_extensions = {"VK_ARM_tensors", "VK_ARM_data_graph"};
-  SharedGpuContext context(std::move(info));
+  SharedVulkanContext context(std::move(info));
 
   EXPECT_TRUE(context.has_device_extension("VK_ARM_tensors"));
   EXPECT_TRUE(context.has_device_extension("VK_ARM_data_graph"));
@@ -266,12 +272,12 @@ TEST_F(SharedGpuContextRegistryTest, ReportsDeclaredDeviceExtensions) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, RejectsContextWithoutLifetimeAnchor) {
-  const SharedGpuContextKey key{"scene0", 10};
+TEST_F(SharedVulkanContextRegistryTest, RejectsContextWithoutLifetimeAnchor) {
+  const SharedVulkanContextKey key{"scene0", 10};
   auto info = make_create_info(key);
   info.lifetime_anchor.reset();
 
-  auto result = SharedGpuContextRegistry::Get().register_external_context(
+  auto result = SharedVulkanContextRegistry::Get().register_external_context(
       std::move(info));
 
   ASSERT_FALSE(result.ok());
@@ -280,11 +286,11 @@ TEST_F(SharedGpuContextRegistryTest, RejectsContextWithoutLifetimeAnchor) {
 
 // cppcheck-suppress unusedFunction
 TEST_F(
-    SharedGpuContextRegistryTest,
+    SharedVulkanContextRegistryTest,
     UnregisterKeepsLifetimeAnchorAliveWhileContextIsReferenced) {
-  const SharedGpuContextKey key{"scene0", 11};
+  const SharedVulkanContextKey key{"scene0", 11};
   std::weak_ptr<int> owner_weak;
-  SharedGpuContextPtr held_context;
+  SharedVulkanContextPtr held_context;
 
   {
     auto owner = std::make_shared<int>(17);
@@ -293,17 +299,19 @@ TEST_F(
     auto info = make_create_info(key);
     info.lifetime_anchor = owner;
 
-    auto registered = SharedGpuContextRegistry::Get().register_external_context(
-        std::move(info));
+    auto registered =
+        SharedVulkanContextRegistry::Get().register_external_context(
+            std::move(info));
     ASSERT_TRUE(registered.ok());
 
-    held_context = SharedGpuContextRegistry::Get().lookup(key);
+    held_context = SharedVulkanContextRegistry::Get().lookup(key);
     ASSERT_NE(held_context, nullptr);
   }
 
   EXPECT_FALSE(owner_weak.expired());
-  EXPECT_EQ(SharedGpuContextRegistry::Get().unregister_context(key), Error::Ok);
-  EXPECT_EQ(SharedGpuContextRegistry::Get().lookup(key), nullptr);
+  EXPECT_EQ(
+      SharedVulkanContextRegistry::Get().unregister_context(key), Error::Ok);
+  EXPECT_EQ(SharedVulkanContextRegistry::Get().lookup(key), nullptr);
 
   // unregister_context() removes registry ownership only. An existing delegate
   // reference must continue to keep the underlying Vulkan objects alive.
@@ -314,9 +322,9 @@ TEST_F(
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, SerializesSharedQueueAccess) {
-  const SharedGpuContextKey key{"scene0", 12};
-  auto context = std::make_shared<SharedGpuContext>(make_create_info(key));
+TEST_F(SharedVulkanContextRegistryTest, SerializesSharedQueueAccess) {
+  const SharedVulkanContextKey key{"scene0", 12};
+  auto context = std::make_shared<SharedVulkanContext>(make_create_info(key));
 
   std::mutex state_mutex;
   std::condition_variable state_cv;
@@ -400,11 +408,11 @@ TEST_F(SharedGpuContextRegistryTest, SerializesSharedQueueAccess) {
 }
 
 // cppcheck-suppress unusedFunction
-TEST_F(SharedGpuContextRegistryTest, RejectsIncompleteExternalContext) {
-  SharedGpuContextCreateInfo info;
+TEST_F(SharedVulkanContextRegistryTest, RejectsIncompleteExternalContext) {
+  SharedVulkanContextCreateInfo info;
   info.key = {"scene0", 8};
 
-  auto result = SharedGpuContextRegistry::Get().register_external_context(
+  auto result = SharedVulkanContextRegistry::Get().register_external_context(
       std::move(info));
 
   ASSERT_FALSE(result.ok());

@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <executorch/backends/gpu_shared/runtime/export.h>
+#include <executorch/backends/vulkan_shared/runtime/export.h>
 #include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/core/result.h>
 
@@ -16,11 +16,11 @@
 
 namespace executorch {
 namespace backends {
-namespace gpu_shared {
+namespace vulkan_shared {
 
-inline constexpr char kSharedContextTokenOption[] = "gpu_shared_context_token";
-inline constexpr char kSharedContextModeOption[] = "gpu_shared_context_mode";
-inline constexpr char kSharedGroupIdOption[] = "gpu_shared_group_id";
+inline constexpr char kSharedContextNameOption[] = "vulkan_shared_context_name";
+inline constexpr char kSharedContextModeOption[] = "vulkan_shared_context_mode";
+inline constexpr char kSharedGroupIdOption[] = "vulkan_shared_group_id";
 
 enum class SharedContextMode : uint8_t {
   kDisabled = 0,
@@ -32,8 +32,8 @@ enum class SharedContextMode : uint8_t {
 // Load-time configuration shared by the VGF and Vulkan delegates. These values
 // are RuntimeSpec options: context selection is a deployment concern and must
 // not be serialized into a backend CompileSpec or a .pte file.
-struct SharedGpuRuntimeConfig final {
-  std::string token = "default";
+struct SharedVulkanRuntimeConfig final {
+  std::string context_name = "default";
   int group_id = 0;
   SharedContextMode context_mode = SharedContextMode::kLookupOrCreate;
 
@@ -54,9 +54,9 @@ struct SharedGpuRuntimeConfig final {
   }
 };
 
-EXECUTORCH_GPU_SHARED_API runtime::Result<SharedGpuRuntimeConfig>
-parse_shared_gpu_runtime_config(const runtime::BackendInitContext& context);
+EXECUTORCH_VULKAN_SHARED_API runtime::Result<SharedVulkanRuntimeConfig>
+parse_shared_vulkan_runtime_config(const runtime::BackendInitContext& context);
 
-} // namespace gpu_shared
+} // namespace vulkan_shared
 } // namespace backends
 } // namespace executorch

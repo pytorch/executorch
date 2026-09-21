@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <executorch/backends/gpu_shared/runtime/export.h>
+#include <executorch/backends/vulkan_shared/runtime/export.h>
 
 #include <vulkan/vulkan.h>
 
@@ -22,25 +22,25 @@
 
 namespace executorch {
 namespace backends {
-namespace gpu_shared {
+namespace vulkan_shared {
 
-struct SharedGpuContextKey final {
-  std::string token;
+struct SharedVulkanContextKey final {
+  std::string context_name;
   int group_id = 0;
 
   bool valid() const {
-    return !token.empty();
+    return !context_name.empty();
   }
 
   friend bool operator==(
-      const SharedGpuContextKey& lhs,
-      const SharedGpuContextKey& rhs) {
-    return lhs.group_id == rhs.group_id && lhs.token == rhs.token;
+      const SharedVulkanContextKey& lhs,
+      const SharedVulkanContextKey& rhs) {
+    return lhs.group_id == rhs.group_id && lhs.context_name == rhs.context_name;
   }
 
   friend bool operator!=(
-      const SharedGpuContextKey& lhs,
-      const SharedGpuContextKey& rhs) {
+      const SharedVulkanContextKey& lhs,
+      const SharedVulkanContextKey& rhs) {
     return !(lhs == rhs);
   }
 };
@@ -48,10 +48,10 @@ struct SharedGpuContextKey final {
 // The shared layer carries Vulkan handles but deliberately does not call Vulkan
 // entry points itself. Every registered context must provide a lifetime_anchor
 // whose lifetime guarantees that instance, physical_device, device, and queue
-// remain valid until the final SharedGpuContext reference is released. The
+// remain valid until the final SharedVulkanContext reference is released. The
 // anchor destructor may perform backend/application Vulkan teardown.
-struct SharedGpuContextCreateInfo final {
-  SharedGpuContextKey key;
+struct SharedVulkanContextCreateInfo final {
+  SharedVulkanContextKey key;
   VkInstance instance = VK_NULL_HANDLE;
   VkPhysicalDevice physical_device = VK_NULL_HANDLE;
   VkDevice device = VK_NULL_HANDLE;
@@ -61,15 +61,15 @@ struct SharedGpuContextCreateInfo final {
   std::shared_ptr<void> lifetime_anchor;
 };
 
-class EXECUTORCH_GPU_SHARED_API SharedGpuContext final {
+class EXECUTORCH_VULKAN_SHARED_API SharedVulkanContext final {
  public:
-  explicit SharedGpuContext(SharedGpuContextCreateInfo create_info);
-  ~SharedGpuContext();
+  explicit SharedVulkanContext(SharedVulkanContextCreateInfo create_info);
+  ~SharedVulkanContext();
 
-  SharedGpuContext(const SharedGpuContext&) = delete;
-  SharedGpuContext& operator=(const SharedGpuContext&) = delete;
+  SharedVulkanContext(const SharedVulkanContext&) = delete;
+  SharedVulkanContext& operator=(const SharedVulkanContext&) = delete;
 
-  const SharedGpuContextKey& key() const;
+  const SharedVulkanContextKey& key() const;
   VkInstance instance() const;
   VkPhysicalDevice physical_device() const;
   VkDevice device() const;
@@ -89,12 +89,12 @@ class EXECUTORCH_GPU_SHARED_API SharedGpuContext final {
   bool is_valid() const;
 
  private:
-  SharedGpuContextCreateInfo create_info_;
+  SharedVulkanContextCreateInfo create_info_;
   mutable std::mutex queue_mutex_;
 };
 
-using SharedGpuContextPtr = std::shared_ptr<SharedGpuContext>;
+using SharedVulkanContextPtr = std::shared_ptr<SharedVulkanContext>;
 
-} // namespace gpu_shared
+} // namespace vulkan_shared
 } // namespace backends
 } // namespace executorch

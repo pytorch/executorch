@@ -5,38 +5,38 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/gpu_shared/runtime/SharedGpuContextRegistry.h>
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContextRegistry.h>
 
 #include <utility>
 
 namespace executorch {
 namespace backends {
-namespace gpu_shared {
+namespace vulkan_shared {
 
-SharedGpuContextRegistry& SharedGpuContextRegistry::Get() {
+SharedVulkanContextRegistry& SharedVulkanContextRegistry::Get() {
   // The default context is process-persistent. Intentionally do not register a
   // static destructor: delegate DSOs may be unloaded before their lifetime
   // anchors, so teardown must be explicit through unregister_context().
-  static auto* registry = new SharedGpuContextRegistry();
+  static auto* registry = new SharedVulkanContextRegistry();
   return *registry;
 }
 
-size_t SharedGpuContextRegistry::KeyHash::operator()(
-    const SharedGpuContextKey& key) const {
-  const size_t token_hash = std::hash<std::string>{}(key.token);
+size_t SharedVulkanContextRegistry::KeyHash::operator()(
+    const SharedVulkanContextKey& key) const {
+  const size_t token_hash = std::hash<std::string>{}(key.context_name);
   const size_t group_hash = std::hash<int>{}(key.group_id);
   return token_hash ^
       (group_hash + static_cast<size_t>(0x9e3779b9) + (token_hash << 6) +
        (token_hash >> 2));
 }
 
-SharedGpuContextPtr SharedGpuContextRegistry::lookup(
-    const SharedGpuContextKey& key) {
+SharedVulkanContextPtr SharedVulkanContextRegistry::lookup(
+    const SharedVulkanContextKey& key) {
   if (!key.valid()) {
     return nullptr;
   }
 
-  SharedGpuContextPtr stale_context;
+  SharedVulkanContextPtr stale_context;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = registry_.find(key);
@@ -62,15 +62,16 @@ SharedGpuContextPtr SharedGpuContextRegistry::lookup(
   return nullptr;
 }
 
-runtime::Result<SharedGpuContextPtr> SharedGpuContextRegistry::lookup_or_create(
-    const SharedGpuContextKey& key,
+runtime::Result<SharedVulkanContextPtr>
+SharedVulkanContextRegistry::lookup_or_create(
+    const SharedVulkanContextKey& key,
     CreateFn create_fn) {
   if (!key.valid() || !create_fn) {
     return runtime::Error::InvalidArgument;
   }
 
   std::shared_ptr<Entry> entry;
-  SharedGpuContextPtr stale_context;
+  SharedVulkanContextPtr stale_context;
 
   {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -95,7 +96,7 @@ runtime::Result<SharedGpuContextPtr> SharedGpuContextRegistry::lookup_or_create(
 
   auto maybe_created = create_fn();
   runtime::Error create_error = runtime::Error::Ok;
-  SharedGpuContextPtr created;
+  SharedVulkanContextPtr created;
   if (!maybe_created.ok()) {
     create_error = maybe_created.error();
   } else {
@@ -106,7 +107,7 @@ runtime::Result<SharedGpuContextPtr> SharedGpuContextRegistry::lookup_or_create(
     }
   }
 
-  SharedGpuContextPtr selected;
+  SharedVulkanContextPtr selected;
   {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -130,8 +131,8 @@ runtime::Result<SharedGpuContextPtr> SharedGpuContextRegistry::lookup_or_create(
                                             : create_error;
 }
 
-runtime::Error SharedGpuContextRegistry::register_context(
-    SharedGpuContextPtr context) {
+runtime::Error SharedVulkanContextRegistry::register_context(
+    SharedVulkanContextPtr context) {
   if (!context || !context->is_valid()) {
     return runtime::Error::InvalidArgument;
   }
@@ -153,10 +154,10 @@ runtime::Error SharedGpuContextRegistry::register_context(
   return runtime::Error::Ok;
 }
 
-runtime::Result<SharedGpuContextPtr>
-SharedGpuContextRegistry::register_external_context(
-    SharedGpuContextCreateInfo create_info) {
-  auto context = std::make_shared<SharedGpuContext>(std::move(create_info));
+runtime::Result<SharedVulkanContextPtr>
+SharedVulkanContextRegistry::register_external_context(
+    SharedVulkanContextCreateInfo create_info) {
+  auto context = std::make_shared<SharedVulkanContext>(std::move(create_info));
   const runtime::Error error = register_context(context);
   if (error != runtime::Error::Ok) {
     return error;
@@ -164,8 +165,8 @@ SharedGpuContextRegistry::register_external_context(
   return context;
 }
 
-runtime::Error SharedGpuContextRegistry::unregister_context(
-    const SharedGpuContextKey& key) {
+runtime::Error SharedVulkanContextRegistry::unregister_context(
+    const SharedVulkanContextKey& key) {
   if (!key.valid()) {
     return runtime::Error::InvalidArgument;
   }
@@ -182,8 +183,8 @@ runtime::Error SharedGpuContextRegistry::unregister_context(
     }
 
     // Unlink the entry under the registry lock, but retain ownership locally so
-    // SharedGpuContext/lifetime_anchor destruction cannot run while mutex_ is
-    // held. Backend teardown is allowed to re-enter this registry.
+    // SharedVulkanContext/lifetime_anchor destruction cannot run while mutex_
+    // is held. Backend teardown is allowed to re-enter this registry.
     removed_entry = std::move(it->second);
     registry_.erase(it);
   }
@@ -192,7 +193,7 @@ runtime::Error SharedGpuContextRegistry::unregister_context(
   return runtime::Error::Ok;
 }
 
-void SharedGpuContextRegistry::clear_for_testing() {
+void SharedVulkanContextRegistry::clear_for_testing() {
   decltype(registry_) removed_entries;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -209,6 +210,6 @@ void SharedGpuContextRegistry::clear_for_testing() {
   removed_entries.clear();
 }
 
-} // namespace gpu_shared
+} // namespace vulkan_shared
 } // namespace backends
 } // namespace executorch

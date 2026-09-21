@@ -5,12 +5,12 @@
 
 add_executable(
   shared_gpu_runtime_test
-  ${CMAKE_CURRENT_SOURCE_DIR}/SharedGpuContextRegistryTest.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/SharedGpuRuntimeConfigTest.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/SharedVulkanContextRegistryTest.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/SharedVulkanRuntimeConfigTest.cpp
 )
 
 target_link_libraries(
-  shared_gpu_runtime_test PRIVATE executorch_gpu_shared_runtime
+  shared_gpu_runtime_test PRIVATE executorch_vulkan_shared_runtime
                                   Threads::Threads
 )
 
