@@ -6061,6 +6061,69 @@ class OnesTest(OpTestCase):
         return OnesModel(self.shape, self.dtype)
 
 
+class CastChainModel(nn.Module):
+    def __init__(self, intermediate_dtype: torch.dtype, output_dtype: torch.dtype):
+        super().__init__()
+        self.intermediate_dtype = intermediate_dtype
+        self.output_dtype = output_dtype
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Keep a delegated op even if the cast chain is incorrectly removed.
+        return x.to(self.intermediate_dtype).to(self.output_dtype) + 1
+
+
+@register_test
+class CastChainTest(OpTestCase):
+    """Default passes must preserve rounding and truncation in cast chains."""
+
+    name = "cast_chain"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        intermediate_dtype: torch.dtype = torch.int32,
+        source_dtype: torch.dtype = torch.float32,
+        dynamic: bool = False,
+    ):
+        self.intermediate_dtype = intermediate_dtype
+        self.source_dtype = source_dtype
+        self.dynamic = dynamic
+        self.name = f"cast_chain_{source_dtype}_{intermediate_dtype}_{dynamic}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["CastChainTest"]:
+        return [
+            cls(dtype, dynamic=dynamic)
+            for dtype in (torch.int32, torch.float16, torch.bfloat16)
+            for dynamic in (False, True)
+        ] + [
+            cls(torch.float32, source_dtype=dtype)
+            for dtype in (torch.float16, torch.bfloat16)
+        ]
+
+    def create_model(self) -> nn.Module:
+        return CastChainModel(self.intermediate_dtype, self.source_dtype)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.tensor([1.9, -2.9, 3.7, 0.1], dtype=self.source_dtype),)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = self.create_inputs()[0]
+        return (torch.cat((x, x)) if self.dynamic else x,)
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        return {"x": {0: Dim("length", min=2, max=16)}} if self.dynamic else None
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
+
+
 class ToDtypeModel(nn.Module):
     def __init__(self, target_dtype: torch.dtype):
         super().__init__()
@@ -6432,6 +6495,102 @@ class SDPATest(OpTestCase):
             mask[:, :, :, : self.kv_seq_len // 4] = False  # Mask out first quarter
             return (q, k, v, mask)
         return (q, k, v)
+
+
+class MaskedRowsSDPAModel(nn.Module):
+    def __init__(self, custom: bool):
+        super().__init__()
+        self.custom = custom
+
+    def forward(self, q, k, v, mask):
+        if self.custom:
+            return torch.ops.mlx.custom_sdpa(
+                q, k, v, start_pos=0, attn_mask=mask, is_causal=False
+            )
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v, mask)
+
+
+@register_test
+class SDPAMaskedRowsTest(OpTestCase):
+    """Empty rows must be zero, without zeroing finite biases or partial rows."""
+
+    name = "sdpa_masked_rows"
+    rtol = 0
+    atol = 0
+    expected_node_counts = {"SdpaNode": 1}
+
+    def __init__(
+        self,
+        mask_kind: str = "bool",
+        dtype: torch.dtype = torch.float32,
+        head_dim: int = 8,
+        seq_len: int = 4,
+        custom: bool = False,
+        per_batch: bool = False,
+    ):
+        self.mask_kind = mask_kind
+        self.dtype = dtype
+        self.head_dim = head_dim
+        self.seq_len = seq_len
+        self.custom = custom
+        self.per_batch = per_batch
+        self.name = (
+            f"sdpa_masked_rows_{mask_kind}_{dtype}_d{head_dim}_s{seq_len}"
+            f"_custom{custom}_batch{per_batch}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["SDPAMaskedRowsTest"]:
+        return (
+            [
+                cls(mask_kind, dtype, head_dim, seq_len)
+                for mask_kind in ("bool", "additive")
+                for dtype in (torch.float32, torch.float16, torch.bfloat16)
+                for head_dim, seq_len in ((8, 4), (64, 4), (64, 16))
+            ]
+            + [
+                cls("finite", dtype)
+                for dtype in (torch.float32, torch.float16, torch.bfloat16)
+            ]
+            + [cls(mask_kind, custom=True) for mask_kind in ("bool", "additive")]
+            + [cls(mask_kind, per_batch=True) for mask_kind in ("bool", "additive")]
+        )
+
+    def create_model(self) -> nn.Module:
+        return MaskedRowsSDPAModel(self.custom)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        shape = (2, 2, self.seq_len, self.head_dim)
+        q = torch.zeros(shape, dtype=self.dtype)
+        k = torch.zeros_like(q)
+        v = (
+            torch.arange(1, self.seq_len + 1, dtype=self.dtype)
+            .view(1, 1, -1, 1)
+            .expand(shape)
+            .contiguous()
+        )
+        allowed = torch.ones(self.seq_len, self.seq_len, dtype=torch.bool)
+        allowed[0] = False
+        allowed[2, 1:] = False
+        if self.per_batch:
+            allowed = allowed.expand(2, 1, -1, -1).clone()
+            allowed[1, :, 0] = True
+        if self.mask_kind == "bool":
+            mask = allowed
+        else:
+            masked_value = (
+                torch.finfo(self.dtype).min
+                if self.mask_kind == "finite"
+                else float("-inf")
+            )
+            mask = torch.zeros(allowed.shape, dtype=self.dtype)
+            mask.masked_fill_(~allowed, masked_value)
+        return q, k, v, mask
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 @register_test
