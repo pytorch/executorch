@@ -17,7 +17,6 @@
 // Must run on Apple Silicon: MLX needs the Metal backend.
 
 #include "MLXInterpreter.h"
-#include "backend_options.h"
 
 #include <mlx/mlx.h>
 
@@ -154,6 +153,12 @@ TEST(MLXEvalThreshold, EnabledAccountsEveryInstruction) {
   Interpreter::reset_accounting_calls();
   interp.run(program, st);
   EXPECT_EQ(Interpreter::accounting_calls(), kN);
+  for (uint32_t i = 0; i < kN - 1; ++i) {
+    const array& temp = st.tensors[st.tensor_index(Tid{kTemp0 + i})].value();
+    EXPECT_FALSE(temp.is_available()) << "temp=" << i;
+  }
+  const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
+  EXPECT_FALSE(out.is_available());
 }
 
 // An IF's branch instructions are charged to the caller's counter, and the IF
@@ -179,7 +184,7 @@ TEST(MLXEvalThreshold, NestedIfAccumulatesWithoutDoubleCounting) {
 // forced evaluation an MLX array built by dispatch alone is not available.
 TEST(MLXEvalThreshold, CrossingThresholdEvaluatesLiveTensors) {
   const int kFloats = 4096;
-  const uint32_t kN = 8;
+  const uint32_t kN = 9;
   MLXProgram program = make_flat_program(kN);
   ConstantData constants;
   MutableBufferData bufs;
@@ -191,9 +196,13 @@ TEST(MLXEvalThreshold, CrossingThresholdEvaluatesLiveTensors) {
     Interpreter interp;
     interp.set_eval_threshold_bytes(2 * input_bytes(kFloats));
     interp.run(program, st);
-    // The last evaluation leaves earlier temps materialized.
-    const array& first_temp = st.tensors[st.tensor_index(Tid{kTemp0})].value();
-    EXPECT_TRUE(first_temp.is_available());
+    // The eighth ADD triggers a barrier; the ninth stays below the threshold.
+    for (uint32_t i = 0; i < kN - 1; ++i) {
+      const array& temp = st.tensors[st.tensor_index(Tid{kTemp0 + i})].value();
+      EXPECT_TRUE(temp.is_available()) << "temp=" << i;
+    }
+    const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
+    EXPECT_FALSE(out.is_available());
   }
 
   // Disabled: the same slot is still an unevaluated graph node.
@@ -263,14 +272,4 @@ TEST(MLXEvalThreshold, SettingsArePerInterpreter) {
   Interpreter::reset_accounting_calls();
   enabled.run(program, st_on);
   EXPECT_GT(Interpreter::accounting_calls(), 0u);
-}
-
-// The option is carried as an int, so a caller can hand the backend a negative
-// value. 0 is the valid "disabled" setting, not an invalid one.
-TEST(MLXEvalThreshold, ValidatesOptionValue) {
-  EXPECT_TRUE(eval_threshold_bytes_is_valid(0));
-  EXPECT_TRUE(eval_threshold_bytes_is_valid(1));
-  EXPECT_TRUE(eval_threshold_bytes_is_valid(512 * 1024 * 1024));
-  EXPECT_FALSE(eval_threshold_bytes_is_valid(-1));
-  EXPECT_FALSE(eval_threshold_bytes_is_valid(std::numeric_limits<int>::min()));
 }

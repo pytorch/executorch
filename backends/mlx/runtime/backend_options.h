@@ -72,13 +72,6 @@ inline constexpr char kSkipMutableBufferInitKey[] = "skip_mutable_buffer_init";
 // against measurements rather than expecting the value to bound RSS.
 inline constexpr char kEvalThresholdBytesKey[] = "eval_threshold_bytes";
 
-// Validity predicate for kEvalThresholdBytesKey. The option is carried as an
-// int (the only integral type BackendOptions supports), so a caller can hand
-// us a negative value; 0 is the valid "disabled" setting.
-inline constexpr bool eval_threshold_bytes_is_valid(int value) {
-  return value >= 0;
-}
-
 } // namespace mlx
 } // namespace backends
 } // namespace executorch
