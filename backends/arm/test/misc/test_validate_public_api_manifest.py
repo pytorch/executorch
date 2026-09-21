@@ -122,6 +122,30 @@ def test_running_manifest_validation_rejects_cmake_drift(tmp_path, monkeypatch):
     assert issues[0][1] == "signature changed"
 
 
+def test_validate_manifests_checks_every_manifest(monkeypatch, capsys):
+    manifest_paths = [
+        Path("api_manifest_1_4.toml"),
+        Path("api_manifest_running.toml"),
+    ]
+    validated_paths = []
+
+    def validate_manifest(manifest_path):
+        validated_paths.append(manifest_path)
+        if manifest_path.name == "api_manifest_running.toml":
+            return [("foo", "signature changed", "foo()", "foo(x)")]
+        return []
+
+    monkeypatch.setattr(vpam, "validate_manifest", validate_manifest)
+
+    failures = vpam.validate_manifests(manifest_paths)
+
+    assert failures == 1
+    assert validated_paths == manifest_paths
+    output = capsys.readouterr().out
+    assert "=== api_manifest_1_4.toml ===" in output
+    assert "=== api_manifest_running.toml ===" in output
+
+
 def test_nested_python_manifest_entries_are_validated():
     manifest_symbols = get_manifest_python_symbols(
         tomllib.loads(
