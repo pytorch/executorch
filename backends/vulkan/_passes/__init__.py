@@ -16,6 +16,9 @@ from executorch.backends.vulkan._passes.insert_dtype_promotion import (
     InsertDtypePromotionPass,
 )
 from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
+from executorch.backends.vulkan._passes.normalize_convolution_args import (
+    NormalizeConvolutionArgs,
+)
 from executorch.backends.vulkan._passes.remove_asserts import (
     remove_asserts,
     RemoveAssertsTransform,
@@ -35,6 +38,7 @@ __all__ = [
     "FuseQuantizedOpsTransform",
     "InsertDtypePromotionPass",
     "insert_prepack_nodes",
+    "NormalizeConvolutionArgs",
     "remove_asserts",
     "RemoveAssertsTransform",
     "RemoveRedundantOpsTransform",
