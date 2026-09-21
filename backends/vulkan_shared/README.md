@@ -1,5 +1,8 @@
 # Shared Vulkan runtime
 
+This component is not a standalone ExecuTorch backend. It does not 
+partition graphs, register a backend, or execute delegated operators.
+
 This component is the backend-neutral runtime bridge used by the VGF and
 ExecuTorch Vulkan delegates. It deliberately does not introduce a unified
 partitioner or a wrapper delegate.
