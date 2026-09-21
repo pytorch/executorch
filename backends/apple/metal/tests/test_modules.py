@@ -642,6 +642,29 @@ MODULE_REGISTRY["conv2d_single_channel"] = {
 
 
 # -------------------------------------------------------------------------
+class Conv2dPointwiseToSingleChannel(nn.Module):
+    """The 1x1 conv lowers to a matmul whose single-channel result reaches the
+    second conv with channels-last strides. Those strides describe the same
+    memory as contiguous ones, but the wrapper still expects the second conv's
+    output in channels-last."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 1, kernel_size=1)
+        self.conv2 = nn.Conv2d(1, 4, kernel_size=3, padding=1)
+
+    def forward(self, x):
+        return self.conv2(self.conv1(x))
+
+
+MODULE_REGISTRY["conv2d_pointwise_to_single_channel"] = {
+    "model_class": Conv2dPointwiseToSingleChannel,
+    "input_shapes": [(2, 3, 7, 9)],
+    "description": "1x1 Conv2d producing one channel, followed by a 3x3 Conv2d",
+}
+
+
+# -------------------------------------------------------------------------
 # Attention (SDPA) Modules
 # -------------------------------------------------------------------------
 

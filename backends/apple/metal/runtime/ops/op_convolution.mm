@@ -19,9 +19,37 @@ namespace {
 // channels-last output back.
 enum class ConvMemoryFormat { Contiguous, ChannelsLast };
 
-// Classifies a 4D tensor from its strides. Dimensions of size 1 are ignored
-// because their stride carries no information; a tensor that fits both layouts
-// is reported as contiguous. Returns false for any other stride pattern.
+// Mirrors c10's is_channels_last_strides_2d, which is what PyTorch's
+// suggest_memory_format() runs on a 4D tensor.
+bool suggests_channels_last(const Tensor& tensor) {
+  const auto sizes = tensor.sizes();
+  const auto strides = tensor.strides();
+  if (strides[1] == 0) {
+    return false;
+  }
+  int64_t min = 0;
+  for (int d : {1, 3, 2, 0}) {
+    if (sizes[d] == 0 || strides[d] < min) {
+      return false;
+    }
+    // Tells N111 (contiguous) apart from NC11 stored channels-last.
+    if (d == 0 && min == strides[1]) {
+      return false;
+    }
+    min = strides[d];
+    if (sizes[d] > 1) {
+      min *= sizes[d];
+    }
+  }
+  return true;
+}
+
+// Classifies a 4D tensor from its strides. A dimension of size 1 does not
+// change where the elements are, so it is ignored when checking that the data
+// is dense in one of the two layouts. A tensor with such a dimension can fit
+// both; its elements read the same either way, but the layout still decides
+// the layout of the output, and the generated wrapper expects the one PyTorch
+// would pick. Returns false for any other stride pattern.
 bool get_conv_memory_format(const Tensor& tensor, ConvMemoryFormat* format) {
   const auto sizes = tensor.sizes();
   const auto strides = tensor.strides();
@@ -39,7 +67,10 @@ bool get_conv_memory_format(const Tensor& tensor, ConvMemoryFormat* format) {
     is_channels_last = is_channels_last && strides[i] == channels_last[i];
   }
 
-  if (is_contiguous) {
+  if (is_contiguous && is_channels_last) {
+    *format = suggests_channels_last(tensor) ? ConvMemoryFormat::ChannelsLast
+                                             : ConvMemoryFormat::Contiguous;
+  } else if (is_contiguous) {
     *format = ConvMemoryFormat::Contiguous;
   } else if (is_channels_last) {
     *format = ConvMemoryFormat::ChannelsLast;
