@@ -4554,11 +4554,11 @@ class TestQNNQuantizedOperator(TestQNN):
                     pte_path = f"{tmp_dir}/model.pte"
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
-                    adb = self.get_adb_tool(pte_path)
+                    device = self.get_device_tool(pte_path)
                     binaries_trace = generate_optrace(
                         tmp_dir,
                         self.chipset_table[TestQNN.soc_model],
-                        adb,
+                        device,
                         pte_path,
                         [sample_input],
                     )
@@ -4614,11 +4614,11 @@ class TestQNNQuantizedOperator(TestQNN):
                     pte_path = f"{tmp_dir}/model.pte"
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
-                    adb = self.get_adb_tool(pte_path)
+                    device = self.get_device_tool(pte_path)
                     binaries_trace = generate_optrace(
                         tmp_dir,
                         self.chipset_table[TestQNN.soc_model],
-                        adb,
+                        device,
                         pte_path,
                         [sample_input],
                     )
@@ -4668,11 +4668,11 @@ class TestQNNQuantizedOperator(TestQNN):
             pte_path = f"{tmp_dir}/model.pte"
             with open(pte_path, "wb") as f:
                 edge_prog_mgr.write_to_file(f)
-            adb = self.get_adb_tool(pte_path)
+            device = self.get_device_tool(pte_path)
             binaries_trace = generate_optrace(
                 tmp_dir,
                 self.chipset_table[TestQNN.soc_model],
-                adb,
+                device,
                 pte_path,
                 [sample_input],
             )
@@ -6672,11 +6672,11 @@ class TestQNNQuantizedModel(TestQNN):
                     pte_path = f"{tmp_dir}/model.pte"
                     with open(pte_path, "wb") as f:
                         edge_prog_mgr.write_to_file(f)
-                    adb = self.get_adb_tool(pte_path)
+                    device = self.get_device_tool(pte_path)
                     binaries_trace = generate_optrace(
                         tmp_dir,
                         self.chipset_table[TestQNN.soc_model],
-                        adb,
+                        device,
                         pte_path,
                         [tc[QCOM_SAMPLE_INPUTS]],
                     )
@@ -6801,11 +6801,11 @@ class TestQNNQuantizedModel(TestQNN):
             pte_path = f"{tmp_dir}/model.pte"
             with open(pte_path, "wb") as f:
                 edge_prog_mgr.write_to_file(f)
-            adb = self.get_adb_tool(pte_path)
+            device = self.get_device_tool(pte_path)
             binaries_trace = generate_optrace(
                 tmp_dir,
                 self.chipset_table[self.soc_model],
-                adb,
+                device,
                 pte_path,
                 [sample_input],
             )
@@ -7690,11 +7690,11 @@ class TestQNNFloatingPointUtils(TestQNN):
                 with open(pte_path, "wb") as f:
                     edge_prog_mgr.write_to_file(f)
 
-                adb = self.get_adb_tool(pte_path)
+                device = self.get_device_tool(pte_path)
                 binaries_trace = generate_optrace(
                     tmp_dir,
                     self.chipset_table[self.soc_model],
-                    adb,
+                    device,
                     pte_path,
                     [sample_input],
                 )
@@ -8810,11 +8810,11 @@ class TestQNNQuantizedUtils(TestQNN):
                 with open(pte_path, "wb") as f:
                     edge_prog_mgr.write_to_file(f)
 
-                adb = self.get_adb_tool(pte_path)
+                device = self.get_device_tool(pte_path)
                 binaries_trace = generate_optrace(
                     tmp_dir,
                     self.chipset_table[self.soc_model],
-                    adb,
+                    device,
                     pte_path,
                     [sample_input],
                 )

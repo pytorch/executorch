@@ -25,10 +25,10 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import (
+    Device,
     make_quantizer,
     QnnConfig,
     setup_common_args_and_variables,
-    SimpleADB,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -464,17 +464,17 @@ def inference_whisper(args: argparse.Namespace, qnn_config: QnnConfig, inputs, t
             ]
         )
 
-        adb = SimpleADB(
+        device = Device(
             qnn_config=qnn_config,
             pte_path=pte_path,
             workspace=workspace,
             runner="examples/qualcomm/oss_scripts/whisper/qnn_whisper_runner",
         )
         # No pregen inputs, input_list is not required
-        adb.push(inputs=inputs, files=[tokenizer_json])
-        adb.execute(custom_runner_cmd=runner_cmd)
+        device.push(inputs=inputs, files=[tokenizer_json])
+        device.execute(custom_runner_cmd=runner_cmd)
 
-        adb.pull(host_output_path=args.artifact, callback=post_process)
+        device.pull(host_output_path=args.artifact, callback=post_process)
     wer = eval_metric(outputs, target)
 
     if args.ip and args.port != -1:

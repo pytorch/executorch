@@ -190,13 +190,14 @@ class DrawGraph:
                 shutil.move(dot_file, dot_dest_file)
 
 
+# TODO: Initialize from QnnConfig and add Windows support.
 class QnnTool:
     def __init__(
         self,
         tmp_dir,
         sample_input,
         soc_id,
-        adb,
+        device,
         build_folder,
         workspace="/data/local/tmp/qnn_executorch_test",
     ):
@@ -217,7 +218,7 @@ class QnnTool:
 
         self.tmp_dir = tmp_dir
         self.workspace = workspace
-        self.adb = adb
+        self.device = device
         self.sample_input = sample_input
         self.build_folder = build_folder
         self.root = os.getcwd()
@@ -303,18 +304,14 @@ class QnnTool:
             "--profiling_level detailed",
             "--profiling_option optrace",
         ]
-        self.adb.push(
+        self.device.push(
             inputs=self.sample_input,
             files=files,
         )
-        self.adb.execute(custom_runner_cmd=" ".join(cmds))
-        self.adb._adb(
-            [
-                "pull",
-                "-a",
-                f"{self.workspace}/output/qnn-profiling-data_0.log",
-                self.tmp_dir,
-            ]
+        self.device.execute(custom_runner_cmd=" ".join(cmds))
+        self.device.pull(
+            host_output_path=self.tmp_dir,
+            device_output_path=f"{self.workspace}/output/qnn-profiling-data_0.log",
         )
 
         assert os.path.isfile(
@@ -403,7 +400,7 @@ class QnnTool:
 def generate_optrace(
     artifact,
     soc_id: QcomChipset,
-    adb,
+    device,
     pte_path: str,
     inputs: Sequence[Tuple[torch.Tensor]],
 ):
@@ -412,7 +409,7 @@ def generate_optrace(
 
     Args:
         artifact (str): Path to the artifact folder.
-        adb (SimpleADB): An object for communicating with Android device
+        device (Device): An object for communicating with Android device
         pte_path (str): The path to the generated PTE file, including the file extension (e.g., model.pte).
         inputs Sequence((Tuple[torch.Tensor])): The input tensors for the model.
 
@@ -431,9 +428,9 @@ def generate_optrace(
         artifact,
         inputs,
         soc_id,
-        adb,
-        build_folder=adb.build_path,
-        workspace=adb.workspace,
+        device,
+        build_folder=device.build_path,
+        workspace=device.workspace,
     )
 
     binaries_trace = {}
