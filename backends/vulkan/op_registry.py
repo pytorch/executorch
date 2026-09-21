@@ -271,6 +271,16 @@ def register_binaryop_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.et_vk.swiglu.default)
+def register_swiglu():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 @update_features(
     [
         exir_ops.edge.aten.eq.Tensor,
