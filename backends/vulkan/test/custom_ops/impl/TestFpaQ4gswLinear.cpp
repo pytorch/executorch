@@ -520,9 +520,8 @@ void add_q4gsw_linear_coop_kc_forced_node(
 
   const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size_ref);
 
-  std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
-  const int64_t K = weight_sizes.at(1) * 2;
-  const uint32_t K_val = static_cast<uint32_t>(K);
+  const uint32_t K_val =
+      utils::safe_downcast<uint32_t>(graph.size_at<int64_t>(-1, fp_input));
 
   const ValueRef packed_weight_kc =
       prepack_q4_w_4x8_nc_buffer(graph, weight_data);
@@ -587,6 +586,13 @@ void add_q4gsw_linear_coop_kc_forced_node(
       VK_THROW("add_q4gsw_linear_coop_kc_forced_node: non-coop kind");
   }
 
+  vkapi::SpecVarList spec_vars = {
+      apply_bias, K_val, static_cast<uint32_t>(group_size_val)};
+  if (in_dtype == vkapi::kHalf) {
+    spec_vars.append(utils::safe_downcast<uint32_t>(
+        graph.size_at<int64_t>(-2, weight_data)));
+  }
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_shader,
@@ -601,7 +607,7 @@ void add_q4gsw_linear_coop_kc_forced_node(
         vkapi::kRead}},
       {graph.sizes_ubo(output), graph.sizes_ubo(fp_input)},
       {},
-      {apply_bias, K_val, static_cast<uint32_t>(group_size_val)},
+      spec_vars,
       {weight_data, fp_input},
       resize_q4gsw_linear_node));
 }
