@@ -138,7 +138,7 @@ class QnnBackend(BackendDetails):
                         op = unwrap_op_overload(node.target)
                         context_loader_target = eval(
                             f"torch.ops.{OpContextLoader.namespace}.{op.__name__}",
-                            globals().update(torch.__dict__),
+                            {"torch": torch},
                         )
                         assert op == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
