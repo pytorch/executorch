@@ -4518,6 +4518,81 @@ class AdvancedIndexTest(OpTestCase):
         return (x, *indices)
 
 
+class DynamicAdvancedIndexModel(nn.Module):
+    def __init__(self, leading_singleton: bool):
+        super().__init__()
+        self.leading_singleton = leading_singleton
+
+    def forward(self, x, rows, columns):
+        if self.leading_singleton:
+            return x[:, rows, columns]
+        return x[rows, columns]
+
+
+@register_test
+class DynamicAdvancedIndexTest(OpTestCase):
+    """Broadcast index dimensions must remain dynamic through gather/reshape."""
+
+    name = "dynamic_advanced_index"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        trailing_dim: bool = False,
+        leading_singleton: bool = False,
+        test_rows: int = 4,
+        test_columns: int = 5,
+    ):
+        self.trailing_dim = trailing_dim
+        self.leading_singleton = leading_singleton
+        self.test_rows = test_rows
+        self.test_columns = test_columns
+        self.name = (
+            f"dynamic_advanced_index_tail{trailing_dim}_leading{leading_singleton}"
+            f"_runtime{test_rows}x{test_columns}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["DynamicAdvancedIndexTest"]:
+        return [
+            cls(
+                trailing_dim=trailing,
+                leading_singleton=leading,
+                test_rows=rows,
+                test_columns=columns,
+            )
+            for trailing, leading in ((False, False), (True, False), (True, True))
+            for rows, columns in ((4, 5), (3, 2))
+        ]
+
+    def create_model(self) -> nn.Module:
+        return DynamicAdvancedIndexModel(self.leading_singleton)
+
+    def _inputs(self, rows, columns):
+        shape = (6, 7) + ((4,) if self.trailing_dim else ())
+        if self.leading_singleton:
+            shape = (1,) + shape
+        return (
+            torch.randn(shape),
+            torch.arange(rows).reshape(-1, 1),
+            torch.arange(columns).reshape(1, -1),
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(2, 3)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.test_rows, self.test_columns)
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        return {
+            "x": None,
+            "rows": {0: Dim("rows", min=2, max=4)},
+            "columns": {1: Dim("columns", min=2, max=5)},
+        }
+
+
 class IndexUpdateModel(nn.Module):
     """Model that performs index_copy on a mutable buffer.
 

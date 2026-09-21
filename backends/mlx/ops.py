@@ -2466,8 +2466,7 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     indices = [P.slot_to_tid(idx) for _, idx in non_none]
     axes = [i for i, _ in non_none]
 
-    # slice_sizes: 1 for indexed axes, full dim size for non-indexed axes
-    # Use int() to handle SymInt values from dynamic shapes
+    # slice_sizes: 1 for indexed axes, full static size for non-indexed axes.
     indexed_axes = set(axes)
     slice_sizes = []
     for dim in range(x_ndim):
@@ -2495,13 +2494,17 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
 
     # Reshape to match aten.index.Tensor output shape, which strips the
-    # trailing dimensions introduced by gather's slice_sizes
+    # trailing dimensions introduced by gather's slice_sizes.
     out_meta = n.meta.get("val")
     if out_meta is None:
         raise ValueError(
             "aten.index.Tensor: output shape metadata required for reshape after gather"
         )
-    out_shape = [P.to_int_or_vid(int(d)) for d in out_meta.shape]
+    # Non-indexed sizes are static above, so symbolic output sizes belong to
+    # the broadcast index shape, which leads the gather result. Read them at
+    # runtime instead of adding specialization guards through int(SymInt).
+    leading_dims = axes[0] if axes == list(range(axes[0], axes[-1] + 1)) else 0
+    out_shape = emit_shape(P, n, gather_slot, dim_offset=-leading_dims)
 
     out = P.make_or_get_slot(n)
     P.emit(
