@@ -644,7 +644,7 @@ Error read_input_files(
       ET_LOG(
           Error,
           "Reading input tensor %lu from file %s failed.",
-          static_cast<unsigned long>(i + 1),
+          static_cast<printf_size_t>(i + 1),
           input_filenames[i]);
       return Error::AccessFailed;
     }
