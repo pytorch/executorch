@@ -571,7 +571,8 @@ PYBIND11_MODULE(_llm_runner, m) {
 
   m.def(
       "make_image_input",
-      [](torch::Tensor image_tensor) -> MultimodalInput {
+      [](torch::Tensor image_tensor,
+         const std::string& layout) -> MultimodalInput {
         if (image_tensor.dim() == 4) {
           if (image_tensor.size(0) != 1) {
             throw std::runtime_error(
@@ -590,22 +591,23 @@ PYBIND11_MODULE(_llm_runner, m) {
         }
 
         int64_t height, width, channels;
-        const bool is_chw =
-            image_tensor.size(0) == 3 || image_tensor.size(0) == 4;
-        const bool is_hwc =
-            image_tensor.size(2) == 3 || image_tensor.size(2) == 4;
-        if (is_chw) {
+        if (layout == "CHW") {
           channels = image_tensor.size(0);
           height = image_tensor.size(1);
           width = image_tensor.size(2);
-        } else if (is_hwc) {
+        } else if (layout == "HWC") {
           height = image_tensor.size(0);
           width = image_tensor.size(1);
           channels = image_tensor.size(2);
           image_tensor = image_tensor.permute({2, 0, 1});
         } else {
           throw std::runtime_error(
-              "Image tensor must have 3 (RGB) or 4 (RGBA) channels in the first or last dimension");
+              "Image tensor layout must be 'CHW' or 'HWC'");
+        }
+
+        if (channels != 3 && channels != 4) {
+          throw std::runtime_error(
+              "Image must have 3 (RGB) or 4 (RGBA) channels in the dimension specified by layout");
         }
 
         image_tensor = image_tensor.contiguous();
@@ -630,8 +632,9 @@ PYBIND11_MODULE(_llm_runner, m) {
               "Unsupported image tensor dtype. Only uint8 and float32 are supported.");
         }
       },
-      "Create an image input from a contiguous uint8 or float32 torch tensor with shape (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
-      py::arg("image_tensor"));
+      "Create an image input from a contiguous uint8 or float32 torch tensor. layout must be 'CHW' or 'HWC' and defaults to 'CHW'.",
+      py::arg("image_tensor"),
+      py::arg("layout") = "CHW");
 
   m.def(
       "make_audio_input",

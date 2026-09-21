@@ -253,35 +253,46 @@ class TestHelperFunctions(unittest.TestCase):
 
     def test_make_image_input(self):
         """Test supported image layouts and dtypes."""
-        height, width = 5, 7
-        for channels in (3, 4):
-            for dtype in (torch.uint8, torch.float32):
-                chw = torch.arange(channels * height * width, dtype=dtype).reshape(
-                    channels, height, width
-                )
-                hwc = chw.permute(1, 2, 0).contiguous()
-                layouts = {
-                    "chw": chw,
-                    "1xchw": chw.unsqueeze(0),
-                    "hwc": hwc,
-                    "1xhwc": hwc.unsqueeze(0),
-                }
+        dimensions = ((3, 7), (4, 7), (5, 3), (5, 4), (5, 7))
+        for height, width in dimensions:
+            for channels in (3, 4):
+                for dtype in (torch.uint8, torch.float32):
+                    chw = torch.arange(channels * height * width, dtype=dtype).reshape(
+                        channels, height, width
+                    )
+                    hwc = chw.permute(1, 2, 0).contiguous()
+                    layouts = {
+                        "chw_default": (chw, None),
+                        "1xchw": (chw.unsqueeze(0), "CHW"),
+                        "hwc": (hwc, "HWC"),
+                        "1xhwc": (hwc.unsqueeze(0), "HWC"),
+                    }
 
-                for layout, tensor in layouts.items():
-                    with self.subTest(channels=channels, dtype=dtype, layout=layout):
-                        image_input = make_image_input(tensor)
-                        self.assertTrue(image_input.is_image())
-                        image = image_input.get_image()
-                        self.assertEqual(image.channels, channels)
-                        self.assertEqual(image.height, height)
-                        self.assertEqual(image.width, width)
-                        expected_data = chw.flatten().tolist()
-                        actual_data = (
-                            image.uint8_data
-                            if dtype == torch.uint8
-                            else image.float_data
-                        )
-                        self.assertEqual(actual_data, expected_data)
+                    for name, (tensor, layout) in layouts.items():
+                        with self.subTest(
+                            channels=channels,
+                            dtype=dtype,
+                            height=height,
+                            width=width,
+                            layout=name,
+                        ):
+                            image_input = (
+                                make_image_input(tensor)
+                                if layout is None
+                                else make_image_input(tensor, layout=layout)
+                            )
+                            self.assertTrue(image_input.is_image())
+                            image = image_input.get_image()
+                            self.assertEqual(image.channels, channels)
+                            self.assertEqual(image.height, height)
+                            self.assertEqual(image.width, width)
+                            expected_data = chw.flatten().tolist()
+                            actual_data = (
+                                image.uint8_data
+                                if dtype == torch.uint8
+                                else image.float_data
+                            )
+                            self.assertEqual(actual_data, expected_data)
 
     def test_make_image_input_rejects_invalid_inputs(self):
         """Test invalid image dimensions, layouts, and dtypes."""
@@ -294,14 +305,20 @@ class TestHelperFunctions(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, r"3 \(RGB\) or 4 \(RGBA\)"):
             make_image_input(torch.ones((2, 5, 7), dtype=torch.uint8))
 
+        with self.assertRaisesRegex(RuntimeError, r"3 \(RGB\) or 4 \(RGBA\)"):
+            make_image_input(torch.ones((5, 7, 2), dtype=torch.uint8), layout="HWC")
+
+        with self.assertRaisesRegex(RuntimeError, "must be 'CHW' or 'HWC'"):
+            make_image_input(torch.ones((3, 5, 7), dtype=torch.uint8), layout="NHWC")
+
         with self.assertRaisesRegex(RuntimeError, "Only uint8 and float32"):
             make_image_input(torch.ones((3, 5, 7), dtype=torch.int32))
 
         noncontiguous_tensors = (
-            torch.ones((3, 5, 7), dtype=torch.uint8).transpose(1, 2),
-            torch.ones((5, 7, 3), dtype=torch.uint8).transpose(0, 1),
+            (torch.ones((3, 5, 7), dtype=torch.uint8).transpose(1, 2), "CHW"),
+            (torch.ones((5, 7, 3), dtype=torch.uint8).transpose(0, 1), "HWC"),
         )
-        for tensor in noncontiguous_tensors:
+        for tensor, layout in noncontiguous_tensors:
             with self.subTest(shape=tuple(tensor.shape)):
                 with self.assertRaisesRegex(RuntimeError, "must be contiguous"):
-                    make_image_input(tensor)
+                    make_image_input(tensor, layout=layout)

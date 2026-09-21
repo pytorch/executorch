@@ -553,14 +553,18 @@ def make_text_input(text: str) -> MultimodalInput:
     """
     ...
 
-def make_image_input(image_tensor: torch.Tensor) -> MultimodalInput:
+def make_image_input(
+    image_tensor: torch.Tensor, layout: str = "CHW"
+) -> MultimodalInput:
     """
     Create an image input from a torch tensor.
 
     Args:
-        image_tensor: Contiguous uint8 or float32 tensor with shape (H, W, C),
-            (1, H, W, C), (C, H, W), or (1, C, H, W). HWC inputs are
-            converted to CHW internally.
+        image_tensor: Contiguous uint8 or float32 tensor with an optional batch
+            dimension of size 1.
+        layout: Tensor layout, either "CHW" or "HWC". Defaults to "CHW" to
+            preserve existing behavior. HWC inputs are converted to CHW
+            internally, including when height is 3 or 4.
 
     Returns:
         A MultimodalInput containing the image
