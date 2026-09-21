@@ -32,7 +32,7 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "shared_gpu_runtime_config_test",
+        name = "shared_vulkan_runtime_config_test",
         srcs = ["runtime/test/SharedVulkanRuntimeConfigTest.cpp"],
         deps = [
             ":runtime",
