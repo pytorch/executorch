@@ -122,6 +122,10 @@ def set_arg_node_repr_or_transition(
     elif isinstance(arg_node, (list, tuple)):
         ret: bool = False
         for n in arg_node:
+            # `None` entries (e.g. the unspecified indices of `aten.index.Tensor`)
+            # do not reference a tensor; skip them.
+            if n is None:
+                continue
             assert isinstance(n, torch.fx.Node)
             assert utils.is_single_tensor_node(n)
             ret = single_node_impl(n) or ret
@@ -193,9 +197,12 @@ class TagMemoryMetaPass(ExportPass):
             return True
 
         if isinstance(node, (tuple, list)):
-            for n in node:
-                if not isinstance(n, torch.fx.Node):
-                    return False
+            # `None` entries (e.g. the unspecified indices of `aten.index.Tensor`)
+            # do not reference a tensor; skip them.
+            tensor_nodes = utils.tensor_nodes_in_arg(node)
+            if len(tensor_nodes) == 0:
+                return False
+            for n in tensor_nodes:
                 if not self.is_non_constant_tensor_node(n):
                     return False
 
@@ -252,14 +259,14 @@ class TagMemoryMetaPass(ExportPass):
         """
         arg_node = op_node.args[arg_i]
 
+        arg_tensor_nodes = utils.tensor_nodes_in_arg(arg_node)
         # For non-tensor arguments, return ANY_STORAGE_INCL_PACKED_INT8 so that the respset does
         # not appear to be empty.
-        if not utils.is_tensor_arg_node(arg_node):
+        if len(arg_tensor_nodes) == 0:
             return utils.ANY_STORAGE_INCL_PACKED_INT8
 
         # Special case for cat - use the first tensor in the list as representative
-        if isinstance(arg_node, list):
-            arg_node = arg_node[0]
+        arg_node = arg_tensor_nodes[0]
 
         if utils.has_node_repr(arg_node):
             arg_node_repr = utils.get_node_repr(arg_node)
@@ -421,8 +428,12 @@ class TagMemoryMetaPass(ExportPass):
 
         # First, trace downstream users to discover what layout they prefer.
         arg_node = op_repsets.op_node.args[arg_i]
-        if isinstance(arg_node, list):
-            arg_node = arg_node[0]
+        if isinstance(arg_node, (list, tuple)):
+            arg_tensor_nodes = utils.tensor_nodes_in_arg(arg_node)
+            if len(arg_tensor_nodes) == 0:
+                return
+            # Use the first tensor in the list as representative
+            arg_node = arg_tensor_nodes[0]
 
         arg_repset = op_repsets.get_arg_repset(arg_i)
         if not arg_repset.is_constrained():
@@ -456,7 +467,7 @@ class TagMemoryMetaPass(ExportPass):
 
     def constrain_op_repsets(self, op_repsets: utils.OpRepSets) -> None:
         for i in range(len(op_repsets.op_node.args)):
-            if utils.is_tensor_arg_node(op_repsets.op_node.args[i]):
+            if utils.tensor_nodes_in_arg(op_repsets.op_node.args[i]):
                 self.constrain_op_arg_repset(i, op_repsets)
 
         self.constrain_op_out_repset(op_repsets)
@@ -526,7 +537,7 @@ class TagMemoryMetaPass(ExportPass):
                     or transitions_inserted
                 )
             elif isinstance(arg_node, (list, tuple)):
-                for n in arg_node:
+                for n in utils.tensor_nodes_in_arg(arg_node):
                     assert isinstance(n, torch.fx.Node)
                     assert utils.is_single_tensor_node(n)
                     transitions_inserted = (
