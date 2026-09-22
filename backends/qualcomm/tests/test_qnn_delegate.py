@@ -5142,8 +5142,6 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_linear_to_conv2d(self):
-        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
-
         test_comb = [
             {
                 QCOM_MODULE: [
@@ -5158,22 +5156,16 @@ class TestQNNQuantizedOperator(TestQNN):
             },
         ]
 
-        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "edge_program"
-        ] = None
-
         index = 0
         for comb in test_comb:
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         index += 1
-                        qdq_module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(
-                            qdq_module, sample_input, passes_job=passes_job
+                        qdq_module = self.get_qdq_module(
+                            module, sample_input, convert_linear_to_conv2d=True
                         )
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_linear_shared_weights(self):
         modules = [
@@ -5190,17 +5182,9 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_linear_to_conv2d_shared_weights(self):
-        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
-
         modules = [
             LinearSharedWeight(512, 32),  # noqa: F405
         ]
-
-        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "edge_program"
-        ] = None
 
         sample_input = (
             torch.randn([3, 512]),
@@ -5208,10 +5192,10 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         for i, module in enumerate(modules):
             with self.subTest(i=i):
-                qdq_module = self.get_qdq_module(module, sample_input)
-                self.lower_module_and_test_output(
-                    qdq_module, sample_input, passes_job=passes_job
+                qdq_module = self.get_qdq_module(
+                    module, sample_input, convert_linear_to_conv2d=True
                 )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_block(self):
@@ -5236,18 +5220,11 @@ class TestQNNQuantizedOperator(TestQNN):
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_to_conv2d_block(self):
-        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
 
         modules = [
             Linear(use_bias=False),  # noqa: F405
             Linear(use_bias=True),  # noqa: F405
         ]
-
-        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "edge_program"
-        ] = None
 
         sample_input = (torch.randn([3, 512]),)
         for i, module in enumerate(modules):
@@ -5260,10 +5237,9 @@ class TestQNNQuantizedOperator(TestQNN):
                     sample_input,
                     quant_dtype=QuantDtype.use_16a4w_block,
                     block_size_map={"linear": (1, 32)},
+                    convert_linear_to_conv2d=True,
                 )
-                self.lower_module_and_test_output(
-                    module, sample_input, passes_job=passes_job
-                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear_qat(self):
         """
@@ -9513,17 +9489,26 @@ class TestExampleLLMScript(TestQNN):
         # This is the Hugging Face transformers flow, not the static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
-        prompt = "My favourite condiment is "
+
+        # TODO: Robust testing framework to check accuracy and performance metrics.
+        golden_start_with = {
+            "llama3_2-1b": "Simply put, the theory of relativity states that the speed of light",
+            "qwen2_5-0_5b": "Simply put, the theory of relativity states that the laws of physics",
+            "qwen3-0_6b": "Simply put, the theory of relativity states that the laws of physics",
+            "smollm2_135m": "Simply put, the theory of relativity states that the speed of light",
+            "granite-3_3-2b": "Simply put, the theory of relativity states that the laws of physics",
+        }
+        assert (
+            self.model_name in golden_start_with
+        ), f"{self.model_name} is not supported in test_hf_causal_lm. Currently support: {golden_start_with.keys()}"
+        prompt = "Simply put, the theory of relativity states that"
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2_5-0_5b",
-            "--ptq",
-            "16a8w",
-            "--enable_spinquant_r3",
+            self.model_name,
             "--max_seq_len",
             "128",
             "--artifact",
@@ -9533,7 +9518,6 @@ class TestExampleLLMScript(TestQNN):
         ]
         self.add_default_cmds(cmds)
 
-        golden_start_with = "My favourite condiment is iced tea."
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -9545,8 +9529,8 @@ class TestExampleLLMScript(TestQNN):
                 if not self.compile_only:
                     model_out = msg["result"][0]
                     self.assertTrue(
-                        model_out.startswith(golden_start_with),
-                        f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
+                        model_out.startswith(golden_start_with[self.model_name]),
+                        f"Expected Output: '{golden_start_with[self.model_name]}' Actual Output: '{model_out}'",
                     )
 
     def test_static_llm_qat(self):

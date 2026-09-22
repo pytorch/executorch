@@ -46,12 +46,12 @@
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
-#include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/backends/cuda/runtime/cuda_weight_cache.h>
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 
 namespace executorch::backends::cuda {
 
@@ -195,8 +195,8 @@ class ET_EXPERIMENTAL CudaBackend final
         res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
-    auto run_single_threaded = get_function(
-        so_handle, "AOTInductorModelContainerRunSingleThreaded");
+    auto run_single_threaded =
+        get_function(so_handle, "AOTInductorModelContainerRunSingleThreaded");
     handle->run_single_threaded = run_single_threaded.ok()
         ? reinterpret_cast<AOTInductorModelContainerRunFunc>(
               run_single_threaded.get())
@@ -306,13 +306,60 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
   // Once per loaded binary blob
+  // The number of tokens this step writes, read from the input the export side
+  // named. Shape metadata only -- never the tensor's contents, which live on
+  // device and would cost a synchronisation every step.
+  static Result<int64_t> offgraph_kv_step_width(
+      const cuda::CudaDelegateHandle* handle,
+      Span<EValue*> args,
+      size_t n_inputs) {
+    const int index = handle->kv_step_width_input;
+    ET_CHECK_OR_RETURN_ERROR(
+        index >= 0 && static_cast<size_t>(index) < n_inputs,
+        InvalidArgument,
+        "offgraph_kv: step-width input %d is out of range (%zu inputs)",
+        index,
+        n_inputs);
+    ET_CHECK_OR_RETURN_ERROR(
+        args[index]->isTensor(),
+        InvalidArgument,
+        "offgraph_kv: step-width input %d is not a tensor",
+        index);
+    const auto& tensor = args[index]->toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        handle->kv_step_width_dim < tensor.dim(),
+        InvalidArgument,
+        "offgraph_kv: step-width dim %d is out of range for a %zd-D input",
+        handle->kv_step_width_dim,
+        tensor.dim());
+    const auto width = tensor.size(handle->kv_step_width_dim);
+    ET_CHECK_OR_RETURN_ERROR(
+        width > 0, InvalidArgument, "offgraph_kv: step width is %zd", width);
+    return static_cast<int64_t>(width);
+  }
+
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
+    int kv_step_width_input = -1;
+    int kv_step_width_dim = 0;
     for (const CompileSpec& spec : compile_specs) {
+      if (std::strcmp(spec.key, "offgraph_kv_step_width") == 0) {
+        // "input_index:dim"
+        const std::string value(
+            static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
+        const size_t colon = value.find(':');
+        ET_CHECK_OR_RETURN_ERROR(
+            colon != std::string::npos,
+            InvalidArgument,
+            "offgraph_kv_step_width must be \"input_index:dim\", got '%s'",
+            value.c_str());
+        kv_step_width_input = std::atoi(value.substr(0, colon).c_str());
+        kv_step_width_dim = std::atoi(value.substr(colon + 1).c_str());
+      }
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
             static_cast<const char*>(spec.value.buffer),
@@ -474,7 +521,21 @@ class ET_EXPERIMENTAL CudaBackend final
           InvalidArgument,
           "init: cache under key '%s' is not a CUDA cache",
           cache_key);
-      ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->note_handle(handle));
+      ET_ASSIGN_OR_RETURN(
+          serves_offgraph, handle->kv_cache->note_handle(handle));
+      if (!serves_offgraph) {
+        // An embedding or vision pass: it carries no KV storage, so it has no
+        // use for the cache and must not be asked to step it.
+        handle->kv_cache = nullptr;
+        handle->kv_cache_shared.reset();
+      } else {
+        ET_CHECK_OR_RETURN_ERROR(
+            kv_step_width_input >= 0,
+            InvalidArgument,
+            "off-graph KV cache needs an offgraph_kv_step_width compile spec");
+        handle->kv_step_width_input = kv_step_width_input;
+        handle->kv_step_width_dim = kv_step_width_dim;
+      }
     }
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
@@ -628,7 +689,18 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    // The cache has to grow, and its storage be rebound, before the compiled
+    // program reads it -- and nothing inside that program can call back out, so
+    // the step is driven from here rather than by the runner.
+    int64_t kv_step_width = 0;
     if (handle->kv_cache != nullptr) {
+      // Assigned, not declared: ET_ASSIGN_OR_RETURN introduces its own name and
+      // would shadow the one the commit sites below read.
+      const auto step_width = offgraph_kv_step_width(handle, args, n_inputs);
+      ET_CHECK_OK_OR_RETURN_ERROR(step_width.error());
+      kv_step_width = step_width.get();
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          handle->kv_cache->prepare_step(kv_step_width));
       ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
     }
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
@@ -681,6 +753,13 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
 
+      // Only a run that reached here wrote its tokens, so only now may the
+      // cache advance past them; an earlier commit would desynchronise its
+      // length from the history the kernels actually hold.
+      if (handle->kv_cache != nullptr) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            handle->kv_cache->commit_step(kv_step_width));
+      }
       return Error::Ok;
     }
 
@@ -889,14 +968,14 @@ class ET_EXPERIMENTAL CudaBackend final
     auto run = handle->cuda_graph_state.phase == CudaGraphPhase::Disabled
         ? handle->run
         : handle->run_single_threaded;
-    AOTIRuntimeError error = run(
-        handle->container_handle,
-        reinterpret_cast<Tensor**>(slim_inputs.data()),
-        n_inputs,
-        reinterpret_cast<Tensor**>(slim_outputs.data()),
-        n_outputs,
-        static_cast<void*>(cuda_stream),
-        nullptr);
+    AOTIRuntimeError error =
+        run(handle->container_handle,
+            reinterpret_cast<Tensor**>(slim_inputs.data()),
+            n_inputs,
+            reinterpret_cast<Tensor**>(slim_outputs.data()),
+            n_outputs,
+            static_cast<void*>(cuda_stream),
+            nullptr);
     run_called = true;
 
     // Delete orphaned pre-created outputs that run() replaced.
@@ -977,6 +1056,13 @@ class ET_EXPERIMENTAL CudaBackend final
       // Last failure point is behind us, so the captured state is now the state
       // the next call should replay from.
       capture_guard.disarm();
+      // Only a run that reached here wrote its tokens, so only now may the
+      // cache advance past them; an earlier commit would desynchronise its
+      // length from the history the kernels actually hold.
+      if (handle->kv_cache != nullptr) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            handle->kv_cache->commit_step(kv_step_width));
+      }
       return Error::Ok;
     }
 
@@ -1023,6 +1109,12 @@ class ET_EXPERIMENTAL CudaBackend final
       slim_outputs[i] = nullptr;
     }
 
+    // Only a run that reached here wrote its tokens, so only now may the cache
+    // advance past them; an earlier commit would desynchronise its length from
+    // the history the kernels actually hold.
+    if (handle->kv_cache != nullptr) {
+      ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->commit_step(kv_step_width));
+    }
     return Error::Ok;
   }
 

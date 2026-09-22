@@ -234,6 +234,14 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // pointer is the backend face of that same object.
   std::shared_ptr<::executorch::extension::llm::cache::Cache> kv_cache_shared;
   CudaKVCache* kv_cache{nullptr};
+
+  // Where this method's inputs carry the number of tokens a step writes, as an
+  // index into execute()'s args and a dimension of that tensor. Declared by the
+  // export side, which knows the signature; the compiled program cannot report
+  // it, because lowering replaced the cache op with kernels over pre-bound
+  // memory. Negative until a step-width spec is seen.
+  int kv_step_width_input{-1};
+  int kv_step_width_dim{0};
 };
 
 } // namespace cuda

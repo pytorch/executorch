@@ -13,11 +13,13 @@ cleanup (CSE, reinplace) runs before lowering via transform_passes, since
 ExecuTorch forbids a partitioner from mutating the graph module.
 """
 
+import operator
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
 # Registers torch.ops.torchao.dequantize_gguf, referenced in _SUPPORTED_NON_CORE_OPS.
 import executorch.extension.llm.export.gguf  # noqa: F401
 import torch
+from executorch.backends.native.custom_ops import rope_op
 from executorch.backends.native.passes import backend_inplace_aten_variants
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -43,6 +45,7 @@ _SUPPORTED_NON_CORE_OPS = [
     # GGUF weight dequantize stays in the delegate; the serializer folds it into a
     # PackedQuant weight on the consuming op.
     torch.ops.torchao.dequantize_gguf.default,
+    rope_op,
     torch.ops.aten.rms_norm.default,
 ]
 
@@ -69,6 +72,23 @@ class NativeSupportedOperators(OperatorSupportBase):
             return False
         if node.op != "call_function":
             return False
+        # getitem only unpacks a multi-output node's result (e.g. split/chunk); it
+        # is not a real op. Claim it so a supported multi-output op and its
+        # unpackers stay in one partition -- otherwise every getitem is a partition
+        # boundary and fused-projection models (chunked gate_up / qkv) fragment into
+        # many delegates.
+        #
+        # Only claim it when the producer is claimed too. partition() passes
+        # allows_single_node_partition=True, which disables the capability
+        # partitioner's filter that would otherwise drop getitem-only partitions
+        # (getitem counts as non-compute there). Claiming unconditionally can
+        # therefore emit a delegate holding no computation, fed by a tuple crossing
+        # the delegate boundary.
+        if node.target is operator.getitem:
+            producer = node.args[0] if node.args else None
+            return isinstance(producer, Node) and self.is_node_supported(
+                submodules, producer
+            )
         if isinstance(node.target, torch._ops.HigherOrderOperator):
             return False
 
