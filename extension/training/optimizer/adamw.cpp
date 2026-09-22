@@ -37,7 +37,7 @@ void add_out_hack(
   auto a_ptr = a.const_data_ptr<scalar_t>();
   auto b_ptr = b.const_data_ptr<scalar_t>();
   auto out_ptr = out.mutable_data_ptr<scalar_t>();
-  for (size_t i = 0; i < a.numel(); ++i) {
+  for (ssize_t i = 0; i < a.numel(); ++i) {
     out_ptr[i] = static_cast<scalar_t>(
         static_cast<double>(a_ptr[i]) + static_cast<double>(b_ptr[i]) * alpha);
   }
@@ -48,7 +48,7 @@ template <typename scalar_t>
 void mul_out_hack(const Tensor& a, const double alpha, Tensor& out) {
   auto a_ptr = a.const_data_ptr<scalar_t>();
   auto out_ptr = out.mutable_data_ptr<scalar_t>();
-  for (size_t i = 0; i < a.numel(); ++i) {
+  for (ssize_t i = 0; i < a.numel(); ++i) {
     out_ptr[i] = static_cast<scalar_t>(static_cast<double>(a_ptr[i]) * alpha);
   }
 }
@@ -65,7 +65,7 @@ void addcmul_sq_out_hack(
   auto g_ptr = g.const_data_ptr<scalar_t>();
   auto out_ptr = out.mutable_data_ptr<scalar_t>();
   const double one_minus_beta2 = 1.0 - beta2;
-  for (size_t i = 0; i < v.numel(); ++i) {
+  for (ssize_t i = 0; i < v.numel(); ++i) {
     const double gi = static_cast<double>(g_ptr[i]);
     out_ptr[i] = static_cast<scalar_t>(
         static_cast<double>(v_ptr[i]) * beta2 + one_minus_beta2 * gi * gi);
@@ -91,7 +91,7 @@ void adamw_update_hack(
   auto v_ptr = v.const_data_ptr<scalar_t>();
   const double inv_bc1 = 1.0 / bias_correction1;
   const double inv_sqrt_bc2 = 1.0 / std::sqrt(bias_correction2);
-  for (size_t i = 0; i < p.numel(); ++i) {
+  for (ssize_t i = 0; i < p.numel(); ++i) {
     const double m_hat = static_cast<double>(m_ptr[i]) * inv_bc1;
     const double v_hat_sqrt =
         std::sqrt(static_cast<double>(v_ptr[i])) * inv_sqrt_bc2;
@@ -135,7 +135,7 @@ void AdamW::add_param_group(const AdamWParamGroup& param_group) {
 Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
                       named_gradients) {
   for (auto& group : param_groups_) {
-    auto& options = static_cast<AdamWOptions&>(group.options());
+    auto& options = group.options();
     const double lr = options.lr();
     const double beta1 = options.beta1();
     const double beta2 = options.beta2();
@@ -152,6 +152,11 @@ Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
       auto g = named_gradient->second;
       auto p = param_iter->second;
       const auto scalar_type = p.scalar_type();
+
+      if (scalar_type != executorch::aten::ScalarType::Float &&
+          scalar_type != executorch::aten::ScalarType::Half) {
+        return Error::InvalidArgument;
+      }
 
       if (p.sizes() != g.sizes() || scalar_type != g.scalar_type() ||
           !executorch::ET_RUNTIME_NAMESPACE::tensor_is_contiguous(p) ||

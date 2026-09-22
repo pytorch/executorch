@@ -100,8 +100,7 @@ class ET_EXPERIMENTAL AdamWOptions {
         weight_decay_(weight_decay) {}
 
   std::unique_ptr<AdamWOptions> clone() const {
-    return std::make_unique<AdamWOptions>(
-        static_cast<const AdamWOptions&>(*this));
+    return std::make_unique<AdamWOptions>(*this);
   }
 
   double lr() const {
