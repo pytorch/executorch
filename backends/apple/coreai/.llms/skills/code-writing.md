@@ -4,6 +4,10 @@ description: >-
   Conventions for writing code in the Core AI ExecuTorch backend
   (backends/apple/coreai): comment style (clear, concise, self-documenting) and
   how to run the test suite. Apply when editing or adding code/tests here.
+metadata:
+  strict: true
+  oncalls:
+    - executorch
 ---
 
 # Core AI backend: code-writing conventions
