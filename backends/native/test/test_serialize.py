@@ -103,6 +103,15 @@ class _KVCache(nn.Module):
         return self.cache + 1.0
 
 
+class _ReadOnlyNonPersistentBuffer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("table", torch.arange(4), persistent=False)
+
+    def forward(self, x):
+        return x + self.table
+
+
 _ADD_INPUTS = (torch.randn(2, 3), torch.randn(2, 3))
 
 # Sentinel marking a positional slot that should be a fresh tensor placeholder.
@@ -210,6 +219,14 @@ class SerializeRoundTripTest(unittest.TestCase):
         self.assertTrue(any("bias" in f for f in fqns))
         # Raw data is returned separately, keyed by the same fqns.
         self.assertEqual(set(r.constants.keys()), fqns)
+
+    def test_read_only_non_persistent_buffer_is_shipped(self):
+        r = _roundtrip(_ReadOnlyNonPersistentBuffer(), (torch.zeros(4),))
+        self.assertIn("table", {c.data_key for c in r.method.constants})
+        self.assertNotIn(
+            "table", {buffer.fqn for buffer in r.method.mutable_buffers or []}
+        )
+        self.assertTrue(torch.equal(torch.arange(4), r.constants["table"]))
 
     def test_tensor_args_reference_by_name(self):
         graph = _roundtrip(_Add(), _ADD_INPUTS).graph

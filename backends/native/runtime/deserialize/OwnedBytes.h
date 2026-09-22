@@ -86,11 +86,14 @@ class OwnedBytes {
   // Throws std::runtime_error if the file cannot be read, or cannot be mapped
   // when mapping was asked for (including on a platform with no mmap). An empty
   // file yields empty heap bytes either way, since mmap rejects a zero length.
-  static OwnedBytes from_file(const std::string& path, bool use_mmap = true);
+  static OwnedBytes from_file(
+      const std::string& path,
+      bool use_mmap = true,
+      uint64_t max_size = UINT64_MAX);
 
  private:
-  static OwnedBytes read_file(const std::string& path);
-  static OwnedBytes map_file(const std::string& path);
+  static OwnedBytes read_file(const std::string& path, uint64_t max_size);
+  static OwnedBytes map_file(const std::string& path, uint64_t max_size);
 };
 
 } // namespace ptn
