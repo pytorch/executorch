@@ -128,7 +128,7 @@ def tensors_match(a: str, b: str) -> bool:
     """
     if a == b:
         return True
-    if b + "/" in a or a + "/" in b:
+    if a.startswith(b + "/") or b.startswith(a + "/"):
         return True
     return False
 
@@ -572,6 +572,9 @@ class NeutronMap:
             key=lambda sg: sg.location,
         )
 
+        # Skip subgraphs that are consumed by another subgraph internally.
+        # Such subgraphs are not chain start points - they are added to the chain
+        # when their producer is processed. Kept as a safety check.
         has_predecessor: set[int] = {
             sg.num
             for sg in active
