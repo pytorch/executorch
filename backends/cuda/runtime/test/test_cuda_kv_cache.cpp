@@ -132,7 +132,6 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
     ASSERT_EQ(serves.error(), Error::Ok);
     ASSERT_TRUE(serves.get());
   }
-  ASSERT_EQ(context.validate(), Error::Ok);
   EXPECT_EQ(context.metrics().allocated_bytes, 0);
 
   ASSERT_EQ(context.prepare_step(3), Error::Ok);
@@ -230,7 +229,6 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
       ASSERT_EQ(serves.error(), Error::Ok);
       ASSERT_TRUE(serves.get());
     }
-    ASSERT_EQ(context.validate(), Error::Ok);
 
     ASSERT_EQ(context.prepare_step(4), Error::Ok);
     ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);

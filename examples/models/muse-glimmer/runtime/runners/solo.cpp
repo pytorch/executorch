@@ -612,15 +612,6 @@ static int run_engine_generation(llm::Stats& stats) {
     stats.gpu_peak_usage_mb =
         (stats.gpu_total_bytes - gpu_free_bytes) / 1024.0 / 1024.0;
   }
-  if (const auto kv = engine->offgraph_kv_metrics(); kv.has_value()) {
-    printf(
-        "OffGraphKV {\"logical_length\":%" PRId64 ",\"flat_capacity\":%" PRId64
-        ",\"growth_count\":%" PRId64 ",\"allocated_bytes\":%" PRId64 "}\n",
-        kv->logical_length,
-        kv->flat_capacity,
-        kv->growth_count,
-        kv->allocated_bytes);
-  }
 #endif
 
   llm::print_report(stats);

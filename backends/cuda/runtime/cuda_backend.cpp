@@ -1603,7 +1603,7 @@ class ET_EXPERIMENTAL CudaBackend final
 namespace executorch::backends {
 namespace {
 auto cls = cuda::CudaBackend();
-executorch::runtime::Backend backend{"CudaBackend", &cls};
+executorch::runtime::Backend backend{cuda::kCudaBackendId, &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
 
