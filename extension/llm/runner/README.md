@@ -799,7 +799,8 @@ either field does not constrain generated output.
 **Memory Optimization**:
 - Use KV cache for efficient autoregressive generation
 - Enable parallel prefill for faster prompt processing
-- Set appropriate `seq_len` based on available memory
+- Choose the exported context capacity based on available memory; lowering
+  `GenerationConfig::seq_len` does not resize the allocated KV cache
 
 **Sampling Strategies**:
 - Low temperature (0.1-0.3) for factual, deterministic output
