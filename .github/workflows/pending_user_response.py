@@ -66,7 +66,7 @@ def main():
             # ---- POST REMINDER AFTER 7 DAYS OF INITIAL REMINDER ----
             if days_since_reminder >= REMINDER_COOLDOWN_DAYS:
                 print(f"Posting reminder for issue/PR #{issue.number}.")
-                    issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
+                issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
             else:
                 print(f"Skipping issue/PR #{issue.number}; "
                 "a reminder was posted recently.")
@@ -75,7 +75,7 @@ def main():
         # ---- INITIAL REMINDER AFTER 30 DAYS OF INACTIVITY ----
         last_comment = comments[-1] if comments else None
 
-        if (last_comment is not None and age_in_days(now, last_comment.created_at) >= DAYS_BEFORE_REMINDER):
+        if (last_comment is not None and (now - lastcomment).days >= DAYS_BEFORE_REMINDER):
             print(f"Posting initial reminder for issue/PR #{issue.number}.")
             issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
         else:
