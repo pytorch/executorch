@@ -25,6 +25,23 @@ namespace {
 constexpr size_t kMinBufferSize = 8;
 } // namespace
 
+Program::Program(Program&& other) noexcept
+    : bytes_(std::move(other.bytes_)),
+      program_fb_(other.program_fb_),
+      method_cache_(std::move(other.method_cache_)) {
+  other.program_fb_ = nullptr;
+}
+
+Program& Program::operator=(Program&& other) noexcept {
+  if (this != &other) {
+    bytes_ = std::move(other.bytes_);
+    program_fb_ = other.program_fb_;
+    method_cache_ = std::move(other.method_cache_);
+    other.program_fb_ = nullptr;
+  }
+  return *this;
+}
+
 Program Program::load(const void* data, size_t size) {
   if (data == nullptr || size < kMinBufferSize) {
     throw std::runtime_error("native program: buffer is null or too small");
@@ -61,12 +78,18 @@ Program Program::load(const void* data, size_t size) {
 }
 
 size_t Program::num_methods() const {
+  if (program_fb_ == nullptr) {
+    return 0;
+  }
   const auto* methods = program_fb_->methods();
   return methods == nullptr ? 0 : methods->size();
 }
 
 std::vector<std::string> Program::method_names() const {
   std::vector<std::string> names;
+  if (program_fb_ == nullptr) {
+    return names;
+  }
   const auto* methods = program_fb_->methods();
   if (methods != nullptr) {
     names.reserve(methods->size());
