@@ -408,6 +408,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
         self._recipe = None
+        self._convert_linear_to_conv2d = False
 
     @property
     def recipe(self):
@@ -549,7 +550,9 @@ class QnnQuantizer(Quantizer):
         """
         return get_qnn_pass_manager_cls(
             self.backend
-        )().transform_for_annotation_pipeline(model)
+        )().transform_for_annotation_pipeline(
+            model, convert_linear_to_conv2d=self._convert_linear_to_conv2d
+        )
 
     def validate(self, model: GraphModule) -> None:
         # Validate: only for mapped nodes (qnn_op present); unmapped → skip validation
@@ -703,6 +706,17 @@ class QnnQuantizer(Quantizer):
             block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
         """
         self.block_size_map = block_size_map
+
+    def set_convert_linear_to_conv2d(self, convert_linear_to_conv2d: bool) -> None:
+        """
+        Convert linear to conv2d during the annotation pipeline.
+
+        If this is enabled, quant_recipe will need to target conv node instead of linear node.
+
+        Args:
+            convert_linear_to_conv2d (bool): True to convert during annotation.
+        """
+        self._convert_linear_to_conv2d = convert_linear_to_conv2d
 
     def set_default_quant_config(
         self,
