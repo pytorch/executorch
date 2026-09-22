@@ -6,7 +6,8 @@
 
 """DFlash2 runtime regressions; see test_dflash_runtime.py for runner setup.
 
-Reuse an exported fixture through MUSE_GLIMMER_DFLASH_TEST_ARTIFACT.
+Reuse an exported fixture through MUSE_GLIMMER_DFLASH_TEST_ARTIFACT, with
+_8 or _16 appended for wider verification.
 """
 
 import unittest
@@ -32,3 +33,11 @@ class DFlash2RuntimeTest(DFlashRuntimeTestMixin, unittest.TestCase):
             output_multiplier=0.19611613513,
             final_logit_softcapping=20.0,
         )
+
+
+class DFlash2EightRowRuntimeTest(DFlash2RuntimeTest):
+    verification_length = 8
+
+
+class DFlash2SixteenRowRuntimeTest(DFlash2RuntimeTest):
+    verification_length = 16

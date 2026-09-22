@@ -118,16 +118,20 @@ python -m executorch.examples.models.muse_glimmer.export.export_dflash \
 DFlash2 is detected from GGUF metadata. Original Meta DFlash GGUFs and prebuilt
 PTEs remain supported.
 
-Keep the runner defaults `--block_length=0 --n_draft=3`: DFlash2 uses its trained
-16-position block and CUDA verifies three proposals plus the anchor in four
-positions. CUDA accepts `--n_draft=1` through `3`, padding unused positions until
-the context limit. Serving uses `--dflash-block-length` and `--dflash-n-draft`.
+Keep `--block_length=0` to use DFlash2's trained 16-position block. CUDA exports
+default to four verification rows (three proposals plus the anchor). Rebuild the
+CUDA runner and re-export to enable packed DFlash2 drafting. For wider
+verification, export with `--cuda-verification-length=8` or `16`, then use
+`--n_draft=7` or `15`, respectively.
+Match export capacity to `--n_draft` to avoid extra LM-head work.
+Existing four-row PTEs accept at most three proposals. Serving uses
+`--dflash-block-length` and `--dflash-n-draft`.
 For both DFlash versions, `--cuda_graph=true` captures drafting and target
 verification, with eager fallback for shapes that differ from the captured graph.
 
 DFlash2 has been validated on CUDA; MLX execution remains unvalidated. The
-quantized target can produce different logits with one-row and four-row inputs,
-so four-row validation does not establish parity with ordinary one-row decoding.
+quantized target can produce different logits across kernel paths and verification
+widths; validation at a matching width does not establish ordinary one-row parity.
 
 Add `--mmproj "$MMPROJ"` to an export command to include the vision encoder. A
 vision export also writes `pos_embed.bin` beside `model.pte`.
@@ -149,6 +153,7 @@ advanced inputs.
 | DFlash | MLX | `target_forward_from_embeddings`, `embed_text`, `draft_forward` |
 
 Vision adds `vision_encoder` to each method set.
+CUDA verification lengths above four also add `target_verify_from_embeddings`.
 
 ## Build the runners
 
