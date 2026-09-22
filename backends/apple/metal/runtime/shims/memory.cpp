@@ -39,6 +39,41 @@ std::unordered_map<Tensor*, std::shared_ptr<Tensor>> tensors;
 constexpr int32_t NOT_OWN = -1;
 std::unordered_map<void*, int32_t> memory_to_n_tensor;
 
+// Every handle into memory the runtime owns holds a count on that allocation
+// in memory_to_n_tensor. A handle whose own address is not an allocation (a
+// view at an offset, or a handle made from one) finds only that address when
+// it is deleted, so this maps it to the allocation its count went to.
+std::unordered_map<Tensor*, void*> view_owner;
+
+namespace {
+
+// The owned allocation that `handle`, with data at `data_ptr`, lives in, or
+// null for memory the runtime does not own, such as a model's constants.
+void* owning_allocation(Tensor* handle, void* data_ptr) {
+  auto owner = view_owner.find(handle);
+  if (owner != view_owner.end()) {
+    return owner->second;
+  }
+  auto memory = memory_to_n_tensor.find(data_ptr);
+  if (memory != memory_to_n_tensor.end() && memory->second != NOT_OWN) {
+    return data_ptr;
+  }
+  return nullptr;
+}
+
+// Takes a count on `owner`, if any, for a new handle with data at `data_ptr`.
+void hold_allocation(Tensor* handle, void* data_ptr, void* owner) {
+  if (owner == nullptr) {
+    return;
+  }
+  memory_to_n_tensor[owner] += 1;
+  if (data_ptr != owner) {
+    view_owner[handle] = owner;
+  }
+}
+
+} // namespace
+
 extern "C" {
 
 AOTITorchError aoti_torch_create_tensor_from_blob_v2(
@@ -217,6 +252,28 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+// Drops one count on owned memory and frees it when none is left.
+static AOTITorchError release_memory(void* data_ptr) {
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end() && memory_it->second > 0,
+      Internal,
+      "Internal error: releasing memory %p that is not owned",
+      data_ptr);
+  if (memory_it->second > 1) {
+    memory_it->second -= 1;
+    return Error::Ok;
+  }
+  if (metal_is_device_pointer(data_ptr)) {
+    metal_deallocate_buffer(data_ptr);
+  } else {
+    free(data_ptr);
+    ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
+  }
+  memory_to_n_tensor.erase(memory_it);
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: entered");
 
@@ -234,32 +291,28 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   void* data_ptr = tensor_ptr->mutable_data_ptr();
 
   auto memory_it = memory_to_n_tensor.find(data_ptr);
-  if (memory_it != memory_to_n_tensor.end()) {
-    int32_t ref_count = memory_it->second;
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      Internal,
+      "Internal error: memory not found during deletion");
 
-    if (ref_count == NOT_OWN) {
-      // No-op unless this tensor is a view into a Metal buffer.
-      metal_unregister_view(data_ptr);
-      tensors.erase(it);
-      ET_LOG(
-          Debug,
-          "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
-      return Error::Ok;
-    } else if (ref_count == 1) {
-      if (metal_is_device_pointer(data_ptr)) {
-        metal_deallocate_buffer(data_ptr);
-      } else {
-        free(data_ptr);
-        ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
-      }
-      memory_to_n_tensor.erase(memory_it);
-    } else if (ref_count > 1) {
-      memory_to_n_tensor[data_ptr] = ref_count - 1;
+  if (memory_it->second == NOT_OWN) {
+    // No-op unless this tensor is a view.
+    metal_unregister_view(data_ptr);
+    // Give back the count the view held on the allocation it lives in.
+    auto owner = view_owner.find(tensor);
+    if (owner != view_owner.end()) {
+      void* allocation = owner->second;
+      view_owner.erase(owner);
+      ET_CHECK_OK_OR_RETURN_ERROR(release_memory(allocation));
     }
-  } else {
-    ET_CHECK_OR_RETURN_ERROR(
-        false, Internal, "Internal error: memory not found during deletion");
+    tensors.erase(it);
+    ET_LOG(
+        Debug,
+        "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
+    return Error::Ok;
   }
+  ET_CHECK_OK_OR_RETURN_ERROR(release_memory(data_ptr));
 
   tensors.erase(it);
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: successful");
@@ -587,18 +640,27 @@ AOTITorchError aoti_torch__reinterpret_tensor(
           element_size,
           adjusted_data);
 
-      // The view shares its parent's Metal buffer and is bound at an offset.
-      // It must not get an MTLBuffer of its own: Metal would treat the two as
-      // unrelated, and inductor both reads views of a buffer another op is
-      // still writing and fills a buffer (e.g. the result of a cat) by writing
-      // through views of it.
-      if (metal_is_device_pointer(data_ptr)) {
+      if (metal_is_device_pointer(data_ptr) && !metal_is_cpu_view(data_ptr)) {
+        // The view shares its parent's Metal buffer and is bound at an
+        // offset. It must not get an MTLBuffer of its own: Metal would treat
+        // the two as unrelated, and inductor both reads views of a buffer
+        // another op is still writing and fills a buffer (e.g. the result of
+        // a cat) by writing through views of it.
         ET_CHECK_OR_RETURN_ERROR(
             metal_register_view(adjusted_data, data_ptr),
             Internal,
             "Failed to register adjusted_data=%p as a view of %p",
             adjusted_data,
             data_ptr);
+      } else {
+        // CPU memory has no Metal buffer to be bound into, so the view gets a
+        // no-copy one of its own, as before.
+        ET_CHECK_OR_RETURN_ERROR(
+            metal_register_cpu_view(adjusted_data, tensor->nbytes()),
+            Internal,
+            "Failed to wrap adjusted_data=%p, nbytes=%zu in a Metal buffer",
+            adjusted_data,
+            static_cast<size_t>(tensor->nbytes()));
       }
 
       memory_to_n_tensor[adjusted_data] = NOT_OWN;
@@ -608,10 +670,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       metal_retain_view(data_ptr);
     }
 
-    // Increment the reference count for this memory address only if it is owned
-    if (memory_to_n_tensor[data_ptr] != NOT_OWN) {
-      memory_to_n_tensor[data_ptr] += 1;
-    }
+    // The new handle keeps the allocation it lives in alive, including when
+    // `self` is itself a view.
+    hold_allocation(
+        tensor.get(), adjusted_data, owning_allocation(self, data_ptr));
   }
 
   ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successful");
@@ -703,11 +765,9 @@ AOTITorchError aoti_torch_new_tensor_handle(
   // and deleting either must leave the view registered for the other one.
   metal_retain_view(data_ptr);
 
-  // Increment the reference count for this memory address only if it is owned
-  // by tensor
-  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
-      ? NOT_OWN
-      : memory_to_n_tensor[data_ptr] + 1;
+  // The new handle keeps the allocation the original lives in alive.
+  hold_allocation(
+      tensor.get(), data_ptr, owning_allocation(orig_handle, data_ptr));
 
   ET_LOG(Debug, "aoti_torch_new_tensor_handle: successful");
   return Error::Ok;
@@ -736,6 +796,7 @@ void cleanup_memory() {
   // anymore, and a stale entry would make the next model fail to load as soon
   // as its constants land on an address used before.
   memory_to_n_tensor.clear();
+  view_owner.clear();
 
   // Clean up Metal resources
   metal_cleanup_resources();

@@ -83,10 +83,13 @@ std::unordered_map<void*, id<MTLBuffer>> ptr_to_mtl_buffer;
 
 namespace {
 // A view's address mapped to the address of the buffer it lives in, counted
-// because several tensors can be views of the same address.
+// because several tensors can be views of the same address. A view of CPU
+// memory has a no-copy buffer of its own, mapped at its own address, which
+// goes away with the view's last handle.
 struct MetalView {
     void* base;
     int32_t count;
+    bool owns_buffer = false;
 };
 std::unordered_map<void*, MetalView> ptr_to_view;
 } // namespace
@@ -340,11 +343,54 @@ void metal_retain_view(void* view_ptr) {
     }
 }
 
+bool metal_register_cpu_view(void* view_ptr, size_t nbytes) {
+    auto it = ptr_to_view.find(view_ptr);
+    if (it != ptr_to_view.end()) {
+        if (!it->second.owns_buffer) {
+            ET_LOG(Error, "metal_register_cpu_view: %p is already a view of a Metal buffer", view_ptr);
+            return false;
+        }
+        // Another view at this address, which may reach further than the
+        // ones before it: the buffer has to cover the longest of them.
+        id<MTLBuffer> current = ptr_to_mtl_buffer[view_ptr];
+        if ([current length] < nbytes) {
+            if (!metal_buffer_nocopy(view_ptr, nbytes, true)) {
+                return false;
+            }
+            [current release];
+        }
+        it->second.count++;
+        return true;
+    }
+    if (ptr_to_mtl_buffer.find(view_ptr) != ptr_to_mtl_buffer.end()) {
+        ET_LOG(Error, "metal_register_cpu_view: %p already has a Metal buffer", view_ptr);
+        return false;
+    }
+    if (!metal_buffer_nocopy(view_ptr, nbytes, true)) {
+        return false;
+    }
+    ptr_to_view[view_ptr] = {view_ptr, 1, true};
+    return true;
+}
+
+bool metal_is_cpu_view(void* ptr) {
+    auto it = ptr_to_view.find(ptr);
+    return it != ptr_to_view.end() && it->second.owns_buffer;
+}
+
 void metal_unregister_view(void* view_ptr) {
     auto it = ptr_to_view.find(view_ptr);
-    if (it != ptr_to_view.end() && --it->second.count <= 0) {
-        ptr_to_view.erase(it);
+    if (it == ptr_to_view.end() || --it->second.count > 0) {
+        return;
     }
+    if (it->second.owns_buffer) {
+        auto buffer = ptr_to_mtl_buffer.find(view_ptr);
+        if (buffer != ptr_to_mtl_buffer.end()) {
+            [buffer->second release];
+            ptr_to_mtl_buffer.erase(buffer);
+        }
+    }
+    ptr_to_view.erase(it);
 }
 
 bool metal_is_device_pointer(void* ptr) {
@@ -1231,10 +1277,22 @@ bool ETMetalStream::isEmpty() const {
     return !commandBuffer_ && !commandEncoder_;
 }
 
-void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSDictionary* results, SyncType syncType) {
+void ETMetalStream::executeMPSGraph(
+    MPSGraph* mpsGraph,
+    NSDictionary* feeds,
+    NSDictionary* results,
+    SyncType syncType,
+    bool settle_aliases) {
     // Use dispatch_sync_with_rethrow exactly like PyTorch does for MPSGraph execution
     dispatch_sync_with_rethrow(serialQueue_, ^() {
         @autoreleasepool {
+            // An alias (see get_mtl_buffer) is a separate MTLBuffer over memory
+            // another buffer covers, and Metal orders nothing between the two.
+            // Settle that memory on both sides of this graph, all within this
+            // block so that no other work on the stream can come in between.
+            if (settle_aliases) {
+                synchronize(SyncType::COMMIT_AND_WAIT);
+            }
             endKernelCoalescing();
 
             [mpsGraph encodeToCommandBuffer:commandBuffer()
@@ -1242,13 +1300,12 @@ void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSD
                            targetOperations:nil
                           resultsDictionary:results
                         executionDescriptor:nil];
+
+            if (settle_aliases) {
+                synchronize(SyncType::COMMIT_AND_WAIT);
+            }
         }
     });
-
-    if (syncAfterNextGraph_) {
-        syncAfterNextGraph_ = false;
-        synchronize(SyncType::COMMIT_AND_WAIT);
-    }
 }
 
 // =======================
