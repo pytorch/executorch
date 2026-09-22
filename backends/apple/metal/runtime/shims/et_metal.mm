@@ -140,42 +140,15 @@ bool metal_is_strided_view(const void* tensor) {
 
 id<MTLBuffer> metal_packed_copy_of_strided_view(
     const executorch::runtime::etensor::Tensor& tensor) {
-    auto it = strided_views.find(&tensor);
-    if (it == strided_views.end()) {
+    if (strided_views.find(&tensor) == strided_views.end()) {
         return nil;
     }
-    const StridedView& view = it->second;
-
-    // The copy is made on the CPU, so what the GPU still has to write into the
-    // view has to be there first.
-    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
-
-    const size_t element_size = tensor.element_size();
-    const size_t numel = tensor.numel();
-    id<MTLBuffer> packed = [get_metal_device() newBufferWithLength:std::max<size_t>(numel * element_size, 1)
-                                                           options:MTLResourceStorageModeShared];
-    if (!packed) {
+    id<MTLComputeCommandEncoder> encoder = getCurrentMetalStream()->commandEncoder();
+    if (!encoder) {
+        ET_LOG(Error, "metal_packed_copy_of_strided_view: no command encoder");
         return nil;
     }
-
-    const char* src = static_cast<const char*>(tensor.const_data_ptr());
-    char* dst = static_cast<char*>([packed contents]);
-    const size_t ndim = view.sizes.size();
-    std::vector<int64_t> coord(ndim, 0);
-    for (size_t flat = 0; flat < numel; flat++) {
-        int64_t src_index = 0;
-        for (size_t d = 0; d < ndim; d++) {
-            src_index += coord[d] * view.strides[d];
-        }
-        std::memcpy(dst + flat * element_size, src + src_index * element_size, element_size);
-        for (size_t d = ndim; d-- > 0;) {
-            if (++coord[d] < view.sizes[d]) {
-                break;
-            }
-            coord[d] = 0;
-        }
-    }
-    return [packed autorelease];
+    return ETMetalKernelFunction::encodePackedCopyOfStridedView(encoder, tensor);
 }
 
 // Metal buffer pool with best-fit matching and LRU eviction.
@@ -636,6 +609,116 @@ void ETMetalKernelFunction::startEncoding() {
     }
 }
 
+namespace {
+
+// Copies the elements of a strided view, in row-major order, into a packed
+// buffer. Bound at the top of the argument table so that the arguments an op
+// has already set are left alone.
+constexpr uint32_t kGatherMaxDims = 16;
+constexpr unsigned kGatherSrcIndex = 28;
+constexpr unsigned kGatherDstIndex = 29;
+constexpr unsigned kGatherParamsIndex = 30;
+
+struct GatherParams {
+    uint32_t ndim;
+    uint32_t sizes[kGatherMaxDims];
+    uint32_t strides[kGatherMaxDims];
+};
+
+const char* kGatherShaderSource = R"(
+#include <metal_stdlib>
+using namespace metal;
+
+struct GatherParams {
+    uint ndim;
+    uint sizes[16];
+    uint strides[16];
+};
+
+template <typename T>
+kernel void gather_strided(
+    device const T* src [[buffer(28)]],
+    device T* dst [[buffer(29)]],
+    constant GatherParams& p [[buffer(30)]],
+    uint gid [[thread_position_in_grid]]) {
+    uint remaining = gid;
+    uint offset = 0;
+    for (uint i = 0; i < p.ndim; ++i) {
+        const uint d = p.ndim - 1 - i;
+        offset += (remaining % p.sizes[d]) * p.strides[d];
+        remaining /= p.sizes[d];
+    }
+    dst[gid] = src[offset];
+}
+
+template [[host_name("gather_strided_1")]] kernel void gather_strided<uchar>(device const uchar*, device uchar*, constant GatherParams&, uint);
+template [[host_name("gather_strided_2")]] kernel void gather_strided<ushort>(device const ushort*, device ushort*, constant GatherParams&, uint);
+template [[host_name("gather_strided_4")]] kernel void gather_strided<uint>(device const uint*, device uint*, constant GatherParams&, uint);
+template [[host_name("gather_strided_8")]] kernel void gather_strided<ulong>(device const ulong*, device ulong*, constant GatherParams&, uint);
+)";
+
+std::shared_ptr<ETMetalKernelFunction> gather_kernel(size_t element_size) {
+    static ETMetalShaderLibrary library(kGatherShaderSource);
+    return library.getKernelFunction("gather_strided_" + std::to_string(element_size));
+}
+
+} // namespace
+
+MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
+    MTLComputeCommandEncoder_t encoder,
+    const executorch::runtime::etensor::Tensor& tensor) {
+    auto it = strided_views.find(&tensor);
+    if (it == strided_views.end()) {
+        return nil;
+    }
+    const StridedView& view = it->second;
+    const size_t element_size = tensor.element_size();
+    const size_t numel = tensor.numel();
+    if (view.sizes.size() > kGatherMaxDims || numel > UINT32_MAX ||
+        (element_size != 1 && element_size != 2 && element_size != 4 && element_size != 8)) {
+        ET_LOG(Error, "encodePackedCopyOfStridedView: unsupported view (ndim %zu, numel %zu, element size %zu)",
+               view.sizes.size(), numel, element_size);
+        return nil;
+    }
+
+    id<MTLBuffer> src = nil;
+    size_t src_offset = 0;
+    if (!metal_resolve_buffer(tensor.mutable_data_ptr(), &src, &src_offset)) {
+        ET_LOG(Error, "encodePackedCopyOfStridedView: the view is not in a Metal buffer");
+        return nil;
+    }
+    id<MTLBuffer> dst = [get_metal_device() newBufferWithLength:std::max<size_t>(numel * element_size, 1)
+                                                        options:MTLResourceStorageModeShared];
+    if (!dst) {
+        ET_LOG(Error, "encodePackedCopyOfStridedView: failed to allocate %zu bytes", numel * element_size);
+        return nil;
+    }
+    [dst autorelease];
+
+    GatherParams params = {};
+    params.ndim = static_cast<uint32_t>(view.sizes.size());
+    for (size_t d = 0; d < view.sizes.size(); d++) {
+        params.sizes[d] = static_cast<uint32_t>(view.sizes[d]);
+        params.strides[d] = static_cast<uint32_t>(view.strides[d]);
+    }
+
+    auto gather = gather_kernel(element_size);
+    if (!gather) {
+        return nil;
+    }
+    id<MTLComputePipelineState> cps = gather->cps_;
+    [encoder setComputePipelineState:cps];
+    [encoder setBuffer:src offset:src_offset atIndex:kGatherSrcIndex];
+    [encoder setBuffer:dst offset:0 atIndex:kGatherDstIndex];
+    [encoder setBytes:&params length:sizeof(params) atIndex:kGatherParamsIndex];
+    const uint64_t group = std::min<uint64_t>([cps maxTotalThreadsPerThreadgroup], std::max<size_t>(numel, 1));
+    // Straight onto the encoder: the stream's dispatch accounting may flush,
+    // which would end the encoder under the op that is still binding to it.
+    [encoder dispatchThreads:MTLSizeMake(std::max<size_t>(numel, 1), 1, 1)
+       threadsPerThreadgroup:MTLSizeMake(group, 1, 1)];
+    return dst;
+}
+
 void ETMetalKernelFunction::setArg(
     unsigned idx,
     const executorch::runtime::etensor::Tensor& tensor,
@@ -646,8 +729,9 @@ void ETMetalKernelFunction::setArg(
     }
 
     if (!strided_view_in_place) {
-        id<MTLBuffer> packed = metal_packed_copy_of_strided_view(tensor);
+        id<MTLBuffer> packed = encodePackedCopyOfStridedView(encoder_, tensor);
         if (packed) {
+            [encoder_ setComputePipelineState:cps_];
             [encoder_ setBuffer:packed offset:0 atIndex:idx];
             return;
         }

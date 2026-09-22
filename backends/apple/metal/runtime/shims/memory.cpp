@@ -39,6 +39,11 @@ std::unordered_map<Tensor*, std::shared_ptr<Tensor>> tensors;
 constexpr int32_t NOT_OWN = -1;
 std::unordered_map<void*, int32_t> memory_to_n_tensor;
 
+// A view at another address than its parent counts towards the parent's
+// entry in memory_to_n_tensor, so this maps such a view to the parent address
+// that count has to be given back to.
+std::unordered_map<Tensor*, void*> view_owner;
+
 extern "C" {
 
 AOTITorchError aoti_torch_create_tensor_from_blob_v2(
@@ -217,6 +222,28 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+// Drops one count on owned memory and frees it when none is left.
+static AOTITorchError release_memory(void* data_ptr) {
+  auto memory_it = memory_to_n_tensor.find(data_ptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end() && memory_it->second > 0,
+      Internal,
+      "Internal error: releasing memory %p that is not owned",
+      data_ptr);
+  if (memory_it->second > 1) {
+    memory_it->second -= 1;
+    return Error::Ok;
+  }
+  if (metal_is_device_pointer(data_ptr)) {
+    metal_deallocate_buffer(data_ptr);
+  } else {
+    free(data_ptr);
+    ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
+  }
+  memory_to_n_tensor.erase(memory_it);
+  return Error::Ok;
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: entered");
 
@@ -235,32 +262,28 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   metal_forget_strided_view(tensor);
 
   auto memory_it = memory_to_n_tensor.find(data_ptr);
-  if (memory_it != memory_to_n_tensor.end()) {
-    int32_t ref_count = memory_it->second;
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      Internal,
+      "Internal error: memory not found during deletion");
 
-    if (ref_count == NOT_OWN) {
-      // No-op unless this tensor is a view into a Metal buffer.
-      metal_unregister_view(data_ptr);
-      tensors.erase(it);
-      ET_LOG(
-          Debug,
-          "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
-      return Error::Ok;
-    } else if (ref_count == 1) {
-      if (metal_is_device_pointer(data_ptr)) {
-        metal_deallocate_buffer(data_ptr);
-      } else {
-        free(data_ptr);
-        ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
-      }
-      memory_to_n_tensor.erase(memory_it);
-    } else if (ref_count > 1) {
-      memory_to_n_tensor[data_ptr] = ref_count - 1;
+  if (memory_it->second == NOT_OWN) {
+    // No-op unless this tensor is a view into a Metal buffer.
+    metal_unregister_view(data_ptr);
+    // Give back the count the view held on its parent's memory.
+    auto owner = view_owner.find(tensor);
+    if (owner != view_owner.end()) {
+      void* parent = owner->second;
+      view_owner.erase(owner);
+      ET_CHECK_OK_OR_RETURN_ERROR(release_memory(parent));
     }
-  } else {
-    ET_CHECK_OR_RETURN_ERROR(
-        false, Internal, "Internal error: memory not found during deletion");
+    tensors.erase(it);
+    ET_LOG(
+        Debug,
+        "aoti_torch_delete_tensor_object: tensor doesn't own memory, skipping free");
+    return Error::Ok;
   }
+  ET_CHECK_OK_OR_RETURN_ERROR(release_memory(data_ptr));
 
   tensors.erase(it);
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: successful");
@@ -626,6 +649,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     // Increment the reference count for this memory address only if it is owned
     if (memory_to_n_tensor[data_ptr] != NOT_OWN) {
       memory_to_n_tensor[data_ptr] += 1;
+      if (adjusted_data != data_ptr) {
+        // Deleting the view finds `adjusted_data`, not `data_ptr`; remember
+        // where its count went.
+        view_owner[tensor.get()] = data_ptr;
+      }
     }
   }
 
@@ -753,6 +781,7 @@ void cleanup_memory() {
   // anymore, and a stale entry would make the next model fail to load as soon
   // as its constants land on an address used before.
   memory_to_n_tensor.clear();
+  view_owner.clear();
 
   // Clean up Metal resources
   metal_cleanup_resources();

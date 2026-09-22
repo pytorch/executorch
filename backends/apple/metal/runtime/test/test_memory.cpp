@@ -163,3 +163,35 @@ TEST_F(MetalMemoryTest, ViewOutlivesDeletedSameAddressReinterpret) {
   expectViewOutlivesDeletedHandle(
       /*by_reinterpret=*/true, /*delete_view=*/false);
 }
+
+// A view at another address counts towards its parent's memory, and the
+// parent must not be freed under it. Once the last handle on that memory is
+// gone, view or parent, the buffer has to be released.
+TEST_F(MetalMemoryTest, ParentFreedAfterViewDeletedLast) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndView(&base, &view);
+  void* base_ptr = base->mutable_data_ptr();
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(base_ptr));
+  EXPECT_TRUE(metal_is_device_pointer(view->mutable_data_ptr()));
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(base_ptr));
+  EXPECT_EQ(memory_to_n_tensor.count(base_ptr), 0u);
+}
+
+TEST_F(MetalMemoryTest, ParentFreedAfterParentDeletedLast) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndView(&base, &view);
+  void* base_ptr = base->mutable_data_ptr();
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(base_ptr));
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(base_ptr));
+  EXPECT_EQ(memory_to_n_tensor.count(base_ptr), 0u);
+}

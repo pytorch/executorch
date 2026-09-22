@@ -217,6 +217,16 @@ class ETMetalKernelFunction {
 
   void runCommandBlock(std::function<void(void)> f);
 
+  // Encodes, on `encoder`, a copy of a strided view (see
+  // metal_record_strided_view) into a new packed buffer, and returns that
+  // buffer. Nothing is committed or waited for: the copy is ordered after the
+  // work already encoded on the stream, which is what fills the view. Leaves
+  // the encoder's pipeline state changed and buffers 28-30 bound. Returns nil
+  // if `tensor` is not a strided view.
+  static MTLBuffer_t encodePackedCopyOfStridedView(
+      MTLComputeCommandEncoder_t encoder,
+      const executorch::runtime::etensor::Tensor& tensor);
+
  private:
   MTLComputePipelineState_t cps_;
   MTLFunction_t func_;
@@ -450,8 +460,9 @@ extern std::unordered_map<void*, MTLBuffer_t> ptr_to_mtl_buffer;
 // Metal does not own.
 bool metal_resolve_buffer(void* ptr, MTLBuffer_t* buffer, size_t* offset);
 
-// A packed, row-major copy of a strided view's elements in a new buffer, made
-// after waiting for pending GPU work. Returns nil if `tensor` is not a strided
+// A packed, row-major copy of a strided view's elements in a new buffer. The
+// copy is encoded on the current stream, ordered after the work that fills the
+// view, so nothing is waited for. Returns nil if `tensor` is not a strided
 // view. Writes to the copy do not reach the view.
 id<MTLBuffer> metal_packed_copy_of_strided_view(
     const executorch::runtime::etensor::Tensor& tensor);
