@@ -695,7 +695,25 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
             producer = frontier
             frontier_user = previous_frontier
         else:
-            producer = frontier.all_input_nodes[0]
+            inputs = list(frontier.all_input_nodes)
+            if len(inputs) > 1 and not self.is_multi_input_elementwise(frontier):
+                # The earlier propagation check accepted exactly one layout-dependent
+                # input. Select it because a broadcast scalar may appear first.
+                rank = len(node.args[1])
+                layout_dependent_inputs = [
+                    input_node
+                    for input_node in inputs
+                    if not FuseIdenticalInputTransformsPass.is_layout_invariant(
+                        input_node, rank
+                    )
+                ]
+                assert len(layout_dependent_inputs) == 1, (
+                    f"Expected exactly one layout-dependent input for {frontier.target}, "
+                    f"got {len(layout_dependent_inputs)}"
+                )
+                producer = layout_dependent_inputs[0]
+            else:
+                producer = inputs[0]
             frontier_user = frontier
 
         node.replace_input_with(original_input, producer)

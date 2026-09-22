@@ -9,6 +9,8 @@
 
 #include "arm_perf_monitor.h"
 
+using printf_size_t = unsigned long;
+
 #ifdef ETHOSU
 #include <ethosu_driver.h>
 #include <executorch/runtime/platform/log.h>
@@ -40,6 +42,14 @@ uint64_t ethosu_ArmBackendExecuteCycleCount = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCountStart = 0;
 uint64_t ethosu_ArmWhenNPURunCycleCount = 0;
 uint64_t ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+struct IOCopyStats {
+  uint64_t calls = 0;
+  uint64_t bytes = 0;
+};
+IOCopyStats ethosu_inputCopyStats;
+IOCopyStats ethosu_outputCopyStats;
+#endif
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
 struct DelegateStats {
   const void* handle = nullptr;
@@ -47,6 +57,10 @@ struct DelegateStats {
   uint64_t npu_invocations = 0;
   uint64_t pmu_cycles = 0;
   std::array<uint64_t, ethosu_pmuCountersUsed> pmu_events{};
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  IOCopyStats input_copies;
+  IOCopyStats output_copies;
+#endif
 };
 
 std::array<DelegateStats, ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES>
@@ -79,6 +93,30 @@ static_assert(ETHOSU_PMU_NCOUNTERS >= ethosu_pmuCountersUsed);
 } // namespace
 
 extern "C" {
+
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+void EthosUBackend_input_memcpy(size_t size) {
+  ethosu_inputCopyStats.calls++;
+  ethosu_inputCopyStats.bytes += size;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if (ethosu_activeDelegate != nullptr) {
+    ethosu_activeDelegate->input_copies.calls++;
+    ethosu_activeDelegate->input_copies.bytes += size;
+  }
+#endif
+}
+
+void EthosUBackend_output_memcpy(size_t size) {
+  ethosu_outputCopyStats.calls++;
+  ethosu_outputCopyStats.bytes += size;
+#if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
+  if (ethosu_activeDelegate != nullptr) {
+    ethosu_activeDelegate->output_copies.calls++;
+    ethosu_activeDelegate->output_copies.bytes += size;
+  }
+#endif
+}
+#endif
 
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
 void EthosUBackend_delegate_begin(const void* handle) {
@@ -197,6 +235,10 @@ void StartMeasurements() {
   ethosu_ArmBackendExecuteCycleCount = 0;
   ethosu_ArmWhenNPURunCycleCount = 0;
   ethosu_pmuCycleCount = 0;
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  ethosu_inputCopyStats = {};
+  ethosu_outputCopyStats = {};
+#endif
 #if defined(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
   ethosu_delegateStats = {};
   ethosu_delegateCount = 0;
@@ -234,6 +276,32 @@ void StopMeasurements(int num_inferences) {
       "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
       ethosu_ArmBackendExecuteCycleCount,
       (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  const uint64_t io_copy_calls =
+      ethosu_inputCopyStats.calls + ethosu_outputCopyStats.calls;
+  const uint64_t io_copy_bytes =
+      ethosu_inputCopyStats.bytes + ethosu_outputCopyStats.bytes;
+  ET_LOG(
+      Info,
+      "Ethos-U IO copy calls: %" PRIu64 " (%.2f per inference)",
+      io_copy_calls,
+      (double)io_copy_calls / num_inferences);
+  ET_LOG(
+      Info,
+      "Ethos-U IO copy bytes: %" PRIu64 " bytes (%.2f per inference)",
+      io_copy_bytes,
+      (double)io_copy_bytes / num_inferences);
+  ET_LOG(
+      Info,
+      "Ethos-U input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+      ethosu_inputCopyStats.calls,
+      ethosu_inputCopyStats.bytes);
+  ET_LOG(
+      Info,
+      "Ethos-U output copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+      ethosu_outputCopyStats.calls,
+      ethosu_outputCopyStats.bytes);
+#endif
   // We could print a list of the cycles used by the other delegates here in the
   // future but now we only print ethos-u: this means that "Operator(s) total:
   // ..." will be the same number as ethos-u : cycle_cnt and not the sum of all
@@ -288,8 +356,8 @@ void StopMeasurements(int num_inferences) {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ET_LOG(
         Info,
-        "ethosu_pmu_cntr%zd : %" PRIu64 " (%.2f per inference)",
-        i,
+        "ethosu_pmu_cntr%lu : %" PRIu64 " (%.2f per inference)",
+        static_cast<printf_size_t>(i),
         ethosu_pmuEventCounts[i],
         (double)ethosu_pmuEventCounts[i] / num_inferences);
   }
@@ -300,30 +368,45 @@ void StopMeasurements(int num_inferences) {
     const DelegateStats& stats = ethosu_delegateStats[delegate_id];
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu: %" PRIu64 " backend invocations, %" PRIu64
+        "Ethos-U delegate %lu: %" PRIu64 " backend invocations, %" PRIu64
         " NPU invocations",
-        delegate_id,
+        static_cast<printf_size_t>(delegate_id),
         stats.backend_invocations,
         stats.npu_invocations);
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu PMU cycles: %" PRIu64,
-        delegate_id,
+        "Ethos-U delegate %lu PMU cycles: %" PRIu64,
+        static_cast<printf_size_t>(delegate_id),
         stats.pmu_cycles);
     for (size_t event = 0; event < ethosu_pmuCountersUsed; ++event) {
       ET_LOG(
           Info,
-          "Ethos-U delegate %zu PMU counter %zu: %" PRIu64,
-          delegate_id,
-          event,
+          "Ethos-U delegate %lu PMU counter %lu: %" PRIu64,
+          static_cast<printf_size_t>(delegate_id),
+          static_cast<printf_size_t>(event),
           stats.pmu_events[event]);
     }
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+    ET_LOG(
+        Info,
+        "Ethos-U delegate %lu input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+        static_cast<printf_size_t>(delegate_id),
+        stats.input_copies.calls,
+        stats.input_copies.bytes);
+    ET_LOG(
+        Info,
+        "Ethos-U delegate %lu output copy: %" PRIu64 " calls, %" PRIu64
+        " bytes",
+        static_cast<printf_size_t>(delegate_id),
+        stats.output_copies.calls,
+        stats.output_copies.bytes);
+#endif
   }
   if (ethosu_delegateCapacityExceeded) {
     ET_LOG(
         Error,
-        "Ethos-U per-delegate profiling exceeded its capacity of %zu delegates",
-        ethosu_delegateStats.size());
+        "Ethos-U per-delegate profiling exceeded its capacity of %lu delegates",
+        static_cast<printf_size_t>(ethosu_delegateStats.size()));
   }
 #endif
 #if defined(ETHOSU55) || defined(ETHOSU65)

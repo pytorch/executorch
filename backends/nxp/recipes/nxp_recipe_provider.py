@@ -9,6 +9,15 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, cast, Iterable, Optional, Sequence
 
+import torch
+
+from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
+    FuseBatchNormWithLinearPass,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
+    RemoveSimulatedLinearBatchNormFusionQATPass,
+)
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
@@ -29,12 +38,18 @@ from executorch.backends.nxp.nxp_backend import (
     default_preserve_ops,
     generate_neutron_compile_spec,
 )
+from executorch.backends.nxp.quantizer.utils import (
+    _replace_histogram_observers_for_integer_inputs,
+)
 from executorch.backends.nxp.recipes.nxp_recipe_types import NXP_BACKEND, NXPRecipeType
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_default_quantizer,
     handle_kernel_selection,
     ModelInputSpec,
     to_model_input_spec,
+)
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasAtenPass,
 )
 from executorch.exir import (
     EdgeCompileConfig,
@@ -72,7 +87,7 @@ NEUTRON_RECIPE_CONFIG_KEY = "neutron_recipe_config"
 class NeutronRecipeConfig:
     """Configuration shared by all NXP recipe types.
 
-    Parameters that vary the *type* of export (delegate vs no-delegate)
+    Parameters that vary the *type* of export (delegate vs no-delegate, PTQ vs QAT)
     are expressed by choosing a different NXPRecipeType rather than by flags here.
 
     Attributes:
@@ -95,6 +110,9 @@ class NeutronRecipeConfig:
         dump_kernel_selection_code: Generate kernel-selection files after compilation.
         use_profiling: Enable Neutron execution profiling. IMPORTANT: To also generate an
                        ETRecord, pass generate_etrecord=True to export() separately.
+        train_fn: Training function required for QAT recipe types (INT8_QAT_NEUTRON and
+                  INT8_QAT_NO_DELEGATE). Receives the prepared GraphModule and must
+                  perform the training loop. Ignored for PTQ recipe types.
     """
 
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
@@ -109,6 +127,7 @@ class NeutronRecipeConfig:
     fetch_constants_to_sram: bool = False
     dump_kernel_selection_code: bool = False
     use_profiling: bool = False
+    train_fn: Callable[["torch.fx.GraphModule"], None] | None = None
 
 
 class NXPRecipeProvider(BackendRecipeProvider):
@@ -149,6 +168,10 @@ class NXPRecipeProvider(BackendRecipeProvider):
                 return self._build_recipe(recipe_type, rc, is_qat=False, delegate=True)
             case NXPRecipeType.INT8_PTQ_NO_DELEGATE:
                 return self._build_recipe(recipe_type, rc, is_qat=False, delegate=False)
+            case NXPRecipeType.INT8_QAT_NEUTRON:
+                return self._build_recipe(recipe_type, rc, is_qat=True, delegate=True)
+            case NXPRecipeType.INT8_QAT_NO_DELEGATE:
+                return self._build_recipe(recipe_type, rc, is_qat=True, delegate=False)
             case _:
                 raise NotImplementedError(
                     f"NXP backend: Recipe `{recipe_type}` is not supported."
@@ -162,10 +185,10 @@ class NXPRecipeProvider(BackendRecipeProvider):
         is_qat: bool,
         delegate: bool,
     ) -> ExportRecipe:
-        # is_qat=True is reserved for future QAT support; always False for now.
-        if is_qat:
-            raise NotImplementedError(
-                "NXP recipe with QAT (quantization aware training) is not yet supported."
+        if is_qat and rc.train_fn is None:
+            raise ValueError(
+                f"NXP backend: Recipe `{recipe_type}` requires `train_fn` to be set in "
+                f"NeutronRecipeConfig. Provide a callable that trains the prepared model."
             )
 
         neutron_target_spec = NeutronTargetSpec(rc.target)
@@ -175,7 +198,7 @@ class NXPRecipeProvider(BackendRecipeProvider):
                 get_default_quantizer, neutron_target_spec, is_qat
             )
 
-        quantization_recipe = _build_quantization_recipe(rc)
+        quantization_recipe = _build_quantization_recipe(rc, is_qat)
         compile_spec = generate_neutron_compile_spec(
             rc.target,
             intermediates_dir=rc.intermediates_dir,
@@ -200,22 +223,87 @@ class NXPRecipeProvider(BackendRecipeProvider):
 
 
 # ---------------------------------------------------------------------------
+# Pass wrappers
+# ---------------------------------------------------------------------------
+# ExirPassBase subclasses return a PassResult with a .graph_module attribute,
+# but QuantizeStage._apply_passes expects callable(GraphModule) -> GraphModule.
+# These thin wrappers bridge the two conventions.
+
+
+def _wrap_exir_pass(pass_cls, *args, **kwargs):
+    """Return a callable(GraphModule) -> GraphModule wrapping an ExirPass instance."""
+    _pass_instance = pass_cls(*args, **kwargs)
+
+    def _wrapped(m):
+        return _pass_instance(m).graph_module
+
+    _wrapped.__qualname__ = f"_wrap_exir_pass({pass_cls.__name__})"
+    return _wrapped
+
+
+def _histogram_observer_fix_pass(m):
+    """Callable(GraphModule) -> GraphModule that replaces HistogramObserver for integer inputs."""
+    _replace_histogram_observers_for_integer_inputs(m)
+    return m
+
+
+# ---------------------------------------------------------------------------
 # Module-level builder helpers
 # ---------------------------------------------------------------------------
 
 
-def _build_quantization_recipe(rc: NeutronRecipeConfig) -> QuantizationRecipe:
-    """Build the QuantizationRecipe for PTQ.
+def _build_quantization_recipe(
+    rc: NeutronRecipeConfig, is_qat: bool
+) -> QuantizationRecipe:
+    """Build the QuantizationRecipe for PTQ or QAT.
 
     PTQ uses the standard QuantizeStage flow (prepare_pt2e -> calibrate -> convert_pt2e).
-    The example_inputs passed to the export session are used directly for calibration.
-    Multiple PTQ recipes can be combined with ExportRecipe.combine().
+    QAT uses the QAT flow (prepare_qat_pt2e -> BN-fusion passes -> train_fn -> convert_pt2e).
+
+    The NXP-specific passes are injected via the QuantizationRecipe hook lists so
+    that QuantizeStage executes them in the correct order.
     """
     _quantizer = rc.get_quantizer_fn()
 
-    return QuantizationRecipe(
-        quantizers=[_quantizer],
-    )
+    # post_prepare_passes: always fix HistogramObserver for non-float inputs.
+    # For QAT, also insert the simulated linear-BN fusion before training so
+    # fake-quantize nodes see fused weights during the training loop.
+    post_prepare: list[Callable] = []
+    if is_qat:
+        post_prepare.append(_wrap_exir_pass(AddSimulatedLinearBatchNormFusionQATPass))
+    post_prepare.append(_histogram_observer_fix_pass)
+
+    if is_qat:
+        # pre_convert_passes: tear down the simulated fusion and fold BN into
+        # the linear weights before convert_pt2e.
+        pre_convert: list[Callable] = [
+            _wrap_exir_pass(RemoveSimulatedLinearBatchNormFusionQATPass),
+            _wrap_exir_pass(FuseBatchNormWithLinearPass),
+        ]
+
+        # post_convert_passes: fix up quantization parameters for fused conv+BN
+        # bias nodes after convert_pt2e has inserted the quantize/dequantize ops.
+        post_convert: list[Callable] = [
+            _wrap_exir_pass(
+                QuantizeFusedConvBnBiasAtenPass,
+                default_zero_bias=False,
+                symmetric_quant=True,
+            )
+        ]
+
+        return QuantizationRecipe(
+            quantizers=[_quantizer],
+            is_qat=True,
+            train_fn=rc.train_fn,
+            post_prepare_passes=post_prepare,
+            pre_convert_passes=pre_convert,
+            post_convert_passes=post_convert,
+        )
+    else:
+        return QuantizationRecipe(
+            quantizers=[_quantizer],
+            post_prepare_passes=post_prepare,
+        )
 
 
 def _build_lowering_recipe(

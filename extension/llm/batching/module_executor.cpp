@@ -9,8 +9,8 @@
 #include <executorch/extension/llm/batching/module_executor.h>
 
 #include <algorithm>
-#include <cinttypes>
 #include <limits>
+#include <new>
 #include <random>
 #include <utility>
 
@@ -33,58 +33,22 @@ using ::executorch::runtime::Result;
 
 namespace {
 
-// Constant methods carry no delegate, so the layout reads with the program
-// loaded and the method not. Sizing is the caller's and is left unset.
-Result<cache::CacheConfig> config_from_program(Module& module) {
-  const auto read_int = [&module](const char* name) -> std::optional<int64_t> {
-    const auto r = module.execute(name);
-    if (!r.ok() || r->empty() || !r->at(0).isInt()) {
-      return std::nullopt;
-    }
-    return r->at(0).toInt();
-  };
-  const auto read_ints =
-      [&module](const char* name) -> std::optional<std::vector<int>> {
-    const auto r = module.execute(name);
-    if (!r.ok() || r->empty() || !r->at(0).isTensor()) {
-      return std::nullopt;
-    }
-    const auto t = r->at(0).toTensor();
-    if (t.scalar_type() != ::executorch::aten::ScalarType::Int) {
-      return std::nullopt;
-    }
-    const int32_t* p = t.const_data_ptr<int32_t>();
-    return std::vector<int>(p, p + t.numel());
-  };
+struct SequenceGuard {
+  cache::BatchControl& control;
+  std::int32_t seq_id;
+  bool owned = true;
 
-  const auto n_caches = read_int("get_n_caches");
-  const auto kv_heads = read_ints("get_kv_heads");
-  const auto head_dims = read_ints("get_head_dims");
-  const auto windows = read_ints("get_windows");
-  ET_CHECK_OR_RETURN_ERROR(
-      n_caches && kv_heads && head_dims && windows,
-      InvalidArgument,
-      "ModuleExecutor: the program publishes no KV layout");
-  const auto n = static_cast<size_t>(*n_caches);
-  ET_CHECK_OR_RETURN_ERROR(
-      kv_heads->size() == n && head_dims->size() == n && windows->size() == n,
-      InvalidArgument,
-      "ModuleExecutor: the published KV layout names %zu caches inconsistently",
-      n);
-
-  cache::CacheConfig cfg{};
-  cfg.n_layers = static_cast<int>(n);
-  cfg.layers.reserve(n);
-  for (size_t l = 0; l < n; ++l) {
-    cache::LayerConfig lc{};
-    lc.n_kv_heads = (*kv_heads)[l];
-    lc.head_dim = (*head_dims)[l];
-    lc.policy = (*windows)[l] > 0
-        ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, (*windows)[l]}
-        : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
-    cfg.layers.push_back(lc);
+  ~SequenceGuard() {
+    if (owned) {
+      control.seq_rm(seq_id);
+    }
   }
-  return cfg;
+};
+
+bool is_supported_logits_type(::executorch::aten::ScalarType type) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
 }
 
 std::uint64_t nondeterministic_seed() {
@@ -134,7 +98,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
     const std::int64_t start = static_cast<std::int64_t>(input.position) +
         static_cast<std::int64_t>(input.offset);
     const auto [cursor_it, first_for_seq] =
-        cursor.try_emplace(seq_id, ctl_->next_pos(seq_id));
+        cursor.try_emplace(seq_id, ctl_->pos(seq_id));
     int& at = cursor_it->second;
     if (start > at) {
       // Positions nothing attended, and nothing later reaches back to fill.
@@ -195,7 +159,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
   }
 
   for (const auto& [seq_id, from] : rewinds) {
-    if (!ctl_->seq_rm(seq_id, from, std::nullopt)) {
+    if (!ctl_->rewind(seq_id, from)) {
       ET_LOG(Error, "build_step: sequence %d would not truncate", seq_id);
       return Error::Internal;
     }
@@ -211,7 +175,8 @@ ModuleExecutor::ModuleExecutor(
     std::string backend_id,
     std::string method,
     std::int32_t vocab_size,
-    int max_step_tokens)
+    int max_step_tokens,
+    LogitsToKeepMode logits_to_keep_mode)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
@@ -220,7 +185,8 @@ ModuleExecutor::ModuleExecutor(
       backend_id_(std::move(backend_id)),
       method_(std::move(method)),
       vocab_size_(vocab_size),
-      max_step_tokens_(max_step_tokens) {}
+      max_step_tokens_(max_step_tokens),
+      logits_to_keep_mode_(logits_to_keep_mode) {}
 
 ModuleExecutor::~ModuleExecutor() = default;
 
@@ -237,7 +203,7 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return Error::InvalidArgument;
   }
   if (max_sessions <= 0 || max_session_tokens <= 0) {
-    ET_LOG(Error, "ModuleExecutor: session limits must be positive");
+    ET_LOG(Error, "ModuleExecutor: invalid session limits");
     return Error::InvalidArgument;
   }
   const Error load_error =
@@ -247,20 +213,45 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return load_error;
   }
 
-  auto cfg = config_from_program(*module);
-  if (!cfg.ok()) {
-    return cfg.error();
+  const auto max_context_length = read_max_context_length(*module);
+  if (!max_context_length.ok()) {
+    ET_LOG(Error, "ModuleExecutor: the program's metadata is malformed");
+    return max_context_length.error();
+  }
+  if (max_session_tokens > *max_context_length) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: max session tokens %d exceeds model context length %" PRId64,
+        max_session_tokens,
+        *max_context_length);
+    return Error::InvalidArgument;
+  }
+  const auto logits_mode_result = read_logits_to_keep_mode(*module);
+  if (!logits_mode_result.ok()) {
+    ET_LOG(Error, "ModuleExecutor: the program's metadata is malformed");
+    return logits_mode_result.error();
+  }
+  const LogitsToKeepMode logits_mode = *logits_mode_result;
+  if (logits_mode == LogitsToKeepMode::Last) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: logits-to-keep mode last is incompatible with batched execution");
+    return Error::NotSupported;
+  }
+
+  auto geometry = read_cache_geometry(*module);
+  if (!geometry.ok()) {
+    return geometry.error();
   }
   if (max_sessions > std::numeric_limits<int>::max() / max_session_tokens) {
     ET_LOG(Error, "ModuleExecutor: total cache capacity exceeds int range");
     return Error::InvalidArgument;
   }
-  cfg->capacity = max_sessions * max_session_tokens;
-  cfg->kv_dtype = kv_dtype;
+  cache::CacheConfig cfg{max_sessions * max_session_tokens, kv_dtype};
   if (initial_capacity >= 0) {
-    cfg->initial_capacity = initial_capacity;
+    cfg.initial_capacity = initial_capacity;
   }
-  if (!cache::valid(*cfg)) {
+  if (!cache::valid(*geometry, cfg)) {
     ET_LOG(Error, "ModuleExecutor: the program's layout is unusable");
     return Error::InvalidProgram;
   }
@@ -269,6 +260,83 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
   if (!meta.ok()) {
     ET_LOG(Error, "ModuleExecutor: %s has no metadata", method.c_str());
     return meta.error();
+  }
+
+  const std::size_t expected_inputs =
+      logits_mode == LogitsToKeepMode::Selected ? 3 : 2;
+  if (meta->num_inputs() != expected_inputs) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s expects %zu inputs for its logits mode, got %zu",
+        method.c_str(),
+        expected_inputs,
+        meta->num_inputs());
+    return Error::InvalidProgram;
+  }
+
+  const auto tokens_info = meta->input_tensor_meta(0);
+  const auto positions_info = meta->input_tensor_meta(1);
+  if (!tokens_info.ok() || !positions_info.ok()) {
+    ET_LOG(Error, "ModuleExecutor: %s inputs must be tensors", method.c_str());
+    return Error::InvalidProgram;
+  }
+  const auto token_sizes = tokens_info->sizes();
+  const auto position_sizes = positions_info->sizes();
+  if (tokens_info->scalar_type() != ::executorch::aten::ScalarType::Long ||
+      token_sizes.size() != 2 || token_sizes[0] != 1 || token_sizes[1] <= 0 ||
+      positions_info->scalar_type() != ::executorch::aten::ScalarType::Long ||
+      position_sizes.size() != 1 || position_sizes[0] != token_sizes[1]) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s must take Long[1, T] tokens and Long[T] positions",
+        method.c_str());
+    return Error::InvalidProgram;
+  }
+  if (logits_mode == LogitsToKeepMode::Selected) {
+    const auto selector_info = meta->input_tensor_meta(2);
+    if (!selector_info.ok() ||
+        selector_info->scalar_type() != ::executorch::aten::ScalarType::Long ||
+        selector_info->sizes().size() != 1) {
+      ET_LOG(
+          Error,
+          "ModuleExecutor: %s selected logits selector must be rank-one Long",
+          method.c_str());
+      return Error::InvalidProgram;
+    }
+  }
+
+  if (meta->num_outputs() == 0) {
+    ET_LOG(Error, "ModuleExecutor: %s publishes no outputs", method.c_str());
+    return Error::InvalidProgram;
+  }
+  const auto logits_info = meta->output_tensor_meta(0);
+  if (!logits_info.ok()) {
+    ET_LOG(Error, "ModuleExecutor: %s has no logits metadata", method.c_str());
+    return logits_info.error();
+  }
+  const auto logits_sizes = logits_info->sizes();
+  if (logits_sizes.size() < 2 || logits_sizes[logits_sizes.size() - 1] <= 0 ||
+      !is_supported_logits_type(logits_info->scalar_type())) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: %s logits must have supported dtype and shape [..., vocab]",
+        method.c_str());
+    return Error::InvalidProgram;
+  }
+  const auto published_vocab_size = read_vocab_size(*module);
+  if (!published_vocab_size.ok()) {
+    ET_LOG(
+        Error, "ModuleExecutor: invalid get_vocab_size for %s", method.c_str());
+    return published_vocab_size.error();
+  }
+  const auto vocab_size = check_vocab_size(
+      *published_vocab_size, logits_sizes[logits_sizes.size() - 1]);
+  if (!vocab_size.ok()) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: invalid get_vocab_size for %s output width",
+        method.c_str());
+    return vocab_size.error();
   }
 
   std::string backend_id;
@@ -295,51 +363,33 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
     return Error::InvalidProgram;
   }
 
-  auto built =
-      cache::CacheFactory::global().build(backend_id, cache_kind, *cfg);
+  auto built = cache::CacheFactory::global().build(
+      backend_id, cache_kind, *geometry, cfg);
   if (!built.ok()) {
     ET_LOG(
         Error,
-        "ModuleExecutor: backend %s registers no %s cache",
+        "ModuleExecutor: failed to build backend %s cache %s",
         backend_id.c_str(),
         cache_kind.c_str());
     return built.error();
   }
   std::shared_ptr<cache::Cache> cache = built.get();
-  if (cache->as<cache::BatchControl>() == nullptr) {
+  cache::BatchControl* const ctl = cache->as<cache::BatchControl>();
+  if (ctl == nullptr) {
     ET_LOG(Error, "ModuleExecutor: the cache carries no sequence identity");
     return Error::InvalidType;
   }
-
-  if (meta->num_outputs() == 0) {
-    ET_LOG(Error, "ModuleExecutor: %s publishes no outputs", method.c_str());
-    return Error::InvalidProgram;
-  }
-  const auto logits_info = meta->output_tensor_meta(0);
-  if (!logits_info.ok()) {
-    ET_LOG(Error, "ModuleExecutor: %s has no logits metadata", method.c_str());
-    return logits_info.error();
-  }
-  if (logits_info->sizes().empty()) {
-    ET_LOG(Error, "ModuleExecutor: %s has no logits shape", method.c_str());
-    return Error::InvalidProgram;
-  }
-  const auto logits_sizes = logits_info->sizes();
-
-  const auto tokens_info = meta->input_tensor_meta(0);
-  if (!tokens_info.ok()) {
+  // Refused here rather than at the session that would not open, so a caller
+  // asking for more than the layout holds hears about it once.
+  const std::optional<int> seq_limit = ctl->max_seqs();
+  if (seq_limit && max_sessions > *seq_limit) {
     ET_LOG(
         Error,
-        "ModuleExecutor: %s has no token input metadata",
-        method.c_str());
-    return tokens_info.error();
+        "ModuleExecutor: %d resident sessions requested, but the layout holds %d",
+        max_sessions,
+        *seq_limit);
+    return Error::InvalidArgument;
   }
-  if (tokens_info->sizes().empty()) {
-    ET_LOG(
-        Error, "ModuleExecutor: %s has no token input shape", method.c_str());
-    return Error::InvalidProgram;
-  }
-  const auto tokens_sizes = tokens_info->sizes();
 
   return std::unique_ptr<ModuleExecutor>(new ModuleExecutor(
       std::move(module),
@@ -348,8 +398,9 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
       max_session_tokens,
       std::move(backend_id),
       std::move(method),
-      logits_sizes[logits_sizes.size() - 1],
-      tokens_sizes[tokens_sizes.size() - 1]));
+      *vocab_size,
+      token_sizes[1],
+      logits_mode));
 }
 
 bool ModuleExecutor::initialize() {
@@ -374,15 +425,36 @@ bool ModuleExecutor::initialize() {
 }
 
 std::optional<SessionId> ModuleExecutor::open_session() {
-  if (static_cast<int>(sessions_.size()) >= max_sessions_) {
+  if (sessions_.size() >= static_cast<std::size_t>(max_sessions_) ||
+      next_session_ == 0) {
     return std::nullopt;
   }
-  const std::optional<std::int32_t> seq_id = ctl_->seq_new();
-  if (!seq_id) {
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    const std::optional<std::int32_t> seq_id = ctl_->seq_new();
+    return seq_id ? publish_session(*seq_id, 0) : std::nullopt;
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::bad_alloc&) {
     return std::nullopt;
   }
-  const SessionId session = next_session_++;
-  sessions_.emplace(session, SessionState{*seq_id, nullptr});
+#endif
+}
+
+std::optional<SessionId> ModuleExecutor::publish_session(
+    std::int32_t seq_id,
+    Position position) {
+  SequenceGuard guard{*ctl_, seq_id};
+  if (ctl_->pos(seq_id) != position) {
+    return std::nullopt;
+  }
+  const SessionId session = next_session_;
+  if (!sessions_.emplace(session, SessionState{seq_id, nullptr}).second) {
+    return std::nullopt;
+  }
+  guard.owned = false;
+  next_session_ =
+      session == std::numeric_limits<SessionId>::max() ? 0 : session + 1;
   return session;
 }
 
@@ -392,8 +464,32 @@ void ModuleExecutor::close_session(SessionId session) {
     return;
   }
   // Frees the cells and hands the sequence id back. The session id is not.
-  ctl_->seq_rm(it->second.seq_id, 0, std::nullopt);
+  ctl_->seq_rm(it->second.seq_id);
   sessions_.erase(it);
+}
+
+std::optional<SessionId> ModuleExecutor::clone(
+    SessionId source,
+    Position upto) {
+  const auto it = sessions_.find(source);
+  if (it == sessions_.end() || upto < 0 || upto > max_session_tokens_ ||
+      sessions_.size() >= static_cast<std::size_t>(max_sessions_) ||
+      next_session_ == 0) {
+    return std::nullopt;
+  }
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (upto > ctl_->pos(it->second.seq_id)) {
+      return std::nullopt;
+    }
+    const auto seq_id = ctl_->seq_clone(it->second.seq_id, upto);
+    return seq_id ? publish_session(*seq_id, upto) : std::nullopt;
+#if ET_HAS_EXCEPTIONS
+  } catch (const std::bad_alloc&) {
+    return std::nullopt;
+  }
+#endif
 }
 
 void ModuleExecutor::set_sampling(
@@ -443,7 +539,32 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
         {n},
         std::vector<std::int64_t>(
             step->positions.begin() + off, step->positions.begin() + off + n));
-    auto result = module_->execute(method_, {tokens, positions});
+    std::vector<std::int64_t> selector_values;
+    std::vector<std::size_t> selected_inputs;
+    if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
+      for (std::size_t i = 0; i < step->logit_indices.size(); ++i) {
+        const int row = step->logit_indices[i];
+        if (row >= off && row < off + n) {
+          selector_values.push_back(row - off);
+          selected_inputs.push_back(i);
+        }
+      }
+      if (selector_values.empty()) {
+        selector_values.push_back(n - 1);
+      }
+    }
+
+    const int expected_rows = logits_to_keep_mode_ == LogitsToKeepMode::Selected
+        ? static_cast<int>(selector_values.size())
+        : n;
+    auto result = [&]() -> Result<std::vector<::executorch::runtime::EValue>> {
+      if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
+        auto selector =
+            make_tensor_ptr({expected_rows}, std::move(selector_values));
+        return module_->execute(method_, {tokens, positions, selector});
+      }
+      return module_->execute(method_, {tokens, positions});
+    }();
     if (!result.ok()) {
       ET_LOG(
           Error,
@@ -458,18 +579,43 @@ bool ModuleExecutor::execute(const BatchInput& batch, BatchOutput& out) {
     }
     // Non-const: the sampler reduces each row in place. Each is read once.
     auto logits = result->at(0).toTensor();
+    if (logits.dim() < 2 || logits.size(logits.dim() - 1) != vocab_size_ ||
+        logits.numel() !=
+            static_cast<std::int64_t>(expected_rows) * vocab_size_) {
+      ET_LOG(
+          Error,
+          "ModuleExecutor: %s returned invalid logits shape for %d rows and vocab %d",
+          method_.c_str(),
+          expected_rows,
+          vocab_size_);
+      return false;
+    }
 
-    for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
-      const int row = step->logit_indices[i];
-      if (row < off || row >= off + n) {
-        continue; // another slice's row, or a chunk whose prediction is dropped
+    if (logits_to_keep_mode_ == LogitsToKeepMode::Selected) {
+      for (std::size_t row = 0; row < selected_inputs.size(); ++row) {
+        const std::size_t input_index = selected_inputs[row];
+        const SessionId session = batch.inputs[input_index].sid;
+        const std::optional<Token> token =
+            sample_row(logits, static_cast<int>(row), session);
+        if (!token) {
+          return false;
+        }
+        out.outputs[input_index] = Output{session, {*token}};
       }
-      const SessionId session = batch.inputs[i].sid;
-      const std::optional<Token> token = sample_row(logits, row - off, session);
-      if (!token) {
-        return false;
+    } else {
+      for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
+        const int row = step->logit_indices[i];
+        if (row < off || row >= off + n) {
+          continue; // another slice's row, or a dropped chunk prediction
+        }
+        const SessionId session = batch.inputs[i].sid;
+        const std::optional<Token> token =
+            sample_row(logits, row - off, session);
+        if (!token) {
+          return false;
+        }
+        out.outputs[i] = Output{session, {*token}};
       }
-      out.outputs[i] = Output{session, {*token}};
     }
   }
   return true;

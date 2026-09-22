@@ -39,10 +39,7 @@ ops_after_transforms: dict[str, int] = {
 }
 
 # Use bigger sample set for calibration.
-calibration_samples = [
-    (torch.randn(1, 3, 232, 232).to(memory_format=torch.channels_last),)
-    for i in (range(100))
-]
+calibration_samples = [(torch.randn(1, 3, 232, 232),) for _ in range(100)]
 
 test_cases = {
     "mobilenet_v3_small": McuTestCase(

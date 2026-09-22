@@ -24,6 +24,16 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "constant_pool",
+    srcs = [
+        "constant_pool.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools:serializer",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "mapping",
     srcs = [
         "mapping.py",
@@ -95,6 +105,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         ":compile_spec",
+        ":constant_pool",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:process_node",
         "//executorch/backends/arm/debug:schema",

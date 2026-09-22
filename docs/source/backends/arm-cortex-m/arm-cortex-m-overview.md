@@ -100,6 +100,9 @@ quantized = convert_pt2e(prepared)
 quantized_exported_program = torch.export.export(quantized, (example_input,))
 ```
 
+Calibration observes logical tensor values, so calibration inputs do not need
+to use the same memory format as the export example.
+
 ### 2. Lower to edge and apply Cortex-M passes
 
 Lower to the edge dialect with the backend's `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:

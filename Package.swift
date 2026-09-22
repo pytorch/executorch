@@ -66,6 +66,13 @@ let products = deliverables([
     ],
   ],
   "executorch": [
+    "frameworks": [
+      "Accelerate",
+      "CoreGraphics",
+      "CoreImage",
+      "CoreVideo",
+      "Foundation",
+    ],
     "libraries": [
       "c++",
     ],

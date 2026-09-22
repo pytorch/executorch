@@ -77,7 +77,7 @@ from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 import os
 import random
 
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from typing import List
 
 from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
@@ -2699,9 +2699,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unfold(self):
-        sample_input = (torch.randn(2, 128, 32, 32),)
-        module = Unfold()  # noqa: F405
-        self.lower_module_and_test_output(module, sample_input)
+        sample_input = (torch.randn(2, 128, 64, 64),)
+        modules = [
+            Unfold(kernel_size=(2, 2), stride=(2, 2)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(1, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 1), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 2), padding=(1, 1)),  # noqa: F405
+        ]
+        for index, module in enumerate(modules):
+            with self.subTest(i=index):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unsqueeze(self):
         module = Unsqueeze()  # noqa: F405
@@ -5134,8 +5142,6 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_linear_to_conv2d(self):
-        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
-
         test_comb = [
             {
                 QCOM_MODULE: [
@@ -5150,22 +5156,16 @@ class TestQNNQuantizedOperator(TestQNN):
             },
         ]
 
-        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "edge_program"
-        ] = None
-
         index = 0
         for comb in test_comb:
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         index += 1
-                        qdq_module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(
-                            qdq_module, sample_input, passes_job=passes_job
+                        qdq_module = self.get_qdq_module(
+                            module, sample_input, convert_linear_to_conv2d=True
                         )
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_linear_shared_weights(self):
         modules = [
@@ -5182,17 +5182,9 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_linear_to_conv2d_shared_weights(self):
-        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
-
         modules = [
             LinearSharedWeight(512, 32),  # noqa: F405
         ]
-
-        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "edge_program"
-        ] = None
 
         sample_input = (
             torch.randn([3, 512]),
@@ -5200,10 +5192,10 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         for i, module in enumerate(modules):
             with self.subTest(i=i):
-                qdq_module = self.get_qdq_module(module, sample_input)
-                self.lower_module_and_test_output(
-                    qdq_module, sample_input, passes_job=passes_job
+                qdq_module = self.get_qdq_module(
+                    module, sample_input, convert_linear_to_conv2d=True
                 )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_block(self):
@@ -5228,18 +5220,11 @@ class TestQNNQuantizedOperator(TestQNN):
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_to_conv2d_block(self):
-        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
 
         modules = [
             Linear(use_bias=False),  # noqa: F405
             Linear(use_bias=True),  # noqa: F405
         ]
-
-        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
-            "edge_program"
-        ] = None
 
         sample_input = (torch.randn([3, 512]),)
         for i, module in enumerate(modules):
@@ -5252,10 +5237,9 @@ class TestQNNQuantizedOperator(TestQNN):
                     sample_input,
                     quant_dtype=QuantDtype.use_16a4w_block,
                     block_size_map={"linear": (1, 32)},
+                    convert_linear_to_conv2d=True,
                 )
-                self.lower_module_and_test_output(
-                    module, sample_input, passes_job=passes_job
-                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear_qat(self):
         """
@@ -6330,10 +6314,18 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unfold(self):
-        sample_input = (torch.randn(2, 128, 32, 32),)
-        module = Unfold()  # noqa: F405
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        sample_input = (torch.randn(2, 128, 64, 64),)
+        modules = [
+            Unfold(kernel_size=(2, 2), stride=(2, 2)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(1, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 1), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 1)),  # noqa: F405
+            Unfold(kernel_size=(2, 2), stride=(2, 2), padding=(1, 1)),  # noqa: F405
+        ]
+        for index, module in enumerate(modules):
+            with self.subTest(i=index):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_unsqueeze(self):
         module = Unsqueeze()  # noqa: F405
@@ -9497,17 +9489,26 @@ class TestExampleLLMScript(TestQNN):
         # This is the Hugging Face transformers flow, not the static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
-        prompt = "My favourite condiment is "
+
+        # TODO: Robust testing framework to check accuracy and performance metrics.
+        golden_start_with = {
+            "llama3_2-1b": "Simply put, the theory of relativity states that the speed of light",
+            "qwen2_5-0_5b": "Simply put, the theory of relativity states that the laws of physics",
+            "qwen3-0_6b": "Simply put, the theory of relativity states that the laws of physics",
+            "smollm2_135m": "Simply put, the theory of relativity states that the speed of light",
+            "granite-3_3-2b": "Simply put, the theory of relativity states that the laws of physics",
+        }
+        assert (
+            self.model_name in golden_start_with
+        ), f"{self.model_name} is not supported in test_hf_causal_lm. Currently support: {golden_start_with.keys()}"
+        prompt = "Simply put, the theory of relativity states that"
         cmds = [
             "python",
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2_5-0_5b",
-            "--ptq",
-            "16a8w",
-            "--enable_spinquant_r3",
+            self.model_name,
             "--max_seq_len",
             "128",
             "--artifact",
@@ -9517,7 +9518,6 @@ class TestExampleLLMScript(TestQNN):
         ]
         self.add_default_cmds(cmds)
 
-        golden_start_with = "My favourite condiment is iced tea."
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -9529,8 +9529,8 @@ class TestExampleLLMScript(TestQNN):
                 if not self.compile_only:
                     model_out = msg["result"][0]
                     self.assertTrue(
-                        model_out.startswith(golden_start_with),
-                        f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
+                        model_out.startswith(golden_start_with[self.model_name]),
+                        f"Expected Output: '{golden_start_with[self.model_name]}' Actual Output: '{model_out}'",
                     )
 
     def test_static_llm_qat(self):
@@ -11596,6 +11596,130 @@ class TestUtilsScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+    # Building an LPAI op package needs the LPAI op package headers and
+    # makefiles, which are only shipped by Qualcomm AI Engine Direct SDK >= 2.48.
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.48"),
+        "LPAI op package support requires QNN SDK >= 2.48",
+    )
+    def test_custom_op_lpai(self):
+        # Running the kernel on the DSP additionally requires direct mode, which
+        # in turn requires SDK >= 2.49. Registering an op package over FastRPC is
+        # not supported, so there is no non-direct on-device path to fall back to.
+        if not self.enable_x86_64:
+            if is_qnn_sdk_version_less_than("2.49"):
+                self.skipTest(
+                    "Running an LPAI op package on device requires QNN SDK >= 2.49"
+                )
+            if not self.direct_build_folder:
+                self.skipTest(
+                    "Running an LPAI op package on device requires direct mode; "
+                    "please provide --direct_build_folder"
+                )
+
+        self._run_custom_op_lpai()
+
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.48"),
+        "LPAI op package support requires QNN SDK >= 2.48",
+    )
+    def test_custom_op_lpai_requant_edge_cases(self):
+        # The kernel's requantization has two paths that the default run cannot
+        # reach, because it calibrates and infers with the same tensor and so
+        # always lands at the top of the calibrated range:
+        #   * a small input, whose code is biased into the upper half of the
+        #     stored byte and has to be un-biased modulo the storage width;
+        #   * an input above the calibrated range, which has to saturate.
+        # The arithmetic is identical in the x86 and the DSP build, so exercise
+        # it on the simulator rather than paying for a DSP rebuild and re-sign.
+        if not self.enable_x86_64:
+            self.skipTest(
+                "The requantization edge cases are checked on the x86 simulator; "
+                "please provide --enable_x86_64"
+            )
+
+        # expected=EXPECT_EAGER compares against the eager result, which is the
+        # right reference as long as the input is inside the calibrated range.
+        EXPECT_EAGER = None
+        RequantCase = namedtuple("RequantCase", "calibration inference expected")
+        cases = [
+            # code 64, stored as the byte 192 once biased by offset -128. A
+            # kernel that un-biases without wrapping reads this as code 320,
+            # saturates, and returns 3.0.
+            RequantCase(calibration=1.0, inference=0.25, expected=EXPECT_EAGER),
+            # Above the calibrated range: the graph's quantize node clamps the
+            # input to 1.0, so the correct answer is 3.0 rather than 6.0.
+            RequantCase(calibration=1.0, inference=2.0, expected=3.0),
+        ]
+        for index, case in enumerate(cases):
+            with self.subTest(calibration=case.calibration, inference=case.inference):
+                extra_args = [
+                    "--calibration_value",
+                    str(case.calibration),
+                    "--inference_value",
+                    str(case.inference),
+                ]
+                if case.expected is not EXPECT_EAGER:
+                    extra_args.extend(["--expected_value", str(case.expected)])
+                # The op package only has to be built once: the cases differ
+                # only in the values passed to the already built kernel, and a
+                # rebuild costs about as much as the run itself.
+                self._run_custom_op_lpai(
+                    extra_args=extra_args, build_op_package=index == 0
+                )
+
+    def _run_custom_op_lpai(self, extra_args=None, build_op_package=True):
+        op_package_dir = (
+            f"{self.executorch_root}/examples/qualcomm/custom_op/"
+            "example_op_package_lpai/ExampleLpaiOpPackage"
+        )
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_lpai.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--soc_model",
+            self.soc_model,
+            "--backend",
+            "lpai",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            op_package_dir,
+        ]
+        if build_op_package:
+            cmds.append("--build_op_package")
+        cmds.extend(extra_args or [])
+        # A device serial is only meaningful for an on-device run; the x86
+        # simulator is driven without one.
+        if self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        else:
+            # On device the op package is only reachable through direct mode,
+            # which also selects the direct runner and passes --domain_id.
+            cmds.extend(["--direct_build_folder", self.direct_build_folder])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            # Checked separately from the output: the eager fallback computes
+            # the same values, so a matching output does not by itself prove
+            # that the op package ran.
+            self.assertTrue(msg["is_delegated"])
             self.assertTrue(msg["is_close"])
 
     def test_debugger_generate_optrace(self):

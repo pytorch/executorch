@@ -168,6 +168,44 @@ def test_fold_qdq_does_not_treat_index_as_binary_operand(
     )
 
 
+def test_fold_qdq_does_not_fold_a_qparam_tensor_as_quantized_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dynamic zero point is a Q argument, not the value being quantized."""
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    scale = graph.placeholder("scale")
+    zero_point = graph.call_function(
+        exir_ops.edge.aten.full.default,
+        ((1,), 0),
+        {"dtype": torch.int32},
+    )
+    q = graph.call_function(
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        (x, scale, zero_point, -127, 127, torch.int8),
+    )
+    output = graph.call_function(
+        exir_ops.edge.aten.view_copy.default,
+        (q, (1,)),
+    )
+    graph.output(output)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    # This unit test checks rewiring only; avoid requiring fake metadata for the
+    # handcrafted graph when FoldAndAnnotateQParamsPass refreshes metadata.
+    monkeypatch.setattr(
+        ArmPass,
+        "call",
+        lambda self, module: PassResult(module, True),
+    )
+
+    FoldAndAnnotateQParamsPass()(graph_module)
+
+    assert q in graph_module.graph.nodes
+    assert output.args[0] is q
+    assert zero_point.args == ((1,), 0)
+
+
 def _check_fold_qdq_preserves_partial_binary_qdq(
     binary_target: Callable[..., object],
     preserve_partial_binary_tensor_qdq: bool = False,

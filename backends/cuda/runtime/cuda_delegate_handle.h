@@ -10,6 +10,7 @@
 
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
 #include <cstdint>
 #include <cstdlib>
@@ -49,15 +50,11 @@ struct CudaWeightStorage {
       std::free(data);
       return;
     }
-    int previous_device = 0;
-    const cudaError_t get_device_error = cudaGetDevice(&previous_device);
-    if (get_device_error == cudaSuccess && previous_device != device_index) {
-      (void)cudaSetDevice(device_index);
-    }
+    // A destructor cannot report, and the guard logs a failed restore itself.
+    const auto guard =
+        ::executorch::extension::cuda::CUDAGuard::create(device_index);
+    (void)guard;
     (void)cudaFree(data);
-    if (get_device_error == cudaSuccess && previous_device != device_index) {
-      (void)cudaSetDevice(previous_device);
-    }
   }
 
   CudaWeightStorage(const CudaWeightStorage&) = delete;
