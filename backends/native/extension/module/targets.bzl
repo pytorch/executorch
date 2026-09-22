@@ -1,3 +1,8 @@
+load(
+    "@fbsource//tools/build_defs:default_platform_defs.bzl",
+    "ANDROID",
+    "CXX",
+)
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets(is_fbcode = False):
@@ -56,9 +61,6 @@ def define_common_targets(is_fbcode = False):
         name = "native_module_load_test",
         srcs = ["test/NativeModuleLoadTest.cpp"],
         headers = ["test/TestData.h"],
-        env = {} if runtime.is_oss or not is_fbcode else {
-            "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
-        },
         deps = [
             ":module_ptn",
             "//executorch/backends/native/runtime:native_graph_schema",
@@ -68,6 +70,26 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/module:module",
         ],
     )
+
+    if not runtime.is_oss and is_fbcode:
+        runtime.cxx_test(
+            name = "method_meta_parity_test",
+            srcs = ["test/MethodMetaParityTest.cpp"],
+            headers = ["test/TestData.h"],
+            env = {
+                "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+            },
+            # The exported model is produced by a host-only target.
+            platforms = [CXX, ANDROID],
+            deps = [
+                ":module_ptn",
+                "//executorch/backends/native/runtime:native_graph_schema",
+                "//executorch/backends/native/runtime/deserialize:package",
+                "//executorch/backends/native/runtime/deserialize:package_test_data",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/module:module",
+            ],
+        )
 
     runtime.cxx_test(
         name = "native_module_execution_test",

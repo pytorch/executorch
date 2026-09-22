@@ -9,6 +9,7 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -33,7 +34,7 @@ struct EngineBehavior {
   bool extra_output = false;
   bool bad_input_dtype = false;
   bool bad_output_shape = false;
-  bool fail_get_output = false;
+  std::optional<size_t> fail_get_output;
 };
 
 struct TestEngineState {
@@ -62,7 +63,8 @@ class FakeExecutable final : public ptn::EngineExecutable {
       : metadata_(ptn::MethodMeta::from_method(method)),
         shared_state_(shared_state),
         behavior_(behavior),
-        inputs_(metadata_.inputs().size()) {}
+        inputs_(metadata_.inputs().size()),
+        outputs_(metadata_.outputs().size()) {}
 
   size_t num_inputs() const override {
     return metadata_.inputs().size();
@@ -110,28 +112,33 @@ class FakeExecutable final : public ptn::EngineExecutable {
 
   void execute() override {
     ++shared_state_;
-    output_.assign(
-        metadata_.outputs().at(0).numel(), static_cast<float>(shared_state_));
-    for (const auto& input : inputs_) {
-      if (input.size() != output_.size()) {
-        throw std::runtime_error("missing input");
-      }
-      for (size_t i = 0; i < output_.size(); ++i) {
-        output_[i] += input[i];
+    for (size_t output_index = 0; output_index < outputs_.size();
+         ++output_index) {
+      auto& output = outputs_[output_index];
+      output.assign(
+          metadata_.outputs().at(0).numel(),
+          static_cast<float>(shared_state_ + output_index));
+      for (const auto& input : inputs_) {
+        if (input.size() != output.size()) {
+          throw std::runtime_error("missing input");
+        }
+        for (size_t i = 0; i < output.size(); ++i) {
+          output[i] += input[i];
+        }
       }
     }
   }
 
   void get_output(size_t index, void* data, size_t numel, ptn::ScalarType dtype)
       override {
-    if (behavior_.fail_get_output) {
+    if (behavior_.fail_get_output == index) {
       throw std::runtime_error("output transfer failed");
     }
-    if (index != 0 || dtype != ptn::kFloat || numel != output_.size() ||
-        data == nullptr) {
+    const auto& output = outputs_.at(index);
+    if (dtype != ptn::kFloat || numel != output.size() || data == nullptr) {
       throw std::runtime_error("bad output transfer");
     }
-    std::memcpy(data, output_.data(), output_.size() * sizeof(float));
+    std::memcpy(data, output.data(), output.size() * sizeof(float));
   }
 
  private:
@@ -139,7 +146,7 @@ class FakeExecutable final : public ptn::EngineExecutable {
   int32_t& shared_state_;
   EngineBehavior& behavior_;
   std::vector<std::vector<float>> inputs_;
-  std::vector<float> output_;
+  std::vector<std::vector<float>> outputs_;
 };
 
 class FakeContext final : public ptn::EngineContext {
@@ -253,6 +260,13 @@ runtime::Error bind_temporary_output(
                          : module.set_output(output);
 }
 
+void expect_values(const runtime::EValue& value, float first, float second) {
+  const auto& tensor = value.toTensor();
+  ASSERT_EQ(tensor.numel(), 2);
+  EXPECT_FLOAT_EQ(tensor.const_data_ptr<float>()[0], first);
+  EXPECT_FLOAT_EQ(tensor.const_data_ptr<float>()[1], second);
+}
+
 TEST_F(NativeModuleExecutionTest, SessionsShareWithinModuleAndIsolateModules) {
   const auto bytes =
       testing::make_tensor_package(std::vector<std::string>{"first", "second"});
@@ -310,11 +324,47 @@ TEST_F(
   expect_values(published, /*first=*/2.0f, /*second=*/3.0f);
   const runtime::EValue published_view = published->at(0);
   EXPECT_FLOAT_EQ(destination.const_data_ptr<float>()[0], 2.0f);
-  engine_state().behavior.fail_get_output = true;
+  engine_state().behavior.fail_get_output = 0;
   EXPECT_EQ(module->forward(input).error(), runtime::Error::Internal);
   EXPECT_EQ(module->get_outputs().error(), runtime::Error::InvalidState);
   EXPECT_FLOAT_EQ(published_view.toTensor().const_data_ptr<float>()[0], 2.0f);
   EXPECT_FLOAT_EQ(destination.const_data_ptr<float>()[0], 2.0f);
+}
+
+TEST_F(
+    NativeModuleExecutionTest,
+    FailedLaterOutputTransferInvalidatesCurrentOutputs) {
+  const auto bytes = testing::make_tensor_package(
+      {"forward"},
+      /*num_inputs=*/1,
+      {2},
+      /*bind_missing_constant=*/false,
+      "1.0",
+      /*num_outputs=*/2);
+  TensorFactory<ScalarType::Float> tensors;
+  const auto input = tensors.make({2}, {1.0f, 2.0f});
+  auto first_destination = tensors.zeros({2});
+  auto second_destination = tensors.zeros({2});
+  auto module = make_module(bytes);
+
+  ASSERT_EQ(
+      module->set_outputs({first_destination, second_destination}),
+      runtime::Error::Ok);
+  const auto published = module->forward(input);
+  ASSERT_TRUE(published.ok());
+  ASSERT_EQ(published->size(), 2);
+  expect_values(published->at(0), /*first=*/2.0f, /*second=*/3.0f);
+  expect_values(published->at(1), /*first=*/3.0f, /*second=*/4.0f);
+  const std::vector<runtime::EValue>& published_views = *published;
+
+  engine_state().behavior.fail_get_output = 1;
+  EXPECT_EQ(module->forward(input).error(), runtime::Error::Internal);
+
+  EXPECT_EQ(module->get_outputs().error(), runtime::Error::InvalidState);
+  expect_values(published_views[0], /*first=*/2.0f, /*second=*/3.0f);
+  expect_values(published_views[1], /*first=*/3.0f, /*second=*/4.0f);
+  EXPECT_FLOAT_EQ(first_destination.const_data_ptr<float>()[0], 2.0f);
+  EXPECT_FLOAT_EQ(second_destination.const_data_ptr<float>()[0], 3.0f);
 }
 
 TEST_F(NativeModuleExecutionTest, CompileFailureIsRetryable) {
@@ -490,6 +540,7 @@ TEST_F(NativeModuleExecutionTest, PreservesDeclaredOutputLayout) {
       /*sizes=*/{2, 3},
       /*bind_missing_constant=*/false,
       /*version=*/"1.0",
+      /*num_outputs=*/1,
       /*dim_order=*/{1, 0});
   std::array<executorch::aten::SizesType, 2> sizes{2, 3};
   std::array<executorch::aten::DimOrderType, 2> dim_order{1, 0};
