@@ -30,6 +30,7 @@
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <cuda_runtime.h>
+#include <executorch/extension/cuda/caller_stream.h>
 #endif
 
 namespace executorch::extension::llm {
@@ -970,16 +971,24 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       bool use_target_prefill = false,
       int64_t retain_from_row = 0) {
     std::vector<int64_t> token_data(tokens, tokens + count);
-    std::vector<int64_t> positions(count);
+#ifdef EXECUTORCH_BUILD_CUDA
+    // Keep verification arithmetic at four rows when fewer proposals
+    // are requested. Causal masking excludes the padded future positions.
+    if (!use_target_prefill && image == nullptr &&
+        count < kCudaDFlashHiddenRows &&
+        start_pos + kCudaDFlashHiddenRows <= max_context_len()) {
+      token_data.resize(kCudaDFlashHiddenRows, config_.mask_token_id);
+    }
+#endif
+    const auto input_count = static_cast<SizesType>(token_data.size());
+    std::vector<int64_t> positions(input_count);
     std::iota(positions.begin(), positions.end(), start_pos);
     auto token_tensor = from_blob(
         token_data.data(),
-        {1, static_cast<SizesType>(count)},
+        {1, input_count},
         executorch::aten::ScalarType::Long);
     auto position_tensor = from_blob(
-        positions.data(),
-        {static_cast<SizesType>(count)},
-        executorch::aten::ScalarType::Long);
+        positions.data(), {input_count}, executorch::aten::ScalarType::Long);
 
     const auto execute_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
@@ -993,7 +1002,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const auto& embed_tensor = (*embed_outputs)[0].toTensor();
     ET_CHECK_OR_RETURN_ERROR(
         embed_tensor.dim() == 3 && embed_tensor.size(0) == 1 &&
-            embed_tensor.size(1) == count &&
+            embed_tensor.size(1) == input_count &&
             embed_tensor.scalar_type() == hidden_dtype_,
         InvalidProgram,
         "embed_text must return [1, T, H] in the activation dtype");
@@ -1101,9 +1110,18 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
 
     const auto& hidden_tensor = outputs[1].toTensor();
+    int64_t max_output_rows = count;
+#ifdef EXECUTORCH_BUILD_CUDA
+    // Caller-allocated CUDA outputs can retain their four-row capacity when
+    // verification uses fewer rows. Only the first count rows are active.
+    if (!use_target_prefill && count < kCudaDFlashHiddenRows) {
+      max_output_rows = kCudaDFlashHiddenRows;
+    }
+#endif
     ET_CHECK_OR_RETURN_ERROR(
         hidden_tensor.dim() == 3 && hidden_tensor.size(0) == 1 &&
-            hidden_tensor.size(1) == count &&
+            hidden_tensor.size(1) >= count &&
+            hidden_tensor.size(1) <= max_output_rows &&
             hidden_tensor.scalar_type() == hidden_dtype_,
         InvalidProgram,
         "DFlash target hidden must be [1, T, H] in the activation dtype");
@@ -1162,10 +1180,16 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         cudaPointerGetAttributes(&attributes, source) == cudaSuccess &&
         attributes.type == cudaMemoryTypeDevice;
     if (on_device) {
-      return cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost) ==
-              cudaSuccess
-          ? Error::Ok
-          : Error::Internal;
+      const auto stream =
+          executorch::extension::cuda::getCallerStream().value_or(
+              cudaStreamPerThread);
+      if (cudaMemcpyAsync(
+              destination, source, bytes, cudaMemcpyDeviceToHost, stream) !=
+          cudaSuccess) {
+        return Error::Internal;
+      }
+      return cudaStreamSynchronize(stream) == cudaSuccess ? Error::Ok
+                                                          : Error::Internal;
     }
 #endif
     std::memcpy(destination, source, bytes);

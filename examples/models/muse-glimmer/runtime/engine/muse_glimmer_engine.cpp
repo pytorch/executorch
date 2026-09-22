@@ -1398,7 +1398,9 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         Info,
         "MuseGlimmerEngine: CUDA graph requested; per-session rebinding "
         "disabled and serving capacity clamped to 1 session.");
-  } else {
+  } else if (config.max_sessions > 1) {
+    // A single session uses the program's buffers directly. Capturing templates
+    // and allocating a second cache provides no isolation benefit in that case.
     auto candidate = std::make_unique<MuseGlimmerMutableStateContextOwner>();
     if (Error e = register_mutable_fqns(meta_module.get(), *candidate);
         e == Error::Ok) {
