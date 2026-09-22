@@ -272,7 +272,9 @@ def define_common_targets(is_fbcode = False):
                 ],
             }),
             exported_preprocessor_flags = get_vulkan_preprocessor_flags(no_volk, is_fbcode),
-            exported_deps = VK_API_DEPS,
+            exported_deps = VK_API_DEPS + [
+                "//executorch/backends/vulkan_shared:runtime",
+            ],
         )
 
         runtime.cxx_library(
@@ -324,6 +326,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":vulkan_graph_runtime{}".format(suffix),
                 "//executorch/backends/vulkan/serialization:vk_delegate_schema",
+                "//executorch/backends/vulkan_shared:runtime",
                 "//executorch/runtime/core:event_tracer",
                 "//executorch/runtime/core/exec_aten/util:tensor_util",
                 "//executorch/runtime/core:named_data_map",
@@ -332,6 +335,30 @@ def define_common_targets(is_fbcode = False):
             # VulkanBackend.cpp needs to compile with executor as whole
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
             link_whole = True,
+        )
+
+    for no_volk in [False, True]:
+        if no_volk and is_fbcode:
+            continue
+        suffix = "_no_volk" if no_volk else ""
+        runtime.cxx_test(
+            name = "vulkan_shared_context_test{}".format(suffix),
+            srcs = [
+                "test/shared_context/SharedContextPolicyTest.cpp",
+                "test/shared_context/SharedContextAdapterTest.cpp",
+            ],
+            headers = ["runtime/SharedContext.h"],
+            compiler_flags = get_vulkan_compiler_flags(),
+            labels = get_labels(no_volk),
+            platforms = get_platforms(),
+            deps = [
+                ":vulkan_backend_lib{}".format(suffix),
+                ":vulkan_graph_runtime{}".format(suffix),
+                "//executorch/backends/vulkan_shared:runtime",
+                "//executorch/runtime/backend:interface",
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/platform:platform",
+            ],
         )
 
     ##

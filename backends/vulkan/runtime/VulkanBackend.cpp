@@ -2,11 +2,14 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 #include <executorch/backends/vulkan/runtime/ResolveLayouts.h>
+#include <executorch/backends/vulkan/runtime/SharedContext.h>
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
@@ -32,9 +35,12 @@
 #include <cstdio>
 #include <cstdlib> /* strtol */
 #include <cstring>
+#include <exception>
 #include <memory>
+#include <new>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace executorch {
@@ -610,6 +616,19 @@ void maybe_resize_output(
 // VulkanBackend class
 //
 
+struct VulkanDelegateHandle final {
+  std::unique_ptr<vkapi::Adapter> shared_adapter;
+  ComputeGraph* compute_graph =
+      nullptr; // Storage belongs to the runtime arena.
+
+  ~VulkanDelegateHandle() {
+    if (compute_graph) {
+      compute_graph->~ComputeGraph();
+    }
+    // shared_adapter is released only after graph/context resources.
+  }
+};
+
 class VulkanBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~VulkanBackend() override = default;
@@ -684,29 +703,65 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ComputeGraph* compute_graph =
-        context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
-    if (compute_graph == nullptr) {
+    if (processed == nullptr || context.get_runtime_allocator() == nullptr) {
+      return Error::InvalidArgument;
+    }
+    struct ProcessedGuard final {
+      FreeableBuffer* buffer;
+      ~ProcessedGuard() {
+        buffer->Free();
+      }
+    } processed_guard{processed};
+    try {
+      auto adapter = resolve_vulkan_shared_adapter(context);
+      if (!adapter.ok()) {
+        return adapter.error();
+      }
+      auto* handle = context.get_runtime_allocator()
+                         ->allocateInstance<VulkanDelegateHandle>();
+      if (handle == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+      new (handle) VulkanDelegateHandle();
+      // The arena owns storage, so the guard invokes only the destructor.
+      auto destroy_handle = [](VulkanDelegateHandle* value) {
+        value->~VulkanDelegateHandle();
+      };
+      std::unique_ptr<VulkanDelegateHandle, decltype(destroy_handle)> guard(
+          handle, destroy_handle);
+      handle->shared_adapter = std::move(adapter.get());
+      auto* graph_storage =
+          context.get_runtime_allocator()->allocateInstance<ComputeGraph>();
+      if (graph_storage == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+      GraphConfig graph_config = get_graph_config(compile_specs);
+      graph_config.external_adapter = handle->shared_adapter
+          ? handle->shared_adapter.get()
+          : vkapi::set_and_get_external_adapter();
+      // Assign only after construction succeeds: a throwing constructor must
+      // not be followed by an explicit destructor on unconstructed storage.
+      handle->compute_graph = new (graph_storage) ComputeGraph(graph_config);
+      const Error error = compileModel(
+          processed->data(),
+          processed->size(),
+          handle->compute_graph,
+          context.get_named_data_map());
+      if (error != Error::Ok) {
+        return error;
+      }
+      return static_cast<DelegateHandle*>(guard.release());
+    } catch (const std::bad_alloc&) {
       return Error::MemoryAllocationFailed;
+    } catch (const vkapi::ShaderNotSupportedError& error) {
+      ET_LOG(Error, "Vulkan shader compatibility error: %s", error.what());
+      return Error::DelegateInvalidCompatibility;
+    } catch (const std::exception& error) {
+      ET_LOG(Error, "Vulkan initialization failed: %s", error.what());
+      return Error::Internal;
+    } catch (...) {
+      return Error::Internal;
     }
-
-    GraphConfig graph_config = get_graph_config(compile_specs);
-    graph_config.external_adapter = vkapi::set_and_get_external_adapter();
-    new (compute_graph) ComputeGraph(graph_config);
-
-    const NamedDataMap* named_data_map = context.get_named_data_map();
-    Error err = compileModel(
-        processed->data(), processed->size(), compute_graph, named_data_map);
-
-    // This backend does not need its processed data after compiling the
-    // model.
-    processed->Free();
-
-    if (err != Error::Ok) {
-      return err;
-    }
-
-    return compute_graph;
   }
 
   Error execute(
@@ -715,7 +770,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
       Span<EValue*> args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
-    ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
+    if (handle == nullptr) {
+      return Error::InvalidArgument;
+    }
+    ComputeGraph* compute_graph =
+        static_cast<VulkanDelegateHandle*>(handle)->compute_graph;
 
     const size_t num_inputs = compute_graph->inputs().size();
     const size_t num_outputs = compute_graph->outputs().size();
@@ -912,17 +971,24 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle) const override {
-    if (handle != nullptr) {
-      ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
-      compute_graph->context()
+    if (handle == nullptr) {
+      return;
+    }
+    auto* resources = static_cast<VulkanDelegateHandle*>(handle);
+    try {
+      resources->compute_graph->context()
           ->adapter_ptr()
           ->compute_pipeline_cache()
           .save_cache();
-      // ComputeGraph is not trivially destructible. Since
-      // this was constructed manually in init(), we must destroy it manually
-      // here.
-      compute_graph->~ComputeGraph();
+    } catch (const std::exception& error) {
+      ET_LOG(Error, "Unable to save Vulkan pipeline cache: %s", error.what());
+    } catch (...) {
+      ET_LOG(Error, "Unable to save Vulkan pipeline cache");
     }
+    // Arena owns the handle's memory; only run its destructor. The graph and
+    // borrowing adapter are released, but registry discoverability persists
+    // until the application explicitly unregisters the context key.
+    resources->~VulkanDelegateHandle();
   }
 };
 

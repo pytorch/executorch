@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -417,10 +419,11 @@ void PhysicalDevice::override_device_name(const std::string& new_name) {
 // DeviceHandle
 //
 
-DeviceHandle::DeviceHandle(VkDevice device) : handle(device) {}
+DeviceHandle::DeviceHandle(VkDevice device, bool owns_handle)
+    : handle(device), owns_handle_(owns_handle) {}
 
 DeviceHandle::~DeviceHandle() {
-  if (handle == VK_NULL_HANDLE) {
+  if (!owns_handle_ || handle == VK_NULL_HANDLE) {
     return;
   }
   vkDestroyDevice(handle, nullptr);
