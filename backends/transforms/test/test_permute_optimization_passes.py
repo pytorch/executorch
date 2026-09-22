@@ -922,6 +922,50 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "RemovePermutesAcrossView",
         )
 
+    def test_target_filter_blocks_permutation(self) -> None:
+        """A target_filter that rejects a node keeps its permutes in place."""
+
+        def build() -> tuple[torch.fx.GraphModule, torch.Tensor]:
+            builder = GraphBuilder()
+            x_data = torch.randn(1, 128, 16)
+            x = builder.placeholder("x", x_data)
+            p1 = builder.call_operator(
+                op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+            )
+            mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(p1, p1))
+            p2 = builder.call_operator(
+                op=exir_ops.edge.aten.permute_copy.default, args=(mul, [0, 2, 1])
+            )
+            builder.output([p2])
+            return builder.get_graph_module(), x_data
+
+        # Baseline: with no filter the pass cancels both permutes.
+        unfiltered = cast(PassResult, RemovePermutesAroundElementwiseOps()(build()[0]))
+        self.assertEqual(
+            count_node(
+                unfiltered.graph_module, exir_ops.edge.aten.permute_copy.default
+            ),
+            0,
+        )
+
+        original, x_data = build()
+        gm_before = copy.deepcopy(original)
+        p = RemovePermutesAroundElementwiseOps(
+            target_filters={exir_ops.edge.aten.mul.Tensor: lambda node: False}
+        )
+        result = cast(PassResult, p(original))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
     def test_4d_permute_squeeze_clamp_3d_permute(self) -> None:
         """Cascade detector conv→LN boundary: permute_4D([0,3,1,2]) →
         view(squeeze) → hardtanh → permute_3D([0,2,1]).

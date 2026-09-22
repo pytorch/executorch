@@ -92,7 +92,7 @@ else()
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS OFF)
   message(
-    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
+    "gen_oplist: No aten:: or dim_order_ops:: operators were found in ${ET_PTE_FILE_PATH}; skipping portable operator selection. Other CPU operators may still run."
   )
 endif()
 
