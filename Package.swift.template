@@ -59,6 +59,7 @@ let products = deliverables([
     "sha256": "__SHA256_backend_xnnpack__",
     "sha256" + debug_suffix: "__SHA256_backend_xnnpack_debug__",
     "targets": [
+      "kleidiai",
       "threadpool",
     ],
   ],
@@ -101,6 +102,7 @@ let products = deliverables([
       "Accelerate",
     ],
     "targets": [
+      "kleidiai",
       "threadpool",
     ],
   ],
@@ -112,12 +114,17 @@ let products = deliverables([
     "sha256": "__SHA256_kernels_torchao__",
     "sha256" + debug_suffix: "__SHA256_kernels_torchao_debug__",
     "targets": [
+      "kleidiai",
       "threadpool",
     ],
   ],
 ])
 
 let targets = deliverables([
+  "kleidiai": [
+    "sha256": "__SHA256_kleidiai__",
+    "sha256" + debug_suffix: "__SHA256_kleidiai_debug__",
+  ],
   "threadpool": [
     "sha256": "__SHA256_threadpool__",
     "sha256" + debug_suffix: "__SHA256_threadpool_debug__",
