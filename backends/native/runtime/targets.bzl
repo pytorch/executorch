@@ -57,7 +57,28 @@ def define_common_targets():
             ":method",
         ],
         deps = [
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
             ":native_graph_schema",
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "validation",
+        srcs = ["Validation.cpp"],
+        exported_headers = ["Validation.h"],
+        exported_deps = [
+            ":method",
+            ":runtime",
+            "//executorch/backends/native/runtime/deserialize:package",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
         ],
         visibility = ["PUBLIC"],
     )
@@ -77,6 +98,16 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:string_format",
         ],
         visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_test(
+        name = "program_version_test",
+        srcs = ["test/ProgramVersionTest.cpp"],
+        deps = [
+            ":native_graph_schema",
+            ":runtime",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+        ],
     )
 
     # A named method: one top-level Graph plus its stateful signature bindings
