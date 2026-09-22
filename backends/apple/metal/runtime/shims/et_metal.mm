@@ -429,16 +429,15 @@ int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_dev
         }
 
         // Case 2: Host-to-device or device-to-host - use memcpy with shared memory
-        // Since Metal uses shared storage mode, CPU and GPU access the same memory
-        std::memcpy(dst, src, nbytes);
-
-        // Synchronize only if we need to ensure GPU operations complete before CPU reads
-        // (device-to-host case where GPU may have written data)
-        if (src_is_device && !dst_is_device) {
-            // Ensure any pending GPU writes to source complete before CPU reads
+        // Since Metal uses shared storage mode, CPU and GPU access the same memory.
+        // What the GPU still has to do with it must be done before the CPU
+        // touches it: writes to a device source, and reads or writes of a device
+        // destination.
+        if (src_is_device || dst_is_device) {
             ETMetalStream* stream = getCurrentMetalStream();
             stream->synchronize(SyncType::COMMIT_AND_WAIT);
         }
+        std::memcpy(dst, src, nbytes);
 
         ET_LOG(Debug, "Metal memory copy (memcpy): %zu bytes, src_device=%d, dst_device=%d",
                nbytes, src_is_device, dst_is_device);
