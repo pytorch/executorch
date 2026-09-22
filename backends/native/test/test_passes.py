@@ -150,6 +150,30 @@ class ReplaceCopyWithAliasPassTest(unittest.TestCase):
         self.assertIn("torch.ops.aten.view.default", targets)
         self.assertNotIn("torch.ops.aten.view_copy.default", targets)
 
+    def test_nonzero_offset_select_remains_copy(self):
+        class SelectModel(nn.Module):
+            def forward(self, x):
+                return x.select(0, -1) + 1.0
+
+        graph = deserialize_graph(
+            _get_delegate_blob(_lower(SelectModel(), (torch.randn(3, 4),)))
+        )
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.select_copy.int", targets)
+        self.assertNotIn("torch.ops.aten.select.int", targets)
+
+    def test_nonzero_offset_slice_remains_copy(self):
+        class SliceModel(nn.Module):
+            def forward(self, x):
+                return x[1:3] + 1.0
+
+        graph = deserialize_graph(
+            _get_delegate_blob(_lower(SliceModel(), (torch.randn(4, 4),)))
+        )
+        targets = _call_function_targets(graph)
+        self.assertIn("torch.ops.aten.slice_copy.Tensor", targets)
+        self.assertNotIn("torch.ops.aten.slice.Tensor", targets)
+
 
 class FuseRopePassTest(unittest.TestCase):
     def test_hf_rope_fusion_preserves_numerics(self):

@@ -876,7 +876,7 @@ def _extract_constants_and_mutable_buffers(
         target_fqn = getattr(ispec, "target", None)
         if name is None or target_fqn is None:
             continue
-        if _is_non_persistent_buffer(ispec):
+        if _is_non_persistent_buffer(ispec) and target_fqn in mutated_fqns:
             mutable_buffers.append(MutableBufferSpec(name=name, fqn=target_fqn))
             continue
         tensor = None
