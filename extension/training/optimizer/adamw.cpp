@@ -173,6 +173,8 @@ Error AdamW::step(const std::map<std::string_view, executorch::aten::Tensor>&
       auto param_state_it = state_.find(p.unsafeGetTensorImpl());
       AdamWParamState* state_ptr = nullptr;
       if (param_state_it == state_.end()) {
+        // Moment buffers use the parameter dtype to preserve on-device memory
+        // usage. Half state trades numerical precision for a smaller footprint.
         void* m_buf_ptr = malloc(g.nbytes());
         void* v_buf_ptr = malloc(g.nbytes());
         if ((m_buf_ptr == nullptr || v_buf_ptr == nullptr) && g.nbytes() != 0) {
