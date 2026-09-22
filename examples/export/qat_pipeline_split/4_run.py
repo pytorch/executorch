@@ -6,7 +6,7 @@
 # Stage 4: run model.pte through the ExecuTorch runtime.
 #
 # Loads the .pte produced by stage 3 and executes it, asserting the output
-# shape matches expectations.  If the ExecuTorch pybindings are not available
+# shape matches expectations. If the ExecuTorch pybindings are not available
 # in this environment a warning is printed and the script exits cleanly; the
 # .pte produced by stage 3 is still valid.
 
@@ -30,7 +30,7 @@ def main() -> None:
 
     try:
         from executorch.runtime import Runtime
-    except ModuleNotFoundError:
+    except ImportError:
         print(
             "WARNING: executorch.runtime is not available in this environment. "
             "Build and install the ExecuTorch pybindings to run the .pte file. "
@@ -50,7 +50,7 @@ def main() -> None:
     out_tensor = outputs[0]
     assert out_tensor.shape == (1, 10), f"Unexpected output shape: {out_tensor.shape}"
     print(
-        f"Runtime execution succeeded.  Output shape: {out_tensor.shape}  (assertion passed)"
+        f"Runtime execution succeeded. Output shape: {out_tensor.shape} (assertion passed)"
     )
     print("\nStage 4 done.")
 

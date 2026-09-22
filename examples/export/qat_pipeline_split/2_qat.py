@@ -22,17 +22,19 @@ from model import get_calibration_inputs, get_example_inputs
 
 
 def _get_quantizer():
-    from executorch.backends.xnnpack.recipes.xnnpack_recipe_types import (
-        XNNPackRecipeType,
+    # Build the quantizer directly with is_qat=True so that FusedMovingAvgObsFakeQuantize
+    # nodes are inserted instead of the HistogramObserver nodes used for PTQ calibration.
+    from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+        get_symmetric_quantization_config,
+        XNNPACKQuantizer,
     )
-    from executorch.export.recipe import ExportRecipe
 
-    recipe = ExportRecipe.get_recipe(XNNPackRecipeType.PT2E_INT8_STATIC_PER_TENSOR)
-    quantizers = recipe.quantization_recipe.quantizers
-    assert (
-        quantizers and len(quantizers) > 0
-    ), "Recipe carries no quantizers - cannot prepare for QAT"
-    return quantizers[0]
+    quantizer = XNNPACKQuantizer()
+    operator_config = get_symmetric_quantization_config(
+        is_per_channel=False, is_dynamic=False, is_qat=True
+    )
+    quantizer.set_global(operator_config)
+    return quantizer
 
 
 def _run_qat(captured_gm: torch.fx.GraphModule, workdir: str) -> torch.fx.GraphModule:
@@ -137,8 +139,8 @@ def _run_qat(captured_gm: torch.fx.GraphModule, workdir: str) -> torch.fx.GraphM
 def run(example: str, workdir: str) -> None:
     pt2_in = os.path.join(workdir, f"stage1_{example}.pt2")
     assert os.path.isfile(pt2_in), (
-        f"Input file not found: {pt2_in}  "
-        f"(run 1_prepare.py --example {example} first)"
+        f"Input file not found: {pt2_in} "
+        f"(run 1_prepare.py --example {example} --workdir {workdir} first)"
     )
 
     print(f"[{example}] Loading captured graph from {pt2_in}")
@@ -170,7 +172,7 @@ def main() -> None:
 
     run(args.example, args.workdir)
 
-    print(f"\nStage 2 done.  Artifacts in: {args.workdir}")
+    print(f"\nStage 2 done. Artifacts in: {args.workdir}")
 
 
 if __name__ == "__main__":

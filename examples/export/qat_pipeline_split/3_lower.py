@@ -8,7 +8,7 @@
 # Two example paths (selected with --example):
 #
 #   minimal (default)
-#       Pass the .pt2 file path directly to export().  ExportSession detects
+#       Pass the .pt2 file path directly to export(). ExportSession detects
 #       an ExportedProgram input and auto-skips SOURCE_TRANSFORM, QUANTIZE and
 #       TORCH_EXPORT; the effective pipeline starts at TO_EDGE_TRANSFORM_AND_LOWER.
 #
@@ -92,13 +92,14 @@ def run_minimal(workdir: str) -> None:
 
     pt2_in = os.path.join(workdir, "stage2_minimal_quantized.pt2")
     assert os.path.isfile(pt2_in), (
-        f"Input file not found: {pt2_in}  " "(run 2_qat.py --example minimal first)"
+        f"Input file not found: {pt2_in} "
+        f"(run 2_qat.py --example minimal --workdir {workdir} first)"
     )
     print(f"[minimal] Lowering quantized model from {pt2_in}")
 
     recipe = _build_recipe()
 
-    # Pass the file path directly.  ExportSession auto-skips SOURCE_TRANSFORM,
+    # Pass the file path directly. ExportSession auto-skips SOURCE_TRANSFORM,
     # QUANTIZE and TORCH_EXPORT for ExportedProgram input.
     sess = et_export(pt2_in, export_recipe=recipe)
 
@@ -126,7 +127,8 @@ def run_sliced(workdir: str) -> None:
 
     pt2_in = os.path.join(workdir, "stage2_sliced_quantized.pt2")
     assert os.path.isfile(pt2_in), (
-        f"Input file not found: {pt2_in}  " "(run 2_qat.py --example sliced first)"
+        f"Input file not found: {pt2_in} "
+        f"(run 2_qat.py --example sliced --workdir {workdir} first)"
     )
     print(f"[sliced]  Lowering quantized model from {pt2_in}")
 
@@ -141,8 +143,11 @@ def run_sliced(workdir: str) -> None:
 
     recipe = _build_recipe()
 
-    # Mirror image of the [SOURCE_TRANSFORM] slice in stage 1: together they
-    # cover the full pipeline with no overlap and no stage silently skipped.
+    # Mirror image of the [SOURCE_TRANSFORM] slice in stage 1. QUANTIZE is
+    # intentionally absent: it was performed out-of-band in stage 2. Together
+    # the two slices cover every recipe stage with no overlap.
+    # Note: this list matches the XNNPACK recipe. Other recipes may include
+    # additional stages (e.g. EDGE_PROGRAM_MANAGER_TRANSFORM); adjust accordingly.
     recipe.pipeline_stages = [
         StageType.TORCH_EXPORT,
         StageType.TO_EDGE_TRANSFORM_AND_LOWER,

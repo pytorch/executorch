@@ -7,7 +7,7 @@
 # Orchestrate the four-stage QAT pipeline split example.
 #
 # Each stage runs in its own Python process and communicates only through files
-# in WORKDIR.  This mirrors a real workflow where training and lowering happen
+# in WORKDIR. This mirrors a real workflow where training and lowering happen
 # on separate machines or at different times.
 #
 # Usage:
@@ -114,7 +114,7 @@ echo ""
 # ----------------------------------------------------------------- Summary
 PTE_FILE="${WORKDIR}/model.pte"
 echo "================================================================"
-echo "  Done.  Final artifact:"
+echo "  Done. Final artifact:"
 echo ""
 ls -lh "$PTE_FILE"
 echo ""

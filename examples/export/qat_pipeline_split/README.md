@@ -8,7 +8,7 @@ recipe.
 
 `ExportRecipe` / `ExportSession` run the full export pipeline — source
 transforms, quantize, torch.export, lower, to-executorch — as a single
-declarative call.  That works well when PTQ calibration is sufficient.  Real
+declarative call. That works well when PTQ calibration is sufficient. Real
 QAT workflows are different: they involve training loops, checkpointing, job
 restarts, and potentially separate machines for training and compilation.
 Those workflows cannot fit inside a single `export()` call.
@@ -16,7 +16,7 @@ Those workflows cannot fit inside a single `export()` call.
 ## The solution: split the recipe around QUANTIZE
 
 The recipe's `pipeline_stages` attribute lets you restrict a session to a
-specific subset of stages.  This example uses that mechanism to insert an
+specific subset of stages. This example uses that mechanism to insert an
 arbitrary QAT step between the pre-quantize and post-quantize halves of the
 recipe:
 
@@ -47,8 +47,8 @@ carving out the QUANTIZE stage to replace it with your own flow.
 ### `minimal` — let the recipe adapt to work you already did
 
 Stage 1 captures the eager model with a plain `torch.export.export` call, with
-no recipe involved at all.  After your QAT flow (stage 2), you hand the
-quantized `.pt2` directly to `export()` with the full recipe.  `ExportSession`
+no recipe involved at all. After your QAT flow (stage 2), you hand the
+quantized `.pt2` directly to `export()` with the full recipe. `ExportSession`
 detects that the input is already an `ExportedProgram` and automatically skips
 `SOURCE_TRANSFORM`, `QUANTIZE` and `TORCH_EXPORT` — the recipe picks up at
 `TO_EDGE_TRANSFORM_AND_LOWER` and completes lowering as normal.
@@ -62,8 +62,9 @@ Stage 1 creates an `ExportRecipe`, restricts `pipeline_stages` to
 `[SOURCE_TRANSFORM]`, and runs only that pre-quantize half of the pipeline.
 After your QAT flow (stage 2), stage 3 picks up the same recipe, sets
 `pipeline_stages` to `[TORCH_EXPORT, TO_EDGE_TRANSFORM_AND_LOWER,
-TO_EXECUTORCH]`, and completes the pipeline.  Together the two slices cover
-every stage of the recipe with no overlap and no stage silently skipped.
+TO_EXECUTORCH]`, and completes the pipeline. Together the two slices cover
+every stage of the recipe with no overlap (`QUANTIZE` is performed out-of-band
+in stage 2).
 
 Use this when you need pre-quantize recipe passes to run before QAT (for
 example, torchao source transforms that the recipe provides).
@@ -71,11 +72,11 @@ example, torchao source transforms that the recipe provides).
 ### Which should I use?
 
 Use **`minimal`** when the recipe uses its default pipeline stages and you have
-no need for pre-quantize recipe passes.  The `minimal` mode works because
-`ExportSession` auto-skips SOURCE_TRANSFORM, QUANTIZE and TORCH_EXPORT when it
+no need for pre-quantize recipe passes. The `minimal` mode works because
+`ExportSession` auto-skips `SOURCE_TRANSFORM`, `QUANTIZE` and `TORCH_EXPORT` when it
 receives an `ExportedProgram` input — this auto-skip only applies to the
-default pipeline.  If the recipe defines a custom `pipeline_stages` list, use
-**`sliced`** instead.  The
+default pipeline. If the recipe defines a custom `pipeline_stages` list, use
+**`sliced`** instead. The
 `sliced` mode is also required whenever pre-quantize recipe passes (such as
 torchao source transforms) need to run before handing the graph to your
 training loop.
@@ -154,8 +155,8 @@ python 4_run.py                       --workdir /tmp/out
 
 ## Notes
 
-- The concrete backend is XNNPACK (`PT2E_INT8_STATIC_PER_TENSOR`).  To adapt
+- The concrete backend is XNNPACK (`PT2E_INT8_STATIC_PER_TENSOR`). To adapt
   to a different backend replace `_build_recipe()` in `1_prepare.py` and
   `3_lower.py`, and `_get_quantizer()` in `2_qat.py`.
-- Stage 4 requires the ExecuTorch pybindings (`executorch.runtime`).  If they
+- Stage 4 requires the ExecuTorch pybindings (`executorch.runtime`). If they
   are not installed a warning is printed and the stage exits cleanly.

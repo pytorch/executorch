@@ -9,11 +9,11 @@
 #
 #   minimal (default)
 #       Export the eager nn.Module to an ATEN-dialect ExportedProgram with a
-#       single torch.export.export call.  No recipe, no ExportSession.
+#       single torch.export.export call. No recipe, no ExportSession.
 #
 #   sliced
 #       Drive only the SOURCE_TRANSFORM stage through ExportSession, then
-#       export to ATEN and save.  This shows how to restrict the pipeline to
+#       export to ATEN and save. This shows how to restrict the pipeline to
 #       the stages that precede quantization.
 #
 # Both paths write a .pt2 file consumed by 2_qat.py.
@@ -141,7 +141,7 @@ def main() -> None:
     else:
         run_sliced(args.workdir)
 
-    print(f"\nStage 1 done.  Artifact written to: {args.workdir}")
+    print(f"\nStage 1 done. Artifact written to: {args.workdir}")
 
 
 if __name__ == "__main__":

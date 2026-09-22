@@ -6,7 +6,7 @@
 # Model definition for the QAT pipeline split example.
 #
 # SmallConvNet is used only by stage 1 (1_prepare.py), which constructs the
-# eager model before capture.  Stages 2 and 3 reload the model from a saved
+# eager model before capture. Stages 2 and 3 reload the model from a saved
 # .pt2 file and only import the example-input helpers below.
 
 from typing import List, Tuple
