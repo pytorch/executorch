@@ -59,6 +59,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import OutputKind
 from torch.library import Library
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 class TestPasses(unittest.TestCase):
@@ -807,6 +808,72 @@ class TestPasses(unittest.TestCase):
             if "quantized_aot_lib" in str(e):
                 self.skipTest(f"LPAI quantizer unavailable: {e}")
             raise
+
+    def test_annotate_skips_non_float_activations(self):
+        """No integer or boolean activation may carry a quantization spec.
+
+        Observers only work with float tensors, so a spec on an int64 activation makes
+        convert_pt2e emit a quantize_per_tensor whose dtype assert fires at export.
+        The per-op guards cover the operands an annotator inspects; slice_scatter on an
+        int64 cache index (the HuggingFace cache_position update) is annotated whole.
+        """
+
+        class SliceScatterInt64(torch.nn.Module):
+            def forward(self, x, ids):
+                updated = torch.slice_scatter(ids, ids[:2] + 1, dim=0, start=0, end=2)
+                return x * updated.to(torch.float32)
+
+        module = SliceScatterInt64().eval()
+        sample_input = (torch.randn(4), torch.arange(4, dtype=torch.int64))
+        gm = torch.export.export(module, sample_input, strict=True).module()
+
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+        gm = quantizer.transform_for_annotation(gm)
+        quantizer.annotate(gm)
+
+        def is_non_float(node):
+            val = node.meta.get("val")
+            return isinstance(val, torch.Tensor) and not val.dtype.is_floating_point
+
+        # Guard against a vacuous test: the int64 slice_scatter must be in the graph.
+        self.assertTrue(
+            any(
+                n.target == torch.ops.aten.slice_scatter.default and is_non_float(n)
+                for n in gm.graph.nodes
+            ),
+            "expected an int64 aten.slice_scatter.default in the graph",
+        )
+
+        annotated_float_nodes = 0
+        for node in gm.graph.nodes:
+            annotation = node.meta.get(Q_ANNOTATION_KEY)
+            if annotation is None:
+                continue
+            if is_non_float(node):
+                self.assertIsNone(
+                    annotation.output_qspec,
+                    f"non-float node {node.name} carries an output_qspec",
+                )
+            else:
+                annotated_float_nodes += 1
+            for arg in annotation.input_qspec_map:
+                self.assertFalse(
+                    is_non_float(arg),
+                    f"{node.name} quantizes non-float input {arg.name}",
+                )
+
+        # The float half of the graph must still be quantized.
+        self.assertGreater(annotated_float_nodes, 0)
+
+        # The full pipeline: re-exporting runs the quantize_per_tensor meta kernel,
+        # which is where the annotation on the int64 tensor surfaces as
+        # "Expecting input to have dtype torch.float32, but got dtype: torch.int64".
+        prepared = prepare_pt2e(
+            torch.export.export(module, sample_input, strict=True).module(), quantizer
+        )
+        prepared(*sample_input)
+        torch.export.export(convert_pt2e(prepared), sample_input, strict=True)
 
     def test_expand_broadcast_preserves_rank0_input_mutation(self):
         """A rank-0 user input that is BOTH broadcast (needs rank promotion) AND mutated in

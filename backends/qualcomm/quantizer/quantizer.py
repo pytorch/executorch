@@ -32,6 +32,7 @@ from executorch.backends.qualcomm.quantizer.backend_opinfo_adapter import (
 from executorch.backends.qualcomm.quantizer.registry_loader import (
     load_backend_rules_and_constraints,
 )
+from executorch.backends.qualcomm.quantizer.rules import drop_non_float_annotations
 from executorch.backends.qualcomm.quantizer.validators import NormalizedConstraints
 
 from executorch.backends.qualcomm.serialization.qc_schema import (
@@ -531,6 +532,8 @@ class QnnQuantizer(Quantizer):
                 )
             self._annotate(model)
             self._annotate_custom_annotation(model)
+
+        drop_non_float_annotations(model)
 
         # This is the only place we have sufficient information for min-max ranges.
         # This has to be done before calibration since this affects scale/offset.
