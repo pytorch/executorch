@@ -80,50 +80,6 @@ void clearCurrentCUDAStream(DeviceIndex device_index) {
   current_streams_.erase(device_index);
 }
 
-CUDAGuard::CUDAGuard(CUDAGuard&& other) noexcept
-    : original_device_index_(other.original_device_index_),
-      current_device_index_(other.current_device_index_) {
-  // Mark the moved-from object as "already restored" so its destructor doesn't
-  // try to restore the device
-  other.original_device_index_ = other.current_device_index_;
-}
-
-CUDAGuard::~CUDAGuard() {
-  if (original_device_index_ != current_device_index_) {
-    // DeviceIndex (int8_t) implicitly widens to int for cudaSetDevice
-    cudaError_t err = cudaSetDevice(original_device_index_);
-    if (err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "~CUDAGuard: Failed to restore device to %d: %s",
-          static_cast<int>(original_device_index_),
-          cudaGetErrorString(err));
-    }
-  }
-}
-
-Error CUDAGuard::set_index(DeviceIndex device_index) {
-  // CUDA API returns int, explicit cast to DeviceIndex (int8_t) following ATen
-  int tmp_device = -1;
-  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&tmp_device));
-
-  original_device_index_ = static_cast<DeviceIndex>(tmp_device);
-  current_device_index_ = device_index;
-
-  if (current_device_index_ != original_device_index_) {
-    // DeviceIndex (int8_t) implicitly widens to int for cudaSetDevice
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaSetDevice(current_device_index_));
-  }
-
-  return Error::Ok;
-}
-
-Result<CUDAGuard> CUDAGuard::create(DeviceIndex device_index) {
-  CUDAGuard guard; // Fixed: Removed () to create a variable, not a function
-  ET_CHECK_OK_OR_RETURN_ERROR(guard.set_index(device_index));
-  return guard;
-}
-
 CUDAStreamGuard::CUDAStreamGuard(CUDAStreamGuard&& other) noexcept
     : device_guard_(std::move(other.device_guard_)),
       original_stream_(other.original_stream_),
