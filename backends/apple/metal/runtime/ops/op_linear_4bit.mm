@@ -1237,21 +1237,21 @@ static std::string get_int4_metal_source() {
 
       METAL_FUNC MMATile() thread {}
 
-      METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) {
+      METAL_FUNC constexpr thread frag_type& frag_at(const short i, const short j) thread {
         return val_frags[i * kTileCols + j];
       }
 
       METAL_FUNC constexpr const thread frag_type& frag_at(
-          const short i, const short j) const {
+          const short i, const short j) const thread {
         return val_frags[i * kTileCols + j];
       }
 
-      METAL_FUNC thread elem_type* elems() {
+      METAL_FUNC thread elem_type* elems() thread {
         return reinterpret_cast<thread elem_type*>(val_frags);
       }
 
       template <typename U, int w_x, int w_y, int str_x, int str_y>
-      METAL_FUNC void load(const threadgroup U* src) {
+      METAL_FUNC void load(const threadgroup U* src) thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < kTileRows; ++i) {
           STEEL_PRAGMA_UNROLL
@@ -1267,7 +1267,7 @@ static std::string get_int4_metal_source() {
       }
 
       template <typename U, int w_x, int w_y>
-      METAL_FUNC void store(device U* dst, const int ld) const {
+      METAL_FUNC void store(device U* dst, const int ld) const thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < kTileRows; ++i) {
           STEEL_PRAGMA_UNROLL
@@ -1283,7 +1283,7 @@ static std::string get_int4_metal_source() {
 
       template <typename U, int w_x, int w_y>
       METAL_FUNC void
-      store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const {
+      store_safe(device U* dst, const int ld, const short2 dst_tile_dims) const thread {
         STEEL_PRAGMA_UNROLL
         for (int i = 0; i < kTileRows; ++i) {
           STEEL_PRAGMA_UNROLL
@@ -1365,7 +1365,7 @@ static std::string get_int4_metal_source() {
 
       METAL_FUNC BlockMMA(
           ushort simd_group_id [[simdgroup_index_in_threadgroup]],
-          ushort simd_lane_id [[thread_index_in_simdgroup]]) {
+          ushort simd_lane_id [[thread_index_in_simdgroup]]) thread {
         short tm = kFragSize * (simd_group_id / WN);
         short tn = kFragSize * (simd_group_id % WN);
         short2 simd_coord = MMAFrag_acc_t::get_coord(simd_lane_id);
@@ -1377,7 +1377,7 @@ static std::string get_int4_metal_source() {
         sn += tn;
       }
 
-      METAL_FUNC void mma(const threadgroup T* As, const threadgroup T* Bs) {
+      METAL_FUNC void mma(const threadgroup T* As, const threadgroup T* Bs) thread {
         As += As_offset;
         Bs += Bs_offset;
         STEEL_PRAGMA_UNROLL
@@ -1393,7 +1393,7 @@ static std::string get_int4_metal_source() {
         }
       }
 
-      METAL_FUNC void store_result(device U* D, const int ldd) {
+      METAL_FUNC void store_result(device U* D, const int ldd) thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < decltype(Ctile)::kElemsPerTile; i++) {
           Ctile.elems()[i] = Epilogue::apply(Ctile.elems()[i]);
@@ -1403,7 +1403,7 @@ static std::string get_int4_metal_source() {
       }
 
       METAL_FUNC void
-      store_result_safe(device U* D, const int ldd, short2 dst_tile_dims) {
+      store_result_safe(device U* D, const int ldd, short2 dst_tile_dims) thread {
         STEEL_PRAGMA_UNROLL
         for (short i = 0; i < decltype(Ctile)::kElemsPerTile; i++) {
           Ctile.elems()[i] = Epilogue::apply(Ctile.elems()[i]);

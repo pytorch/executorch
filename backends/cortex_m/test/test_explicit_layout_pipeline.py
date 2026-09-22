@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
-from functools import partial
 
 import pytest
 import torch
@@ -15,8 +14,8 @@ from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
 )
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-from executorch.backends.cortex_m.test.tester import CortexMTester
-from executorch.backends.test.harness.stages import Quantize, RunPasses, StageType
+from executorch.backends.cortex_m.test.tester import CortexMRunPasses, CortexMTester
+from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.backends.transforms.remove_unused_constants_pass import (
     RemoveUnusedConstantsPass,
 )
@@ -83,13 +82,9 @@ def _count(exported_program, target) -> int:
 def _run_explicit_layout_pass_manager(tester: CortexMTester) -> CortexMTester:
     target_config = CortexMTargetConfig(cpu=CortexM.M55)
     tester.run_passes(
-        RunPasses(
-            partial(
-                CortexMPassManager,
-                target_config=target_config,
-                use_explicit_layout=True,
-            ),  # type: ignore[arg-type]
-            CortexMPassManager.explicit_layout_pass_list,  # type: ignore[arg-type]
+        CortexMRunPasses(
+            target_config=target_config,
+            use_explicit_layout=True,
         )
     )
     return tester
@@ -141,7 +136,7 @@ def test_layout_pipelines_select_distinct_spatial_operators():
     assert _count(explicit_program, exir_ops.edge.cortex_m.transpose.default) == 2
 
 
-@pytest.mark.parametrize("use_edge_transform", [False, True], ids=["cortex_m", "edge"])
+@pytest.mark.parametrize("entry_point", ["legacy", "edge_passes", "edge_manager"])
 @pytest.mark.parametrize(
     "passes,lifted,pruned",
     [
@@ -156,7 +151,7 @@ def test_layout_pipelines_select_distinct_spatial_operators():
     ],
 )
 def test_constant_cleanup_respects_pass_list_and_lift_order(
-    passes, lifted, pruned, use_edge_transform
+    passes, lifted, pruned, entry_point
 ):
     class Model(torch.nn.Module):
         def __init__(self):
@@ -202,11 +197,16 @@ def test_constant_cleanup_respects_pass_list_and_lift_order(
     original_state = program.state_dict.copy()
     program.graph_module.meta["constant_lifting_test"] = "preserved"
 
-    transformed = (
-        edge.transform([pass_cls() for pass_cls in passes]).exported_program()
-        if use_edge_transform
-        else CortexMPassManager(program, passes=passes).transform()
-    )
+    if entry_point == "edge_passes":
+        transformed = edge.transform(
+            [pass_cls() for pass_cls in passes]
+        ).exported_program()
+    elif entry_point == "edge_manager":
+        transformed = edge.transform(
+            CortexMPassManager(passes=passes)
+        ).exported_program()
+    else:
+        transformed = CortexMPassManager(program, passes=passes).transform()
 
     program.validate()
     other.validate()
@@ -322,5 +322,7 @@ def test_explicit_layout_rejects_unsupported_spatial_operator():
     with pytest.raises(Exception) as caught:
         _run_explicit_layout_passes(tester)
 
-    assert caught.value.__cause__ is not None
-    assert "NHWC-eligible" in str(caught.value.__cause__)
+    error = caught.value
+    while error.__cause__ is not None:
+        error = error.__cause__
+    assert "NHWC-eligible" in str(error)
