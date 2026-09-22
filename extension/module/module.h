@@ -64,6 +64,12 @@ class Module {
     MmapUseMadvise,
   };
 
+  /// Serialized program format selected after loading.
+  enum class Format {
+    Pte,
+    Ptn,
+  };
+
   /**
    * Constructs an instance by loading a program from a file with specified
    * memory locking behavior.
@@ -242,11 +248,15 @@ class Module {
     return program_ != nullptr || ptn_ != nullptr;
   }
 
+  /** Loads the program if needed and returns its serialized format. */
+  runtime::Result<Format> format();
+
   /**
    * Get the program. The data loader used by the program is guaranteed to be
    * valid for the lifetime of the program.
    *
-   * @returns Shared pointer to the program or nullptr if it's not yet loaded.
+   * @returns Shared pointer to the PTE program, or nullptr if the Module is not
+   *          loaded or contains a different format.
    */
   inline std::shared_ptr<Program> program() const {
     return program_;
