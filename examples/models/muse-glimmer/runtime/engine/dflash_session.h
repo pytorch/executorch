@@ -51,6 +51,7 @@ struct DFlashSessionConfig {
   int64_t block_size = 0;
   int64_t block_length = 0;
   int64_t n_draft = 0;
+  int64_t selector_top_k = 0;
   int64_t mask_token_id = 0;
   int64_t n_target_layers = 0;
   int64_t draft_sliding_window = 0;

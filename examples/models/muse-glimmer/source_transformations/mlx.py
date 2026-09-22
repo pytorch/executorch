@@ -500,8 +500,10 @@ def _replace_dflash_layer_forward(layer: nn.Module) -> None:
         target_hidden: torch.Tensor,
         input_pos: torch.Tensor,
     ) -> torch.Tensor:
-        x = x + self.self_attn(self.input_layernorm(x), target_hidden, input_pos)
-        x = x + self.mlp(self.post_attention_layernorm(x))
+        h, coefficients = self.prepare_attention(x)
+        h = self.self_attn(h, target_hidden, input_pos)
+        x = x + self.finish_attention(h, coefficients)
+        x = x + self.feed_forward(x)
         return x
 
     layer.forward = types.MethodType(_mlx_dflash_layer_forward, layer)

@@ -103,7 +103,33 @@ python -m executorch.examples.models.muse_glimmer.export.export_dflash \
   --output-dir exports/dflash
 ```
 
-Add `--mmproj "$MMPROJ"` to either command to include the vision encoder. A
+For DFlash2, use the released z-lab drafter with the same target:
+
+```bash
+hf download z-lab/Muse-Glimmer-30B-DFlash2-GGUF \
+  Muse-Glimmer-30B-DFlash2-Q4_K_M.gguf --local-dir checkpoints/dflash2
+
+python -m executorch.examples.models.muse_glimmer.export.export_dflash \
+  --target-gguf "$TARGET" \
+  --draft-gguf checkpoints/dflash2/Muse-Glimmer-30B-DFlash2-Q4_K_M.gguf \
+  --backend cuda --output-dir exports/dflash2
+```
+
+DFlash2 is detected from GGUF metadata. Original Meta DFlash GGUFs and prebuilt
+PTEs remain supported.
+
+Keep the runner defaults `--block_length=0 --n_draft=3`: DFlash2 uses its trained
+16-position block and CUDA verifies three proposals plus the anchor in four
+positions. CUDA accepts `--n_draft=1` through `3`, padding unused positions until
+the context limit. Serving uses `--dflash-block-length` and `--dflash-n-draft`.
+For both DFlash versions, `--cuda_graph=true` captures drafting and target
+verification, with eager fallback for shapes that differ from the captured graph.
+
+DFlash2 has been validated on CUDA; MLX execution remains unvalidated. The
+quantized target can produce different logits with one-row and four-row inputs,
+so four-row validation does not establish parity with ordinary one-row decoding.
+
+Add `--mmproj "$MMPROJ"` to an export command to include the vision encoder. A
 vision export also writes `pos_embed.bin` beside `model.pte`.
 
 The quick download excludes BF16 GGUFs, but they remain supported inputs. For a

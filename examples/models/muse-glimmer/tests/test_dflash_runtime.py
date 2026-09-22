@@ -87,6 +87,8 @@ class DFlashRuntimeTestMixin:
             TINY_CONFIG,
         )
 
+        from executorch.exir import to_edge_transform_and_lower
+
         torch.manual_seed(42)
         tc = replace(TINY_CONFIG, max_seq_len=128, global_attn_cfg="[32,32,32,0]")
         target = MuseGlimmerModel(tc).eval().to(torch.bfloat16)
@@ -106,9 +108,17 @@ class DFlashRuntimeTestMixin:
                     torch.nn.functional.pad(hidden, padding),
                 )
 
+        def lower_fixture(methods, **kwargs):
+            if not dc.selector_top_k:
+                # Published DFlash artifacts predate optional selector metadata.
+                kwargs["constant_methods"].pop("get_dflash_selector_top_k")
+            return to_edge_transform_and_lower(methods, **kwargs)
+
         with patch(
             "executorch.examples.models.muse_glimmer.model.dflash_model.MuseGlimmerWithDFlash",
             PaddedVerification,
+        ), patch(
+            "executorch.exir.to_edge_transform_and_lower", side_effect=lower_fixture
         ):
             _export_dflash_cuda(
                 target,
