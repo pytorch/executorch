@@ -402,3 +402,43 @@ TEST_F(MetalGraphViewTest, CpuBackedViewBufferCoversLongerViewAtSameAddress) {
   const auto* got = static_cast<const float*>(out->const_data_ptr());
   EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 7, 8}));
 }
+
+// A copy to the CPU sees what a graph still pending on the stream writes.
+TEST_F(MetalGraphViewTest, CopyToHostWaitsForPendingWrites) {
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  std::fill_n(static_cast<float*>(out->mutable_data_ptr()), 4, -1.0f);
+  AOTITensorHandle host = nullptr;
+  createMatrix(kDeviceCpu, &host);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, identity, identity), Error::Ok);
+  ASSERT_EQ(aoti_torch_copy_(host, out, 0), Error::Ok);
+  const auto* got = static_cast<const float*>(host->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 0, 0, 1}));
+}
+
+// A copy from the CPU does not overwrite what a graph still pending on the
+// stream is to read.
+TEST_F(MetalGraphViewTest, CopyToDeviceWaitsForPendingReads) {
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(i + 1);
+  }
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  AOTITensorHandle host = nullptr;
+  createMatrix(kDeviceCpu, &host);
+  std::fill_n(static_cast<float*>(host->mutable_data_ptr()), 4, 9.0f);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, input, identity), Error::Ok);
+  ASSERT_EQ(aoti_torch_copy_(input, host, 0), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 2, 3, 4}));
+}
