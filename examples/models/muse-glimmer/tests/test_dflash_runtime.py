@@ -39,7 +39,10 @@ class DFlashRuntimeTestMixin:
         cls.directory = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.directory.cleanup)
         cls.root = Path(cls.directory.name)
-        cls.artifact = Path(os.environ.get(cls.artifact_env_var, cls.root))
+        artifact_key = cls.artifact_env_var
+        if cls.verification_length != 4:
+            artifact_key += f"_{cls.verification_length}"
+        cls.artifact = Path(os.environ.get(artifact_key, cls.root))
         if cls.artifact == cls.root:
             cls.export_fixture()
         cls.common = [
@@ -102,7 +105,8 @@ class DFlashRuntimeTestMixin:
                     inputs_embeds, input_pos
                 )
                 # Quantized CUDA exports may retain maximum output sizes.
-                padding = (0, 0, 0, 4 - inputs_embeds.shape[1])
+                capacity = 4 if inputs_embeds.shape[1] <= 4 else cls.verification_length
+                padding = (0, 0, 0, capacity - inputs_embeds.shape[1])
                 return (
                     torch.nn.functional.pad(logits, padding),
                     torch.nn.functional.pad(hidden, padding),
@@ -110,8 +114,9 @@ class DFlashRuntimeTestMixin:
 
         def lower_fixture(methods, **kwargs):
             if not dc.selector_top_k:
-                # Published DFlash artifacts predate optional selector metadata.
+                # Published DFlash artifacts predate both optional metadata fields.
                 kwargs["constant_methods"].pop("get_dflash_selector_top_k")
+                kwargs["constant_methods"].pop("get_cuda_dflash_verification_length")
             return to_edge_transform_and_lower(methods, **kwargs)
 
         with patch(
@@ -131,6 +136,7 @@ class DFlashRuntimeTestMixin:
                 128,
                 torch.bfloat16,
                 0,
+                verification_length=cls.verification_length,
             )
 
     def test_graph_transitions_to_single_token_tail(self):
@@ -257,7 +263,11 @@ class DFlashRuntimeTestMixin:
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         if enabled:
-            target_method = "target_forward_from_embeddings"
+            target_method = (
+                "target_forward_from_embeddings"
+                if self.verification_length == 4
+                else "target_verify_from_embeddings"
+            )
             self.assertEqual(
                 result.stderr.count(
                     f"CUDA graph: captured and instantiated for '{target_method}'"

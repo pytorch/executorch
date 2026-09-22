@@ -83,8 +83,8 @@ DEFINE_int32(eos_id, 200001, "EOS token id.");
 DEFINE_int32(
     n_draft,
     3,
-    "Draft positions per call (0 = block_length - 1). On CUDA this must be at "
-    "most 3.");
+    "Draft positions per call (0 = artifact maximum). CUDA requires "
+    "n_draft + 1 to fit the exported verification length.");
 DEFINE_int32(
     block_length,
     0,

@@ -45,6 +45,8 @@ using Clock = std::chrono::steady_clock;
 
 constexpr const char* kTargetForwardFromEmbeddings =
     "target_forward_from_embeddings";
+constexpr const char* kTargetVerifyFromEmbeddings =
+    "target_verify_from_embeddings";
 constexpr const char* kTargetPrefillFromEmbeddings =
     "target_prefill_from_embeddings";
 constexpr const char* kEmbedText = "embed_text";
@@ -332,7 +334,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         }
         use_target_prefill = chunk >= config_.min_target_prefill_chunk;
       } else {
-        chunk = std::min<int64_t>(chunk, kCudaDFlashHiddenRows);
+        chunk = std::min<int64_t>(chunk, kCudaDFlashSmallRows);
       }
 #endif
       const bool is_final_chunk = offset + chunk == token_count;
@@ -621,10 +623,10 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   Error prime_draft_cache() {
 #ifdef EXECUTORCH_BUILD_CUDA
     if (config_.has_draft_prefill) {
-      while (hidden_rows() - kCudaDFlashHiddenRows >=
+      while (hidden_rows() - config_.verification_length >=
              config_.min_draft_prefill_chunk) {
         const int64_t rows_to_feed = std::min(
-            hidden_rows() - kCudaDFlashHiddenRows,
+            hidden_rows() - config_.verification_length,
             config_.max_draft_prefill_chunk);
         ET_CHECK_OK_OR_RETURN_ERROR(run_draft_prefill(rows_to_feed));
         hidden_.erase(
@@ -632,7 +634,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         cached_ctx_len_ += rows_to_feed;
       }
     }
-    constexpr int64_t prime_chunk = kCudaDFlashHiddenRows;
+    const int64_t prime_chunk = config_.verification_length;
 #else
     const int64_t prime_chunk = config_.max_prefill_chunk;
 #endif
@@ -693,7 +695,12 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     ET_CHECK_OR_RETURN_ERROR(
         room > 0, InvalidArgument, "DFlash context capacity exhausted");
 #ifdef EXECUTORCH_BUILD_CUDA
-    if (room < n_draft_ + 1) {
+    // Do not accept a wide block across the point where the per-token
+    // reference must switch to small-row arithmetic at the context boundary.
+    const int64_t minimum_room = n_draft_ + 1 > kCudaDFlashSmallRows
+        ? 2 * (n_draft_ + 1) - 1
+        : n_draft_ + 1;
+    if (room < minimum_room) {
       return run_target_only_cycle();
     }
 #else
@@ -988,12 +995,16 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       int64_t retain_from_row = 0) {
     std::vector<int64_t> token_data(tokens, tokens + count);
 #ifdef EXECUTORCH_BUILD_CUDA
-    // Keep verification arithmetic at four rows when fewer proposals
-    // are requested. Causal masking excludes the padded future positions.
-    if (!use_target_prefill && image == nullptr &&
-        count < kCudaDFlashHiddenRows &&
-        start_pos + kCudaDFlashHiddenRows <= max_context_len()) {
-      token_data.resize(kCudaDFlashHiddenRows, config_.mask_token_id);
+    // Keep arithmetic at the selected verification width, with the legacy
+    // small-row path for context tails. Causal masking excludes padded rows.
+    int64_t padded_count =
+        std::max<int64_t>(kCudaDFlashSmallRows, n_draft_ + 1);
+    if (start_pos + padded_count > max_context_len()) {
+      padded_count = kCudaDFlashSmallRows;
+    }
+    if (!use_target_prefill && image == nullptr && count < padded_count &&
+        start_pos + padded_count <= max_context_len()) {
+      token_data.resize(padded_count, config_.mask_token_id);
     }
 #endif
     const auto input_count = static_cast<SizesType>(token_data.size());
@@ -1064,10 +1075,15 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       target_inputs = {(*embed_outputs)[0], EValue(position_tensor)};
     }
 
-    auto outputs = execute_active(
-        use_target_prefill ? kTargetPrefillFromEmbeddings
-                           : kTargetForwardFromEmbeddings,
-        target_inputs);
+    const char* target_method = use_target_prefill
+        ? kTargetPrefillFromEmbeddings
+        : kTargetForwardFromEmbeddings;
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (!use_target_prefill && input_count > kCudaDFlashSmallRows) {
+      target_method = kTargetVerifyFromEmbeddings;
+    }
+#endif
+    auto outputs = execute_active(target_method, target_inputs);
     if (timing != nullptr) {
       timing->target_execute_ms += elapsed_ms(execute_start, Clock::now());
     }
@@ -1079,7 +1095,8 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         sample_last,
         timing,
         use_target_prefill,
-        retain_from_row);
+        retain_from_row,
+        input_count);
   }
 
   Result<TargetResult> process_target_outputs(
@@ -1089,7 +1106,8 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       bool sample_last,
       DFlashCycleTiming* timing,
       bool use_target_prefill,
-      int64_t retain_from_row) {
+      int64_t retain_from_row,
+      int64_t input_count) {
     ET_CHECK_OR_RETURN_ERROR(
         outputs.size() >= 2 && outputs[0].isTensor() && outputs[1].isTensor(),
         InvalidProgram,
@@ -1126,12 +1144,13 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
 
     const auto& hidden_tensor = outputs[1].toTensor();
-    int64_t max_output_rows = count;
+    int64_t max_output_rows = input_count;
 #ifdef EXECUTORCH_BUILD_CUDA
-    // Caller-allocated CUDA outputs can retain their four-row capacity when
-    // verification uses fewer rows. Only the first count rows are active.
-    if (!use_target_prefill && count < kCudaDFlashHiddenRows) {
-      max_output_rows = kCudaDFlashHiddenRows;
+    // Caller-allocated outputs can retain capacity; only count rows are active.
+    if (!use_target_prefill) {
+      max_output_rows = input_count > kCudaDFlashSmallRows
+          ? config_.verification_length
+          : kCudaDFlashSmallRows;
     }
 #endif
     ET_CHECK_OR_RETURN_ERROR(
@@ -1229,18 +1248,19 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const uint16_t* hidden_data = hidden_.data();
     int64_t hidden_input_rows = rows_to_feed;
 #ifdef EXECUTORCH_BUILD_CUDA
-    std::vector<uint16_t> padded_hidden(kCudaDFlashHiddenRows * hidden_dim_, 0);
+    std::vector<uint16_t> padded_hidden(
+        config_.verification_length * hidden_dim_, 0);
     ET_CHECK_OR_RETURN_ERROR(
-        hidden_input_rows <= kCudaDFlashHiddenRows,
+        hidden_input_rows <= config_.verification_length,
         InvalidState,
         "CUDA DFlash hidden backlog exceeds %" PRId64 " rows",
-        kCudaDFlashHiddenRows);
+        config_.verification_length);
     std::memcpy(
         padded_hidden.data(),
         hidden_data,
         rows_to_feed * hidden_dim_ * sizeof(uint16_t));
     hidden_data = padded_hidden.data();
-    hidden_input_rows = kCudaDFlashHiddenRows;
+    hidden_input_rows = config_.verification_length;
 #endif
     auto token_tensor = from_blob(
         draft_tokens.data(),
@@ -1290,7 +1310,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       const int64_t k = config_.selector_top_k;
       int64_t proposals = draft_len - 1;
 #ifdef EXECUTORCH_BUILD_CUDA
-      proposals = std::min(proposals, kCudaDFlashHiddenRows - 1);
+      proposals = std::min(proposals, config_.verification_length - 1);
 #endif
       ET_CHECK_OR_RETURN_ERROR(
           ids.scalar_type() == executorch::aten::ScalarType::Long &&

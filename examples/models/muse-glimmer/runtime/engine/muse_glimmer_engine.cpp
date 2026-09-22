@@ -99,6 +99,8 @@ constexpr const char* kMinPrefillChunk = "get_min_prefill_chunk";
 constexpr const char* kUseSampling = "use_sampling";
 constexpr const char* kTargetForwardFromEmbeddingsMethod =
     "target_forward_from_embeddings";
+constexpr const char* kTargetVerifyFromEmbeddingsMethod =
+    "target_verify_from_embeddings";
 constexpr const char* kTargetPrefillFromEmbeddingsMethod =
     "target_prefill_from_embeddings";
 constexpr const char* kEmbedTextMethod = "embed_text";
@@ -106,6 +108,8 @@ constexpr const char* kMuseGlimmerVisionEncoderMethod = "vision_encoder";
 constexpr const char* kDraftForwardMethod = "draft_forward";
 constexpr const char* kDraftPrefillMethod = "draft_prefill";
 constexpr const char* kDFlashSelectorTopK = "get_dflash_selector_top_k";
+constexpr const char* kDFlashVerificationLength =
+    "get_cuda_dflash_verification_length";
 constexpr const char* kDFlashBlockSize = "get_block_size";
 constexpr const char* kDFlashMaskTokenId = "get_mask_token_id";
 constexpr const char* kDFlashTargetLayers = "get_n_target_layers";
@@ -302,7 +306,7 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       cuda_opts.set_option("weight_sharing_across_methods", true));
   if (config.enable_cuda_graph) {
     const char* graph_methods = artifact_mode == MuseGlimmerArtifactMode::DFlash
-        ? "target_forward_from_embeddings,draft_forward"
+        ? "target_forward_from_embeddings,target_verify_from_embeddings,draft_forward"
         : kDecodeFromEmbeddingMethod;
     ET_CHECK_OK_OR_RETURN_ERROR(
         cuda_opts.set_option("enable_cuda_graph_for_method", graph_methods));
@@ -355,6 +359,11 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
     if (method_names_result.get().count(kDraftPrefillMethod) != 0) {
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
           kDraftPrefillMethod, nullptr, nullptr, load_options));
+    }
+    if (method_names_result.get().count(kTargetVerifyFromEmbeddingsMethod) !=
+        0) {
+      ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+          kTargetVerifyFromEmbeddingsMethod, nullptr, nullptr, load_options));
     }
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
@@ -1299,6 +1308,24 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         "Invalid DFlash selector size");
     metadata[kDFlashSelectorTopK] = selector_top_k;
 #ifdef EXECUTORCH_BUILD_CUDA
+    int64_t verification_length = kCudaDFlashSmallRows;
+    if (method_names.count(kDFlashVerificationLength) != 0) {
+      auto length = get_required_int_metadata(
+          meta_module.get(), kDFlashVerificationLength);
+      ET_CHECK_OK_OR_RETURN_ERROR(length.error());
+      verification_length = length.get();
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        verification_length == 4 || verification_length == 8 ||
+            verification_length == 16,
+        InvalidProgram,
+        "CUDA DFlash verification length must be 4, 8, or 16");
+    ET_CHECK_OR_RETURN_ERROR(
+        verification_length == 4 ||
+            method_names.count(kTargetVerifyFromEmbeddingsMethod) != 0,
+        InvalidProgram,
+        "Wide CUDA DFlash requires target_verify_from_embeddings");
+    metadata[kDFlashVerificationLength] = verification_length;
     if (has_dflash_target_prefill) {
       auto min_target_prefill_chunk = get_required_int_metadata(
           meta_module.get(), kDFlashMinTargetPrefillChunk);
@@ -1309,7 +1336,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       dflash_min_target_prefill_chunk = min_target_prefill_chunk.get();
       dflash_max_target_prefill_chunk = max_target_prefill_chunk.get();
       ET_CHECK_OR_RETURN_ERROR(
-          dflash_min_target_prefill_chunk > kCudaDFlashHiddenRows &&
+          dflash_min_target_prefill_chunk > kCudaDFlashSmallRows &&
               dflash_max_target_prefill_chunk >=
                   dflash_min_target_prefill_chunk,
           InvalidProgram,
@@ -1329,7 +1356,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       dflash_min_draft_prefill_chunk = min_draft_prefill_chunk.get();
       dflash_max_draft_prefill_chunk = max_draft_prefill_chunk.get();
       ET_CHECK_OR_RETURN_ERROR(
-          dflash_min_draft_prefill_chunk > kCudaDFlashHiddenRows &&
+          dflash_min_draft_prefill_chunk > kCudaDFlashSmallRows &&
               dflash_max_draft_prefill_chunk >= dflash_min_draft_prefill_chunk,
           InvalidProgram,
           "Invalid DFlash draft prefill chunk interval [%" PRId64 ", %" PRId64
@@ -1367,12 +1394,12 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
     // draft call must feed into the fixed-size CUDA hidden input.
     const int64_t n_draft = config.dflash_n_draft > 0
         ? config.dflash_n_draft
-        : std::min(block_length - 1, kCudaDFlashHiddenRows - 1);
+        : std::min(block_length - 1, verification_length - 1);
     ET_CHECK_OR_RETURN_ERROR(
-        n_draft + 1 <= kCudaDFlashHiddenRows,
+        n_draft + 1 <= verification_length,
         InvalidArgument,
         "CUDA DFlash n_draft must be at most %" PRId64 ", got %" PRId64,
-        kCudaDFlashHiddenRows - 1,
+        verification_length - 1,
         n_draft);
 #endif
     metadata[kDFlashBlockSize] = dflash_block_size;
@@ -1582,7 +1609,8 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
         : dflash_block_size_;
     int64_t default_n_draft = block_length - 1;
 #ifdef EXECUTORCH_BUILD_CUDA
-    default_n_draft = std::min(default_n_draft, kCudaDFlashHiddenRows - 1);
+    default_n_draft =
+        std::min(default_n_draft, metadata_.at(kDFlashVerificationLength) - 1);
 #endif
     const int64_t n_draft =
         config_.dflash_n_draft > 0 ? config_.dflash_n_draft : default_n_draft;
@@ -1601,6 +1629,10 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
     session_config.block_length = block_length;
     session_config.n_draft = n_draft;
     session_config.selector_top_k = metadata_.at(kDFlashSelectorTopK);
+#ifdef EXECUTORCH_BUILD_CUDA
+    session_config.verification_length =
+        metadata_.at(kDFlashVerificationLength);
+#endif
     session_config.mask_token_id = dflash_mask_token_id_;
     session_config.n_target_layers = dflash_n_target_layers_;
     session_config.draft_sliding_window = dflash_sliding_window_;

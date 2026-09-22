@@ -20,9 +20,15 @@ import torch
 from executorch.examples.models.muse_glimmer.export import common
 
 
-def validate_dflash_export_options(backend: str) -> None:
+def validate_dflash_export_options(
+    backend: str, cuda_verification_length: int = 4
+) -> None:
     if backend not in {"cuda", "mlx"}:
         raise ValueError(f"Unsupported DFlash backend: {backend}")
+    if cuda_verification_length not in {4, 8, 16}:
+        raise ValueError("CUDA verification length must be 4, 8, or 16")
+    if backend != "cuda" and cuda_verification_length != 4:
+        raise ValueError("cuda_verification_length requires the CUDA backend")
 
 
 def _share_graph_mutable_buffers(backend: str) -> bool:
@@ -58,6 +64,7 @@ def export_dflash(
     backend: str = "mlx",
     mmproj: str | None = None,
     max_vision_patches: int = 16384,
+    cuda_verification_length: int = 4,
 ) -> None:
     """Export DFlash target + draft to one CUDA or MLX .pte.
 
@@ -68,7 +75,7 @@ def export_dflash(
     both must already be quantized. Supplying ``mmproj`` reuses the ordinary Muse Glimmer
     mmproj loader and vision export contract to add ``vision_encoder``.
     """
-    validate_dflash_export_options(backend)
+    validate_dflash_export_options(backend, cuda_verification_length)
 
     import executorch.extension.llm.export.gguf  # noqa: F401
     import executorch.extension.llm.export.int4  # noqa: F401
@@ -159,6 +166,11 @@ def export_dflash(
         max_seq_len,
         activation_dtype,
         max_vision_patches,
+        **(
+            {"verification_length": cuda_verification_length}
+            if backend == "cuda"
+            else {}
+        ),
     )
 
 
@@ -433,6 +445,7 @@ def _export_dflash_cuda(
     max_seq_len: int,
     activation_dtype: torch.dtype,
     max_vision_patches: int,
+    verification_length: int = 4,
 ) -> None:
     """Export the CUDA DFlash contract.
 
@@ -444,6 +457,7 @@ def _export_dflash_cuda(
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.backends.cuda.quantize_op_dispatch.config import short_query_kernels
     from executorch.examples.models.gemma4_31b.cuda_packers import (
         convert_quantized_tensors_for_cuda,
     )
@@ -466,6 +480,11 @@ def _export_dflash_cuda(
     from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
     from torch.export import Dim, export
 
+    validate_dflash_export_options("cuda", verification_length)
+    if verification_length > max_seq_len:
+        raise ValueError("Verification length exceeds the context capacity")
+    if verification_length > 4 and not draft_config.selector_top_k:
+        raise ValueError("Wide CUDA verification currently requires a DFlash2 drafter")
     max_prefill = 512
     has_vision = vision_model is not None
 
@@ -485,7 +504,7 @@ def _export_dflash_cuda(
         draft_model,
         target_config,
         draft_config,
-        max_draft_tokens=min(3, draft_config.block_size - 1),
+        max_draft_tokens=min(verification_length - 1, draft_config.block_size - 1),
     )
     max_target_prefill = min(
         target_config.max_seq_len - 1, target_model._sliding_window * 2
@@ -519,10 +538,30 @@ def _export_dflash_cuda(
             strict=True,
         )
 
+    wide_target_ep = None
+    if verification_length > target_max_len:
+        print("Exporting target_verify_from_embeddings...")
+        wide_dim = Dim("verification_len", min=5, max=verification_length)
+        with common.BoundMethodForward(
+            combined, combined.target_forward_from_embeddings
+        ), torch.no_grad(), short_query_kernels(verification_length):
+            wide_target_ep = export(
+                combined,
+                (
+                    torch.zeros(
+                        (1, verification_length, target_config.dim),
+                        dtype=activation_dtype,
+                    ),
+                    torch.arange(verification_length, dtype=torch.long),
+                ),
+                dynamic_shapes=({1: wide_dim}, {0: wide_dim}),
+                strict=True,
+            )
+
     # ``embed_text`` serves both the fixed-width verifier path and the
     # variable-width prefill path, so its input needs the same upper bound as
     # ``target_prefill_from_embeddings``.
-    embed_max_len = _embed_text_max_len("cuda", target_max_len, max_target_prefill)
+    embed_max_len = _embed_text_max_len("cuda", verification_length, max_target_prefill)
     embed_seq_dim = Dim("embed_seq_len", min=1, max=embed_max_len)
     print("=" * 60)
     print("Exporting embed_text...")
@@ -578,9 +617,9 @@ def _export_dflash_cuda(
     )
     n_target = draft_config.n_target_layers
     dim = draft_config.dim
-    new_ctx_max = 4
+    new_ctx_max = verification_length
 
-    # Preserve the trained backbone block, projecting only three proposals.
+    # Preserve the trained DFlash2 backbone block.
     block_dim = (
         Dim.STATIC
         if draft_config.selector_top_k
@@ -588,10 +627,12 @@ def _export_dflash_cuda(
     )
     draft_input_pos = torch.tensor([0], dtype=torch.long)
 
-    with common.BoundMethodForward(combined, combined.draft_forward), torch.no_grad():
+    with common.BoundMethodForward(
+        combined, combined.draft_forward
+    ), torch.no_grad(), short_query_kernels():
         # Keep every input byte size fixed for CUDA Graph replay. The
         # valid-length scalar preserves cache/attention semantics when the
-        # previous speculative step committed fewer than four positions.
+        # previous speculative step committed fewer positions than capacity.
         draft_ep = export(
             combined,
             (
@@ -661,6 +702,8 @@ def _export_dflash_cuda(
         "draft_forward": draft_ep,
         "draft_prefill": draft_prefill_ep,
     }
+    if wide_target_ep is not None:
+        methods["target_verify_from_embeddings"] = wide_target_ep
     if vision_ep is not None:
         methods["vision_encoder"] = vision_ep
     partitioner = {name: [cuda_partitioner(name)] for name in methods}
@@ -681,6 +724,7 @@ def _export_dflash_cuda(
             "get_max_target_prefill_chunk": max_target_prefill,
             "get_min_draft_prefill_chunk": 5,
             "get_max_draft_prefill_chunk": max_draft_prefill,
+            "get_cuda_dflash_verification_length": verification_length,
         }
     )
 
@@ -702,6 +746,7 @@ def _export_dflash_cuda(
         draft_ep,
         draft_prefill_ep,
         vision_ep,
+        wide_target_ep,
     )
     gc.collect()
 
@@ -789,6 +834,13 @@ def main() -> None:
         help="Maximum patch count accepted by the exported vision encoder.",
     )
     parser.add_argument(
+        "--cuda-verification-length",
+        type=int,
+        choices=[4, 8, 16],
+        default=4,
+        help="Maximum CUDA verification rows, including the anchor (default: 4).",
+    )
+    parser.add_argument(
         "--activation-dtype",
         default=None,
         choices=list(common.ACTIVATION_DTYPES),
@@ -798,7 +850,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        validate_dflash_export_options(args.backend)
+        validate_dflash_export_options(args.backend, args.cuda_verification_length)
     except ValueError as error:
         parser.error(str(error))
     if args.backend == "cuda" and not torch.cuda.is_available():
@@ -823,6 +875,7 @@ def main() -> None:
         backend=args.backend,
         mmproj=args.mmproj,
         max_vision_patches=args.max_vision_patches,
+        cuda_verification_length=args.cuda_verification_length,
     )
 
 
