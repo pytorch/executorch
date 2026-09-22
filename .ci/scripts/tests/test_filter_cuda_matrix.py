@@ -211,10 +211,13 @@ class TestGates(unittest.TestCase):
         self.assertNotIn(dropped, published)
 
     def test_dropped_train_still_publishes_the_others(self):
-        # Losing cu126 from the generator must not block the remaining supported trains.
-        if "cu126" not in FILTER.SUPPORTED_CUDA_VERSIONS:
-            self.skipTest("cu126 is not a published train")
-        survivors = [c for c in FILTER.SUPPORTED_CUDA_VERSIONS if c != "cu126"]
+        # Losing the oldest train from the generator must not block the remaining supported
+        # ones. The case above drops the newest, so the two together cover both ends of the
+        # list. Both read the list rather than naming a train, because naming one turns into
+        # a skipped case, and a case that stops running the day the list changes is the one
+        # that would have caught the change.
+        dropped = FILTER.SUPPORTED_CUDA_VERSIONS[0]
+        survivors = FILTER.SUPPORTED_CUDA_VERSIONS[1:]
         matrix = {
             "include": [
                 {"python_version": python, "desired_cuda": cuda}
@@ -225,7 +228,7 @@ class TestGates(unittest.TestCase):
         emitted = _emitted(_run(matrix))
         published = sorted({row["desired_cuda"] for row in emitted["include"]})
         self.assertEqual(published, sorted(survivors))
-        self.assertNotIn("cu126", published)
+        self.assertNotIn(dropped, published)
         # Every survivor keeps all its pythons, so what publishes is complete, just narrower.
         self.assertEqual(
             len(emitted["include"]),
@@ -280,9 +283,7 @@ class TestPublishedSets(unittest.TestCase):
     """
 
     def test_published_cuda_versions(self):
-        self.assertEqual(
-            FILTER.SUPPORTED_CUDA_VERSIONS, ["cu126", "cu130", "cu132", "cu134"]
-        )
+        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu130", "cu132", "cu134"])
 
     def test_published_cuda_versions_are_supported_by_the_installer(self):
         supported = {
