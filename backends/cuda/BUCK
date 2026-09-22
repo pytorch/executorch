@@ -145,6 +145,7 @@ fbcode_target(
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/offgraph_kv.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
