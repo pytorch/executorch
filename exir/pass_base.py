@@ -848,6 +848,27 @@ class _ExportPassBase(PassBase):
             True,
         )
 
+    @staticmethod
+    def _get_fake_mode_from_placeholders(
+        graph_module: fx.GraphModule,
+    ) -> Optional[FakeTensorMode]:
+        """Returns the single FakeTensorMode on the graph's placeholders, if any.
+
+        Returns None when the placeholders carry no FakeTensor or disagree on the
+        mode, leaving the caller to fall back to creating one.
+        """
+        mode = None
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            val = node.meta.get("val", None)
+            if not isinstance(val, FakeTensor):
+                continue
+            if mode is not None and mode is not val.fake_mode:
+                return None
+            mode = val.fake_mode
+        return mode
+
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         if not getattr(self, "_initialized", False):
             raise ExportPassBaseError(
@@ -863,6 +884,13 @@ class _ExportPassBase(PassBase):
                     fake_tensor_mode is None or fake_tensor_mode is i.fake_mode
                 ), "Multiple fake tensor mode detected."
                 fake_tensor_mode = i.fake_mode
+        if fake_tensor_mode is None:
+            # self.inputs() unwraps a placeholder's FakeTensor to its .constant
+            # when one is materialized, so a submodule whose placeholders are all
+            # lifted constants yields no FakeTensor above even though the graph
+            # carries a mode. Creating a fresh one here would leave the retraced
+            # nodes in a different mode from the untouched placeholders.
+            fake_tensor_mode = self._get_fake_mode_from_placeholders(graph_module)
         if fake_tensor_mode is None:
             fake_tensor_mode = FakeTensorMode(allow_non_fake_inputs=True)
             dispatcher_mode = nullcontext()  # type: ignore[assignment]
