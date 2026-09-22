@@ -4,6 +4,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 
 #include <algorithm>
@@ -54,7 +56,7 @@ class TempPackage {
   std::filesystem::path path_;
 
  public:
-  TempPackage() {
+  explicit TempPackage(std::vector<uint8_t> tensors = {}) {
     path_ = std::filesystem::temp_directory_path() /
         ("ptn_package_" + std::to_string(reinterpret_cast<uintptr_t>(this)) +
          ".ptn");
@@ -64,9 +66,11 @@ class TempPackage {
     if (archive == nullptr) {
       throw std::runtime_error("failed to create test package");
     }
-    const std::vector<uint8_t> tensors = make_safetensors(
-        R"({"weight":{"dtype":"U8","shape":[4],"data_offsets":[0,4]},"bias":{"dtype":"I16","shape":[1],"data_offsets":[4,6]}})",
-        "dataxy");
+    if (tensors.empty()) {
+      tensors = make_safetensors(
+          R"({"weight":{"dtype":"U8","shape":[4],"data_offsets":[0,4]},"bias":{"dtype":"I16","shape":[1],"data_offsets":[4,6]}})",
+          "dataxy");
+    }
     add(archive.get(), kProgramEntry, as_bytes(program_));
     add(archive.get(), kSafeTensorsEntry, ByteSpan(tensors));
     add(archive.get(), kAliasesEntry, as_bytes(aliases_));
@@ -128,7 +132,7 @@ TEST(PackageTest, LoadsConstantsOnDemand) {
       package.acquire_constant("tied_weight");
   ASSERT_TRUE(acquired);
   EXPECT_TRUE(std::ranges::equal(acquired->span(), destination));
-  EXPECT_NO_THROW(package.verify_constants());
+  EXPECT_NO_THROW(package.verify());
 }
 
 TEST(PackageTest, ReportsMissingConstantsAndWrongDestinations) {
@@ -152,6 +156,15 @@ TEST(PackageTest, SupportsCallerOwnedArchiveBytes) {
   ASSERT_TRUE(weight);
   EXPECT_TRUE(std::ranges::equal(
       weight->span(), (std::array<uint8_t, 4>{'d', 'a', 't', 'a'})));
+}
+
+TEST(PackageTest, RejectsOversizedSafeTensorsHeaderBeforeReadingIt) {
+  std::vector<uint8_t> tensors(sizeof(uint64_t));
+  const uint64_t header_size = detail::kMaxJsonBytes + 1;
+  std::memcpy(tensors.data(), &header_size, sizeof(header_size));
+  const TempPackage file(std::move(tensors));
+
+  EXPECT_THROW(Package::load(file.path()), ResourceLimitError);
 }
 // cppcheck-suppress-end syntaxError
 
