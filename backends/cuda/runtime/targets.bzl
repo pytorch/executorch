@@ -128,6 +128,7 @@ def define_common_targets(is_fbcode = False):
             "cuda_weight_cache.cpp",
         ],
         headers = [
+            "backend_options.h",
             "cuda_delegate_handle.h",
             "cuda_kv_cache.h",
             "cuda_mutable_state.h",
