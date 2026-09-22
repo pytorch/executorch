@@ -33,6 +33,7 @@
 #endif
 #endif
 
+#ifndef ET_KLEIDIAI_DISABLE_SME2_BF16
 #if __has_include( \
     <kai/kai_matmul_clamp_f32_bf16p2vlx2_bf16p2vlx2_2vlx2vl_sme2_mopa.h>)
 #define ET_KLEIDIAI_HAS_SME2_BF16
@@ -47,6 +48,7 @@
 #include <kai/ukernels/matmul/pack/kai_rhs_pack_kxn_x16p2vlx2b_x16_x16_sme.h>
 #include <kai/ukernels/matmul/pack/kai_rhs_pack_nxk_x16p2vlx2b_x16_x16_sme.h>
 #endif
+#endif // ET_KLEIDIAI_DISABLE_SME2_BF16
 #endif // ET_BUILD_WITH_KLEIDIAI
 
 namespace executorch {

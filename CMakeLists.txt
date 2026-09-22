@@ -1206,6 +1206,10 @@ if(TARGET cpublas
     target_compile_definitions(cpublas PRIVATE ET_BUILD_WITH_KLEIDIAI)
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
       target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_NEON_BF16)
+      # The SME2 headers are present here but the kleidiai this links against
+      # does not carry the SME2 ukernels, and the code path is chosen by header
+      # availability alone, so the framework link fails on the symbols.
+      target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_SME2_BF16)
     endif()
     target_link_libraries(cpublas PRIVATE kleidiai)
   endif()

@@ -138,6 +138,7 @@ def get_kleidiai_preprocessor_flags():
         "ovr_config//os:macos-arm64": [
             "-DET_BUILD_WITH_KLEIDIAI",
             "-DET_KLEIDIAI_DISABLE_NEON_BF16",
+            "-DET_KLEIDIAI_DISABLE_SME2_BF16",
         ],
     })
 
