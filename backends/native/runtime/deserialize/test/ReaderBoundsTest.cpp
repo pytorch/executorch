@@ -6,6 +6,9 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Json.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/deserialize/SafeTensorsReader.h>
 #include <executorch/backends/native/runtime/deserialize/ZipReader.h>
 
@@ -19,6 +22,18 @@
 
 namespace ptn {
 namespace {
+
+template <typename F>
+void expect_resource_limit(F&& operation, const std::string& message) {
+  try {
+    operation();
+    FAIL() << "expected ResourceLimitError";
+  } catch (const ResourceLimitError& error) {
+    EXPECT_EQ(error.what(), message);
+  } catch (...) {
+    FAIL() << "expected ResourceLimitError";
+  }
+}
 
 template <typename T>
 void write_le(std::vector<uint8_t>& bytes, size_t offset, T value) {
@@ -46,18 +61,48 @@ TEST(SafeTensorsReaderTest, Open_ValidScalar_ReportsPayloadSize) {
   EXPECT_EQ(reader.total_bytes(), 4);
 }
 
-TEST(SafeTensorsReaderTest, Open_ByteSizeOverflow_Throws) {
+TEST(SafeTensorsReaderTest, Open_ExcessiveDimension_ThrowsResourceLimit) {
   const auto bytes = make_safetensors(
       R"({"weight":{"dtype":"F64","shape":[9223372036854775807],"data_offsets":[0,0]}})");
 
-  try {
-    static_cast<void>(SafeTensorsReader::open(bytes));
-    FAIL() << "expected an overflowing tensor byte size to be rejected";
-  } catch (const std::runtime_error& error) {
-    EXPECT_NE(
-        std::string(error.what()).find("byte size overflows"),
-        std::string::npos);
+  expect_resource_limit(
+      [&]() { static_cast<void>(SafeTensorsReader::open(bytes)); },
+      "safetensors: entry 'weight' exceeds dimension limit");
+}
+
+TEST(SafeTensorsReaderTest, Open_ExcessiveRank_ThrowsResourceLimit) {
+  std::string dimensions;
+  for (size_t i = 0; i <= detail::kMaxTensorRank; ++i) {
+    dimensions += i == 0 ? "1" : ",1";
   }
+  const auto bytes = make_safetensors(
+      "{\"weight\":{\"dtype\":\"F32\",\"shape\":[" + dimensions +
+      "],\"data_offsets\":[0,0]}}");
+
+  expect_resource_limit(
+      [&]() { static_cast<void>(SafeTensorsReader::open(bytes)); },
+      "safetensors: entry 'weight' exceeds tensor rank limit");
+}
+
+TEST(SafeTensorsReaderTest, Open_ElementCountOverflow_ThrowsResourceLimit) {
+  const auto bytes = make_safetensors(
+      R"({"weight":{"dtype":"F64","shape":[2147483647,2147483647,2147483647],"data_offsets":[0,0]}})");
+
+  expect_resource_limit(
+      [&]() { static_cast<void>(SafeTensorsReader::open(bytes)); },
+      "safetensors: entry 'weight' element count overflows");
+}
+
+TEST(SafeTensorsReaderTest, Open_OverlappingRanges_Throws) {
+  const auto bytes = make_safetensors(
+      R"({"first":{"dtype":"F32","shape":[],"data_offsets":[0,4]},"second":{"dtype":"F32","shape":[],"data_offsets":[0,4]}})",
+      /*payload_size=*/4);
+
+  EXPECT_THROW(SafeTensorsReader::open(bytes), std::runtime_error);
+}
+
+TEST(JsonParserTest, ParseDocument_DuplicateObjectKey_Throws) {
+  EXPECT_THROW(parse_json(R"({"key":1,"key":2})"), std::runtime_error);
 }
 
 std::vector<uint8_t> make_zip(
