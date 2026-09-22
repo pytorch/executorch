@@ -60,14 +60,18 @@ namespace cuda {
 executorch::runtime::Result<void*> load_library(
     const std::filesystem::path& path) {
 #ifdef _WIN32
-  std::string utf8 = path.u8string();
-  auto lib_handle = LoadLibrary(utf8.c_str());
+  // string(), not u8string(). LoadLibrary without an explicit W takes a narrow
+  // string in the active code page, which is what string() returns, and since
+  // C++20 u8string() returns a std::u8string that does not convert to
+  // std::string at all.
+  std::string path_str = path.string();
+  auto lib_handle = LoadLibrary(path_str.c_str());
   if (lib_handle == NULL) {
     const DWORD err = GetLastError();
     ET_LOG(
         Error,
         "Failed to load %s with error %lu: %s",
-        utf8.c_str(),
+        path_str.c_str(),
         err,
         format_win_error(err).c_str());
     return executorch::runtime::Error::AccessFailed;
