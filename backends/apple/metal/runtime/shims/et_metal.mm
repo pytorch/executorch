@@ -16,12 +16,15 @@
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <list>
 #include <map>
 #include <optional>
 #include <exception>
+#include <stdexcept>
+#include <string>
 
 #if (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000) || \
     (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000) || \

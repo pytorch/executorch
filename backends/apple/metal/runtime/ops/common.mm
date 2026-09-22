@@ -8,6 +8,8 @@
 
 #include <executorch/backends/apple/metal/runtime/ops/common.h>
 
+#include <cstring>
+
 namespace executorch {
 namespace backends {
 namespace metal {

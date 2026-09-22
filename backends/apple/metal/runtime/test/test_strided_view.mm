@@ -8,8 +8,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
