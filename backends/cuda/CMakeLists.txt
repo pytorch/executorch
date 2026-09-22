@@ -338,8 +338,8 @@ install(
 
 # CUDA backend implementation
 set(_aoti_cuda_backend_sources
-    runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
-    runtime/cuda_weight_cache.cpp
+    runtime/cuda_backend.cpp runtime/cuda_kv_cache.cpp
+    runtime/cuda_mutable_state.cpp runtime/cuda_weight_cache.cpp
 )
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
@@ -391,7 +391,7 @@ endif()
 target_link_libraries(
   aoti_cuda_backend
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
-         extension_cuda ${CMAKE_DL_LIBS}
+         extension_cuda extension_llm_cache ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)
