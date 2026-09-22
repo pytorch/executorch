@@ -304,14 +304,14 @@ runtime::Error Module::load_internal(
       return ptn_detection_result.error();
     }
     if (*ptn_detection_result) {
+      if (load_mode_ != LoadMode::File && load_mode_ != LoadMode::Mmap) {
+        return runtime::Error::NotSupported;
+      }
       if (has_backend_options) {
         return runtime::Error::NotSupported;
       }
       if (!data_files_.empty() || !data_map_loaders_.empty()) {
         return runtime::Error::InvalidArgument;
-      }
-      if (load_mode_ != LoadMode::File && load_mode_ != LoadMode::Mmap) {
-        return runtime::Error::NotSupported;
       }
       const native_module::internal::PtnSource source = file_path_.empty()
           ? native_module::internal::PtnSource(std::ref(*data_loader_))

@@ -1,6 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     runtime.cxx_library(
         name = "method_meta_bridge",
         srcs = ["MethodMetaBridge.cpp"],
@@ -56,6 +56,9 @@ def define_common_targets():
         name = "native_module_load_test",
         srcs = ["test/NativeModuleLoadTest.cpp"],
         headers = ["test/TestData.h"],
+        env = {} if runtime.is_oss or not is_fbcode else {
+            "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+        },
         deps = [
             ":module_ptn",
             "//executorch/backends/native/runtime:native_graph_schema",
