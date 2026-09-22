@@ -14,6 +14,7 @@ from typing import List, Tuple
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 import torch
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.serialization import (
     vulkan_graph_builder as graph_builder_module,
 )
@@ -34,6 +35,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
     VulkanDelegateHeader,
 )
+from executorch.exir import to_edge_transform_and_lower
 
 
 class TestSerialization(unittest.TestCase):
@@ -167,6 +169,48 @@ class TestSerialization(unittest.TestCase):
                     graph.output_ids,
                     [builder.node_to_value_ids[mutation]],
                 )
+
+    def test_mutation_aliasing_user_output_gets_one_slot(self) -> None:
+        # A mutated buffer returned through a view: once the view is removed
+        # the mutation and the user output are the same node. With aliasing on
+        # the mutation is applied in place and only the user output takes a
+        # slot; without it the mutation still needs a slot to carry the new
+        # value back, and the graph is left to be rejected rather than silently
+        # skipping the state update.
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 48))
+
+            def forward(self, x):
+                self.state.add_(x)
+                return self.state.view(2, 48)
+
+        for alias, expected_slots in ((True, 1), (False, 2)):
+            with self.subTest(alias_buffer_mutations=alias):
+                captured: List[int] = []
+                original = graph_builder_module.VkGraphBuilder.build_graph
+
+                def spy(builder_self, _original=original, _captured=captured):
+                    graph = _original(builder_self)
+                    _captured.append(len(graph.output_ids))
+                    return graph
+
+                graph_builder_module.VkGraphBuilder.build_graph = spy
+                try:
+                    program = torch.export.export(
+                        Model(), (torch.ones(2, 48),), strict=True
+                    )
+                    to_edge_transform_and_lower(
+                        program,
+                        partitioner=[
+                            VulkanPartitioner({"alias_buffer_mutations": alias})
+                        ],
+                    ).to_executorch()
+                finally:
+                    graph_builder_module.VkGraphBuilder.build_graph = original
+
+                self.assertEqual(captured, [expected_slots])
 
     def _generate_random_const_tensors(self, num_tensors: int) -> List[torch.Tensor]:
         """
