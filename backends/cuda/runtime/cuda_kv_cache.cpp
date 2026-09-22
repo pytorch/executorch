@@ -180,8 +180,13 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     return bind(handle);
   }
 
-  Error validate() const override {
-    std::lock_guard<std::mutex> guard(mutex_);
+  // Whole-model check, so it cannot run until every program has been
+  // loaded and registered. The first step is the earliest moment that is
+  // guaranteed, which is why the cache runs it itself instead of exposing it
+  // to a caller who would have to know when "everything is loaded" is true.
+  // Caller holds mutex_: this runs from prepare_step, and mutex_ is not
+  // recursive.
+  Error validate_locked() const {
     if (error_ != Error::Ok) {
       return error_;
     }
@@ -206,6 +211,14 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     ET_CHECK_OR_RETURN_ERROR(
         write_length > 0, InvalidArgument, "write length must be positive");
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
+    if (!validated_) {
+      const Error valid = validate_locked();
+      if (valid != Error::Ok) {
+        error_ = valid;
+        return valid;
+      }
+      validated_ = true;
+    }
     // plan() is the neutral admission check: it rejects a step that runs past
     // capacity, and one wider than a ring layer can serve. It runs on the host
     // between executes, so it never lands inside a CUDA graph capture.
@@ -585,6 +598,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   int device_{0};
   bool device_known_{false};
   bool handles_associated_{false};
+  bool validated_{false};
   Error error_{Error::Ok};
   OffGraphKVMetrics metrics_;
   std::unordered_map<int64_t, Allocation> allocations_;

@@ -409,10 +409,17 @@ endif()
 
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
 
-if(EXECUTORCH_BUILD_SHARED)
+if(_executorch_cuda_ships_libraries)
   # Resolve the runtime from the shared library rather than from the static
-  # core, so the delegate registers into the one registry the process has. True
-  # of a static delegate in a shared build too, which is what ROCm builds.
+  # core, so the delegate registers into the one registry the process has.
+  # Through the helper, not as an ordinary dependency: CMake orders an archive
+  # ahead of what it depends on, so the static core would satisfy the runtime
+  # symbols first and this library would carry its own registry.
+  executorch_target_link_shared_runtime(aoti_cuda_backend)
+elseif(EXECUTORCH_BUILD_SHARED)
+  # Static delegate in a shared build, which is what ROCm produces. It carries
+  # no link step of its own, so the helper cannot apply and its consumer
+  # resolves the runtime instead.
   target_link_libraries(aoti_cuda_backend PUBLIC executorch_shared)
 endif()
 

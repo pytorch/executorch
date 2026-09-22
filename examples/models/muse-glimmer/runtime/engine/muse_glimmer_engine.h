@@ -29,7 +29,6 @@
 #include <pytorch/tokenizers/tokenizer.h>
 
 #ifdef EXECUTORCH_BUILD_CUDA
-#include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
@@ -146,13 +145,6 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
     return artifact_mode_;
   }
 
-#ifdef EXECUTORCH_BUILD_CUDA
-  // Defined out of line: reading them needs the CUDA cache face, which this
-  // header deliberately does not name.
-  std::optional<::executorch::backends::cuda::OffGraphKVMetrics>
-  offgraph_kv_metrics() const;
-#endif
-
   MuseGlimmerEngine(const MuseGlimmerEngine&) = delete;
   MuseGlimmerEngine& operator=(const MuseGlimmerEngine&) = delete;
 
@@ -227,7 +219,6 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   // needs a backend face, but that lookup lives in the .cpp so the runner's
   // header stays free of CUDA cache types; SequenceControl is what the runner
   // itself speaks.
-  std::shared_ptr<::executorch::extension::llm::cache::Cache> offgraph_cache_;
   std::unique_ptr<::executorch::extension::llm::cache::InstallGuard>
       offgraph_guard_;
   ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ =
