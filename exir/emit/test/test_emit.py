@@ -427,9 +427,11 @@ class TestEmit(unittest.TestCase):
             .to_executorch()
             .executorch_program
         )
-        # The value for beta should appear before alpha
-        self.assertEqual(program.execution_plan[0].values[12].val, Int(3))
-        self.assertEqual(program.execution_plan[0].values[13].val, Int(2))
+        plan = program.execution_plan[0]
+        call = plan.chains[0].instructions[-1].instr_args
+        self.assertEqual(plan.operators[call.op_index].name, "aten::addbmm")
+        self.assertEqual(plan.values[call.args[3]].val, Int(3))
+        self.assertEqual(plan.values[call.args[4]].val, Int(2))
 
     def test_kwargs2(self) -> None:
         """Tests that the kwargs are placed in the order specified by

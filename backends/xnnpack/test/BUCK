@@ -94,7 +94,9 @@ fbcode_target(_kind = runtime.python_test,
     ]) + [
         "test_xnnpack_utils.py",
     ],
+    supports_static_listing = False,
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/backends/test/harness:tester",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",

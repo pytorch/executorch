@@ -228,8 +228,10 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   // header stays free of CUDA cache types; SequenceControl is what the runner
   // itself speaks.
   std::shared_ptr<::executorch::extension::llm::cache::Cache> offgraph_cache_;
-  std::unique_ptr<::executorch::extension::llm::cache::InstallGuard> offgraph_guard_;
-  ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ = nullptr;
+  std::unique_ptr<::executorch::extension::llm::cache::InstallGuard>
+      offgraph_guard_;
+  ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ =
+      nullptr;
 #endif
   std::atomic<int> live_sessions_{0};
 };
