@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdio>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
@@ -32,6 +33,8 @@ struct ZipFileDeleter {
 
 using ZipHandle = std::unique_ptr<zip_t, ZipDeleter>;
 using ZipFileHandle = std::unique_ptr<zip_file_t, ZipFileDeleter>;
+
+constexpr zip_int64_t kMaxMemberCount = 1 << 20;
 
 [[noreturn]] void throw_zip(zip_t* archive, const std::string& operation) {
   throw std::runtime_error("zip: " + operation + ": " + zip_strerror(archive));
@@ -90,12 +93,16 @@ struct ZipReader::Impl {
   explicit Impl(ZipHandle handle) : archive(std::move(handle)) {}
 
   ZipHandle archive;
+  mutable std::mutex mutex;
 };
 
 ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
   const zip_int64_t count = zip_get_num_entries(impl_->archive.get(), 0);
   if (count < 0) {
     throw_zip(impl_->archive.get(), "cannot enumerate members");
+  }
+  if (count > kMaxMemberCount) {
+    throw std::runtime_error("zip: member count exceeds package limit");
   }
 
   names_.reserve(static_cast<size_t>(count));
@@ -186,6 +193,7 @@ void ZipReader::read_entry_into(
     return;
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry.index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {
@@ -218,6 +226,7 @@ void ZipReader::verify(std::string_view name) const {
     throw std::runtime_error("zip: no member named " + std::string(name));
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry->index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {
