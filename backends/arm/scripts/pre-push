@@ -57,15 +57,13 @@ is_docgen_trigger_file() {
 }
 
 run_docgen_check() {
+    local FAILED=0
+
     echo -e "${INFO} Running Arm docgen"
-    python backends/arm/scripts/docgen/docgen.py
-    if [[ $? -ne 0 ]]; then
+    if ! python backends/arm/scripts/docgen/docgen.py; then
         echo -e "${ERROR} Failed to run Arm docgen"
         FAILED=1
-        return
-    fi
-
-    if ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}"; then
+    elif ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}"; then
         echo -e "${ERROR} Arm docgen updated generated documentation." >&2
         echo -e "${INFO} Review and commit the regenerated docs before pushing."
         git diff HEAD -- "${DOCGEN_OUTPUTS[@]}"
@@ -73,6 +71,7 @@ run_docgen_check() {
     else
         echo -e "${SUCCESS} Arm docgen OK"
     fi
+    return "$FAILED"
 }
 
 run_op_support_checks() {
@@ -80,6 +79,7 @@ run_op_support_checks() {
     local backend_name="$2"
     local output="$3"
     local coverage_output
+    local FAILED=0
 
     echo -e "${INFO} Generating ${backend_name} operator support documentation"
 
@@ -104,6 +104,7 @@ run_op_support_checks() {
     else
         echo -e "${SUCCESS} ${backend_name} operator support coverage OK"
     fi
+    return "$FAILED"
 }
 
 wait_public_api_validator() {
@@ -126,7 +127,7 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
 "Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax|Format|Don't|"\
-"Consolidate|Review|Run"
+"Consolidate|Review|Run|Parallelize"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -160,10 +161,10 @@ if [ -z "$COMMITS" ]; then
     exit 0
 fi
 
-manifest_output=$(mktemp) || exit 1
-trap 'rm -f "${manifest_output}"' EXIT
+check_output_dir=$(mktemp -d) || exit 1
+trap 'rm -rf "${check_output_dir}"' EXIT
 backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh \
-    > "${manifest_output}" 2>&1 &
+    > "${check_output_dir}/manifest" 2>&1 &
 manifest_pid=$!
 
 for COMMIT in ${COMMITS}; do
@@ -354,17 +355,36 @@ for COMMIT in ${COMMITS}; do
     echo "" # Newline to visually separate commit processing
 done
 
+docgen_pid=""
 if [[ $RUN_DOCGEN -eq 1 ]]; then
-    run_docgen_check
+    run_docgen_check > "${check_output_dir}/docgen" 2>&1 &
+    docgen_pid=$!
 else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
 
-run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT"
-run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT"
-run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT"
+run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/u55" 2>&1 &
+u55_pid=$!
+run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/u85" 2>&1 &
+u85_pid=$!
+run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/vgf" 2>&1 &
+vgf_pid=$!
+
+if [[ -n "$docgen_pid" ]]; then
+    wait "$docgen_pid" || FAILED=1
+    cat "${check_output_dir}/docgen"
+fi
+wait "$u55_pid" || FAILED=1
+cat "${check_output_dir}/u55"
+wait "$u85_pid" || FAILED=1
+cat "${check_output_dir}/u85"
+wait "$vgf_pid" || FAILED=1
+cat "${check_output_dir}/vgf"
 wait_public_api_validator
-cat "${manifest_output}"
+cat "${check_output_dir}/manifest"
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\
