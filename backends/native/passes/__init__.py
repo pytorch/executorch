@@ -29,6 +29,7 @@ default pass list.
 
 from typing import List, Union
 
+from executorch.backends.native.passes.fuse_rope import FuseRoPEPass
 from executorch.backends.native.passes.reinplace import (
     backend_inplace_aten_variants,
     BACKEND_INPLACE_OPS,
@@ -54,6 +55,7 @@ __all__ = [
     "CollapseViewCopyPass",
     "FuseGQAWithSDPAPass",
     "FuseRMSNormPass",
+    "FuseRoPEPass",
     "get_default_passes",
     "NativeReinplacePass",
     "NormalizeSDPAInputRankPass",
@@ -69,6 +71,7 @@ def get_default_passes() -> List[Union[ExportPass, ExportedProgramPassBase]]:
     their in-place edge forms.
     """
     return [
+        FuseRoPEPass(),
         FuseGQAWithSDPAPass(),
         NormalizeSDPAInputRankPass(),
         FuseRMSNormPass(fold_dtype_casts=True, allow_lossy_weight_casts=True),

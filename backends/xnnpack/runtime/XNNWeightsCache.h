@@ -91,6 +91,26 @@ class XNNWeightsCache {
    */
   Result<std::vector<std::string>> finalize_for_runtime();
 
+  /**
+   * Transfers ownership of the unpacked buffers loaded since `first_index`
+   * out of this cache. finalize_for_runtime() will not free them.
+   *
+   * For values XNNPACK does not pack (PReLU slopes, for example) the subgraph
+   * keeps a pointer into the unpacked memory for the life of the runtime, so
+   * something has to keep those buffers alive past finalize_for_runtime().
+   * Callers pair this with get_num_unpacked_data() taken before the value was
+   * defined, which is how the non-weights-cache path in XNNCompiler decides
+   * what to retain.
+   *
+   * @param[in] first_index Index into the unpacked buffer list, from
+   *     get_num_unpacked_data() before the value was defined.
+   * @param[out] out Receives the buffers. The caller owns them and must keep
+   *     them alive for at least as long as the runtime.
+   */
+  void take_unpacked_data_from(
+      size_t first_index,
+      std::vector<FreeableBuffer>& out);
+
   // Taken from XNN_ALLOCATION_ALIGNMENT in xnnpack/common.h
   static const size_t kPackedAllocationAlignment = 64;
 

@@ -96,10 +96,10 @@ class TestMilestoneMobileBertQAT(unittest.TestCase):
             example_inputs[1].size(2),
             example_inputs[1].size(3),
         )
-        vector_input_ids = torch.randint(0, 256, size_input_ids).to(device)
+        vector_input_ids = torch.randint(0, 256, size_input_ids, device=device)
         vector_attention_mask = torch.zeros(
-            size_attention_mask, dtype=torch.float32
-        ).to(device)
+            size_attention_mask, dtype=torch.float32, device=device
+        )
         export_inputs = (
             vector_input_ids,
             vector_attention_mask,
