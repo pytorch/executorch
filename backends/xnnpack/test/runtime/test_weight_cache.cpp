@@ -11,13 +11,19 @@
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <cstdio>
 
 using namespace ::testing;
 
+using executorch::backends::xnnpack::get_packed_cache_report;
+using executorch::backends::xnnpack::packed_cache_path_option_key;
+using executorch::backends::xnnpack::PackedCacheHeapReason;
+using executorch::backends::xnnpack::save_weight_cache_on_disk_option_key;
 using executorch::backends::xnnpack::weight_cache_option_key;
 using executorch::backends::xnnpack::workspace_sharing_mode_option_key;
 using executorch::backends::xnnpack::WorkspaceSharingMode;
@@ -148,3 +154,42 @@ TEST(RuntimeSpec, OverridesGlobalWeightCache) {
   get_option(xnnpack_backend_key, read_option);
   ASSERT_EQ(std::get<bool>(read_option.value), true);
 }
+
+TEST(PackedCacheStats, GlobalAccessorReachesTheBackendSingleton) {
+  executorch::runtime::runtime_init();
+
+  // The wiring under test is get_packed_cache_report() -> the registered
+  // backend instance -> XnnpackBackendOptions -> XNNWeightsCacheManager.
+  // Hosts call only this entry point, and nothing else in the suite exercises
+  // it. Absolute values depend on what else has run in the process, so this
+  // asserts reachability and invariants rather than specific counts.
+  const auto report = get_packed_cache_report();
+  const auto& stats = report.aggregate;
+
+  EXPECT_GE(stats.heap_bytes, 0);
+  EXPECT_GE(stats.mapped_bytes, 0);
+  EXPECT_GE(stats.file_bytes, 0);
+  EXPECT_LT(
+      static_cast<int32_t>(stats.heap_reason),
+      static_cast<int32_t>(PackedCacheHeapReason::Count));
+  EXPECT_NE(stats.heap_reason, PackedCacheHeapReason::NotOptedIn)
+      << "NotOptedIn is excluded from heap_bytes and must never be reported";
+
+  // The breakdown must be able to attribute the aggregate: several models
+  // share a process, and a single folded number cannot say which one fell
+  // back.
+  for (const auto& entry : report.per_cache) {
+    EXPECT_GE(entry.stats.heap_bytes, 0);
+    EXPECT_GE(entry.stats.mapped_bytes, 0);
+  }
+}
+
+// NOTE: the warm path — load_packed_cache() succeeding and its mapped bytes
+// being counted — is deliberately NOT covered here. Producing a loadable
+// cache file needs a model with packed weights and a populated index; the
+// models wired into this target (ModuleAddLarge / ModuleSubLarge) are
+// elementwise and pack nothing, so a cold run writes a zero-entry trailer
+// that load_packed_cache correctly rejects. Covering it needs ModuleLinear
+// plus its external .ptd and a NamedDataMap, as test_xnn_data_separation
+// does. Until then the warm path is verified on device by the
+// PackedWeights log line reporting non-zero mapped/cache_file.

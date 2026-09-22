@@ -68,7 +68,8 @@ if sys.platform == "win32":
         os.add_dll_directory(pybindings_dir)
     except Exception as e:
         logger.error(
-            "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
+            "Failed to add the pybinding extension DLL to the search path. "
+            "The extension may not work: %s",
             e,
         )
 
@@ -88,6 +89,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _load_for_executorch,  # noqa: F401
     _load_for_executorch_from_buffer,  # noqa: F401
     _load_for_executorch_from_bundled_program,  # noqa: F401
+    _load_for_executorch_from_data_loader,  # noqa: F401
     _load_program,  # noqa: F401
     _load_program_from_buffer,  # noqa: F401
     _reset_profile_results,  # noqa: F401
@@ -98,6 +100,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401
     MethodMeta,  # noqa: F401
+    TensorInfo,  # noqa: F401
     Verification,  # noqa: F401
 )
 

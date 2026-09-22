@@ -3,246 +3,158 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-include_guard(GLOBAL)
+include_guard(DIRECTORY)
 
-# Helper routines shared by the standalone runner and any superbuild that reuses
-# the runner targets.
-
-get_filename_component(
-  _arm_runner_executorch_root "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE
+# Stable CMake API for in-tree and external Arm runner consumers. Incompatible
+# changes require a migration path for existing consumers.
+# cmake-format: off
+set(ARM_RUNNER_UTILS_API_COMMANDS
+    arm_runner_add_minimal_executable
+    arm_runner_add_standalone_executorch
+    arm_runner_configure_ethos_u_platform
+    arm_runner_configure_linker_script
+    arm_runner_configure_model
+    arm_runner_configure_runtime_output
+    arm_runner_create_default_selected_ops_libs
+    arm_runner_create_selected_ops_lib
+    arm_runner_define_cache_options
+    arm_runner_link_minimal_specs
+    arm_runner_link_registration_libraries
+    arm_runner_require_baremetal_targets
+    arm_runner_require_python
+    arm_runner_validate_model_source
 )
-if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT "${_arm_runner_executorch_root}")
-endif()
 
-# Make sure codegen function used below is loaded.
-if(NOT COMMAND gen_selected_ops)
-  include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
-endif()
+# KIND distinguishes functions from macros; SIGNATURE records the stable call
+# interface.
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_add_minimal_executable function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_add_minimal_executable
+    "arm_runner_add_minimal_executable(*, TARGET, SOURCE, OPS_PREFIX, COMPILE_DEFINITIONS=())"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_add_standalone_executorch macro)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_add_standalone_executorch
+    "arm_runner_add_standalone_executorch()"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_configure_ethos_u_platform function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_configure_ethos_u_platform
+    "arm_runner_configure_ethos_u_platform(*, SDK_PATH, SYSTEM_CONFIG, MEMORY_MODE)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_configure_linker_script function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_configure_linker_script
+    "arm_runner_configure_linker_script(*, TARGET, SYSTEM_CONFIG, OUTPUT_NAME=None)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_configure_model function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_configure_model
+    "arm_runner_configure_model(*, TARGET, PTE_FILE=None, MODEL_PTE_ADDR=None, MODEL_PTE_SIZE=None, PUBLIC=False)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_configure_runtime_output function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_configure_runtime_output
+    "arm_runner_configure_runtime_output(TARGET_NAME, FALLBACK_DIR)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_create_default_selected_ops_libs
+    function
+)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_create_default_selected_ops_libs
+    "arm_runner_create_default_selected_ops_libs(*, PREFIX, SUFFIX=None, OP_LIST=None, OPS_FROM_MODEL=None, DTYPE_SELECTIVE_BUILD=None, OUT_LIBS=None, DEPS=())"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_create_selected_ops_lib function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_create_selected_ops_lib
+    "arm_runner_create_selected_ops_lib(*, LIB_NAME, FUNCTIONS_YAML=None, CUSTOM_OPS_YAML=None, OP_LIST=None, OPS_FROM_MODEL=None, DTYPE_SELECTIVE_BUILD=None, KERNEL_LIBS=(), DEPS=(), INCLUDE_ALL_OPS=False, PRIM_OPS=False)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_define_cache_options function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_define_cache_options
+    "arm_runner_define_cache_options(*, METHOD_ALLOCATOR_SIZE=None)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_link_minimal_specs function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_link_minimal_specs
+    "arm_runner_link_minimal_specs(TARGET_NAME)"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_link_registration_libraries function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_link_registration_libraries
+    "arm_runner_link_registration_libraries(*, TARGET, SCOPE=None, BASE_LIBS=(), REGISTRATION_LIBS=(), NORMAL_LIBS=(), SUPPRESS_LIBS=())"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_require_baremetal_targets function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_require_baremetal_targets
+    "arm_runner_require_baremetal_targets()"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_require_python macro)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_require_python
+    "arm_runner_require_python()"
+)
+set(ARM_RUNNER_UTILS_API_KIND_arm_runner_validate_model_source function)
+set(ARM_RUNNER_UTILS_API_SIGNATURE_arm_runner_validate_model_source
+    "arm_runner_validate_model_source(*, ALLOW_SEMIHOSTING=False)"
+)
+# cmake-format: on
 
-# Verify that targets required for building the executor runner are present.
-function(arm_runner_require_baremetal_targets)
-  if(NOT TARGET extension_runner_util)
-    message(
-      FATAL_ERROR
-        "extension_runner_util target missing. Configure ExecuTorch (or the standalone runner) with EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON."
-    )
-  endif()
-
-endfunction()
-
-function(verify_targets_exist)
-  cmake_parse_arguments(ARG "" "CONTEXT" "TARGETS" ${ARGN})
-
-  set(_targets ${ARG_TARGETS} ${ARG_UNPARSED_ARGUMENTS})
-  if(NOT ARG_CONTEXT)
-    set(ARG_CONTEXT "verify_targets_exist")
-  endif()
-
-  foreach(_target IN LISTS _targets)
-    if(NOT TARGET ${_target})
-      message(FATAL_ERROR "${ARG_CONTEXT} requires missing target ${_target}.")
-    endif()
-  endforeach()
-endfunction()
-
-#[[
-Create a selected operator registration library for one operator family.
-
-Arguments:
-  LIB_NAME: Name of the generated registration library target.
-	example: arm_cortex_m_ops_lib
-
-  FUNCTIONS_YAML: Portable ATen operator YAML used to generate bindings.
-	example: ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-
-  CUSTOM_OPS_YAML: Custom/backend operator YAML used to generate bindings.
-	example: ${EXECUTORCH_ROOT}/backends/cortex_m/ops/operators.yaml
-
-  OP_LIST: Operators to select.
-	example: ${EXECUTORCH_SELECT_OPS_LIST}
-
-  OPS_FROM_MODEL: ExecuTorch model file used to select operators.
-	example: ${ET_PTE_FILE_PATH}
-
-  DTYPE_SELECTIVE_BUILD: Enables dtype filtering for operator libraries that support it.
-	example: ${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}
-
-  KERNEL_LIBS: Kernel implementation libraries used by the generated target.
-	example: cortex_m_kernels
-
-  DEPS: Additional libraries required by the generated registration target.
-	example: executorch
-
-  INCLUDE_ALL_OPS: Generate a non-selective registration library for the
-	selected operator family.
-
-  PRIM_OPS: Build a selective prim ops library instead of a codegen operators lib.
-
-The lib will always be created, even when no operators are selected.
-OP_LIST and OPS_FROM_MODEL can be used additively.
-If neither OP_LIST nor OPS_FROM_MODEL is set, the generated registration
-library is empty. INCLUDE_ALL_OPS explicitly builds a full registration library.
-]]
-function(arm_runner_create_selected_ops_lib)
-  # Parse arguments
-  set(options INCLUDE_ALL_OPS PRIM_OPS)
-  set(one_value_args LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML OP_LIST
-                     OPS_FROM_MODEL DTYPE_SELECTIVE_BUILD
-  )
-  set(multi_value_args KERNEL_LIBS DEPS)
-  cmake_parse_arguments(
-    ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN}
-  )
-
-  # Validate and normalize arguments
-  if(ARG_LIB_NAME)
-    set(_arm_runner_create_selected_ops_lib_context
-        "arm_runner_create_selected_ops_lib(${ARG_LIB_NAME})"
-    )
-  else()
-    set(_arm_runner_create_selected_ops_lib_context
-        "arm_runner_create_selected_ops_lib"
-    )
-  endif()
-
-  if(ARG_UNPARSED_ARGUMENTS)
-    message(
-      FATAL_ERROR
-        "${_arm_runner_create_selected_ops_lib_context} got unexpected arguments: ${ARG_UNPARSED_ARGUMENTS}."
-    )
-  endif()
-
-  if(NOT ARG_LIB_NAME)
-    message(
-      FATAL_ERROR
-        "${_arm_runner_create_selected_ops_lib_context} requires LIB_NAME."
-    )
-  endif()
-
-  if(NOT ARG_PRIM_OPS
-     AND NOT ARG_FUNCTIONS_YAML
-     AND NOT ARG_CUSTOM_OPS_YAML
+# Validate the API metadata before loading the implementation.
+foreach(_arm_runner_api_command IN LISTS ARM_RUNNER_UTILS_API_COMMANDS)
+  if(NOT DEFINED ARM_RUNNER_UTILS_API_KIND_${_arm_runner_api_command}
+     OR NOT DEFINED ARM_RUNNER_UTILS_API_SIGNATURE_${_arm_runner_api_command}
   )
     message(
       FATAL_ERROR
-        "${_arm_runner_create_selected_ops_lib_context} requires FUNCTIONS_YAML or CUSTOM_OPS_YAML unless PRIM_OPS is set."
+        "Arm runner CMake API metadata is missing for ${_arm_runner_api_command}."
     )
   endif()
-
-  if(ARG_DTYPE_SELECTIVE_BUILD)
-    executorch_load_build_variables()
-  endif()
-
-  verify_targets_exist(
-    CONTEXT "${_arm_runner_create_selected_ops_lib_context}" TARGETS
-    ${ARG_KERNEL_LIBS} ${ARG_DEPS}
+  if(NOT ARM_RUNNER_UTILS_API_KIND_${_arm_runner_api_command} MATCHES
+     "^(function|macro)$"
   )
-
-  # Generate selected operator list file.
-  set(_arm_runner_selected_ops_args
-      LIB_NAME
-      "${ARG_LIB_NAME}"
-      ROOT_OPS
-      "${ARG_OP_LIST}"
-      OPS_FROM_MODEL
-      "${ARG_OPS_FROM_MODEL}"
-      DTYPE_SELECTIVE_BUILD
-      "${ARG_DTYPE_SELECTIVE_BUILD}"
-  )
-  set(_arm_runner_include_all_ops OFF)
-  if(ARG_INCLUDE_ALL_OPS)
-    set(_arm_runner_include_all_ops ON)
-    list(APPEND _arm_runner_selected_ops_args INCLUDE_ALL_OPS "ON")
-  endif()
-  gen_selected_ops(${_arm_runner_selected_ops_args})
-
-  if(ARG_PRIM_OPS)
-    set(_arm_runner_prim_ops_args
-        LIB_NAME "${ARG_LIB_NAME}" SELECTED_OPS_YAML
-        "${gen_selected_ops_output_yaml}" DEPS ${ARG_DEPS}
-    )
-    if(_arm_runner_include_all_ops)
-      list(APPEND _arm_runner_prim_ops_args INCLUDE_ALL_OPS)
-    endif()
-    gen_selected_prim_ops_lib(${_arm_runner_prim_ops_args})
-    return()
-  endif()
-
-  # Codegen for operator library.
-  set(_arm_ops_binding_args LIB_NAME "${ARG_LIB_NAME}")
-  if(ARG_FUNCTIONS_YAML)
-    list(APPEND _arm_ops_binding_args FUNCTIONS_YAML "${ARG_FUNCTIONS_YAML}")
-  endif()
-  if(ARG_CUSTOM_OPS_YAML)
-    list(APPEND _arm_ops_binding_args CUSTOM_OPS_YAML "${ARG_CUSTOM_OPS_YAML}")
-  endif()
-  if(ARG_DTYPE_SELECTIVE_BUILD)
-    list(APPEND _arm_ops_binding_args DTYPE_SELECTIVE_BUILD
-         "${ARG_DTYPE_SELECTIVE_BUILD}"
+    message(
+      FATAL_ERROR
+        "Arm runner CMake API kind must be function or macro for ${_arm_runner_api_command}."
     )
   endif()
-  generate_bindings_for_kernels(${_arm_ops_binding_args})
-
-  # Finally, build operator library.
-  gen_operators_lib(
-    LIB_NAME
-    "${ARG_LIB_NAME}"
-    KERNEL_LIBS
-    ${ARG_KERNEL_LIBS}
-    DEPS
-    ${ARG_DEPS}
-    DTYPE_SELECTIVE_BUILD
-    "${ARG_DTYPE_SELECTIVE_BUILD}"
+  if(NOT ARM_RUNNER_UTILS_API_SIGNATURE_${_arm_runner_api_command} MATCHES
+     "^${_arm_runner_api_command}\\("
   )
-endfunction()
-
-# Ensure a runner target emits its binary to a predictable location. Uses
-# FALLBACK_DIR when TARGET_NAME has no runtime output directory set, and also
-# fills per-configuration runtime output directories for multi-config generators
-# when they are unset.
-function(arm_runner_configure_runtime_output TARGET_NAME FALLBACK_DIR)
-  if(NOT TARGET ${TARGET_NAME})
-    return()
-  endif()
-
-  get_target_property(_base_runtime_dir ${TARGET_NAME} RUNTIME_OUTPUT_DIRECTORY)
-  if(NOT _base_runtime_dir
-     OR _base_runtime_dir STREQUAL "_base_runtime_dir-NOTFOUND"
-     OR "${_base_runtime_dir}" STREQUAL ""
-  )
-    set_target_properties(
-      ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${FALLBACK_DIR}"
+    message(
+      FATAL_ERROR
+        "Arm runner CMake API signature does not match ${_arm_runner_api_command}."
     )
-    set(_base_runtime_dir "${FALLBACK_DIR}")
   endif()
+endforeach()
 
-  if(CMAKE_CONFIGURATION_TYPES)
-    foreach(_cfg ${CMAKE_CONFIGURATION_TYPES})
-      string(TOUPPER ${_cfg} _cfg_upper)
-      set(_cfg_prop "RUNTIME_OUTPUT_DIRECTORY_${_cfg_upper}")
-      get_target_property(_cfg_dir ${TARGET_NAME} ${_cfg_prop})
-      if(NOT _cfg_dir
-         OR _cfg_dir STREQUAL "_cfg_dir-NOTFOUND"
-         OR "${_cfg_dir}" STREQUAL ""
+if(ARM_RUNNER_UTILS_API_METADATA_ONLY)
+  if(ARM_RUNNER_UTILS_API_EMIT_MANIFEST)
+    foreach(_arm_runner_api_command IN LISTS ARM_RUNNER_UTILS_API_COMMANDS)
+      set(_kind "${ARM_RUNNER_UTILS_API_KIND_${_arm_runner_api_command}}")
+      set(_signature
+          "${ARM_RUNNER_UTILS_API_SIGNATURE_${_arm_runner_api_command}}"
       )
-        set_target_properties(
-          ${TARGET_NAME} PROPERTIES ${_cfg_prop} "${_base_runtime_dir}/${_cfg}"
-        )
-      endif()
+      message(
+        "ARM_RUNNER_UTILS_API|${_arm_runner_api_command}|${_kind}|${_signature}"
+      )
     endforeach()
   endif()
-endfunction()
+  return()
+endif()
 
-# Link the provided target with minimal specs. This minimizes code size, but
-# comes with limited support. Notably, printing with %zu is not supported.
-function(arm_runner_link_minimal_specs TARGET_NAME)
-  verify_targets_exist(
-    CONTEXT arm_runner_link_minimal_specs TARGETS ${TARGET_NAME}
-  )
-  if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_link_options(
-      ${TARGET_NAME} PRIVATE --specs=nano.specs -u _printf_float
+get_cmake_property(_arm_runner_commands_before_include COMMANDS)
+include(${CMAKE_CURRENT_LIST_DIR}/ArmRunnerUtilsInternal.cmake)
+
+foreach(_arm_runner_api_command IN LISTS ARM_RUNNER_UTILS_API_COMMANDS)
+  if(NOT COMMAND ${_arm_runner_api_command})
+    message(
+      FATAL_ERROR
+        "Arm runner CMake API requires missing command ${_arm_runner_api_command}."
     )
   endif()
-endfunction()
+endforeach()
+
+get_cmake_property(_arm_runner_commands COMMANDS)
+list(REMOVE_ITEM _arm_runner_commands ${_arm_runner_commands_before_include})
+list(FILTER _arm_runner_commands INCLUDE REGEX "^arm_runner_")
+foreach(_arm_runner_command IN LISTS _arm_runner_commands)
+  if(NOT _arm_runner_command IN_LIST ARM_RUNNER_UTILS_API_COMMANDS)
+    message(
+      FATAL_ERROR
+        "Arm runner CMake command ${_arm_runner_command} is not declared in ARM_RUNNER_UTILS_API_COMMANDS. Add it to the API or use the _arm_runner_ prefix for a private helper."
+    )
+  endif()
+endforeach()
+
+unset(_arm_runner_api_command)
+unset(_arm_runner_command)
+unset(_arm_runner_commands)
+unset(_arm_runner_commands_before_include)

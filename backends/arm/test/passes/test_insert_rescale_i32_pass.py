@@ -1,16 +1,19 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import Callable, Tuple
 
+import pytest
 import torch
 from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     InsertRescaleInt32Pass,
 )
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class MultipleOpsModel(torch.nn.Module):
@@ -88,6 +91,55 @@ def test_insert_rescale_int32_tosa_INT_sum():
 
 def test_insert_rescale_int32_tosa_INT_multiple_ops():
     _test_model_with_f32_data(MultipleOpsModel())
+
+
+@pytest.mark.parametrize(
+    "binary_target",
+    (exir_ops.edge.aten.add.Tensor, exir_ops.edge.aten.mul.Tensor),
+)
+def test_insert_rescale_int32_preserves_partial_qdq(
+    binary_target: Callable[..., object],
+) -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    y = graph.placeholder("y")
+    x_q = graph.call_function(
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        (x, 0.5, 0, -128, 127, torch.int8),
+    )
+    x_dq = graph.call_function(
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        (x_q, 0.5, 0, -128, 127, torch.int8),
+    )
+    binary = graph.call_function(binary_target, (x_dq, y))
+    binary.meta["custom"] = {
+        ArmAnnotationInfo.CUSTOM_META_KEY: ArmAnnotationInfo(quantized=True)
+    }
+    output_q = graph.call_function(
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        (binary, 0.5, 0, -128, 127, torch.int8),
+    )
+    output_dq = graph.call_function(
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        (output_q, 0.5, 0, -128, 127, torch.int8),
+    )
+    graph.output(output_dq)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    fold_result = FoldAndAnnotateQParamsPass(preserve_partial_binary_tensor_qdq=True)(
+        graph_module
+    )
+    assert fold_result is not None
+    rescale_result = InsertRescaleInt32Pass()(fold_result.graph_module)
+    assert rescale_result is not None
+
+    assert binary.args == (x_dq, y)
+    assert output_q in binary.users
+    assert not rescale_result.graph_module.graph.find_nodes(
+        op="call_function",
+        target=exir_ops.backend.tosa.RESCALE.default,
+        sort=False,
+    )
 
 
 def test_insert_rescale_int32_tosa_FP_dont_insert_rescales():

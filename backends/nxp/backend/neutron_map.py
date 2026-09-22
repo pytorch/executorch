@@ -91,15 +91,15 @@ def get_tensors_name(tensors: str) -> list[str]:
 
 
 class NeutronMap:
-    """Mapping between Neutron, TFLite, and Edge operators based on the Neutron converter log.
+    """Mapping between Neutron, TFLite, and Edge operators based on the Neutron compiler log.
 
-    Parses the Neutron converter log to extract information about TFLite nodes and Neutron subgraphs.
+    Parses the Neutron compiler log to extract information about TFLite nodes and Neutron subgraphs.
     Maps TFLite operators to corresponding Neutron operators.
     Maps Edge operators to Neutron operators via the Edge-to-TFLite mapping.
 
     Attributes:
-        tflite_nodes (list[Node]): TFLite node information extracted from the converter log.
-        neutron_subgraphs (list[SubgraphInfo]): Neutron subgraph information extracted from the converter log.
+        tflite_nodes (list[Node]): TFLite node information extracted from the compiler log.
+        neutron_subgraphs (list[SubgraphInfo]): Neutron subgraph information extracted from the compiler log.
         neutron_graphs (list[int]): Indices of final Neutron graphs derived from neutron_subgraphs.
         edge_to_tflite_map (dict[int, tuple[int, ...]]): Mapping from Edge operators to TFLite operators.
         edge_to_neutron_map (dict[int, tuple[int, ...]]): Mapping from Edge operators to Neutron operators.
@@ -118,12 +118,12 @@ class NeutronMap:
     tflite_to_neutron_map: dict[int, tuple[int, ...]]
 
     def __init__(
-        self, neutron_converter_log: str, edge_to_tflite_map: dict[int, tuple[int, ...]]
+        self, neutron_compiler_log: str, edge_to_tflite_map: dict[int, tuple[int, ...]]
     ) -> None:
-        """Initialize neutron map from neutron converter log.
+        """Initialize neutron map from neutron compiler log.
 
-        :param neutron_converter_log: neutron converter log obtained during model conversion. It should contain
-        original tflite graph and neutron graph dump. To add these dumps to converter log the dumpAfterImport and
+        :param neutron_compiler_log: neutron compiler log obtained during model compilation. It should contain
+        original tflite graph and neutron graph dump. To add these dumps to compiler log the dumpAfterImport and
         dumpAfterGenerate flags have to be set to "console".
         """
         super().__init__()
@@ -134,12 +134,12 @@ class NeutronMap:
         self.tflite_to_neutron_map = {}
         self.edge_to_neutron_map = {}
         self.neutron_kernels_num = 0
-        self._split_profiling_log(neutron_converter_log)
+        self._split_profiling_log(neutron_compiler_log)
 
     def _split_profiling_log(self, log: str) -> None:
         """Process profiling log to split it into original TFLite and converted Neutron nodes.
 
-        :param log: Neutron converter log obtained during model conversion, containing the original
+        :param log: Neutron compiler log obtained during model compilation, containing the original
             TFLite graph and Neutron graph dump.
         :return: None. Sets class attributes tflite_nodes and neutron_subgraphs with node information.
         """
@@ -175,7 +175,7 @@ class NeutronMap:
     def _get_neutron_subgraphs(self, graph_dump: str) -> list[SubgraphInfo]:
         """Parse Neutron graph dump and extract subgraph information.
 
-        :param graph_dump: String containing the Neutron graph dump from the converter log.
+        :param graph_dump: String containing the Neutron graph dump from the compiler log.
         :return: List of SubgraphInfo objects containing subgraph metadata and operator nodes.
         """
 

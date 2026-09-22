@@ -171,13 +171,15 @@ void handle_session_operation(
 
 int run_muse_glimmer_worker_loop(llm::MuseGlimmerEngine& engine) {
   llm::WorkerSessions sessions(engine);
+  llm::WorkerCancellationController cancellation_controller;
   llm::worker_emit(
       {{"ready", true},
        {"max_sessions",
         engine.serving_capacity()
             .max_physical_sessions_without_weight_duplication},
        {"max_named_sessions", sessions.max_named()},
-       {"supports_image", engine.has_vision()}});
+       {"supports_image", engine.has_vision()},
+       {"supports_cancel", cancellation_controller.supported()}});
 
   std::string line;
   while (std::getline(std::cin, line)) {
@@ -192,6 +194,11 @@ int run_muse_glimmer_worker_loop(llm::MuseGlimmerEngine& engine) {
         continue;
       }
 
+      const auto cancel_request_id = llm::worker_cancel_request_id(
+          request, cancellation_controller.supported());
+      if (cancel_request_id.has_value()) {
+        cancellation_controller.validate_request_id(*cancel_request_id);
+      }
       const std::string id = request.value("session_id", std::string{});
       llm::WorkerSessionState* state = nullptr;
       bool warm = false;
@@ -208,6 +215,15 @@ int run_muse_glimmer_worker_loop(llm::MuseGlimmerEngine& engine) {
           continue;
         }
         warm = FLAGS_warm_resume;
+      }
+
+      llm::WorkerCancellationState cancellation;
+      llm::WorkerCancellationController::ActiveRequest active_request;
+      llm::WorkerCancellationState* cancellation_ptr = nullptr;
+      if (cancel_request_id.has_value()) {
+        active_request = cancellation_controller.activate(
+            *cancel_request_id, *state, cancellation);
+        cancellation_ptr = &cancellation;
       }
 
       std::vector<uint64_t> prefix = {static_cast<uint64_t>(FLAGS_bos_id)};
@@ -251,7 +267,8 @@ int run_muse_glimmer_worker_loop(llm::MuseGlimmerEngine& engine) {
             engine.metadata(),
             request,
             prefix,
-            additional_terminal_stats);
+            additional_terminal_stats,
+            cancellation_ptr);
       } catch (...) {
         if (multimodal != nullptr) {
           multimodal->clear_staged_image();

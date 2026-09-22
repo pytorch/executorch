@@ -268,6 +268,17 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         return squeeze_out, conv_out
 
 
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset=0):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
+
+
 class Asinh(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2413,6 +2424,25 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim=1, reduce="sum"):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
+
+
 class ScatterSrc(torch.nn.Module):
     def __init__(self, dim=1):
         super().__init__()
@@ -2913,6 +2943,16 @@ class Threshold(torch.nn.Module):
         )
 
 
+class ConvRelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv(x))
+
+
 class TopKandIndex(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2976,16 +3016,18 @@ class Unflatten(torch.nn.Module):
 
 
 class Unfold(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding=0):
         super().__init__()
-        self.patch_height = 2
-        self.patch_width = 2
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
 
     def forward(self, x):
         unfold = torch.nn.functional.unfold(
             x,
-            kernel_size=(self.patch_height, self.patch_width),
-            stride=(self.patch_height, self.patch_width),
+            kernel_size=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
         )
         return unfold
 

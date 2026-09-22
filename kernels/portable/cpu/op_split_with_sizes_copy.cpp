@@ -43,6 +43,8 @@ void split_with_sizes_copy_out(
   for (const auto i : c10::irange(out.size())) {
     ET_KERNEL_CHECK(
         ctx, tensors_have_same_dim_order(in, out[i]), InvalidArgument, );
+    ET_KERNEL_CHECK(
+        ctx, tensor_is_default_dim_order(out[i]), InvalidArgument, );
   }
 
   // If out is empty, then nothing needs to be done after checking the args.

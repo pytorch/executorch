@@ -9,7 +9,10 @@
 #pragma once
 
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -17,28 +20,49 @@ namespace executorch {
 namespace backends {
 namespace cuda {
 
-// Shared CUDA stream wrapper with proper RAII cleanup.
-// This ensures the stream is destroyed when all handles using it are destroyed.
-struct CudaStreamDeleter {
-  void operator()(cudaStream_t* stream) const {
-    if (stream != nullptr && *stream != nullptr) {
-      (void)cudaStreamDestroy(*stream);
-    }
-    delete stream;
-  }
-};
+using AOTInductorModelContainerGetConstantDtypeFunc =
+    aoti::AOTIRuntimeError (*)(
+        aoti::AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        int32_t* dtype);
+struct CudaWeightStorage {
+  void* data{nullptr};
+  size_t nbytes{0};
+  aoti::slim::c10::DeviceType device_type{aoti::slim::c10::DeviceType::CUDA};
+  int device_index{0};
 
-// Creates a new shared CUDA stream.
-// Returns nullptr on failure.
-inline std::shared_ptr<cudaStream_t> create_cuda_stream() {
-  cudaStream_t stream;
-  cudaError_t err = cudaStreamCreate(&stream);
-  if (err != cudaSuccess) {
-    return nullptr;
+  CudaWeightStorage(
+      void* data_,
+      size_t nbytes_,
+      aoti::slim::c10::DeviceType device_type_,
+      int device_index_)
+      : data(data_),
+        nbytes(nbytes_),
+        device_type(device_type_),
+        device_index(device_index_) {}
+
+  ~CudaWeightStorage() {
+    if (data == nullptr) {
+      return;
+    }
+    if (device_type == aoti::slim::c10::DeviceType::CPU) {
+      std::free(data);
+      return;
+    }
+    int previous_device = 0;
+    const cudaError_t get_device_error = cudaGetDevice(&previous_device);
+    if (get_device_error == cudaSuccess && previous_device != device_index) {
+      (void)cudaSetDevice(device_index);
+    }
+    (void)cudaFree(data);
+    if (get_device_error == cudaSuccess && previous_device != device_index) {
+      (void)cudaSetDevice(previous_device);
+    }
   }
-  return std::shared_ptr<cudaStream_t>(
-      new cudaStream_t(stream), CudaStreamDeleter());
-}
+
+  CudaWeightStorage(const CudaWeightStorage&) = delete;
+  CudaWeightStorage& operator=(const CudaWeightStorage&) = delete;
+};
 
 // Phases of the CUDA graph lifecycle for a delegate handle.
 //
@@ -146,28 +170,29 @@ struct CudaGraphState {
 };
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
-// This consolidates CUDA stream management into a single location.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
-  // CUDA stream for this handle, support both shared mode and single mode.
-  // In shared mode, all cuda delegate handles share the same stream (e.g., for
-  // skip-copy optimization), they will all hold a reference to the same
-  // shared_ptr. The stream is automatically destroyed when the last handle is
-  // destroyed. In single mode, every cuda delegate handle has its own stream.
-  std::shared_ptr<cudaStream_t> cuda_stream;
+  // Extra AOTI metadata used to validate per-FQN weights before binding.
+  AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
-  // Get the raw CUDA stream pointer for use in CUDA API calls.
-  // Returns nullptr if no stream is set.
+  // The per-thread stream. Nothing owns it: the value is a fixed sentinel the
+  // driver resolves to a different stream on each host thread, so releasing the
+  // holder destroys nothing. Initialised to that sentinel rather than null,
+  // because null is the legacy default stream, which is a different stream and
+  // would silently drop the per-thread ordering this handle relies on.
+  cudaStream_t cuda_stream = cudaStreamPerThread;
+
+  // The stream this handle's work runs on.
   cudaStream_t get_cuda_stream() const {
-    return cuda_stream ? *cuda_stream : nullptr;
-  }
-
-  // Check if this handle has a valid CUDA stream.
-  bool has_cuda_stream() const {
-    return cuda_stream != nullptr && *cuda_stream != nullptr;
+    return cuda_stream;
   }
 
   // CUDA graph state (warmup, capture, replay, static buffers)
   CudaGraphState cuda_graph_state;
+
+  // Per-FQN weight artifacts keep the allocations and their
+  // SlimTensor handles alive for as long as AOTI may reference their views.
+  std::vector<std::shared_ptr<CudaWeightStorage>> fqn_weight_storages;
+  std::vector<std::unique_ptr<aoti::slim::SlimTensor>> fqn_weight_tensors;
 };
 
 } // namespace cuda

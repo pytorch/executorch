@@ -10,6 +10,7 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
 PORTABLE_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:program",
+    "//executorch/runtime/core:device_memory_buffer",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/aten_util:aten_bridge",
     "//executorch/devtools/bundled_program:runtime",
@@ -27,6 +28,7 @@ PORTABLE_MODULE_DEPS = [
 ATEN_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry_aten",
     "//executorch/runtime/executor:program_aten",
+    "//executorch/runtime/core:device_memory_buffer",
     "//executorch/runtime/core/exec_aten:lib_aten",
     "//executorch/devtools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/data_loader:buffer_data_loader",

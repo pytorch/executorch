@@ -25,7 +25,7 @@ class LayerNormVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         all_input_tensors = []
         input_node = node.args[0]
         input_id = self.define_tensor(input_node, enn_graph, vals_to_ids)
@@ -51,3 +51,5 @@ class LayerNormVisitor(NodeVisitor):
         enn_graph.define_op(
             node.name, "LAYERNORM", all_input_tensors, [output_id], params
         )
+
+        return True

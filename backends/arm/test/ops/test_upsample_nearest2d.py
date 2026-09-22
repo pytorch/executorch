@@ -17,6 +17,7 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -41,7 +42,6 @@ test_data_suite = {
     "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
     "rand_one_double_scale": lambda: (torch.rand(2, 4, 1, 1), None, 2.0, True),
     "rand_one_double_size": lambda: (torch.rand(2, 4, 1, 1), (2, 2), None, True),
-    "rand_one_same_scale": lambda: (torch.rand(2, 4, 1, 1), None, 1.0, True),
     "rand_one_same_size": lambda: (torch.rand(2, 4, 1, 1), (1, 1), None, True),
     # Can't compare outputs as the rounding when selecting the nearest pixel is
     # different between PyTorch and TOSA. Just check the legalization went well.
@@ -91,6 +91,11 @@ test_data_u55 = {
     ),
     "rand_quadruple_size": lambda: (torch.rand(1, 4, 8, 3), (32, 12), None, True),
     "rand_octuple_size": lambda: (torch.rand(1, 4, 8, 3), (64, 24), None, True),
+}
+
+test_data_suite_u85_same_size = {
+    "rand_same_size": lambda: (torch.rand(2, 3, 5, 5), (5, 5), None, False),
+    "rand_same_scale": lambda: (torch.rand(2, 3, 5, 5), None, 1.0, False),
 }
 
 test_data_suite_dynamic = {
@@ -210,6 +215,19 @@ def test_upsample_nearest2d_vec_tosa_FP_interpolate(test_data: torch.Tensor):
     )
     if not compare_outputs:
         pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+def test_upsample_nearest2d_vec_tosa_FP_explicit_fractional_scale():
+    # The rounded output size implies a 6 / 4 ratio, but PyTorch samples using
+    # the explicitly supplied 1.6 scale factor.
+    pipeline = TosaPipelineFP[input_t1](
+        Interpolate(size=None, scale_factor=1.6),
+        (torch.rand(1, 2, 4, 4),),
+        aten_op,
+        exir_op=[],
+    )
+
     pipeline.run()
 
 
@@ -501,6 +519,23 @@ def test_upsample_nearest2d_vec_u55_INT_UpsamplingNearest2d(
     pipeline.run()
 
 
+@common.parametrize("test_data", test_data_suite_u85_same_size)
+def test_upsample_nearest2d_vec_u85_INT_same_size(
+    test_data: torch.Tensor,
+):
+    test_data, size, scale_factor, compare_outputs = test_data()
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Interpolate(size, scale_factor),
+        (test_data,),
+        aten_op,
+        exir_op,
+    )
+    if not compare_outputs:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
 def test_upsample_nearest2d_vec_u55_INT_unsupported_scale_not_delegated():
     # 2.25 rounds a 2x2 input to 4x4, which looks like a supported 2x resize from shapes alone.
     test_data = torch.rand(1, 4, 2, 2)
@@ -730,4 +765,16 @@ def test_upsample_nearest2d_vec_tosa_INT_dynamic_upsample(test_data: torch.Tenso
     if not compare_outputs:
         pipeline.pop_stage(-1)
 
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_upsample_nearest2d_vec_u85_INT():
+    input_tensor = torch.rand(1, 4, 8, 3)
+    pipeline = EthosU85PipelineINT[input_t1](
+        Upsample(size=None, scale_factor=2.0),
+        (input_tensor,),
+        aten_op,
+        exir_op,
+    )
     pipeline.run()

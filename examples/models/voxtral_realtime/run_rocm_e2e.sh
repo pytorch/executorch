@@ -9,7 +9,6 @@
 #   SKIP_EXPORT=1 Use existing model.pte and aoti_cuda_blob.ptd files.
 #   DEVICE_INDEX  Visible GPU index (default: 0).
 #   SLIDING_WINDOW Decoder window (default: 2048).
-#   ROCM_PACKED_MATVEC=1 Use the experimental fixed-shape decoder matvec.
 #   OFFLINE_MAX_NEW_TOKENS Offline token limit (default: 500).
 #   VOXTRAL_PYTHON Python executable (default: python).
 #   ROCM_PATH     ROCm installation (default: /opt/rocm).
@@ -33,18 +32,12 @@ EXECUTION_MODE="${4:-streaming}"
 OUTPUT_ROOT="${5:-$PWD/voxtral_rt_rocm}"
 DEVICE_INDEX="${DEVICE_INDEX:-0}"
 SLIDING_WINDOW="${SLIDING_WINDOW:-2048}"
-ROCM_PACKED_MATVEC="${ROCM_PACKED_MATVEC:-0}"
 OFFLINE_MAX_NEW_TOKENS="${OFFLINE_MAX_NEW_TOKENS:-500}"
 VOXTRAL_PYTHON="${VOXTRAL_PYTHON:-python}"
 ROCM_ROOT="${ROCM_PATH:-/opt/rocm}"
 
 export HIP_VISIBLE_DEVICES="$DEVICE_INDEX"
 export CUDA_VISIBLE_DEVICES="$DEVICE_INDEX"
-
-if [[ "$ROCM_PACKED_MATVEC" != "0" && "$ROCM_PACKED_MATVEC" != "1" ]]; then
-  echo "ERROR: ROCM_PACKED_MATVEC must be 0 or 1" >&2
-  exit 1
-fi
 
 case "$PRECISION_MODE" in
   bf16) PRECISIONS=(bf16) ;;
@@ -158,10 +151,6 @@ for precision in "${PRECISIONS[@]}"; do
     if [[ "$execution" == "streaming" ]]; then
       export_args+=(--streaming --sliding-window "$SLIDING_WINDOW")
     fi
-    if [[ "$precision" == "w4-bf16" && "$ROCM_PACKED_MATVEC" == "1" ]]; then
-      export_args+=(--rocm-packed-matvec)
-    fi
-
     export_elapsed_ms=-1
     if [[ "${SKIP_EXPORT:-0}" != "1" ]]; then
       export_start_ms="$(monotonic_ms)"

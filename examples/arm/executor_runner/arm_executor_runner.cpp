@@ -13,12 +13,14 @@
  *
  * Some defines used to configure the code:
  *
- * ET_MODEL_PTE_ADDR  - Where in memory/flash your PTE model data is, if
- *                      not set the model is supposed to have been converted to
- *                      a c-array named model_pte and put into model_pte.h
- *                      this is placed in network_model_sec linker section
- *                      that is controlled by your memory mode via the
- *                      ETHOSU_MODEL cmake parameter. This is not used by the
+ * ET_MODEL_PTE_ADDR  - Where in memory/flash your PTE model data is.
+ * ET_MODEL_PTE_SIZE  - Size in bytes of the PTE at ET_MODEL_PTE_ADDR. CMake
+ *                      defaults to the legacy 0x10000000 upper bound.
+ *                      If the address is not set, the model is converted to a
+ *                      c-array named model_pte and put into model_pte.h in the
+ *                      network_model_sec linker section, controlled by your
+ *                      memory mode via the ETHOSU_MODEL cmake parameter. This
+ *                      is not used by the
  *                      semihosting path, which either loads the model from a
  *                      file or can reuse an embedded model with
  *                      ET_COMPILED_PTE.
@@ -100,6 +102,9 @@
  */
 
 #include <errno.h>
+#if defined(ETHOSU55) && defined(SEMIHOSTING)
+#include <ethosu_driver.h>
+#endif
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -170,6 +175,10 @@ unsigned char __attribute__((
 
 #if defined(ET_MODEL_PTE_ADDR) && defined(ET_COMPILED_PTE)
 #error "ET_MODEL_PTE_ADDR and ET_COMPILED_PTE are mutually exclusive"
+#endif
+
+#if defined(ET_MODEL_PTE_ADDR) && !defined(ET_MODEL_PTE_SIZE)
+#error "ET_MODEL_PTE_ADDR requires ET_MODEL_PTE_SIZE"
 #endif
 
 #if !defined(ET_MODEL_PTE_ADDR) && !defined(ET_COMPILED_PTE) && \
@@ -957,11 +966,11 @@ void log_mem_status(RunnerContext& ctx) {
 #if defined(ET_MODEL_PTE_ADDR)
   ET_LOG(
       Info,
-      "model_pte_program_size:     %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_program_size:     %lu bytes.",
       static_cast<unsigned long>(ctx.program_data_len));
   ET_LOG(
       Info,
-      "model_pte_loaded_size:      %lu bytes. (pte size unknown when not baked into elf)",
+      "model_pte_loaded_size:      %lu bytes.",
       static_cast<unsigned long>(ctx.model_data_size));
 #else
   ET_LOG(
@@ -1357,6 +1366,24 @@ bool run_model(RunnerContext& ctx, const void* model_data) {
   return model_ok;
 }
 
+#if defined(ETHOSU55) && defined(SEMIHOSTING)
+void set_runner_power(bool enabled) {
+  struct ethosu_driver* driver = ethosu_reserve_driver();
+  ET_CHECK_MSG(driver != nullptr, "Failed to reserve the Ethos-U driver");
+
+  int result = 0;
+  if (enabled) {
+    result = ethosu_request_power(driver);
+  } else {
+    ethosu_release_power(driver);
+  }
+  ethosu_release_driver(driver);
+
+  // ET_CHECK_MSG aborts and does not return if the power request failed.
+  ET_CHECK_MSG(result == 0, "Failed to power the Ethos-U NPU");
+}
+#endif
+
 #if defined(SEMIHOSTING)
 bool run_model_server(
     RunnerContext& ctx,
@@ -1437,10 +1464,9 @@ int main(int argc, const char* argv[]) {
 
 #if defined(ET_MODEL_PTE_ADDR)
   // Read the PTE from a fixed memory/flash address configured via
-  // -DET_MODEL_PTE_ADDR=<address>. Since the runner does not know the exact
-  // size up front, use a large upper bound for the buffer span.
+  // -DET_MODEL_PTE_ADDR=<address> and -DET_MODEL_PTE_SIZE=<bytes>.
   model_data = reinterpret_cast<const uint8_t*>(ET_MODEL_PTE_ADDR);
-  model_size = 0x10000000;
+  model_size = ET_MODEL_PTE_SIZE;
 #elif defined(ET_COMPILED_PTE)
   model_data = model_pte;
   model_size = sizeof(model_pte);
@@ -1532,11 +1558,25 @@ int main(int argc, const char* argv[]) {
   runner_init(ctx, model_data, model_size, input_buffers);
   bool model_ok = true;
 #if defined(SEMIHOSTING)
+#if defined(ETHOSU55)
+  // For semihosting FVP builds repeated U55 power cycles can make FVP fast mode
+  // stop responding, so keep one power reference across jobs.
+  // cppcheck-suppress knownConditionTrueFalse
+  const bool keep_powered = ctx.server_mode || num_inferences > 1;
+  if (keep_powered) {
+    set_runner_power(true);
+  }
+#endif
   if (ctx.server_mode) {
     model_ok = run_model_server(ctx, model_data, input_buffers);
   } else {
     model_ok = run_model(ctx, model_data);
   }
+#if defined(ETHOSU55)
+  if (keep_powered) {
+    set_runner_power(false);
+  }
+#endif
 #else
   model_ok = run_model(ctx, model_data);
 #endif

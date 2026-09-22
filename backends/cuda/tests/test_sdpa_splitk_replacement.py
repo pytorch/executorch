@@ -7,8 +7,8 @@
 """Test ReplaceEdgeOpWithTritonOpPass split-K SDPA kernel selection.
 
 Exports a minimal model containing F.scaled_dot_product_attention through the
-CUDA backend and verifies that the pass routes to split-K for decode
-(L_q==1, L_kv >= 256) and standard SDPA otherwise.
+CUDA backend and verifies that CUDA routes eligible decode shapes to split-K,
+while ROCm and other shapes use standard SDPA.
 """
 
 import logging
@@ -127,8 +127,8 @@ class TestSplitKReplacement(unittest.TestCase):
             f"Expected 1 SDPA replaced with standard kernel. Log: {msgs}",
         )
 
-    def test_at_threshold_uses_splitk(self):
-        """L_kv=256 == threshold -> split-K selected (boundary, inclusive)."""
+    def test_at_threshold_uses_backend_kernel(self):
+        """L_kv=256 selects split-K on CUDA and standard SDPA on ROCm."""
         model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=256).to(
             torch.bfloat16
         )
@@ -140,11 +140,23 @@ class TestSplitKReplacement(unittest.TestCase):
         _, msgs = _capture_pass_logs(lambda: _export_through_cuda_backend(model, args))
 
         splitk = [m for m in msgs if "split-K" in m]
-        self.assertEqual(len(splitk), 1, f"Expected 1 split-K selection. Log: {msgs}")
-        self.assertIn("L_kv=256", splitk[0])
+        expected = 0 if torch.version.hip is not None else 1
+        self.assertEqual(
+            len(splitk),
+            expected,
+            f"Expected {expected} split-K selections. Log: {msgs}",
+        )
+        if expected:
+            self.assertIn("L_kv=256", splitk[0])
 
-    def test_large_kv_cache_uses_splitk(self):
-        """L_kv=4096 > threshold -> split-K selected for decode."""
+        replaced = [m for m in msgs if "Replaced" in m]
+        self.assertTrue(
+            any("1 nodes" in m for m in replaced),
+            f"Expected 1 SDPA replaced with a Triton kernel. Log: {msgs}",
+        )
+
+    def test_large_kv_cache_uses_backend_kernel(self):
+        """L_kv=4096 selects split-K on CUDA and standard SDPA on ROCm."""
         model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=4096).to(
             torch.bfloat16
         )
@@ -156,8 +168,20 @@ class TestSplitKReplacement(unittest.TestCase):
         _, msgs = _capture_pass_logs(lambda: _export_through_cuda_backend(model, args))
 
         splitk = [m for m in msgs if "split-K" in m]
-        self.assertEqual(len(splitk), 1, f"Expected 1 split-K selection. Log: {msgs}")
-        self.assertIn("L_kv=4096", splitk[0])
+        expected = 0 if torch.version.hip is not None else 1
+        self.assertEqual(
+            len(splitk),
+            expected,
+            f"Expected {expected} split-K selections. Log: {msgs}",
+        )
+        if expected:
+            self.assertIn("L_kv=4096", splitk[0])
+
+        replaced = [m for m in msgs if "Replaced" in m]
+        self.assertTrue(
+            any("1 nodes" in m for m in replaced),
+            f"Expected 1 SDPA replaced with a Triton kernel. Log: {msgs}",
+        )
 
     def test_non_pow2_head_dim_uses_standard(self):
         """Non-power-of-2 head_dim -> standard SDPA even with large L_kv."""

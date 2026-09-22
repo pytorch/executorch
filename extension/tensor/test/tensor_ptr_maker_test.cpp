@@ -23,6 +23,64 @@ class TensorPtrMakerTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrMakerTest, TypedPointerDeducesItsOwnScalarType) {
+  // for_blob, from_blob and from_blob with strides are three separate entry
+  // points. All three used to take the pointer as void* and default to Float.
+  std::vector<int8_t> bytes = {1, 2, 3, 4};
+
+  auto from_maker = for_blob(bytes.data(), {2, 2}).make_tensor_ptr();
+  EXPECT_EQ(from_maker->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(from_maker->nbytes(), bytes.size() * sizeof(int8_t));
+
+  auto blob = from_blob(bytes.data(), {2, 2});
+  EXPECT_EQ(blob->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(blob->nbytes(), bytes.size() * sizeof(int8_t));
+
+  auto strided = from_blob(bytes.data(), {2, 2}, {2, 1});
+  EXPECT_EQ(strided->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(strided->nbytes(), bytes.size() * sizeof(int8_t));
+
+  // An untyped pointer has nothing to deduce from and keeps the default.
+  void* untyped = bytes.data();
+  auto from_void = from_blob(untyped, {2, 2});
+  EXPECT_EQ(from_void->scalar_type(), executorch::aten::ScalarType::Float);
+
+  // An explicit type still reinterprets, on the builder and on the factory.
+  auto reinterpreted =
+      from_blob(bytes.data(), {2, 2}, executorch::aten::ScalarType::Float);
+  EXPECT_EQ(reinterpreted->scalar_type(), executorch::aten::ScalarType::Float);
+  auto overridden = for_blob(bytes.data(), {2, 2})
+                        .type(executorch::aten::ScalarType::Float)
+                        .make_tensor_ptr();
+  EXPECT_EQ(overridden->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrMakerTest, TypedPointerDeducesItsOwnScalarTypeWithDeleter) {
+  // The fluent builder is the only path that can combine deduction with a
+  // custom deleter, because the deleter is not a positional parameter there.
+  // The deleter still has to run exactly once and receive the pointer it was
+  // given, so that a typed delete[] stays correct.
+  auto deleter_calls = 0;
+  void* deleted_ptr = nullptr;
+  auto* data = new int8_t[4]();
+
+  {
+    auto tensor = for_blob(data, {2, 2})
+                      .deleter([&deleter_calls, &deleted_ptr](void* ptr) {
+                        ++deleter_calls;
+                        deleted_ptr = ptr;
+                        delete[] static_cast<int8_t*>(ptr);
+                      })
+                      .make_tensor_ptr();
+    EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Char);
+    EXPECT_EQ(tensor->nbytes(), 4 * sizeof(int8_t));
+    EXPECT_EQ(deleter_calls, 0);
+  }
+
+  EXPECT_EQ(deleter_calls, 1);
+  EXPECT_EQ(deleted_ptr, static_cast<void*>(data));
+}
+
 TEST_F(TensorPtrMakerTest, CreateTensorUsingTensorMaker) {
   float data[20] = {2};
   auto tensor =
@@ -195,6 +253,7 @@ TEST_F(TensorPtrMakerTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {4, 5},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);

@@ -1265,7 +1265,11 @@ class PixelShuffle(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.pixel_unshuffle.default], QnnConstants.OpSpaceToDepth.op_name
+    [
+        torch.ops.aten.pixel_unshuffle.default,
+        torch.ops.qnn_custom.space_to_depth.default,
+    ],
+    QnnConstants.OpSpaceToDepth.op_name,
 )
 class PixelUnshuffle(GeneralOpDef):
     @staticmethod
@@ -1444,7 +1448,12 @@ class ScaledDotProductAttention(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.scatter.src, torch.ops.aten.scatter.value],
+    [
+        torch.ops.aten.scatter.src,
+        torch.ops.aten.scatter.value,
+        torch.ops.aten.scatter_add.default,
+        torch.ops.aten.scatter_reduce.two,
+    ],
     qnn_op=None,
 )
 class ScatterElements(GeneralOpDef):

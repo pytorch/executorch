@@ -14,6 +14,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import get_buffer
 from torch.export import ExportedProgram
 from torch.fx import GraphModule, Node
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class AnnotateQparamsPass(ExportPass):
@@ -40,6 +41,7 @@ class AnnotateQparamsPass(ExportPass):
         exir_ops.edge.aten.concat.default,
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.expand_copy.default,
+        exir_ops.edge.aten.split_with_sizes_copy.default,
     }
 
     def __init__(self, edge_program: ExportedProgram):
@@ -148,12 +150,33 @@ class AnnotateQparamsPass(ExportPass):
                 _check_same(ori_quant_attrs[key], requantize_attrs[key])
                 for key in key_map.values()
             ):
-                requantize_map[idx] = requantize_attrs
+                if (
+                    ori_quant_attrs[QuantConstants.QUANT_KEY.quant_dtype]
+                    != requantize_attrs[QuantConstants.QUANT_KEY.quant_dtype]
+                ):
+                    # For Q-DQ who will change quant dtype, we will insert requantization node
+                    requantize_map[idx] = requantize_attrs
+                else:
+                    node.meta["quantize_attrs"] = requantize_attrs
 
     def _annotate(self, graph_module: GraphModule):
         for node in graph_module.graph.nodes:
+            if key_map := QuantConstants.DEQUANT_OPS_KEY_MAP.get(node.target, None):
+                # We will fold node with constant output in the future pass as a constant node
+                # example: Constant->Q->DQ->nodeN->Q->DQ, this seq will be folded to one
+                # We need to store the q-params from last DQ params for quantizing constant value
+                quant_attrs = self.get_quant_attrs(node, key_map)
+                if node.args[0].target in QuantConstants.QUANT_OPS_KEY_MAP:
+                    node.meta["quantize_attrs"] = quant_attrs
+                else:
+                    node.args[0].meta["quantize_attrs"] = quant_attrs
+                continue
             key_map = QuantConstants.QUANT_OPS_KEY_MAP.get(node.target, None)
             if not key_map:
+                continue
+            quant_attrs = self.get_quant_attrs(node, key_map)
+            if node.args[0].target in QuantConstants.QUANT_OPS_KEY_MAP:
+                node.meta["quantize_attrs"] = quant_attrs
                 continue
             source_node = node.args[0]
             if source_node.target in (
@@ -163,14 +186,66 @@ class AnnotateQparamsPass(ExportPass):
                 # Currently, don't add quant info for d_qd node here.
                 continue
             elif source_node.target == operator.getitem:
+                source_node.meta["quantize_attrs"] = quant_attrs
                 source_node = source_node.args[0]
-            quant_attrs = self.get_quant_attrs(node, key_map)
+
             source_node.meta["quantize_attrs"] = quant_attrs
             self._annotate_requantize(source_node)
             self._propagate_quant_params(source_node)
 
+    def _annotate_in_quantize_attrs(self, graph_module: GraphModule):
+        # Collects quantize_attrs attributes along with their input index into a list, and stores them
+        # in the current node's meta["in_quantize_attrs"]. This information is used later in
+        # customized_constant_prop.py.
+        for node in graph_module.graph.nodes:
+            in_quantize_attrs = []
+            for idx, input_node in enumerate(node.all_input_nodes):
+                # Check if input is a Dequant node
+                if input_node.target not in QuantConstants.DEQUANT_OPS_KEY_MAP:
+                    continue
+                # Check if Dequant's input is a Quant node
+                if input_node.args[0].target in QuantConstants.QUANT_OPS_KEY_MAP:
+                    quant_node = input_node.args[0]
+                    quant_input_node = quant_node.args[0]
+                    if "quantize_attrs" in quant_input_node.meta:
+                        in_quantize_attrs.append(
+                            (idx, quant_input_node.meta["quantize_attrs"])
+                        )
+                else:
+                    # Const -> Dequant, get quantize_attrs from const node
+                    if "quantize_attrs" in input_node.args[0].meta:
+                        in_quantize_attrs.append(
+                            (idx, input_node.args[0].meta["quantize_attrs"])
+                        )
+            if in_quantize_attrs:
+                node.meta["in_quantize_attrs"] = in_quantize_attrs
+
+    def _annotate_decomposed_mm(self, graph_module: GraphModule):
+        partitions = get_source_partitions(
+            graph_module.graph,
+            [
+                "matmul",
+                torch.ops.aten.matmul.default,
+                operator.matmul,
+                torch.matmul,
+                torch.bmm,
+            ],
+        )
+
+        for _, src_partitions in partitions.items():
+            for src_partition in src_partitions:
+                final_view = src_partition.output_nodes[0]
+                if not (quantize_attrs := final_view.meta.get("quantize_attrs")):
+                    continue
+                for node in src_partition.nodes:
+                    if node.target == exir_ops.edge.aten.bmm.default:
+                        node.meta["quantize_attrs"] = quantize_attrs
+                        break
+
     def call(self, graph_module: GraphModule):
         self._annotate(graph_module)
+        self._annotate_decomposed_mm(graph_module)
+        self._annotate_in_quantize_attrs(graph_module)
         graph_module.recompile()
         return PassResult(graph_module, True)
 

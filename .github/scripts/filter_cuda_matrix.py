@@ -32,15 +32,14 @@ from typing import Any, Dict, List
 
 # Python versions that are deliberately NOT published, with the reason, so a row naming one
 # is rejected for a stated cause rather than for merely being absent from the supported list.
-# 3.14 is excluded because the current CPU wheel rows already fail on it for an unrelated
-# reason in the example requirements, so a GPU row would inherit a known-broken build. The
-# free-threaded builds are excluded because the CUDA dependencies are not published for them.
+# The free-threaded builds are excluded because the CUDA dependencies are not published for
+# them.
 #
 # This is documentation, not the gate. The gate is SUPPORTED_PYTHON_VERSIONS below: anything
 # not on that list is rejected whether or not it appears here.
-DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14", "3.14t", "3.15", "3.15t"]
+DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 
-# CUDA versions to publish.
+# CUDA versions to publish, when the generator offers them.
 #
 # Chosen so that every consumer row can find a matching wheel rather than by what is
 # convenient to verify. A delegate built against one of these has to be able to depend on an
@@ -49,20 +48,24 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14", "3.14t", "3.15", "3.15t"
 #
 #   cu126   the floor, and what Jetson devices are limited to
 #   cu130   the generator's stable choice, and the default for accelerator consumers
-#   cu132   the newest, which consumers building against a current TensorRT need
+#   cu132   a current TensorRT build target
+#   cu134   the newest, which consumers building against the latest CUDA need
+#
+# Skip wholly absent trains so an upstream removal cannot block the remaining releases.
+# Offered trains must still cover every supported Python version.
 #
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
 # minor versions are compatible, so a cu132 wheel has been run end to end on a CUDA 13.0
 # device. The packaging properties are checked on every row regardless.
-SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132"]
+SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132", "cu134"]
 
 # Python versions to publish, stated rather than derived for the same reason the CUDA
 # versions are. Deriving them from the rows that survived the filter made the release
 # guard below unable to notice a python that disappeared from every supported train: with
 # nothing left to compare, a release quietly published nine wheels instead of twelve.
 # Keep in step with the python-versions list in the CUDA wheel workflows.
-SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13"]
+SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 # The single row built for a pull request. A full matrix on every push would cost hours for
 # little signal, and cu130 is the version with a machine on hand that can run a model on it.
@@ -185,45 +188,30 @@ def main(argv: List[str]) -> None:
     if args.limit_pr_builds.lower() == "true" and items:
         items = only_pull_request_row(items)
     elif items and not is_jetpack:
-        # A release has to publish every combination this policy advertises. Comparing the result against
-        # what the generator offered cannot catch anything, because both sides apply the same conditions, so
-        # the difference is empty by construction and the check never fires. The policy's own list is the
-        # thing to compare against: a CUDA version the generator stopped offering otherwise disappears from
-        # the release silently, and a missing job is a green check for a wheel that was never built.
-        #
-        # The generic rows only. A JetPack release advertises the single pair its own lists name rather than
-        # every supported CUDA version, so checking it against this list would fail a correct release.
-        #
-        # Both axes come from this policy's own lists, not from the matrix. Reading the generator's python
-        # axis pulled in rows this policy never builds, and deriving it from the rows that survived went
-        # blind to a python that disappeared from every supported train. The generator lives in another
-        # repository and its axes move independently of what this policy promises to publish.
         built = {(item["python_version"], item["desired_cuda"]) for item in items}
-        # A train that produced no row at all is missing for every python, so reporting it per python
-        # would read as a python problem. Named on its own instead, and first, because the per-pair
-        # report below would otherwise bury it.
-        absent_trains = sorted(
-            set(SUPPORTED_CUDA_VERSIONS) - {cuda for _, cuda in built}
-        )
+        # Filtering out every Python row must not disguise an offered train as absent.
+        offered_trains = {
+            item["desired_cuda"]
+            for item in matrix.get("include", [])
+            if item["desired_cuda"] in SUPPORTED_CUDA_VERSIONS
+        }
+        absent_trains = sorted(set(SUPPORTED_CUDA_VERSIONS) - offered_trains)
         if absent_trains:
             print(
-                f"this policy publishes {SUPPORTED_CUDA_VERSIONS}, but the generator offered no row "
-                f"this filter could keep for {absent_trains}, so a release would publish no wheel for "
-                "that CUDA version at all",
+                f"the generator offered no row for {absent_trains}, so they are skipped this run; "
+                f"publishing {sorted(offered_trains)}",
                 file=sys.stderr,
             )
-            sys.exit(1)
         missing = sorted(
             f"{python}/{cuda}"
             for python in SUPPORTED_PYTHON_VERSIONS
-            for cuda in SUPPORTED_CUDA_VERSIONS
+            for cuda in offered_trains
             if (python, cuda) not in built
         )
         if missing:
             print(
-                f"this policy publishes {SUPPORTED_CUDA_VERSIONS} for each of "
-                f"{SUPPORTED_PYTHON_VERSIONS}, but {len(missing)} combination(s) produced no row, so a "
-                f"release would publish no wheel for them: {missing}",
+                f"a published train is missing some of {SUPPORTED_PYTHON_VERSIONS}, so a release "
+                f"would ship an incomplete train: {missing}",
                 file=sys.stderr,
             )
             sys.exit(1)

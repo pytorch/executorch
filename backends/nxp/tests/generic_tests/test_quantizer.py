@@ -9,13 +9,27 @@ import itertools
 from copy import deepcopy
 
 import executorch.backends.nxp.tests.executorch_pipeline as executorch_pipeline
-import executorch.backends.nxp.tests.models as models
+import executorch.backends.nxp.tests.simple_models as models
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
+)
+
+from executorch.backends.nxp.backend.ops_aliases import (
+    AddMM,
+    Convolution,
+    HardTanh,
+    MM,
+    NativebatchNormLegitNoStats,
+    NativebatchNormLegitNoTraining,
+    Relu,
+    Sigmoid,
+    Tanh,
 )
 
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -30,8 +44,6 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-
-from executorch.exir.dialects._ops import ops as exir_ops
 
 requires_tflite = pytest.mark.skipif(
     tflite is None, reason="tensorflow/tflite not available"
@@ -50,13 +62,13 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 )
 
 fuse_activation_ops = [
-    exir_ops.edge.aten.addmm.default,
-    exir_ops.edge.aten.mm.default,
-    exir_ops.edge.aten.convolution.default,
-    exir_ops.edge.aten.hardtanh.default,
-    exir_ops.edge.aten.relu.default,
-    exir_ops.edge.aten.sigmoid.default,
-    exir_ops.edge.aten.tanh.default,
+    AddMM,
+    MM,
+    Convolution,
+    HardTanh,
+    Relu,
+    Sigmoid,
+    Tanh,
 ]
 
 
@@ -74,8 +86,8 @@ all_activation_cases = list(
 ]
 
 batch_norm_ops = (
-    exir_ops.edge.aten._native_batch_norm_legit.no_stats,
-    exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+    NativebatchNormLegitNoStats,
+    NativebatchNormLegitNoTraining,
     torch.ops.aten._native_batch_norm_legit_no_training.default,
     torch.ops.aten.batch_norm.default,
     torch.ops.aten.native_batch_norm.default,

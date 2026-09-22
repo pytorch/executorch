@@ -44,14 +44,16 @@ class EagerEvalWrapper(eval_wrapper):
         """
         The stories model does not have an EOT token, so we use the EOS token instead.
         """
-        if hasattr(self._tokenizer, "eot_id"):
-            return self._tokenizer.eot_id
+        eot_id = getattr(self._tokenizer, "eot_id", None)
+        if eot_id is not None:
+            return eot_id
         return self._tokenizer.eos_id
 
     @property
     def prefix_token_id(self):
-        if hasattr(self._tokenizer, "bos_id"):
-            return self._tokenizer.bos_id
+        bos_id = getattr(self._tokenizer, "bos_id", None)
+        if bos_id is not None:
+            return bos_id
         return self.eot_token_id
 
     @property

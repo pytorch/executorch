@@ -27,6 +27,7 @@ class ArmQuantize(Quantize):
         is_qat: Optional[bool] = False,
         set_global: bool = True,
         fold_quantize: bool = True,
+        dynamic_shapes: Optional[Tuple[Any, ...]] = None,
     ):
         super().__init__(
             quantizer,
@@ -37,6 +38,7 @@ class ArmQuantize(Quantize):
             set_global,
         )
         self.fold_quantize = fold_quantize
+        self.dynamic_shapes = dynamic_shapes
 
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
@@ -44,7 +46,9 @@ class ArmQuantize(Quantize):
         assert inputs is not None
         if self.is_qat:
             artifact.train()
-        captured_graph = export(artifact, inputs, strict=True).module()
+        captured_graph = export(
+            artifact, inputs, dynamic_shapes=self.dynamic_shapes, strict=True
+        ).module()
 
         if not isinstance(self.quantizer, TOSAQuantizer):
             raise ValueError("ArmQuantizer can only run with TOSAQuantizer.")

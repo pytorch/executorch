@@ -89,7 +89,7 @@ class PtnConstantHandoffTest(unittest.TestCase):
         base = torch.arange(6).view(2, 3)
         view = base.t()
         edge_program = SimpleNamespace(
-            graph_module=object(),
+            graph_module=torch.fx.GraphModule(nn.Module(), torch.fx.Graph()),
             graph_signature=object(),
             state_dict={},
             constants={},
@@ -162,6 +162,23 @@ class PreprocessSerializationTest(unittest.TestCase):
                 s.kind == OutputKind.BUFFER_MUTATION
                 for s in (method.output_specs or [])
             )
+        )
+
+    def test_reinplace_produces_inplace_relu(self):
+        class ReluModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(8, 8)
+
+            def forward(self, x):
+                return torch.relu(self.linear(x))
+
+        blob = _get_delegate_blob(_lower(ReluModel(), (torch.randn(1, 8),)))
+        graph = deserialize_graph(blob)
+        targets = _call_function_targets(graph)
+        self.assertTrue(
+            any(t is not None and "relu_" in t for t in targets),
+            f"expected in-place relu_, got {targets}",
         )
 
     def test_constants_shipped_via_named_data(self):

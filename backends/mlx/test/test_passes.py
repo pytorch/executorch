@@ -14,6 +14,7 @@ import unittest
 import executorch.exir as exir
 import torch
 import torch.nn as nn
+from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import (
     _is_pure_dtype_cast,
@@ -22,6 +23,7 @@ from executorch.backends.mlx.passes import (
     CollapsePermutePass,
     CollapseViewCopyPass,
     FuseRMSNormPass,
+    get_default_passes,
     RemoveNoOpsPass,
 )
 from executorch.exir import EdgeCompileConfig
@@ -44,8 +46,8 @@ class _PreserveOpsPartitioner(MLXPartitioner):
         )
 
 
-def _to_edge_gm(module, example_inputs, dynamic_shapes=None):
-    """Export module and lower to edge dialect, returning the GraphModule."""
+def _to_edge(module, example_inputs, dynamic_shapes=None):
+    """Preserve MLX-supported ops without delegating, for pass inspection."""
     ep = export(module, example_inputs, dynamic_shapes=dynamic_shapes, strict=False)
     edge = exir.to_edge_transform_and_lower(
         ep,
@@ -55,7 +57,13 @@ def _to_edge_gm(module, example_inputs, dynamic_shapes=None):
             _skip_dim_order=True,
         ),
     )
-    return edge.exported_program().graph_module
+    return edge
+
+
+def _to_edge_gm(module, example_inputs, dynamic_shapes=None):
+    return (
+        _to_edge(module, example_inputs, dynamic_shapes).exported_program().graph_module
+    )
 
 
 def _count_ops(gm, target):
@@ -554,13 +562,11 @@ class TestFuseRMSNormPass(unittest.TestCase):
 
         model = RMSNorm(16)
         model.eval()
-        gm = _to_edge_gm(model, (torch.randn(1, 4, 16),))
-
-        result = FuseRMSNormPass()(gm)
-
-        self.assertTrue(
-            result.modified, "FuseRMSNormPass should fuse the RMSNorm pattern"
+        inputs = (torch.randn(1, 4, 16),)
+        result = (
+            _to_edge(model, inputs).transform([FuseRMSNormPass()]).exported_program()
         )
+        torch.testing.assert_close(result.module()(*inputs), model(*inputs))
 
         has_rms_norm = any(
             n.op == "call_function" and "rms_norm" in str(n.target)
@@ -580,9 +586,12 @@ class TestFuseRMSNormPass(unittest.TestCase):
             def forward(self, x):
                 return x + 1
 
-        ep = export(M(), (torch.randn(4, 4),), strict=False)
-        result = FuseRMSNormPass()(ep.graph_module)
-        self.assertFalse(result.modified)
+        inputs = (torch.randn(4, 4),)
+        edge = _to_edge(M(), inputs)
+        before = str(edge.exported_program().graph)
+        result = edge.transform([FuseRMSNormPass()]).exported_program()
+        self.assertEqual(str(result.graph), before)
+        torch.testing.assert_close(result.module()(*inputs), M()(*inputs))
 
 
 class TestPassComposition(unittest.TestCase):
@@ -592,13 +601,14 @@ class TestPassComposition(unittest.TestCase):
             def forward(self, x):
                 return x.view(2, 6).view(3, 4)
 
-        gm = _to_edge_gm(M(), (torch.randn(12),))
+        edge = _to_edge(M(), (torch.randn(12),))
         target = exir_ops.edge.aten.view_copy.default
 
-        self.assertGreaterEqual(_count_ops(gm, target), 2)
-
-        CollapseViewCopyPass()(gm)
-        self.assertEqual(_count_ops(gm, target), 1)
+        self.assertGreaterEqual(
+            _count_ops(edge.exported_program().graph_module, target), 2
+        )
+        result = edge.transform([CollapseViewCopyPass()]).exported_program()
+        self.assertEqual(_count_ops(result.graph_module, target), 1)
 
     def test_canonicalize_then_collapse_permute_identity(self):
         """Double transpose = identity → both removed."""
@@ -607,18 +617,16 @@ class TestPassComposition(unittest.TestCase):
             def forward(self, x):
                 return x.transpose(0, 1).transpose(0, 1)
 
-        gm = _to_edge_gm(M(), (torch.randn(3, 4),))
+        edge = _to_edge(M(), (torch.randn(3, 4),))
         target = exir_ops.edge.aten.permute_copy.default
 
-        CanonicalizePermutePass()(gm)
-        self.assertEqual(_count_ops(gm, target), 2)
-
-        CollapsePermutePass()(gm)
-        self.assertEqual(_count_ops(gm, target), 0)
+        edge = edge.transform([CanonicalizePermutePass()])
+        self.assertEqual(_count_ops(edge.exported_program().graph_module, target), 2)
+        result = edge.transform([CollapsePermutePass()]).exported_program()
+        self.assertEqual(_count_ops(result.graph_module, target), 0)
 
     def test_full_pipeline_does_not_crash(self):
-        """Running the full default pass list should not crash."""
-        from executorch.backends.mlx.passes import get_default_passes
+        """Run both GraphModule and ExportedProgram passes and build the result."""
 
         class M(nn.Module):
             def __init__(self):
@@ -628,23 +636,17 @@ class TestPassComposition(unittest.TestCase):
             def forward(self, x):
                 return self.linear(x).to(torch.float16)
 
-        gm = _to_edge_gm(M(), (torch.randn(1, 16),))
-
-        from executorch.exir.pass_base import ExportedProgramPassBase
-
-        for p in get_default_passes():
-            # EP-aware passes (e.g. MLXReinplacePass) require a full
-            # ExportedProgram (graph_signature), not a bare GraphModule; they are
-            # exercised in the reinplace tests.
-            if isinstance(p, ExportedProgramPassBase):
-                continue
-            p(gm)
-
-        gm.graph.lint()
+        model = M().eval()
+        inputs = (torch.randn(1, 16),)
+        result = (
+            _to_edge(model, inputs).transform(get_default_passes()).exported_program()
+        )
+        result.graph.lint()
+        torch.testing.assert_close(result.module()(*inputs), model(*inputs))
+        MLXProgramBuilder(result).build()
 
     def test_correctness_after_all_passes(self):
         """Output values should be preserved after running all passes."""
-        from executorch.backends.mlx.passes import get_default_passes
 
         class M(nn.Module):
             def forward(self, x):
@@ -656,22 +658,207 @@ class TestPassComposition(unittest.TestCase):
         x = torch.randn(3, 4)
         expected = module(x)
 
-        gm = _to_edge_gm(module, (x,))
+        result = (
+            _to_edge(module, (x,)).transform(get_default_passes()).exported_program()
+        )
+        torch.testing.assert_close(result.module()(x), expected)
 
-        from executorch.exir.pass_base import ExportedProgramPassBase
 
-        for p in get_default_passes():
-            # EP-aware passes (e.g. MLXReinplacePass) require a full
-            # ExportedProgram, not a bare GraphModule; skip here.
-            if isinstance(p, ExportedProgramPassBase):
-                continue
-            p(gm)
+class TestDefaultFusionPipeline(unittest.TestCase):
+    """Check shared transforms compose with MLX cleanup and builder dispatch."""
 
-        actual = gm(x)
-        # Edge graph modules may return a tuple
-        if isinstance(actual, tuple):
-            actual = actual[0]
-        torch.testing.assert_close(actual, expected)
+    def _run_pipeline(self, model, inputs, expected_op, **tolerances):
+        model.eval()
+        with torch.no_grad():
+            expected = model(*inputs)
+        result = (
+            _to_edge(model, inputs).transform(get_default_passes()).exported_program()
+        )
+        result.graph.lint()
+        with torch.no_grad():
+            actual = result.module()(*inputs)
+        self.assertEqual(actual.shape, expected.shape)
+        self.assertEqual(actual.dtype, expected.dtype)
+        torch.testing.assert_close(actual, expected, **tolerances)
+        built = MLXProgramBuilder(result).build()
+        self.assertEqual(
+            sum(
+                type(instr.op).__name__ == expected_op
+                for chain in built.instruction_chains
+                for instr in chain.instructions
+            ),
+            1,
+        )
+        return result
+
+    def test_repeated_kv_gqa(self):
+        class GQA(nn.Module):
+            def forward(self, q, k, v, mask):
+                def repeat(x):
+                    shape = list(x.shape)
+                    expanded = [*shape[:-2], 2, *shape[-2:]]
+                    shape[-3] *= 2
+                    return x.unsqueeze(-3).expand(expanded).reshape(shape)
+
+                return nn.functional.scaled_dot_product_attention(
+                    q, repeat(k), repeat(v), mask, scale=0.25
+                )
+
+        for rank in (3, 4):
+            with self.subTest(rank=rank):
+                prefix = (2,) if rank == 4 else ()
+                inputs = (
+                    torch.randn(*prefix, 4, 3, 8),
+                    torch.randn(*prefix, 2, 5, 8),
+                    torch.randn(*prefix, 2, 5, 8),
+                    torch.randn(3, 5),
+                )
+                result = self._run_pipeline(GQA(), inputs, "SdpaNode")
+                sdpa_nodes = _find_nodes(
+                    result.graph_module,
+                    exir_ops.edge.aten.scaled_dot_product_attention.default,
+                )
+                self.assertEqual(len(sdpa_nodes), 1)
+                sdpa = sdpa_nodes[0]
+                self.assertTrue(sdpa.kwargs.get("enable_gqa"))
+                self.assertEqual(sdpa.kwargs.get("scale"), 0.25)
+                for node, original in zip(sdpa.args[:3], inputs[:3]):
+                    padded_shape = (1,) * (4 - rank) + tuple(original.shape)
+                    self.assertEqual(tuple(node.meta["val"].shape), padded_shape)
+                self.assertFalse(
+                    _has_op(result.graph_module, exir_ops.edge.aten.expand_copy.default)
+                )
+
+    def test_sdpa_input_ranks(self):
+        class SDPA(nn.Module):
+            def __init__(self, causal):
+                super().__init__()
+                self.causal = causal
+
+            def forward(self, q, k, v, mask=None):
+                return nn.functional.scaled_dot_product_attention(
+                    q, k, v, mask, is_causal=self.causal, scale=0.25
+                )
+
+        for rank, mode in ((2, "boolean"), (3, "additive"), (4, "causal")):
+            with self.subTest(rank=rank, mode=mode):
+                prefix = {2: (), 3: (2,), 4: (2, 2)}[rank]
+                mask = None
+                if mode == "boolean":
+                    mask = torch.ones(3, 5, dtype=torch.bool)
+                    mask[:, -1] = False
+                elif mode == "additive":
+                    mask = torch.linspace(-1, 1, 15).reshape(3, 5)
+                inputs = (
+                    torch.randn(*prefix, 3, 8),
+                    torch.randn(*prefix, 5, 8),
+                    torch.randn(*prefix, 5, 8),
+                )
+                if mask is not None:
+                    inputs += (mask,)
+                result = self._run_pipeline(SDPA(mode == "causal"), inputs, "SdpaNode")
+                nodes = _find_nodes(
+                    result.graph_module,
+                    exir_ops.edge.aten.scaled_dot_product_attention.default,
+                )
+                self.assertEqual(len(nodes), 1)
+                sdpa = nodes[0]
+                for node, original in zip(sdpa.args[:3], inputs[:3]):
+                    self.assertEqual(
+                        tuple(node.meta["val"].shape),
+                        (1,) * (4 - rank) + tuple(original.shape),
+                    )
+                    if rank == 4:
+                        self.assertEqual(node.op, "placeholder")
+                self.assertEqual(sdpa.kwargs.get("scale"), 0.25)
+                self.assertEqual(len(sdpa.meta["val"].shape), 4)
+                if mask is not None:
+                    self.assertEqual(
+                        tuple(sdpa.args[3].meta["val"].shape), (1, 1, 3, 5)
+                    )
+                    self.assertEqual(sdpa.args[3].meta["val"].dtype, mask.dtype)
+                else:
+                    self.assertTrue(sdpa.args[5])
+                    self.assertFalse(
+                        _has_op(
+                            result.graph_module, exir_ops.edge.aten.squeeze_copy.dims
+                        )
+                    )
+
+    def test_weighted_and_unweighted_rms_norm(self):
+        class RMSNorm(nn.Module):
+            def __init__(self, weighted):
+                super().__init__()
+                self.weight = (
+                    nn.Parameter(torch.linspace(0.5, 1.5, 16)) if weighted else None
+                )
+
+            def forward(self, x):
+                norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
+                return norm if self.weight is None else self.weight * norm
+
+        for weighted in (False, True):
+            with self.subTest(weighted=weighted):
+                result = self._run_pipeline(
+                    RMSNorm(weighted), (torch.randn(2, 3, 16),), "RMSNormNode"
+                )
+                nodes = _find_nodes(
+                    result.graph_module, torch.ops.aten.rms_norm.default
+                )
+                self.assertEqual(len(nodes), 1)
+                self.assertEqual(nodes[0].args[2] is not None, weighted)
+                self.assertFalse(
+                    _has_op(result.graph_module, exir_ops.edge.aten.rsqrt.default)
+                )
+
+    def test_mixed_precision_rms_norm_folds_casts(self):
+        class RMSNorm(nn.Module):
+            def __init__(self, round_before_weight):
+                super().__init__()
+                self.weight = nn.Parameter(torch.linspace(0.501, 1.499, 16))
+                self.round_before_weight = round_before_weight
+
+            def forward(self, x):
+                y = x.float()
+                norm = y * torch.rsqrt(y.pow(2).mean(-1, keepdim=True) + 1e-6)
+                if self.round_before_weight:
+                    return norm.to(x.dtype).float() * self.weight
+                return (norm * self.weight).to(x.dtype)
+
+        for dtype in (torch.float16, torch.bfloat16):
+            for round_before_weight in (False, True):
+                with self.subTest(dtype=dtype, round_before_weight=round_before_weight):
+                    x = torch.linspace(-2.3, 1.7, 96).reshape(2, 3, 16).to(dtype)
+                    model = RMSNorm(round_before_weight)
+                    result = self._run_pipeline(
+                        model,
+                        (x,),
+                        "RMSNormNode",
+                        rtol=2 * torch.finfo(dtype).eps,
+                        atol=2 * torch.finfo(dtype).eps,
+                    )
+                    nodes = _find_nodes(
+                        result.graph_module, torch.ops.aten.rms_norm.default
+                    )
+                    self.assertEqual(len(nodes), 1)
+                    norm = nodes[0]
+                    self.assertEqual(norm.args[0].meta["val"].dtype, dtype)
+                    self.assertEqual(norm.meta["val"].dtype, dtype)
+                    self.assertEqual(norm.args[2] is None, round_before_weight)
+                    if norm.args[2] is not None:
+                        self.assertEqual(norm.args[2].meta["val"].dtype, dtype)
+                    casts = _find_nodes(
+                        result.graph_module, exir_ops.edge.aten._to_copy.default
+                    )
+                    self.assertFalse(any(n.kwargs.get("dtype") == dtype for n in casts))
+                    # Check the opted-in fused policy exactly, including rounded weights.
+                    weight = None if round_before_weight else model.weight.to(dtype)
+                    expected = nn.functional.rms_norm(x, (16,), weight, 1e-6)
+                    if round_before_weight:
+                        expected = expected.float() * model.weight
+                    torch.testing.assert_close(
+                        result.module()(x), expected, rtol=0, atol=0
+                    )
 
 
 class TestReinplacePass(unittest.TestCase):

@@ -140,6 +140,11 @@ class vTensorStorage final {
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
 
+  vTensorStorage(
+      Context* const context,
+      const vkapi::VulkanBuffer& buffer,
+      const vkapi::ScalarType dtype);
+
  public:
   vTensorStorage(vTensorStorage& other) = delete;
   vTensorStorage& operator=(const vTensorStorage& other) = delete;
@@ -211,9 +216,11 @@ class vTensor final {
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true,
       const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap,
-      // When non-null, wrap this image instead of allocating. Stored as a
-      // VulkanImage copy, which aliases the handle without owning it.
-      const vkapi::VulkanImage* external_image = nullptr);
+      // When non-null, wrap this resource instead of allocating. Stored as a
+      // copy, which aliases the handle without owning it. At most one may be
+      // set.
+      const vkapi::VulkanImage* external_image = nullptr,
+      const vkapi::VulkanBuffer* external_buffer = nullptr);
 
   vTensor(const vTensor& other) = delete;
 

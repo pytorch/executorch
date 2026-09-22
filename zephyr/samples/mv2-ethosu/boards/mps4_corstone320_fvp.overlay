@@ -5,16 +5,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* Override zephyr,sram to the 4 MiB ISRAM (0x3100_0000) so the allocator
- * pools (~3 MiB total) fit alongside code in the same region.  The default
- * sram@12000000 is only 2 MiB which is too small for MV2.
+/* The board uses ISRAM for XIP code. Reserve its first 512 KiB for code
+ * and the remaining 3.5 MiB for writable data and allocator pools. Using
+ * the same region for zephyr,flash and zephyr,sram overlaps code and data.
  *
  * The model PTE blob is placed in DDR (0x7000_0000) via a linker snippet.
  * The Ethos-U can DMA from DDR on the Corstone-320 FVP.
  */
+&isram {
+	reg = <0x31000000 DT_SIZE_K(512)>;
+};
+
 / {
 	chosen {
-		zephyr,sram = &isram;
+		zephyr,sram = &executorch_sram;
+	};
+
+	executorch_sram: memory@31080000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x31080000 DT_SIZE_K(3584)>;
+		zephyr,memory-region = "EXECUTORCH_SRAM";
 	};
 
 	model_ddr: memory@70000000 {
