@@ -31,12 +31,14 @@ def main():
 
     for issue in issues:
         print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
-        comments = sorted(issue.get_comments(), key=lambda comment: comment.created_at,)
+        comments = sorted(
+            issue.get_comments(), 
+            key=lambda comment: comment.created_at,
+        )
         
         # Find automation comments
         auto_comments = [c for c in comments if REMINDER_MARKER in c.body]
         latest_auto_comment = auto_comments[-1] if auto_comments else None
-        user_comments = [c for c in comments if REMINDER_MARKER not in c.body]
 
         if latest_auto_comment is not None:
             user_responded = any(
@@ -59,27 +61,37 @@ def main():
             
             # ---- CLOSE ISSUE AFTER 30 DAYS OF REMINDER ----
             if days_since_reminder >= DAYS_BEFORE_CLOSE:
-                    print(f"Closing issue/PR #{issue.number} due to no response from author.")
+                    print(
+                        f"Closing issue/PR #{issue.number} due to no response from author."
+                    )
                     issue.create_comment(CLOSE_COMMENT)
                     issue.edit(state="closed")
                     continue
             # ---- POST REMINDER AFTER 7 DAYS OF INITIAL REMINDER ----
             if days_since_reminder >= REMINDER_COOLDOWN_DAYS:
-                print(f"Posting reminder for issue/PR #{issue.number}.")
+                print(
+                    f"Posting reminder for issue/PR #{issue.number}."
+                )
                 issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
             else:
-                print(f"Skipping issue/PR #{issue.number}; "
-                "a reminder was posted recently.")
+                print(
+                    f"Skipping issue/PR #{issue.number}; "
+                    "a reminder was posted recently."
+                )
             continue
 
         # ---- INITIAL REMINDER AFTER 30 DAYS OF INACTIVITY ----
         last_comment = comments[-1] if comments else None
 
-        if (last_comment is not None and (now - lastcomment).days >= DAYS_BEFORE_REMINDER):
+        if (
+            last_comment is not None 
+            and (now - last_comment).days >= DAYS_BEFORE_REMINDER
+        ):
             print(f"Posting initial reminder for issue/PR #{issue.number}.")
             issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
         else:
-            print(f"Skipping issue/PR #{issue.number}; "
+            print(
+                f"Skipping issue/PR #{issue.number}; "
                 "it has not been inactive for 30 days."
             )
 
