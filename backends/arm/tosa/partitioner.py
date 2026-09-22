@@ -499,51 +499,76 @@ class TOSAPartitioner(Partitioner):
 
         Remove delegation tags from quantize nodes with inputs outside the
         partition and from dequantize nodes with outputs outside the partition.
+        This applies to all variants in ``Q_OPS`` and ``DQ_OPS``, independent
+        of their integer dtype.
 
-        For non Q/DQ nodes, remove the tag from the first node in the partition
-        if any input has floating-point dtype.
+        For INT-only partitions, also remove floating-point nodes at input and
+        output boundaries. Repeat until removing one node no longer exposes
+        another invalid boundary node.
 
         Args:
             tag: The delegation tag assigned to the partition.
             reporter: A reporter to log rejected nodes.
             module: The GraphModule containing the partition.
-            detag_first_fp_node: Whether to de-tag the first floating-point
-                node in a partition.
+            detag_first_fp_node: Whether to de-tag floating-point nodes at the
+                input and output boundaries of a partition.
 
         """
-        # De-tag outermost q-nodes upwards and dq-nodes downwards.
-        # De-tag if at least one input/output is not part of the partition.
-        for node in module.graph.nodes:
-            if not is_partitioned(node, tag):
-                continue
+        # Q_OPS and DQ_OPS cover the supported conversion variants. Their
+        # parameters determine the integer dtype, so this handles INT8 and
+        # INT16 graphs.
+        #
+        # Keep conversions and floating-point operations outside INT-only
+        # delegates:
+        #
+        #     integer delegate -> portable [DQ -> floating-point operations]
+        #
+        # Removing one boundary node can expose another Q/DQ or floating-point
+        # node, so repeat until the partition has a valid boundary.
+        modified = True
+        while modified:
+            modified = False
+            for node in module.graph.nodes:
+                if not is_partitioned(node, tag):
+                    continue
 
-            is_q_node = node.target in Q_OPS
-            is_dq_node = node.target in DQ_OPS
-            is_boundary_q_node = is_q_node and not is_partitioned(
-                node.all_input_nodes[0], tag
-            )
-            is_boundary_dq_node = is_dq_node and any(
-                not is_partitioned(user, tag) for user in node.users
-            )
+                is_q_node = node.target in Q_OPS
+                is_dq_node = node.target in DQ_OPS
+                is_boundary_q_node = is_q_node and not is_partitioned(
+                    node.all_input_nodes[0], tag
+                )
+                has_external_user = any(
+                    not is_partitioned(user, tag) for user in node.users
+                )
+                is_boundary_dq_node = is_dq_node and has_external_user
+                is_boundary_fp_output = (
+                    detag_first_fp_node
+                    and not is_q_node
+                    and not is_dq_node
+                    and has_external_user
+                    and get_first_fake_tensor(node).dtype.is_floating_point
+                )
 
-            if is_boundary_q_node or is_boundary_dq_node:
-                # Remove tag from quantize node with input outside partition,
-                # or dequantize node with any output outside partition
-                del node.meta["delegation_tag"]
-            elif detag_first_fp_node and not is_q_node and not is_dq_node:
-                # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
-                for input in node.all_input_nodes:
-                    if is_partitioned(input, tag) or isinstance(
-                        input.meta["val"], torch.SymInt
-                    ):
-                        continue
-                    if get_first_fake_tensor(input).dtype.is_floating_point:
-                        reporter.report_reject(
-                            node,
-                            f"Was first node in partition and input {input.name} had fp dtype.",
-                        )
-                        del node.meta["delegation_tag"]
-                        break
+                if is_boundary_q_node or is_boundary_dq_node or is_boundary_fp_output:
+                    del node.meta["delegation_tag"]
+                    modified = True
+                    continue
+
+                if detag_first_fp_node and not is_q_node and not is_dq_node:
+                    # Remove the first floating-point node at an input boundary.
+                    for input in node.all_input_nodes:
+                        if is_partitioned(input, tag) or isinstance(
+                            input.meta["val"], torch.SymInt
+                        ):
+                            continue
+                        if get_first_fake_tensor(input).dtype.is_floating_point:
+                            reporter.report_reject(
+                                node,
+                                f"Was first node in partition and input {input.name} had fp dtype.",
+                            )
+                            del node.meta["delegation_tag"]
+                            modified = True
+                            break
 
     def _preserve_io_quantization_enabled(self) -> bool:
         """Return True if compile specs preserve IO quantization."""

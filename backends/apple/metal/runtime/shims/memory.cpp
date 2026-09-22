@@ -738,6 +738,13 @@ void cleanup_memory() {
   // tensors map should now be empty, but ensure it's cleared
   tensors.clear();
 
+  // Tensors created from a blob are tracked as NOT_OWN and
+  // aoti_torch_delete_tensor_object leaves their address in the map, since
+  // several of them may alias it. With every tensor gone nothing is tracked
+  // anymore, and a stale entry would make the next model fail to load as soon
+  // as its constants land on an address used before.
+  memory_to_n_tensor.clear();
+
   // Clean up Metal resources
   metal_cleanup_resources();
 

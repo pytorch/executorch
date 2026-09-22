@@ -95,6 +95,7 @@ from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # no
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
+from .decompose_pow_tensor_tensor_pass import DecomposePowTensorTensorPass  # noqa
 from .decompose_prelu_pass import DecomposePReLUPass  # noqa
 from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
@@ -197,6 +198,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
     RemovePermutesAroundElementwiseTosaOps,
 )
+from .remove_redundant_type_as_pass import RemoveRedundantTypeAsPass  # noqa
 from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
