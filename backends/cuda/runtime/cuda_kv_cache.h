@@ -52,7 +52,11 @@ class CudaKVCache {
   // Load time. Discovers this program's KV storage entries and records the
   // metadata needed to bind them. One cache serves every method of a model, so
   // this is called once per delegate handle.
-  virtual runtime::Error note_handle(CudaDelegateHandle* handle) = 0;
+  //
+  // Answers whether this program carries off-graph storage at all: a method
+  // that does not (an embedding or vision pass) has no use for the cache, and
+  // the caller should stop associating it with one.
+  virtual runtime::Result<bool> note_handle(CudaDelegateHandle* handle) = 0;
   virtual void forget_handle(CudaDelegateHandle* handle) = 0;
 
   // Execute time. Points the AOTI container at the current allocations, which

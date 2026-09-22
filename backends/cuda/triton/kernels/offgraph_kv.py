@@ -13,7 +13,6 @@ import math
 import torch
 import triton
 import triton.language as tl
-from torch.library import triton_op, wrap_triton
 
 from executorch.backends.cuda.triton.kernels.sdpa import (
     _decode_splitk_config,
@@ -22,6 +21,7 @@ from executorch.backends.cuda.triton.kernels.sdpa import (
     _sdpa_fwd_kernel_body,
     _should_pack_gqa,
 )
+from torch.library import triton_op, wrap_triton
 
 
 FLAT_CACHE = 0
@@ -108,9 +108,7 @@ def _update_cache_kernel(
         other=0.0,
     )
     storage_offset = (
-        (b * H + h) * capacity * D
-        + physical_pos[:, None] * D
-        + offs_d[None, :]
+        (b * H + h) * capacity * D + physical_pos[:, None] * D + offs_d[None, :]
     )
     tl.store(KStorage + storage_offset, k, mask=valid_store)
     tl.store(VStorage + storage_offset, v, mask=valid_store)
@@ -273,13 +271,9 @@ def _offgraph_decode_splitk_kernel(
         )
         p = tl.exp(safe_diff).to(tl.float32)
         l_ij = tl.sum(p, axis=1).to(tl.float32)
-        alpha = tl.exp(
-            tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)
-        ).to(tl.float32)
+        alpha = tl.exp(tl.where(m_ij > -float("inf"), m_i - m_ij, 0.0)).to(tl.float32)
         v = tl.load(VStorage + storage_offset, mask=n_valid[:, None], other=0.0)
-        acc = (acc * alpha[:, None] + tl.dot(p.to(tl.bfloat16), v)).to(
-            tl.float32
-        )
+        acc = (acc * alpha[:, None] + tl.dot(p.to(tl.bfloat16), v)).to(tl.float32)
         l_i = (l_i * alpha + l_ij).to(tl.float32)
         m_i = m_ij
 
@@ -289,18 +283,8 @@ def _offgraph_decode_splitk_kernel(
         + h_q[:, None] * stride_op_h
         + offs_d[None, :] * stride_op_d
     )
-    m_ptrs = (
-        MPartial
-        + split_id * stride_mp_s
-        + b * stride_mp_b
-        + h_q * stride_mp_h
-    )
-    l_ptrs = (
-        LPartial
-        + split_id * stride_lp_s
-        + b * stride_lp_b
-        + h_q * stride_lp_h
-    )
+    m_ptrs = MPartial + split_id * stride_mp_s + b * stride_mp_b + h_q * stride_mp_h
+    l_ptrs = LPartial + split_id * stride_lp_s + b * stride_lp_b + h_q * stride_lp_h
     tl.store(o_ptrs, acc, mask=g_valid[:, None])
     tl.store(m_ptrs, m_i, mask=g_valid)
     tl.store(l_ptrs, l_i, mask=g_valid)
@@ -320,15 +304,11 @@ def _launch_offgraph_decode_splitk(
 ) -> None:
     B, h_q, _, head_dim = q.shape
     sweep_length = window_size if window_size else max_capacity
-    num_splits, chunk_size = _decode_splitk_config(
-        sweep_length, B * h_kv, q.device
-    )
+    num_splits, chunk_size = _decode_splitk_config(sweep_length, B * h_kv, q.device)
     o_partial = torch.empty(
         (num_splits, B, h_q, head_dim), device=q.device, dtype=torch.float32
     )
-    m_partial = torch.empty(
-        (num_splits, B, h_q), device=q.device, dtype=torch.float32
-    )
+    m_partial = torch.empty((num_splits, B, h_q), device=q.device, dtype=torch.float32)
     l_partial = torch.empty_like(m_partial)
     groups = h_q // h_kv
     wrap_triton(_offgraph_decode_splitk_kernel)[(num_splits, B * h_kv)](

@@ -16,9 +16,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import torch
-from executorch.backends.cuda.passes.lower_offgraph_kv import (
-    OFFGRAPH_KV_FQN_PREFIX,
-)
+from executorch.backends.cuda.passes.lower_offgraph_kv import OFFGRAPH_KV_FQN_PREFIX
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
