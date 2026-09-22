@@ -27,6 +27,8 @@ namespace {
 constexpr int32_t kFloat32 = 6;
 // DeviceType::MPS.
 constexpr int32_t kDeviceMps = 13;
+// DeviceType::CPU.
+constexpr int32_t kDeviceCpu = 0;
 
 } // namespace
 
@@ -183,4 +185,89 @@ TEST_F(MetalStridedViewTest, CopiedHandleIsAStridedViewToo) {
   EXPECT_TRUE(metal_is_strided_view(alias));
   ASSERT_EQ(aoti_torch_delete_tensor_object(alias), Error::Ok);
   EXPECT_FALSE(metal_is_strided_view(alias));
+}
+
+// CPU memory, and views of it that have a Metal buffer of their own, cannot be
+// bound where they are: a view of them that is not densely packed is copied
+// into a buffer of its own instead.
+TEST_F(MetalStridedViewTest, NonPackedViewOfCpuBackedViewIsMaterialized) {
+  const int64_t base_size = 20;
+  const int64_t unit = 1;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &unit, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  float* data = static_cast<float*>(base->mutable_data_ptr());
+  for (int i = 0; i < 20; i++) {
+    data[i] = static_cast<float>(i);
+  }
+  const int64_t cpu_view_size = 16;
+  AOTITensorHandle cpu_view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &cpu_view_size, &unit, /*storage_offset=*/4, &cpu_view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_cpu_view(cpu_view->mutable_data_ptr()));
+
+  const int64_t sizes[2] = {4, 2};
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle half = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          cpu_view, 2, sizes, strides, /*storage_offset=*/2, &half),
+      Error::Ok);
+  EXPECT_FALSE(metal_is_strided_view(half));
+  const float* got = static_cast<const float*>(half->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{6, 7, 10, 11, 14, 15, 18, 19}));
+}
+
+// A kernel can write CPU memory through the Metal buffer of a view of it; a
+// copy of that memory made afterwards has to see the write.
+TEST_F(MetalStridedViewTest, MaterializingCpuMemoryWaitsForGpuWrites) {
+  const int64_t base_size = 12;
+  const int64_t unit = 1;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &unit, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  std::fill_n(static_cast<float*>(base->mutable_data_ptr()), 12, 0.0f);
+  const int64_t four = 4;
+  AOTITensorHandle target = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &four, &unit, /*storage_offset=*/4, &target),
+      Error::Ok);
+  AOTITensorHandle source = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &four, &unit, kFloat32, kDeviceMps, 0, &source),
+      Error::Ok);
+  float* src = static_cast<float*>(source->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    src[i] = static_cast<float>(31 + i);
+  }
+
+  auto copy = copyKernel();
+  copy->runCommandBlock([&]() {
+    copy->startEncoding();
+    copy->setArg(0, *source);
+    copy->setArg(1, *target, ETMetalKernelFunction::ArgAccess::kWrite);
+    copy->dispatchSingle(4);
+  });
+
+  // Elements 4, 5, 8 and 9: not densely packed, so copied on the CPU.
+  const int64_t sizes[2] = {2, 2};
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, sizes, strides, /*storage_offset=*/4, &read),
+      Error::Ok);
+  const float* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 4), (std::vector<float>{31, 32, 0, 0}));
 }

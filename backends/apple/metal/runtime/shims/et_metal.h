@@ -319,18 +319,15 @@ class ETMetalStream {
 
   void endKernelCoalescing();
 
-  // MPSGraph execution
+  // MPSGraph execution. `settle_aliases` is for a graph fed an aliasing buffer
+  // (see get_mtl_buffer): the stream then waits for the GPU both before and
+  // after encoding the graph, as one step.
   void executeMPSGraph(
       MPSGraph_t mpsGraph,
       NSDictionary_t feeds,
       NSDictionary_t results,
-      SyncType syncType = SyncType::COMMIT_ADAPTIVE);
-
-  // Makes the next executeMPSGraph() wait for the GPU before returning. See
-  // get_mtl_buffer(): needed when a graph was handed an aliasing buffer.
-  void syncAfterNextGraph() {
-    syncAfterNextGraph_ = true;
-  }
+      SyncType syncType = SyncType::COMMIT_ADAPTIVE,
+      bool settle_aliases = false);
 
   // Command buffer lifecycle management
   void commitCommandBuffer(MTLCommandBuffer_t commandBuffer);
@@ -373,7 +370,6 @@ class ETMetalStream {
 
   // Configuration
   bool enableCommitAndContinue_;
-  bool syncAfterNextGraph_ = false;
   int flushInterval_; // 0 = disabled, >0 = flush every N dispatches
   std::atomic<int> dispatchCount_; // dispatches since last flush
 
@@ -437,6 +433,12 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 bool metal_register_view(void* view_ptr, void* base_ptr);
 void metal_retain_view(void* view_ptr);
 void metal_unregister_view(void* view_ptr);
+
+// A view of CPU memory that Metal kernels are to use gets a no-copy buffer of
+// its own, mapped at `view_ptr`. It is counted and released like a view of a
+// Metal buffer, and the buffer goes with its last handle.
+bool metal_register_cpu_view(void* view_ptr, size_t nbytes);
+bool metal_is_cpu_view(void* ptr);
 
 // Helper functions to access Metal objects
 MTLDevice_t get_metal_device();

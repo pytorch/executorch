@@ -128,7 +128,8 @@ AOTITorchError aoti_torch_mps_topk(
 
       stream->endKernelCoalescing();
 
-      id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "topk", "self");
+      bool settle_aliases = false;
+      id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "topk", "self", &settle_aliases);
       id<MTLBuffer> values_buffer = ptr_to_mtl_buffer[values_ptr];
       id<MTLBuffer> indices_buffer = ptr_to_mtl_buffer[indices_ptr];
 
@@ -151,7 +152,7 @@ AOTITorchError aoti_torch_mps_topk(
         };
 
         @try {
-          stream->executeMPSGraph(cached.graph, feeds, results, SyncType::COMMIT);
+          stream->executeMPSGraph(cached.graph, feeds, results, SyncType::COMMIT, settle_aliases);
         } @catch (NSException* e) {
           ET_LOG(Error, "aoti_torch_mps_topk: ObjC exception: %s - %s",
                   e.name.UTF8String, e.reason.UTF8String);
@@ -218,7 +219,7 @@ AOTITorchError aoti_torch_mps_topk(
             indices_out: indicesData,
           };
 
-          stream->executeMPSGraph(graph, feeds, results, SyncType::COMMIT);
+          stream->executeMPSGraph(graph, feeds, results, SyncType::COMMIT, settle_aliases);
 
           [selfData release];
           [valuesData release];

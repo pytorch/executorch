@@ -15,9 +15,14 @@ namespace metal {
 std::unordered_map<GraphCacheKey, CachedGraph, GraphCacheKeyHash> graph_cache;
 CacheStats cache_stats;
 
-id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* tensor_name) {
+id<MTLBuffer> get_mtl_buffer(
+    Tensor* tensor,
+    const char* op_name,
+    const char* tensor_name,
+    bool* settle_aliases) {
   // MPSGraph reads its inputs as dense tensors. A strided view is handed over
-  // as a packed copy; a graph cannot write its result through one.
+  // as a packed copy, which is encoded on the stream ahead of the graph and so
+  // needs no settling; a graph cannot write its result through one.
   if (metal_is_strided_view(tensor)) {
     if (std::strcmp(tensor_name, "out") == 0) {
       ET_LOG(Error, "%s: the out tensor is a view that is not densely packed, which is unsupported", op_name);
@@ -46,11 +51,8 @@ id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* te
   // cannot address into a buffer, so the graph needs an MTLBuffer that begins at
   // the view, over the same memory. Metal does not relate that alias to
   // `buffer`, and work using one does not see pending work on the other, so the
-  // memory has to be settled on both sides of the graph: wait for what was
-  // already encoded, and have the stream wait again once the graph has run.
-  ETMetalStream* stream = getCurrentMetalStream();
-  stream->synchronize(SyncType::COMMIT_AND_WAIT);
-
+  // graph has to run with the memory settled on both sides of it. That is asked
+  // of the one graph this buffer is for, through executeMPSGraph.
   id<MTLBuffer> alias = [get_metal_device() newBufferWithBytesNoCopy:data_ptr
                                                               length:tensor->nbytes()
                                                              options:MTLResourceStorageModeShared
@@ -59,9 +61,7 @@ id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* te
     ET_LOG(Error, "%s: failed to wrap the %s view in a Metal buffer", op_name, tensor_name);
     throw std::runtime_error(std::string(tensor_name) + " view could not be wrapped in a Metal buffer");
   }
-  // Only once the alias exists: a failure above must not leave the next,
-  // unrelated graph waiting.
-  stream->syncAfterNextGraph();
+  *settle_aliases = true;
   return [alias autorelease];
 }
 

@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -25,8 +26,15 @@ namespace {
 constexpr int32_t kFloat32 = 6;
 // DeviceType::MPS.
 constexpr int32_t kDeviceMps = 13;
+// DeviceType::CPU.
+constexpr int32_t kDeviceCpu = 0;
 
 } // namespace
+
+extern "C" AOTITorchError aoti_torch_mps_mm_out(
+    AOTITensorHandle out,
+    AOTITensorHandle self,
+    AOTITensorHandle mat2);
 
 class MetalMemoryTest : public ::testing::Test {
  protected:
@@ -242,4 +250,155 @@ TEST_F(MetalMemoryTest, CopiedViewHandleKeepsParentAlive) {
   ASSERT_EQ(aoti_torch_delete_tensor_object(alias), Error::Ok);
   EXPECT_FALSE(metal_is_device_pointer(base_ptr));
   EXPECT_EQ(memory_to_n_tensor.count(base_ptr), 0u);
+}
+
+class MetalGraphViewTest : public MetalMemoryTest {
+ protected:
+  // An 8-element tensor holding 1..8 on `device_type`, and the 2x2 view of
+  // its last four elements.
+  void createOffsetMatrix(
+      int32_t device_type,
+      AOTITensorHandle* base,
+      AOTITensorHandle* view) {
+    const int64_t base_size = 8;
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            1, &base_size, &kStride, kFloat32, device_type, 0, base),
+        Error::Ok);
+    auto* data = static_cast<float*>((*base)->mutable_data_ptr());
+    for (int i = 0; i < 8; i++) {
+      data[i] = static_cast<float>(i + 1);
+    }
+    ASSERT_EQ(
+        aoti_torch__reinterpret_tensor(
+            *base, 2, kMatrixSizes, kMatrixStrides, /*storage_offset=*/4, view),
+        Error::Ok);
+  }
+
+  // A 2x2 Metal tensor holding the identity matrix.
+  void createIdentity(AOTITensorHandle* identity) {
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            2, kMatrixSizes, kMatrixStrides, kFloat32, kDeviceMps, 0, identity),
+        Error::Ok);
+    auto* data = static_cast<float*>((*identity)->mutable_data_ptr());
+    std::fill_n(data, 4, 0.0f);
+    data[0] = data[3] = 1.0f;
+  }
+
+  void createMatrix(int32_t device_type, AOTITensorHandle* matrix) {
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            2, kMatrixSizes, kMatrixStrides, kFloat32, device_type, 0, matrix),
+        Error::Ok);
+  }
+
+  static constexpr int64_t kMatrixSizes[2] = {2, 2};
+  static constexpr int64_t kMatrixStrides[2] = {2, 1};
+};
+
+// A graph fed an offset view through an alias settles the stream itself: its
+// result is there as soon as the op returns.
+TEST_F(MetalGraphViewTest, AliasedGraphSettlesItsOwnWork) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createOffsetMatrix(kDeviceMps, &base, &view);
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, view, identity), Error::Ok);
+  EXPECT_TRUE(getCurrentMetalStream()->isEmpty());
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 7, 8}));
+}
+
+// An op that fails after taking an alias for one of its inputs must not leave
+// a wait behind for the next, unrelated graph.
+TEST_F(MetalGraphViewTest, FailedAliasedGraphLeavesNoWaitBehind) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createOffsetMatrix(kDeviceMps, &base, &view);
+  AOTITensorHandle unmapped = nullptr;
+  createMatrix(kDeviceCpu, &unmapped);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  EXPECT_NE(aoti_torch_mps_mm_out(out, view, unmapped), Error::Ok);
+
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, identity, identity), Error::Ok);
+  // Left pending on the stream, as a graph fed no alias always is.
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+}
+
+// A view of CPU memory gets a no-copy Metal buffer of its own, which MPSGraph
+// ops can read.
+TEST_F(MetalGraphViewTest, CpuBackedOffsetViewIsUsableByMm) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createOffsetMatrix(kDeviceCpu, &base, &view);
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, view, identity), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 7, 8}));
+}
+
+// The Metal buffer of a view of CPU memory stays while any handle to the view
+// does, and goes with the last one, before the CPU memory can be freed.
+TEST_F(MetalGraphViewTest, CpuBackedViewBufferGoesWithLastHandle) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createOffsetMatrix(kDeviceCpu, &base, &view);
+  void* view_ptr = view->mutable_data_ptr();
+  AOTITensorHandle alias = nullptr;
+  ASSERT_EQ(aoti_torch_new_tensor_handle(view, &alias), Error::Ok);
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(view_ptr));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(alias), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(view_ptr));
+}
+
+// A second view of CPU memory at the same address can be longer than the
+// first; the Metal buffer they share has to cover it.
+TEST_F(MetalGraphViewTest, CpuBackedViewBufferCoversLongerViewAtSameAddress) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  const int64_t short_size = 2;
+  AOTITensorHandle short_view = nullptr;
+  const int64_t base_size = 8;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* data = static_cast<float*>(base->mutable_data_ptr());
+  for (int i = 0; i < 8; i++) {
+    data[i] = static_cast<float>(i + 1);
+  }
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &short_size, &kStride, /*storage_offset=*/4, &short_view),
+      Error::Ok);
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, kMatrixStrides, /*storage_offset=*/4, &view),
+      Error::Ok);
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, view, identity), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 7, 8}));
 }
