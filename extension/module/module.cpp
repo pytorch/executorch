@@ -8,6 +8,8 @@
 
 #include <executorch/extension/module/module.h>
 
+#include <functional>
+
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
@@ -311,8 +313,15 @@ runtime::Error Module::load_internal(
       if (load_mode_ != LoadMode::File && load_mode_ != LoadMode::Mmap) {
         return runtime::Error::NotSupported;
       }
-      auto ptn_load_result =
-          native_module::load_ptn(*data_loader_, verification);
+      const native_module::internal::PtnSource source = file_path_.empty()
+          ? native_module::internal::PtnSource(std::ref(*data_loader_))
+          : native_module::internal::PtnSource(
+                native_module::internal::PtnFileSource{
+                    file_path_,
+                    load_mode_ == LoadMode::Mmap
+                        ? native_module::internal::PtnFileSource::Mode::Mmap
+                        : native_module::internal::PtnFileSource::Mode::Read});
+      auto ptn_load_result = native_module::load_ptn(source, verification);
       if (!ptn_load_result.ok()) {
         return ptn_load_result.error();
       }

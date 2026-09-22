@@ -10,9 +10,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include <executorch/runtime/core/data_loader.h>
@@ -63,12 +66,27 @@ class PtnModule {
       size_t index) = 0;
 };
 
+struct PtnFileSource {
+  enum class Mode : uint8_t {
+    Read,
+    Mmap,
+  };
+
+  std::string_view path;
+  Mode mode;
+};
+
+using PtnSource =
+    std::variant<std::reference_wrapper<runtime::DataLoader>, PtnFileSource>;
+
 struct PtnHooks {
   runtime::Result<std::unique_ptr<PtnModule>> (*load)(
-      runtime::DataLoader& loader,
+      const PtnSource& source,
       Program::Verification verification) = nullptr;
 };
 
+// This registration keeps PTN linkage optional: Module depends only on this
+// hook contract, while a linked PTN provider supplies the implementation.
 runtime::Error register_ptn_hooks(const PtnHooks& hooks);
 const PtnHooks* get_ptn_hooks();
 
@@ -77,7 +95,7 @@ const PtnHooks* get_ptn_hooks();
 namespace executorch::extension::native_module {
 
 runtime::Result<std::unique_ptr<internal::PtnModule>> load_ptn(
-    runtime::DataLoader& loader,
+    const internal::PtnSource& source,
     internal::Program::Verification verification);
 
 } // namespace executorch::extension::native_module

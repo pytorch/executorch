@@ -53,13 +53,13 @@ const PtnHooks* get_ptn_hooks() {
 namespace executorch::extension::native_module {
 
 runtime::Result<std::unique_ptr<internal::PtnModule>> load_ptn(
-    runtime::DataLoader& loader,
+    const internal::PtnSource& source,
     internal::Program::Verification verification) {
   const internal::PtnHooks* hooks = internal::get_ptn_hooks();
   if (hooks == nullptr) {
     return runtime::Error::NotSupported;
   }
-  return hooks->load(loader, verification);
+  return hooks->load(source, verification);
 }
 
 } // namespace executorch::extension::native_module
