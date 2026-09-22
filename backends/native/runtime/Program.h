@@ -25,6 +25,11 @@ namespace ptn {
 
 namespace fbs = ::native_backend;
 
+struct ProgramVersion {
+  uint32_t major;
+  uint32_t minor;
+};
+
 // Represents a loaded native-graph program
 class Program {
  private:
@@ -33,13 +38,13 @@ class Program {
   // in the destination. A moved-from Program is empty.
   std::vector<uint8_t> bytes_;
   const fbs::Program* program_fb_ = nullptr;
+  ProgramVersion version_;
   // Lazy cache. The mutex guards lookup and materialization; unordered_map
   // keeps returned references stable across insertions.
   mutable std::mutex method_cache_mutex_;
   mutable std::unordered_map<std::string, Method> method_cache_;
 
-  Program(std::vector<uint8_t> bytes, const fbs::Program* program_fb)
-      : bytes_(std::move(bytes)), program_fb_(program_fb) {}
+  Program(std::vector<uint8_t> bytes, const fbs::Program* program_fb);
 
  public:
   ~Program() = default;
@@ -55,6 +60,10 @@ class Program {
 
   const fbs::Program* flatbuffer() const {
     return program_fb_;
+  }
+
+  ProgramVersion version() const {
+    return version_;
   }
 
   size_t num_methods() const;
