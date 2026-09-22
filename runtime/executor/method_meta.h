@@ -150,6 +150,16 @@ class MethodMeta final {
   ~MethodMeta() = default;
 
   /**
+   * Creates metadata over an already-validated serialized execution plan.
+   *
+   * The plan and all of its backing storage must outlive the returned view.
+   * This is intended for format adapters that synthesize an ExecuTorch
+   * metadata view after validating their source representation.
+   */
+  static MethodMeta from_validated_execution_plan(
+      const executorch_flatbuffer::ExecutionPlan& plan);
+
+  /**
    * Get the name of this method.
    *
    * @returns The method name.
