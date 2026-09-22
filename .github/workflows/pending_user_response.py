@@ -32,12 +32,14 @@ def main():
     for issue in issues:
         print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
         comments = sorted(
-            issue.get_comments(), 
+            issue.get_comments(),
             key=lambda comment: comment.created_at,
         )
         
         # Find automation comments
-        auto_comments = [c for c in comments if REMINDER_MARKER in c.body]
+        auto_comments = [
+            comment for comment in comments if REMINDER_MARKER in (comment.body or "")
+        ]
         latest_auto_comment = auto_comments[-1] if auto_comments else None
 
         if latest_auto_comment is not None:
@@ -57,7 +59,7 @@ def main():
                 issue.remove_from_labels(LABEL)
                 continue
         
-            days_since_reminder = (now - latest_auto_comment).days
+            days_since_reminder = (now - latest_auto_comment.created_at).days
             
             # ---- CLOSE ISSUE AFTER 30 DAYS OF REMINDER ----
             if days_since_reminder >= DAYS_BEFORE_CLOSE:
@@ -85,7 +87,7 @@ def main():
 
         if (
             last_comment is not None 
-            and (now - last_comment).days >= DAYS_BEFORE_REMINDER
+            and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER
         ):
             print(f"Posting initial reminder for issue/PR #{issue.number}.")
             issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
@@ -94,6 +96,7 @@ def main():
                 f"Skipping issue/PR #{issue.number}; "
                 "it has not been inactive for 30 days."
             )
+
 
 if __name__ == "__main__":
     main()
