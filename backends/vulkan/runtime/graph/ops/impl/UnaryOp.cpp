@@ -227,6 +227,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.log10.default, log10);
   VK_REGISTER_OP(aten.round.default, round);
   VK_REGISTER_OP(aten.bitwise_not.default, bitwise_not);
+  VK_REGISTER_OP(aten.logical_not.default, bitwise_not);
 }
 
 } // namespace vkcompute
