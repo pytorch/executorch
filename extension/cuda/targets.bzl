@@ -29,13 +29,16 @@ def define_common_targets():
         name = "caller_stream",
         srcs = [
             "caller_stream.cpp",
+            "device_guard.cpp",
         ],
         exported_headers = [
             "caller_stream.h",
+            "device_guard.h",
             "export.h",
         ],
         exported_deps = [
             ":runtime_api",
+            "//executorch/runtime/core:core",
         ],
         # Opt out of the OSS force_static default so consumers *can* link one
         # shared instance and keep the thread-local unique (see above); the
