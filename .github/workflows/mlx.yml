@@ -60,7 +60,7 @@ jobs:
         ${CONDA_RUN} python install_executorch.py > /dev/null
         # The sanitizers fail on github VM runner, but pass on real device
         # TODO: figure out why
-        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
@@ -70,7 +70,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_metallib_path_test mlx_mutable_state_test mlx_sequence_cache_test mlx_batched_sequence_cache_test mlx_cell_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        # Build all configured targets so newly registered tests are built too.
+        ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
 
         echo "::group::Check MLX artifact sizes"
@@ -104,18 +105,12 @@ jobs:
           exit 1
         fi
 
-        echo "::group::Run SwiftPM metallib path unit test"
-        ./cmake-out/backends/mlx/test/mlx_metallib_path_test
-        echo "::endgroup::"
-
-        echo "::group::Run mutable-state (multi-session) unit test"
-        ./cmake-out/backends/mlx/test/mlx_mutable_state_test
-        echo "::endgroup::"
-
-        echo "::group::Run off-graph KV-cache op test"
-        ./cmake-out/backends/mlx/test/mlx_sequence_cache_test
-        ./cmake-out/backends/mlx/test/mlx_batched_sequence_cache_test
-        ./cmake-out/backends/mlx/test/mlx_cell_cache_test
+        echo "::group::Run registered MLX C++ tests"
+        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
+        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
+          ET_TESTING_NUM_THREADS=50 \
+          ET_PREDICTIONS_PER_THREAD=100 \
+          ${CONDA_RUN} ctest --test-dir cmake-out/backends/mlx/test --output-on-failure --no-tests=error
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
@@ -133,14 +128,6 @@ jobs:
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           -v
-        echo "::endgroup::"
-
-        echo "::group::Run multi-thread stress test"
-        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
-        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
-          ET_TESTING_NUM_THREADS=50 \
-          ET_PREDICTIONS_PER_THREAD=100 \
-          ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
         echo "::group::Run custom_kernel_ops op tests"

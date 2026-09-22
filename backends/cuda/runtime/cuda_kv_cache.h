@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 
+#include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/runtime/core/error.h>
@@ -21,7 +22,6 @@ namespace cache = ::executorch::extension::llm::cache;
 
 // The name the runtime knows this delegate by, and the backend id its cache
 // builders are registered under.
-inline constexpr char kCudaBackendId[] = "CudaBackend";
 
 struct OffGraphKVMetrics {
   int64_t logical_length{0};
@@ -62,10 +62,6 @@ class CudaKVCache {
   // Execute time. Points the AOTI container at the current allocations, which
   // move whenever the cache grows.
   virtual runtime::Error rebind_for_execute(CudaDelegateHandle* handle) = 0;
-
-  // Every layer's storage was found in the loaded program, and at least one
-  // handle was associated.
-  virtual runtime::Error validate() const = 0;
 
   // Between steps. prepare_step() admits a step of write_length tokens and
   // grows the flat layers if needed; commit_step() advances the logical length
