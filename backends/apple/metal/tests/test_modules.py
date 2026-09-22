@@ -210,6 +210,31 @@ MODULE_REGISTRY["addmm"] = {
 
 
 # -------------------------------------------------------------------------
+class BmmSingletonDim(nn.Module):
+    """The constant is {2, 1, 4} with strides {4, 1, 1}: dense and row-major,
+    but its size-1 dimension does not have the row-major stride."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "weight",
+            torch.arange(8, dtype=torch.get_default_dtype())
+            .reshape(2, 4, 1)
+            .transpose(1, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        return torch.bmm(self.weight, x)
+
+
+MODULE_REGISTRY["bmm_singleton_dim"] = {
+    "model_class": BmmSingletonDim,
+    "input_shapes": [(2, 4, 3)],
+    "description": "bmm whose constant has a size-1 dim with a non-row-major stride",
+}
+
+
+# -------------------------------------------------------------------------
 # View / copy Modules
 # -------------------------------------------------------------------------
 

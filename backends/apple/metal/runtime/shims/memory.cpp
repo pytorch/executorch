@@ -370,6 +370,10 @@ AOTITorchError aoti_torch_copy_(
   // TODO: This should be improved to catch cases like (4, 1, 5) -> (4, 5)
   bool same_schema = true;
   for (int i = 0; i < self->dim(); i++) {
+    // A dimension of size 1 in both does not change where the elements are.
+    if (self_sizes[i] == 1 && src_sizes[i] == 1) {
+      continue;
+    }
     if (self_strides[i] != src_strides[i]) {
       same_schema = false;
       break;
