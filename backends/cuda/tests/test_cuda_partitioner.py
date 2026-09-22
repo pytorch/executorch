@@ -31,9 +31,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     parse_offgraph_kv_manifest,
 )
-from executorch.backends.cuda.triton.kernels.offgraph_kv import (
-    ring_physical_capacity,
-)
+from executorch.backends.cuda.triton.kernels.offgraph_kv import ring_physical_capacity
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
