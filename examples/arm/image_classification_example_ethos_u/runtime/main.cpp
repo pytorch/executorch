@@ -85,7 +85,7 @@ constexpr const char* labels[] = {
 
 const size_t method_allocation_pool_size = 1 * 1024 * 1024;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section("method_allocator_sec"),
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
 
 /*

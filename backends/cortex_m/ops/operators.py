@@ -11,7 +11,11 @@ from typing import Sequence
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.cortex_m.passes.passes_utils import (
+from executorch.backends.cortex_m.quantizer.quantization_configs import (
+    CMSIS_SOFTMAX_SCALE,
+    CMSIS_SOFTMAX_ZERO_POINT,
+)
+from executorch.backends.cortex_m.utils import (
     dequantize_per_tensor_cmsis,
     is_channel_broadcast,
     is_channels_last,
@@ -19,10 +23,7 @@ from executorch.backends.cortex_m.passes.passes_utils import (
     requantize_cmsis,
     SHIFT_INT8,
 )
-from executorch.backends.cortex_m.quantizer.quantization_configs import (
-    CMSIS_SOFTMAX_SCALE,
-    CMSIS_SOFTMAX_ZERO_POINT,
-)
+from executorch.exir._warnings import experimental
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # To provide the implementation of the operators
@@ -30,6 +31,11 @@ from torch.library import impl, Library, register_fake
 
 # New operator library with a custom namespace to allow fusion etc.
 lib = Library("cortex_m", "DEF")
+
+_EXPLICIT_LAYOUT_EXPERIMENTAL = (
+    "This explicit-layout Cortex-M operator may change while the legacy "
+    "dim-order operators remain supported."
+)
 
 SOFTMAX_INPUT_INTEGER_BITS = 5
 
@@ -763,6 +769,37 @@ lib.define(
 )
 
 
+def _conv2d_padding(
+    padding: Sequence[int],
+    input_shape: torch.Size,
+    weight_shape: torch.Size,
+    stride: Sequence[int],
+    dilation: Sequence[int],
+) -> tuple[int, int, int, int]:
+    # Four values mean top/left/bottom/right for supported SAME convolutions.
+    if len(padding) not in (2, 4) or any(p < 0 for p in padding):
+        raise ValueError(f"Expected 2 or 4 nonnegative padding values, got {padding}")
+    top, left = padding[:2]
+    bottom, right = padding[2:] if len(padding) == 4 else padding
+    if len(padding) == 4:
+        height, width = input_shape[2:4]
+        kernel = weight_shape[1:3]
+        if height == 1 and kernel[0] == 1:
+            raise ValueError("Four-value padding is unsupported for 1xN convolution")
+        total = [
+            max(((size + step - 1) // step - 1) * step + dil * (k - 1) + 1 - size, 0)
+            for size, step, dil, k in zip((height, width), stride, dilation, kernel)
+        ]
+        if (top, left, bottom, right) != (
+            total[0] // 2,
+            total[1] // 2,
+            total[0] - total[0] // 2,
+            total[1] - total[1] // 2,
+        ):
+            raise ValueError("Four-value padding must match SAME convolution geometry")
+    return top, left, bottom, right
+
+
 def _compute_conv2d_output_shape(
     input_shape: torch.Size,
     weight_shape: torch.Size,
@@ -778,15 +815,17 @@ def _compute_conv2d_output_shape(
     kernel_width = weight_shape[2]
 
     stride_h, stride_w = stride
-    pad_h, pad_w = padding
+    pad_h, pad_w, pad_bottom, pad_right = _conv2d_padding(
+        padding, input_shape, weight_shape, stride, dilation
+    )
     dilation_h, dilation_w = dilation
 
     out_channels = weight_shape[0]
     out_height = (
-        in_height + 2 * pad_h - dilation_h * (kernel_height - 1) - 1
+        in_height + pad_h + pad_bottom - dilation_h * (kernel_height - 1) - 1
     ) // stride_h + 1
     out_width = (
-        in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
+        in_width + pad_w + pad_right - dilation_w * (kernel_width - 1) - 1
     ) // stride_w + 1
     return torch.Size([batch, out_channels, out_height, out_width])
 
@@ -807,15 +846,17 @@ def _compute_depthwise_conv2d_output_shape(
     kernel_width = weight_shape[2]
 
     stride_h, stride_w = stride
-    pad_h, pad_w = padding
+    pad_h, pad_w, pad_bottom, pad_right = _conv2d_padding(
+        padding, input_shape, weight_shape, stride, dilation
+    )
     dilation_h, dilation_w = dilation
 
     out_channels = weight_shape[3]  # IHWO format: output channels at dimension 3
     out_height = (
-        in_height + 2 * pad_h - dilation_h * (kernel_height - 1) - 1
+        in_height + pad_h + pad_bottom - dilation_h * (kernel_height - 1) - 1
     ) // stride_h + 1
     out_width = (
-        in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
+        in_width + pad_w + pad_right - dilation_w * (kernel_width - 1) - 1
     ) // stride_w + 1
     return torch.Size([batch, out_channels, out_height, out_width])
 
@@ -870,6 +911,12 @@ def quantized_conv2d_impl(
         raise RuntimeError("quantized_conv2d expects 4D input and weight tensors")
     # Convert to int32 for accumulation and apply offsets
     input_int32 = input.to(torch.int32) + int(input_offset)
+    if len(padding) == 4:
+        top, left, bottom, right = _conv2d_padding(
+            padding, input.shape, weight.shape, stride, dilation
+        )
+        input_int32 = F.pad(input_int32, (left, right, top, bottom))
+        padding = (0, 0)
     weight_int32 = weight.to(torch.int32)
 
     if bias is None:
@@ -913,6 +960,92 @@ def quantized_conv2d_impl(
     # TODO - this enforces all convolution layers to result in channels last.
     # This issue does comes min/mul layers from decomposition of hard swish
     return result.to(torch.int8, memory_format=torch.channels_last)
+
+
+lib.define(
+    "quantized_conv2d_nhwc("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_conv2d_nhwc.out("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_conv2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_conv2d_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_conv2d_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_conv2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_conv2d_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_conv2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================
@@ -1018,6 +1151,12 @@ def quantized_depthwise_conv2d_impl(
 
     # Convert to int32 for accumulation and apply offsets
     input_int32 = input.to(torch.int32) + int(input_offset)
+    if len(padding) == 4:
+        top, left, bottom, right = _conv2d_padding(
+            padding, input.shape, weight.shape, stride, dilation
+        )
+        input_int32 = F.pad(input_int32, (left, right, top, bottom))
+        padding = (0, 0)
     weight_int32 = weight.to(torch.int32)
 
     if bias is None:
@@ -1060,6 +1199,96 @@ def quantized_depthwise_conv2d_impl(
     result = torch.clamp(result, activation_min, activation_max)
 
     return result.to(torch.int8, memory_format=torch.channels_last)
+
+
+lib.define(
+    "quantized_depthwise_conv2d_nhwc("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int depth_multiplier, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_depthwise_conv2d_nhwc.out("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int depth_multiplier, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_depthwise_conv2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_depthwise_conv2d_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    depth_multiplier: int,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_depthwise_conv2d_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        depth_multiplier,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_depthwise_conv2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_depthwise_conv2d_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    depth_multiplier: int,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_depthwise_conv2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        depth_multiplier,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================
@@ -1270,6 +1499,101 @@ def quantized_transpose_conv2d_impl(
     return result.to(torch.int8).to(memory_format=torch.channels_last)
 
 
+lib.define(
+    "quantized_transpose_conv2d_nhwc("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] output_padding, int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "Tensor output_scratch) -> Tensor"
+)
+lib.define(
+    "quantized_transpose_conv2d_nhwc.out("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] output_padding, int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "Tensor output_scratch, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_transpose_conv2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_transpose_conv2d_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    output_padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_transpose_conv2d_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        output_padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+        output_scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_transpose_conv2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_transpose_conv2d_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    output_padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_transpose_conv2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        weight,
+        bias,
+        stride,
+        padding,
+        output_padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+        output_scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
 # ===================================================================
 # QUANTIZED AVG_POOL2D OPERATION DEFINITION
 # ===================================================================
@@ -1363,6 +1687,73 @@ def quantized_avg_pool2d_impl(
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
     output = torch.clamp(result, -128, 127)
     return output.to(torch.int8)
+
+
+lib.define(
+    "quantized_avg_pool2d_nhwc("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "bool ceil_mode, int zero_point, int multiplier, int shift, "
+    "Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_avg_pool2d_nhwc.out("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "bool ceil_mode, int zero_point, int multiplier, int shift, "
+    "Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_avg_pool2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_avg_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    ceil_mode: bool,
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_avg_pool2d_meta(
+        input.permute(0, 3, 1, 2),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        zero_point,
+        multiplier,
+        shift,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_avg_pool2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_avg_pool2d_nhwc_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    ceil_mode: bool,
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_avg_pool2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        zero_point,
+        multiplier,
+        shift,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================
@@ -1495,8 +1886,23 @@ def quantized_max_pool2d_impl(
     if ceil_mode:
         raise RuntimeError("quantized_max_pool2d does not support ceil_mode=True")
 
+    # aten's channels-last max_pool2d caps how large an image it will take, so
+    # pool a contiguous copy instead. Pooling is layout-invariant, and the
+    # return below puts the result back in channels-last either way.
+    #
+    # The cap: cpu_max_pool_channels_last buffers each window index in
+    # vec::int_same_size_t<opmath_t> and guards it with
+    # TORCH_CHECK(input_depth * input_height * input_width <= max), so int8
+    # rejects any image with more than 127 spatial elements -- H*W, with
+    # channels not counted. int16 hits the same wall at 32767, which a future
+    # quantized_max_pool2d_s16 will need to handle the same way.
+    #
+    # .to(memory_format=...) rather than .contiguous(): for C == 1 the
+    # channels-last strides also satisfy plain contiguity, so .contiguous()
+    # returns the same tensor while aten still dispatches on the memory-format
+    # hint and raises anyway.
     result = F.max_pool2d(
-        input,
+        input.to(memory_format=torch.contiguous_format),
         kernel,
         stride=stride_vals,
         padding=padding_vals,
@@ -1505,3 +1911,75 @@ def quantized_max_pool2d_impl(
     )
     result = torch.clamp(result, activation_min, activation_max)
     return result.to(torch.int8).contiguous(memory_format=torch.channels_last)
+
+
+lib.define(
+    "quantized_max_pool2d_nhwc("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "int[] dilation, bool ceil_mode, int input_zero_point, "
+    "int output_zero_point, int activation_min, int activation_max) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc.out("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "int[] dilation, bool ceil_mode, int input_zero_point, "
+    "int output_zero_point, int activation_min, int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_max_pool2d_nhwc")  # type: ignore[misc]
+@experimental(_EXPLICIT_LAYOUT_EXPERIMENTAL)  # type: ignore[misc]
+def quantized_max_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    nchw = quantized_max_pool2d_meta(
+        input.permute(0, 3, 1, 2),
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_max_pool2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_max_pool2d_nhwc_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    nchw = quantized_max_pool2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()

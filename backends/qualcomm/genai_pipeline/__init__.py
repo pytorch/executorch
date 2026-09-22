@@ -23,10 +23,12 @@ from executorch.backends.qualcomm.genai_pipeline.exceptions import (
     PipelineError,
     StageError,
 )
+from executorch.backends.qualcomm.genai_pipeline.genai_pipeline import GenAIPipeline
 from executorch.backends.qualcomm.genai_pipeline.pipeline_context import (
     PipelineContext,
     PipelineContextBuilder,
 )
+from executorch.backends.qualcomm.genai_pipeline.pipeline_stage import PipelineStage
 from executorch.backends.qualcomm.genai_pipeline.pipeline_types import EngineType
 
 __all__ = [
@@ -36,6 +38,7 @@ __all__ = [
     "EngineNotAvailableError",
     "EngineProxy",
     "EngineType",
+    "GenAIPipeline",
     "InferenceInputConfig",
     "InferenceOutputConfig",
     "ModelPreparationInputConfig",

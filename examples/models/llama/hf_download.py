@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
+
 from pathlib import Path
 from typing import Callable
 
@@ -28,7 +30,8 @@ def download_and_convert_hf_checkpoint(
 
     # Build cache path.
     cache_subdir = "meta_checkpoints"
-    cache_dir = Path.home() / ".cache" / cache_subdir
+    home_dir = Path(os.environ.get("HF_HOME", Path.home()))
+    cache_dir = home_dir / ".cache" / cache_subdir
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Use repo name to name the converted file.

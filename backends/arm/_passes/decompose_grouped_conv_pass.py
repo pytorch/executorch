@@ -8,8 +8,8 @@ from typing import Literal, Protocol, Set, Type, TypeGuard
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
-from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -46,7 +46,7 @@ class DecomposeGroupedConvPass(ArmOpTargetedPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {Conv1dUnsqueezePass}
+    _passes_required_after: Set[Type[ExportPass]] = {RewriteConvPass}
     target_ops = (
         exir_ops.edge.aten.convolution.default,
         torch.ops.aten.conv_transpose2d.input,

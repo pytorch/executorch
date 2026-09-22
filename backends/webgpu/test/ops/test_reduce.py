@@ -19,12 +19,14 @@ on buffer storage, so those reduce over `dim=-1`, mirroring Vulkan's per-row pat
 
 from __future__ import annotations
 
+import math
 import unittest
 
 import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
 
 class ReduceModule(torch.nn.Module):
@@ -59,6 +61,70 @@ def _det_input(shape) -> torch.Tensor:
         n *= s
     flat = torch.arange(n, dtype=torch.float32)
     return ((flat % 17) - 8).div(16.0).reshape(shape)
+
+
+# Shared structural and manifest-driven extrema case authority.
+EXTREMA_CONFIGS = (
+    ("keepdim_2d", (37, 41), -1, True, "default"),
+    ("nodim_2d", (37, 41), -1, False, "default"),
+    ("keepdim_3d", (5, 7, 11), -1, True, "default"),
+    ("nodim_3d", (5, 7, 11), -1, False, "default"),
+    ("sign_trap_63_drop", (3, 63), -1, False, "sign_trap"),
+    ("tie_64_keep", (2, 64), -1, True, "tie"),
+    ("tie_65_posdim_drop", (2, 65), 1, False, "tie"),
+    ("sign_trap_255_keep", (2, 255), -1, True, "sign_trap"),
+    ("tie_256_drop", (2, 256), -1, False, "tie"),
+    ("tie_257_posdim_keep", (2, 257), 1, True, "tie"),
+)
+
+
+def _sign_trap_input(shape, *, for_max: bool) -> torch.Tensor:
+    magnitude = ((torch.arange(math.prod(shape), dtype=torch.float32) % 31) + 1).div(
+        8.0
+    )
+    rows = magnitude.reshape(-1, shape[-1])
+    for row_index, row in enumerate(rows):
+        row.add_(float(row_index))
+    values = -magnitude if for_max else magnitude
+    return values.reshape(shape)
+
+
+def amax_sign_trap_input(shape) -> torch.Tensor:
+    return _sign_trap_input(shape, for_max=True)
+
+
+def amin_sign_trap_input(shape) -> torch.Tensor:
+    return _sign_trap_input(shape, for_max=False)
+
+
+def _tie_input(shape, *, for_max: bool) -> torch.Tensor:
+    values = ((torch.arange(math.prod(shape), dtype=torch.float32) % 29) - 14).div(8.0)
+    rows = values.reshape(-1, shape[-1])
+    for row_index, row in enumerate(rows):
+        extreme = 16.0 + float(row_index)
+        if not for_max:
+            extreme = -extreme
+        row[-2] = extreme
+        row[-1] = extreme
+    return values.reshape(shape)
+
+
+def amax_tie_input(shape) -> torch.Tensor:
+    return _tie_input(shape, for_max=True)
+
+
+def amin_tie_input(shape) -> torch.Tensor:
+    return _tie_input(shape, for_max=False)
+
+
+def _extrema_input(op: str, input_class: str, shape) -> torch.Tensor:
+    if input_class == "default":
+        return _det_input(shape)
+    if input_class == "sign_trap":
+        return (
+            amax_sign_trap_input(shape) if op == "amax" else amin_sign_trap_input(shape)
+        )
+    return amax_tie_input(shape) if op == "amax" else amin_tie_input(shape)
 
 
 def _export(m: torch.nn.Module, x: torch.Tensor):
@@ -128,21 +194,55 @@ def export_reduce_model(
 
 
 class AmaxModule(torch.nn.Module):
-    def __init__(self, keepdim: bool) -> None:
+    def __init__(self, keepdim: bool, dim: int = -1) -> None:
         super().__init__()
         self.keepdim = keepdim
+        self.dim = dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.amax(x, dim=-1, keepdim=self.keepdim)
+        return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
 
 
 class AminModule(torch.nn.Module):
-    def __init__(self, keepdim: bool) -> None:
+    def __init__(self, keepdim: bool, dim: int = -1) -> None:
         super().__init__()
         self.keepdim = keepdim
+        self.dim = dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.amin(x, dim=-1, keepdim=self.keepdim)
+        return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
+
+
+class TestExtrema(unittest.TestCase):
+    def test_config_contract(self) -> None:
+        self.assertEqual(
+            EXTREMA_CONFIGS,
+            (
+                ("keepdim_2d", (37, 41), -1, True, "default"),
+                ("nodim_2d", (37, 41), -1, False, "default"),
+                ("keepdim_3d", (5, 7, 11), -1, True, "default"),
+                ("nodim_3d", (5, 7, 11), -1, False, "default"),
+                ("sign_trap_63_drop", (3, 63), -1, False, "sign_trap"),
+                ("tie_64_keep", (2, 64), -1, True, "tie"),
+                ("tie_65_posdim_drop", (2, 65), 1, False, "tie"),
+                ("sign_trap_255_keep", (2, 255), -1, True, "sign_trap"),
+                ("tie_256_drop", (2, 256), -1, False, "tie"),
+                ("tie_257_posdim_keep", (2, 257), 1, True, "tie"),
+            ),
+        )
+
+    def test_exports_fully_delegated(self) -> None:
+        for op, module_cls in (("amax", AmaxModule), ("amin", AminModule)):
+            for name, shape, dim, keepdim, input_class in EXTREMA_CONFIGS:
+                with self.subTest(op=op, config=name):
+                    x = _extrema_input(op, input_class, shape)
+                    ep = torch.export.export(module_cls(keepdim, dim).eval(), (x,))
+                    edge = to_edge_transform_and_lower(
+                        ep, partitioner=[VulkanPartitioner()]
+                    )
+                    graph = edge.exported_program().graph_module.graph
+                    self.assertEqual(len(get_delegates(graph)), 1)
+                    self.assertEqual(get_non_lowered_nodes(graph), [])
 
 
 if __name__ == "__main__":

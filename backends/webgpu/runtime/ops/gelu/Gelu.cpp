@@ -13,6 +13,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -42,13 +43,18 @@ void gelu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& out_tensor = graph.get_tensor(out_id);
   utils::check_elementwise_fp32_io(in_tensor, out_tensor, "gelu");
 
-  uint32_t num_elements =
-      static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+  const uint64_t num_elements64 = out_tensor.nbytes / sizeof(float);
+  if (num_elements64 >
+      static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+    throw std::runtime_error(
+        "WebGPU gelu: element count exceeds the flattened 2D dispatch limit");
+  }
+  const uint32_t num_elements = static_cast<uint32_t>(num_elements64);
 
   // Each thread handles up to 4 elements (vec4 body + scalar-tail idiom).
   uint32_t num_vec4_threads = utils::div_up(num_elements, 4u);
   uint32_t wg_size = utils::clamp_workgroup_size(device, kGeluWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, num_vec4_threads, wg_size, "gelu");
 
   WGPUConstantEntry wg_constant = utils::make_wg_size_constant(wg_size);
@@ -56,9 +62,7 @@ void gelu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   GeluParams params = {};
   params.num_elements = num_elements;
 
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(GeluParams));
-  graph.add_uniform_buffer_bytes(sizeof(GeluParams));
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
 
   // input (read storage) + output (storage) + params. The exact/approximate
   // choice is baked into the compiled pipeline via the entry point (mirrors
@@ -85,10 +89,38 @@ void gelu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       1,
       exact ? "main_erf" : "main_tanh");
 
-  graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.add_dispatch_2d(
+      bundle.pipeline, bundle.bind_group, workgroup_count.x, workgroup_count.y);
 
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, wg_size, dispatch_idx, params_buf](WebGPUGraph& g) {
+        const auto& dims = g.cur_dims(in_id);
+        const uint64_t num_elements64 = utils::numel_of(dims);
+        if (num_elements64 >
+            static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+          throw std::runtime_error(
+              "WebGPU gelu(resize): element count exceeds the flattened 2D "
+              "dispatch limit");
+        }
+        const uint32_t num_elements = static_cast<uint32_t>(num_elements64);
+        g.set_cur_dims(out_id, dims);
+
+        GeluParams params = {};
+        params.num_elements = num_elements;
+        wgpuQueueWriteBuffer(
+            g.queue(), params_buf, 0, &params, sizeof(GeluParams));
+
+        const uint32_t num_vec4_threads = utils::div_up(num_elements, 4u);
+        const utils::WgCount resized_workgroup_count =
+            utils::compute_2d_workgroup_count(
+                g.device(), num_vec4_threads, wg_size, "gelu(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            resized_workgroup_count.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y =
+            resized_workgroup_count.y;
+      });
 }
 
 } // namespace

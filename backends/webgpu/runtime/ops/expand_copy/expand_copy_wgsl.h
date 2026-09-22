@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from expand_copy.wgsl - DO NOT EDIT.
-// wgsl-sha256: 99953670bea89e42bc9c689ab80addfd9a331442c8c8f1a5b0c39dbe11c19370
+// wgsl-sha256: b3c032ab961ffde245fc44289b67df3b5e4ca93eedb9ada2f20a3eaa6f10e9c6
 inline constexpr const char* kExpandCopyWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -30,8 +30,10 @@ struct TensorMeta {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (idx >= out_meta.numel) {
         return;
     }

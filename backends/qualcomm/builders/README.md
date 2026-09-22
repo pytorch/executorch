@@ -436,6 +436,7 @@ Please help update following table if you are contributing new operators:
 | GetSparseValues | &cross; |
 | GridSample | &check; |
 | GroupNorm | &check; |
+| HadamardTransform | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
 | IsInf | &check; |
@@ -502,6 +503,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.as_strided` | `DecomposeAsStrided` |
 | `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
 | `aten.atanh` | `DecomposeHyperbolicVariants` |

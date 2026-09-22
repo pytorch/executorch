@@ -23,6 +23,21 @@ class TestCompilationInputConfig(unittest.TestCase):
         with self.assertRaises(TypeError):
             CompilationInputConfig()
 
+    def test_optional_fields_default_to_none(self):
+        config = CompilationInputConfig(soc_model=MagicMock(), backend_type=MagicMock())
+        self.assertIsNone(config.model)
+        self.assertIsNone(config.example_inputs)
+        self.assertIsNone(config.compile_specs)
+
+    def test_example_inputs_carries_export_signature(self):
+        example_inputs = (MagicMock(name="tokens"), MagicMock(name="attn_mask"))
+        config = CompilationInputConfig(
+            soc_model=MagicMock(),
+            backend_type=MagicMock(),
+            example_inputs=example_inputs,
+        )
+        self.assertIs(config.example_inputs, example_inputs)
+
 
 if __name__ == "__main__":
     unittest.main()

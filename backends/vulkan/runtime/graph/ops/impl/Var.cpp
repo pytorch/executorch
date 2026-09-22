@@ -16,29 +16,13 @@ namespace vkcompute {
 using namespace utils;
 
 // Custom global workgroup size function for var_buffer
-utils::uvec3 var_buffer_global_wg_size(
+GlobalWorkGrid var_buffer_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
-  (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  return {
-      graph->size_at<uint32_t>(-1, out),
-      graph->size_at<uint32_t>(-2, out),
-      graph->size_at<uint32_t>(-3, out) * graph->size_at<uint32_t>(-4, out)};
-}
-
-// Custom local workgroup size function for var_buffer
-utils::uvec3 var_buffer_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  (void)global_workgroup_size;
   const ValueRef in = args.at(1).refs.at(0);
   const int dim = resize_args.at(0);
 
@@ -46,14 +30,18 @@ utils::uvec3 var_buffer_local_wg_size(
   int32_t reduce_dim = normalize(dim, ndim);
   reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
 
-  const uint32_t nworkers_per_group = 4;
-  utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim] = nworkers_per_group;
-  return local_wg_size;
+  utils::uvec3 lwg_extents{1u, 1u, 1u};
+  lwg_extents[reduce_dim] = 4u;
+  return GlobalWorkGrid(
+      {graph->size_at<uint32_t>(-1, out),
+       graph->size_at<uint32_t>(-2, out),
+       graph->size_at<uint32_t>(-3, out) * graph->size_at<uint32_t>(-4, out)},
+      kTiledWorkGrid,
+      LocalWorkGroup(lwg_extents));
 }
 
 // Custom global workgroup size function for var_texture
-utils::uvec3 var_texture_global_wg_size(
+GlobalWorkGrid var_texture_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -67,39 +55,18 @@ utils::uvec3 var_texture_global_wg_size(
   int32_t reduce_dim = normalize(dim, ndim);
   reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
 
-  utils::uvec3 global_wg_size = graph->logical_limits_of(out);
-  global_wg_size[reduce_dim] = 1;
-  return global_wg_size;
-}
-
-// Custom local workgroup size function for var_texture
-utils::uvec3 var_texture_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)shader;
-  const ValueRef in = args.at(1).refs.at(0);
-  const int dim = resize_args.at(0);
-
-  const int64_t ndim = graph->dim_of(in);
-  int32_t reduce_dim = normalize(dim, ndim);
-  reduce_dim = nchw_dim_to_whcn_dim(reduce_dim, ndim);
-
-  const uint32_t nworkers_per_group = 4;
-  const uint32_t ngroups = 4;
-
-  utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim] = nworkers_per_group;
+  utils::uvec3 extents = graph->logical_limits_of(out);
+  extents[reduce_dim] = 1;
+  utils::uvec3 lwg_extents{1u, 1u, 1u};
+  lwg_extents[reduce_dim] = 4u;
   const int other_dim_1 = (reduce_dim + 1) % 3;
   const int other_dim_2 = (reduce_dim + 2) % 3;
-  if (global_workgroup_size[other_dim_1] > global_workgroup_size[other_dim_2]) {
-    local_wg_size[other_dim_1] = ngroups;
+  if (extents[other_dim_1] > extents[other_dim_2]) {
+    lwg_extents[other_dim_1] = 4u;
   } else {
-    local_wg_size[other_dim_2] = ngroups;
+    lwg_extents[other_dim_2] = 4u;
   }
-  return local_wg_size;
+  return GlobalWorkGrid(extents, kTiledWorkGrid, LocalWorkGroup(lwg_extents));
 }
 
 void resize_var_node(
@@ -142,16 +109,6 @@ void add_var_buffer_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  const uint32_t nworkers_per_group = 4;
-
-  utils::uvec3 global_wg_size = {
-      graph.size_at<uint32_t>(-1, out),
-      graph.size_at<uint32_t>(-2, out),
-      graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
-
-  utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim] = nworkers_per_group;
-
   std::vector<PushConstantDataInfo> push_constants;
   int32_t unbiased_int = static_cast<int32_t>(unbiased);
   push_constants.emplace_back(&unbiased_int, sizeof(unbiased_int));
@@ -159,8 +116,8 @@ void add_var_buffer_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      var_buffer_global_wg_size,
-      var_buffer_local_wg_size,
+      var_buffer_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
@@ -211,19 +168,14 @@ void add_var_texture_node(
   const uint32_t ngroups = 4;
   VK_CHECK_COND(nworkers_per_group * ngroups <= max_nthreads);
 
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  global_wg_size[reduce_dim] = 1;
-
-  utils::uvec3 local_wg_size{1, 1, 1};
-  local_wg_size[reduce_dim] = nworkers_per_group;
+  utils::uvec3 extents = graph.logical_limits_of(out);
+  extents[reduce_dim] = 1;
   const int other_dim_1 = (reduce_dim + 1) % 3;
   const int other_dim_2 = (reduce_dim + 2) % 3;
   int32_t group_dim;
-  if (global_wg_size[other_dim_1] > global_wg_size[other_dim_2]) {
-    local_wg_size[other_dim_1] = ngroups;
+  if (extents[other_dim_1] > extents[other_dim_2]) {
     group_dim = other_dim_1;
   } else {
-    local_wg_size[other_dim_2] = ngroups;
     group_dim = other_dim_2;
   }
 
@@ -234,8 +186,8 @@ void add_var_texture_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      var_texture_global_wg_size,
-      var_texture_local_wg_size,
+      var_texture_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers

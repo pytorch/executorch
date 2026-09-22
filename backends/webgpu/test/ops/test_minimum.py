@@ -6,8 +6,8 @@
 
 """`aten.minimum.default` module for the WebGPU op-test framework.
 
-`MinimumModule` is imported by `cases.py`. minimum is a same-shape elementwise
-binary op mirroring the landed `add`/`mul` pattern (flat 2D-dispatch kernel).
+`MinimumModule` is imported by `cases.py`. minimum is an elementwise binary op
+with the same-shape fast path and broadcast indexing used by `mul`.
 """
 
 import torch

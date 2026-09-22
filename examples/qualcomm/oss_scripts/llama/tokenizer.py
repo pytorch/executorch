@@ -15,7 +15,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
     VISION_ENCODER,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import ModelArgs
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
@@ -77,8 +76,8 @@ class TokenizerWrapper:
             config.params_path if control_args.params is None else control_args.params
         )
         with open(params_path) as f:
-            model_args = ModelArgs(**json.load(f))
-        self.vocab_size = model_args.vocab_size
+            model_args = json.load(f)
+        self.vocab_size = model_args.get("text_config", model_args)["vocab_size"]
 
         self.runtime_tokenizer_path = self._init_tokenizer(
             control_args.tokenizer_model, control_args.tokenizer_bin
@@ -136,6 +135,10 @@ class TokenizerWrapper:
             # Override the default BOS and EOS token IDs for codegen2_1b
             tokenizer.bos_id = 1
             tokenizer.eos_id = 2
+        if self.decoder_model == "gemma4-e2b":
+            # Override the default BOS and EOS token IDs for gemma4_e2b
+            tokenizer.bos_id = 2
+            tokenizer.eos_id = 1
 
         return runtime_tokenizer_path, tokenizer, chat_template
 

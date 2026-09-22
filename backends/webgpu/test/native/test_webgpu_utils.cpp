@@ -14,7 +14,15 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace executorch::backends::webgpu;
+
+TEST(WebGPUUtils, DivUpDoesNotOverflowAtUint32Max) {
+  constexpr uint32_t kMax = std::numeric_limits<uint32_t>::max();
+  EXPECT_EQ(utils::div_up(kMax, 4u), 1073741824u);
+  EXPECT_EQ(utils::div_up(kMax, kMax), 1u);
+}
 
 TEST(WebGPUUtils, DispatchGridStaysOneDimUnderCeiling) {
   utils::DispatchGrid g =

@@ -452,3 +452,95 @@ TEST_F(OpNativeLayerNormTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpNativeLayerNormTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // mean and rstd share the input's rank with the normalized dims set to 1.
+  // All four are channels-last so the same-dim-order check passes and only the
+  // default dim order check can reject.
+  Tensor input = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out0 = tf.zeros_channels_last({1, 3, 2, 2});
+  Tensor out1 = tf.zeros_channels_last({1, 3, 2, 1});
+  Tensor out2 = tf.zeros_channels_last({1, 3, 2, 1});
+  const std::vector<int64_t> normalized_shape = {2};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_native_layer_norm_out(
+          input,
+          IntArrayRef(normalized_shape.data(), normalized_shape.size()),
+          exec_aten::optional<Tensor>(),
+          exec_aten::optional<Tensor>(),
+          1e-5,
+          out0,
+          out1,
+          out2));
+}
+
+TEST_F(OpNativeLayerNormTest, NonDefaultDimOrderWeightDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // weight takes the shape of normalized_shape, so it has to be rank 4 to carry
+  // a channels-last dim order, which makes the input rank 5. Everything else is
+  // default, so the same dim order check on weight shall be what rejects.
+  Tensor input = tf.make({2, 2, 2, 2, 2}, std::vector<float>(32, 1));
+  Tensor weight = tf.make_with_dimorder(
+      {2, 2, 2, 2}, std::vector<float>(16, 1), {0, 2, 3, 1});
+  Tensor out0 = tf.zeros({2, 2, 2, 2, 2});
+  Tensor out1 = tf.zeros({2, 1, 1, 1, 1});
+  Tensor out2 = tf.zeros({2, 1, 1, 1, 1});
+  const std::vector<int64_t> normalized_shape = {2, 2, 2, 2};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_native_layer_norm_out(
+          input,
+          IntArrayRef(normalized_shape.data(), normalized_shape.size()),
+          exec_aten::optional<Tensor>(weight),
+          exec_aten::optional<Tensor>(),
+          1e-5,
+          out0,
+          out1,
+          out2));
+}
+
+TEST_F(OpNativeLayerNormTest, NonDefaultDimOrderBiasDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // bias takes the shape of normalized_shape, so it has to be rank 4 to carry
+  // a channels-last dim order, which makes the input rank 5. Everything else is
+  // default, so the same dim order check on bias shall be what rejects.
+  Tensor input = tf.make({2, 2, 2, 2, 2}, std::vector<float>(32, 1));
+  Tensor bias = tf.make_with_dimorder(
+      {2, 2, 2, 2}, std::vector<float>(16, 1), {0, 2, 3, 1});
+  Tensor out0 = tf.zeros({2, 2, 2, 2, 2});
+  Tensor out1 = tf.zeros({2, 1, 1, 1, 1});
+  Tensor out2 = tf.zeros({2, 1, 1, 1, 1});
+  const std::vector<int64_t> normalized_shape = {2, 2, 2, 2};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_native_layer_norm_out(
+          input,
+          IntArrayRef(normalized_shape.data(), normalized_shape.size()),
+          exec_aten::optional<Tensor>(),
+          exec_aten::optional<Tensor>(bias),
+          1e-5,
+          out0,
+          out1,
+          out2));
+}

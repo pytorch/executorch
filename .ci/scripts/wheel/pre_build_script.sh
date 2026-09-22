@@ -44,6 +44,80 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
     echo "the file $file has been modified for atomic to use full path"
 fi
 
+# A CPU row must say so, rather than relying on the builder having no CUDA toolkit installed. The build
+# turns CUDA on when it detects one, so a builder that gains a toolkit would silently start producing a
+# CPU wheel carrying the CUDA delegate. That already happened on Windows, where the image ships a toolkit
+# on PATH and the resulting wheel failed to load its own extension.
+#
+# Stated as the inverse rule: anything that does not name a CUDA train this project supports is a CPU row.
+# An allowlist of spellings was tried first and left a gap for every spelling nobody thought of, which is
+# the same defect twice: testing only for empty let a row spelled "cpu" through, and listing "cpu" still
+# leaves "cpu-aarch64", "rocm" and anything else the matrix generator emits.
+#
+# The supported trains come from install_utils.py, so both classifiers see the same list.
+# A row that names CUDA and is not a supported train fails here rather than being
+# rebadged as CPU. The wheel matrix comes from a different repository than this list, so
+# when they drift the alternative is publishing a CPU wheel under a CUDA-named index with
+# no error anywhere: setup.py cannot catch it, because the CPU option this script writes
+# is read first and returns early.
+CUDA_ROW=0
+if [[ -n "${CU_VERSION:-${DESIRED_CUDA:-}}" ]]; then
+    ROW_VALUE="${CU_VERSION:-${DESIRED_CUDA:-}}"
+    # Windows builders run MSYS bash in a conda environment that has python.exe
+    # and no python3, so either name alone breaks a platform. Mirrors
+    # run_python_script.sh. Resolving up front instead of testing the exit status
+    # keeps a missing interpreter a hard failure rather than a silent CPU build.
+    PYTHON_BIN=$(command -v python3 || command -v python)
+    row_classification=$("${PYTHON_BIN}" - "${ROW_VALUE}" <<'PY'
+import re, sys
+sys.path.insert(0, '.')
+from install_utils import SUPPORTED_CUDA_VERSIONS
+raw = sys.argv[1].strip().lower()
+trains = {f'{major}{minor}' for major, minor in SUPPORTED_CUDA_VERSIONS}
+# Decide by what the row NAMES, not by the digits it happens to contain. Reducing the whole
+# value to digits classified rocm13.2 as CUDA and rebadged a row named plainly "cuda" as CPU.
+match = re.fullmatch(r'cu(?:da)?[-_]?(.*)', raw)
+if match is None:
+    print('cpu')
+else:
+    digits = re.sub(r'[^0-9]', '', match.group(1))
+    print('cuda' if digits in trains else 'unsupported')
+PY
+)
+    if [[ "${row_classification}" == "cuda" ]]; then
+        CUDA_ROW=1
+    elif [[ "${row_classification}" == "unsupported" ]]; then
+        echo "row '${ROW_VALUE}' names a CUDA train this project does not support." >&2
+        echo "Add it to SUPPORTED_CUDA_VERSIONS in install_utils.py, and to" >&2
+        echo "_CUDA_RUNTIME_PACKAGES and _CUDA_LIBRARY_DIRECTORIES in setup.py, or" >&2
+        echo "stop building this row. Building it as CPU would publish a CPU wheel" >&2
+        echo "under a CUDA-named index." >&2
+        exit 1
+    fi
+fi
+
+if [[ ${CUDA_ROW} -eq 0 ]]; then
+    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
+    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
+    echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' names no supported CUDA train, building CPU-only"
+else
+    # A CUDA row must produce the CUDA libraries. Left at the default, the build only
+    # turns CUDA on if it happens to detect a toolkit, so a builder without one produced
+    # a wheel tagged for CUDA, carrying no CUDA library, while still declaring the CUDA
+    # runtime packages. That installs cleanly and then reports the backend as
+    # unregistered when a model runs. Asking for it explicitly stops the decision from
+    # depending on detection.
+    #
+    # It does not turn a missing toolkit into a configure failure. The CUDA directory
+    # requires the toolkit but gates its sources on a working compiler, so a builder that
+    # has toolkit files and no usable nvcc still configures and simply compiles none of
+    # them. That leniency is deliberate, for packaging jobs that cannot complete compiler
+    # identification, so the row itself has to verify the libraries it expected are present.
+    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=ON"
+    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
+    echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' is a CUDA row, requiring the CUDA build"
+fi
+
 # On Windows, enable symlinks and re-checkout the current revision to create
 # the symlinked src/ directory. This is needed to build the wheel.
 if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
@@ -54,8 +128,8 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     # Windows wheels are CPU-only (build-wheels-windows.yml sets
     # with-cuda: disabled), but the Windows CI image ships a CUDA toolkit on
     # PATH, which makes setup.py auto-enable EXECUTORCH_BUILD_CUDA. That bakes a
-    # CUDA _portable_lib into the CPU wheel, which then fails its DLL load in the
-    # smoke test ("DLL load failed while importing _portable_lib"). Force a
+    # CUDA _C into the CPU wheel, which then fails its DLL load in the
+    # smoke test ("DLL load failed while importing _C"). Force a
     # CPU-only build.
     export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
     echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
@@ -71,6 +145,11 @@ fi
 # Enable VGF in pybind wheel builds when the platform-specific build input is
 # available from pip.
 if [[ "$UNAME_S" == "Linux" || "$UNAME_S" == "Darwin" ]]; then
+  # The wheel rewrites recorded runtime paths after linking, which needs patchelf. It is declared
+  # under build-system requires, but that is honoured only by a frontend with build isolation and
+  # this path deliberately installs requirements itself, so without this the rewrite silently
+  # does nothing and a CUDA wheel loses its route to the NVIDIA libraries beside it.
+  python3 -m pip install patchelf || true
   if python3 -m pip install -r \
     "${GITHUB_WORKSPACE}/${REPOSITORY}/backends/arm/requirements-arm-vgf-runtime.txt"; then
     export EXECUTORCH_PYBIND_ENABLE_VGF=ON

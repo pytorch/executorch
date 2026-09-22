@@ -17,8 +17,8 @@ namespace vkcompute {
 DispatchNode::DispatchNode(
     ComputeGraph& graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const utils::uvec3& local_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const LocalWorkGroup& lwg,
     const std::vector<ArgGroup>& args,
     const vkapi::ParamsBindList& params,
     const std::vector<PushConstantDataInfo>& push_constants,
@@ -27,8 +27,8 @@ DispatchNode::DispatchNode(
     const ResizeFunction& resize_fn)
     : ExecuteNode(resize_fn, resize_args, args, shader.kernel_name),
       shader_(shader),
-      global_workgroup_size_(global_workgroup_size),
-      local_workgroup_size_(local_workgroup_size),
+      gwg_(gwg),
+      lwg_(gwg.required_lwg_size().is_valid() ? gwg.required_lwg_size() : lwg),
       params_(params),
       spec_vars_(spec_vars),
       push_constants_(push_constants) {
@@ -37,7 +37,7 @@ DispatchNode::DispatchNode(
 
 void DispatchNode::prepare_pipelines(ComputeGraph* graph) {
   graph->register_pipeline_to_create(
-      shader_, local_workgroup_size_, spec_vars_, push_constants_);
+      shader_, lwg_, spec_vars_, push_constants_);
 }
 
 void DispatchNode::encode(ComputeGraph* graph) {
@@ -46,8 +46,7 @@ void DispatchNode::encode(ComputeGraph* graph) {
   }
 
   // If any global wg size element is 0, then skip encoding this shader
-  if (global_workgroup_size_[0] == 0 || global_workgroup_size_[1] == 0 ||
-      global_workgroup_size_[2] == 0) {
+  if (gwg_[0] == 0 || gwg_[1] == 0 || gwg_[2] == 0) {
     return;
   }
 
@@ -75,12 +74,12 @@ void DispatchNode::encode(ComputeGraph* graph) {
 #else
       shader_.kernel_name,
 #endif
-      global_workgroup_size_,
-      local_workgroup_size_,
+      gwg_,
+      lwg_,
       node_id_);
 
   vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
-      shader_, local_workgroup_size_, spec_vars_, push_constants_offset_);
+      shader_, lwg_, spec_vars_, push_constants_offset_);
 
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
@@ -92,7 +91,8 @@ void DispatchNode::encode(ComputeGraph* graph) {
       descriptor_set,
       pipeline_barrier,
       shader_,
-      global_workgroup_size_,
+      gwg_,
+      lwg_,
       push_constants_data_.data(),
       push_constants_offset_);
 

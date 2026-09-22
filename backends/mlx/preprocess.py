@@ -22,6 +22,7 @@ import hashlib
 from typing import ClassVar, final, List
 
 from executorch.backends.mlx._logging import logger
+from executorch.backends.mlx._memprofile import log_footprint, mem_phase
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.serialization.mlx_graph_serialize import (
     HEADER_LENGTH,
@@ -74,6 +75,7 @@ class MLXBackend(BackendDetails):
         """
         logger.debug("MLXBackend.preprocess() called")
         logger.debug(f"Edge program:\n{edge_program}")
+        log_footprint("preprocess entry")
 
         # Build MLXGraph from ExportedProgram
         # Use a deterministic 4-hex prefix derived from the edge program to
@@ -82,22 +84,32 @@ class MLXBackend(BackendDetails):
         # with the same auto-generated name.
         prefix = hashlib.sha256(str(edge_program).encode()).hexdigest()[:4]
         builder = MLXProgramBuilder(edge_program, named_data_key_prefix=prefix)
-        mlx_graph = builder.build()
 
-        # Get constant data as NamedDataStore (ET will own this data)
-        named_data_store = builder.get_named_data_store()
+        with mem_phase(f"preprocess[{prefix}]"):
+            with mem_phase("build"):
+                mlx_graph = builder.build()
 
-        logger.debug(f"  named_data_store entries: {len(named_data_store.pte_data)}")
-        _log_mlx_graph(mlx_graph)
+            # Get constant data as NamedDataStore (ET will own this data)
+            with mem_phase("get_named_data_store"):
+                named_data_store = builder.get_named_data_store()
 
-        # Serialize to bytes (no constant data embedded)
-        serialized = serialize_mlx_graph(mlx_graph)
+            logger.debug(
+                f"  named_data_store entries: {len(named_data_store.pte_data)}"
+            )
+            _log_mlx_graph(mlx_graph)
+
+            # Serialize to bytes (no constant data embedded)
+            with mem_phase("serialize"):
+                serialized = serialize_mlx_graph(mlx_graph)
+
+            with mem_phase("data_store_output"):
+                data_store_output = named_data_store.get_named_data_store_output()
 
         logger.debug(f"MLXBackend.preprocess() complete: {len(serialized)} bytes")
 
         return PreprocessResult(
             processed_bytes=serialized,
-            data_store_output=named_data_store.get_named_data_store_output(),
+            data_store_output=data_store_output,
         )
 
 

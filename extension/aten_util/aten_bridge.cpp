@@ -167,11 +167,14 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   std::vector<int64_t> at_tensor_strides(
       etensor.strides().begin(), etensor.strides().end());
 
-  at::Tensor t = at::from_blob(
-      etensor.mutable_data_ptr(),
-      at_tensor_sizes,
-      at_tensor_strides,
-      at::TensorOptions(dtype));
+  // Both are needed: the dispatch key comes from options, and target_device
+  // skips the pointer inspection that rejects an empty tensor's null pointer.
+  const c10::Device device = executorch_to_torch_device(etensor.device());
+  at::Tensor t = at::for_blob(etensor.mutable_data_ptr(), at_tensor_sizes)
+                     .strides(at_tensor_strides)
+                     .options(at::TensorOptions(dtype).device(device))
+                     .target_device(device)
+                     .make_tensor();
 
   check_tensor_meta(t, etensor);
   return t;

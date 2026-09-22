@@ -7,10 +7,12 @@
 from .apply_rope import ROTARY_EMB_REGISTRY
 from .feed_forward import FeedForward_REGISTRY
 from .layernorm import NORM_REGISTRY
+from .static_llama import repeat_kv
 
 
 __all__ = [
     "FeedForward_REGISTRY",
+    "repeat_kv",
     "ROTARY_EMB_REGISTRY",
     "NORM_REGISTRY",
 ]

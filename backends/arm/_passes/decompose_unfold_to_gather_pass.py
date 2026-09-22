@@ -97,6 +97,10 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
         exir_ops.edge.aten.unfold_copy.default,
     }
 
+    def __init__(self, use_slice: bool = False, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.use_slice = use_slice
+
     _UnfoldCopyInfo = tuple[
         torch.Tensor,  # x_val (FakeTensor)
         int,  # C
@@ -165,6 +169,47 @@ class DecomposeUnfoldToGatherPass(ArmOpTargetedPass):
             Q,
             needs_bool_cast,
         ) = self._compute_unfold_copy_params(x, dim, size, step)
+
+        if self.use_slice:
+            rank = len(x_val.shape)
+            dim_norm = dim % rank
+            perm = list(range(dim_norm)) + list(range(dim_norm + 1, rank)) + [dim_norm]
+            windows = []
+            for window in range(U):
+                start = window * S
+                sliced = super().call_operator(
+                    exir_ops.edge.aten.slice_copy.Tensor,
+                    (x, dim_norm, start, start + C),
+                    {},
+                    meta,
+                    updated=True,
+                )
+                transposed = super().call_operator(
+                    exir_ops.edge.aten.permute_copy.default,
+                    (sliced, perm),
+                    {},
+                    meta,
+                    updated=True,
+                )
+                windows.append(
+                    super().call_operator(
+                        exir_ops.edge.aten.unsqueeze_copy.default,
+                        (transposed, dim_norm),
+                        {},
+                        meta,
+                        updated=True,
+                    )
+                )
+
+            if len(windows) == 1:
+                return windows[0]
+            return super().call_operator(
+                exir_ops.edge.aten.cat.default,
+                (windows, dim_norm),
+                {},
+                meta,
+                updated=True,
+            )
 
         (
             to_copy_op,

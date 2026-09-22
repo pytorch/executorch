@@ -6,7 +6,10 @@
 from itertools import product
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_strictly_positive_tensor_node,
+)
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_annotator import (
     _conv_ops,
@@ -66,6 +69,34 @@ class ArithmeticFloatInputsCheck(PatternCheck):
                     return False
 
         return True
+
+
+class PowTensorTensorPositiveBaseCheck(ArithmeticFloatInputsCheck):
+    """Allow Tensor/Tensor pow only when the base is proven strictly positive.
+
+    The INT lowering rewrites pow(x, y) as exp(y * log(x)). That rewrite must
+    not be selected merely because calibration/example inputs happen to be
+    positive: the constraint has to be visible in the exported graph.
+
+    """
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        if not super().check_pattern(pattern):
+            return False
+
+        if len(pattern) != 1:
+            return False
+
+        pow_node = pattern[0]
+        if len(pow_node.args) < 2:
+            return False
+
+        base_node = pow_node.args[0]
+        if not isinstance(base_node, torch.fx.Node):
+            return False
+
+        return is_strictly_positive_tensor_node(base_node)
 
 
 class CastCheck(PatternCheck):
@@ -155,6 +186,7 @@ FUSED_RELU_OP_PATTERNS = (
 ALL_QPARAM_OP_PATTERNS = (
     [(target,) for target in _one_to_one]
     + ACTIVATION_FUNCTION_PATTERNS
+    + combo_pattern(BATCH_NORM_OPS)
     + CONV_OP_PATTERNS
     + LINEAR_OP_PATTERNS
     + BINARY_OP_PATTERNS
@@ -220,7 +252,10 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.ge.Scalar,),
         (torch.ops.aten.eq.Scalar,),
         (torch.ops.aten.ne.Scalar,),
+        # TFA decomposes these recurrent ops after quantization support is
+        # selected, so the original operators must be admitted here.
         (torch.ops.aten.lstm.input,),
+        (torch.ops.aten.lstm_cell.default,),
         (torch.ops.aten.rnn_tanh.input,),
         (torch.ops.aten.rnn_relu.input,),
         (torch.ops.aten.gru.input,),

@@ -54,10 +54,11 @@ static ValueRef prepack_conv1d_pw_weight(
       weight_storage,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(N4),
-      utils::safe_downcast<uint32_t>(K4),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(N4),
+       utils::safe_downcast<uint32_t>(K4),
+       1u},
+      kTiledWorkGrid);
 
   struct PackParams {
     int32_t N;
@@ -76,8 +77,8 @@ static ValueRef prepack_conv1d_pw_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       weight_data,
       packed_weight,
       {},
@@ -125,7 +126,7 @@ vkapi::ShaderInfo pick_conv1d_pw_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-utils::uvec3 pick_conv1d_pw_global_wg_size(
+GlobalWorkGrid pick_conv1d_pw_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -141,7 +142,9 @@ utils::uvec3 pick_conv1d_pw_global_wg_size(
       graph->dim_of(out) >= 3 ? graph->size_at<uint32_t>(-3, out) : 1;
 
   // X=OC4 (div_up_4(C_out)), Y=L/tile_m, Z=N_batch
-  return {utils::div_up_4(C_out), utils::div_up(L, kTileM), N_batch};
+  return GlobalWorkGrid(
+      {utils::div_up_4(C_out), utils::div_up(L, kTileM), N_batch},
+      kTiledWorkGrid);
 }
 
 void add_conv1d_pw_node(
@@ -189,8 +192,8 @@ void add_conv1d_pw_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_conv1d_pw_shader,
-      pick_conv1d_pw_global_wg_size,
-      pick_hw_square_wg_size,
+      pick_conv1d_pw_gwg,
+      pick_xy_square_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {read_inputs, vkapi::kRead}},
       // Shader params buffers

@@ -39,7 +39,7 @@ cmake -DCMAKE_PREFIX_PATH=cmake-out \
       -Bcmake-out/examples/models/phi-3-mini \
       examples/models/phi-3-mini
 
-cmake --build cmake-out/examples/models/phi-3-mini -j16 --config Release
+cmake --build cmake-out/examples/models/phi-3-mini -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 - Run model. Options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/phi-3-mini/main.cpp#L16-L33)
 ```

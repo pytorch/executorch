@@ -20,7 +20,10 @@ from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerC
 from executorch.backends.qualcomm.utils.utils import qnn_edge_config
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.pass_base import ExportPass
-from executorch.exir.program._program import _gen_edge_manager_for_partitioners
+from executorch.exir.program._program import (
+    _gen_edge_manager_for_partitioners,
+    lift_constant_tensor_pass,
+)
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 NodeTarget = object | set[object]
@@ -173,11 +176,16 @@ class PassPipeline:
         sample_input: tuple[torch.Tensor, ...],
         target_pass: type[ExportPass],
         backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
+        convert_linear_to_conv2d: bool = False,
     ) -> torch.fx.GraphModule:
         pm_cls = get_qnn_pass_manager_cls(backend_type)
         gm = torch.export.export(module, sample_input, strict=True).module()
         pass_classes = PassPipeline._slice_to_target(
-            pm_cls.get_annotation_passes(), target_pass, "annotation"
+            pm_cls.get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
+            ),
+            target_pass,
+            "annotation",
         )
         instances = PassPipeline._instantiate(
             pass_classes,
@@ -194,7 +202,6 @@ class PassPipeline:
         target_pass: type[ExportPass],
         backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
         quantizer: Quantizer = None,
-        convert_linear_to_conv2d: bool = False,
     ) -> torch.fx.GraphModule:
         with calibrate(module, [sample_input], quantizer) as quantized:
             module = quantized
@@ -202,7 +209,7 @@ class PassPipeline:
         gm = ep.graph_module
         pm_cls = get_qnn_pass_manager_cls(backend_type)
         pass_classes = PassPipeline._slice_to_target(
-            pm_cls.get_export_passes(convert_linear_to_conv2d=convert_linear_to_conv2d),
+            pm_cls.get_export_passes(),
             target_pass,
             "export",
         )
@@ -226,6 +233,7 @@ class PassPipeline:
         passes_job: OrderedDict = None,
         skip_node_id_set: set | None = None,
         skip_node_op_set: set | None = None,
+        convert_linear_to_conv2d: bool = False,
     ):
         """
         If target_pass is None, runs all edge passes.
@@ -242,6 +250,7 @@ class PassPipeline:
             passes_job=passes_job,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
         if target_pass is not None:
             edge_passes = PassPipeline._slice_to_target(
@@ -266,6 +275,10 @@ class PassPipeline:
                 constant_methods=None,
             )
             edge_manager = edge_manager.transform(edge_passes)
+        # Passes like CanonicalizeConv/ConvertLinearToConv2d create new `get_attr`
+        # nodes to store modified weights; lift_constant_tensor_pass converts them
+        # into `placeholder` nodes.
+        lift_constant_tensor_pass(edge_manager.exported_program())
         return edge_manager.exported_program()
 
     @staticmethod

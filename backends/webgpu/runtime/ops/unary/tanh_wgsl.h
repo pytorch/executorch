@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from tanh.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: 5bd7eb1c6411940d84a9b311884f35b39f15b82103b14bab02902290ed6b0339
 inline constexpr const char* kTanhWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;

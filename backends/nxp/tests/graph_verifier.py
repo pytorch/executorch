@@ -10,17 +10,17 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Callable, Union
 
-from executorch.backends.nxp.neutron_partitioner import (
-    NeutronPartitioner,
-    NXP_DELEGATION_TAG,
-)
-from executorch.backends.nxp.tests.ops_aliases import (
+from executorch.backends.nxp.backend.ops_aliases import (
     DequantizePerChannel,
     DequantizePerTensor,
     QuantizePerChannel,
     QuantizePerTensor,
 )
 
+from executorch.backends.nxp.neutron_partitioner import (
+    NeutronPartitioner,
+    NXP_DELEGATION_TAG,
+)
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from pytest_mock import MockerFixture

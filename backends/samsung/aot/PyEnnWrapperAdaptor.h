@@ -53,6 +53,10 @@ class PyEnnWrapper {
       return py::array_t<char>();
     }
 
+    auto perf_mode = option_buf_->perf_mode();
+    graphgen_set_perf_mode(
+        graphgen_instance_, static_cast<PerformanceMode>(perf_mode));
+
     auto m_buf_info = model_buffer.request();
     auto* model_buf_ptr = reinterpret_cast<uint8_t*>(m_buf_info.ptr);
     NNCBuffer* nnc_buffer = nullptr;

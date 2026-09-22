@@ -7,6 +7,9 @@ from typing import Callable
 
 import torch
 
+from executorch.backends.nxp.aten_passes.add_batch_size_for_3d_input_pool_2d_ops import (
+    AddBatchSizeFor3DInputPool2DOps,
+)
 from executorch.backends.nxp.aten_passes.convert_1d_conv_to_2d import (
     ConvertConv1dToConv2dPass,
 )
@@ -48,6 +51,7 @@ PassType = type[Callable[[torch.fx.GraphModule], PassResult]]
 
 def _get_default_passes(neutron_target_spec, qat_mode: bool = False) -> list[PassType]:
     passes = [
+        AddBatchSizeFor3DInputPool2DOps(),
         DecomposeSplitToSlicesPass(),
         SplitGroupConvolution(),
         SplitGRUBasedOnNumLayers(),

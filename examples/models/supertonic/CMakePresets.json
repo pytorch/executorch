@@ -1,0 +1,68 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "supertonic-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/supertonic",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_STANDARD": "17",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "supertonic-mlx",
+            "displayName": "Supertonic runner (MLX)",
+            "inherits": ["supertonic-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "supertonic-mlx",
+            "displayName": "Build Supertonic runner and tests",
+            "configurePreset": "supertonic-mlx",
+            "configuration": "Release",
+            "targets": [
+                "supertonic_runner",
+                "supertonic_runtime_test"
+            ]
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "supertonic-mlx",
+            "displayName": "Test Supertonic runner",
+            "configurePreset": "supertonic-mlx",
+            "configuration": "Release",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "supertonic-mlx",
+            "displayName": "Configure and build Supertonic runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "supertonic-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "supertonic-mlx"
+                }
+            ]
+        }
+    ]
+}

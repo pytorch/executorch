@@ -4,7 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.qualcomm._passes import DecomposeReciprocal, RemoveRedundancy
+from executorch.backends.qualcomm._passes import (
+    DecomposeReciprocal,
+    RecomposeHadamard,
+    RemoveRedundancy,
+)
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 
@@ -32,18 +36,19 @@ class QnnHtpPassManager(QnnPassManager):
         return deps
 
     @classmethod
-    def get_annotation_passes(cls):
-        passes = [DecomposeReciprocal]
-        passes.extend(super().get_annotation_passes())
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
+        passes = [DecomposeReciprocal, RecomposeHadamard]
+        passes.extend(
+            super().get_annotation_passes(
+                convert_linear_to_conv2d=convert_linear_to_conv2d,
+            )
+        )
         return passes
 
     @classmethod
-    def get_export_passes(
-        cls,
-        convert_linear_to_conv2d: bool = False,
-    ):
+    def get_export_passes(cls):
         # DecomposeReciprocal should be placed in the export pipeline, as it depends on
         # LiftConstantScalarOperands to lift the scalar operand.
         passes = [DecomposeReciprocal]
-        passes.extend(super().get_export_passes(convert_linear_to_conv2d))
+        passes.extend(super().get_export_passes())
         return passes
