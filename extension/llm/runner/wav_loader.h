@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <cinttypes>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -179,7 +180,7 @@ inline std::unique_ptr<WavHeader> load_wav_header(
       header->RIFF[1],
       header->RIFF[2],
       header->RIFF[3]);
-  ET_LOG(Info, "Chunk Size: %u", header->ChunkSize);
+  ET_LOG(Info, "Chunk Size: %" PRIu32, header->ChunkSize);
   ET_LOG(
       Info,
       "WAVE Header: %c%c%c%c",
@@ -194,14 +195,14 @@ inline std::unique_ptr<WavHeader> load_wav_header(
       header->fmt[1],
       header->fmt[2],
       header->fmt[3]);
-  ET_LOG(Info, "Format Chunk Size: %u", header->Subchunk1Size);
+  ET_LOG(Info, "Format Chunk Size: %" PRIu32, header->Subchunk1Size);
   ET_LOG(Info, "Audio Format: %d", header->AudioFormat);
   ET_LOG(Info, "Number of Channels: %d", header->NumOfChan);
-  ET_LOG(Info, "Sample Rate: %u", header->SamplesPerSec);
-  ET_LOG(Info, "Byte Rate: %u", header->bytesPerSec);
+  ET_LOG(Info, "Sample Rate: %" PRIu32, header->SamplesPerSec);
+  ET_LOG(Info, "Byte Rate: %" PRIu32, header->bytesPerSec);
   ET_LOG(Info, "Block Align: %d", header->blockAlign);
   ET_LOG(Info, "Bits per Sample: %d", header->bitsPerSample);
-  ET_LOG(Info, "Subchunk2Size: %u", header->Subchunk2Size);
+  ET_LOG(Info, "Subchunk2Size: %" PRIu32, header->Subchunk2Size);
 
   return header;
 }
