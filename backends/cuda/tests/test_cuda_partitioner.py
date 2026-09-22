@@ -31,9 +31,7 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     LowerOffGraphKVPass,
     parse_offgraph_kv_manifest,
 )
-from executorch.backends.cuda.triton.kernels.offgraph_kv import (
-    ring_physical_capacity,
-)
+from executorch.backends.cuda.triton.kernels.offgraph_kv import ring_physical_capacity
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
@@ -152,12 +150,9 @@ class TestCudaLowMemoryExport(unittest.TestCase):
         layer = {
             "layer_id": 0,
             "policy": "flat",
-            "num_kv_heads": 2,
-            "head_dim": 64,
         }
         manifest = {
             "version": 1,
-            "dtype": "bfloat16",
             "maximum_capacity": 32,
             "max_write": 8,
             "layers": [layer, layer],
@@ -169,14 +164,11 @@ class TestCudaLowMemoryExport(unittest.TestCase):
     def test_offgraph_manifest_requires_max_write(self) -> None:
         manifest = {
             "version": 1,
-            "dtype": "bfloat16",
             "maximum_capacity": 32,
             "layers": [
                 {
                     "layer_id": 0,
                     "policy": "flat",
-                    "num_kv_heads": 2,
-                    "head_dim": 64,
                 }
             ],
         }
@@ -192,7 +184,6 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             json.dumps(
                 {
                     "version": 1,
-                    "dtype": "bfloat16",
                     "maximum_capacity": 256,
                     "max_write": max_write,
                     "layers": [
@@ -200,8 +191,6 @@ class TestCudaLowMemoryExport(unittest.TestCase):
                             "layer_id": 0,
                             "policy": "ring",
                             "window": window,
-                            "num_kv_heads": 2,
-                            "head_dim": 64,
                         }
                     ],
                 }

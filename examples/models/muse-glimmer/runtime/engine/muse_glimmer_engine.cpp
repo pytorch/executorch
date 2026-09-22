@@ -480,7 +480,9 @@ struct OffGraphKVPlan {
 // kept to a single function.
 ::executorch::backends::cuda::CudaKVCache* offgraph_stepper(
     const std::shared_ptr<cache::Cache>& cache) {
-  return cache == nullptr ? nullptr : cache->as<::executorch::backends::cuda::CudaKVCache>();
+  return cache == nullptr
+      ? nullptr
+      : cache->as<::executorch::backends::cuda::CudaKVCache>();
 }
 
 Result<OffGraphKVPlan> read_offgraph_kv_plan(
@@ -508,10 +510,10 @@ Result<OffGraphKVPlan> read_offgraph_kv_plan(
   // CacheConfig counts in int; a value that does not survive the narrowing
   // would otherwise be validated after truncation.
   constexpr int64_t kMaxCacheInt = std::numeric_limits<int>::max();
-  for (const auto& [name, value] : {
-           std::pair{kMaxContextLen, capacity_it->second},
-           std::pair{kMaxPrefillChunk, chunk_it->second},
-           std::pair{"offgraph_initial_capacity", initial_capacity}}) {
+  for (const auto& [name, value] :
+       {std::pair{kMaxContextLen, capacity_it->second},
+        std::pair{kMaxPrefillChunk, chunk_it->second},
+        std::pair{"offgraph_initial_capacity", initial_capacity}}) {
     ET_CHECK_OR_RETURN_ERROR(
         value > 0 && value <= kMaxCacheInt,
         InvalidProgram,
@@ -571,7 +573,6 @@ class MuseGlimmerSession : public LLMSession,
       TensorPtr decode_pos_table_dev,
       MuseGlimmerMutableStateContextOwner* mutable_state,
 #ifdef EXECUTORCH_BUILD_CUDA
-      ::executorch::backends::cuda::CudaKVCache* offgraph_kv,
       ::executorch::extension::llm::cache::SequenceControl* offgraph_control,
 #endif
       int session_token)
@@ -588,7 +589,6 @@ class MuseGlimmerSession : public LLMSession,
 #endif
         mutable_state_(mutable_state),
 #ifdef EXECUTORCH_BUILD_CUDA
-        offgraph_kv_(offgraph_kv),
         offgraph_control_(offgraph_control),
 #endif
         session_token_(session_token) {
@@ -842,7 +842,7 @@ class MuseGlimmerSession : public LLMSession,
   Error reset() override {
     pos_ = 0;
 #ifdef EXECUTORCH_BUILD_CUDA
-    if (offgraph_kv_ != nullptr) {
+    if (offgraph_control_ != nullptr) {
       offgraph_control_->clear();
     }
 #endif
@@ -1098,9 +1098,6 @@ class MuseGlimmerSession : public LLMSession,
       int64_t* next_image_row) {
     std::lock_guard<std::mutex> guard(*exec_mutex_);
 #ifdef EXECUTORCH_BUILD_CUDA
-    if (offgraph_kv_ != nullptr) {
-      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->prepare_step(token_count));
-    }
 #endif
     auto execute_contract = [&]() -> Result<std::vector<EValue>> {
       auto embed_outputs = module_->execute(kEmbedTextMethod, {inputs[0]});
@@ -1166,9 +1163,6 @@ class MuseGlimmerSession : public LLMSession,
         : execute_contract();
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
 #ifdef EXECUTORCH_BUILD_CUDA
-    if (offgraph_kv_ != nullptr) {
-      ET_CHECK_OK_OR_RETURN_ERROR(offgraph_kv_->commit_step(token_count));
-    }
 #endif
     const auto& out_tensor = res.get()[0].toTensor();
     auto sampled = read_sampled_token(out_tensor, temperature, use_sampling_);
@@ -1219,8 +1213,8 @@ class MuseGlimmerSession : public LLMSession,
 #endif
   MuseGlimmerMutableStateContextOwner* mutable_state_ = nullptr;
 #ifdef EXECUTORCH_BUILD_CUDA
-  ::executorch::backends::cuda::CudaKVCache* offgraph_kv_ = nullptr;
-  ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ = nullptr;
+  ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ =
+      nullptr;
 #endif
   int session_token_ = kMuseGlimmerNoMutableSession;
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -1509,9 +1503,11 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state;
 #ifdef EXECUTORCH_BUILD_CUDA
   std::shared_ptr<::executorch::extension::llm::cache::Cache> offgraph_cache;
-  std::unique_ptr<::executorch::extension::llm::cache::InstallGuard> offgraph_guard;
+  std::unique_ptr<::executorch::extension::llm::cache::InstallGuard>
+      offgraph_guard;
   ::executorch::backends::cuda::CudaKVCache* offgraph_kv = nullptr;
-  ::executorch::extension::llm::cache::SequenceControl* offgraph_control = nullptr;
+  ::executorch::extension::llm::cache::SequenceControl* offgraph_control =
+      nullptr;
 #endif
 #ifdef EXECUTORCH_BUILD_CUDA
   if (method_names.count(kNumCaches) != 0) {
@@ -1536,7 +1532,8 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
     ET_CHECK_OK_OR_RETURN_ERROR(built.error());
     offgraph_cache = built.get();
     offgraph_guard = std::make_unique<cache::InstallGuard>(offgraph_cache);
-    offgraph_kv = offgraph_cache->as<::executorch::backends::cuda::CudaKVCache>();
+    offgraph_kv =
+        offgraph_cache->as<::executorch::backends::cuda::CudaKVCache>();
     offgraph_control = offgraph_cache->as<cache::SequenceControl>();
     ET_CHECK_OR_RETURN_ERROR(
         offgraph_kv != nullptr && offgraph_control != nullptr,
@@ -1790,7 +1787,6 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
       decode_pos_table_dev_,
       rebind_available_ ? mutable_state_.get() : nullptr,
 #ifdef EXECUTORCH_BUILD_CUDA
-      offgraph_stepper(offgraph_cache_),
       offgraph_control_,
 #endif
       token));

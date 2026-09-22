@@ -66,8 +66,8 @@ Error update_pairs(
   for (size_t index = 0; index < count; ++index) {
     auto* tensor = reinterpret_cast<slim::SlimTensor*>(pairs[index].handle);
     pointers[pairs[index].name] = tensor->data_ptr();
-    reinterpret_cast<FakeContainer*>(container)
-        ->dtypes[pairs[index].name] = tensor->dtype();
+    reinterpret_cast<FakeContainer*>(container)->dtypes[pairs[index].name] =
+        tensor->dtype();
   }
   return Error::Ok;
 }
@@ -112,7 +112,12 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
   auto& context = *cache_ptr->as<cu::CudaKVCache>();
   auto& control = *cache_ptr->as<cache::SequenceControl>();
   FakeContainer container{
-      {"flat_k", "flat_v", "flat_capacity", "ring_k", "ring_v", "ring_capacity"},
+      {"flat_k",
+       "flat_v",
+       "flat_capacity",
+       "ring_k",
+       "ring_v",
+       "ring_capacity"},
       {"__et_offgraph_kv_layer_0_k",
        "__et_offgraph_kv_layer_0_v",
        "__et_offgraph_kv_layer_0_capacity",
@@ -122,7 +127,11 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
       {},
       {}};
   auto handle = make_handle(container);
-  ASSERT_EQ(context.note_handle(&handle), Error::Ok);
+  {
+    const auto serves = context.note_handle(&handle);
+    ASSERT_EQ(serves.error(), Error::Ok);
+    ASSERT_TRUE(serves.get());
+  }
   ASSERT_EQ(context.validate(), Error::Ok);
   EXPECT_EQ(context.metrics().allocated_bytes, 0);
 
@@ -227,7 +236,11 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
         {},
         {}};
     auto handle = make_handle(container);
-    ASSERT_EQ(context.note_handle(&handle), Error::Ok);
+    {
+      const auto serves = context.note_handle(&handle);
+      ASSERT_EQ(serves.error(), Error::Ok);
+      ASSERT_TRUE(serves.get());
+    }
     ASSERT_EQ(context.validate(), Error::Ok);
 
     ASSERT_EQ(context.prepare_step(4), Error::Ok);

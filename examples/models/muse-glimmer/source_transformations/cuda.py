@@ -28,8 +28,6 @@ import torch.nn.functional as F
 import triton
 import triton.language as tl
 
-from executorch.extension.llm.export.model_metadata import write_cache_geometry
-
 from executorch.examples.models.muse_glimmer.model.dflash_model import (
     build_dflash_swa_mask,
     rotate_half,
@@ -42,6 +40,8 @@ from executorch.examples.models.muse_glimmer.model.model import (
 from executorch.examples.models.muse_glimmer.source_transformations.sampler import (
     sample,
 )
+
+from executorch.extension.llm.export.model_metadata import write_cache_geometry
 from torch.library import triton_op, wrap_triton
 
 
@@ -622,13 +622,13 @@ def enable_offgraph_kv_cache(model: nn.Module, max_write: int) -> str:
     layers = []
     for layer in model.layers:
         attn = layer.self_attn
+        # Only what the graph cannot express: head counts, head dim and dtype
+        # are read off the step's K tensor by the lowering pass.
         layers.append(
             {
                 "layer_id": attn.layer_idx,
                 "policy": "ring" if attn.is_sliding else "flat",
                 "window": attn.window_size if attn.is_sliding else 0,
-                "num_kv_heads": attn.n_kv_heads,
-                "head_dim": attn.head_dim,
             }
         )
         del attn.kv_cache
@@ -637,7 +637,6 @@ def enable_offgraph_kv_cache(model: nn.Module, max_write: int) -> str:
     return json.dumps(
         {
             "version": 1,
-            "dtype": "bfloat16",
             "maximum_capacity": model.config.max_seq_len,
             "max_write": max_write,
             "layers": layers,

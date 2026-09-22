@@ -10,19 +10,22 @@ import json
 from typing import Any
 
 import torch
+
+from executorch.backends.cuda.triton.kernels.offgraph_kv import (
+    FLAT_CACHE,
+    RING_CACHE,
+    ring_physical_capacity,
+)
 from executorch.backends.transforms.utils import create_constant_placeholder
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
 
-from executorch.backends.cuda.triton.kernels.offgraph_kv import (
-    FLAT_CACHE,
-    ring_physical_capacity,
-    RING_CACHE,
-)
-
 
 OFFGRAPH_KV_COMPILE_SPEC = "offgraph_kv_manifest"
+# Consumed by the runtime, not by this pass: "input_index:dim" naming
+# the input whose extent is the number of tokens a step writes.
+OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC = "offgraph_kv_step_width"
 OFFGRAPH_KV_FQN_PREFIX = "__et_offgraph_kv_"
 
 
@@ -30,8 +33,6 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
     manifest = json.loads(value.decode("utf-8"))
     if manifest.get("version") != 1:
         raise ValueError("off-graph KV manifest version must be 1")
-    if manifest.get("dtype") != "bfloat16":
-        raise ValueError("off-graph KV cache currently requires bfloat16")
     maximum_capacity = manifest.get("maximum_capacity")
     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
         raise ValueError("off-graph maximum_capacity must be positive")
@@ -45,17 +46,11 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
     for layer in layers:
         layer_id = layer.get("layer_id")
         policy = layer.get("policy")
-        heads = layer.get("num_kv_heads")
-        head_dim = layer.get("head_dim")
         window = layer.get("window", 0)
         if not isinstance(layer_id, int) or layer_id < 0 or layer_id in by_id:
             raise ValueError("off-graph layer_id must be unique and nonnegative")
         if policy not in ("flat", "ring"):
             raise ValueError(f"invalid off-graph cache policy {policy!r}")
-        if not isinstance(heads, int) or heads <= 0:
-            raise ValueError("off-graph num_kv_heads must be positive")
-        if not isinstance(head_dim, int) or head_dim <= 0:
-            raise ValueError("off-graph head_dim must be positive")
         if policy == "ring" and (not isinstance(window, int) or window <= 0):
             raise ValueError("off-graph ring cache requires a positive window")
         by_id[layer_id] = layer
@@ -81,21 +76,30 @@ class LowerOffGraphKVPass:
     ):
         graph = exported_program.graph_module.graph
         layer_id = layer["layer_id"]
-        heads = layer["num_kv_heads"]
-        head_dim = layer["head_dim"]
+        # Shape and dtype come from the step's own K, so the storage cannot
+        # disagree with what the kernel will write into it. The manifest only
+        # carries what the tensors cannot say: how the layer retains history,
+        # and how far it may grow.
+        kv = node.args[1].meta["val"]  # BHSD
+        heads = kv.shape[1]
+        head_dim = kv.shape[3]
+        if kv.dtype != torch.bfloat16:
+            raise ValueError(
+                f"off-graph KV cache currently requires bfloat16, got {kv.dtype}"
+            )
         if layer["policy"] == "ring":
             capacity = ring_physical_capacity(
                 layer["window"], self._manifest["max_write"]
             )
         else:
             capacity = self._manifest["maximum_capacity"]
-        device = node.args[0].meta["val"].device
+        device = kv.device
         numel = heads * capacity * head_dim
         prefix = f"{OFFGRAPH_KV_FQN_PREFIX}layer_{layer_id}"
         names = (f"{prefix}_k", f"{prefix}_v", f"{prefix}_capacity")
         values = (
-            self._compile_storage(numel, torch.bfloat16, device),
-            self._compile_storage(numel, torch.bfloat16, device),
+            self._compile_storage(numel, kv.dtype, device),
+            self._compile_storage(numel, kv.dtype, device),
             torch.tensor([capacity], dtype=torch.int64, device=device),
         )
         result = []

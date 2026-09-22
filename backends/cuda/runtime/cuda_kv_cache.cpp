@@ -136,9 +136,8 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   }
 
   // CudaKVCache.
-  Error note_handle(CudaDelegateHandle* handle) override {
+  runtime::Result<bool> note_handle(CudaDelegateHandle* handle) override {
     std::lock_guard<std::mutex> guard(mutex_);
-    handles_associated_ = true;
     if (!device_known_) {
       if (cudaGetDevice(&device_) != cudaSuccess) {
         error_ = Error::Internal;
@@ -149,8 +148,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     const Error error = build_descriptors(handle);
     if (error != Error::Ok) {
       error_ = error;
+      return error;
     }
-    return error;
+    const bool serves = !descriptors_[handle].empty();
+    if (!serves) {
+      descriptors_.erase(handle);
+      return false;
+    }
+    handles_associated_ = true;
+    return true;
   }
 
   void forget_handle(CudaDelegateHandle* handle) override {
@@ -206,9 +212,8 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     const int position = length();
     for (size_t index = 0; index < geometry_.layers.size(); ++index) {
       ET_CHECK_OR_RETURN_ERROR(
-          plan(static_cast<int>(index),
-               position,
-               static_cast<int>(write_length))
+          plan(
+              static_cast<int>(index), position, static_cast<int>(write_length))
               .has_value(),
           InvalidArgument,
           "offgraph_kv: a %lld-token step at position %d does not fit layer %zu",
@@ -224,8 +229,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       const int64_t next = std::min<int64_t>(
           config_.capacity,
           std::max(
-              required,
-              std::max<int64_t>(config_.initial_capacity, doubled)));
+              required, std::max<int64_t>(config_.initial_capacity, doubled)));
       ET_CHECK_OK_OR_RETURN_ERROR(grow_flat(next, cudaStreamPerThread));
     }
     return Error::Ok;
