@@ -7,12 +7,52 @@
 from dataclasses import dataclass
 from typing import cast, Iterator, List, Optional
 
+import torch
+import torch.fx
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 
-from executorch.backends.arm.quantizer.quantization_annotator import _is_large_scalar
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch._ops import OpOverload
 from torch.fx import Node
+
+
+def _get_node_target(module: torch.nn.Module | torch.fx.GraphModule, target_str: str):
+    """Get an attribute from a module by dotted path.
+
+    Args:
+        module (torch.nn.Module | torch.fx.GraphModule): Root module.
+        target_str (str): Dotted attribute path, e.g., ``"sub.weight"``.
+
+    Returns:
+        Any: Resolved attribute on the module.
+
+    """
+    targets = target_str.split(".")
+    for target in targets[:-1]:
+        module = module.get_submodule(target)
+    return getattr(module, targets[-1])
+
+
+def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
+    """Return True if input is a large scalar value.
+
+    Large scalars are skipped because ``torch.histc`` supports values only up
+    to a certain upper bound.
+
+    """
+    HISTC_UPPER_BOUND = 3.4028235e15
+    if node.op == "get_attr" and isinstance(node.target, str):
+        tensor = _get_node_target(gm, node.target)
+        # torch.histc works until this upper bound
+        return tensor.numel() == 1 and abs(tensor.item()) > HISTC_UPPER_BOUND
+    if node.op == "call_function" and node.target in (
+        torch.ops.aten.full.default,
+        torch.ops.aten.full,
+        torch.ops.aten.fill_.Scalar,
+    ):
+        fill_value = cast(float, node.args[1])
+        return abs(fill_value) > HISTC_UPPER_BOUND
+    return False
 
 
 @dataclass(frozen=True)

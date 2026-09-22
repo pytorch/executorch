@@ -41,19 +41,10 @@ class VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bo
 ```
 Quantizer supported by the Arm Vgf backend.
 
-.. warning::
-    The composable quantizer is now the default implementation. Setting
-    ``use_composable_quantizer=False`` is deprecated and will be removed in
-    two minor releases.
-
 Args:
 - **compile_spec (VgfCompileSpec)**: Backend compile specification for Vgf
         targets.
-- **use_composable_quantizer (bool)**: Whether to use the composable
-        quantizer implementation. Setting this to ``False`` is deprecated
-        and will be removed in two minor releases. See
-        [issue #17701](https://github.com/pytorch/executorch/issues/17701)
-        for details.
+- **use_composable_quantizer (bool)**: Must be ``True``.
 
 ```python
 def VgfQuantizer.add_quantizer(self, quantizer: 'Quantizer') -> 'TOSAQuantizer':

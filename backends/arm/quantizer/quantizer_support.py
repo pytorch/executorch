@@ -11,10 +11,6 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_strictly_positive_tensor_node,
 )
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
-from executorch.backends.arm.quantizer.quantization_annotator import (
-    _conv_ops,
-    _one_to_one,
-)
 from torch._ops import OpOverload
 
 
@@ -138,6 +134,62 @@ class CastCheck(PatternCheck):
             return False
 
         return cls.is_supported_cast(input_tensor.dtype, output_tensor.dtype)
+
+
+_conv_ops: set[OpOverload] = {
+    torch.ops.aten.conv1d.default,
+    torch.ops.aten.conv2d.default,
+    torch.ops.aten.conv2d.padding,
+    torch.ops.aten.conv_transpose2d.input,
+    torch.ops.aten.conv3d.default,
+    torch.ops.aten.conv3d.padding,
+}
+
+
+_one_to_one: set[OpOverload] = {
+    torch.ops.aten.abs.default,
+    torch.ops.aten.ceil.default,
+    torch.ops.aten.erf.default,
+    torch.ops.aten.erfinv.default,
+    torch.ops.aten.exp.default,
+    torch.ops.aten.expm1.default,
+    torch.ops.aten.elu.default,
+    torch.ops.aten.selu.default,
+    torch.ops.aten.celu.default,
+    torch.ops.aten.floor.default,
+    torch.ops.aten.round.default,
+    torch.ops.aten.log.default,
+    torch.ops.aten.reciprocal.default,
+    torch.ops.aten.rsqrt.default,
+    torch.ops.aten.sigmoid.default,
+    torch.ops.aten.cos.default,
+    torch.ops.aten.sin.default,
+    torch.ops.aten.tanh.default,
+    torch.ops.aten.sum.dim_IntList,
+    torch.ops.aten.sum.default,
+    torch.ops.aten.hardsigmoid.default,
+    torch.ops.aten.hardswish.default,
+    torch.ops.aten.hardswish_.default,
+    torch.ops.aten.leaky_relu.default,
+    torch.ops.aten.leaky_relu_.default,
+    torch.ops.aten.full_like.default,
+    torch.ops.aten.zeros_like.default,
+    torch.ops.aten.pow.Tensor_Scalar,
+    torch.ops.aten.gelu.default,
+    torch.ops.aten.silu.default,
+    torch.ops.aten.silu_.default,
+    torch.ops.aten.sinh.default,
+    torch.ops.aten.atan.default,
+    torch.ops.aten.log1p.default,
+    torch.ops.aten.log10.default,
+    torch.ops.aten.acosh.default,
+    torch.ops.aten.sign.default,
+    torch.ops.aten.asinh.default,
+    torch.ops.aten.cosh.default,
+    torch.ops.aten.cumsum.default,
+    torch.ops.aten.remainder.Scalar,
+    torch.ops.aten.tan.default,
+}
 
 
 BINARY_OP_PATTERNS = [

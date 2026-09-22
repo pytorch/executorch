@@ -20,7 +20,6 @@ fbcode_target(
     srcs = ["arm_quantizer.py"],
     deps = [
         ":arm_quantizer_utils",
-        ":quantization_annotator",
         ":quantizer_support",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:ethosu",
@@ -30,18 +29,6 @@ fbcode_target(
         "//executorch/backends/arm:arm_compile_spec",
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//pytorch/ao:torchao",
-    ],
-)
-
-fbcode_target(
-    _kind = runtime.python_library,
-    name = "quantization_annotator",
-    srcs = ["quantization_annotator.py"],
-    deps = [
-        ":arm_quantizer_utils",
-        ":quantization_config",
-        "//caffe2:torch",
         "//pytorch/ao:torchao",
     ],
 )
@@ -64,7 +51,6 @@ fbcode_target(
     name = "quantizer_support",
     srcs = ["quantizer_support.py"],
     deps = [
-        ":quantization_annotator",
         "//caffe2:torch",
         "//executorch/backends/cortex_m/quantizer:quantizer",
     ],
