@@ -26,10 +26,8 @@
 
 namespace executorch::extension::llm {
 
-// The CUDA draft_forward artifact takes a fixed-size hidden-state input, so the
-// hidden backlog carried into a draft call (n_draft + 1 rows after a decode
-// cycle) must fit within this many rows.
-inline constexpr int64_t kCudaDFlashHiddenRows = 4;
+// Legacy CUDA artifacts have four hidden rows and no verification metadata.
+inline constexpr int64_t kCudaDFlashSmallRows = 4;
 
 using DFlashMultimodalSession = MuseGlimmerMultimodalSession;
 
@@ -52,6 +50,7 @@ struct DFlashSessionConfig {
   int64_t block_length = 0;
   int64_t n_draft = 0;
   int64_t selector_top_k = 0;
+  int64_t verification_length = kCudaDFlashSmallRows;
   int64_t mask_token_id = 0;
   int64_t n_target_layers = 0;
   int64_t draft_sliding_window = 0;

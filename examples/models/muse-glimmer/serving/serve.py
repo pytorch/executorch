@@ -478,7 +478,7 @@ def main() -> None:
         "--dflash-n-draft",
         type=int,
         default=3,
-        help="DFlash candidates per iteration; zero uses block_length - 1.",
+        help="DFlash candidates per iteration; zero uses the artifact maximum.",
     )
     p.add_argument(
         "--dflash-draft-argmax",

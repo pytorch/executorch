@@ -25,7 +25,7 @@ from executorch.examples.models.muse_glimmer.model.dflash_model import (
 
 
 class DFlash2OperationsTest(TestCase):
-    def test_three_proposals_preserve_the_full_backbone_block(self):
+    def test_proposal_limits_preserve_the_full_backbone_block(self):
         torch.manual_seed(17)
         config = DFlashConfig(
             dim=32,
@@ -49,20 +49,6 @@ class DFlash2OperationsTest(TestCase):
         target.activation_dtype = torch.float32
         draft = DFlashDraftModel(config, max_context_length=64).eval()
         full = MuseGlimmerWithDFlash(target, draft, None, config)
-        limited = MuseGlimmerWithDFlash(
-            copy.deepcopy(target),
-            copy.deepcopy(draft),
-            None,
-            config,
-            max_draft_tokens=3,
-        )
-        backbone_rows, projected_rows = [], []
-        limited.draft.register_forward_pre_hook(
-            lambda module, inputs: backbone_rows.append(inputs[0].shape[1])
-        )
-        limited.target.lm_head.register_forward_pre_hook(
-            lambda module, inputs: projected_rows.append(inputs[0].shape[1])
-        )
         inputs = (
             torch.randint(0, 40, (1, 16)),
             torch.randn(1, 4, 32),
@@ -70,11 +56,32 @@ class DFlash2OperationsTest(TestCase):
         )
         with torch.no_grad():
             expected_ids, expected_scores = full.draft_forward(*inputs)
-            ids, scores = limited.draft_forward(*inputs)
-        self.assertEqual(backbone_rows, [16])
-        self.assertEqual(projected_rows, [3])
-        torch.testing.assert_close(ids, expected_ids[:, :3])
-        torch.testing.assert_close(scores, expected_scores[:, :3])
+        for proposals in (3, 7, 15):
+            with self.subTest(proposals=proposals):
+                limited = MuseGlimmerWithDFlash(
+                    copy.deepcopy(target),
+                    copy.deepcopy(draft),
+                    None,
+                    config,
+                    max_draft_tokens=proposals,
+                )
+                backbone_rows, projected_rows = [], []
+                limited.draft.register_forward_pre_hook(
+                    lambda module, inputs, rows=backbone_rows: rows.append(
+                        inputs[0].shape[1]
+                    )
+                )
+                limited.target.lm_head.register_forward_pre_hook(
+                    lambda module, inputs, rows=projected_rows: rows.append(
+                        inputs[0].shape[1]
+                    )
+                )
+                with torch.no_grad():
+                    ids, scores = limited.draft_forward(*inputs)
+                self.assertEqual(backbone_rows, [16])
+                self.assertEqual(projected_rows, [proposals])
+                torch.testing.assert_close(ids, expected_ids[:, :proposals])
+                torch.testing.assert_close(scores, expected_scores[:, :proposals])
 
     def test_large_vocabulary_candidates_match_global_topk(self):
         torch.manual_seed(25)
@@ -296,7 +303,7 @@ class DFlash2CudaTest(TestCase):
             vocab_size=40,
             block_size=16,
             target_layers=[1, 2],
-            max_seq_len=128,
+            max_seq_len=512,
             sliding_window=32,
             sliding_window_pattern=[True, True],
             conv_kernel_size=2,
@@ -304,23 +311,35 @@ class DFlash2CudaTest(TestCase):
             selector_rank=8,
             selector_top_k=4,
         )
-        eager = DFlashDraftModel(config, max_context_length=128).eval()
-        transformed = copy.deepcopy(eager)
-        dflash_cuda_source_transformations(transformed)
-        materialize_dflash_runtime_buffers(transformed, torch.bfloat16)
-        eager = eager.to(device="cuda", dtype=torch.bfloat16)
-        transformed = transformed.to(device="cuda", dtype=torch.bfloat16)
-        position = 0
-        with torch.inference_mode():
-            for rows, block in ((4, 16), (1, 2), (3, 5), (4, 8)) * 6:
-                noise = torch.randn(1, block, 64, device="cuda", dtype=torch.bfloat16)
-                hidden = torch.randn(1, rows, 128, device="cuda", dtype=torch.bfloat16)
-                padded = torch.randn(1, 4, 128, device="cuda", dtype=torch.bfloat16)
-                padded[:, :rows] = hidden
-                pos = torch.tensor([position], device="cuda")
-                actual = transformed(
-                    noise, padded, pos, torch.tensor([rows], device="cuda")
-                )
-                expected = eager(noise, hidden, pos)
-                torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
-                position += rows
+        for capacity in (4, 8, 16):
+            eager = DFlashDraftModel(config, max_context_length=512).eval()
+            transformed = copy.deepcopy(eager)
+            dflash_cuda_source_transformations(transformed)
+            materialize_dflash_runtime_buffers(transformed, torch.bfloat16)
+            eager = eager.to(device="cuda", dtype=torch.bfloat16)
+            transformed = transformed.to(device="cuda", dtype=torch.bfloat16)
+            position = 0
+            with torch.inference_mode():
+                for rows, block in (
+                    (capacity, 16),
+                    (1, 16),
+                    (capacity - 1, 16),
+                    (4, 16),
+                ) * 6:
+                    noise = torch.randn(
+                        1, block, 64, device="cuda", dtype=torch.bfloat16
+                    )
+                    hidden = torch.randn(
+                        1, rows, 128, device="cuda", dtype=torch.bfloat16
+                    )
+                    padded = torch.randn(
+                        1, capacity, 128, device="cuda", dtype=torch.bfloat16
+                    )
+                    padded[:, :rows] = hidden
+                    pos = torch.tensor([position], device="cuda")
+                    actual = transformed(
+                        noise, padded, pos, torch.tensor([rows], device="cuda")
+                    )
+                    expected = eager(noise, hidden, pos)
+                    torch.testing.assert_close(actual, expected, rtol=0.02, atol=0.02)
+                    position += rows
