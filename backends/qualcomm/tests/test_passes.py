@@ -760,6 +760,51 @@ class TestPasses(unittest.TestCase):
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
 
+    def test_lowering_accepts_exported_program_without_reexport(self):
+        """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
+        ExportedProgram as-is instead of re-exporting the module.
+
+        Callers that have already captured and patched a program (e.g. HF
+        transformers' ExecuTorch exporter, which owns its own dynamic shapes and
+        fx fixes) cannot express that through a module argument.
+
+        The module below changes shape when re-traced, so the output shape of the
+        lowered program discriminates: (1, 4) means the supplied program was used,
+        (1, 1) means it was silently re-exported.
+        """
+
+        class RetraceSensitive(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.narrow = False
+
+            def forward(self, x):
+                return torch.relu(x[:, :1] if self.narrow else x)
+
+        module = RetraceSensitive().eval()
+        sample_input = (torch.randn(1, 4),)
+        exported = torch.export.export(module, sample_input, strict=True)
+        module.narrow = True
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(exported, None, compiler_specs)
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
+        output_node = edge.exported_program("forward").graph.output_node()
+        output_meta = output_node.args[0][0].meta["val"]
+        self.assertEqual(
+            tuple(output_meta.shape),
+            (1, 4),
+            "supplied ExportedProgram was re-exported instead of lowered as-is",
+        )
+
     def test_index_put_int64_value_not_quantized(self):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.
 
