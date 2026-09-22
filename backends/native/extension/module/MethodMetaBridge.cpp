@@ -76,6 +76,17 @@ flatbuffers::Offset<executorch_flatbuffer::EValue> make_tensor_value(
       builder, executorch_flatbuffer::KernelTypes::Tensor, tensor.Union());
 }
 
+ET_RUNTIME_NAMESPACE::MethodMeta validated_view(
+    const std::vector<uint8_t>& bytes) {
+  auto result =
+      ET_RUNTIME_NAMESPACE::MethodMeta::from_serialized_execution_plan(
+          bytes.data(), bytes.size());
+  if (!result.ok()) {
+    throw std::runtime_error("native metadata bridge produced an invalid plan");
+  }
+  return *result;
+}
+
 } // namespace
 
 std::unique_ptr<MethodMetaBridge> MethodMetaBridge::create(
@@ -130,9 +141,6 @@ std::unique_ptr<MethodMetaBridge> MethodMetaBridge::create(
 }
 
 MethodMetaBridge::MethodMetaBridge(std::vector<uint8_t> bytes)
-    : bytes_(std::move(bytes)),
-      view_(ET_RUNTIME_NAMESPACE::MethodMeta::from_validated_execution_plan(
-          *flatbuffers::GetRoot<executorch_flatbuffer::ExecutionPlan>(
-              bytes_.data()))) {}
+    : bytes_(std::move(bytes)), view_(validated_view(bytes_)) {}
 
 } // namespace executorch::extension::native_module
