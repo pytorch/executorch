@@ -28,6 +28,10 @@ std::array<char, kTensorShapeStringSizeLimit> tensor_shape_to_c_string_impl(
     std::strcpy(p, kLimitExceededError);
     return out;
   }
+  if (shape.empty()) {
+    std::strcpy(p, "()");
+    return out;
+  }
   *p++ = '(';
   for (const auto elem : shape) {
     if (elem < 0 ||
