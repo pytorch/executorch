@@ -421,8 +421,11 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
     O_ptr,
     Mask_ptr,
     KV_LEN_ptr,
+    Position_ptr,
+    PhysicalCapacity_ptr,
     B,
     H_grid,
+    H_kv,
     Lq,
     Lk,
     stride_qb,
@@ -448,6 +451,8 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
     HAS_MASK: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
+    OFFGRAPH_KV: tl.constexpr,
+    WINDOW_SIZE: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     HEAD_DIM: tl.constexpr,
@@ -507,6 +512,10 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
     q_mask = row_valid[:, None] & (offs_d[None, :] < HEAD_DIM)
     q = tl.load(q_ptrs, mask=q_mask, other=0.0).to(tl.bfloat16)
 
+    if OFFGRAPH_KV:
+        physical_capacity = tl.load(PhysicalCapacity_ptr)
+        query_pos = tl.load(Position_ptr + seq_pos, mask=row_valid, other=0)
+
     m_i = tl.full([BLOCK_M], -float("inf"), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
     acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
@@ -522,6 +531,8 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
     # falls back to Lk, preserving the original behavior exactly.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
+    elif OFFGRAPH_KV:
+        kv_len = tl.load(Position_ptr + Lq - 1) + 1
     else:
         kv_len = Lk
 
@@ -534,12 +545,17 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
     # half (or more) of their KV blocks fully masked, so this is a large cut to
     # the dominant prefill cost. The skip condition is a CTA-wide reduction, so
     # the branch is uniform and turns into a real skip (not predication).
-    if IS_CAUSAL:
+    if IS_CAUSAL and not OFFGRAPH_KV:
         max_seq_pos = tl.max(seq_pos)
     if MASK_IS_CAUSAL:
         max_kv_pos = (kv_len - Lq) + tl.max(seq_pos)
 
-    for start_n in tl.range(0, kv_len, BLOCK_N):
+    if OFFGRAPH_KV and WINDOW_SIZE > 0:
+        loop_start = tl.maximum(0, kv_len - Lq - WINDOW_SIZE + 1)
+    else:
+        loop_start = 0
+
+    for start_n in tl.range(loop_start, kv_len, BLOCK_N):
         offs_n = start_n + offs_n_init
 
         # Decide whether any row in this tile actually attends to this KV block.
@@ -552,6 +568,11 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
             mn_mask = row_valid[:, None] & (offs_n[None, :] < kv_len)
             mask_block = tl.load(mask_ptrs, mask=mn_mask, other=False)
             block_active = tl.sum(mask_block.to(tl.int32)) > 0
+        elif OFFGRAPH_KV:
+            visible = offs_n[None, :] <= query_pos[:, None]
+            if WINDOW_SIZE > 0:
+                visible &= (query_pos[:, None] - offs_n[None, :]) < WINDOW_SIZE
+            block_active = tl.sum(visible.to(tl.int32)) > 0
         elif IS_CAUSAL:
             # Block is entirely in the future for every row -> skip.
             block_active = start_n <= max_seq_pos
@@ -561,14 +582,36 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
             block_active = True
 
         if block_active:
+            if OFFGRAPH_KV:
+                if WINDOW_SIZE > 0:
+                    physical_n = offs_n % physical_capacity
+                else:
+                    physical_n = offs_n
+                stride_kb_effective = H_kv * physical_capacity * HEAD_DIM
+                stride_kh_effective = physical_capacity * HEAD_DIM
+                stride_kn_effective = HEAD_DIM
+                stride_vb_effective = stride_kb_effective
+                stride_vh_effective = stride_kh_effective
+                stride_vn_effective = stride_kn_effective
+            else:
+                physical_n = offs_n
+                stride_kb_effective = stride_kb
+                stride_kh_effective = stride_kh
+                stride_kn_effective = stride_kn
+                stride_vb_effective = stride_vb
+                stride_vh_effective = stride_vh
+                stride_vn_effective = stride_vn
+
             # K load: uniform (single KV head, shared across Q heads in tile)
             k_ptrs = K_ptr + (
-                b * stride_kb
-                + h_kv * stride_kh
-                + (offs_n[:, None] * stride_kn)
+                b * stride_kb_effective
+                + h_kv * stride_kh_effective
+                + (physical_n[:, None] * stride_kn_effective)
                 + (offs_d[None, :] * stride_kd)
             )
             k_mask = (offs_n[:, None] < kv_len) & (offs_d[None, :] < HEAD_DIM)
+            if OFFGRAPH_KV:
+                k_mask &= physical_n[:, None] < physical_capacity
             k = tl.load(k_ptrs, mask=k_mask, other=0.0).to(tl.bfloat16)
 
             qk = (tl.dot(q, tl.trans(k)).to(tl.float32) * sm_scale).to(tl.float32)
@@ -579,7 +622,12 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
                 )
 
             if IS_CAUSAL:
-                causal = offs_n[None, :] > seq_pos[:, None]
+                if OFFGRAPH_KV:
+                    causal = offs_n[None, :] > query_pos[:, None]
+                    if WINDOW_SIZE > 0:
+                        causal |= (query_pos[:, None] - offs_n[None, :]) >= WINDOW_SIZE
+                else:
+                    causal = offs_n[None, :] > seq_pos[:, None]
                 qk = tl.where(
                     causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
                 )
@@ -601,12 +649,14 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
 
             # V load: uniform (single KV head)
             v_ptrs = V_ptr + (
-                b * stride_vb
-                + h_kv * stride_vh
-                + (offs_n[:, None] * stride_vn)
+                b * stride_vb_effective
+                + h_kv * stride_vh_effective
+                + (physical_n[:, None] * stride_vn_effective)
                 + (offs_d[None, :] * stride_vd)
             )
             v_mask = (offs_n[:, None] < kv_len) & (offs_d[None, :] < HEAD_DIM)
+            if OFFGRAPH_KV:
+                v_mask &= physical_n[:, None] < physical_capacity
             v = tl.load(v_ptrs, mask=v_mask, other=0.0).to(tl.bfloat16)
 
             p_bf16 = p_f32.to(tl.bfloat16)
@@ -744,8 +794,11 @@ def _sdpa_fwd_kernel(
         O_ptr,
         Mask_ptr,
         KV_LEN_ptr,
+        0,
+        0,
         B,
         H_grid,
+        H_grid if PACK_GQA else H_grid // NUM_GROUPS,
         Lq,
         Lk,
         stride_qb,
@@ -771,6 +824,8 @@ def _sdpa_fwd_kernel(
         HAS_MASK=HAS_MASK,
         IS_CAUSAL=IS_CAUSAL,
         HAS_KV_LEN=HAS_KV_LEN,
+        OFFGRAPH_KV=False,
+        WINDOW_SIZE=0,
         BLOCK_M=BLOCK_M,
         BLOCK_N=BLOCK_N,
         HEAD_DIM=HEAD_DIM,
