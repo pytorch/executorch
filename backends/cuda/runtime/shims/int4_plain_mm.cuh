@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// W4A8 dp4a matvec for INT4 decode (M <= 4).
+// W4A8 dp4a matvec for INT4 decode (M <= 16).
 //
 // Reads plain nibble-packed [N, K//2] weights (Int4Tensor format).
 // Metadata encoding (transposed AOT for coalesced loads):
@@ -163,7 +163,8 @@ __device__ __forceinline__ void int4_w4a8_matvec_coalesced_body(
     int32_t K,
     int32_t gs_shift,
     int32_t n_groups,
-    int32_t n_super) {
+    int32_t n_super,
+    int32_t valid_rows = ROWS) {
   const int32_t K_half = K / 2;
   const int32_t lane_id = threadIdx.x;
   const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE;
@@ -220,8 +221,9 @@ __device__ __forceinline__ void int4_w4a8_matvec_coalesced_body(
     float activation_scales[ROWS];
 #pragma unroll
     for (int32_t row = 0; row < ROWS; ++row) {
-      const Q8Block* qb =
-          q8 + static_cast<int64_t>(row) * n_q8_blocks + i_safe;
+      const Q8Block* qb = q8 +
+          static_cast<int64_t>(row < valid_rows ? row : 0) * n_q8_blocks +
+          i_safe;
       activations_even[row] =
           *reinterpret_cast<const uint4*>(qb->qs_even);
       activations_odd[row] =
@@ -261,6 +263,9 @@ __device__ __forceinline__ void int4_w4a8_matvec_coalesced_body(
   if (lane_id == 0) {
 #pragma unroll
     for (int32_t row = 0; row < ROWS; ++row) {
+      if (row >= valid_rows) {
+        continue;
+      }
       out[static_cast<int64_t>(row) * N + n] =
           __float2bfloat16(sums[row]);
     }
@@ -342,6 +347,43 @@ DEFINE_INT4_MULTIROW_KERNEL(3)
 DEFINE_INT4_MULTIROW_KERNEL(4)
 
 #undef DEFINE_INT4_MULTIROW_KERNEL
+
+template <bool FULL_TILE>
+__global__ void __launch_bounds__(MV_NWARPS * 32) int4_w4a8_matvec_tiled_kernel(
+    const uint8_t* qdata,
+    const uint8_t* scale,
+    const __half* steps,
+    const uint8_t* zero,
+    const __half* zero_steps,
+    const Q8Block* q8,
+    __nv_bfloat16* out,
+    int32_t M,
+    int32_t N,
+    int32_t K,
+    int32_t gs_shift,
+    int32_t n_groups,
+    int32_t n_super) {
+  const int32_t n = blockIdx.x * MV_NWARPS + threadIdx.y;
+  if (n >= N) {
+    return;
+  }
+  const int32_t row = blockIdx.y * 8;
+  int4_w4a8_matvec_coalesced_body<8>(
+      qdata,
+      scale,
+      steps,
+      zero,
+      zero_steps,
+      q8 + static_cast<int64_t>(row) * (K / 32),
+      out + static_cast<int64_t>(row) * N,
+      n,
+      N,
+      K,
+      gs_shift,
+      n_groups,
+      n_super,
+      FULL_TILE ? 8 : min(8, M - row));
+}
 
 // Persistent Q8 buffer (lazy init, not thread-safe — single-stream only).
 // Freed at process exit via a static guard so leak detectors stay quiet; the
@@ -460,6 +502,27 @@ inline void _int4_plain_mm_cuda(
 
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int32_t n_super = static_cast<int32_t>(scale_step.size(1));
+  if (M > 4 && M <= 16) {
+    dim3 tiled_grid((N + MV_NWARPS - 1) / MV_NWARPS, (M + 7) / 8);
+    const auto kernel = M % 8 == 0 ? int4_w4a8_matvec_tiled_kernel<true>
+                                   : int4_w4a8_matvec_tiled_kernel<false>;
+    kernel<<<tiled_grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+        reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(scale_step.data_ptr()),
+        reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+        reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        M,
+        N,
+        K,
+        gs_shift,
+        n_groups,
+        n_super);
+    return;
+  }
+
   if (M == 4) {
     dim3 m4_grid((N + MV_NWARPS - 1) / MV_NWARPS);
     int4_w4a8_matvec_m4_coalesced_kernel<<<m4_grid, block, 0, stream>>>(
