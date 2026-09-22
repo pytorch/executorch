@@ -29,6 +29,10 @@
 namespace executorch {
 namespace extension {
 
+namespace native_module::internal {
+class PtnModule;
+} // namespace native_module::internal
+
 using ET_RUNTIME_NAMESPACE::Kernel;
 using ET_RUNTIME_NAMESPACE::Method;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
@@ -234,8 +238,8 @@ class Module {
    *
    * @returns true if the program is loaded, false otherwise.
    */
-  virtual inline bool is_loaded() const {
-    return program_ != nullptr;
+  virtual bool is_loaded() const {
+    return program_ != nullptr || ptn_ != nullptr;
   }
 
   /**
@@ -300,9 +304,7 @@ class Module {
    *
    * @returns True if the method is unloaded, false if no-op.
    */
-  inline bool unload_method(const std::string& method_name) {
-    return methods_.erase(method_name);
-  }
+  bool unload_method(const std::string& method_name);
 
   /**
    * DEPRECATED: Module manages each Method exclusively.
@@ -365,9 +367,7 @@ class Module {
    * @returns true if the method specified by method_name is loaded, false
    * otherwise.
    */
-  inline bool is_method_loaded(const std::string& method_name) const {
-    return methods_.count(method_name);
-  }
+  bool is_method_loaded(const std::string& method_name) const;
 
   /**
    * Get a method metadata struct by method name.
@@ -748,6 +748,7 @@ class Module {
   std::vector<std::string> data_files_;
   LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
+  std::shared_ptr<native_module::internal::PtnModule> ptn_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
@@ -768,7 +769,8 @@ class Module {
   bool share_memory_arenas_;
 
   ET_NODISCARD runtime::Error load_internal(
-      const Program::Verification verification);
+      const Program::Verification verification,
+      bool has_backend_options = false);
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
