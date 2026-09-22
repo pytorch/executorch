@@ -21,6 +21,13 @@ import torch.nn as nn
 # GGUF pattern → model FQN pattern. ``{}`` is the layer index.
 _KEY_MAP = {
     "fc.weight": "fc.weight",
+    "selector_hidden.weight": "candidate_selector.hidden_projection.weight",
+    "selector_predecessor.weight": "candidate_selector.predecessor_codebook.weight",
+    "selector_successor.weight": "candidate_selector.successor_codebook.weight",
+    "blk.{}.attn_conv_base": "layers.{}.attention_conv.base_kernel",
+    "blk.{}.attn_conv_proj.weight": "layers.{}.attention_conv.kernel_projection.weight",
+    "blk.{}.ffn_conv_base": "layers.{}.mlp_conv.base_kernel",
+    "blk.{}.ffn_conv_proj.weight": "layers.{}.mlp_conv.kernel_projection.weight",
     "enc.output_norm.weight": "hidden_norm.weight",
     "output_norm.weight": "norm.weight",
     "blk.{}.attn_q.weight": "layers.{}.self_attn.q_proj.weight",
@@ -93,25 +100,27 @@ def load_dflash_gguf(
     from executorch.extension.llm.export.quant import to_default
 
     # Read metadata from GGUF to build config
-    from gguf import GGUFReader, GGUFValueType
+    from gguf import GGUFReader
 
     reader = GGUFReader(gguf_path)
-    metadata = {}
-    for key, field in reader.fields.items():
-        if field.types and field.types[0] == GGUFValueType.ARRAY:
-            # Array field: data values are in parts[field.data]
-            metadata[key] = [field.parts[i].tolist()[0] for i in field.data]
-        else:
-            # Scalar field
-            data = field.parts[-1]
-            if hasattr(data, "tolist"):
-                val = data.tolist()
-                metadata[key] = val[0] if len(val) == 1 else val
-            else:
-                metadata[key] = data
+    metadata = {
+        key: field.contents()
+        for key, field in reader.fields.items()
+        if key.startswith("dflash.") or key == "tokenizer.ggml.mask_token_id"
+    }
+    config = DFlashConfig.from_gguf_metadata(metadata)
+    config.max_seq_len = max_seq_len
+    if config.selector_top_k:
+        unknown = [
+            tensor.name
+            for tensor in reader.tensors
+            if tensor.name not in _IGNORED_KEYS
+            and dflash_gguf_to_model_key(tensor.name) is None
+        ]
+        if unknown:
+            raise ValueError(f"Unrecognized DFlash2 GGUF tensors: {unknown}")
     del reader
 
-    config = DFlashConfig.from_gguf_metadata(metadata)
     print(
         f"DFlash config: {config.n_layers} layers, dim={config.dim}, "
         f"block_size={config.block_size}, target_layers={config.target_layers}"
@@ -121,12 +130,21 @@ def load_dflash_gguf(
     with torch.device("meta"):
         model = DFlashDraftModel(config, max_context_length=max_seq_len)
 
+    expected_shapes = {name: value.shape for name, value in model.named_parameters()}
+
+    def convert_weight(name, value):
+        if config.selector_top_k and value.shape != expected_shapes[name]:
+            raise ValueError(
+                f"DFlash2 tensor {name} has shape {value.shape}, expected {expected_shapes[name]}"
+            )
+        return to_default(name, value)
+
     print(f"Loading DFlash draft from {gguf_path}...")
     load_checkpoint(
         gguf_path,
         model,
         key_map=dflash_gguf_to_model_key,
-        convert=to_default,
+        convert=convert_weight,
         dtype=activation_dtype,
     )
     _validate_no_meta(model)

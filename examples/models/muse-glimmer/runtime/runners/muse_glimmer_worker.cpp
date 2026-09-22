@@ -55,7 +55,7 @@ DEFINE_string(
     "Artifact execution mode: auto, autoregressive, or dflash.");
 DEFINE_int32(
     dflash_block_length,
-    4,
+    0,
     "DFlash block length. Zero uses the artifact's exported maximum.");
 DEFINE_int32(
     dflash_n_draft,

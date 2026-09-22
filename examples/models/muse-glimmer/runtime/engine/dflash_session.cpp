@@ -8,7 +8,7 @@
 
 #include <executorch/examples/models/muse-glimmer/runtime/engine/dflash_session.h>
 
-#include <executorch/examples/models/muse-glimmer/runtime/engine/sampling.h>
+#include <executorch/examples/models/muse-glimmer/runtime/engine/dflash2_sampling.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -721,7 +721,23 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const bool draft_argmax = stochastic && config_.draft_argmax;
     const auto draft_sampling_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
-    if (draft_argmax) {
+    if (config_.selector_top_k > 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          muse_glimmer::sample_dflash2_path(
+              rng_,
+              draft_candidate_ids_.data(),
+              draft_logits_storage_.data(),
+              verify_len - 1,
+              config_.selector_top_k,
+              last_logits_tensor_->size(last_logits_tensor_->dim() - 1),
+              effective_temperature(),
+              !stochastic || draft_argmax,
+              candidates,
+              draft_probs_,
+              sampling_workspace_),
+          InvalidProgram,
+          "Invalid DFlash2 candidate lattice");
+    } else if (draft_argmax) {
       const auto& logits = *draft_logits.get();
       const int64_t vocab_size = logits.size(logits.dim() - 1);
       const float* logits_data =
@@ -1263,8 +1279,36 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
     const auto logits_copy_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
+    size_t score_output = 0;
+    if (config_.selector_top_k > 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          outputs->size() == 2 && (*outputs)[1].isTensor(),
+          InvalidProgram,
+          "DFlash2 draft_forward must return candidate IDs and pair scores");
+      const auto& ids = (*outputs)[0].toTensor();
+      const auto& scores = (*outputs)[1].toTensor();
+      const int64_t k = config_.selector_top_k;
+      int64_t proposals = draft_len - 1;
+#ifdef EXECUTORCH_BUILD_CUDA
+      proposals = std::min(proposals, kCudaDFlashHiddenRows - 1);
+#endif
+      ET_CHECK_OR_RETURN_ERROR(
+          ids.scalar_type() == executorch::aten::ScalarType::Long &&
+              ids.dim() == 3 && ids.size(0) == 1 && ids.size(1) == proposals &&
+              ids.size(2) == k && scores.dim() == 4 && scores.size(0) == 1 &&
+              scores.size(1) == proposals && scores.size(2) == k &&
+              scores.size(3) == k,
+          InvalidProgram,
+          "Invalid DFlash2 lattice shapes");
+      draft_candidate_ids_.resize(ids.numel());
+      ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
+          draft_candidate_ids_.data(),
+          ids.const_data_ptr(),
+          draft_candidate_ids_.size() * sizeof(int64_t)));
+      score_output = 1;
+    }
     auto host_logits = copy_float_tensor_to_host(
-        (*outputs)[0].toTensor(), draft_logits_storage_);
+        (*outputs)[score_output].toTensor(), draft_logits_storage_);
     ET_CHECK_OK_OR_RETURN_ERROR(host_logits.error());
     draft_logits_tensor_ = std::move(host_logits.get());
     if (timing != nullptr) {
@@ -1307,6 +1351,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
 
   std::vector<float> last_logits_storage_;
   TensorPtr last_logits_tensor_;
+  std::vector<int64_t> draft_candidate_ids_;
   std::vector<float> draft_logits_storage_;
   TensorPtr draft_logits_tensor_;
   std::vector<std::vector<float>> draft_probs_;
