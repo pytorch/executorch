@@ -77,7 +77,8 @@
 #                                MLX_METALLIB_PATH, see below.
 # executorch::kernels_torchao    The TorchAO kernels. macOS on Apple Silicon only.
 # executorch::backend_cuda       The CUDA delegate. Linux only.
-# executorch::extension_cuda     The CUDA stream extension. Linux only.
+# executorch::extension_cuda     The CUDA stream and device helpers. Linux
+#                                only.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
 #                                OpenVINO runtime by name, which a C++ program
 #                                installs and points OPENVINO_LIB_PATH at.
