@@ -21,12 +21,16 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     to_dq_op,
     to_q_op,
 )
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.builders.op_custom_op import (
     _resolve_qnn_data_type,
     CustomOp,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.partition.common_defs import (
+    to_be_implemented_operator,
+)
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
@@ -51,6 +55,7 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
+    qnn_edge_config,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
@@ -759,6 +764,60 @@ class TestPasses(unittest.TestCase):
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
+
+    def test_empty_permuted_is_delegated(self):
+        """torch.empty_like decomposes to aten.empty_permuted.default at edge, even
+        for a contiguous tensor, so any model that allocates a scratch buffer hits it.
+
+        Without a node visitor the partitioner rejects it and the buffer allocation,
+        plus everything downstream of it, falls back to CPU.
+        """
+
+        class EmptyLikeModule(torch.nn.Module):
+            def forward(self, x):
+                buf = torch.empty_like(x)
+                buf.copy_(torch.relu(x))
+                return buf + x
+
+        module = EmptyLikeModule().eval()
+        sample_input = (torch.randn(1, 4),)
+        empty_permuted = exir_ops.edge.aten.empty_permuted.default
+
+        # Guard against a vacuous test: the op must actually reach the partitioner.
+        edge = to_edge(
+            torch.export.export(module, sample_input, strict=True),
+            compile_config=qnn_edge_config(),
+        )
+        self.assertIn(
+            empty_permuted,
+            [n.target for n in edge.exported_program().graph.nodes],
+            "expected aten.empty_permuted.default at edge",
+        )
+        self.assertNotIn(empty_permuted, to_be_implemented_operator)
+        self.assertIn(
+            "aten.empty_permuted.default",
+            get_node_visitors(edge.exported_program()),
+            "no node visitor registered for aten.empty_permuted.default",
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            lowered = to_edge_transform_and_lower_to_qnn(
+                module, sample_input, compiler_specs
+            )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
+        self.assertNotIn(
+            empty_permuted,
+            [n.target for n in lowered.exported_program().graph.nodes],
+            "aten.empty_permuted.default fell back to CPU instead of being delegated",
+        )
 
     def test_index_put_int64_value_not_quantized(self):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.

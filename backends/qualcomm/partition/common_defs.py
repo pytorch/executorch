@@ -30,6 +30,7 @@ to_be_implemented_operator = [
 
 constant_operator = [
     exir_ops.edge.aten.arange.start_step,
+    exir_ops.edge.aten.empty_permuted.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
     torch.ops.aten.scalar_tensor.default,
