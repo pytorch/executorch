@@ -118,16 +118,6 @@ endif()
 
 # MARK: - flatcc
 
-# flatcc writes build artifacts into its source directory. Use a private source
-# copy so independent ExecuTorch build trees cannot overwrite each other's
-# artifacts.
-set(_flatcc_source_dir ${CMAKE_CURRENT_BINARY_DIR}/flatcc-src)
-file(
-  COPY ${PROJECT_SOURCE_DIR}/third-party/flatcc/
-  DESTINATION ${_flatcc_source_dir}
-  PATTERN .git EXCLUDE
-)
-
 if(WIN32)
   # For some reason, when configuring the external project during build
   # CMAKE_C_SIMULATE_ID is set to MSVC, but CMAKE_CXX_SIMULATE_ID is not set. To
@@ -151,9 +141,11 @@ else()
 ExternalProject_Add(
   flatcc_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
-  SOURCE_DIR ${_flatcc_source_dir}
+  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc-host
   BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
+  BUILD_ALWAYS TRUE
   CMAKE_ARGS
+    -DEXECUTORCH_FLATCC_SOURCE_DIR:PATH=${PROJECT_SOURCE_DIR}/third-party/flatcc
     -DFLATCC_RTONLY=OFF
     -DFLATCC_TEST=OFF
     -DFLATCC_REFLECTION=OFF
@@ -208,7 +200,14 @@ set(FLATCC_INSTALL
     OFF
     CACHE BOOL ""
 )
-add_subdirectory(${_flatcc_source_dir} flatcc)
+add_subdirectory(flatcc)
+set_target_properties(
+  flatccrt
+  PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/lib"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/lib"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/bin"
+)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
    AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 15
 )
@@ -216,12 +215,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
     flatccrt PRIVATE -Wno-error=unterminated-string-initialization
   )
 endif()
-# Unfortunately flatcc writes libs directly in to the source tree [1]. So to
-# ensure the target lib is created last, force flatcc_cli to build first.
-#
-# [1]
-# https://github.com/dvidelabs/flatcc/blob/896db54787e8b730a6be482c69324751f3f5f117/CMakeLists.txt#L168
-add_dependencies(flatccrt flatcc_cli)
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
 # a shared object; recompile with -fPIC" when building on some x86 linux
 # systems.
