@@ -105,8 +105,8 @@ class Package {
   bool load_constant_into(const std::string& key, MutableByteSpan destination)
       const;
 
-  // Stream all weight bytes once to verify the zip member checksum.
-  void verify_constants() const;
+  // Stream every recognized member once to verify its zip checksum.
+  void verify() const;
 
   // Every key the package resolves, owners and aliases alike, sorted.
   std::vector<std::string> keys() const;
