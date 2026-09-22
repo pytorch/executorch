@@ -61,12 +61,12 @@ def main():
             
             # ---- CLOSE ISSUE AFTER 30 DAYS OF REMINDER ----
             if days_since_reminder >= DAYS_BEFORE_CLOSE:
-                    print(
-                        f"Closing issue/PR #{issue.number} due to no response from author."
-                    )
-                    issue.create_comment(CLOSE_COMMENT)
-                    issue.edit(state="closed")
-                    continue
+                print(
+                    f"Closing issue/PR #{issue.number} due to no response from author."
+                )
+                issue.create_comment(CLOSE_COMMENT)
+                issue.edit(state="closed")
+                continue
             # ---- POST REMINDER AFTER 7 DAYS OF INITIAL REMINDER ----
             if days_since_reminder >= REMINDER_COOLDOWN_DAYS:
                 print(
