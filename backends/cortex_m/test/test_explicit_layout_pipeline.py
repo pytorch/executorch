@@ -4,12 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+
 import pytest
 import torch
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
+    CortexMPassManager,
+    LiftConstantTensorsPass,
+)
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import CortexMRunPasses, CortexMTester
 from executorch.backends.test.harness.stages import Quantize, StageType
+from executorch.backends.transforms.remove_unused_constants_pass import (
+    RemoveUnusedConstantsPass,
+)
+from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 
@@ -100,6 +110,11 @@ def test_layout_pipelines_select_distinct_spatial_operators():
     )
     explicit_program = explicit.get_artifact(StageType.RUN_PASSES).exported_program()
 
+    for program in (legacy_program, explicit_program):
+        assert all(
+            node.users for node in program.graph.nodes if node.op == "placeholder"
+        )
+
     assert _count(legacy_program, exir_ops.edge.cortex_m.quantized_conv2d.default) == 1
     assert (
         _count(
@@ -119,6 +134,104 @@ def test_layout_pipelines_select_distinct_spatial_operators():
         == 1
     )
     assert _count(explicit_program, exir_ops.edge.cortex_m.transpose.default) == 2
+
+
+@pytest.mark.parametrize("entry_point", ["legacy", "edge_passes", "edge_manager"])
+@pytest.mark.parametrize(
+    "passes,lifted,pruned",
+    [
+        pytest.param([], False, False, id="empty"),
+        pytest.param([LiftConstantTensorsPass], True, False, id="lift"),
+        pytest.param(
+            [LiftConstantTensorsPass, RemoveUnusedConstantsPass],
+            True,
+            True,
+            id="lift_and_prune",
+        ),
+    ],
+)
+def test_constant_cleanup_respects_pass_list_and_lift_order(
+    passes, lifted, pruned, entry_point
+):
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("_lifted_tensor_constant0", torch.tensor([1.0]))
+            self.register_buffer("_lifted_tensor_constant1", torch.tensor([2.0]))
+
+        def forward(self, input):
+            return input + self._lifted_tensor_constant1
+
+    class OtherEntryPoint(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("_lifted_tensor_constant2", torch.tensor([7.0]))
+
+        def forward(self, x):
+            return x + self._lifted_tensor_constant2
+
+    inputs = (torch.zeros(1),)
+    edge = to_edge(torch.export.export(Model(), inputs))
+    program = edge.exported_program()
+    assert "_lifted_tensor_constant0" in program.graph_signature.buffers
+    program.graph_module.register_buffer("new_tensor", torch.tensor([3.0]))
+    output = next(node for node in program.graph.nodes if node.op == "output")
+    original = output.args[0][0]
+    with program.graph.inserting_before(original):
+        constant = program.graph.get_attr("new_tensor")
+        constant.meta = original.meta.copy()
+        result = program.graph.call_function(
+            exir_ops.edge.aten.add.Tensor, (original.args[1], constant)
+        )
+        result.meta = original.meta.copy()
+    original.replace_input_with(original.args[1], result)
+    program.graph_module.recompile()
+    program.validate()
+
+    other = to_edge(torch.export.export(OtherEntryPoint(), inputs)).exported_program()
+    program.state_dict.update(other.state_dict)
+    other._state_dict = program.state_dict
+    other.validate()
+    original_code = program.graph_module.code
+    original_signature = copy.deepcopy(program.graph_signature)
+    original_state = program.state_dict.copy()
+    program.graph_module.meta["constant_lifting_test"] = "preserved"
+
+    if entry_point == "edge_passes":
+        transformed = edge.transform(
+            [pass_cls() for pass_cls in passes]
+        ).exported_program()
+    elif entry_point == "edge_manager":
+        transformed = edge.transform(
+            CortexMPassManager(passes=passes)
+        ).exported_program()
+    else:
+        transformed = CortexMPassManager(program, passes=passes).transform()
+
+    program.validate()
+    other.validate()
+    torch.testing.assert_close(program.module()(*inputs), torch.tensor([5.0]))
+    torch.testing.assert_close(other.module()(*inputs), torch.tensor([7.0]))
+    assert program.graph_module.code == original_code
+    assert program.graph_signature == original_signature
+    assert program.state_dict.keys() == original_state.keys()
+    for name, tensor in original_state.items():
+        assert program.state_dict[name] is tensor
+        assert other.state_dict[name] is tensor
+    transformed.validate()
+    assert transformed.graph_signature.user_inputs == original_signature.user_inputs
+    assert transformed.graph_module.meta["constant_lifting_test"] == "preserved"
+    assert ("_lifted_tensor_constant0" in transformed.graph_signature.buffers) == (
+        not pruned
+    )
+    assert sum(node.op == "get_attr" for node in transformed.graph.nodes) == (
+        not lifted
+    )
+    assert (
+        transformed.state_dict["_lifted_tensor_constant1"]
+        is original_state["_lifted_tensor_constant1"]
+    )
+    torch.testing.assert_close(transformed.module()(*inputs), torch.tensor([5.0]))
 
 
 def test_conv1d_is_quantized_before_layout_conversion():
