@@ -155,6 +155,7 @@ union XNodeUnion {
   XNNSin: _XNNNode1x1,
   XNNCopy: _XNNNode1x1,
   XNNCos: _XNNNode1x1,
+  XNNApproxGelu: _XNNNode1x1,
 }
 
 union XValueUnion {

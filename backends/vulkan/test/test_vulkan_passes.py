@@ -5,6 +5,9 @@ import torch
 
 from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
+from executorch.backends.vulkan._passes.remove_redundant_ops import (
+    RemoveRedundantOpsTransform,
+)
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
@@ -877,3 +880,60 @@ class TestVulkanPasses(unittest.TestCase):
 
         gm = ep.graph_module
         self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)
+
+    def test_remove_same_shape_view_copy(self):
+        """A view onto the shape it already has is dropped."""
+
+        class SameShapeViewModule(torch.nn.Module):
+            def forward(self, x):
+                # Two views that cancel out. FuseViewCopyTransform collapses the
+                # chain into a single view back to the original shape, which is
+                # what leaves a redundant node behind in a real graph.
+                return (x.view(4, 24).view(2, 48) + 1.0).view(2, 48)
+
+        model = SameShapeViewModule()
+        inputs = (torch.rand(size=(2, 48), dtype=torch.float32),)
+        program = torch.export.export(model, inputs)
+        edge_program = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep = edge_program._edge_programs["forward"]
+
+        before = op_node_count(ep.graph_module, "view_copy.default")
+        self.assertGreater(before, 0)
+
+        RemoveRedundantOpsTransform().call(ep.graph_module)
+        gm = ep.graph_module
+        self.assertLess(op_node_count(gm, "view_copy.default"), before)
+
+        # Every view that survived changes the shape.
+        for node in gm.graph.nodes:
+            if get_target_canonical_name(node) == "view_copy.default":
+                self.assertNotEqual(
+                    node.args[0].meta["val"].shape, node.meta["val"].shape
+                )
+
+        self.assertTrue(torch.allclose(ep.module()(*inputs), model(*inputs)))
+
+    def test_rank_changing_view_copy_is_kept(self):
+        """A view that changes the shape must survive.
+
+        Its consumers read their argument's shape, so removing it makes them see
+        the wrong rank even when both shapes occupy the same image extents.
+        """
+
+        class RankChangeModule(torch.nn.Module):
+            def forward(self, x):
+                return x.view(1, 2, 48) + 1.0
+
+        model = RankChangeModule()
+        inputs = (torch.rand(size=(2, 48), dtype=torch.float32),)
+        program = torch.export.export(model, inputs)
+        edge_program = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep = edge_program._edge_programs["forward"]
+
+        before = op_node_count(ep.graph_module, "view_copy.default")
+        RemoveRedundantOpsTransform().call(ep.graph_module)
+        self.assertEqual(op_node_count(ep.graph_module, "view_copy.default"), before)

@@ -242,15 +242,7 @@ if(EXECUTORCH_BUILD_SHARED)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
-# Enable ccache if available
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  message(STATUS "ccache found and enabled for faster builds")
-else()
-  message(STATUS "ccache not found, builds will not be cached")
-endif()
+executorch_try_enabling_ccache()
 announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -840,6 +832,9 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
+endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL
    OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
@@ -1193,6 +1188,22 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     )
   endif()
 
+endif()
+
+if(TARGET cpublas
+   AND TARGET kleidiai
+   AND TARGET cpuinfo
+)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
+     OR ANDROID_ABI STREQUAL "arm64-v8a"
+     OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"
+  )
+    target_compile_definitions(cpublas PRIVATE ET_BUILD_WITH_KLEIDIAI)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_NEON_BF16)
+    endif()
+    target_link_libraries(cpublas PRIVATE kleidiai)
+  endif()
 endif()
 
 # The shared build ships the profiler as one of its libraries, and the Python
