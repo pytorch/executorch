@@ -52,6 +52,7 @@ set(CUDA_SHIM_TESTS
 set(CUDA_KERNEL_TESTS
     test_aoti_torch_cuda__weight_int4pack_mm test_aoti_torch_cuda_int4_plain_mm
     test_aoti_torch_cuda_int5_plain_mm test_aoti_torch_cuda_int6_plain_mm
+    test_aoti_torch_cuda_speculative_plain_mm
 )
 
 enable_testing()

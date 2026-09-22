@@ -33,6 +33,7 @@ CudaCoalescedInt4Tensor weights::
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+from executorch.backends.cuda.quantize_op_dispatch import config
 from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
 from torch.library import impl
 
@@ -162,7 +163,7 @@ def _(func, types, args, kwargs):
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
-    if M <= 4:
+    if M <= config.SHORT_QUERY_MAX_ROWS:
         # The metadata is already in the coalesced [N, n_groups] layout the
         # decode kernel reads directly (baked into the weight constant at pack
         # time): scale as uint8 codes + per-256 fp16 scale_step; zero as uint8

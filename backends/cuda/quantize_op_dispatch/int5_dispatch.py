@@ -40,6 +40,7 @@ from executorch.backends.cuda.dp4a_planar_int5_tensor import (
     CudaDp4aPlanarInt5Tensor,
     unpack_int5,
 )
+from executorch.backends.cuda.quantize_op_dispatch import config
 from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
 from torch.library import impl
 
@@ -153,7 +154,7 @@ def _(func, types, args, kwargs):
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
-    if M <= 4:
+    if M <= 4 or (gs == 32 and M <= config.SHORT_QUERY_MAX_ROWS):
         out = torch.ops.executorch_cuda.int5_plain_mm(
             x_2d, ql, qh, scale, scale_step, zero, zero_point_step, gs
         )
