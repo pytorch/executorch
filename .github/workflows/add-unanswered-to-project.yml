@@ -20,7 +20,7 @@ jobs:
         id: generate-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.EXECUTORCH_TRIAGE_APP_CLIENT_ID }}
+          client-id: ${{ vars.EXECUTORCH_TRIAGE_CLIENT_ID }}
           private-key: ${{ secrets.EXECUTORCH_TRIAGE_APP }}
           owner: pytorch
           repositories: executorch
