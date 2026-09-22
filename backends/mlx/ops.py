@@ -2505,6 +2505,7 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     # runtime instead of adding specialization guards through int(SymInt).
     # Contiguous indexed axes keep the broadcast dimensions in place in ATen.
     leading_dims = axes[0] if axes == list(range(axes[0], axes[-1] + 1)) else 0
+    # Read pre-transpose sizes; the offset maps broadcast dims back to gather axes.
     out_shape = emit_shape(P, n, gather_slot, dim_offset=-leading_dims)
 
     reshape_slot = gather_slot

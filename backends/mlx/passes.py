@@ -255,6 +255,11 @@ class CollapseDtypeConversionPass(ExportPass):
                 source_dtype,
                 intermediate_dtype,
             ) not in {
+                # Boolean values 0 and 1 are exact in each floating-point dtype.
+                (torch.bool, torch.float16),
+                (torch.bool, torch.bfloat16),
+                (torch.bool, torch.float32),
+                (torch.bool, torch.float64),
                 (torch.float16, torch.float32),
                 (torch.bfloat16, torch.float32),
                 (torch.float16, torch.float64),
