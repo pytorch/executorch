@@ -20,4 +20,4 @@ else()
   target_link_libraries(shared_vulkan_runtime_test PRIVATE gtest gtest_main)
 endif()
 
-add_test(NAME shared_gpu_runtime_test COMMAND shared_gpu_runtime_test)
+add_test(NAME shared_vulkan_runtime_test COMMAND shared_vulkan_runtime_test)
