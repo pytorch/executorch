@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
@@ -59,6 +60,21 @@ class MetalStridedViewTest : public ::testing::Test {
             *base, 2, view_sizes, base_strides, /*storage_offset=*/2, view),
         Error::Ok);
   }
+
+  // A hand-written kernel copying buffer 0 to buffer 1.
+  std::shared_ptr<ETMetalKernelFunction> copyKernel() {
+    static ETMetalShaderLibrary library(R"(
+      #include <metal_stdlib>
+      using namespace metal;
+      kernel void copy_float(
+          device const float* in [[buffer(0)]],
+          device float* out [[buffer(1)]],
+          uint i [[thread_position_in_grid]]) {
+        out[i] = in[i];
+      }
+    )");
+    return library.getKernelFunction("copy_float");
+  }
 };
 
 TEST_F(MetalStridedViewTest, NonPackedViewStaysInParentBuffer) {
@@ -90,6 +106,68 @@ TEST_F(MetalStridedViewTest, PackedCopyGathersTheViewsElements) {
     std::memcpy(got.data(), [packed contents], got.size() * sizeof(float));
     EXPECT_EQ(got, expected);
   }
+}
+
+// A hand-written kernel reads a strided view through a packed copy, encoded
+// on the same encoder the kernel is being set up on.
+TEST_F(MetalStridedViewTest, HandWrittenKernelReadsPackedCopy) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  const int64_t out_size = 8;
+  const int64_t out_stride = 1;
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &out_size, &out_stride, kFloat32, kDeviceMps, 0, &out),
+      Error::Ok);
+
+  auto copy = copyKernel();
+  copy->runCommandBlock([&]() {
+    copy->startEncoding();
+    copy->setArg(0, *view);
+    copy->setArg(1, *out, ETMetalKernelFunction::ArgAccess::kWrite);
+    copy->dispatchSingle(8);
+  });
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+
+  const float* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{2, 3, 6, 7, 10, 11, 14, 15}));
+}
+
+// Writes to a packed copy would be lost, so a hand-written kernel may not
+// write through a strided view.
+TEST_F(MetalStridedViewTest, HandWrittenKernelMayNotWriteAStridedView) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+
+  auto copy = copyKernel();
+  copy->runCommandBlock([&]() {
+    copy->startEncoding();
+    EXPECT_THROW(
+        copy->setArg(1, *view, ETMetalKernelFunction::ArgAccess::kWrite),
+        std::runtime_error);
+  });
+}
+
+// A strided view that cannot be packed is an error, rather than being bound
+// with the packed strides it carries.
+TEST_F(MetalStridedViewTest, FailingToPackIsAnError) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  // Describe the view as spanning more elements than the gather can index.
+  // Nothing reads through it: the gather refuses it before encoding anything.
+  metal_record_strided_view(view, {4, 2}, {int64_t{1} << 31, 1});
+
+  auto copy = copyKernel();
+  copy->runCommandBlock([&]() {
+    copy->startEncoding();
+    EXPECT_THROW(copy->setArg(0, *view), std::runtime_error);
+  });
 }
 
 TEST_F(MetalStridedViewTest, CopiedHandleIsAStridedViewToo) {

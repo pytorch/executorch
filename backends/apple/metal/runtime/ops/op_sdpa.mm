@@ -607,7 +607,7 @@ static AOTITorchError sdpa_mps_impl(
         kernel_func->setArg(0, *query_tensor);
         kernel_func->setArg(1, *key_tensor);
         kernel_func->setArg(2, *value_tensor);
-        kernel_func->setArg(3, *out_tensor);
+        kernel_func->setArg(3, *out_tensor, ETMetalKernelFunction::ArgAccess::kWrite);
 
         // Set scalar arguments (uint values)
         kernel_func->setArg(4, gqa_factor);

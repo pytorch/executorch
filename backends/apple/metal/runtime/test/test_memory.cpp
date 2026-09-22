@@ -195,3 +195,51 @@ TEST_F(MetalMemoryTest, ParentFreedAfterParentDeletedLast) {
   EXPECT_FALSE(metal_is_device_pointer(base_ptr));
   EXPECT_EQ(memory_to_n_tensor.count(base_ptr), 0u);
 }
+
+// A view of a view lives in the same allocation, and keeps it alive after the
+// base and the first view are gone.
+TEST_F(MetalMemoryTest, NestedViewKeepsParentAlive) {
+  for (int64_t nested_offset : {0, 2}) {
+    AOTITensorHandle base = nullptr;
+    AOTITensorHandle view = nullptr;
+    createBaseAndView(&base, &view);
+    void* base_ptr = base->mutable_data_ptr();
+
+    const int64_t nested_size = 2;
+    AOTITensorHandle nested = nullptr;
+    ASSERT_EQ(
+        aoti_torch__reinterpret_tensor(
+            view, 1, &nested_size, &kStride, nested_offset, &nested),
+        Error::Ok);
+    void* nested_ptr = nested->mutable_data_ptr();
+
+    ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+    ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+    EXPECT_TRUE(metal_is_device_pointer(base_ptr)) << nested_offset;
+    EXPECT_TRUE(metal_is_device_pointer(nested_ptr)) << nested_offset;
+
+    ASSERT_EQ(aoti_torch_delete_tensor_object(nested), Error::Ok);
+    EXPECT_FALSE(metal_is_device_pointer(base_ptr)) << nested_offset;
+    EXPECT_EQ(memory_to_n_tensor.count(base_ptr), 0u) << nested_offset;
+  }
+}
+
+// A handle copied from a view keeps the allocation alive after the base and
+// the original view are gone.
+TEST_F(MetalMemoryTest, CopiedViewHandleKeepsParentAlive) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndView(&base, &view);
+  void* base_ptr = base->mutable_data_ptr();
+  AOTITensorHandle alias = nullptr;
+  ASSERT_EQ(aoti_torch_new_tensor_handle(view, &alias), Error::Ok);
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(base_ptr));
+  EXPECT_TRUE(metal_is_device_pointer(alias->mutable_data_ptr()));
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(alias), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(base_ptr));
+  EXPECT_EQ(memory_to_n_tensor.count(base_ptr), 0u);
+}

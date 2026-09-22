@@ -285,7 +285,8 @@ MODULE_REGISTRY["linear_bias_batch1"] = {
 # -------------------------------------------------------------------------
 class LinearChunkLastDim(nn.Module):
     """Chunking the last dim gives a non-packed view (its row stride is still
-    the parent's), which reinterpret_tensor has to materialize."""
+    the parent's). It stays in the parent's buffer, and the linear reads it
+    through a packed copy."""
 
     def __init__(self):
         super().__init__()
@@ -301,6 +302,27 @@ MODULE_REGISTRY["linear_chunk_last_dim"] = {
     "model_class": LinearChunkLastDim,
     "input_shapes": [(12, 7)],
     "description": "Linear on the second last-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkLastDimOutput(nn.Module):
+    """Returns a non-packed view: the backend copies the model's outputs out
+    of the GPU buffers, and has to copy this one by its real strides."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(7, 16, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear(x).chunk(2, dim=-1)
+        return second
+
+
+MODULE_REGISTRY["linear_chunk_last_dim_output"] = {
+    "model_class": LinearChunkLastDimOutput,
+    "input_shapes": [(12, 7)],
+    "description": "Linear whose last-dim chunk is the model's output",
 }
 
 
@@ -869,14 +891,13 @@ MODULE_REGISTRY["sdpa_head_dim_256"] = {
 
 
 # -------------------------------------------------------------------------
-# Narrow (non-packed reinterpret_tensor materialization)
+# Narrow (non-packed views)
 # -------------------------------------------------------------------------
 
 
 class NarrowLastDim(nn.Module):
     """Splits the last dimension into two halves via narrow, producing
-    non-packed strided views that the Metal backend must materialize
-    into contiguous buffers."""
+    non-packed strided views."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         half = x.shape[-1] // 2

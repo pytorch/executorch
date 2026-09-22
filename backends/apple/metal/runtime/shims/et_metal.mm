@@ -151,6 +151,20 @@ id<MTLBuffer> metal_packed_copy_of_strided_view(
     return ETMetalKernelFunction::encodePackedCopyOfStridedView(encoder, tensor);
 }
 
+bool metal_copy_strided_view(
+    const executorch::runtime::etensor::Tensor& tensor,
+    void* dst) {
+    @autoreleasepool {
+        id<MTLBuffer> packed = metal_packed_copy_of_strided_view(tensor);
+        if (!packed) {
+            return false;
+        }
+        getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+        std::memcpy(dst, [packed contents], tensor.nbytes());
+        return true;
+    }
+}
+
 // Metal buffer pool with best-fit matching and LRU eviction.
 // On free, buffers are recycled into a sorted pool. On alloc, the smallest
 // buffer >= requested size is returned (if within the headroom bound). When the
@@ -697,9 +711,18 @@ MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
 
     GatherParams params = {};
     params.ndim = static_cast<uint32_t>(view.sizes.size());
+    uint64_t extent = 0;
     for (size_t d = 0; d < view.sizes.size(); d++) {
         params.sizes[d] = static_cast<uint32_t>(view.sizes[d]);
         params.strides[d] = static_cast<uint32_t>(view.strides[d]);
+        if (view.sizes[d] > 0) {
+            extent += static_cast<uint64_t>(view.sizes[d] - 1) * static_cast<uint64_t>(view.strides[d]);
+        }
+    }
+    if (extent > UINT32_MAX) {
+        ET_LOG(Error, "encodePackedCopyOfStridedView: view spans %llu elements, more than the gather can index",
+               (unsigned long long)extent);
+        return nil;
     }
 
     auto gather = gather_kernel(element_size);
@@ -722,19 +745,28 @@ MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
 void ETMetalKernelFunction::setArg(
     unsigned idx,
     const executorch::runtime::etensor::Tensor& tensor,
-    bool strided_view_in_place) {
+    ArgAccess access) {
     if (!encoder_) {
         ET_LOG(Error, "ETMetalKernelFunction::setArg: No active encoder");
         return;
     }
 
-    if (!strided_view_in_place) {
-        id<MTLBuffer> packed = encodePackedCopyOfStridedView(encoder_, tensor);
-        if (packed) {
-            [encoder_ setComputePipelineState:cps_];
-            [encoder_ setBuffer:packed offset:0 atIndex:idx];
-            return;
+    if (access != ArgAccess::kStridedInPlace && metal_is_strided_view(&tensor)) {
+        // The tensor's own strides are those of a packed tensor, so binding the
+        // memory as it is would have the kernel read or write the wrong
+        // elements.
+        if (access == ArgAccess::kWrite) {
+            ET_LOG(Error, "ETMetalKernelFunction::setArg: argument %u is written through a view that is not densely packed, which is unsupported", idx);
+            throw std::runtime_error("kernel writes through a non-packed view");
         }
+        id<MTLBuffer> packed = encodePackedCopyOfStridedView(encoder_, tensor);
+        if (!packed) {
+            ET_LOG(Error, "ETMetalKernelFunction::setArg: failed to pack the view for argument %u", idx);
+            throw std::runtime_error("failed to pack a non-packed view");
+        }
+        [encoder_ setComputePipelineState:cps_];
+        [encoder_ setBuffer:packed offset:0 atIndex:idx];
+        return;
     }
 
     void* data_ptr = tensor.mutable_data_ptr();

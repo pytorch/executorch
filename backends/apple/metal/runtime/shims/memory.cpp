@@ -39,10 +39,40 @@ std::unordered_map<Tensor*, std::shared_ptr<Tensor>> tensors;
 constexpr int32_t NOT_OWN = -1;
 std::unordered_map<void*, int32_t> memory_to_n_tensor;
 
-// A view at another address than its parent counts towards the parent's
-// entry in memory_to_n_tensor, so this maps such a view to the parent address
-// that count has to be given back to.
+// Every handle into memory the runtime owns holds a count on that allocation
+// in memory_to_n_tensor. A handle whose own address is not an allocation (a
+// view at an offset, or a handle made from one) finds only that address when
+// it is deleted, so this maps it to the allocation its count went to.
 std::unordered_map<Tensor*, void*> view_owner;
+
+namespace {
+
+// The owned allocation that `handle`, with data at `data_ptr`, lives in, or
+// null for memory the runtime does not own, such as a model's constants.
+void* owning_allocation(Tensor* handle, void* data_ptr) {
+  auto owner = view_owner.find(handle);
+  if (owner != view_owner.end()) {
+    return owner->second;
+  }
+  auto memory = memory_to_n_tensor.find(data_ptr);
+  if (memory != memory_to_n_tensor.end() && memory->second != NOT_OWN) {
+    return data_ptr;
+  }
+  return nullptr;
+}
+
+// Takes a count on `owner`, if any, for a new handle with data at `data_ptr`.
+void hold_allocation(Tensor* handle, void* data_ptr, void* owner) {
+  if (owner == nullptr) {
+    return;
+  }
+  memory_to_n_tensor[owner] += 1;
+  if (data_ptr != owner) {
+    view_owner[handle] = owner;
+  }
+}
+
+} // namespace
 
 extern "C" {
 
@@ -309,12 +339,12 @@ AOTITorchError aoti_torch_copy_(
       InvalidArgument,
       "aoti_torch_copy_ failed: src tensor is null");
 
-  // The copy below goes by the tensors' strides, and a strided view carries the
-  // strides of a packed tensor rather than its own.
+  // A strided view carries the strides of a packed tensor rather than its own,
+  // so copying by those strides would write the wrong elements.
   ET_CHECK_OR_RETURN_ERROR(
-      !metal_is_strided_view(self) && !metal_is_strided_view(src),
+      !metal_is_strided_view(self),
       NotSupported,
-      "aoti_torch_copy_ does not support views that are not densely packed");
+      "aoti_torch_copy_ does not support copying into a view that is not densely packed");
 
   // Get dtype information and validate compatibility
   int32_t self_dtype, src_dtype;
@@ -380,7 +410,15 @@ AOTITorchError aoti_torch_copy_(
   size_t total_bytes = src->nbytes();
   int64_t total_elements = self->numel();
 
-  if (same_schema) {
+  if (same_schema && metal_is_strided_view(src)) {
+    // E.g. a model output that is a chunk of a larger buffer. The strides
+    // compared above are the packed ones `src` carries, so `self` is packed
+    // the same way and takes the view's elements in order.
+    ET_CHECK_OR_RETURN_ERROR(
+        metal_copy_strided_view(*src, self->mutable_data_ptr()),
+        Internal,
+        "aoti_torch_copy_: failed to copy a view that is not densely packed");
+  } else if (same_schema) {
     int result = metal_copy_memory(
         self->mutable_data_ptr(),
         src->data_ptr(),
@@ -646,15 +684,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       metal_retain_view(data_ptr);
     }
 
-    // Increment the reference count for this memory address only if it is owned
-    if (memory_to_n_tensor[data_ptr] != NOT_OWN) {
-      memory_to_n_tensor[data_ptr] += 1;
-      if (adjusted_data != data_ptr) {
-        // Deleting the view finds `adjusted_data`, not `data_ptr`; remember
-        // where its count went.
-        view_owner[tensor.get()] = data_ptr;
-      }
-    }
+    // The new handle keeps the allocation it lives in alive, including when
+    // `self` is itself a view.
+    hold_allocation(
+        tensor.get(), adjusted_data, owning_allocation(self, data_ptr));
   }
 
   ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successful");
@@ -748,11 +781,9 @@ AOTITorchError aoti_torch_new_tensor_handle(
   // and deleting either must leave the view registered for the other one.
   metal_retain_view(data_ptr);
 
-  // Increment the reference count for this memory address only if it is owned
-  // by tensor
-  memory_to_n_tensor[data_ptr] = memory_to_n_tensor[data_ptr] == NOT_OWN
-      ? NOT_OWN
-      : memory_to_n_tensor[data_ptr] + 1;
+  // The new handle keeps the allocation the original lives in alive.
+  hold_allocation(
+      tensor.get(), data_ptr, owning_allocation(orig_handle, data_ptr));
 
   ET_LOG(Debug, "aoti_torch_new_tensor_handle: successful");
   return Error::Ok;
