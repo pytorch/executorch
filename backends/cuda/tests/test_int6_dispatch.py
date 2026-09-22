@@ -35,6 +35,7 @@ from executorch.backends.cuda.dp4a_planar_int6_tensor import (
     pack_int6,
     unpack_int6,
 )
+from executorch.backends.cuda.quantize_op_dispatch.config import short_query_kernels
 from executorch.backends.cuda.quantize_op_dispatch.int6_dispatch import _unit_dq_mm_int6
 
 
@@ -117,6 +118,49 @@ class TestDispatchRouting(unittest.TestCase):
             out = F.linear(x, t)
         self.assertEqual(len(calls), 1)
         self.assertEqual(out.shape, (1, 16))
+
+    def test_wide_export_keeps_custom_op_and_prefill_stays_dynamic(self):
+        t, _, _ = _make_int6_tensor(16, 256)
+        module = nn.Linear(256, 16, bias=False, dtype=torch.bfloat16)
+        module.weight = nn.Parameter(t, requires_grad=False)
+        for limit in (8, 16):
+            x = torch.zeros(limit, 256, dtype=torch.bfloat16)
+            with self.subTest(limit=limit), short_query_kernels(limit):
+                ep = torch.export.export(
+                    module,
+                    (x,),
+                    dynamic_shapes=({0: torch.export.Dim("rows", min=5, max=limit)},),
+                )
+            self.assertIn(
+                torch.ops.executorch_cuda.int6_plain_mm.default,
+                [node.target for node in ep.graph.nodes],
+            )
+        prefill = torch.export.export(
+            module,
+            (x,),
+            dynamic_shapes=({0: torch.export.Dim("prefill", min=5, max=32)},),
+        )
+        self.assertNotIn(
+            torch.ops.executorch_cuda.int6_plain_mm.default,
+            [node.target for node in prefill.graph.nodes],
+        )
+
+    def test_wide_non_native_groups_keep_dequant_fallback(self):
+        t, _, _ = _make_int6_tensor(16, 256, group_size=32)
+        with short_query_kernels(), _record_int6_plain_mm() as calls:
+            F.linear(torch.zeros(8, 256, dtype=torch.bfloat16), t)
+            self.assertEqual(calls, [])
+
+    def test_wide_verification_scope_restores_prefill_dispatch(self):
+        t, _, _ = _make_int6_tensor(16, 256)
+        with short_query_kernels():
+            for rows in (4, 5, 8, 9, 15, 16, 17):
+                with self.subTest(rows=rows), _record_int6_plain_mm() as calls:
+                    F.linear(torch.zeros(rows, 256, dtype=torch.bfloat16), t)
+                    self.assertEqual(len(calls), int(rows <= 16))
+        with _record_int6_plain_mm() as calls:
+            F.linear(torch.zeros(8, 256, dtype=torch.bfloat16), t)
+            self.assertEqual(calls, [])
 
     def test_prefill_uses_dequant(self):
         """M>4 uses inline dequant (no custom op) and is numerically correct."""

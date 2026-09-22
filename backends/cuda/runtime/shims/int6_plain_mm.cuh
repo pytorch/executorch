@@ -6,7 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// W6A8 dp4a matvec for packed INT6 decode (M <= 4), used for GGUF Q6_K weights.
+// W6A8 dp4a matvec for packed INT6 decode (M <= 16), used for GGUF Q6_K
+// weights.
 //
 // Reads a genuine 6-bit packed weight (CudaDp4aPlanarInt6Tensor format), split
 // into two planes:
@@ -221,7 +222,8 @@ __device__ __forceinline__ void int6_w6a8_matvec_body(
     int32_t K,
     int32_t gs_shift,
     int32_t n_groups,
-    int32_t n_super) {
+    int32_t n_super,
+    int32_t valid_rows = ROWS) {
   const int32_t K_half = K / 2;
   const int32_t K_quarter = K / 4;
   const int32_t lane_id = threadIdx.x;
@@ -262,7 +264,8 @@ __device__ __forceinline__ void int6_w6a8_matvec_body(
     int16_t activation_sums[ROWS][4];
 #pragma unroll
     for (int32_t row = 0; row < ROWS; ++row) {
-      const Q8Block_i6* qb = q8 + static_cast<int64_t>(row) * n_q8_blocks + i;
+      const Q8Block_i6* qb = q8 +
+          static_cast<int64_t>(row < valid_rows ? row : 0) * n_q8_blocks + i;
       activations_even[row] = *reinterpret_cast<const uint4*>(qb->qs_even);
       activations_odd[row] = *reinterpret_cast<const uint4*>(qb->qs_odd);
       activation_scales[row] = qb->d;
@@ -321,6 +324,9 @@ __device__ __forceinline__ void int6_w6a8_matvec_body(
   if (lane_id == 0) {
 #pragma unroll
     for (int32_t row = 0; row < ROWS; ++row) {
+      if (row >= valid_rows) {
+        continue;
+      }
       out[static_cast<int64_t>(row) * N + n] = __float2bfloat16(sums[row]);
     }
   }
@@ -547,6 +553,42 @@ __global__ void __launch_bounds__(MV6_THREADS) int6_w6a8_matvec_m4_kernel(
 }
 
 // ---------------------------------------------------------------------------
+
+template <bool FULL_TILE>
+__global__ void __launch_bounds__(MV6_NWARPS * 32)
+    int6_w6a8_matvec_tiled_kernel(
+        const uint8_t* ql,
+        const uint8_t* qh,
+        const int8_t* scale,
+        const __half* steps,
+        const Q8Block_i6* q8,
+        __nv_bfloat16* out,
+        int32_t M,
+        int32_t N,
+        int32_t K,
+        int32_t n_groups,
+        int32_t n_super) {
+  const int32_t n = blockIdx.x * MV6_NWARPS + threadIdx.y;
+  if (n >= N) {
+    return;
+  }
+  const int32_t row = blockIdx.y * 8;
+  int6_w6a8_matvec_body<8, true, true>(
+      ql,
+      qh,
+      scale,
+      steps,
+      q8 + static_cast<int64_t>(row) * (K / 32),
+      out + static_cast<int64_t>(row) * N,
+      n,
+      N,
+      K,
+      4,
+      n_groups,
+      n_super,
+      FULL_TILE ? 8 : min(8, M - row));
+}
+
 // Persistent Q8 buffer (lazy init, not thread-safe — single-stream only).
 // Freed at process exit via a static guard so leak detectors stay quiet; the
 // CUDA runtime would otherwise reclaim it on teardown anyway.
@@ -601,7 +643,10 @@ inline void _int6_plain_mm_cuda(
   int32_t N = ql.size(0);
 
   ET_CHECK(A.dtype() == c10::ScalarType::BFloat16);
-  ET_CHECK_MSG(M >= 1 && M <= 4, "int6 short-query M=%d must be in [1, 4]", M);
+  ET_CHECK_MSG(
+      M >= 1 && (M <= 4 || (M <= 16 && group_size == 16)),
+      "int6 M=%d requires 1-4 rows, or 5-16 rows with group_size=16",
+      M);
   ET_CHECK(
       ql.dtype() == c10::ScalarType::Byte ||
       ql.dtype() == c10::ScalarType::Char);
@@ -667,6 +712,25 @@ inline void _int6_plain_mm_cuda(
 
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int32_t n_super = static_cast<int32_t>(steps.size(1));
+  if (M > 4 && gs == 16) {
+    dim3 tiled_grid((N + MV6_NWARPS - 1) / MV6_NWARPS, (M + 7) / 8);
+    const auto kernel = M % 8 == 0 ? int6_w6a8_matvec_tiled_kernel<true>
+                                   : int6_w6a8_matvec_tiled_kernel<false>;
+    kernel<<<tiled_grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+        reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+        reinterpret_cast<const int8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(steps.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        M,
+        N,
+        K,
+        n_groups,
+        n_super);
+    return;
+  }
+
   if (M == 4 && gs == 16) {
     int6_w6a8_matvec_m4_sum_gs16_kernel<<<grid, block, 0, stream>>>(
         reinterpret_cast<const uint8_t*>(ql.data_ptr()),

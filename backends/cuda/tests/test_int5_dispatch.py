@@ -38,6 +38,7 @@ from executorch.backends.cuda.dp4a_planar_int5_tensor import (
     pack_int5,
     unpack_int5,
 )
+from executorch.backends.cuda.quantize_op_dispatch.config import short_query_kernels
 from executorch.backends.cuda.quantize_op_dispatch.int5_dispatch import (
     _dequant_matmul_int5,
 )
@@ -169,6 +170,49 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(out.shape, (1, 16))
 
+    def test_wide_export_keeps_custom_op_and_prefill_stays_dynamic(self):
+        t, _ = _make_int5_tensor(16, 256)
+        module = nn.Linear(256, 16, bias=False, dtype=torch.bfloat16)
+        module.weight = nn.Parameter(t, requires_grad=False)
+        for limit in (8, 16):
+            x = torch.zeros(limit, 256, dtype=torch.bfloat16)
+            with self.subTest(limit=limit), short_query_kernels(limit):
+                ep = torch.export.export(
+                    module,
+                    (x,),
+                    dynamic_shapes=({0: torch.export.Dim("rows", min=5, max=limit)},),
+                )
+            self.assertIn(
+                torch.ops.executorch_cuda.int5_plain_mm.default,
+                [node.target for node in ep.graph.nodes],
+            )
+        prefill = torch.export.export(
+            module,
+            (x,),
+            dynamic_shapes=({0: torch.export.Dim("prefill", min=5, max=32)},),
+        )
+        self.assertNotIn(
+            torch.ops.executorch_cuda.int5_plain_mm.default,
+            [node.target for node in prefill.graph.nodes],
+        )
+
+    def test_wide_non_native_groups_keep_dequant_fallback(self):
+        t, _ = _make_int5_tensor(16, 256, gs=64)
+        with short_query_kernels(), _record_int5_plain_mm() as calls:
+            F.linear(torch.zeros(8, 256, dtype=torch.bfloat16), t)
+            self.assertEqual(calls, [])
+
+    def test_wide_verification_scope_restores_prefill_dispatch(self):
+        t, _ = _make_int5_tensor(16, 256)
+        with short_query_kernels():
+            for rows in (4, 5, 8, 9, 15, 16, 17):
+                with self.subTest(rows=rows), _record_int5_plain_mm() as calls:
+                    F.linear(torch.zeros(rows, 256, dtype=torch.bfloat16), t)
+                    self.assertEqual(len(calls), int(rows <= 16))
+        with _record_int5_plain_mm() as calls:
+            F.linear(torch.zeros(8, 256, dtype=torch.bfloat16), t)
+            self.assertEqual(calls, [])
+
     def test_prefill_uses_dequant(self):
         t, w_ref = _make_int5_tensor(16, 256)
         x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
@@ -237,7 +281,7 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertLess(self._rel_err(out, ref), 0.02)
 
     def test_from_intx_int8_rejects_out_of_range(self):
-        """qdata outside [-16, 15] (not a genuine int5) is rejected."""
+        """Qdata outside [-16, 15] (not a genuine int5) is rejected."""
         ft, _, _, _ = _make_intx_source(8, 64)
         ft.qdata = ft.qdata.clone()
         ft.qdata[0, 0] = 20  # > 15
