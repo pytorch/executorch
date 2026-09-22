@@ -34,8 +34,9 @@ Tensor& quantized_linear_out(
   const int8_t* weight_data = weights.const_data_ptr<int8_t>();
   const int32_t* bias_data =
       bias.has_value() ? bias.value().const_data_ptr<int32_t>() : nullptr;
-  int32_t* kernel_sum_data =
-      kernel_sum.has_value() ? kernel_sum.value().data_ptr<int32_t>() : nullptr;
+  int32_t* kernel_sum_data = kernel_sum.has_value()
+      ? kernel_sum.value().mutable_data_ptr<int32_t>()
+      : nullptr;
   int8_t* output_data = out.mutable_data_ptr<int8_t>();
 
   cmsis_nn_context ctx;

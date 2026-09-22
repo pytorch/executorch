@@ -29,7 +29,7 @@ TEST(SamplerTest, TestArgMax) {
   // -7.5863]]])
   torch::Tensor input = torch::rand({1, 1, 32000}, at::kFloat);
   input[0][0][396] = 1.0f;
-  EXPECT_EQ(sampler.sample(input.data_ptr<float>()), 396);
+  EXPECT_EQ(sampler.sample(input.mutable_data_ptr<float>()), 396);
 }
 
 TEST(SamplerTest, TestArgMaxWithFP16) {
@@ -42,7 +42,7 @@ TEST(SamplerTest, TestArgMaxWithFP16) {
   // -7.5863]]])
   torch::Tensor input = torch::rand({1, 1, 32000}, at::kHalf);
   input[0][0][396] = 1.0f;
-  EXPECT_EQ(sampler.sample(input.data_ptr<c10::Half>()), 396);
+  EXPECT_EQ(sampler.sample(input.mutable_data_ptr<c10::Half>()), 396);
 }
 
 TEST(SamplerTest, TestBFloat16SamplingUsesFloatArithmetic) {
@@ -89,7 +89,7 @@ TEST(SamplerTest, TestTopKRestrictsToCandidates) {
   for (int trial = 0; trial < 50; ++trial) {
     // Re-fill logits each trial because sample() mutates them in place.
     torch::Tensor logits = input.clone();
-    int32_t out = sampler.sample(logits.data_ptr<float>());
+    int32_t out = sampler.sample(logits.mutable_data_ptr<float>());
     EXPECT_TRUE(allowed.count(out)) << "trial " << trial << " got " << out;
   }
 }
@@ -111,7 +111,7 @@ TEST(SamplerTest, TestTopKDisabledByZero) {
   int hits = 0;
   for (int trial = 0; trial < 20; ++trial) {
     torch::Tensor logits = input.clone();
-    if (sampler.sample(logits.data_ptr<float>()) == 11) {
+    if (sampler.sample(logits.mutable_data_ptr<float>()) == 11) {
       hits++;
     }
   }
@@ -134,7 +134,7 @@ TEST(SamplerTest, TestTopKWithFP16) {
   std::set<int32_t> allowed = {3, 8};
   for (int trial = 0; trial < 30; ++trial) {
     torch::Tensor logits = input.clone();
-    int32_t out = sampler.sample(logits.data_ptr<c10::Half>());
+    int32_t out = sampler.sample(logits.mutable_data_ptr<c10::Half>());
     EXPECT_TRUE(allowed.count(out)) << "trial " << trial << " got " << out;
   }
 }
@@ -153,7 +153,7 @@ TEST(SamplerTest, TestTopKEqualsOneIsArgmax) {
 
   for (int trial = 0; trial < 10; ++trial) {
     torch::Tensor logits = input.clone();
-    EXPECT_EQ(sampler.sample(logits.data_ptr<float>()), 57);
+    EXPECT_EQ(sampler.sample(logits.mutable_data_ptr<float>()), 57);
   }
 }
 
@@ -175,7 +175,7 @@ TEST(SamplerTest, TestTopKTakesPrecedenceOverTopP) {
   std::set<int32_t> allowed = {3, 8};
   for (int trial = 0; trial < 50; ++trial) {
     torch::Tensor logits = input.clone();
-    int32_t out = sampler.sample(logits.data_ptr<float>());
+    int32_t out = sampler.sample(logits.mutable_data_ptr<float>());
     EXPECT_TRUE(allowed.count(out)) << "trial " << trial << " got " << out;
   }
 }
