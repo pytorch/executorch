@@ -25,15 +25,17 @@ Tensor& narrow_copy_out(
     Tensor& out) {
   (void)ctx;
 
+  ET_KERNEL_CHECK(ctx, dim_is_valid(dim, in.dim()), InvalidArgument, out);
+
+  if (dim < 0) {
+    dim += in.dim();
+  }
+
   ET_KERNEL_CHECK(
       ctx,
       check_narrow_copy_args(in, dim, start, length, out),
       InvalidArgument,
       out);
-
-  if (dim < 0) {
-    dim += in.dim();
-  }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
