@@ -35,6 +35,7 @@ def main():
             issue.get_comments(),
             key=lambda comment: comment.created_at,
         )
+
         
         # Find automation comments
         auto_comments = [
@@ -58,8 +59,10 @@ def main():
                 )
                 issue.remove_from_labels(LABEL)
                 continue
-        
+
+            
             days_since_reminder = (now - latest_auto_comment.created_at).days
+
             
             # ---- CLOSE ISSUE AFTER 30 DAYS OF REMINDER ----
             if days_since_reminder >= DAYS_BEFORE_CLOSE:
@@ -71,9 +74,7 @@ def main():
                 continue
             # ---- POST REMINDER AFTER 7 DAYS OF INITIAL REMINDER ----
             if days_since_reminder >= REMINDER_COOLDOWN_DAYS:
-                print(
-                    f"Posting reminder for issue/PR #{issue.number}."
-                )
+                print(f"Posting reminder for issue/PR #{issue.number}.")
                 issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
             else:
                 print(
@@ -86,7 +87,7 @@ def main():
         last_comment = comments[-1] if comments else None
 
         if (
-            last_comment is not None 
+            last_comment is not None
             and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER
         ):
             print(f"Posting initial reminder for issue/PR #{issue.number}.")
