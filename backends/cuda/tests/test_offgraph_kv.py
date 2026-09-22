@@ -157,12 +157,8 @@ class OffGraphKVTest(unittest.TestCase):
         torch.manual_seed(2)
         capacity_value = 512
         storage = (
-            torch.zeros(
-                1, 2, capacity_value, 64, device="cuda", dtype=torch.bfloat16
-            ),
-            torch.zeros(
-                1, 2, capacity_value, 64, device="cuda", dtype=torch.bfloat16
-            ),
+            torch.zeros(1, 2, capacity_value, 64, device="cuda", dtype=torch.bfloat16),
+            torch.zeros(1, 2, capacity_value, 64, device="cuda", dtype=torch.bfloat16),
         )
         capacity = torch.tensor([capacity_value], device="cuda")
         oracle = _Oracle(capacity_value)
@@ -176,12 +172,8 @@ class OffGraphKVTest(unittest.TestCase):
             prefill_v,
             torch.arange(0, 257, device="cuda"),
         )
-        out, q, k, v = self._step(
-            storage, capacity, 257, 1, policy=0, window=0
-        )
-        expected = oracle.step(
-            q, k, v, torch.tensor([257], device="cuda")
-        )
+        out, q, k, v = self._step(storage, capacity, 257, 1, policy=0, window=0)
+        expected = oracle.step(q, k, v, torch.tensor([257], device="cuda"))
         self.assertLess(_max_abs_diff(out, expected), 1e-2)
 
     def test_flat_rejects_write_past_capacity(self) -> None:

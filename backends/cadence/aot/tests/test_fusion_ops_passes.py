@@ -520,6 +520,33 @@ class TestFusionPasses(TestFusionPassesBase):
             },
         )
 
+    def test_quant_view_dequant_fusion_refreshes_bypassed_meta(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(quant, [-1])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(view, 1.2, 3, 0, 127, torch.int8),
+        )
+        builder.output([dequant])
+        original_graph = builder.get_graph_module()
+
+        p = FuseQuantDequantToRequantizePass()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
+
+        # The view now consumes the quantize's float input, so its metadata must
+        # follow; a stale int8 val fails the edge verifier's dtype check.
+        (view_node,) = converted_graph.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        )
+        self.assertEqual(view_node.meta["val"].dtype, torch.float32)
+
     def test_replace_dequant_quant_with_requantize(self) -> None:
         builder = GraphBuilder()
         x_input = torch.randint(low=0, high=5, size=(2, 12, 1, 6), dtype=torch.int8)

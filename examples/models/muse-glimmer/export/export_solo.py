@@ -173,6 +173,9 @@ def _export_cuda(
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.backends.cuda.passes.lower_offgraph_kv import (
+        OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
+    )
     from executorch.exir import (
         EdgeCompileConfig,
         ExecutorchBackendConfig,
@@ -309,9 +312,12 @@ def _export_cuda(
         if offgraph_manifest is not None:
             compile_specs.extend(
                 (
-                    CompileSpec(
-                        "offgraph_kv_manifest", offgraph_manifest.encode()
-                    ),
+                    CompileSpec("offgraph_kv_manifest", offgraph_manifest.encode()),
+                    # Where the delegate reads this step's token count, as
+                    # "input_index:dim". Lowering compiles the cache op away, so
+                    # the runtime cannot recover the width from the graph; every
+                    # method here takes input_pos second, shaped [T].
+                    CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"1:0"),
                     CompileSpec("autotune_at_compile_time", b"OFF"),
                 )
             )
