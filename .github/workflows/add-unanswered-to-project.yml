@@ -16,10 +16,18 @@ jobs:
   add_to_project:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate executorch-triage installation token
+        id: generate-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.EXECUTORCH_TRIAGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EXECUTORCH_TRIAGE_APP }}
+          owner: pytorch
+          repositories: executorch
       - name: Add open issues and open, non-draft PRs to org project and label external PRs (excluding certain authors and bots)
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.ET_EXT_CONTRIB }}
+          github-token: ${{ steps.generate-token.outputs.token }}
           script: |
             const projectId = "PVT_kwDOAUB9vs4A_PUL"; // PyTorch org project 136
             const owner = 'pytorch';
