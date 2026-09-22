@@ -43,7 +43,7 @@ bool check_gather_args(
     if (d != dim) {
       ET_CHECK_OR_RETURN_FALSE(
           nonempty_size(index, d) <= nonempty_size(in, d),
-          "size of dimension %zd of index should be smaller than the size of that dimension of input if dimension %zd != dim %zd",
+          "size of dimension %zd of index should be smaller than the size of that dimension of input if dimension %zd != dim %" PRId64,
           d,
           d,
           dim);
@@ -53,7 +53,7 @@ bool check_gather_args(
   for (const auto i : c10::irange(index.numel())) {
     ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(in, dim),
-        "Index is out of bounds for dimension %zd with size %zd",
+        "Index is out of bounds for dimension %" PRId64 " with size %zd",
         dim,
         nonempty_size(index, dim));
   }
@@ -182,7 +182,7 @@ bool check_scatter_add_args(
     if (d != dim) {
       ET_CHECK_OR_RETURN_FALSE(
           nonempty_size(index, d) <= nonempty_size(self, d),
-          "size of dimension %zd of index should be smaller than the size of that dimension of self if dimension %zd != dim %zd",
+          "size of dimension %zd of index should be smaller than the size of that dimension of self if dimension %zd != dim %" PRId64,
           d,
           d,
           dim);
@@ -192,7 +192,7 @@ bool check_scatter_add_args(
   for (const auto i : c10::irange(index.numel())) {
     ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(self, dim),
-        "Index is out of bounds for dimension %zd with size %zd",
+        "Index is out of bounds for dimension %" PRId64 " with size %zd",
         dim,
         nonempty_size(self, dim));
   }

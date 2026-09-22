@@ -528,7 +528,7 @@ list(APPEND _common_compile_options $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
 )
 # GCC checks no format strings by default; enforce them as errors.
 list(APPEND _common_compile_options
-     $<$<CXX_COMPILER_ID:GNU>:-Wformat;-Werror=format>
+     $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-Wformat;-Werror=format>
 )
 # Set default CMAKE_POSITION_INDEPENDENT_CODE behavior if ON or not set
 # (default) (and not for MSVC compiler)
