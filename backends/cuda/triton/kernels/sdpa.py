@@ -625,9 +625,7 @@ def _sdpa_fwd_kernel_body(  # noqa: C901
                 if OFFGRAPH_KV:
                     causal = offs_n[None, :] > query_pos[:, None]
                     if WINDOW_SIZE > 0:
-                        causal |= (
-                            query_pos[:, None] - offs_n[None, :]
-                        ) >= WINDOW_SIZE
+                        causal |= (query_pos[:, None] - offs_n[None, :]) >= WINDOW_SIZE
                 else:
                     causal = offs_n[None, :] > seq_pos[:, None]
                 qk = tl.where(
