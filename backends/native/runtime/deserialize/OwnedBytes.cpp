@@ -13,6 +13,8 @@
 #include <stdexcept>
 #include <system_error>
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+
 #if !defined(_WIN32)
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -41,11 +43,14 @@ OwnedBytes OwnedBytes::from_vector(std::vector<uint8_t> bytes) {
   return OwnedBytes(std::move(bytes));
 }
 
-OwnedBytes OwnedBytes::from_file(const std::string& path, bool use_mmap) {
-  return use_mmap ? map_file(path) : read_file(path);
+OwnedBytes OwnedBytes::from_file(
+    const std::string& path,
+    bool use_mmap,
+    uint64_t max_size) {
+  return use_mmap ? map_file(path, max_size) : read_file(path, max_size);
 }
 
-OwnedBytes OwnedBytes::read_file(const std::string& path) {
+OwnedBytes OwnedBytes::read_file(const std::string& path, uint64_t max_size) {
   std::error_code error;
   const std::filesystem::file_status status =
       std::filesystem::status(path, error);
@@ -63,6 +68,9 @@ OwnedBytes OwnedBytes::read_file(const std::string& path) {
       file_size >
           static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
     throw std::runtime_error("cannot read " + path + ": file is too large");
+  }
+  if (file_size > max_size) {
+    throw ResourceLimitError("file exceeds size limit: " + path);
   }
 
   std::ifstream file(path, std::ios::binary);
@@ -82,7 +90,7 @@ OwnedBytes OwnedBytes::read_file(const std::string& path) {
   return OwnedBytes(std::move(buffer));
 }
 
-OwnedBytes OwnedBytes::map_file(const std::string& path) {
+OwnedBytes OwnedBytes::map_file(const std::string& path, uint64_t max_size) {
 #if defined(_WIN32)
   // TODO: Implement Windows mappings with CreateFileMapping and MapViewOfFile.
   throw std::runtime_error("cannot mmap " + path + ": unsupported platform");
@@ -106,6 +114,10 @@ OwnedBytes OwnedBytes::map_file(const std::string& path) {
   if (st.st_size < 0) {
     ::close(fd);
     throw std::runtime_error("cannot mmap " + path + ": invalid file size");
+  }
+  if (static_cast<uint64_t>(st.st_size) > max_size) {
+    ::close(fd);
+    throw ResourceLimitError("file exceeds size limit: " + path);
   }
   if (static_cast<uintmax_t>(st.st_size) > std::numeric_limits<size_t>::max()) {
     ::close(fd);
