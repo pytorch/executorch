@@ -13,10 +13,10 @@
 // is a prompt, and generated text is streamed to
 // <out_prefix>_<prompt-index>.txt.
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -31,8 +31,11 @@
 #include <executorch/backends/mlx/examples/llm/runner_utils.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/module_executor.h>
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/runner.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/module/module.h>
 
@@ -40,10 +43,27 @@ DEFINE_string(pte, "", "Path to the .pte exported with --use-offgraph-cache");
 DEFINE_string(tokenizer, "", "Path to a supported tokenizer file");
 DEFINE_string(out_prefix, "gen", "Output files are <prefix>_<n>.txt");
 DEFINE_int32(max_session_tokens, 2048, "Maximum tokens retained per session");
+DEFINE_int32(
+    prefix_cache_entries,
+    0,
+    "Maximum immutable prompt snapshots; 0 disables prefix caching. "
+    "Reserves additional logical cache capacity per entry.");
+DEFINE_int32(
+    prompt_rounds,
+    1,
+    "Repeat the prompt batch on fresh sessions, retaining the prefix cache "
+    "between rounds");
 DEFINE_string(
     kv_storage_dtype,
-    "bf16",
-    "KV storage dtype: bf16, fp16, or fp32");
+    "",
+    "Override KV storage dtype with bf16, fp16, or fp32. Defaults to the PTE "
+    "activation dtype, or bf16 when metadata is absent.");
+DEFINE_string(
+    cache_kind,
+    ::executorch::extension::llm::cache::kind::kBatched,
+    "Which cache layout backs the batch: batched takes the default; "
+    "batched-sequence gives each sequence its own history; batched-cell "
+    "shares one table of per-token cells.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -65,14 +85,13 @@ DEFINE_string(
     "Chat template: llama3, gemma, gemma4, or 0 for raw text");
 
 namespace batching = ::executorch::extension::llm::batching;
+using ::executorch::backends::mlx::examples::llm::resolve_kv_storage_dtype;
 using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
 using ::executorch::backends::mlx::examples::llm::StopTokens;
-using ::executorch::backends::mlx::examples::llm::storage_dtype;
 using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::Module;
 using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
-using ::executorch::runtime::Result;
 
 namespace {
 
@@ -121,6 +140,9 @@ struct Emitter {
 
 struct JobResult {
   std::optional<batching::Session> session;
+  batching::PrefixCache::PromptCapture capture;
+  std::vector<batching::Token> prompt_tokens;
+  std::size_t cached_prompt_tokens = 0;
   batching::GenerationHandle handle;
   std::optional<batching::FinishReason> reason;
   std::optional<batching::GenerationMetrics> metrics;
@@ -150,31 +172,11 @@ const char* reason_name(const std::optional<batching::FinishReason>& reason) {
   return "unknown";
 }
 
-Result<std::optional<int64_t>> optional_const_int(
-    Module& module,
-    const char* name) {
-  const auto methods = module.method_names();
-  if (!methods.ok()) {
-    return methods.error();
-  }
-  if (methods->count(name) == 0) {
-    return std::optional<int64_t>{};
-  }
-  const auto result = module.execute(name);
-  if (!result.ok()) {
-    return result.error();
-  }
-  if (result->size() != 1 || !result->at(0).isInt()) {
-    return Error::InvalidProgram;
-  }
-  return std::optional<int64_t>{result->at(0).toInt()};
-}
-
-void submit_prompt(
-    batching::Session& session,
+void prepare_prompt(
+    batching::Runner& runner,
+    batching::PrefixCache& prefixes,
     const tokenizers::Tokenizer& tokenizer,
     const std::string& prompt,
-    const std::vector<batching::Token>& stop_tokens,
     JobResult& result) {
   try {
     std::string wrapped;
@@ -196,9 +198,32 @@ void submit_prompt(
       return;
     }
 
+    result.prompt_tokens = std::move(*encoded);
+    auto match = prefixes.lookup(result.prompt_tokens);
+    if (match) {
+      result.cached_prompt_tokens = match->matched_tokens;
+      result.session = std::move(match->session);
+    } else {
+      result.session = runner.open_session_async().get();
+    }
+    if (!result.session) {
+      result.message = "could not open session";
+    }
+  } catch (const std::exception& error) {
+    result.message = error.what();
+  }
+}
+
+void submit_prompt(
+    batching::PrefixCache& prefixes,
+    const tokenizers::Tokenizer& tokenizer,
+    const std::vector<batching::Token>& stop_tokens,
+    bool retain_prefix,
+    JobResult& result) {
+  try {
     auto emitter = std::make_shared<Emitter>(
         tokenizer,
-        encoded->back(),
+        result.prompt_tokens.back(),
         result.output_path,
         static_cast<std::size_t>(FLAGS_flush_every));
     if (!emitter->file) {
@@ -214,22 +239,30 @@ void submit_prompt(
     config.stop_tokens = stop_tokens;
     config.seed = FLAGS_seed;
 
-    result.handle = session.generate_async(
-        std::move(*encoded),
+    std::vector<batching::Token> suffix(
+        result.prompt_tokens.begin() + result.cached_prompt_tokens,
+        result.prompt_tokens.end());
+    if (retain_prefix) {
+      result.capture =
+          prefixes.capture_prompt(*result.session, result.prompt_tokens);
+    }
+    result.handle = result.session->generate_async(
+        std::move(suffix),
         std::move(config),
-        [emitter](const batching::GenerationUpdate& update) {
-          std::size_t count = update.tokens.size();
-          if (update.finish_reason == batching::FinishReason::StopToken &&
-              count > 0) {
-            --count;
-          }
-          for (std::size_t i = 0; i < count; ++i) {
-            emitter->append(update.tokens[i]);
-          }
-          if (update.finish_reason) {
-            emitter->finish();
-          }
-        });
+        result.capture.wrap(
+            [emitter](const batching::GenerationUpdate& update) {
+              std::size_t count = update.tokens.size();
+              if (update.finish_reason == batching::FinishReason::StopToken &&
+                  count > 0) {
+                --count;
+              }
+              for (std::size_t i = 0; i < count; ++i) {
+                emitter->append(update.tokens[i]);
+              }
+              if (update.finish_reason) {
+                emitter->finish();
+              }
+            }));
   } catch (const std::exception& error) {
     result.message = error.what();
   }
@@ -248,10 +281,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (FLAGS_max_session_tokens <= 0 || FLAGS_max_new_tokens <= 0 ||
-      FLAGS_max_decode_sequences <= 0 || FLAGS_flush_every <= 0) {
-    std::cerr
-        << "session, generation, decode, and flush limits must be positive"
-        << std::endl;
+      FLAGS_max_decode_sequences <= 0 || FLAGS_flush_every <= 0 ||
+      FLAGS_prompt_rounds <= 0 || FLAGS_prefix_cache_entries < 0) {
+    std::cerr << "session, generation, decode, flush, and round limits must be "
+                 "positive; prefix cache entries must be non-negative"
+              << std::endl;
     return 1;
   }
   if (FLAGS_temperature < 0.0 || FLAGS_top_p <= 0.0 || FLAGS_top_p > 1.0 ||
@@ -269,9 +303,9 @@ int main(int argc, char** argv) {
     std::cerr << "too many prompts" << std::endl;
     return 1;
   }
-  const int kv_dtype = storage_dtype(FLAGS_kv_storage_dtype);
-  if (kv_dtype < 0) {
-    std::cerr << "--kv_storage_dtype must be bf16, fp16, or fp32" << std::endl;
+  if (prompts.size() > std::numeric_limits<std::size_t>::max() /
+          static_cast<std::size_t>(FLAGS_prompt_rounds)) {
+    std::cerr << "too many prompt rounds" << std::endl;
     return 1;
   }
   if (FLAGS_max_new_tokens > FLAGS_max_session_tokens) {
@@ -292,16 +326,27 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto model_max_context = optional_const_int(*module, "get_max_ctx_len");
-  if (!model_max_context.ok()) {
-    std::cerr << "could not read get_max_ctx_len" << std::endl;
+  const auto activation_dtype =
+      ::executorch::extension::llm::read_activation_dtype(*module);
+  if (!activation_dtype.ok()) {
+    std::cerr << "could not read model metadata" << std::endl;
     return 1;
   }
-  if (*model_max_context &&
-      (**model_max_context <= 0 ||
-       FLAGS_max_session_tokens > **model_max_context)) {
+  const int kv_dtype =
+      resolve_kv_storage_dtype(FLAGS_kv_storage_dtype, *activation_dtype);
+  if (kv_dtype < 0) {
+    std::cerr << "--kv_storage_dtype must be bf16, fp16, or fp32" << std::endl;
+    return 1;
+  }
+  const auto max_context_length =
+      ::executorch::extension::llm::read_max_context_length(*module);
+  if (!max_context_length.ok()) {
+    std::cerr << "could not read model metadata" << std::endl;
+    return 1;
+  }
+  if (FLAGS_max_session_tokens > *max_context_length) {
     std::cerr << "--max_session_tokens " << FLAGS_max_session_tokens
-              << " exceeds the model context limit " << **model_max_context
+              << " exceeds the model context limit " << *max_context_length
               << std::endl;
     return 1;
   }
@@ -316,12 +361,22 @@ int main(int argc, char** argv) {
   const std::vector<batching::Token> stop_tokens(
       resolved_stop_tokens.ids.begin(), resolved_stop_tokens.ids.end());
 
+  const auto snapshot_slots = std::min(
+      prompts.size(), static_cast<std::size_t>(FLAGS_prefix_cache_entries));
+  const auto resident_sessions = static_cast<std::uint64_t>(prompts.size()) +
+      FLAGS_prefix_cache_entries + snapshot_slots;
+  if (resident_sessions >
+      static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+    std::cerr << "too many active and retained sessions" << std::endl;
+    return 1;
+  }
   auto executor = batching::ModuleExecutor::create(
       std::move(module),
-      static_cast<int>(prompts.size()),
+      static_cast<int>(resident_sessions),
       FLAGS_max_session_tokens,
       kv_dtype,
-      FLAGS_kv_initial_capacity);
+      FLAGS_kv_initial_capacity,
+      FLAGS_cache_kind);
   if (!executor.ok()) {
     std::cerr << "could not create executor: "
               << ::executorch::runtime::to_string(executor.error())
@@ -360,7 +415,8 @@ int main(int argc, char** argv) {
   }
 
   batching::Runner runner(**executor, std::move(scheduler));
-  std::vector<JobResult> results(prompts.size());
+  batching::PrefixCache prefixes(FLAGS_prefix_cache_entries);
+  std::vector<JobResult> results(prompts.size() * FLAGS_prompt_rounds);
   // Fail before opening sessions if any output path cannot be created.
   for (std::size_t i = 0; i < results.size(); ++i) {
     results[i].output_path =
@@ -374,32 +430,34 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::vector<std::future<std::optional<batching::Session>>> session_futures;
-  session_futures.reserve(prompts.size());
-  for (std::size_t i = 0; i < prompts.size(); ++i) {
-    session_futures.push_back(runner.open_session_async());
-  }
-  for (std::size_t i = 0; i < prompts.size(); ++i) {
-    results[i].session = session_futures[i].get();
-  }
-  for (std::size_t i = 0; i < prompts.size(); ++i) {
-    if (!results[i].session) {
-      results[i].message = "could not open session";
-      continue;
+  for (int round = 0; round < FLAGS_prompt_rounds; ++round) {
+    const std::size_t base = static_cast<std::size_t>(round) * prompts.size();
+    for (std::size_t i = 0; i < prompts.size(); ++i) {
+      prepare_prompt(
+          runner, prefixes, *tokenizer, prompts[i], results[base + i]);
     }
-    submit_prompt(
-        *results[i].session, *tokenizer, prompts[i], stop_tokens, results[i]);
-  }
-  for (JobResult& result : results) {
-    if (!result.handle.valid()) {
-      continue;
+    for (std::size_t i = 0; i < prompts.size(); ++i) {
+      JobResult& result = results[base + i];
+      if (!result.session) {
+        continue;
+      }
+      submit_prompt(
+          prefixes, *tokenizer, stop_tokens, i < snapshot_slots, result);
     }
-    result.handle.wait();
-    result.metrics = result.handle.metrics();
-    result.reason = result.handle.finish_reason();
-    result.message = result.handle.error_message();
+    for (std::size_t i = 0; i < prompts.size(); ++i) {
+      JobResult& result = results[base + i];
+      if (result.handle.valid()) {
+        result.handle.wait();
+        result.metrics = result.handle.metrics();
+        result.reason = result.handle.finish_reason();
+        result.message = result.handle.error_message();
+      }
+      result.capture.collect();
+      result.session.reset();
+    }
   }
 
+  prefixes.clear();
   runner.shutdown();
   const batching::EngineMetrics engine = runner.metrics();
 
@@ -407,7 +465,9 @@ int main(int argc, char** argv) {
     std::cout << "\n";
     for (std::size_t i = 0; i < results.size(); ++i) {
       if (results[i].metrics) {
-        std::cout << "[" << i << "] "
+        std::cout << "[" << i << "] " << results[i].prompt_tokens.size()
+                  << " prompt tokens (" << results[i].cached_prompt_tokens
+                  << " cached)\n"
                   << batching::format_report(*results[i].metrics);
       }
     }
@@ -433,7 +493,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  std::cout << prompts.size() - failures << "/" << prompts.size()
+  std::cout << results.size() - failures << "/" << results.size()
             << " generations completed" << std::endl;
   return failures == 0 ? 0 : 1;
 }

@@ -125,10 +125,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
-    ExecutionHandle* handle = new (std::nothrow) ExecutionHandle();
+    ExecutionHandle* handle = allocator->allocateInstance<ExecutionHandle>();
     if (handle == nullptr) {
       return Error::MemoryAllocationFailed;
     }
+    new (handle) ExecutionHandle();
 
     EXECUTORCH_PROF_START(
         event_tracer,
@@ -138,11 +139,16 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         data, size, context.get_named_data_map(), &handle->handles);
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
     if (read_status != Error::Ok) {
-      delete handle;
+      handle->~ExecutionHandle();
       return read_status;
     }
 
-    handle->platform_state = platform_init(compile_specs, allocator);
+    const Error platform_status =
+        platform_init(compile_specs, allocator, handle);
+    if (platform_status != Error::Ok) {
+      handle->~ExecutionHandle();
+      return platform_status;
+    }
 
     // Return the same buffer we were passed - this data will be
     // executed directly
@@ -324,7 +330,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       platform_destroy(exec_handle->platform_state);
     }
 
-    delete exec_handle;
+    exec_handle->~ExecutionHandle();
   }
 
  private:
@@ -459,15 +465,6 @@ auto EthosUBackend_backend = EthosUBackend();
 Backend EthosUBackend_id{"EthosUBackend", &EthosUBackend_backend};
 static executorch::runtime::Error EthosUBackend_registered =
     register_backend(EthosUBackend_id);
-
-// DEPRECATED in Executorch 1.2
-// Remove it from your code and make sure to add this to your CMAKE rules
-// instead:
-//   executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
-extern "C" ET_DEPRECATED executorch::runtime::Error
-executorch_delegate_EthosUBackend_registered() {
-  return EthosUBackend_registered;
-}
 
 } // namespace
 

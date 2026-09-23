@@ -10,6 +10,7 @@ The Neutron delegate supports the following quantization schemes:
 - Static quantization with 8-bit symmetric weights and 8-bit asymmetric activations (via the PT2E quantization flow), per-tensor granularity.
     - Following operators are supported at this moment: 
       - `aten.abs.default`
+      - `aten.adaptive_avg_pool1d.default`
       - `aten.adaptive_avg_pool2d.default`
       - `aten.add.Tensor`
       - `aten.addmm.default`

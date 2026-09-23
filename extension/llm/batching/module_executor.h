@@ -23,6 +23,7 @@
 #include <executorch/extension/llm/batching/executor.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
@@ -47,9 +48,11 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   // program must be loaded and its method must not be, since the delegate
   // resolves the cache while that load runs.
   //
-  // Capacity is `max_sessions` x `max_session_tokens` cells exactly, and
-  // open_session() holds the count, so exhaustion is unreachable rather than
-  // handled. `kv_dtype` is the ET ScalarType K/V is stored in; a negative
+  // `max_sessions` includes every resident session, including retained and
+  // transient clones. Capacity reserves `max_session_tokens` per session.
+  // These are logical cells, not a byte budget; the cache layout determines
+  // whether a clone shares or copies storage.
+  // `kv_dtype` is the ET ScalarType K/V is stored in; a negative
   // `initial_capacity` leaves the pools to grow from their own default.
   // `cache_kind` must name a builder that carries batch control -- a cache
   // serving one sequence cannot back a batch of them.
@@ -63,7 +66,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
       int max_session_tokens,
       int kv_dtype,
       int initial_capacity = -1,
-      std::string cache_kind = cache::kind::kBatchedCell,
+      std::string cache_kind = cache::kind::kBatched,
       std::string method = "forward");
 
   // The widest step this method takes, from the shape its token input was
@@ -79,6 +82,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
 
   std::optional<SessionId> open_session() override;
   void close_session(SessionId session) override;
+  std::optional<SessionId> clone(SessionId source, Position upto) override;
   void set_sampling(
       SessionId session,
       const SamplingParams& params,
@@ -99,6 +103,9 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   };
 
   ::executorch::runtime::Result<Step> build_step(const BatchInput& batch);
+  std::optional<SessionId> publish_session(
+      std::int32_t seq_id,
+      Position position);
 
   ModuleExecutor(
       std::unique_ptr<Module> module,
@@ -108,7 +115,8 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
       std::string backend_id,
       std::string method,
       std::int32_t vocab_size,
-      int max_step_tokens);
+      int max_step_tokens,
+      LogitsToKeepMode logits_to_keep_mode);
 
   // Draw the token an input produced from its row of `logits`, which the
   // session's sampler consumes in place.
@@ -127,6 +135,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   // The method's logits width, so a sampler can be built by its policy.
   std::int32_t vocab_size_;
   int max_step_tokens_;
+  LogitsToKeepMode logits_to_keep_mode_;
 
   SessionId next_session_ = 1; // never reused, unlike the cache's sequence ids
   std::unordered_map<SessionId, SessionState> sessions_;

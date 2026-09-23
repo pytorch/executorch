@@ -24,7 +24,6 @@ import argparse
 import time
 
 import torch
-
 from executorch.backends.mlx.examples.llm.runtime_meta import (
     apply_chat_template,
     chunked_prefill,
@@ -112,7 +111,7 @@ def resolve_limits(program, pte_path, n_draft_arg):
     max_ctx_len, prefill_chunk_size = read_model_limits(program)
     if max_ctx_len is None:
         raise ValueError(
-            f"{pte_path} publishes no get_max_ctx_len; re-export it with "
+            f"{pte_path} publishes no get_max_context_len; re-export it with "
             "dflash/export.py."
         )
     if prefill_chunk_size is None:

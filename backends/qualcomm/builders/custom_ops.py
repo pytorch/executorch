@@ -16,13 +16,19 @@ def _hadamard_matrix(dim: int, device, dtype) -> torch.Tensor:
     return h
 
 
-if not hasattr(torch.ops, "qnn_custom") or not hasattr(
-    torch.ops.qnn_custom, "hadamard_transform"
+if (
+    not hasattr(torch.ops, "qnn_custom")
+    or not hasattr(torch.ops.qnn_custom, "hadamard_transform")
+    or not hasattr(torch.ops.qnn_custom, "space_to_depth")
 ):
-    hadamard_op_lib = Library("qnn_custom", "DEF")
-    hadamard_op_lib.define("hadamard_transform(Tensor input, float scale) -> Tensor")
+    qnn_custom_lib = Library("qnn_custom", "DEF")
+    qnn_custom_lib.define("hadamard_transform(Tensor input, float scale) -> Tensor")
+    qnn_custom_lib.define(
+        "space_to_depth(Tensor input, int block_h, int block_w) -> Tensor"
+    )
 
-    @impl(hadamard_op_lib, "hadamard_transform", "CompositeExplicitAutograd")
+    # Qnn HadamardTransform
+    @impl(qnn_custom_lib, "hadamard_transform", "CompositeExplicitAutograd")
     def hadamard_transform_impl(input: torch.Tensor, scale: float) -> torch.Tensor:
         # Normalized Walsh-Hadamard transform along the last dim, times scale.
         # Matches a linear/matmul whose weight is scipy.linalg.hadamard(dim) * s,
@@ -37,5 +43,27 @@ if not hasattr(torch.ops, "qnn_custom") or not hasattr(
         # Hadamard weight is square, so the transform preserves shape.
         return torch.empty_like(input)
 
+    # Qnn SpaceToDepth
+    @impl(qnn_custom_lib, "space_to_depth", "CompositeExplicitAutograd")
+    def space_to_depth_impl(
+        input: torch.Tensor, block_h: int, block_w: int
+    ) -> torch.Tensor:
+        # Generalizes torch.nn.functional.pixel_unshuffle to independent block
+        # sizes along height/width, matching QNN SpaceToDepth's CRD mode: output
+        # channel c*block_h*block_w + i*block_w + j holds input channel c's
+        # (i, j)'th block element.
+        n, c, h, w = input.shape
+        out_h, out_w = h // block_h, w // block_w
+        x = input.view(n, c, out_h, block_h, out_w, block_w)
+        x = x.permute(0, 1, 3, 5, 2, 4)
+        return x.reshape(n, c * block_h * block_w, out_h, out_w)
+
+    @register_fake("qnn_custom::space_to_depth")
+    def space_to_depth_fake(
+        input: torch.Tensor, block_h: int, block_w: int
+    ) -> torch.Tensor:
+        n, c, h, w = input.shape
+        return input.new_empty(n, c * block_h * block_w, h // block_h, w // block_w)
+
 else:
-    hadamard_op_lib = Library("qnn_custom", "FRAGMENT")
+    qnn_custom_lib = Library("qnn_custom", "FRAGMENT")

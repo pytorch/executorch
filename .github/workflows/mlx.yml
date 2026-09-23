@@ -11,6 +11,8 @@ on:
     paths:
       - .github/workflows/mlx.yml
       - backends/mlx/**
+      - extension/llm/batching/**
+      - extension/llm/cache/**
       - extension/llm/export/**
       - extension/audio/**
       - examples/models/gemma4_31b/**
@@ -58,7 +60,7 @@ jobs:
         ${CONDA_RUN} python install_executorch.py > /dev/null
         # The sanitizers fail on github VM runner, but pass on real device
         # TODO: figure out why
-        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
+        ${CONDA_RUN} cmake --preset mlx-release -DEXECUTORCH_BUILD_TESTS=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_MLX_ENABLE_SANITIZERS=OFF
         echo "::endgroup::"
 
         ${CONDA_RUN} pip list
@@ -68,7 +70,8 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Build test runners"
-        ${CONDA_RUN} cmake --build cmake-out --target op_test_runner multi_thread_test_runner mlx_metallib_path_test mlx_mutable_state_test mlx_sequence_cache_test mlx_cell_cache_test -j$(( $(sysctl -n hw.ncpu) - 1 ))
+        # Build all configured targets so newly registered tests are built too.
+        ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
         echo "::endgroup::"
 
         echo "::group::Check MLX artifact sizes"
@@ -102,17 +105,12 @@ jobs:
           exit 1
         fi
 
-        echo "::group::Run SwiftPM metallib path unit test"
-        ./cmake-out/backends/mlx/test/mlx_metallib_path_test
-        echo "::endgroup::"
-
-        echo "::group::Run mutable-state (multi-session) unit test"
-        ./cmake-out/backends/mlx/test/mlx_mutable_state_test
-        echo "::endgroup::"
-
-        echo "::group::Run off-graph KV-cache op test"
-        ./cmake-out/backends/mlx/test/mlx_sequence_cache_test
-        ./cmake-out/backends/mlx/test/mlx_cell_cache_test
+        echo "::group::Run registered MLX C++ tests"
+        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
+        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
+          ET_TESTING_NUM_THREADS=50 \
+          ET_PREDICTIONS_PER_THREAD=100 \
+          ${CONDA_RUN} ctest --test-dir cmake-out/backends/mlx/test --output-on-failure --no-tests=error
         echo "::endgroup::"
 
         echo "::group::Run op unit tests"
@@ -130,14 +128,6 @@ jobs:
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           -v
-        echo "::endgroup::"
-
-        echo "::group::Run multi-thread stress test"
-        ${CONDA_RUN} python backends/mlx/test/export_multi_thread_test_model.py /tmp/multi_thread_test_model.pte
-        ET_TESTING_MODEL_PATH=/tmp/multi_thread_test_model.pte \
-          ET_TESTING_NUM_THREADS=50 \
-          ET_PREDICTIONS_PER_THREAD=100 \
-          ./cmake-out/backends/mlx/test/multi_thread_test_runner
         echo "::endgroup::"
 
         echo "::group::Run custom_kernel_ops op tests"
@@ -853,7 +843,7 @@ jobs:
 
   # DFlash speculative decoding: target and draft exported as two methods of one
   # .pte. Also the only coverage that the constants the export publishes
-  # (get_max_ctx_len / get_prefill_chunk_size / get_max_block_len /
+  # (get_max_context_len / get_max_seq_len / get_max_block_len /
   # get_mask_token_id) match what
   # the runner derives from them -- the runner takes no capacity or block flags.
   test-mlx-dflash:
@@ -919,7 +909,7 @@ jobs:
         BLOCK_SIZE=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).block_size)")
         MASK_TOKEN_ID=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).mask_token_id)")
         echo "draft checkpoint block_size: ${BLOCK_SIZE} mask_token_id: ${MASK_TOKEN_ID}"
-        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_ctx_len', 'get_prefill_chunk_size', 'get_max_block_len', 'get_mask_token_id']}; want = {'get_max_ctx_len': ${MAX_CTX_LEN}, 'get_prefill_chunk_size': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}, 'get_mask_token_id': ${MASK_TOKEN_ID}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
+        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_context_len', 'get_max_seq_len', 'get_max_block_len', 'get_mask_token_id']}; want = {'get_max_context_len': ${MAX_CTX_LEN}, 'get_max_seq_len': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}, 'get_mask_token_id': ${MASK_TOKEN_ID}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
         echo "::endgroup::"
 
         echo "::group::Run DFlash speculative decoding"
@@ -1064,6 +1054,7 @@ jobs:
           --model-id "${MODEL_ID}" \
           --output /tmp/${MODEL_NAME}_offgraph.pte \
           --use-offgraph-cache \
+          --logits-to-keep selected \
           --max-ctx-len 1024 \
           --dtype bf16 \
           --qlinear 4w

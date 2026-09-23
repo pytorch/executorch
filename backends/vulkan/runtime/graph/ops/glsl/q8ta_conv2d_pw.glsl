@@ -63,6 +63,7 @@ layout(push_constant) uniform restrict Block {
   int output_zp;
   int K4_per_group;
   int OC4_per_group;
+  int stream_row_offset;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -73,6 +74,9 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+// Row-tile input (im2col scratch) vs batched activation input. Uniform per
+// dispatch; declared last so existing constant ids are unchanged.
+${layout_declare_spec_const(C, "int", "use_flat_tile", "0")}
 
 int compute_outp_buffer_idx(
     const int w_block_idx,
@@ -107,9 +111,29 @@ void main() {
   const int W4 = div_up_4(int(outp.sizes[0][0]));
   const int H = int(outp.sizes[0][1]);
   const int OC4 = div_up_4(int(outp.sizes[0][2]));
-  const int hn = int(gl_GlobalInvocationID.z);
-  const int n = hn / H;
-  const int oh = hn % H;
+  const int local_row_idx = int(gl_GlobalInvocationID.z);
+  int n;
+  int oh;
+  int input_n;
+  int input_h;
+  if (use_flat_tile == 1) {
+    if (local_row_idx >= int(inp.sizes[0][1])) {
+      return;
+    }
+    const int global_row_idx = stream_row_offset + local_row_idx;
+    if (global_row_idx >= int(outp.sizes[0][3]) * H) {
+      return;
+    }
+    n = global_row_idx / H;
+    oh = global_row_idx % H;
+    input_n = 0;
+    input_h = local_row_idx;
+  } else {
+    n = local_row_idx / H;
+    oh = local_row_idx % H;
+    input_n = n;
+    input_h = oh;
+  }
 
   // Bounds check in block space
   if (ow_block_idx >= W4 ||
@@ -152,8 +176,8 @@ void main() {
   // Compute initial input tile index with group offset
   // For grouped im2col, each group's K range starts at group_idx * K4_per_group
   // For non-grouped (groups=1), group_idx is always 0 so offset is 0
-  int input_idx = n * inp_n_stride
-                + oh * inp_h_stride
+  int input_idx = input_n * inp_n_stride
+                + input_h * inp_h_stride
                 + ow_block_idx * inp_w_stride
                 + group_idx * K4_per_group;
 

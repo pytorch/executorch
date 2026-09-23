@@ -212,6 +212,37 @@ class QnnConfig:
         return skip_node_id_set, skip_node_op_set
 
 
+def get_lpai_device_lib_dir(qnn_sdk: str, lpai_hw_ver) -> str:
+    """
+    Resolve the directory holding the LPAI device (aDSP) libraries in the QNN SDK.
+
+    LPAI only loads code-signed libraries, which live under
+    ``lib/lpai-v<hw_ver>/signed``. That directory is not shipped by the SDK, it
+    is produced by ``backends/qualcomm/scripts/sign_library.sh``. A missing
+    setup step is therefore reported here, rather than surfacing later as an
+    opaque library load failure from the QNN API.
+
+    Args:
+        qnn_sdk: Path to QNN_SDK_ROOT.
+        lpai_hw_ver: LPAI hardware version of the target SoC.
+
+    Returns:
+        Path of the directory containing the signed LPAI device libraries.
+    """
+    signed_dir = f"{qnn_sdk}/lib/lpai-v{lpai_hw_ver}/signed"
+    if not os.path.isdir(signed_dir):
+        raise RuntimeError(
+            f"{signed_dir} not found. LPAI libraries must be code-signed before "
+            "they can be loaded, please run\n"
+            "  backends/qualcomm/scripts/sign_library.sh "
+            f"--lpai_arch v{lpai_hw_ver}\n"
+            "(for direct mode, run it as "
+            f"'--direct_mode --htp_arch v<htp_arch> --lpai_arch v{lpai_hw_ver}') "
+            "and try again."
+        )
+    return signed_dir
+
+
 class SimpleADB:
     """
     A wrapper class for communicating with Android device
@@ -286,6 +317,23 @@ class SimpleADB:
         self.extra_cmds = ""
         self.skip_push = qnn_config.skip_push
         self.backend_library_paths = {}
+        # Resolved on first use through the lpai_lib_dir property, see there.
+        self._lpai_lib_dir = None
+        # Names of the LPAI device libraries that live in the *signed* directory.
+        # They are kept as bare names and joined with lpai_lib_dir only when an
+        # LPAI deployment actually asks for them, see _library_paths_for().
+        self._signed_lpai_lib_names = (
+            [
+                "libqnn_executorch_backend.so",
+                "libqnn_executorch_skel.so",
+                "libQnnLpai.so",
+                "libQnnSystem.so",
+                "libc++abi.so.1",
+                "libc++.so.1",
+            ]
+            if self.direct_build_folder
+            else ["libQnnLpaiSkel.so"]
+        )
 
         if self.direct_build_folder and self.dump_intermediate_outputs:
             raise ValueError(
@@ -305,14 +353,9 @@ class SimpleADB:
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++abi.so.1",
                         f"{self.hexagon_tools_root}/Tools/target/hexagon/lib/v{self.htp_arch}/G0/pic/libc++.so.1",
                     ],
-                    QnnExecuTorchBackendType.kLpaiBackend: [
-                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libqnn_executorch_backend.so",
-                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libqnn_executorch_skel.so",
-                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libQnnLpai.so",
-                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libQnnSystem.so",
-                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libc++abi.so.1",
-                        f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/signed/libc++.so.1",
-                    ],
+                    # every LPAI library in direct mode has to be code-signed,
+                    # so they are all added by _library_paths_for()
+                    QnnExecuTorchBackendType.kLpaiBackend: [],
                 }
             )
             for _, library_paths in self.backend_library_paths.items():
@@ -339,19 +382,39 @@ class SimpleADB:
                     QnnExecuTorchBackendType.kGpuBackend: [
                         f"{self.qnn_sdk}/lib/{self.target}/libQnnGpu.so",
                     ],
-                    # please note that users need to sign LPAI related libs manually
+                    # the LPAI skel additionally has to be code-signed, it is
+                    # added by _library_paths_for()
                     QnnExecuTorchBackendType.kLpaiBackend: [
                         f"{self.qnn_sdk}/lib/{self.target}/libQnnLpai.so",
-                        (
-                            f"{self.qnn_sdk}/lib/lpai-v{self.lpai_hw_ver}/"
-                            f"signed/libQnnLpaiSkel.so"
-                        ),
                         f"{self.qnn_sdk}/lib/{self.target}/libQnnLpaiStub.so",
                     ],
                 }
             )
             for _, library_paths in self.backend_library_paths.items():
                 library_paths.extend(traditional_general_artifacts)
+
+    @property
+    def lpai_lib_dir(self) -> str:
+        """
+        Directory holding the signed LPAI device libraries.
+
+        Resolved on first access rather than in __init__ on purpose: the
+        directory only exists once the libraries have been code-signed, so
+        resolving it raises. Deploying a different backend on an LPAI capable
+        SoC never loads these libraries and must not fail because of them.
+        """
+        if self._lpai_lib_dir is None:
+            self._lpai_lib_dir = get_lpai_device_lib_dir(self.qnn_sdk, self.lpai_hw_ver)
+        return self._lpai_lib_dir
+
+    def _library_paths_for(self, backend: QnnExecuTorchBackendType) -> List[str]:
+        """Backend libraries to deploy, including the signed LPAI ones."""
+        paths = list(self.backend_library_paths[backend])
+        if backend == QnnExecuTorchBackendType.kLpaiBackend:
+            paths.extend(
+                f"{self.lpai_lib_dir}/{name}" for name in self._signed_lpai_lib_names
+            )
+        return paths
 
     def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
@@ -393,7 +456,7 @@ class SimpleADB:
 
             # backend libraries
             for backend in backends:
-                artifacts.extend(self.backend_library_paths[backend])
+                artifacts.extend(self._library_paths_for(backend))
 
             # Ensure that all necessary library artifacts exists.
             missing = [path for path in artifacts if not os.path.exists(path)]

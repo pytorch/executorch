@@ -29,10 +29,9 @@ class TestT5EncoderModel:
 
     ops_after_partitioner_FP = {
         "executorch_exir_dialects_edge__ops_aten_clamp_Tensor": 4,
-        "executorch_exir_dialects_edge__ops_aten_isinf_default": 4,
         "executorch_exir_dialects_edge__ops_aten_where_self": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
-        "torch.ops.higher_order.executorch_call_delegate": 10,
+        "torch.ops.higher_order.executorch_call_delegate": 6,
     }
 
     ops_after_partitioner_INT = {
@@ -48,9 +47,8 @@ class TestT5EncoderModel:
 
     ops_after_partitioner_vgf_quantize = {
         "executorch_exir_dialects_edge__ops_aten_clamp_Tensor": 4,
-        "executorch_exir_dialects_edge__ops_aten_isinf_default": 4,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
-        "torch.ops.higher_order.executorch_call_delegate": 9,
+        "torch.ops.higher_order.executorch_call_delegate": 5,
     }
 
     ops_after_partitioner_vgf_no_quantize = ops_after_partitioner_vgf_quantize

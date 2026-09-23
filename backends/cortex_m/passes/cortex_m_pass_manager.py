@@ -26,8 +26,12 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
-from executorch.exir.pass_base import ExportPass
-from executorch.exir.pass_manager import PassManager
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+)
+from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
 
@@ -41,6 +45,8 @@ from .explicit_layout_pass import (
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
+from .fuse_conv_padding_pass import FuseConvPaddingPass
+from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -48,7 +54,36 @@ from .replace_quant_nodes_pass import ReplaceQuantNodesPass
 PassClass = Type[ExportPass]
 
 
-class CortexMPassManager(PassManager):
+class _CortexMLoweringPass(ExportedProgramPassBase):
+    def __init__(
+        self, pass_classes: list[PassClass], target_config: CortexMTargetConfig
+    ) -> None:
+        self.pass_classes = pass_classes
+        self.target_config = target_config
+
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        modified = False
+        for pass_cls in self.pass_classes:
+            signature = inspect.signature(pass_cls)
+            kwargs: dict[str, Any] = {}
+            if "exported_program" in signature.parameters:
+                kwargs["exported_program"] = exported_program
+            if "target_config" in signature.parameters:
+                kwargs["target_config"] = self.target_config
+
+            transform_pass = pass_cls(**kwargs)
+            transformed = _transform(exported_program, transform_pass)
+            modified |= transformed is not exported_program
+            exported_program = transformed
+
+        # Passes can introduce tensor attributes that must become program inputs.
+        buffer_count = len(exported_program.graph_signature.buffers)
+        exported_program = lift_constant_tensor_pass(exported_program)
+        modified |= len(exported_program.graph_signature.buffers) != buffer_count
+        return ExportedProgramPassResult(exported_program, modified)
+
+
+class CortexMPassManager(ExportedProgramPassManager):
     legacy_pass_list: list[PassClass] = [
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
@@ -59,6 +94,8 @@ class CortexMPassManager(PassManager):
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
         AtenToCortexMPass,
+        FuseConvPaddingPass,
+        InitializeScratchBuffersPass,
     ]
 
     explicit_layout_pass_list: list[PassClass] = [
@@ -71,12 +108,14 @@ class CortexMPassManager(PassManager):
         ConvertConv1dToConv2dPass,
         CortexMReplaceOpsWithChannelsLastVariants,
         ReplaceSqueezeAndUnsqueezeWithViewPass,
-        CortexMCanonicalizeViewCopyPermutePass,
+        # Move layout copies across pads before singleton permutations become views.
         RemovePermutesAroundElementwiseOps,
         CortexMCanonicalizeViewCopyPermutePass,
         ValidateCortexMExplicitLayoutPass,
         ReplaceQuantNodesPass,
         AtenToCortexMPass,
+        FuseConvPaddingPass,
+        InitializeScratchBuffersPass,
     ]
 
     pass_list = legacy_pass_list
@@ -92,7 +131,7 @@ class CortexMPassManager(PassManager):
 
     def __init__(
         self,
-        exported_program: ExportedProgram | None,
+        exported_program: ExportedProgram | None = None,
         passes: Optional[list[PassClass]] = None,
         target_config: Optional[CortexMTargetConfig] = None,
         use_explicit_layout: bool = False,
@@ -100,9 +139,8 @@ class CortexMPassManager(PassManager):
         """Initialize the Cortex-M pass manager.
 
         Args:
-            exported_program: The exported program to transform. Required
-                before calling ``transform()``; may be ``None`` for callers
-                that only use ``transform_for_annotation()``.
+            exported_program: Optional program for the legacy ``transform()``
+                entry point. Omit when using ``edge.transform(pass_manager)``.
             passes: Optional override of the pass list. Defaults to
                 the legacy or explicit-layout pass list selected by
                 ``use_explicit_layout``.
@@ -113,20 +151,26 @@ class CortexMPassManager(PassManager):
             use_explicit_layout: Select the experimental explicit-layout pass
                 sequence. Legacy lowering remains the default.
         """
-        super().__init__(passes=[])
         self.exported_program = exported_program
-        # PassManager.passes is typed as callables; this manager stores pass classes which are initialized at transform time with the exported_program.
         default_passes = (
             self.explicit_layout_pass_list
             if use_explicit_layout
             else self.legacy_pass_list
         )
-        self.passes: list[PassClass] = (  # type: ignore[assignment]
-            passes if passes is not None else default_passes  # type: ignore[assignment]
-        )
+        pass_classes = passes if passes is not None else default_passes
+        for pass_cls in pass_classes:
+            if not isinstance(pass_cls, type):
+                raise ValueError(
+                    f"{type(self).__name__} expects pass classes, not instances; "
+                    f"got {pass_cls!r}"
+                )
         self.target_config: CortexMTargetConfig = target_config or CortexMTargetConfig(
             cpu=CortexM.M55
         )
+        lowering_passes: list[PassType] = [
+            _CortexMLoweringPass(pass_classes, self.target_config)
+        ]
+        super().__init__(lowering_passes)
 
     def transform_for_annotation(self, model):
         passes = self.pass_list_transform_for_annotation
@@ -142,24 +186,5 @@ class CortexMPassManager(PassManager):
                 f"got {exported_program!r}"
             )
 
-        for pass_cls in self.passes:
-            if not isinstance(pass_cls, type):
-                raise ValueError(
-                    f"{type(self).__name__} expects pass classes, not instances; "
-                    f"got {pass_cls!r}"
-                )
-
-            signature = inspect.signature(pass_cls)
-            kwargs: dict[str, Any] = {}
-            if "exported_program" in signature.parameters:
-                kwargs["exported_program"] = exported_program
-            if "target_config" in signature.parameters:
-                kwargs["target_config"] = self.target_config
-
-            transform_pass = pass_cls(**kwargs)
-            exported_program = _transform(exported_program, transform_pass)
-
-        # All constant tensors should be lifted to buffers at this point, re-run
-        # lift_constant_tensor_pass in case new ones have been introduced.
-        exported_program = lift_constant_tensor_pass(exported_program)
-        return exported_program
+        result = self(exported_program)
+        return result.exported_program if result.modified else exported_program

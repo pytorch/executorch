@@ -19,6 +19,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.backends.arm.constants import MAX_U55_INDEX_TENSOR_ELEMENTS
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -203,7 +204,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
-        exir_ops.edge.aten.index.Tensor,  # GATHER
         exir_ops.edge.aten.index_put.default,  # SCATTER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
@@ -425,6 +425,54 @@ class EthosU55UnfoldCopyCheck(OperatorSupportBase):
             self.reporter.report_reject(
                 node,
                 f"U55 unfold_copy supports at most {self.max_windows} windows.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55IndexTensorCheck(OperatorSupportBase):
+    """Accept single constant index.Tensor cases that lower to slices."""
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.exported_program = exported_program
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.index.Tensor:
+            return True
+
+        input_arg, indices_arg = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        indices = typing.cast(typing.Sequence[fx.Node | None], indices_arg)
+        input_shape = get_first_fake_tensor(input_node).shape
+        tensor_indices = [index for index in indices if index is not None]
+        if len(tensor_indices) != 1:
+            self.reporter.report_reject(
+                node,
+                "U55 index.Tensor only supports indexing along one dimension but got "
+                f"{len(tensor_indices)}.",
+            )
+            return False
+
+        index_node = tensor_indices[0]
+        index_shape = get_first_fake_tensor(index_node).shape
+        if (
+            not is_param_node(self.exported_program, index_node)
+            or len(index_shape) != 1
+            or index_shape[0] == 0
+            or index_shape[0] > MAX_U55_INDEX_TENSOR_ELEMENTS
+            or any(not isinstance(size, int) for size in input_shape)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 index.Tensor requires static input shape and a constant "
+                f"rank-1 index with at most {MAX_U55_INDEX_TENSOR_ELEMENTS} elements.",
             )
             return False
 

@@ -80,4 +80,4 @@ ops_list=(
     cortex_m::quantized_batch_matmul.out
 )
 
-${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="$(join_by_comma "${ops_list[@]}")" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"
+${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="$(join_by_comma "${ops_list[@]}")" --extra_build_flags="-DCORTEX_M_ENABLE_RUNTIME_CHECKS=ON -DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"
