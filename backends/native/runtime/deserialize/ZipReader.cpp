@@ -16,6 +16,9 @@
 
 #include <zip.h>
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
+
 namespace ptn {
 namespace {
 
@@ -33,8 +36,6 @@ struct ZipFileDeleter {
 
 using ZipHandle = std::unique_ptr<zip_t, ZipDeleter>;
 using ZipFileHandle = std::unique_ptr<zip_file_t, ZipFileDeleter>;
-
-constexpr zip_int64_t kMaxMemberCount = 1 << 20;
 
 [[noreturn]] void throw_zip(zip_t* archive, const std::string& operation) {
   throw std::runtime_error("zip: " + operation + ": " + zip_strerror(archive));
@@ -101,8 +102,8 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
   if (count < 0) {
     throw_zip(impl_->archive.get(), "cannot enumerate members");
   }
-  if (count > kMaxMemberCount) {
-    throw std::runtime_error("zip: member count exceeds package limit");
+  if (static_cast<uint64_t>(count) > detail::kMaxPackageMembers) {
+    throw ResourceLimitError("zip: member count exceeds package limit");
   }
 
   names_.reserve(static_cast<size_t>(count));
@@ -125,6 +126,10 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
     }
     if (stat.encryption_method != ZIP_EM_NONE) {
       throw std::runtime_error("zip: member is encrypted: " + name);
+    }
+    if (stat.size > detail::kMaxPackageBytes) {
+      throw ResourceLimitError(
+          "zip: member exceeds package size limit: " + name);
     }
     if (stat.size > std::numeric_limits<size_t>::max()) {
       throw std::runtime_error("zip: member is too large: " + name);
