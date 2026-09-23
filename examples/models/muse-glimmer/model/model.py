@@ -42,9 +42,9 @@ class MuseGlimmerConfig:
     # separate so it can carry its own per-layer quant bit-width. Takes
     # precedence over ``fuse_qkv`` when True.
     fuse_qko: bool = False
-    # Optional per-layer QKV fusion. CUDA GGUF loading populates this for layers
-    # whose V projection has the same quantization type as Q/K/OG, while mixed
-    # Q4/Q6 layers retain the qko_proj + v_proj layout.
+    # Optional per-layer QKV fusion. Checkpoint loading populates this for layers
+    # whose V projection has the same quantization type as Q/K/OG. Mixed layers
+    # retain the backend's existing unfused layout.
     fuse_qkv_layers: tuple[int, ...] = ()
     fuse_gate_up: bool = True
     output_soft_cap_temp: float = 20.0

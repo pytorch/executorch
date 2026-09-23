@@ -377,13 +377,13 @@ def _fuse_state_dict(
     return fused_sd, fused_groups
 
 
-def _fuse_compatible_cuda_qkv(atomic_sd: dict, config) -> set[int]:
+def _fuse_compatible_qkv(atomic_sd: dict, config) -> set[int]:
     """Fuse Q/K/V/OG per layer when their portable quantization matches.
 
     Muse Glimmer GGUFs may store V as Q4_K on some layers and Q6_K on others.
-    A global QKV decision therefore leaves avoidable duplicate activation
-    quantization on the Q4-only layers. Fuse those compatible layers exactly;
-    mixed layers fall back to the existing QKO + standalone-V layout.
+    A global QKV decision therefore leaves avoidable projection launches on
+    compatible layers. Fuse those layers exactly; mixed layers retain the
+    backend's existing unfused layout.
     """
     from executorch.extension.llm.export.quant import fuse_along_output
 
@@ -475,9 +475,7 @@ def _finalize(atomic_sd: dict, backend: str, config, activation_dtype: torch.dty
     from executorch.extension.llm.export.load import assign_state_dict
     from executorch.extension.llm.export.quant import identity
 
-    fused_qkv_layers = (
-        _fuse_compatible_cuda_qkv(atomic_sd, config) if backend == "cuda" else set()
-    )
+    fused_qkv_layers = _fuse_compatible_qkv(atomic_sd, config)
     fused_sd, fused_groups = _fuse_state_dict(atomic_sd, backend, config.n_layers)
 
     # Fused runtime layout for the target backend.
