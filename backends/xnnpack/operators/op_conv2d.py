@@ -82,6 +82,10 @@ class Conv2d(NodeVisitor):
         weight_quant_params = QuantParams.from_weights(
             kernel_node, self._exported_program
         )
+        # XNNPACK's bf16 convolution takes the filter in bf16 (with an fp32
+        # bias); every other float convolution takes an fp32 filter.
+        kernel_val = kernel_node.meta.get("val", None)
+        is_bf16_kernel = kernel_val is not None and kernel_val.dtype == torch.bfloat16
 
         if weight_quant_params is not None and weight_quant_params.per_channel:
             if is_transpose:
@@ -102,7 +106,7 @@ class Conv2d(NodeVisitor):
             swap_in_out_for_weights=is_depthwise_conv or is_transpose,
             quant_params=weight_quant_params,
             groups=groups if is_transpose else 1,
-            force_fp32=True,
+            force_fp32=not is_bf16_kernel,
         )
         kwargs["filter_id"] = vals_to_ids[get_input_node(node, 1)]
 
