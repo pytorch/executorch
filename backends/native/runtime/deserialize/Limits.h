@@ -20,6 +20,7 @@ inline constexpr int kMaxJsonDepth = 64;
 inline constexpr size_t kMaxPackageMembers = size_t{1} << 20;
 inline constexpr size_t kMaxTensorCount = size_t{1} << 20;
 inline constexpr size_t kMaxAliasCount = size_t{1} << 20;
+inline constexpr size_t kMaxProgramMethods = size_t{1} << 16;
 inline constexpr size_t kMaxTensorRank = 64;
 inline constexpr uint64_t kMaxTensorDimension = (1ULL << 31) - 1;
 inline constexpr uint64_t kMaxTensorBytes = uint64_t{1} << 40;

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include <executorch/backends/native/runtime/Program.h>
+#include <executorch/backends/native/runtime/Validation.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
 
 namespace ptn {
@@ -39,8 +40,9 @@ const Package& EngineContext::package() const {
 
 std::unique_ptr<EngineExecutable> EngineContext::compile(
     const std::string& method_name) {
-  std::unique_ptr<EngineExecutable> executable =
-      compile_method(program_->get_method(method_name));
+  const Method& method = program_->get_method(method_name);
+  validate_method_constants(method, *package_);
+  std::unique_ptr<EngineExecutable> executable = compile_method(method);
   if (executable == nullptr) {
     throw std::runtime_error("engine returned a null executable");
   }
