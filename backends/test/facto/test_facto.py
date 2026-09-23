@@ -175,6 +175,8 @@ def _selected_arm_op_names() -> list[str]:
         return []
 
     return _selected_op_names()
+
+
 def _facto_config() -> _FactoConfig:
     max_cases = os.environ.get(FACTO_MAX_CASES_ENV)
     selected_op_names = _selected_op_names()
