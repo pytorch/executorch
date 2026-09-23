@@ -58,7 +58,9 @@ class ExecutorchBackendConfig:
 
     # A single memory planning pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
-    memory_planning_pass: Union[PassType, Dict[str, PassType]] = MemoryPlanningPass()
+    memory_planning_pass: Union[PassType, Dict[str, PassType]] = field(
+        default_factory=MemoryPlanningPass
+    )
 
     # A single propagate device config can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.

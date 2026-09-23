@@ -887,6 +887,137 @@ class TestUnsupportedConfigurations(unittest.TestCase):
             banked_memory_planning_pass(flat_map(), share_mutable_buffers=True)
         self.assertIn("share_mutable_buffers", str(caught.exception))
 
+    class StateNet(torch.nn.Module):
+        """One mutable buffer to declare, so that an arena is appended."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.register_buffer("state", torch.zeros(4))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            self.state.add_(x)
+            return self.state * 2.0
+
+    class TwoStateNet(torch.nn.Module):
+        """`StateNet` plus a mutable buffer `shared_buffer_fqns` does not name.
+
+        The legacy `share_mutable_buffers` path lays the same program out
+        differently: it puts every mutable buffer in the single arena at
+        `mem_id=2`, so `spare` is in there too and the arena is 48 bytes rather
+        than 16.
+        """
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.register_buffer("state", torch.zeros(4))
+            self.register_buffer("spare", torch.zeros(8))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            self.state.add_(x)
+            self.spare.add_(torch.cat([x, x]))
+            return self.state * 2.0 + self.spare[:4]
+
+    # pyre-ignore[2, 3]: anything the pass will accept as an algorithm; the
+    # module and the export result are untyped.
+    def _export_sharing_state(self, algo, net=None):
+        """Export a program with `state` in a dedicated arena.
+
+        The refusal fires where the arena is appended, so reaching it takes a
+        program rather than a constructor call. ``net`` defaults to `StateNet`,
+        whose one mutable buffer is the least a refusal needs.
+        """
+        memory_pass = MemoryPlanningPass(
+            memory_planning_algo=algo,
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        )
+        return to_edge(
+            export((net or self.StateNet()).eval(), (torch.ones(4),), strict=True)
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=memory_pass, emit_mutable_buffer_names=True
+            )
+        )
+
+    # pyre-ignore[2, 3]: the emitted schema types are untyped here.
+    def _placement(self, plan, fqn):
+        """The (memory_id, memory_offset) the emitted program gives ``fqn``."""
+        values = [
+            value
+            for value in plan.values
+            if getattr(value.val, "extra_tensor_info", None) is not None
+            and value.val.extra_tensor_info.fully_qualified_name == fqn
+        ]
+        self.assertEqual(len(values), 1, fqn)
+        info = values[0].val.allocation_info
+        return (info.memory_id, info.memory_offset_low)
+
+    def test_shared_buffer_fqns_is_rejected_on_a_hand_built_pass(self) -> None:
+        """The helper's refusal is not the only way to reach this planner.
+
+        A pass built by hand around BankedGreedy skips banked_memory_planning_pass
+        entirely, and a dedicated shared arena is appended after the planner has
+        returned: it is not a declared bank, so no bank is charged for its bytes
+        and the capacity check never sees them.
+        """
+        target = two_banks(48 * KiB, 48 * KiB)
+        with self.assertRaises(ValueError) as caught:
+            self._export_sharing_state(
+                MemoryPlanningAlgorithmSuite(algo_list=[BankedGreedy(target)])
+            )
+        message = str(caught.exception)
+        self.assertIn("shared_buffer_fqns", message)
+        self.assertIn("banked_greedy", message)
+        self.assertIn("plans_against_a_memory_budget", message)
+
+    def test_a_planner_assigned_after_construction_is_still_rejected(self) -> None:
+        """`__init__` is not where this can be decided.
+
+        Neither `memory_planning_algo` nor a suite's `algo_list` is frozen by the
+        constructor, so a check there rules on an algorithm the export need not
+        run. Appending the arena is the point at which both facts are settled.
+        """
+        memory_pass = MemoryPlanningPass(
+            memory_planning_algo=MemoryPlanningAlgorithmSuite(algo_list=[greedy]),
+            share_mutable_buffers=True,
+            shared_buffer_fqns=frozenset({"state"}),
+        )
+        memory_pass.memory_planning_algo = MemoryPlanningAlgorithmSuite(
+            algo_list=[BankedGreedy(two_banks(48 * KiB, 48 * KiB))]
+        )
+        with self.assertRaises(ValueError) as caught:
+            to_edge(
+                export(self.StateNet().eval(), (torch.ones(4),), strict=True)
+            ).to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass=memory_pass, emit_mutable_buffer_names=True
+                )
+            )
+        self.assertIn("banked_greedy", str(caught.exception))
+
+    def test_greedy_still_accepts_shared_buffer_fqns(self) -> None:
+        """The refusal is on the banked planner, not on sharing in general.
+
+        Where `state` landed is asserted, not only that nothing raised: an
+        export that shared nothing at all would return without raising too.
+
+        The program carries a second mutable buffer the argument does not name,
+        so the asserted layout is one only the dedicated arena produces. Arena
+        two, offset zero and sixteen bytes are what the legacy
+        `share_mutable_buffers` path gives a one-buffer program; with `spare` in
+        the program that path makes the arena 48 bytes and puts `spare` in it.
+        """
+        et = self._export_sharing_state(
+            MemoryPlanningAlgorithmSuite(algo_list=[greedy]), self.TwoStateNet()
+        )
+        plan = et.executorch_program.execution_plan[0]
+        self.assertEqual(self._placement(plan, "state"), (2, 0))
+        # float32[4]: the dedicated arena holds the declared buffer and nothing
+        # else, so `spare` is planned into the activations like any other
+        # tensor the algorithm was given.
+        self.assertEqual(plan.non_const_buffer_sizes[2], 16)
+        self.assertNotEqual(self._placement(plan, "spare")[0], 2)
+
 
 class TestPlacementReport(unittest.TestCase):
     def test_report_lists_bytes_and_occupancy_per_bank(self) -> None:
