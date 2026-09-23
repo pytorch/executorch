@@ -50,6 +50,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m/passes:cortex_passes",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/backends/test/harness:tester",
+                "//executorch/exir:lib",
             ],
         )
 
@@ -61,7 +62,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m/passes:cortex_passes",
-                "//executorch/backends/cortex_m/passes:passes_utils",
+                "//executorch/backends/cortex_m:utils",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/exir/dialects:lib",
             ],
@@ -72,6 +73,8 @@ def define_common_targets(is_fbcode = False):
             srcs = ["test_explicit_layout_pipeline.py"],
             compile = "with-source",
             typing = False,
+            # Implementation tests require the Cortex-M FVP runner, which Buck does not provide.
+            env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m:target_config",
@@ -99,4 +102,39 @@ def define_common_targets(is_fbcode = False):
             ],
         )
 
+        python_pytest(
+            name = "test_pass_manager",
+            srcs = ["test_pass_manager.py"],
+            compile = "with-source",
+            typing = False,
+            deps = [
+                "//caffe2:torch",
+                "//pytorch/ao:torchao",  # @manual
+                "//executorch/backends/cortex_m:edge_compile_config",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/exir:lib",
+                "//executorch/exir:pass_base",
+                "//executorch/exir/_serialize:lib",
+                "//executorch/exir/dialects:lib",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )
+
     
+
+        python_pytest(
+            name = "test_fuse_conv_padding",
+            srcs = ["test_fuse_conv_padding.py"],
+            compile = "with-source",
+            typing = False,
+            env = {"PYTEST_ADDOPTS": "-k 'not test_implementation'"},
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/test/harness:tester",
+                "//executorch/exir/dialects:lib",
+                ":tester",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )

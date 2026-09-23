@@ -28,6 +28,8 @@ _SYMBOLIC_SHAPE_OPS: dict[Any, Any] = {
     operator.mul: exir_ops.backend.tosa.MUL_SHAPE.default,
     operator.mod: exir_ops.backend.tosa.MOD_SHAPE.default,
     operator.floordiv: exir_ops.backend.tosa.DIV_FLOOR_SHAPE.default,
+    max: exir_ops.backend.tosa.MAX_SHAPE.default,
+    min: exir_ops.backend.tosa.MIN_SHAPE.default,
 }
 
 
@@ -47,7 +49,21 @@ class SymbolicToTosaShapesPass(ArmPass):
 
     def __init__(self):
         super().__init__()
+        self._rewritten_ops = 0
         self.materializer = SymbolMaterializationHelpers(self)
+
+    def call(self, graph_module):
+        self._rewritten_ops = 0
+        self.materializer = SymbolMaterializationHelpers(self)
+        result = super().call(graph_module)
+        if self._rewritten_ops or self.materializer.materialized_shape_ops:
+            logger.debug(
+                "SymbolicToTosaShapesPass: rewrote %d operator(s) and "
+                "materialized %d TOSA shape operator(s).",
+                self._rewritten_ops,
+                self.materializer.materialized_shape_ops,
+            )
+        return result
 
     def _is_shape_proxy(self, arg):
         return isinstance(arg, ProxyValue) and meta_has_shape_mark(
@@ -183,7 +199,7 @@ class SymbolicToTosaShapesPass(ArmPass):
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         if op == torch.ops.aten.sym_size.int:
-            logger.debug("Materializing sym_size.int as TOSA DIM axis=%s", args[1])
+            self._rewritten_ops += 1
             return self.materializer.materialize_shape_op(
                 exir_ops.backend.tosa.DIM.default,
                 (args[0],),
@@ -192,24 +208,14 @@ class SymbolicToTosaShapesPass(ArmPass):
             )
 
         if meta_has_shape_mark(meta.data):
-            logger.debug("Forwarding already shape-marked op=%s", op)
             return super().call_operator(op, args, kwargs, meta, updated)
         new_args: list[Any] = []
         for arg in args:
             if isinstance(arg, (list, tuple)) and len(arg) > 0:
                 if self._has_raw_symint_arg(arg):
-                    logger.debug(
-                        "Materializing raw SymInt entries for op=%s shape arg: %s",
-                        op,
-                        arg,
-                    )
                     arg = self._materialize_raw_symints(arg)
                 if self._has_shape_proxy_arg(arg):
-                    logger.debug(
-                        "Materializing list arg for op=%s as TOSA shape arg: %s",
-                        op,
-                        arg,
-                    )
+                    self._rewritten_ops += 1
                     shape_op_arg = self.materializer.materialize_arglist(arg, meta)
                     new_args.append(shape_op_arg)
                 else:
@@ -217,19 +223,12 @@ class SymbolicToTosaShapesPass(ArmPass):
             else:
                 new_args.append(arg)
         args = tuple(new_args)
-        logger.debug("Calling rewritten op=%s args=%s", op, args)
-
         return super().call_operator(op, args, kwargs, meta)
 
     def call_sym(self, target, args, meta):
         has_shape_arg = any(self._has_shape_proxy_arg(arg) for arg in args)
         if target in _SYMBOLIC_SHAPE_OPS and has_shape_arg:
-            logger.debug(
-                "Materializing symbolic op target=%s as shape op=%s args=%s",
-                target,
-                _SYMBOLIC_SHAPE_OPS[target],
-                args,
-            )
+            self._rewritten_ops += 1
             return self.materializer.materialize_shape_op(
                 _SYMBOLIC_SHAPE_OPS[target], args, {}, meta
             )

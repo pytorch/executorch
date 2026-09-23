@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Per Held <per.held@arm.com>
+Date: Mon, 7 Sep 2026 12:00:00 +0200
+Subject: [PATCH] Remove hello_world from applications
+
+---
+ applications/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/applications/CMakeLists.txt b/applications/CMakeLists.txt
+index 54e0f38..b4fd423 100644
+--- a/applications/CMakeLists.txt
++++ b/applications/CMakeLists.txt
+@@ -15,7 +15,7 @@
+ # limitations under the License.
+ #
+ 
+-add_subdirectory(hello_world)
++#add_subdirectory(hello_world)
+ 
+ if (NOT ETHOSU_MULTI_VARIANT)
+     add_subdirectory(baremetal)
+-- 
+2.43.0
+

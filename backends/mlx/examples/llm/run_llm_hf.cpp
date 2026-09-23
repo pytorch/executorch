@@ -31,6 +31,7 @@
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/model_metadata.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/llm/runner/util.h>
@@ -80,8 +81,9 @@ DEFINE_int32(
     "only choose policy.");
 DEFINE_string(
     kv_storage_dtype,
-    "bf16",
-    "Off-graph: KV storage dtype, bf16|fp16|fp32.");
+    "",
+    "Off-graph: override KV storage dtype with bf16|fp16|fp32. Defaults to "
+    "the PTE activation dtype, or bf16 when metadata is absent.");
 DEFINE_int32(
     kv_initial_capacity,
     -1,
@@ -101,12 +103,19 @@ DEFINE_bool(
     false,
     "Run once before measuring, to absorb JIT and pool growth.");
 
+using ::executorch::backends::mlx::examples::llm::resolve_kv_storage_dtype;
 using ::executorch::backends::mlx::examples::llm::resolve_stop_tokens;
 using ::executorch::backends::mlx::examples::llm::StopTokens;
-using ::executorch::backends::mlx::examples::llm::storage_dtype;
 using ::executorch::backends::mlx::examples::llm::wrap_turn;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
+using ::executorch::extension::llm::check_vocab_size;
+using ::executorch::extension::llm::LogitsToKeepMode;
+using ::executorch::extension::llm::read_activation_dtype;
+using ::executorch::extension::llm::read_cache_geometry;
+using ::executorch::extension::llm::read_logits_to_keep_mode;
+using ::executorch::extension::llm::read_max_seq_len;
+using ::executorch::extension::llm::read_vocab_size;
 using ::executorch::extension::llm::TextStream;
 using ::executorch::runtime::Error;
 
@@ -146,62 +155,50 @@ bool parse_int_list(
   return true;
 }
 
-// Constant methods the export publishes (get_n_caches and friends). They carry
-// no delegate, so reading them only needs the program loaded -- which is what
-// lets the cache be built before forward's backend init consumes its key.
-std::optional<int64_t> const_int(Module& module, const char* name) {
-  const auto r = module.execute(name);
-  if (!r.ok() || r->empty() || !r->at(0).isInt()) {
-    return std::nullopt;
-  }
-  return r->at(0).toInt();
+// The sampler (sample_from_logits) fatally aborts on any other dtype, so an
+// unsupported logits type must be rejected at startup rather than at inference.
+bool is_supported_logits_type(::executorch::aten::ScalarType type) {
+  using ScalarType = ::executorch::aten::ScalarType;
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::BFloat16 || type == ScalarType::UInt16;
 }
 
-std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
-  const auto r = module.execute(name);
-  if (!r.ok() || r->empty() || !r->at(0).isTensor()) {
-    return std::nullopt;
-  }
-  const auto t = r->at(0).toTensor();
-  if (t.scalar_type() != ::executorch::aten::ScalarType::Int) {
-    return std::nullopt;
-  }
-  const int32_t* p = t.const_data_ptr<int32_t>();
-  return std::vector<int>(p, p + t.numel());
-}
-
-// Fill in the cache geometry the export published: get_n_caches, then one
-// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat).
-// Capacity and dtype stay with the flags. False means this is not an off-graph
-// model.
-bool read_kv_layout(
+bool validate_forward_abi(
     Module& module,
-    int prefill_chunk,
-    cache::CacheConfig& cfg) {
-  const auto n_caches = const_int(module, "get_n_caches");
-  const auto kv_heads = const_ints(module, "get_kv_heads");
-  const auto head_dims = const_ints(module, "get_head_dims");
-  const auto windows = const_ints(module, "get_windows");
-  if (!n_caches || !kv_heads || !head_dims || !windows) {
+    LogitsToKeepMode logits_to_keep_mode,
+    std::int64_t& vocab_size) {
+  const auto meta = module.method_meta("forward");
+  if (!meta.ok()) {
+    std::cerr << "Forward metadata is unavailable" << std::endl;
     return false;
   }
-  cfg.max_write = prefill_chunk;
-  const size_t n = static_cast<size_t>(*n_caches);
-  if (kv_heads->size() != n || head_dims->size() != n || windows->size() != n) {
+  // The runner feeds tokens + positions, plus a selector in Selected mode; a
+  // mismatch means the published logits mode disagrees with the traced graph.
+  const std::size_t expected_inputs =
+      logits_to_keep_mode == LogitsToKeepMode::Selected ? 3 : 2;
+  if (meta->num_inputs() != expected_inputs) {
+    std::cerr << "Forward must take " << expected_inputs
+              << " inputs for its logits-to-keep mode, got "
+              << meta->num_inputs() << std::endl;
     return false;
   }
-  cfg.n_layers = static_cast<int>(n);
-  cfg.layers.clear();
-  cfg.layers.reserve(n);
-  for (size_t l = 0; l < n; ++l) {
-    cache::LayerConfig lc{};
-    lc.n_kv_heads = (*kv_heads)[l];
-    lc.head_dim = (*head_dims)[l];
-    lc.policy = (*windows)[l] > 0
-        ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, (*windows)[l]}
-        : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
-    cfg.layers.push_back(lc);
+  // The logits output's last dim is the observed vocab width, cross-checked
+  // against the published get_vocab_size by the caller; its dtype must be one
+  // the sampler supports.
+  if (meta->num_outputs() == 0) {
+    std::cerr << "Forward publishes no logits output" << std::endl;
+    return false;
   }
+  const auto logits = meta->output_tensor_meta(0);
+  if (!logits.ok() || logits->sizes().size() < 2 ||
+      logits->sizes()[logits->sizes().size() - 1] <= 0 ||
+      !is_supported_logits_type(logits->scalar_type())) {
+    std::cerr << "Forward logits must have a sampler-supported dtype and shape "
+                 "[..., vocab]"
+              << std::endl;
+    return false;
+  }
+  vocab_size = logits->sizes()[logits->sizes().size() - 1];
   return true;
 }
 
@@ -213,14 +210,17 @@ bool read_kv_layout(
 // The export sizes the chunk to the model's own window; narrowing the window
 // here would leave the ring (window + max_write - 1) sized by the chunk
 // instead, so the chunk follows the window down.
-bool apply_window_override(const std::string& spec, cache::CacheConfig& cfg) {
+bool apply_window_override(
+    const std::string& spec,
+    cache::CacheGeometry& geometry,
+    cache::CacheConfig& cfg) {
   std::vector<int> pattern;
   if (!parse_int_list(spec, ',', pattern) || pattern.empty()) {
     return false;
   }
-  for (size_t l = 0; l < cfg.layers.size(); ++l) {
+  for (size_t l = 0; l < geometry.layers.size(); ++l) {
     const int w = pattern[l % pattern.size()];
-    cfg.layers[l].policy = w > 0
+    geometry.layers[l].policy = w > 0
         ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, w}
         : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
   }
@@ -233,7 +233,7 @@ bool apply_window_override(const std::string& spec, cache::CacheConfig& cfg) {
   if (cfg.max_write && narrowest > 0 && narrowest < *cfg.max_write) {
     cfg.max_write = narrowest;
   }
-  return cache::valid(cfg);
+  return cache::valid(geometry, cfg);
 }
 
 // Human-readable name for a kv_dtype (an ET ScalarType int). Only the
@@ -255,14 +255,14 @@ std::string dtype_name(int st) {
 // Announce the cache shape: the same .pte runs under whatever config this
 // invocation asks for -- capacity, storage dtype, flat/ring layers -- with no
 // re-export. The footprint lines printed later then show it growing at runtime.
-void print_cache_summary(const cache::CacheConfig& cfg) {
+void print_cache_summary(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg) {
   // Ring layers grouped by window: --kv-windows can give each layer its own,
   // and the pools are sized per layer, so a single number would misreport them.
   std::map<int, int> ring;
   int flat = 0;
-  for (int l = 0; l < cfg.n_layers; ++l) {
-    const cache::LayerConfig& lc =
-        cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+  for (const cache::LayerGeometry& lc : geometry.layers) {
     if (lc.policy.kind == cache::LayerPolicy::Kind::Ring) {
       ++ring[lc.policy.window];
     } else {
@@ -275,7 +275,8 @@ void print_cache_summary(const cache::CacheConfig& cfg) {
   if (cfg.max_write) {
     std::cout << " max_write=" << *cfg.max_write;
   }
-  std::cout << "\n        " << cfg.n_layers << " layers: " << flat << " flat";
+  std::cout << "\n        " << geometry.layers.size() << " layers: " << flat
+            << " flat";
   for (const auto& [window, n] : ring) {
     std::cout << " + " << n << " ring(window " << window << ")";
   }
@@ -333,15 +334,35 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load " << pte << std::endl;
       return 1;
     }
-    const auto published_prefill_chunk =
-        const_int(module, "get_prefill_chunk_size");
-    if (!published_prefill_chunk || *published_prefill_chunk <= 0 ||
-        *published_prefill_chunk > std::numeric_limits<int>::max()) {
-      std::cerr << "Invalid or missing get_prefill_chunk_size in " << pte
+    const auto logits_to_keep_mode_result = read_logits_to_keep_mode(module);
+    if (!logits_to_keep_mode_result.ok()) {
+      std::cerr << "Invalid model metadata in " << pte << std::endl;
+      return 1;
+    }
+    const LogitsToKeepMode logits_to_keep_mode = *logits_to_keep_mode_result;
+    std::int64_t output_vocab_size = 0;
+    if (!validate_forward_abi(module, logits_to_keep_mode, output_vocab_size)) {
+      return 1;
+    }
+    const auto published_vocab_size = read_vocab_size(module);
+    if (!published_vocab_size.ok()) {
+      std::cerr << "Invalid get_vocab_size in " << pte << std::endl;
+      return 1;
+    }
+    const auto vocab_size_result =
+        check_vocab_size(*published_vocab_size, output_vocab_size);
+    if (!vocab_size_result.ok()) {
+      std::cerr << "Invalid get_vocab_size for the forward output in " << pte
                 << std::endl;
       return 1;
     }
-    const int prefill_chunk = static_cast<int>(*published_prefill_chunk);
+    const std::int32_t vocab_size = *vocab_size_result;
+    const auto max_seq_len = read_max_seq_len(module);
+    if (!max_seq_len.ok()) {
+      std::cerr << "Invalid or missing get_max_seq_len in " << pte << std::endl;
+      return 1;
+    }
+    const int prefill_chunk = static_cast<int>(*max_seq_len);
     StopTokens stop_tokens;
     if (!resolve_stop_tokens(*tokenizer, module, chat, stop_tokens)) {
       std::cerr << "Could not resolve stop tokens for --chat=" << chat
@@ -392,14 +413,37 @@ int main(int argc, char** argv) {
         auto in =
             make_tensor_ptr({1, (int)ids.size()}, std::vector<int64_t>(ids));
         auto cp = make_tensor_ptr({(int)pos.size()}, std::vector<int64_t>(pos));
-        auto out = module.execute("forward", {in, cp});
+        auto out = [&]() -> ::executorch::runtime::Result<
+                             std::vector<::executorch::runtime::EValue>> {
+          if (logits_to_keep_mode == LogitsToKeepMode::Selected) {
+            auto selector = make_tensor_ptr(
+                {1},
+                std::vector<int64_t>{static_cast<int64_t>(ids.size() - 1)});
+            return module.execute("forward", {in, cp, selector});
+          }
+          return module.execute("forward", {in, cp});
+        }();
         if (!out.ok()) {
           throw std::runtime_error("execute failed");
         }
+        if (out->empty() || !out->at(0).isTensor()) {
+          throw std::runtime_error("forward returned no logits");
+        }
         const auto& logits = out->at(0).toTensor();
+        const int64_t actual_vocab_size = logits.dim() == 0
+            ? 0
+            : static_cast<int64_t>(logits.size(logits.dim() - 1));
+        const int64_t expected_rows =
+            logits_to_keep_mode == LogitsToKeepMode::Full
+            ? static_cast<int64_t>(ids.size())
+            : 1;
+        if (logits.dim() != 3 || logits.size(0) != 1 ||
+            logits.size(1) != expected_rows ||
+            actual_vocab_size != vocab_size) {
+          throw std::runtime_error("forward returned an invalid logits shape");
+        }
         if (!sampler) {
-          sampler.emplace(
-              static_cast<int32_t>(logits.size(logits.dim() - 1)), temperature);
+          sampler.emplace(vocab_size, temperature);
         }
         stats.on_sampling_begin();
         const int32_t tok =
@@ -632,24 +676,32 @@ int main(int argc, char** argv) {
           /*run_prefill_chunk=*/prefill_chunk);
     }
 
+    const auto activation_dtype = read_activation_dtype(module);
+    if (!activation_dtype.ok()) {
+      std::cerr << "Invalid get_activation_dtype in " << pte << std::endl;
+      return 1;
+    }
     cache::CacheConfig cfg{};
     cfg.capacity = kv_capacity;
-    cfg.kv_dtype = storage_dtype(kv_dtype);
+    cfg.kv_dtype = resolve_kv_storage_dtype(kv_dtype, *activation_dtype);
     if (cfg.kv_dtype < 0) {
-      std::cerr << "Invalid --kv-storage-dtype: " << kv_dtype
+      std::cerr << "Invalid --kv-storage-dtype override: " << kv_dtype
                 << " (bf16|fp16|fp32)" << std::endl;
       return 1;
     }
-    if (!read_kv_layout(module, prefill_chunk, cfg)) {
-      std::cerr << "No KV cache layout in " << pte
+    auto geometry = read_cache_geometry(module);
+    if (!geometry.ok()) {
+      std::cerr << "No valid KV cache geometry in " << pte
                 << "; re-export with --use-offgraph-cache" << std::endl;
       return 1;
     }
-    if (!kv_windows.empty() && !apply_window_override(kv_windows, cfg)) {
+    cfg.max_write = prefill_chunk;
+    if (!kv_windows.empty() &&
+        !apply_window_override(kv_windows, *geometry, cfg)) {
       std::cerr << "Invalid --kv-windows: " << kv_windows << std::endl;
       return 1;
     }
-    if (!cache::valid(cfg)) {
+    if (!cache::valid(*geometry, cfg)) {
       std::cerr << "Invalid cache config" << std::endl;
       return 1;
     }
@@ -659,7 +711,7 @@ int main(int argc, char** argv) {
 
     const char* const cache_kind = cache::kind::kSingle;
     auto built = cache::CacheFactory::global().build(
-        ::executorch::backends::mlx::kMLXBackendId, cache_kind, cfg);
+        ::executorch::backends::mlx::kMLXBackendId, cache_kind, *geometry, cfg);
     if (!built.ok()) {
       std::cerr << "Failed to build cache: " << static_cast<int>(built.error())
                 << std::endl;
@@ -672,7 +724,7 @@ int main(int argc, char** argv) {
     // load_method() inside it.
     const cache::InstallGuard guard{kv};
 
-    print_cache_summary(cfg);
+    print_cache_summary(*geometry, cfg);
     if (guard.set_option(mlx_opts) != Error::Ok ||
         options_map.set_options(
             ::executorch::backends::mlx::kMLXBackendId, mlx_opts.view()) !=

@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import datasets.config
+
 import evaluate
 import numpy as np
 import requests
@@ -16,7 +18,6 @@ import requests
 import torch
 import torch.nn as nn
 import torchao
-
 from datasets import ClassLabel, DatasetDict, load_dataset
 
 from executorch.backends.samsung.quantizer import EnnQuantizer, Precision
@@ -45,6 +46,24 @@ from transformers import (
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 
+def transform_attention_mask(attention_mask: torch.Tensor) -> torch.Tensor:
+    """Transform attention mask for MobileBERT model.
+
+    Args:
+        attention_mask: Input attention mask tensor
+
+    Returns:
+        Transformed attention mask with shape [batch, 1, seq, seq]
+    """
+    attention_mask = attention_mask.to(torch.float32)
+    attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)  # [batch, 1, 1, seq]
+    attention_mask = attention_mask.repeat(
+        1, 1, attention_mask.size(3), 1
+    )  # [batch, 1, seq, seq]
+    attention_mask = (1.0 - attention_mask) * (-255.0)
+    return attention_mask
+
+
 class MobileBertFinetune:
     def __init__(self, metric, args):
         self.tokenizer = self.load_tokenizer()
@@ -56,7 +75,9 @@ class MobileBertFinetune:
         self.num_epochs = args.num_epochs_for_finetune
 
     def load_tokenizer(self):
-        return AutoTokenizer.from_pretrained("google/mobilebert-uncased")
+        return AutoTokenizer.from_pretrained(
+            "google/mobilebert-uncased", do_lower_case=True
+        )
 
     def load_CSV_dataset(self):
         # grab dataset
@@ -120,6 +141,14 @@ class MobileBertFinetune:
 
         print("Preprocessing data...")
         tokenized_datasets = raw_datasets.map(preprocess_function, batched=True)
+        # datasets' torch formatter does `from torchvision.io import VideoReader`
+        # whenever torchvision merely imports, but OSS torchvision ships that symbol
+        # only in Meta-internal builds -- its io/__init__ swallows the import with
+        # `except ImportError: pass`. timm puts torchvision in sys.modules, so
+        # collating the tensors below raises ImportError. This dataset is text only
+        # and never decodes an image or a video, so the torchvision path is dead
+        # weight here. Drop the two lines once datasets guards that import.
+        datasets.config.TORCHVISION_AVAILABLE = False
         tokenized_datasets.set_format(
             type="torch", columns=["input_ids", "attention_mask", "label"]
         )
@@ -190,7 +219,7 @@ class MobileBertFinetune:
         model = MobileBertForSequenceClassification.from_pretrained(
             "google/mobilebert-uncased" if need_finetune else artifacts_dir,
             num_labels=len(labels),
-            # return_dict=False,
+            attn_implementation="eager",
         )
 
         if not need_finetune:
@@ -298,7 +327,9 @@ def trainingQuantModel_QAT(
     for nepoch in range(num_epochs):
         for batch in tqdm(data_loader, desc=f"Training Epoch {nepoch + 1}"):
             batch_input_ids = batch["input_ids"].to(device)
-            batch_attention_mask = batch["attention_mask"].to(device)
+            batch_attention_mask = transform_attention_mask(
+                batch["attention_mask"].to(device)
+            )
             batch_label = batch["label"].to(device)
             logits = model(batch_input_ids, batch_attention_mask).logits
             loss = criterion(logits, batch_label)
@@ -337,7 +368,9 @@ def evaluatingQuantModel_mobileBert(
         )
     ):
         batch_input_ids = batch["input_ids"].to(device)
-        batch_attention_mask = batch["attention_mask"].to(device)
+        batch_attention_mask = transform_attention_mask(
+            batch["attention_mask"].to(device)
+        )
         outputs = quantized_model(batch_input_ids, batch_attention_mask)
         logits = outputs.logits
         preds = torch.argmax(logits, dim=-1)
@@ -387,9 +420,16 @@ def build_aten_to_qat_mobilebert(
     batch_dim = torch.export.Dim("batch_size", min=1, max=batch_size_training)
 
     size_input_ids = (batch_size_training, inputs[0].size(1))
-    size_attention_mask = (batch_size_training, inputs[1].size(1))
-    vector_input_ids = torch.randint(0, 256, size_input_ids).to(device)
-    vector_attention_mask = torch.randint(0, 1, size_attention_mask).to(device)
+    size_attention_mask = (
+        batch_size_training,
+        inputs[1].size(1),
+        inputs[1].size(2),
+        inputs[1].size(3),
+    )
+    vector_input_ids = torch.randint(0, 256, size_input_ids, device=device)
+    vector_attention_mask = torch.zeros(
+        size_attention_mask, dtype=torch.float32, device=device
+    )
     example_inputs = (
         vector_input_ids,
         vector_attention_mask,
@@ -437,9 +477,16 @@ def build_aten_to_qat_mobilebert(
 
     # Saving a quantized model for GPU servers
     size_input_ids = (batch_size_edge, inputs[0].size(1))
-    size_attention_mask = (batch_size_edge, inputs[1].size(1))
-    vector_input_ids = torch.randint(0, 256, size_input_ids).to(device)
-    vector_attention_mask = torch.randint(0, 1, size_attention_mask).to(device)
+    size_attention_mask = (
+        batch_size_edge,
+        inputs[1].size(1),
+        inputs[1].size(2),
+        inputs[1].size(3),
+    )
+    vector_input_ids = torch.randint(0, 256, size_input_ids, device=device)
+    vector_attention_mask = torch.zeros(
+        size_attention_mask, dtype=torch.float32, device=device
+    )
     example_inputs = (
         vector_input_ids,
         vector_attention_mask,
@@ -453,8 +500,10 @@ def build_aten_to_qat_mobilebert(
     device_cpu = torch.device(type="cpu")
     quantized_model = quantized_model.to(device_cpu)
     quantized_model = removing_gpu_node_in_graph(quantized_model)
-    cpu_vector_input_ids = torch.randint(0, 256, size_input_ids).to(device_cpu)
-    cpu_vector_attention_mask = torch.randint(0, 1, size_attention_mask).to(device_cpu)
+    cpu_vector_input_ids = torch.randint(0, 256, size_input_ids, device=device_cpu)
+    cpu_vector_attention_mask = torch.zeros(
+        size_attention_mask, dtype=torch.float32, device=device_cpu
+    )
     example_inputs_cpu = (
         cpu_vector_input_ids,
         cpu_vector_attention_mask,
@@ -524,7 +573,7 @@ def main(args):
 
     # running an example
     example_ref_input_ids = inputs[0][0].to(device)
-    example_ref_attention_mask = inputs[0][1].to(device)
+    example_ref_attention_mask = transform_attention_mask(inputs[0][1].to(device))
     example_inputs = (example_ref_input_ids, example_ref_attention_mask)
     float_out = model(*example_inputs)
 

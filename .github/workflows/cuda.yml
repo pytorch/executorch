@@ -1,6 +1,6 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
-# across different CUDA versions (12.6, 13.0) using the command:
+# across different CUDA versions (12.6, 13.0, 13.4) using the command:
 #   ./install_executorch.sh
 # 
 # Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
@@ -22,6 +22,7 @@ on:
       - .github/workflows/cuda.yml
       - backends/cuda/**
       - backends/aoti/**
+      - extension/cuda/**
       - .ci/scripts/test-cuda-build.sh
       - .ci/scripts/export_model_artifact.sh
       - .ci/scripts/test_model_e2e.sh
@@ -56,6 +57,7 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -64,26 +66,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cuda-version: ["12.6", "13.0"]
+        cuda-version: ["12.6", "13.0", "13.4"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: ${{ matrix.cuda-version }}
-      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
-        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
-        # and install the appropriate PyTorch wheel
+        if [ "${{ matrix.cuda-version }}" = "13.4" ]; then
+          # The image's older Conda runtime aborts during CUDA thread-local cleanup.
+          conda install -y -n base -c conda-forge 'libstdcxx-ng=16.2.0' 'libgcc-ng=16.2.0'
+        fi
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -98,6 +101,7 @@ jobs:
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -112,7 +116,7 @@ jobs:
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 13.0) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds completed successfully!"
           fi
 
   test-models-cuda:
@@ -121,21 +125,21 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -165,6 +169,7 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
@@ -176,7 +181,6 @@ jobs:
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       upload-artifact: cuda-multi-arch-a100
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -232,10 +236,9 @@ jobs:
       contents: read
     with:
       timeout: 90
-      runner: mt-l-x86aavx2-29-113-a10g
+      runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       download-artifact: cuda-multi-arch-a100
       upload-artifact: cuda-multi-arch-merged
@@ -340,7 +343,6 @@ jobs:
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       download-artifact: cuda-multi-arch-merged
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -402,6 +404,7 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -409,16 +412,15 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/pybindings') ||
       contains(needs.changed-files.outputs.changed-files, 'runtime/__init__.py') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -484,21 +486,21 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
       timeout: 90
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -513,10 +515,12 @@ jobs:
           -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache test_cuda_guard test_cuda_stream_guard -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
 
   test-model-cuda-e2e:
     name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}
@@ -530,6 +534,7 @@ jobs:
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -668,10 +673,9 @@ jobs:
     with:
       timeout: 240
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
+      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-11-41-a10g' }}
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -738,6 +742,7 @@ jobs:
     if: |
       contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/cuda') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
@@ -765,7 +770,6 @@ jobs:
       runner: mt-l-x86iavx512-11-125-a100
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |

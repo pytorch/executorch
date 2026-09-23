@@ -68,6 +68,7 @@ enum QcomChipset: int {
   SW6100 = 96,
   QCM6490 = 93,
   SM8845 = 97,
+  SA8540 = 62,
 }
 
 /// Indicate the information of the specified SoC.
@@ -276,6 +277,7 @@ enum QnnExecuTorchOpPackageTarget: int {
   UNKNOWN = 0,
   CPU,
   HTP,
+  LPAI,
 }
 
 /// The platform of the op package library.
@@ -283,6 +285,7 @@ enum QnnExecuTorchOpPackagePlatform: int {
   UNKNOWN = 0,
   X86_64,
   AARCH64_ANDROID,
+  HEXAGON,
 }
 
 table QnnExecuTorchOpPackageInfo {

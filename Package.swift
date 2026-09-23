@@ -62,10 +62,18 @@ let products = deliverables([
   ],
   "backend_xnnpack": [
     "targets": [
+      "kleidiai",
       "threadpool",
     ],
   ],
   "executorch": [
+    "frameworks": [
+      "Accelerate",
+      "CoreGraphics",
+      "CoreImage",
+      "CoreVideo",
+      "Foundation",
+    ],
     "libraries": [
       "c++",
     ],
@@ -86,18 +94,21 @@ let products = deliverables([
       "Accelerate",
     ],
     "targets": [
+      "kleidiai",
       "threadpool",
     ],
   ],
   "kernels_quantized": [:],
   "kernels_torchao": [
     "targets": [
+      "kleidiai",
       "threadpool",
     ],
   ],
 ])
 
 let targets = deliverables([
+  "kleidiai": [:],
   "threadpool": [:],
 ])
 

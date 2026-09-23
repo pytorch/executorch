@@ -57,6 +57,9 @@ option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
 option(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
        "Report Ethos-U PMU statistics per delegate" OFF
 )
+option(ET_ARM_ETHOSU_PROFILE_IO_COPIES
+       "Count Ethos-U backend I/O memcpy calls and bytes" OFF
+)
 set(ET_ARM_ETHOSU_MAX_PROFILED_DELEGATES
     "16"
     CACHE STRING "Maximum delegates tracked by per-delegate profiling"
@@ -360,6 +363,15 @@ if(ET_ARM_ETHOSU_PER_DELEGATE_PROFILING)
   )
   target_compile_definitions(
     executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PER_DELEGATE_PROFILING
+  )
+endif()
+
+if(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+  target_compile_definitions(
+    arm_executor_runner PRIVATE ET_ARM_ETHOSU_PROFILE_IO_COPIES
+  )
+  target_compile_definitions(
+    executorch_delegate_ethos_u PRIVATE ET_ARM_ETHOSU_PROFILE_IO_COPIES
   )
 endif()
 

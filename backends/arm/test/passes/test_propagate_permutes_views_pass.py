@@ -1168,6 +1168,39 @@ def test_up_pass_fuses_equivalent_output_permutations_before_fan_out() -> None:
     assert targets.index(PERMUTE) < targets.index(RELU) < targets.index(ADD)
 
 
+def test_up_pass_fusion_enables_further_propagation() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    relu = graph.call_function(RELU, args=(x,))
+    relu.meta["val"] = torch.empty((1, 2, 3, 4))
+    neg = graph.call_function(NEG, args=(relu,))
+    neg.meta["val"] = torch.empty((1, 2, 3, 4))
+    first_permute = graph.call_function(PERMUTE, args=(neg, [0, 2, 3, 1]))
+    first_permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    second_permute = graph.call_function(PERMUTE, args=(relu, [0, 2, 3, 1]))
+    second_permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    add = graph.call_function(ADD, args=(first_permute, second_permute))
+    add.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(add)
+
+    graph_module = _run_pass_on_graph_module(graph, PropagateViewCopyPermuteUpPass)
+    call_nodes = [
+        node for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    permutes = [node for node in call_nodes if node.target == PERMUTE]
+    x = next(node for node in graph_module.graph.nodes if node.op == "placeholder")
+    relu = next(node for node in call_nodes if node.target == RELU)
+    neg = next(node for node in call_nodes if node.target == NEG)
+    add = next(node for node in call_nodes if node.target == ADD)
+
+    assert len(permutes) == 1
+    assert permutes[0].args[0] is x
+    assert relu.args[0] is permutes[0]
+    assert neg.args[0] is relu
+    assert set(add.all_input_nodes) == {relu, neg}
+
+
 def test_propagate_moves_before_dtype_changing_rescale() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")

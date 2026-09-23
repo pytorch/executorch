@@ -111,6 +111,91 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(len(session._stage_to_artifacts), 5)
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
 
+    def _run_five_stage_pipeline(self, recipe: ExportRecipe) -> ExportSession:
+        stage_types = [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_EXECUTORCH,
+        ]
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        for stage_type in stage_types:
+            session.register_stage(stage_type, self._create_mock_stage(stage_type))
+        session.export()
+        return session
+
+    def test_intermediate_artifacts_retained_by_default(self) -> None:
+        session = self._run_five_stage_pipeline(ExportRecipe(name="test"))
+        self.assertEqual(len(session._stage_to_artifacts), 5)
+        self.assertEqual(session._released_stages, set())
+
+    def test_release_intermediate_artifacts_keeps_only_the_last(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+
+        self.assertEqual(
+            set(session._stage_to_artifacts.keys()), {StageType.TO_EXECUTORCH}
+        )
+        # Every stage but the last had both of its references dropped.
+        for stage_type in [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ]:
+            self.assertIn(stage_type, session._released_stages)
+            session.get_registered_stage(
+                stage_type
+            ).release_artifact.assert_called_once()
+
+    def test_released_accessors_explain_why(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+
+        for accessor in (
+            session.get_exported_program,
+            session.get_edge_program_manager,
+            session.print_delegation_info,
+        ):
+            with self.assertRaises(RuntimeError) as cm:
+                accessor()
+            self.assertIn("released to free memory", str(cm.exception))
+
+    def test_reexport_clears_released_stage_state(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+        self.assertIn(StageType.TORCH_EXPORT, session._released_stages)
+
+        exported_program = Mock()
+        torch_export_stage = session.get_registered_stage(StageType.TORCH_EXPORT)
+        assert torch_export_stage is not None
+        torch_export_stage.get_artifacts.return_value.data = {
+            "forward": exported_program
+        }
+        session._pipeline_stages = [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+        ]
+
+        session.export()
+
+        self.assertIs(session.get_exported_program(), exported_program)
+
+    def test_release_does_not_touch_the_final_artifact(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+        self.assertIsNotNone(session.get_executorch_program_manager())
+
     def test_overriden_pipeline_execution_order(self) -> None:
         # Test when pipeline stages that are passed through recipe
         stage_types = [
@@ -670,6 +755,30 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
         )
         self.assertNotIn(
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._get_default_pipeline()
+        )
+
+    def test_edge_transform_passes_not_duplicated_in_default_pipeline(self) -> None:
+        # Before the fix, from_recipe() gave edge_transform_passes to
+        # EDGE_PROGRAM_MANAGER_TRANSFORM as well as TO_EDGE_TRANSFORM_AND_LOWER,
+        # so they ran twice. Verify the stage no longer holds them at all.
+        from executorch.export.stages import EdgeProgramManagerTransformStage
+
+        edge_pass = Mock()
+        epm_pass = Mock()
+
+        stage = EdgeProgramManagerTransformStage.from_recipe(
+            LoweringRecipe(
+                edge_transform_passes=[edge_pass],
+                edge_manager_transform_passes=[epm_pass],
+            )
+        )
+
+        # The stage must only know about edge_manager_transform_passes.
+        self.assertEqual(stage._edge_manager_transform_passes, [epm_pass])
+        self.assertFalse(
+            hasattr(stage, "_edge_transform_passes"),
+            "EdgeProgramManagerTransformStage must not hold edge_transform_passes "
+            "because TO_EDGE_TRANSFORM_AND_LOWER already applies them.",
         )
 
     def test_example_inputs_required_for_nn_module(self) -> None:
