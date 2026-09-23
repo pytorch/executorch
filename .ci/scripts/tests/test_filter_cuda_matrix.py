@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -284,6 +285,23 @@ class TestPublishedSets(unittest.TestCase):
 
     def test_published_cuda_versions(self):
         self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu130", "cu132", "cu134"])
+
+    def test_published_cuda_versions_are_documented(self):
+        # The install table on the getting started page is the only place a user is told
+        # these wheels exist. A train published without a row there is published to nobody,
+        # and a row left behind after a train stops being built sends people to an index
+        # with no wheel in it.
+        page = ROOT / "docs" / "source" / "getting-started.md"
+        text = page.read_text(encoding="utf-8")
+        heading = "\n## Installation\n"
+        self.assertIn(heading, text, f"no Installation section in {page.name}")
+        section = text.split(heading, 1)[1].split("\n## ", 1)[0]
+        documented = set(re.findall(r"cu\d+", section))
+        self.assertEqual(
+            documented,
+            set(FILTER.SUPPORTED_CUDA_VERSIONS),
+            f"the install table in {page.name} lists {sorted(documented)}",
+        )
 
     def test_published_cuda_versions_are_supported_by_the_installer(self):
         supported = {
