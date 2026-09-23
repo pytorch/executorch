@@ -29,6 +29,7 @@
 #include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
 #include <executorch/backends/native/runtime/deserialize/Package.h>
+#include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/extension/module/ptn_module.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/platform/log.h>
@@ -225,7 +226,10 @@ Error validate_tensor(
       static_cast<size_t>(tensor.dim()) != info.sizes().size()) {
     return Error::InvalidArgument;
   }
-  if (!has_matching_layout(tensor, info) || tensor.nbytes() != info.nbytes()) {
+  if (tensor.nbytes() != info.nbytes()) {
+    return Error::InvalidArgument;
+  }
+  if (info.nbytes() != 0 && !has_matching_layout(tensor, info)) {
     return Error::InvalidArgument;
   }
   if (info.nbytes() != 0 &&
@@ -352,30 +356,22 @@ class NativePtnModule final : public PtnModule {
 
   runtime::Result<ET_RUNTIME_NAMESPACE::MethodMeta> method_meta(
       const std::string& method_name) override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto it = methods_.find(method_name);
-    if (it == methods_.end()) {
-      return Error::InvalidArgument;
-    }
-    try {
-      if (it->second.metadata == nullptr) {
-        const ptn::Method& method = program_->get_method(method_name);
-        it->second.metadata =
-            MethodMetaBridge::create(ptn::MethodMeta::from_method(method));
-      }
-      return it->second.metadata->view();
-    } catch (const ptn::ResourceLimitError& error) {
-      ET_LOG(Error, "PTN metadata limit: %s", error.what());
-      return Error::OutOfResources;
-    } catch (const std::bad_alloc&) {
-      return Error::MemoryAllocationFailed;
-    } catch (const std::exception& error) {
-      ET_LOG(Error, "Invalid PTN metadata: %s", error.what());
-      return Error::InvalidProgram;
-    } catch (...) {
-      ET_LOG(Error, "Unknown exception while reading PTN metadata");
-      return Error::Internal;
-    }
+    return catch_boundary(
+        "reading PTN metadata",
+        Error::InvalidProgram,
+        [&]() -> runtime::Result<ET_RUNTIME_NAMESPACE::MethodMeta> {
+          std::lock_guard<std::mutex> lock(mutex_);
+          const auto it = methods_.find(method_name);
+          if (it == methods_.end()) {
+            return Error::InvalidArgument;
+          }
+          if (it->second.metadata == nullptr) {
+            const ptn::Method& method = program_->get_method(method_name);
+            it->second.metadata =
+                MethodMetaBridge::create(ptn::MethodMeta::from_method(method));
+          }
+          return it->second.metadata->view();
+        });
   }
 
   runtime::Error load_method(const std::string& method_name) override {
