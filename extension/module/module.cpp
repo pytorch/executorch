@@ -305,7 +305,7 @@ runtime::Error Module::load_internal(
       if (has_backend_options) {
         return runtime::Error::NotSupported;
       }
-      if (!data_files_.empty()) {
+      if (!data_files_.empty() || !data_map_loaders_.empty()) {
         return runtime::Error::InvalidArgument;
       }
       if (load_mode_ != LoadMode::File && load_mode_ != LoadMode::Mmap) {

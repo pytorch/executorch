@@ -36,11 +36,16 @@ def define_common_targets():
         # @lint-ignore BUCKLINT: Avoid `link_whole=True`
         link_whole = True,
         visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/backends/native/runtime/engine:engine",
+            "//executorch/runtime/core:core",
+        ],
         deps = [
             ":method_meta_bridge",
             "//executorch/backends/native/runtime:method_meta",
             "//executorch/backends/native/runtime:runtime",
             "//executorch/backends/native/runtime:validation",
+            "//executorch/backends/native/runtime/deserialize:checked_math",
             "//executorch/backends/native/runtime/deserialize:deserialize_error",
             "//executorch/backends/native/runtime/deserialize:limits",
             "//executorch/backends/native/runtime/deserialize:owned_bytes",
@@ -61,5 +66,22 @@ def define_common_targets():
             "//executorch/backends/native/runtime/deserialize:package_test_data",
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/extension/module:module",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "native_module_execution_test",
+        srcs = ["test/NativeModuleExecutionTest.cpp"],
+        headers = ["test/TestData.h"],
+        deps = [
+            ":module_ptn",
+            "//executorch/backends/native/runtime:method_meta",
+            "//executorch/backends/native/runtime:native_graph_schema",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/deserialize:package_test_data",
+            "//executorch/backends/native/runtime/engine:engine",
+            "//executorch/extension/data_loader:buffer_data_loader",
+            "//executorch/extension/module:module",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )
