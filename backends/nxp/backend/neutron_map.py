@@ -834,7 +834,8 @@ class NeutronMap:
 
         :return: Dict: Edge handle -> tuple of Neutron kernel CALLARGS indices.
         """
-        self.get_tflite_to_neutron_map()
+        if not self.tflite_to_neutron_map:
+            self.get_tflite_to_neutron_map()
         result: dict[int, tuple[int, ...]] = {}
         for edge_handle, tflite_indices in self.edge_to_tflite_map.items():
             neutron = {
