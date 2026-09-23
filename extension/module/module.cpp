@@ -313,15 +313,20 @@ runtime::Error Module::load_internal(
       if (!data_files_.empty() || !data_map_loaders_.empty()) {
         return runtime::Error::InvalidArgument;
       }
-      const native_module::internal::PtnSource source = file_path_.empty()
-          ? native_module::internal::PtnSource(std::ref(*data_loader_))
-          : native_module::internal::PtnSource(
-                native_module::internal::PtnFileSource{
+      const ET_PTN_MODULE_NAMESPACE::internal::PtnSource source =
+          file_path_.empty()
+          ? ET_PTN_MODULE_NAMESPACE::internal::PtnSource(
+                std::ref(*data_loader_))
+          : ET_PTN_MODULE_NAMESPACE::internal::PtnSource(
+                ET_PTN_MODULE_NAMESPACE::internal::PtnFileSource{
                     file_path_,
                     load_mode_ == LoadMode::Mmap
-                        ? native_module::internal::PtnFileSource::Mode::Mmap
-                        : native_module::internal::PtnFileSource::Mode::Read});
-      auto ptn_load_result = native_module::load_ptn(source, verification);
+                        ? ET_PTN_MODULE_NAMESPACE::internal::PtnFileSource::
+                              Mode::Mmap
+                        : ET_PTN_MODULE_NAMESPACE::internal::PtnFileSource::
+                              Mode::Read});
+      auto ptn_load_result =
+          ET_PTN_MODULE_NAMESPACE::load_ptn(source, verification);
       if (!ptn_load_result.ok()) {
         return ptn_load_result.error();
       }
