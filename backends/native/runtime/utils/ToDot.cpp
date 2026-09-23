@@ -16,10 +16,10 @@
 
 // Everything below runs on a buffer that Program::load() has already put
 // through flatbuffers::Verifier, so accessors return non-null wherever the
-// schema declares the field required and wherever a union discriminator
-// matches; the helpers here dereference those results directly. Fields the
-// schema leaves optional are still checked, because verification says nothing
-// about whether they are present.
+// schema declares the field required; the helpers here dereference those
+// directly. Optional fields and union values are still checked: verification
+// says nothing about whether they are present, and it accepts a union whose
+// type is set but whose value is absent.
 
 namespace ptn {
 namespace {
@@ -70,17 +70,23 @@ std::string quant_suffix(const fbs::QuantSpec* q) {
   if (q == nullptr) {
     return "";
   }
+  if (q->scheme() == nullptr) {
+    return " q:?";
+  }
   switch (q->scheme_type()) {
-    case fbs::QuantScheme::AffineGroup: {
-      const auto* a = q->scheme_as_AffineGroup();
-      const int gs = a != nullptr ? a->group_size() : 0;
-      return std::string(" q:affine g=") +
-          (gs == 0 ? "perchan" : std::to_string(gs));
+    case fbs::QuantScheme::AffineQuantization: {
+      const auto* affine = q->scheme_as_AffineQuantization();
+      const auto* storage = affine->storage();
+      if (storage->value() == nullptr) {
+        return " q:?";
+      }
+      const auto* packed = storage->value_as_PackedBitsQuantizedStorage();
+      return affine_quant_label(
+          *affine->block_shape(), packed != nullptr ? packed->bit_width() : 0);
     }
-    case fbs::QuantScheme::PackedQuant: {
-      const auto* p = q->scheme_as_PackedQuant();
-      return std::string(" q:") + (p != nullptr ? str_of(p->codec()) : "");
-    }
+    case fbs::QuantScheme::OpaqueQuantization:
+      return std::string(" q:opaque:") +
+          str_of(q->scheme_as_OpaqueQuantization()->codec());
     default:
       return "";
   }

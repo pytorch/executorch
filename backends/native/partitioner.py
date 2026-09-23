@@ -43,7 +43,7 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.aten.addmm.default,
     torch.ops.aten.scaled_dot_product_attention.default,
     # GGUF weight dequantize stays in the delegate; the serializer folds it into a
-    # PackedQuant weight on the consuming op.
+    # opaque quantized weight on the consuming op.
     torch.ops.torchao.dequantize_gguf.default,
     rope_op,
     torch.ops.aten.rms_norm.default,
