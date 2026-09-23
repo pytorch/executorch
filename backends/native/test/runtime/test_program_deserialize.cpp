@@ -75,7 +75,7 @@ std::vector<uint8_t> finish_program(
     flatbuffers::FlatBufferBuilder& builder,
     const std::vector<flatbuffers::Offset<fbs::Method>>& methods) {
   const auto program = fbs::CreateProgram(
-      builder, builder.CreateString("1"), builder.CreateVector(methods));
+      builder, builder.CreateString("1.0"), builder.CreateVector(methods));
   fbs::FinishProgramBuffer(builder, program);
   return {
       builder.GetBufferPointer(),
@@ -167,6 +167,8 @@ TEST(ProgramTest, MoveConstructionLeavesSourceEmpty) {
 
   // NOLINTBEGIN(bugprone-use-after-move)
   EXPECT_EQ(source.flatbuffer(), nullptr);
+  EXPECT_EQ(source.version().major, 0);
+  EXPECT_EQ(source.version().minor, 0);
   EXPECT_EQ(source.num_methods(), 0);
   EXPECT_TRUE(source.method_names().empty());
   // NOLINTEND(bugprone-use-after-move)
