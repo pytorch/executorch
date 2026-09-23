@@ -1,4 +1,5 @@
 load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
+load("@prelude//configurations:constraint_alias.bzl", "constraint_with_aliases")
 
 oncall("executorch")
 
@@ -30,35 +31,33 @@ fb_native.config_setting(
     visibility = ["PUBLIC"],
 )
 
-fb_native.constraint_setting(
+constraint_with_aliases(
     name = "executorch-max-kernel-num",
+    values = [
+        "64",
+        "128",
+        "256",
+        "unspecified",
+    ],
+    default = "unspecified",
+    aliases = {
+        "max-kernel-num-64": "64",
+        "max-kernel-num-128": "128",
+        "max-kernel-num-256": "256",
+    },
     visibility = ["PUBLIC"],
 )
 
-fb_native.constraint_value(
-    name = "max-kernel-num-64",
-    constraint_setting = ":executorch-max-kernel-num",
-    visibility = ["PUBLIC"],
-)
-
-fb_native.constraint_value(
-    name = "max-kernel-num-128",
-    constraint_setting = ":executorch-max-kernel-num",
-    visibility = ["PUBLIC"],
-)
-
-fb_native.constraint_value(
-    name = "max-kernel-num-256",
-    constraint_setting = ":executorch-max-kernel-num",
-    visibility = ["PUBLIC"],
-)
-fb_native.constraint_setting(
-    name = "executorch-event-tracer"
-)
-
-fb_native.constraint_value(
-    name = "event-tracer-enabled",
-    constraint_setting = ":executorch-event-tracer",
+constraint_with_aliases(
+    name = "executorch-event-tracer",
+    values = [
+        "enabled",
+        "unspecified",
+    ],
+    default = "unspecified",
+    aliases = {
+        "event-tracer-enabled": "enabled",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -70,14 +69,16 @@ fb_native.config_setting(
     visibility = ["PUBLIC"],
 )
 
-fb_native.constraint_setting(
+constraint_with_aliases(
     name = "executorch-program-verification",
-    visibility = ["PUBLIC"],
-)
-
-fb_native.constraint_value(
-    name = "program-verification-disabled",
-    constraint_setting = ":executorch-program-verification",
+    values = [
+        "disabled",
+        "unspecified",
+    ],
+    default = "unspecified",
+    aliases = {
+        "program-verification-disabled": "disabled",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -89,14 +90,16 @@ fb_native.config_setting(
     visibility = ["PUBLIC"],
 )
 
-fb_native.constraint_setting(
+constraint_with_aliases(
     name = "executorch-builtin-function-name",
-    visibility = ["PUBLIC"],
-)
-
-fb_native.constraint_value(
-    name = "builtin-function-name-disabled",
-    constraint_setting = ":executorch-builtin-function-name",
+    values = [
+        "disabled",
+        "unspecified",
+    ],
+    default = "unspecified",
+    aliases = {
+        "builtin-function-name-disabled": "disabled",
+    },
     visibility = ["PUBLIC"],
 )
 
@@ -108,13 +111,15 @@ fb_native.config_setting(
     visibility = ["PUBLIC"],
 )
 
-fb_native.constraint_setting(
+constraint_with_aliases(
     name = "executorch-et-log",
-    visibility = ["PUBLIC"],
-)
-
-fb_native.constraint_value(
-    name = "et-log-disabled",
-    constraint_setting = ":executorch-et-log",
+    values = [
+        "disabled",
+        "unspecified",
+    ],
+    default = "unspecified",
+    aliases = {
+        "et-log-disabled": "disabled",
+    },
     visibility = ["PUBLIC"],
 )
