@@ -1288,6 +1288,11 @@ if(EXECUTORCH_BUILD_PYBIND)
         torch
     )
   endif()
+  # The bindings call the threadpool control APIs directly, so static builds
+  # must retain this library rather than relying on transitive linkage.
+  if(TARGET extension_threadpool)
+    list(APPEND _dep_libs extension_threadpool)
+  endif()
 
   # Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
@@ -1430,6 +1435,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_C
   )
+  target_compile_definitions(portable_lib PRIVATE EXECUTORCH_PYBIND_USE_ATEN)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})

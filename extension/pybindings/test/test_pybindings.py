@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from io import StringIO
 
+import numpy as np
 import torch
 
 from executorch.exir import ExecutorchBackendConfig, to_edge
@@ -67,6 +68,93 @@ class PybindingsTest(unittest.TestCase):
         executorch_output = executorch_module.forward(inputs)[0]
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_lightweight_tensor_e2e(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+        lightweight_inputs = tuple(
+            self.runtime.Tensor(value.numpy()) for value in inputs
+        )
+
+        output = executorch_module.forward(lightweight_inputs)[0]
+
+        self.assertIsInstance(output, self.runtime.Tensor)
+        np.testing.assert_allclose(output.numpy(), (inputs[0] + inputs[1]).numpy())
+
+    def test_lightweight_tensor_from_list(self):
+        tensor = self.runtime.Tensor([[1, 2], [3, 4]], dtype=np.float32)
+
+        self.assertEqual(tensor.sizes(), (2, 2))
+        self.assertEqual(tensor.dtype(), np.dtype("float32"))
+        self.assertEqual(tensor.nbytes(), 16)
+        np.testing.assert_array_equal(
+            tensor.numpy(), np.array([[1, 2], [3, 4]], dtype=np.float32)
+        )
+
+    def test_lightweight_tensor_buffer_protocol(self):
+        array = np.arange(6, dtype=np.float32).reshape(2, 3)
+        tensor = self.runtime.Tensor(array)
+
+        view = memoryview(tensor)
+        self.assertTrue(view.readonly)
+        self.assertEqual(view.shape, array.shape)
+        self.assertEqual(view.strides, array.strides)
+        np.testing.assert_array_equal(np.asarray(tensor), array)
+
+    def test_numpy_array_is_a_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertIsInstance(output, self.runtime.Tensor)
+        np.testing.assert_allclose(output.numpy(), (inputs[0] + inputs[0]).numpy())
+
+    def test_lightweight_tensor_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        input_tensor = self.runtime.Tensor(inputs[0].numpy())
+
+        output = executorch_module(input_tensor)[0]
+
+        self.assertIsInstance(output, self.runtime.Tensor)
+        np.testing.assert_allclose(output.numpy(), (inputs[0] + inputs[0]).numpy())
+
+    def test_tensor_subclass_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        parameter = torch.nn.Parameter(inputs[0])
+
+        output = executorch_module(parameter)[0]
+
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[0]))
+
+    def test_tensor_subclass_without_storage_is_rejected(self):
+        class Wrapper(torch.Tensor):
+            @staticmethod
+            def __new__(cls, elem):
+                return torch.Tensor._make_wrapper_subclass(
+                    cls, elem.shape, dtype=elem.dtype
+                )
+
+            @classmethod
+            def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+                raise NotImplementedError(func)
+
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(ValueError, "data is not allocated"):
+            executorch_module(Wrapper(inputs[0]))
+
+    def test_invalid_single_input_type(self):
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(
+            TypeError, "inputs must be a Tensor or a sequence of inputs"
+        ):
+            executorch_module(1)
 
     def test_multiple_entry(self):
         program, inputs = create_program(ModuleMulti())
@@ -342,6 +430,31 @@ class PybindingsTest(unittest.TestCase):
 
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_failed_set_inputs_keeps_previous_lightweight_inputs(self):
+        exported_program, inputs = create_program(
+            ModuleAdd(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+        method.set_inputs(
+            [
+                self.runtime.Tensor(inputs[0].numpy()),
+                self.runtime.Tensor(inputs[1].numpy()),
+            ]
+        )
+
+        with self.assertRaises(RuntimeError):
+            method.set_inputs(
+                [self.runtime.Tensor(inputs[0].numpy()), "unsupported input"]
+            )
+
+        method.execute()
+        output = method.get_outputs()[0]
+        np.testing.assert_allclose(output.numpy(), (inputs[0] + inputs[1]).numpy())
 
     def test_method_callable(self):
         exported_program, inputs = create_program(ModuleAdd())

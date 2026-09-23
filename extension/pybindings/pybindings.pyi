@@ -11,6 +11,8 @@ from typing import Any, Dict, Enum, List, Optional, Sequence, Tuple
 
 from executorch.exir._warnings import experimental
 
+_uses_aten: bool
+
 @experimental("This API is experimental and subject to change without notice.")
 class Verification(Enum):
     """Verification maps C++ Program::Verification to Python.
@@ -33,7 +35,11 @@ class ExecuTorchModule:
     """
 
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
-    def __call__(self, inputs: Any, clone_outputs: bool = True) -> List[Any]: ...
+    def __call__(
+        self,
+        inputs: Any,
+        clone_outputs: bool = True,
+    ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def run_method(
         self,
@@ -44,12 +50,14 @@ class ExecuTorchModule:
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def forward(
         self,
-        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        inputs: Any,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def plan_execute(
-        self, method_name: str, clone_outputs: bool = True
+        self,
+        method_name: str,
+        clone_outputs: bool = True,
     ) -> List[Any]: ...
     # Bundled program methods.
     def load_bundled_input(
@@ -99,20 +107,20 @@ class ExecuTorchMethod:
     """
 
     # pyre-ignore[2]: "Any" in parameter type annotations.
-    def set_inputs(self, inputs: Sequence[Any]) -> None: ...
+    def set_inputs(self, inputs: Any) -> None: ...
     def execute(self) -> None: ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def call(
         self,
-        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def __call__(
         self,
-        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     def method_meta(self) -> MethodMeta: ...
@@ -128,6 +136,20 @@ class BundledModule:
     """
 
     ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class Tensor:
+    """A lightweight, CPU-backed tensor that does not require a torch.Tensor."""
+
+    # pyre-ignore[2]: "Any" in parameter type annotations.
+    def __init__(self, data: Any, dtype: Optional[Any] = None) -> None: ...
+    # pyre-ignore[3]: "Any" in return type annotations.
+    def numpy(self) -> Any: ...
+    def sizes(self) -> Tuple[int, ...]: ...
+    # pyre-ignore[3]: "Any" in return type annotations.
+    def dtype(self) -> Any: ...
+    def nbytes(self) -> int: ...
+    def __repr__(self) -> str: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class TensorInfo:
