@@ -50,7 +50,9 @@ class RuntimeETDumpGenTest(unittest.TestCase):
             etdump_path = os.path.join(temp_dir, "etdump_output.etdp")
             debug_path = os.path.join(temp_dir, "debug_output.bin")
             program.write_etdump_result_to_file(etdump_path, debug_path)
-
+            # Windows cannot delete the temporary directory while the loaded
+            # program still holds the .pte open.
+            del method, program
             # Check that files were created
             self.assertTrue(
                 os.path.exists(etdump_path), f"ETDump file not created at {etdump_path}"

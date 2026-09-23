@@ -41,6 +41,7 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <flatcc/flatcc_builder.h>
 
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
@@ -135,7 +136,8 @@ void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
 }
 
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
-  FILE* f = fopen(path.c_str(), "w+");
+  // Binary mode: in text mode Windows rewrites every 0x0A byte as \r\n.
+  FILE* f = fopen(path.c_str(), "wb");
   if (!f) {
     throw std::runtime_error(
         "Failed to open file " + path + ": " + strerror(errno));
@@ -902,7 +904,9 @@ struct PyModule final {
     etdump_result result = etdump->get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       write_data_to_file(path, result.buf, result.size);
-      free(result.buf);
+      // Allocated by flatcc_builder_finalize_aligned_buffer, which uses
+      // _aligned_malloc on Windows, where plain free() corrupts the heap.
+      flatcc_builder_aligned_free(result.buf);
       if (py::isinstance<py::str>(debug_buffer_path)) {
         // Also write out the debug buffer to a separate file if requested.
         std::string debug_buffer_path_str =
@@ -1711,7 +1715,7 @@ struct PyProgram final {
     etdump_result result = etdump.get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       write_data_to_file(path, result.buf, result.size);
-      free(result.buf);
+      flatcc_builder_aligned_free(result.buf);
       if (debug_buffer_size_ > 0 &&
           py::isinstance<py::str>(debug_buffer_path)) {
         // Also write out the debug buffer to a separate file if requested.

@@ -39,16 +39,14 @@ if(DEFINED ENV{EXECUTORCH_PYBIND_ENABLE_VGF})
   endif()
 endif()
 
+# The wheel ships the profiler library and documents it as usable, so the tracer
+# has to be compiled in. Left off, every recording hook is preprocessed away and
+# a caller gets an empty trace with no error.
+set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
+
 # TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
 # due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  # The wheel ships the profiler library and documents it as usable, so the
-  # tracer has to be compiled in. Left off, every recording hook is preprocessed
-  # away and a caller gets an empty trace with no error. Set per platform rather
-  # than once above, because writing a trace with a debug buffer aborts the
-  # interpreter on Windows, and a wheel that enables the hooks there hands that
-  # crash to anyone who calls the profiling API.
-  set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
   # Same reason as on Linux: one shared runtime so a process has a single
   # backend registry, and a C++ consumer can link the wheel instead of building
   # from source. The Swift package remains the better fit for an application
@@ -82,8 +80,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     endif()
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
-
   set_overridable_option(EXECUTORCH_BUILD_VGF ${_executorch_pybind_enable_vgf})
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)

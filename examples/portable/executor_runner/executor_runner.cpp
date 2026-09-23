@@ -45,6 +45,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/devtools/etdump/etdump_flatcc.h>
+#include <flatcc/flatcc_builder.h>
 #endif // ET_EVENT_TRACER_ENABLED
 
 #if defined(ET_USE_THREADPOOL)
@@ -262,7 +263,7 @@ class EventTraceManager {
     const char* filename = FLAGS_etdump_path.c_str();
 
     std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
-        fopen(filename, "w+"), fclose);
+        fopen(filename, "wb"), fclose);
     if (!etdump_file) {
       ET_LOG(Error, "Failed to open ETDump file at %s.", filename);
       return Error::AccessFailed;
@@ -271,7 +272,8 @@ class EventTraceManager {
     executorch::etdump::ETDumpResult result = etdump_ptr->get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
-      free(result.buf);
+      // _aligned_malloc on Windows, where plain free() corrupts the heap.
+      flatcc_builder_aligned_free(result.buf);
       ET_LOG(Info, "ETDump written to file '%s'.", filename);
     } else {
       ET_LOG(Error, "No ETDump data available!");
