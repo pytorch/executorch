@@ -221,9 +221,13 @@ bool Package::load_constant_into(
   return true;
 }
 
-void Package::verify_constants() const {
+void Package::verify() const {
+  zip_->verify(kProgramEntry);
   if (tensors_) {
     zip_->verify(kSafeTensorsEntry);
+  }
+  if (zip_->member_size(kAliasesEntry)) {
+    zip_->verify(kAliasesEntry);
   }
 }
 
