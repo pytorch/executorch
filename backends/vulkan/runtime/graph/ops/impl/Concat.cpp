@@ -57,7 +57,7 @@ void resize_concat_node(
   graph->virtual_resize(out, new_out_sizes);
 }
 
-utils::uvec3 concat_pick_global_wg_size(
+GlobalWorkGrid concat_pick_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -91,7 +91,7 @@ utils::uvec3 concat_pick_global_wg_size(
   }
 
   if (graph->is_buffer_storage(out)) {
-    return {total_input_numel, 1, 1};
+    return graph->create_linear_gwg(total_input_numel);
   }
 
   // The texture implementation is similar, except each invocation writes out 4
@@ -124,7 +124,7 @@ utils::uvec3 concat_pick_global_wg_size(
   const uint32_t inp_volume_texel_numel =
       utils::multiply_integers(inp_volume_texel_sizes);
 
-  return {inp_volume_texel_numel, 1, 1};
+  return graph->create_linear_gwg(inp_volume_texel_numel);
 }
 
 void add_concat_node(
@@ -166,8 +166,8 @@ void add_concat_node(
     graph.execute_nodes().emplace_back(new DispatchNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
-        {1, 1, 1},
-        {1, 1, 1},
+        GlobalWorkGrid({1u, 1u, 1u}, kExplicitWorkGrid),
+        LocalWorkGroup(1u, 1u, 1u),
         // Inputs and Outputs
         {{concat_offset, vkapi::kWrite}},
         // Parameter buffers
@@ -230,8 +230,8 @@ void add_concat_node(
       graph.execute_nodes().emplace_back(new DynamicDispatchNode(
           graph,
           VK_KERNEL_FROM_STR(kernel_name),
-          concat_pick_global_wg_size,
-          default_pick_local_wg_size,
+          concat_pick_gwg,
+          default_pick_lwg,
           // Inputs and Outputs
           {{out, vkapi::kReadWrite},
            {batch_inputs, vkapi::kRead},
@@ -271,8 +271,8 @@ void add_concat_node(
       graph.execute_nodes().emplace_back(new DispatchNode(
           graph,
           VK_KERNEL_FROM_STR(kernel_name),
-          {1u, 1u, 1u},
-          {1u, 1u, 1u},
+          GlobalWorkGrid({1u, 1u, 1u}, kExplicitWorkGrid),
+          LocalWorkGroup(1u, 1u, 1u),
           // Inputs and Outputs
           {{concat_offset, vkapi::kReadWrite}},
           // Parameter buffers

@@ -18,6 +18,7 @@ from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
+from .decompose_as_strided import DecomposeAsStrided
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -25,6 +26,7 @@ from .decompose_col_im import DecomposeColIm
 from .decompose_diagonal import DecomposeDiagonal
 from .decompose_div_mode import DecomposeDivMode
 from .decompose_einsum import DecomposeEinsum
+from .decompose_empty import DecomposeEmpty
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
@@ -52,6 +54,7 @@ from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
 from .fuse_consecutive_cast import FuseConsecutiveCast
+from .fuse_consecutive_reshape import FuseConsecutiveReshape
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
 from .insert_cast_for_fp_act_quantized_weight import InsertCastForFpActQuantizedWeight
@@ -87,6 +90,7 @@ __all__ = [
     DecomposeAcos,
     DecomposeAddmm,
     DecomposeAny,
+    DecomposeAsStrided,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -94,6 +98,7 @@ __all__ = [
     DecomposeDiagonal,
     DecomposeDivMode,
     DecomposeEinsum,
+    DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
     DecomposeFloorDivide,
@@ -121,6 +126,7 @@ __all__ = [
     FixedLinearKeepDim,
     FoldQDQ,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,

@@ -39,6 +39,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-nxp.yml') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
     uses: ./.github/workflows/_test_backend.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       backend: nxp
       flows: '["nxp_neutron_imxrt700_int8_ptq"]'

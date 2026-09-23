@@ -347,6 +347,28 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   EXPECT_EQ(method_res.error(), Error::Ok);
 }
 
+TEST_P(BackendIntegrationTest, UnavailableBackendFailsToLoad) {
+  // A backend that reports itself unavailable must make load_method return
+  // NotFound rather than being initialized anyway. Backends that cannot run on
+  // the current platform rely on this to fail instead of faulting.
+  StubBackend::singleton().install_is_available([]() { return false; });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // The gate only means something if this method actually delegates to the
+  // stub, so confirm that before asserting the load fails on availability.
+  EXPECT_TRUE(
+      program->method_meta("forward")->uses_backend(StubBackend::kName));
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  Result<Method> method_res = program->load_method("forward", &mmm.get());
+  EXPECT_EQ(method_res.error(), Error::NotFound);
+}
+
 TEST_P(BackendIntegrationTest, GetBackendNamesSuccess) {
   // Load the program from file.
   Result<FileDataLoader> loader = FileDataLoader::from(program_path());

@@ -8,10 +8,17 @@ q8ta_conv2d_pw:
   parameter_names_with_default_values:
     DTYPE: float
     USE_INT8_DOT_PRODUCT_EXT: 1
+    USE_UNSIGNED_DOT_PRODUCT: 0
+    WEIGHT_STORAGE: texture2d
   generate_variant_forall:
     DTYPE:
       - VALUE: float
   shader_variants:
     - NAME: q8ta_conv2d_pw
+    - NAME: q8ta_conv2d_pw_unsigned
+      USE_UNSIGNED_DOT_PRODUCT: 1
+    - NAME: q8ta_conv2d_pw_unsigned_buffer
+      USE_UNSIGNED_DOT_PRODUCT: 1
+      WEIGHT_STORAGE: buffer
     - NAME: q8ta_conv2d_pw_fallback
       USE_INT8_DOT_PRODUCT_EXT: 0

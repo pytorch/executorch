@@ -89,6 +89,7 @@ load_state_dict(const runtime::NamedDataMap& data_map) {
         dim_order,
         strides,
         metadata_res->scalar_type(),
+        exec_aten::DeviceType::CPU,
         exec_aten::TensorShapeDynamism::STATIC,
         [](void* ptr) {
           free(ptr);

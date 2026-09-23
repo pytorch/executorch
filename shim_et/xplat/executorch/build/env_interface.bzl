@@ -23,6 +23,8 @@ _EXTERNAL_DEPS = {
     "aten-core": [],  # TODO(larryliu0820): Add support
     # ATen native_functions.yaml file deps
     "aten-src-path": "//third-party:aten_src_path",
+    # Just the c10 core of PyTorch: Device, ScalarType, and the C10_* macros
+    "c10": "//third-party:libtorch",
     "cpuinfo": [],  # TODO(larryliu0820): Add support
     # Flatbuffer C++ library deps
     "flatbuffers-api": "//third-party:flatbuffers-api",

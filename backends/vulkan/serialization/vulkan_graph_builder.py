@@ -9,7 +9,7 @@ import hashlib
 import logging
 import operator
 from types import NoneType
-from typing import cast, Dict, List, Optional, Union
+from typing import cast, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 import torch
@@ -32,6 +32,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.tensor import TensorSpec
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch.export import ExportedProgram
+from torch.export.graph_signature import OutputKind
 from torch.fx import Node
 
 _ScalarType = Union[bool, int, float]
@@ -418,15 +419,26 @@ class VkGraphBuilder:
             raise RuntimeError(f"Cannot create value for arg of type {type(arg)}")
 
     def process_placeholder_node(self, node: Node) -> None:
-        # ignores any tensors that don't get used in any ops
-        if len(node.users) == 0:
+        # A non-param placeholder occupies a slot in the delegate call's
+        # argument list whether or not this graph goes on to use it, and
+        # VulkanBackend::execute matches `args` to graph inputs positionally.
+        # Dropping an unused one from input_ids desynchronises the two, and the
+        # runtime then rejects the call because it was handed more arguments
+        # than the graph declares inputs and outputs. That happens in practice
+        # when a placeholder's only consumers are folded away by the passes
+        # that run after partitioning, so the graph the partitioner tagged and
+        # the graph serialized here disagree about which inputs are live.
+        if is_param_node(self.program, node):
+            # Params are serialized into the blob rather than passed at call
+            # time, so an unused one costs nothing to skip.
+            if len(node.users) > 0:
+                self.create_node_value(node)
             return None
         ids = self.create_node_value(node)
-        if not is_param_node(self.program, node):
-            if isinstance(ids, int):
-                self.input_ids.append(ids)
-            else:
-                self.input_ids += ids
+        if isinstance(ids, int):
+            self.input_ids.append(ids)
+        else:
+            self.input_ids += ids
 
     def process_getitem_node(self, node: Node) -> None:
         # Find ValueList id from the collection node.
@@ -479,19 +491,80 @@ class VkGraphBuilder:
     def process_getattr_node(self, node: Node) -> None:
         self.create_node_value(node)
 
+    def _output_nodes_in_order(self, node: Node) -> List[Tuple[Optional[int], Node]]:
+        """
+        The graph outputs in order, duplicates included, each paired with its
+        position in the output signature.
+
+        `node.all_input_nodes` de-duplicates, so a graph that returns the same
+        value twice (`return y, y`, or `return y, y.view(...)` once a redundant
+        view is removed) would serialize one output id for two outputs and fail
+        the runtime's argument count check.
+
+        The position is what distinguishes those repeats from a buffer mutation
+        that happens to alias a user output: both reference the same node, so
+        only the signature can say which slot is which. It is None when the
+        signature does not line up with the output args, in which case the
+        caller falls back to matching by name.
+        """
+        args = node.args[0] if len(node.args) == 1 else node.args
+        if isinstance(args, Node):
+            args = (args,)
+        output_specs = getattr(self.program.graph_signature, "output_specs", None)
+        aligned = output_specs is not None and len(output_specs) == len(args)
+        out_nodes: List[Tuple[Optional[int], Node]] = []
+        for idx, arg in enumerate(args):
+            if isinstance(arg, Node):
+                out_nodes.append((idx if aligned else None, arg))
+        return out_nodes
+
+    def _is_user_output_slot(self, idx: Optional[int]) -> Optional[bool]:
+        """
+        Whether the output slot at `idx` is a user output, or None if unknown.
+        """
+        if idx is None:
+            return None
+        output_specs = getattr(self.program.graph_signature, "output_specs", None)
+        if output_specs is None:
+            return None
+        return output_specs[idx].kind == OutputKind.USER_OUTPUT
+
     def process_output_node(self, node: Node) -> None:
-        for out_node in node.all_input_nodes:
+        # Names already emitted for a buffer mutation that aliases a user
+        # output; see the fallback branch below.
+        emitted_mutation_aliases: set[str] = set()
+        for idx, out_node in self._output_nodes_in_order(node):
             if out_node not in self.node_to_value_ids:
                 raise AssertionError(
                     "Cannot find input to output node in node_to_value_ids. This means "
                     "the output node is being serialized before its corresponding "
                     "internal node which is not allowed."
                 )
-            # Mutable buffers outputs are not included as an output to the
-            # delegate call. Skip marking them as an output.
+            # A mutation whose buffer is aliased to its input is applied in
+            # place, so its slot is not an output of the delegate call. Decide
+            # per slot rather than per node: the mutation and a user output can
+            # be the same node, and matching by name alone would either keep
+            # both or drop both.
+            #
+            # Only the aliased case is filtered here. Without aliasing the
+            # mutation still needs a slot to carry the new buffer value back,
+            # so the old rule stands: dropping the slot would leave the graph
+            # accepted but never updating the buffer, which is worse than the
+            # argument-count rejection it would otherwise get.
             if out_node.name in self.buffer_mutation_inputs:
-                if out_node.name not in self.buffer_mutation_user_outputs:
-                    continue
+                is_user_output = self._is_user_output_slot(idx)
+                if is_user_output is not None:
+                    if not is_user_output:
+                        continue
+                else:
+                    if out_node.name not in self.buffer_mutation_user_outputs:
+                        continue
+                    # Without the signature to separate the slots, the mutation
+                    # and the user output are indistinguishable occurrences of
+                    # one node, and together they get a single slot.
+                    if out_node.name in emitted_mutation_aliases:
+                        continue
+                    emitted_mutation_aliases.add(out_node.name)
             elif is_mutable_buffer_node(out_node, self.program):
                 continue
 

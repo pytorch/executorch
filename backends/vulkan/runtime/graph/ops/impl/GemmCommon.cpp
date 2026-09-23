@@ -61,10 +61,11 @@ ValueRef prepack_fp_linear_weight(
       weight_storage,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(N4),
-      utils::safe_downcast<uint32_t>(K4),
-      utils::safe_downcast<uint32_t>(B)};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(N4),
+       utils::safe_downcast<uint32_t>(K4),
+       utils::safe_downcast<uint32_t>(B)},
+      kTiledWorkGrid);
 
   struct PackParams {
     int32_t N;
@@ -86,8 +87,8 @@ ValueRef prepack_fp_linear_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       weight_data,
       packed_weight,
       {},

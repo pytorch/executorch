@@ -586,9 +586,6 @@ function(executorch_load_build_variables)
       TRAIN_XOR_SRCS
       EXECUTOR_RUNNER_SRCS
       SIZE_TEST_SRCS
-      MPS_EXECUTOR_RUNNER_SRCS
-      MPS_BACKEND_SRCS
-      MPS_SCHEMA_SRCS
       XNN_EXECUTOR_RUNNER_SRCS
       XNNPACK_BACKEND_SRCS
       XNNPACK_SCHEMA_SRCS
@@ -620,9 +617,6 @@ function(executorch_load_build_variables)
       _train_xor__srcs
       _executor_runner__srcs
       _size_test__srcs
-      _mps_executor_runner__srcs
-      _mps_backend__srcs
-      _mps_schema__srcs
       _xnn_executor_runner__srcs
       _xnnpack_backend__srcs
       _xnnpack_schema__srcs

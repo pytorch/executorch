@@ -71,7 +71,7 @@ cmake . \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -Bcmake-out-android-so && \
-cmake --build cmake-out-android-so -j16 --target install --config Release
+cmake --build cmake-out-android-so -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Once the build completes, we can push the runner binary to device.

@@ -114,7 +114,18 @@ include(ExternalProject)
 include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  # The vendored c10 is mirrored byte for byte from PyTorch, which builds at
+  # C++20, so it is free to use C++20 in headers we compile. safe_numerics.h
+  # reaches std::countl_zero and std::bit_width on the branch taken when
+  # __builtin_*_overflow is unavailable, which is MSVC only -- every other
+  # toolchain takes the builtin path and stays within C++17. Raising the
+  # standard on Windows alone keeps the embedded targets, where C++20 support is
+  # not a given, on C++17.
+  if(WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+  else()
+    set(CMAKE_CXX_STANDARD 17)
+  endif()
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
@@ -231,15 +242,7 @@ if(EXECUTORCH_BUILD_SHARED)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
-# Enable ccache if available
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  message(STATUS "ccache found and enabled for faster builds")
-else()
-  message(STATUS "ccache not found, builds will not be cached")
-endif()
+executorch_try_enabling_ccache()
 announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -652,6 +655,15 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
 endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+if(WIN32)
+  # This target carries the vendored c10 headers, and safe_numerics.h reaches
+  # std::countl_zero on the branch MSVC takes. Stating it as a compile feature
+  # rather than relying on CMAKE_CXX_STANDARD is what makes it reach every
+  # consumer: features raise a target's standard even where CMAKE_CXX_STANDARD
+  # says 17, and install(EXPORT) carries them into ExecuTorchTargets.cmake, so
+  # projects configured separately from this one pick it up too.
+  target_compile_features(executorch_core PUBLIC cxx_std_20)
+endif()
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
@@ -820,6 +832,9 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
+endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL
    OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
@@ -848,11 +863,6 @@ endif()
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
   list(APPEND _executorch_backends coremldelegate)
-endif()
-
-if(EXECUTORCH_BUILD_MPS)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
-  list(APPEND _executorch_backends mpsdelegate)
 endif()
 
 if(EXECUTORCH_BUILD_MLX)
@@ -1001,6 +1011,10 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
   list(APPEND _executorch_extensions extension_llm_cache)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/batching)
+  list(APPEND _executorch_extensions extension_llm_batching
+       extension_llm_batching_module
+  )
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -1135,6 +1149,25 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
   list(APPEND _executorch_kernels torchao_ops_executorch)
 
+  # The wheel ships one shared library per component so a process holds a single
+  # copy of each. These kernels are static archives declared in the TorchAO
+  # submodule, so wrap them the way the quantized kernels are wrapped rather
+  # than changing a third-party target. extension_threadpool is named explicitly
+  # because the kernels call into it and the wheel ships it as its own library,
+  # so this resolves against that one copy instead of bundling a second.
+  if(EXECUTORCH_BUILD_SHARED)
+    executorch_add_shared_library(
+      executorch_kernels_torchao torchao_ops_executorch extension_threadpool
+      executorch_shared
+    )
+    # Holds registration constructors and no symbol a consumer names, so a link
+    # with --as-needed would drop it and register nothing.
+    executorch_target_link_options_shared_lib(executorch_kernels_torchao)
+    # Ships beside the runtime in the wheel's lib/ directory, and links it, so
+    # it has to be able to find it from wherever the package is installed.
+    executorch_target_shipped_runtime_path(executorch_kernels_torchao)
+  endif()
+
   install(
     TARGETS torchao_ops_executorch torchao_kernels_aarch64
     EXPORT ExecuTorchTargets
@@ -1157,10 +1190,29 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
 
 endif()
 
+if(TARGET cpublas
+   AND TARGET kleidiai
+   AND TARGET cpuinfo
+)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
+     OR ANDROID_ABI STREQUAL "arm64-v8a"
+     OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"
+  )
+    target_compile_definitions(cpublas PRIVATE ET_BUILD_WITH_KLEIDIAI)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_NEON_BF16)
+    endif()
+    target_link_libraries(cpublas PRIVATE kleidiai)
+  endif()
+endif()
+
 # The shared build ships the profiler as one of its libraries, and the Python
-# extension records a hard dependency on it, so the target has to exist whenever
-# either of those is being built rather than only when devtools is asked for.
-if((EXECUTORCH_BUILD_PYBIND OR EXECUTORCH_BUILD_SHARED)
+# extension records a hard dependency on it, and the Apple ETDump extension
+# links it, so the target has to exist whenever any of those is being built
+# rather than only when devtools is asked for.
+if((EXECUTORCH_BUILD_PYBIND
+    OR EXECUTORCH_BUILD_SHARED
+    OR EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
    AND NOT EXECUTORCH_BUILD_DEVTOOLS
 )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
@@ -1305,10 +1357,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs vgf_backend)
   endif()
 
-  if(EXECUTORCH_BUILD_MPS)
-    list(APPEND _dep_libs mpsdelegate)
-  endif()
-
   if(EXECUTORCH_BUILD_MLX)
     list(APPEND _dep_libs mlxdelegate)
   endif()
@@ -1409,7 +1457,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   # Only the libraries that do not already retain themselves are named. A
   # delegate that calls executorch_target_link_options_shared_lib exports
   # --no-as-needed around its own file to every consumer, so the CUDA and
-  # OpenVINO backends are covered by that and are deliberately absent here.
+  # OpenVINO backends are covered by that and are deliberately absent here. That
+  # export is emitted only for NOT APPLE, so it does nothing for an Apple-only
+  # delegate like Core ML. In the wheel's shared build that dylib is instead
+  # kept because it is named directly on the link line, which retains its
+  # namespace-scope initializers without an --as-needed equivalent; only
+  # -dead_strip_dylibs would drop it, and nothing here passes that. In a static
+  # build the delegate is an archive kept by force_load instead.
   foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend
                               extension_threadpool etdump
   )
@@ -1490,8 +1544,10 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Copy the MLX metallib next to the Python extension for editable installs.
   # MLX uses dladdr() to find the directory containing the library with MLX
-  # code, then looks for mlx.metallib in that directory. When MLX is statically
-  # linked into the Python extension, we need the metallib colocated with it.
+  # code, then looks for mlx.metallib in that directory. This covers the case
+  # where the delegate is static and therefore absorbed into the extension; a
+  # shared delegate carries MLX itself and is served by the copy installed
+  # beside it instead.
   executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 
@@ -1518,6 +1574,10 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_ASR_RUNNER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/asr/runner)
   list(APPEND _executorch_extensions extension_asr_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple/dump)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)

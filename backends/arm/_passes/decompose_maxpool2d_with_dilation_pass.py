@@ -10,6 +10,7 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import meta_without_qparams
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -68,7 +69,7 @@ class DecomposeMaxPool2dPass(ArmOpTargetedPass):
         # Normalize missing trailing args to their defaults
         x = args[0]
         kernel_size = args[1]
-        stride = args[2]
+        stride = args[2] if len(args) >= 3 and args[2] else kernel_size
         padding = args[3] if len(args) >= 4 else 0
         dilation = args[4] if len(args) >= 5 else 1
         ceil_mode = args[5] if len(args) == 6 else False
@@ -91,9 +92,7 @@ class DecomposeMaxPool2dPass(ArmOpTargetedPass):
         H_pack, bottom_padding, H_final = _pack_dimension(d_h, pad_h, H, k_h, s_h)
         W_pack, right_padding, W_final = _pack_dimension(d_w, pad_w, W, k_w, s_w)
 
-        meta_with_no_qparams = meta.copy()
-        meta_with_no_qparams.data["output_qparams"] = {}
-        meta_with_no_qparams.data["input_qparams"] = {}
+        meta_with_no_qparams = meta_without_qparams(meta)
         meta_with_no_output_qparams = meta.copy()
         meta_with_no_output_qparams.data["output_qparams"] = {}
 

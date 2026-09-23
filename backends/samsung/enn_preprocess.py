@@ -9,37 +9,19 @@ from typing import Dict, final, List
 
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 import torch
-from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparamsPass
-from executorch.backends.samsung._passes.annotate_scalar_parameters import (
-    AnnotateScalarParametersPass,
-)
-from executorch.backends.samsung._passes.conv1d_to_conv2d import Conv1dToConv2d
-from executorch.backends.samsung._passes.customized_constant_prop import (
-    ConstantPropPass,
-)
-from executorch.backends.samsung._passes.fold_qdq import FoldQDQPass
-from executorch.backends.samsung._passes.insert_qdq import InsertQDQPass
-from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
+from executorch.backends.samsung._passes.enn_pass_manager import EnnPassManager
 from executorch.backends.samsung.builders.node_visitor import get_node_visitors
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 from executorch.backends.samsung.utils.utils import get_compile_spec
-from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
-from executorch.backends.transforms.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
-
-from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
     PreprocessResult,
 )
-
-from executorch.exir.pass_manager import PassManager
 
 from torch.export.exported_program import ExportedProgram
 
@@ -57,29 +39,16 @@ class EnnBackend(BackendDetails):
         )
         enn_wrapper.Init(option_spec.value)
 
-        enn_preprocess_passes = PassManager(
-            passes=[
-                AnnotateQparamsPass(edge_program),
-                FoldQDQPass(),
-                ConstantPropPass(edge_program),
-                Conv1dToConv2d(edge_program),
-                FuseBatchNormWithConvPass(edge_program),
-                AddmmToLinearTransform(),
-                ReplaceOpsWithScalar(),
-                RemoveGetItemPass(),
-                InsertQDQPass(edge_program),
-                AnnotateScalarParametersPass(edge_program),
-            ]
-        )
-        pass_result = enn_preprocess_passes(edge_program.graph_module)
-        assert pass_result is not None
+        graph_module = EnnPassManager().transform_for_preprocess_pass(edge_program)
+        assert graph_module is not None
 
         enn_graph = EnnGraph()
         # node visitors
         node_visitors = get_node_visitors(edge_program)
 
         vals_to_ids: Dict[torch.fx.Node, int] = {}
-        for node in pass_result.graph_module.graph.nodes:
+        placeholder_vistor = node_visitors["placeholder"]
+        for node in graph_module.graph.nodes:
             if node.op == "call_function":
                 logging.info(f"Visiting: {node}, {node.target.__name__}")
                 if node.target.__name__ in node_visitors:
@@ -90,9 +59,11 @@ class EnnBackend(BackendDetails):
                     raise RuntimeError(
                         f"{node.target.__name__}" " is not supported in ENN Delegate"
                     )
+            elif node.op == "placeholder":
+                logging.info(f"Visiting input of graph: {node}")
+                placeholder_vistor.define_node(node, enn_graph, vals_to_ids)
             elif node.op in [
                 "get_attr",
-                "placeholder",
                 "output",
             ]:
                 continue

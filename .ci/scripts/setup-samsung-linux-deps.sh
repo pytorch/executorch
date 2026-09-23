@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-LITECORE_VERSION="v1.0"
+LITECORE_VERSION="v1.2.0"
 LITECORE_FILE_NAME="ai-litecore-ubuntu2204-${LITECORE_VERSION}.tar.gz"
 DEVICEFARM_CLI_VERSION="beta-v1.1.0"
 DEVICEFARM_FILE_NAME="devicefarmcli-${DEVICEFARM_CLI_VERSION}.zip"
@@ -165,6 +165,7 @@ install_enn_backend() {
   echo "NDK will be installed/used at: ${ANDROID_NDK_ROOT}"
 
   bash backends/samsung/build.sh --build all
+  bash examples/samsung/build.sh
 
   export EXECUTORCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   export PYTHONPATH="${PYTHONPATH:-}:${EXECUTORCH_ROOT}/.."

@@ -161,6 +161,27 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_test(
+        name = "banked_memory_planning",
+        srcs = [
+            "test_banked_memory_planning.py",
+        ],
+        preload_deps = [
+            "//executorch/kernels/portable:custom_ops_generated_lib",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//caffe2/functorch:functorch_src",
+            "//executorch/exir:banked_memory_planning",
+            "//executorch/exir:lib",
+            "//executorch/exir:memory_planning",
+            "//executorch/exir:pass_manager",
+            "//executorch/exir:tensor",
+            "//executorch/exir/passes:lib",
+            "//executorch/extension/pybindings:portable_lib",  # @manual
+        ],
+    )
+
+    runtime.python_test(
         name = "memory_planning",
         srcs = [
             "test_memory_planning.py",
@@ -210,6 +231,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/passes:constant_prop_pass",
             "//executorch/exir/passes:cse_pass",
             "//executorch/exir/passes:debug_handle_generator_pass",
+            "//executorch/exir/passes:fold_redundant_qdq_pass",
             "//executorch/exir/passes:insert_write_back_for_buffers_pass",
             "//executorch/exir/passes:lib",
             "//executorch/exir/passes:memory_format_ops_pass",

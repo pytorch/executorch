@@ -17,10 +17,13 @@ from packaging.version import InvalidVersion, Version
 
 MODEL_CONVERTER_BINARY = "model-converter"
 _MODEL_CONVERTER_FALLBACK_BINARY = "model_converter"
-MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS = Version("0.10.0")
+MIN_MODEL_CONVERTER_VERSION = Version("0.10.0")
+# Keep the old name as an alias while tests/callers migrate.
+MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS = MIN_MODEL_CONVERTER_VERSION
 _MODEL_CONVERTER_VERSION_PATTERN = re.compile(r"\b\d+\.\d+\.\d+(?:[A-Za-z0-9_.+-]*)?\b")
 _MODEL_CONVERTER_BUILD_VERSION_ALIASES = {
     "d8c1b8e": Version("0.9.0"),
+    "19d1d0f": Version("0.10.0"),
 }
 
 STATUS_OK = "PASS"
@@ -264,10 +267,36 @@ def check_model_converter_environment() -> ModelConverterEnvironmentCheck:
             "from the same MLSDK install.",
         )
 
+    version_text = _command_output(result)
+    version = parse_model_converter_version(version_text)
+    if version is None:
+        return ModelConverterEnvironmentCheck(
+            "MLSDK model converter",
+            STATUS_FAIL,
+            f"{executable} --version succeeded, but its version could not be "
+            f"parsed:\n{version_text}",
+            f"ExecuTorch VGF requires model-converter "
+            f">={MIN_MODEL_CONVERTER_VERSION}, but the installed converter "
+            "version could not be verified. Install the VGF dependencies from "
+            "this ExecuTorch checkout. If this is a known compatible custom "
+            "build, add its revision to _MODEL_CONVERTER_BUILD_VERSION_ALIASES.",
+        )
+
+    if version < MIN_MODEL_CONVERTER_VERSION:
+        return ModelConverterEnvironmentCheck(
+            "MLSDK model converter",
+            STATUS_FAIL,
+            f"Found model-converter {version}, but ExecuTorch VGF requires "
+            f">={MIN_MODEL_CONVERTER_VERSION} after the ML SDK 0.10 upgrade.",
+            "Install the VGF dependencies from this ExecuTorch checkout with "
+            "python -m pip install -r backends/arm/requirements-arm-vgf.txt, "
+            "or reinstall the matching executorch[vgf] extra.",
+        )
+
     return ModelConverterEnvironmentCheck(
         "MLSDK model converter",
         STATUS_OK,
-        f"{executable} --version succeeded:\n{_command_output(result)}",
+        f"{executable} --version succeeded (version={version}):\n{version_text}",
     )
 
 

@@ -107,7 +107,7 @@ class StagingBuffer final {
         vulkan_buffer_.vma_allocator(),
         vulkan_buffer_.allocation(),
         0u,
-        VK_WHOLE_SIZE);
+        nbytes);
     memcpy(dst, data(), nbytes);
   }
 
@@ -118,7 +118,7 @@ class StagingBuffer final {
         vulkan_buffer_.vma_allocator(),
         vulkan_buffer_.allocation(),
         0u,
-        VK_WHOLE_SIZE);
+        numel * sizeof(SRC_T));
     const SRC_T* src = reinterpret_cast<const SRC_T*>(data());
     for (size_t i = 0; i < numel; ++i) {
       dst[i] = static_cast<DST_T>(src[i]);

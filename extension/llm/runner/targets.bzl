@@ -35,6 +35,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "stats" + aten_suffix,
             exported_headers = [
+                "model_metadata.h",
                 "stats.h",
                 "util.h",
             ],

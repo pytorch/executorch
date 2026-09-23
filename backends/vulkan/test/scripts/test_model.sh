@@ -95,7 +95,7 @@ clean_build_directory() {
 }
 
 recompile() {
-  cmake --build cmake-out -j64 --target install
+  cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 }
 
 build_core_libraries_and_devtools() {
@@ -119,7 +119,7 @@ build_core_libraries_and_devtools() {
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -Bcmake-out && \
-  cmake --build cmake-out -j64 --target install
+  cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 
   # Build devtools example runner
   cmake examples/devtools \
@@ -127,7 +127,7 @@ build_core_libraries_and_devtools() {
     -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -Bcmake-out/examples/devtools && \
-  cmake --build cmake-out/examples/devtools -j16 --config Release
+  cmake --build cmake-out/examples/devtools -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 }
 
 run_example_runner() {

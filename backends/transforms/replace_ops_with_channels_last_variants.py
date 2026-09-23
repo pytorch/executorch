@@ -11,6 +11,7 @@ import executorch.backends.transforms.channels_last_ops  # noqa: F401
 
 import torch
 
+from executorch.backends.transforms.channels_last_layout import LAYOUT_PERMUTE_COPY
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -166,7 +167,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
         res = graph.create_node(
             "call_function",
-            target=exir_ops.edge.channels_last.permute_copy.default,
+            target=LAYOUT_PERMUTE_COPY,
             args=(node_input, _NCHW_TO_NHWC_PERM),
         )
         res.meta = {}
@@ -182,7 +183,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
     ):
         output = graph.create_node(
             "call_function",
-            target=exir_ops.edge.channels_last.permute_copy.default,
+            target=LAYOUT_PERMUTE_COPY,
             args=(node_output, _NHWC_TO_NCHW_PERM),
         )
         output.meta = {}

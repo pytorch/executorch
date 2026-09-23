@@ -1,0 +1,15 @@
+base:
+  metadata: '{"get_bos_id": 1, "get_eos_ids":[7]}'
+
+model:
+  use_kv_cache: True
+  enable_dynamic_shape: False
+  dtype_override: fp32
+
+backend:
+  coreml:
+    enabled: True
+    ios: 18
+    enable_state: True
+    preserve_sdpa: True
+    compute_units: cpu_and_ne

@@ -73,9 +73,9 @@ TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::DimOrderType> dim_order,
     std::vector<executorch::aten::StridesType> strides,
     executorch::aten::ScalarType type,
+    executorch::aten::Device device,
     executorch::aten::TensorShapeDynamism dynamism,
-    std::function<void(void*)> deleter,
-    executorch::aten::Device device) {
+    std::function<void(void*)> deleter) {
   const auto dim = sizes.size();
   ET_CHECK_MSG(
       dim_order.empty() || dim_order.size() == dim,
@@ -190,6 +190,7 @@ TensorPtr make_tensor_ptr(
       std::move(dim_order),
       std::move(strides),
       type,
+      executorch::aten::Device(executorch::aten::DeviceType::CPU),
       dynamism,
       // Data is moved into the deleter and is destroyed together with Storage.
       [data = std::move(data)](void*) {});
@@ -228,6 +229,7 @@ TensorPtr clone_tensor_ptr(
         std::move(dim_order),
         std::move(strides),
         type,
+        executorch::aten::Device(executorch::aten::DeviceType::CPU),
         dynamism);
   }
   const auto tensor_type = tensor.scalar_type();
@@ -367,11 +369,11 @@ TensorPtr clone_tensor_ptr_to(
       std::move(dim_order),
       std::move(strides),
       tensor->scalar_type(),
+      target,
       tensor->shape_dynamism(),
       [allocator, target](void* ptr) {
         allocator->deallocate(ptr, target.index());
-      },
-      target);
+      });
 }
 
 #endif // USE_ATEN_LIB

@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-ROCM_VERSION="${ROCM_VERSION:-7.1}"
+ROCM_VERSION="${ROCM_VERSION:-7.2}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
 TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"

@@ -6,6 +6,7 @@
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -162,6 +163,11 @@ def test_two_input_add_buffer_shader_executes(tmp_path):
 
 # Covers the two-input storage-buffer shader path when both inputs are the same tensor.
 # Checks runtime execution matches eager output for the duplicated-input add case.
+@pytest.mark.xfail(
+    sys.platform == "darwin",
+    reason="Model Converter drops duplicated custom-shader descriptor binding",
+    strict=True,
+)
 @common.SkipIfNoModelConverter
 def test_two_input_add_buffer_shader_with_duplicated_input_executes(tmp_path):
     x = torch.randn(256)

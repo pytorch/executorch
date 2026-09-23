@@ -106,8 +106,8 @@ install_pytorch_and_domains() {
   local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
   local torch_release=$(cat version.txt)
   # Download key must match the upload key below (basename of dist/*.whl,
-  # which always carries setup.py's resolved +gitHASH). Branch-ref pins
-  # like `release/2.13` would otherwise produce `+gitrelease` here and
+  # which always carries the build's resolved +gitHASH). Branch-ref pins
+  # like `release/2.14` would otherwise produce `+gitrelease` here and
   # never hit the cache.
   local torch_short_hash=$(git rev-parse --short=7 HEAD)
   local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
@@ -127,18 +127,31 @@ install_pytorch_and_domains() {
   if [[ "${torch_wheel_not_found}" == "1" ]]; then
     echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
 
-    # Install PyTorch's own build-time deps so the source build does not
-    # silently inherit them from whatever else happens to be in the env
-    # (e.g. executorch's requirements-ci.txt).
-    pip install -r requirements-build.txt
     git submodule update --init --recursive
     if [[ "$(uname -m)" == "aarch64" ]]; then
       export BUILD_IGNORE_SVE_UNAVAILABLE=1
     fi
-    USE_DISTRIBUTED=1 python setup.py bdist_wheel
+    # PyTorch dropped setup.py. Build in a throwaway environment that can see the
+    # active one, so its build requirements, which pin a cmake that would be
+    # preferred over the one on PATH, cannot disturb what is installed here.
+    #
+    # Keep in sync with pytorch/pyproject.toml [build-system].requires.
+    local build_venv=/tmp/pytorch-build-venv
+    rm -rf "${build_venv}"
+    python -m venv --system-site-packages "${build_venv}"
+    "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" ninja \
+      "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
+    USE_DISTRIBUTED=1 "${build_venv}/bin/python" -m build --wheel --no-isolation
+    rm -rf "${build_venv}"
     pip install "$(echo dist/*.whl)"
+    # A build with no BLAS succeeds silently, so check rather than assume.
+    (cd / && python -c "
+import torch
+assert torch._C.has_lapack, 'built without LAPACK'
+torch.linalg.qr(torch.randn(4, 4))
+")
 
-    # Invariant: the basename setup.py just produced must match the cache
+    # Invariant: the basename the build just produced must match the cache
     # URL we'd reconstruct on the next run. If they diverge (someone edits
     # torch_wheel_name above, or PyTorch renames its wheels), the cache
     # will silently miss and every macOS run will fall back to a ~30-min
@@ -178,7 +191,7 @@ install_pytorch_and_domains() {
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.28
+  TORCHVISION_VERSION=release/0.29
   export TORCHVISION_VERSION
 
   install_domains

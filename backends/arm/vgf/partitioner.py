@@ -35,6 +35,7 @@ class VgfPartitioner(TOSAPartitioner):
         self.delegation_spec = DelegationSpec(
             VgfBackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
@@ -42,3 +43,4 @@ class VgfPartitioner(TOSAPartitioner):
         self.intermediate_path = compile_spec._get_intermediate_path()
         # Preserve grid_sampler_2d for the VGF custom-lowering path only.
         self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)
+        self._requires_resolved_tensor_shapes = False
