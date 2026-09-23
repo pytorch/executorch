@@ -16,6 +16,7 @@
 
 #include <executorch/backends/native/extension/module/test/TestData.h>
 #include <executorch/backends/native/runtime/MethodMeta.h>
+#include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -306,11 +307,14 @@ TEST_F(
   auto module = make_module(bytes);
 
   ASSERT_EQ(module->set_output(destination), runtime::Error::Ok);
-  expect_values(module->forward(input), 2.0f, 3.0f);
+  const auto published = module->forward(input);
+  expect_values(published, /*first=*/2.0f, /*second=*/3.0f);
+  const runtime::EValue published_view = published->at(0);
   EXPECT_FLOAT_EQ(destination.const_data_ptr<float>()[0], 2.0f);
   engine_state().behavior.fail_get_output = true;
   EXPECT_EQ(module->forward(input).error(), runtime::Error::Internal);
   EXPECT_EQ(module->get_outputs().error(), runtime::Error::InvalidState);
+  EXPECT_FLOAT_EQ(published_view.toTensor().const_data_ptr<float>()[0], 2.0f);
   EXPECT_FLOAT_EQ(destination.const_data_ptr<float>()[0], 2.0f);
 }
 
@@ -373,10 +377,37 @@ TEST_F(NativeModuleExecutionTest, RejectsInvalidInputAndOutputTensors) {
   TensorFactory<ScalarType::Int> ints;
   const auto wrong_shape = floats.zeros({3});
   const auto wrong_dtype = ints.zeros({2});
+  std::array<int32_t, 1> sizes{2};
+  std::array<uint8_t, 1> dim_order{0};
+  std::array<int32_t, 1> non_contiguous_stride{2};
+  std::array<float, 2> data{1.0f, 2.0f};
+  executorch::aten::TensorImpl non_contiguous_impl(
+      ScalarType::Float,
+      /*dim=*/1,
+      sizes.data(),
+      data.data(),
+      dim_order.data(),
+      non_contiguous_stride.data());
+  const executorch::aten::Tensor non_contiguous(&non_contiguous_impl);
+  const runtime::EValue non_tensor(int64_t{1});
   auto module = make_module(bytes);
 
+  EXPECT_EQ(
+      module->set_input(wrong_shape, /*input_index=*/0),
+      runtime::Error::InvalidArgument);
+  EXPECT_EQ(
+      module->set_input(wrong_dtype, /*input_index=*/0),
+      runtime::Error::InvalidArgument);
+  EXPECT_EQ(
+      module->set_input(non_contiguous, /*input_index=*/0),
+      runtime::Error::InvalidArgument);
   EXPECT_EQ(module->set_output(wrong_shape), runtime::Error::InvalidArgument);
   EXPECT_EQ(module->set_output(wrong_dtype), runtime::Error::InvalidArgument);
+  EXPECT_EQ(
+      module->set_output(non_contiguous), runtime::Error::InvalidArgument);
+  EXPECT_EQ(
+      module->set_input(non_tensor, /*input_index=*/0),
+      runtime::Error::InvalidType);
   EXPECT_EQ(module->get_output().error(), runtime::Error::InvalidState);
 }
 
@@ -459,6 +490,7 @@ TEST_F(NativeModuleExecutionTest, PreservesDeclaredOutputLayout) {
       /*num_inputs=*/1,
       /*sizes=*/{2, 3},
       /*bind_missing_constant=*/false,
+      /*version=*/"1.0",
       /*dim_order=*/{1, 0});
   std::array<executorch::aten::SizesType, 2> sizes{2, 3};
   std::array<executorch::aten::DimOrderType, 2> dim_order{1, 0};
@@ -506,6 +538,25 @@ TEST_F(NativeModuleExecutionTest, PreservesDeclaredOutputLayout) {
   EXPECT_EQ(destination, expected);
 }
 
+TEST_F(NativeModuleExecutionTest, AcceptsZeroSizedOutputTensor) {
+  const auto bytes =
+      testing::make_tensor_package("forward", std::vector<int64_t>{0});
+  std::array<int32_t, 1> sizes{0};
+  std::array<uint8_t, 1> dim_order{0};
+  std::array<int32_t, 1> arbitrary_stride{7};
+  executorch::aten::TensorImpl output_impl(
+      ScalarType::Float,
+      /*dim=*/1,
+      sizes.data(),
+      /*data=*/nullptr,
+      dim_order.data(),
+      arbitrary_stride.data());
+  const executorch::aten::Tensor output(&output_impl);
+  auto module = make_module(bytes);
+
+  EXPECT_EQ(module->set_output(output), runtime::Error::Ok);
+}
+
 TEST_F(NativeModuleExecutionTest, SecondHostFactoryIsRejected) {
   EXPECT_EQ(
       internal::register_engine_host_factory(create_another_fake_host),
@@ -518,6 +569,19 @@ TEST_F(NativeModuleExecutionTest, SameHostFactoryCanBeRegisteredAgain) {
       runtime::Error::Ok);
 }
 // cppcheck-suppress-end syntaxError
+
+TEST_F(NativeModuleExecutionTest, MetadataOutlivesMethodUnload) {
+  const auto bytes = testing::make_tensor_package();
+  auto module = make_module(bytes);
+  ASSERT_EQ(module->load_method("forward"), runtime::Error::Ok);
+  const auto metadata = module->method_meta("forward");
+  ASSERT_TRUE(metadata.ok());
+
+  EXPECT_TRUE(module->is_method_loaded("forward"));
+  EXPECT_TRUE(module->unload_method("forward"));
+  EXPECT_STREQ(metadata->name(), "forward");
+  EXPECT_EQ(metadata->num_inputs(), 1);
+}
 
 } // namespace
 } // namespace executorch::extension::native_module

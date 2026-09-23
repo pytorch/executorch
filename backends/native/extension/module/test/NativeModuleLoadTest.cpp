@@ -9,6 +9,8 @@
 #include <executorch/backends/native/extension/module/NativeModule.h>
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <executorch/backends/native/extension/module/test/TestData.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
@@ -18,6 +20,29 @@
 
 namespace executorch::extension::native_module {
 namespace {
+
+class ShortReadLoader final : public runtime::DataLoader {
+ public:
+  explicit ShortReadLoader(std::vector<uint8_t> bytes)
+      : bytes_(std::move(bytes)) {}
+
+  runtime::Result<runtime::FreeableBuffer>
+  load(size_t offset, size_t size, const SegmentInfo&) const override {
+    if (offset > bytes_.size() || size > bytes_.size() - offset) {
+      return runtime::Error::InvalidArgument;
+    }
+    const size_t returned_size = size > 2 ? size - 1 : size;
+    return runtime::FreeableBuffer(
+        bytes_.data() + offset, returned_size, /*free_fn=*/nullptr);
+  }
+
+  runtime::Result<size_t> size() const override {
+    return bytes_.size();
+  }
+
+ private:
+  std::vector<uint8_t> bytes_;
+};
 
 class NativeModuleLoadTest : public ::testing::Test {
  protected:
@@ -107,6 +132,23 @@ TEST_F(NativeModuleLoadTest, Load_ExternalDataLoader_IsRejected) {
           external_data.data(), external_data.size()));
 
   EXPECT_EQ(module.load(), runtime::Error::InvalidArgument);
+  EXPECT_FALSE(module.is_loaded());
+}
+
+TEST_F(NativeModuleLoadTest, Load_UnsupportedVersion_DoesNotPublishState) {
+  const std::vector<uint8_t> bytes =
+      testing::make_tensor_package_with_version("2.0");
+  Module module(std::make_unique<BufferDataLoader>(bytes.data(), bytes.size()));
+
+  EXPECT_EQ(module.load(), runtime::Error::NotSupported);
+  EXPECT_FALSE(module.is_loaded());
+}
+
+TEST_F(NativeModuleLoadTest, Load_ShortDataLoaderRead_DoesNotPublishState) {
+  Module module(
+      std::make_unique<ShortReadLoader>(testing::make_tensor_package()));
+
+  EXPECT_EQ(module.load(), runtime::Error::InvalidProgram);
   EXPECT_FALSE(module.is_loaded());
 }
 

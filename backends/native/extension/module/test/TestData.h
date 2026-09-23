@@ -23,6 +23,7 @@ inline std::vector<uint8_t> make_tensor_package(
     size_t num_inputs = 1,
     const std::vector<int64_t>& sizes = {2},
     bool bind_missing_constant = false,
+    const std::string& version = "1.0",
     const std::vector<int32_t>& dim_order = {}) {
   flatbuffers::FlatBufferBuilder builder;
   std::vector<flatbuffers::Offset<native_backend::Method>> serialized_methods;
@@ -124,7 +125,7 @@ inline std::vector<uint8_t> make_tensor_package(
   }
   const auto methods = builder.CreateVector(serialized_methods);
   const auto program = native_backend::CreateProgram(
-      builder, builder.CreateString("1.0"), methods);
+      builder, builder.CreateString(version), methods);
   native_backend::FinishProgramBuffer(builder, program);
 
   std::vector<uint8_t> program_bytes(
@@ -178,6 +179,16 @@ inline std::vector<uint8_t> make_tensor_package_with_bad_constant_checksum() {
 inline std::vector<uint8_t> make_missing_constant_package() {
   return make_tensor_package(
       {"forward"}, /*num_inputs=*/1, {2}, /*bind_missing_constant=*/true);
+}
+
+inline std::vector<uint8_t> make_tensor_package_with_version(
+    const std::string& version) {
+  return make_tensor_package(
+      {"forward"},
+      /*num_inputs=*/1,
+      {2},
+      /*bind_missing_constant=*/false,
+      version);
 }
 
 inline std::vector<uint8_t> make_tensor_package(
