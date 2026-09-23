@@ -187,6 +187,7 @@ from .normalize_max_pool2d_input_rank_pass import (  # noqa
     NormalizeMaxPool2dInputRankPass,
 )
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
+from .prepare_gather_indices_pass import PrepareGatherIndicesPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .propagate_view_copy_permute_pass import (  # noqa
     PropagateViewCopyPermuteDownPass,
