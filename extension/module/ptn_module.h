@@ -25,7 +25,15 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/executor/program.h>
 
-namespace executorch::extension::native_module::internal {
+#ifndef ET_PTN_MODULE_NAMESPACE
+#ifdef USE_ATEN_LIB
+#define ET_PTN_MODULE_NAMESPACE native_module::aten
+#else // !USE_ATEN_LIB
+#define ET_PTN_MODULE_NAMESPACE native_module
+#endif // USE_ATEN_LIB
+#endif // ET_PTN_MODULE_NAMESPACE
+
+namespace executorch::extension::ET_PTN_MODULE_NAMESPACE::internal {
 
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
@@ -90,12 +98,12 @@ struct PtnHooks {
 runtime::Error register_ptn_hooks(const PtnHooks& hooks);
 const PtnHooks* get_ptn_hooks();
 
-} // namespace executorch::extension::native_module::internal
+} // namespace executorch::extension::ET_PTN_MODULE_NAMESPACE::internal
 
-namespace executorch::extension::native_module {
+namespace executorch::extension::ET_PTN_MODULE_NAMESPACE {
 
 runtime::Result<std::unique_ptr<internal::PtnModule>> load_ptn(
     const internal::PtnSource& source,
     internal::Program::Verification verification);
 
-} // namespace executorch::extension::native_module
+} // namespace executorch::extension::ET_PTN_MODULE_NAMESPACE

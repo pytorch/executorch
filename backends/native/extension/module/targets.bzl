@@ -1,6 +1,5 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
-    "ANDROID",
     "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -80,7 +79,7 @@ def define_common_targets(is_fbcode = False):
                 "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             },
             # The exported model is produced by a host-only target.
-            platforms = [CXX, ANDROID],
+            platforms = [CXX],
             deps = [
                 ":module_ptn",
                 "//executorch/backends/native/runtime:native_graph_schema",
