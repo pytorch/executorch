@@ -23,24 +23,9 @@ class Tokenizer;
 
 namespace kev {
 
-// Borrows the Module and tokenizer, which must outlive it. Calls must be
-// serialized per Module, including calls through the prefix API below.
-class Kev final : public SystemOne {
- public:
-  Kev(executorch::extension::Module& module,
-      const tokenizers::Tokenizer& tokenizer);
+class Kev;
 
-  executorch::runtime::Result<Answers> system_one(
-      const std::string& state,
-      const Questions& questions) override;
-
- private:
-  executorch::extension::Module& module_;
-  const tokenizers::Tokenizer& tokenizer_;
-};
-
-// Owns the prefix tensors; borrows the Module and tokenizer, which must outlive
-// it. Prefixes can coexist. Call sequentially per Module, including prefill.
+// Owns the snapshot. The Kev instance that created it must outlive it.
 class Prefix {
  public:
   Prefix(Prefix&&) = default;
@@ -48,16 +33,9 @@ class Prefix {
 
  private:
   Prefix() = default;
-  friend executorch::runtime::Result<Prefix> prefill(
-      executorch::extension::Module&,
-      const tokenizers::Tokenizer&,
-      const std::string&);
-  friend executorch::runtime::Result<Answers> evaluate(
-      const Prefix&,
-      const Questions&);
+  friend class Kev;
 
-  executorch::extension::Module* module_ = nullptr;
-  const tokenizers::Tokenizer* tokenizer_ = nullptr;
+  const Kev* owner_ = nullptr;
   std::array<executorch::extension::TensorPtr, 3> state_;
   std::array<int64_t, 5> special_{};
   int64_t pad_id_ = 0;
@@ -67,16 +45,28 @@ class Prefix {
   size_t max_options_ = 0;
 };
 
-executorch::runtime::Result<Prefix> prefill(
-    executorch::extension::Module& module,
-    const tokenizers::Tokenizer& tokenizer,
-    const std::string& state);
+// Borrows the Module and tokenizer, which must outlive it. All calls must be
+// serialized per Module. Multiple prefixes may coexist.
+class Kev final : public SystemOne {
+ public:
+  Kev(executorch::extension::Module& module,
+      const tokenizers::Tokenizer& tokenizer);
 
-// Every question starts from the same prefix. This call leaves it unchanged;
-// later calls can ask different questions. Answers own their values.
-// Requests are split into the program's batch limit and retain their order.
-executorch::runtime::Result<Answers> evaluate(
-    const Prefix& prefix,
-    const Questions& questions);
+  executorch::runtime::Result<Answers> system_one(
+      const std::string& state,
+      const Questions& questions) override;
+
+  executorch::runtime::Result<Prefix> prefill(const std::string& state);
+
+  // Uses a prefix from this instance, leaving it unchanged. Answers own their
+  // values. Requests are split into the program's batch limit and retain order.
+  executorch::runtime::Result<Answers> evaluate(
+      const Prefix& prefix,
+      const Questions& questions);
+
+ private:
+  executorch::extension::Module& module_;
+  const tokenizers::Tokenizer& tokenizer_;
+};
 
 } // namespace kev

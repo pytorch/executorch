@@ -31,6 +31,7 @@ int main(int argc, char** argv) {
     std::cerr << "Cannot load tokenizer.json\n";
     return 1;
   }
+  kev::Kev model(module, tokenizer);
   const std::string state = argc == 4
       ? argv[3]
       : "I was charged twice for invoice 4411. Please refund the duplicate charge.";
@@ -52,14 +53,14 @@ int main(int argc, char** argv) {
   std::array<double, runs> prefill_times{}, evaluation_times{}, total_times{};
   for (int i = 0; i < warmups + runs; ++i) {
     const auto start = Clock::now();
-    auto prefix = kev::prefill(module, tokenizer, state);
+    auto prefix = model.prefill(state);
     if (!prefix.ok()) {
       std::cerr << executorch::runtime::to_string(prefix.error()) << '\n';
       return 1;
     }
     const auto prefilled = Clock::now();
     for (const auto& questions : batches) {
-      auto answers = kev::evaluate(*prefix, questions);
+      auto answers = model.evaluate(*prefix, questions);
       if (!answers.ok()) {
         std::cerr << executorch::runtime::to_string(answers.error()) << '\n';
         return 1;

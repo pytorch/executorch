@@ -139,11 +139,11 @@ cmake-out/kev-cpu/kev_benchmark kev-cpu-bf16/model.pte kev-cpu-bf16/tokenizer.js
 It returns ExecuTorch's `Result<Answers>`. [kev.h](kev.h) provides `Kev`,
 which implements this interface and borrows a `Module` and tokenizer.
 
-For explicit prefix reuse, `kev.h` also exposes
-`prefill(module, tokenizer, state)` and `evaluate(prefix, questions)`.
-`Prefix` owns its snapshot and borrows the `Module` and tokenizer. These must
-outlive the `Kev` instance and prefixes. Multiple prefixes may coexist; all calls
-must be serialized per `Module`.
+For explicit prefix reuse, `Kev` also provides `prefill(state)` and
+`evaluate(prefix, questions)`. `Prefix` owns its snapshot and must be used with
+the `Kev` instance that created it. The instance must outlive its prefixes, and
+the `Module` and tokenizer must outlive the instance. Multiple prefixes may
+coexist; all calls must be serialized per `Module`.
 
 Each question starts from the same snapshot. Evaluation leaves it unchanged,
 so later calls can ask different questions. Answers own their labels and scores.
@@ -174,7 +174,26 @@ auto answers = api.system_one(state, questions);
 ```
 
 Each `system_one` call prefills the supplied state and evaluates its questions.
-Use the prefix API, as in `benchmark.cpp`, to share a snapshot across calls.
+For multiple requests about the same state, reuse a prefix:
+
+```cpp
+auto prefix = model.prefill(state);
+if (!prefix.ok()) {
+  return 1;
+}
+auto answers = model.evaluate(*prefix, questions);
+if (!answers.ok()) {
+  return 1;
+}
+auto followup = model.evaluate(*prefix, {
+    {"duplicate", kev::Noul{"Was the customer charged more than once?", {}}}});
+if (!followup.ok()) {
+  return 1;
+}
+```
+
+Both calls use the same unchanged snapshot. See [benchmark.cpp](benchmark.cpp)
+for a complete example with timing.
 
 Text fields accept UTF-8 strings; structured content can be rendered to text
 before calling this native interface. Instructions may be empty. Choice

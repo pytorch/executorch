@@ -131,30 +131,26 @@ Kev::Kev(Module& module, const tokenizers::Tokenizer& tokenizer)
 Result<Answers> Kev::system_one(
     const std::string& state,
     const Questions& questions) {
-  ET_ASSIGN_OR_RETURN(prefix, prefill(module_, tokenizer_, state));
+  ET_ASSIGN_OR_RETURN(prefix, prefill(state));
   return evaluate(prefix, questions);
 }
 
-Result<Prefix> prefill(
-    Module& module,
-    const tokenizers::Tokenizer& tokenizer,
-    const std::string& state) {
-  ET_ASSIGN_OR_RETURN(version, metadata(module, "get_kev_version"));
+Result<Prefix> Kev::prefill(const std::string& state) {
+  ET_ASSIGN_OR_RETURN(version, metadata(module_, "get_kev_version"));
   ET_CHECK_OR_RETURN_ERROR(
       version == 1, InvalidProgram, "Expected a Kev export");
-  ET_ASSIGN_OR_RETURN(max_prefix, metadata(module, "get_max_prefix"));
-  ET_ASSIGN_OR_RETURN(max_context, metadata(module, "get_max_context"));
-  ET_ASSIGN_OR_RETURN(max_questions, metadata(module, "get_max_questions"));
-  ET_ASSIGN_OR_RETURN(max_options, metadata(module, "get_max_options"));
-  ET_ASSIGN_OR_RETURN(pad_id, metadata(module, "get_pad_id"));
+  ET_ASSIGN_OR_RETURN(max_prefix, metadata(module_, "get_max_prefix"));
+  ET_ASSIGN_OR_RETURN(max_context, metadata(module_, "get_max_context"));
+  ET_ASSIGN_OR_RETURN(max_questions, metadata(module_, "get_max_questions"));
+  ET_ASSIGN_OR_RETURN(max_options, metadata(module_, "get_max_options"));
+  ET_ASSIGN_OR_RETURN(pad_id, metadata(module_, "get_pad_id"));
   ET_CHECK_OR_RETURN_ERROR(
       max_prefix > 0 && max_context > max_prefix && max_questions > 0 &&
           max_options > 0 && max_options <= 255,
       InvalidProgram,
       "Invalid Kev limits");
   Prefix prefix;
-  prefix.module_ = &module;
-  prefix.tokenizer_ = &tokenizer;
+  prefix.owner_ = this;
   prefix.max_context_ = max_context;
   prefix.max_questions_ = max_questions;
   prefix.max_options_ = max_options;
@@ -167,8 +163,8 @@ Result<Prefix> prefill(
       "<|fim_suffix|>"};
   for (size_t i = 0; i < special_tokens.size(); ++i) {
     const auto name = "get_special_" + std::to_string(i);
-    ET_ASSIGN_OR_RETURN(id, metadata(module, name.c_str()));
-    const auto encoded = tokenizer.encode(special_tokens[i]);
+    ET_ASSIGN_OR_RETURN(id, metadata(module_, name.c_str()));
+    const auto encoded = tokenizer_.encode(special_tokens[i]);
     ET_CHECK_OR_RETURN_ERROR(
         encoded.ok() && encoded->size() == 1 && encoded->front() == id,
         InvalidExternalData,
@@ -176,7 +172,7 @@ Result<Prefix> prefill(
         special_tokens[i]);
     prefix.special_[i] = id;
   }
-  ET_ASSIGN_OR_RETURN(tokens, user_tokens(tokenizer, state));
+  ET_ASSIGN_OR_RETURN(tokens, user_tokens(tokenizer_, state));
   tokens.insert(tokens.begin(), prefix.special_[0]);
   ET_CHECK_OR_RETURN_ERROR(
       tokens.size() <= static_cast<size_t>(max_prefix),
@@ -189,7 +185,7 @@ Result<Prefix> prefill(
       tokens.data(),
       {1, static_cast<int32_t>(tokens.size())},
       ScalarType::Long);
-  auto outputs = module.execute("prefill", input);
+  auto outputs = module_.execute("prefill", input);
   if (!outputs.ok()) {
     return outputs.error();
   }
@@ -218,10 +214,15 @@ Result<Prefix> prefill(
   return prefix;
 }
 
-Result<Answers> evaluate(const Prefix& prefix, const Questions& questions) {
+Result<Answers> Kev::evaluate(
+    const Prefix& prefix,
+    const Questions& questions) {
   ET_CHECK_OR_RETURN_ERROR(
-      prefix.module_ && prefix.tokenizer_ && prefix.state_[0] &&
-          prefix.state_[1] && prefix.state_[2],
+      prefix.owner_ == this,
+      InvalidArgument,
+      "Prefix belongs to a different Kev instance");
+  ET_CHECK_OR_RETURN_ERROR(
+      prefix.state_[0] && prefix.state_[1] && prefix.state_[2],
       InvalidArgument,
       "Invalid or moved prefix");
   ET_CHECK_OR_RETURN_ERROR(
@@ -265,12 +266,12 @@ Result<Answers> evaluate(const Prefix& prefix, const Questions& questions) {
     const auto& text = std::visit(
         [](const auto& q) -> const std::string& { return q.instructions; },
         question);
-    ET_ASSIGN_OR_RETURN(instructions, user_tokens(*prefix.tokenizer_, text));
+    ET_ASSIGN_OR_RETURN(instructions, user_tokens(tokenizer_, text));
     Row row{{prefix.special_[1]}, {}};
     row.tokens.insert(
         row.tokens.end(), instructions.begin(), instructions.end());
     for (const auto& option : options) {
-      ET_ASSIGN_OR_RETURN(tokens, user_tokens(*prefix.tokenizer_, option));
+      ET_ASSIGN_OR_RETURN(tokens, user_tokens(tokenizer_, option));
       row.tokens.push_back(prefix.special_[2]);
       row.tokens.insert(row.tokens.end(), tokens.begin(), tokens.end());
       row.options.push_back(row.tokens.size());
@@ -319,7 +320,7 @@ Result<Answers> evaluate(const Prefix& prefix, const Questions& questions) {
         options.data(),
         {batch, static_cast<int32_t>(max_options)},
         ScalarType::Long);
-    auto outputs = prefix.module_->execute(
+    auto outputs = module_.execute(
         "score",
         {input,
          decide_input,
