@@ -75,11 +75,20 @@ For MLX, use macOS 14+ with Xcode's Metal compiler installed:
 ```bash
 cmake -S examples/kev -B cmake-out/kev-mlx \
   -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE="$(command -v python)" \
-  -DEXECUTORCH_BUILD_MLX=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+  -DEXECUTORCH_BUILD_MLX=ON
 cmake --build cmake-out/kev-mlx --target kev_runner --parallel 8
 
 cmake-out/kev-mlx/kev_runner kev-mlx/model.pte kev-mlx/tokenizer.json
 ```
+
+Fresh MLX builds default to a 26.2 deployment target on macOS 26.2+ and 14.0
+on older systems. With macOS SDK 26.2+ and Metal 4, the 26.2 target includes
+MLX's NAX matrix kernels for M5; the same binary uses standard kernels on M1–M4.
+To ship a build from a newer Mac to macOS 14+, set
+`-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0`; this excludes NAX kernels.
+An explicit target, including `MACOSX_DEPLOYMENT_TARGET` in the environment,
+takes precedence. Existing CMake build directories retain their cached target;
+pass `-DCMAKE_OSX_DEPLOYMENT_TARGET=26.2` to update a previous 14.0 build.
 
 CMake copies `mlx.metallib` beside each MLX executable; ship it with the binary.
 The optional `TEXT` argument replaces the bundled customer message.

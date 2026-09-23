@@ -5,6 +5,21 @@
 # LICENSE file in the root directory of this source tree.
 
 cmake_minimum_required(VERSION 3.24)
+if(EXECUTORCH_BUILD_MLX
+   AND CMAKE_HOST_APPLE
+   AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET
+   AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET}
+)
+  cmake_host_system_information(RESULT _kev_macos_version QUERY OS_RELEASE)
+  set(_kev_deployment_target 14.0)
+  if(_kev_macos_version VERSION_GREATER_EQUAL 26.2)
+    set(_kev_deployment_target 26.2)
+  endif()
+  set(CMAKE_OSX_DEPLOYMENT_TARGET
+      ${_kev_deployment_target}
+      CACHE STRING "Minimum macOS version"
+  )
+endif()
 project(kev LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
