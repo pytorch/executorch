@@ -52,12 +52,15 @@ if(EXECUTORCH_BUILD_MLX)
 endif()
 
 add_executable(kev_runner main.cpp)
-target_link_libraries(kev_runner PRIVATE kev)
-if(EXECUTORCH_BUILD_MLX)
-  add_custom_command(
-    TARGET kev_runner
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MLX_METALLIB_PATH}
-            $<TARGET_FILE_DIR:kev_runner>/mlx.metallib
-  )
-endif()
+add_executable(kev_benchmark benchmark.cpp)
+foreach(target kev_runner kev_benchmark)
+  target_link_libraries(${target} PRIVATE kev)
+  if(EXECUTORCH_BUILD_MLX)
+    add_custom_command(
+      TARGET ${target}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MLX_METALLIB_PATH}
+              $<TARGET_FILE_DIR:${target}>/mlx.metallib
+    )
+  endif()
+endforeach()

@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import hashlib
 import math
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from torch.export import Dim
 
 def export_model(backbone, head, limits, metadata):
     max_prefix, max_context, max_questions, max_options = limits
+    sample_prefix = min(3, max_prefix)
     first_linear = next(
         layer.linear_attn
         for layer in backbone.layers
@@ -50,11 +52,11 @@ def export_model(backbone, head, limits, metadata):
         2,
         1,
         first_full.config.num_key_value_heads,
-        3,
+        sample_prefix,
         first_full.head_dim,
         dtype=dtype,
     )
-    prefix_dim = Dim("prefix", min=1, max=max_prefix)
+    prefix_dim = Dim("prefix", min=1, max=max_prefix) if max_prefix > 1 else Dim.STATIC
     question_dim = Dim("questions", min=1, max=max_questions)
     option_dim = Dim("options", min=1, max=max_options)
     branch_dim = Dim("branch", min=2, max=max_context - 1)
@@ -62,7 +64,7 @@ def export_model(backbone, head, limits, metadata):
         programs = {
             "prefill": torch.export.export(
                 Prefill(backbone).eval(),
-                (torch.zeros(1, 3, dtype=torch.long),),
+                (torch.zeros(1, sample_prefix, dtype=torch.long),),
                 dynamic_shapes=({1: prefix_dim},),
                 strict=True,
             ),
@@ -124,8 +126,24 @@ def main():
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--backend", choices=("xnnpack", "mlx"), required=True)
     parser.add_argument("--dtype", choices=("fp32", "bf16"), default="bf16")
+    parser.add_argument(
+        "--max-prefix",
+        type=int,
+        default=MAX_STATE,
+        help="Maximum state tokens, including the state delimiter (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--max-context",
+        type=int,
+        default=MAX_BRANCH,
+        help="Maximum tokens for the prefix plus one question (default: %(default)s)",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if not 1 <= args.max_prefix < args.max_context <= 2**31 - 1 or args.max_context < 6:
+        parser.error(
+            "Require 1 <= max-prefix < max-context <= 2147483647 and max-context >= 6"
+        )
     checkpoint = Checkpoint(args.checkpoint)
     if (
         checkpoint.meta.option_isolation
@@ -142,7 +160,7 @@ def main():
     dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
     tokenizer, model = checkpoint.load("cpu", LoadOptions(dtype=dtype, attn="sdpa"))
     backbone = Backbone(model.lm, args.backend).eval()
-    limits = (MAX_STATE, MAX_BRANCH, 8, 255)
+    limits = (args.max_prefix, args.max_context, 8, 255)
     metadata = dict(
         zip(
             (
@@ -154,7 +172,13 @@ def main():
             limits,
         )
     )
-    metadata.update(get_kev_version=1, get_pad_id=model.pad_id)
+    metadata.update(
+        get_kev_version=1,
+        get_pad_id=model.pad_id,
+        get_temperature=float(model.head.temperature),
+        get_checkpoint_id="sha256:"
+        + hashlib.sha256(checkpoint.file("head.pt").read_bytes()).hexdigest(),
+    )
     for index, token in enumerate(SPECIAL):
         metadata[f"get_special_{index}"] = tokenizer.convert_tokens_to_ids(token)
     program = export_model(backbone, model.head, limits, metadata)

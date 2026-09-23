@@ -28,20 +28,18 @@ using executorch::runtime::Result;
 
 namespace {
 
-Result<OptionScores> score_options(std::vector<double> logits) {
-  if (logits.empty() ||
-      !std::all_of(logits.begin(), logits.end(), [](double x) {
+Result<std::vector<double>> probabilities(const float* logits, size_t count) {
+  if (count == 0 || !std::all_of(logits, logits + count, [](float x) {
         return std::isfinite(x);
       })) {
-    return Error::InvalidArgument;
+    return Error::InvalidExternalData;
   }
-  const auto best = std::max_element(logits.begin(), logits.end());
-  const auto selected = static_cast<size_t>(best - logits.begin());
+  const double best = *std::max_element(logits, logits + count);
   std::vector<double> probabilities;
-  probabilities.reserve(logits.size());
+  probabilities.reserve(count);
   double total = 0;
-  for (const auto logit : logits) {
-    probabilities.push_back(std::exp(logit - *best));
+  for (size_t i = 0; i < count; ++i) {
+    probabilities.push_back(std::exp(static_cast<double>(logits[i]) - best));
     total += probabilities.back();
   }
   std::transform(
@@ -49,7 +47,40 @@ Result<OptionScores> score_options(std::vector<double> logits) {
       probabilities.end(),
       probabilities.begin(),
       [total](double probability) { return probability / total; });
-  return OptionScores{std::move(logits), std::move(probabilities), selected};
+  return probabilities;
+}
+
+Result<Answer>
+make_answer(const Question& question, const float* logits, size_t count) {
+  ET_ASSIGN_OR_RETURN(p, probabilities(logits, count));
+  const auto selected =
+      static_cast<size_t>(std::max_element(p.begin(), p.end()) - p.begin());
+  if (const auto* choice = std::get_if<Choice>(&question)) {
+    ChoiceAnswer answer{choice->criteria[selected].first, {}, 1.0};
+    for (size_t j = 0; j < p.size(); ++j) {
+      answer.probabilities.emplace(choice->criteria[j].first, p[j]);
+    }
+    if (p.size() > 1) {
+      const double uniform = 1.0 / p.size();
+      answer.confidence = (p[selected] - uniform) / (1.0 - uniform);
+    }
+    return Answer{std::move(answer)};
+  } else if (std::holds_alternative<Noul>(question)) {
+    return Answer{NoulAnswer{p[1]}};
+  } else {
+    const auto& score = std::get<Score>(question);
+    ScoreAnswer answer{0.0, score.criteria, std::move(p), 1.0};
+    double distance = 0.0;
+    for (size_t j = 0; j < count; ++j) {
+      answer.score += j * answer.probabilities[j];
+      distance +=
+          answer.probabilities[j] * std::abs(static_cast<double>(j) - selected);
+    }
+    if (count > 1) {
+      answer.confidence = 1.0 - distance / (count - 1);
+    }
+    return Answer{std::move(answer)};
+  }
 }
 
 Result<int64_t> metadata(Module& module, const char* name) {
@@ -93,6 +124,16 @@ struct Row {
 };
 
 } // namespace
+
+Kev::Kev(Module& module, const tokenizers::Tokenizer& tokenizer)
+    : module_(module), tokenizer_(tokenizer) {}
+
+Result<Answers> Kev::system_one(
+    const std::string& state,
+    const Questions& questions) {
+  ET_ASSIGN_OR_RETURN(prefix, prefill(module_, tokenizer_, state));
+  return evaluate(prefix, questions);
+}
 
 Result<Prefix> prefill(
     Module& module,
@@ -177,48 +218,59 @@ Result<Prefix> prefill(
   return prefix;
 }
 
-Result<std::vector<Answer>> evaluate(
-    const Prefix& prefix,
-    const std::vector<Question>& questions) {
+Result<Answers> evaluate(const Prefix& prefix, const Questions& questions) {
   ET_CHECK_OR_RETURN_ERROR(
       prefix.module_ && prefix.tokenizer_ && prefix.state_[0] &&
           prefix.state_[1] && prefix.state_[2],
       InvalidArgument,
       "Invalid or moved prefix");
   ET_CHECK_OR_RETURN_ERROR(
-      !questions.empty() && questions.size() <= prefix.max_questions_,
-      InvalidArgument,
-      "Provide 1-%zu questions",
-      prefix.max_questions_);
+      !questions.empty(), InvalidArgument, "Provide at least one question");
   std::vector<Row> rows;
+  rows.reserve(questions.size());
   std::unordered_set<std::string> ids;
-  size_t max_length = 0, max_options = 0;
-  for (const auto& question : questions) {
+  for (const auto& [id, question] : questions) {
     ET_CHECK_OR_RETURN_ERROR(
-        !question.id.empty() && ids.insert(question.id).second &&
-            question.instructions.find_first_not_of(" \t\n\r\f\v") !=
-                std::string::npos &&
-            !question.options.empty() &&
-            question.options.size() <= prefix.max_options_,
+        ids.insert(id).second, InvalidArgument, "Question IDs must be unique");
+    std::vector<std::string> options;
+    if (const auto* choice = std::get_if<Choice>(&question)) {
+      std::unordered_set<std::string> names;
+      for (const auto& [name, description] : choice->criteria) {
+        ET_CHECK_OR_RETURN_ERROR(
+            names.insert(name).second,
+            InvalidArgument,
+            "Choice criteria names must be unique");
+        options.push_back(name);
+        if (description && !description->empty()) {
+          options.back() += ": " + *description;
+        }
+      }
+    } else if (const auto* noul = std::get_if<Noul>(&question)) {
+      for (const auto outcome : {NoulOutcome::False, NoulOutcome::True}) {
+        options.emplace_back(outcome == NoulOutcome::True ? "yes" : "no");
+        const auto description = noul->criteria.find(outcome);
+        if (description != noul->criteria.end() &&
+            !description->second.empty()) {
+          options.back() += ": " + description->second;
+        }
+      }
+    } else {
+      options = std::get<Score>(question).criteria;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        !options.empty() && options.size() <= prefix.max_options_,
         InvalidArgument,
-        "Question requires a unique ID, instructions, and 1-%zu options",
+        "Question requires 1-%zu criteria",
         prefix.max_options_);
-    ET_ASSIGN_OR_RETURN(
-        instructions, user_tokens(*prefix.tokenizer_, question.instructions));
+    const auto& text = std::visit(
+        [](const auto& q) -> const std::string& { return q.instructions; },
+        question);
+    ET_ASSIGN_OR_RETURN(instructions, user_tokens(*prefix.tokenizer_, text));
     Row row{{prefix.special_[1]}, {}};
     row.tokens.insert(
         row.tokens.end(), instructions.begin(), instructions.end());
-    std::unordered_set<std::string> labels;
-    for (const auto& option : question.options) {
-      ET_CHECK_OR_RETURN_ERROR(
-          !option.label.empty() && labels.insert(option.label).second,
-          InvalidArgument,
-          "Option labels must be nonempty and unique");
-      std::string text = option.label;
-      if (option.description && !option.description->empty()) {
-        text += ": " + *option.description;
-      }
-      ET_ASSIGN_OR_RETURN(tokens, user_tokens(*prefix.tokenizer_, text));
+    for (const auto& option : options) {
+      ET_ASSIGN_OR_RETURN(tokens, user_tokens(*prefix.tokenizer_, option));
       row.tokens.push_back(prefix.special_[2]);
       row.tokens.insert(row.tokens.end(), tokens.begin(), tokens.end());
       row.options.push_back(row.tokens.size());
@@ -229,71 +281,75 @@ Result<std::vector<Answer>> evaluate(
         row.tokens.size() <= prefix.max_context_ - prefix.length_,
         InvalidArgument,
         "Question '%s' exceeds the %zu-token context limit",
-        question.id.c_str(),
+        id.c_str(),
         prefix.max_context_);
-    max_length = std::max(max_length, row.tokens.size());
-    max_options = std::max(max_options, row.options.size());
     rows.push_back(std::move(row));
   }
-  const auto batch = static_cast<int32_t>(rows.size());
-  std::vector<int64_t> tokens(rows.size() * max_length, prefix.pad_id_);
-  std::vector<int64_t> options(rows.size() * max_options, 0);
-  std::vector<int64_t> decide(rows.size());
-  for (size_t i = 0; i < rows.size(); ++i) {
-    std::copy(
-        rows[i].tokens.begin(),
-        rows[i].tokens.end(),
-        tokens.begin() + i * max_length);
-    std::copy(
-        rows[i].options.begin(),
-        rows[i].options.end(),
-        options.begin() + i * max_options);
-    decide[i] = rows[i].tokens.size() - 1;
-  }
-  auto input = from_blob(
-      tokens.data(),
-      {batch, static_cast<int32_t>(max_length)},
-      ScalarType::Long);
-  auto decide_input = from_blob(decide.data(), {batch}, ScalarType::Long);
-  auto option_input = from_blob(
-      options.data(),
-      {batch, static_cast<int32_t>(max_options)},
-      ScalarType::Long);
-  auto outputs = prefix.module_->execute(
-      "score",
-      {input,
-       decide_input,
-       option_input,
-       prefix.state_[0],
-       prefix.state_[1],
-       prefix.state_[2]});
-  if (!outputs.ok()) {
-    return outputs.error();
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      outputs->size() == 1 && outputs->front().isTensor(),
-      InvalidProgram,
-      "Expected Kev pointer logits");
-  const auto& logits = outputs->front().toTensor();
-  ET_CHECK_OR_RETURN_ERROR(
-      logits.scalar_type() == ScalarType::Float && logits.dim() == 2 &&
-          logits.size(0) == batch && logits.size(1) == max_options &&
-          logits.strides()[1] == 1,
-      InvalidProgram,
-      "Expected float logits with shape [questions, options]");
-  std::vector<Answer> answers;
-  for (size_t i = 0; i < questions.size(); ++i) {
-    const auto* begin =
-        logits.const_data_ptr<float>() + i * logits.strides()[0];
-    auto scores = score_options({begin, begin + questions[i].options.size()});
-    if (!scores.ok()) {
-      return Error::InvalidExternalData;
+  Answers answers;
+  answers.reserve(questions.size());
+  for (size_t start = 0; start < rows.size();) {
+    const auto count = std::min(prefix.max_questions_, rows.size() - start);
+    size_t max_length = 0, max_options = 0;
+    for (size_t i = start; i < start + count; ++i) {
+      max_length = std::max(max_length, rows[i].tokens.size());
+      max_options = std::max(max_options, rows[i].options.size());
     }
-    Answer answer{questions[i].id, {}, std::move(*scores)};
-    for (const auto& option : questions[i].options) {
-      answer.labels.push_back(option.label);
+    const auto batch = static_cast<int32_t>(count);
+    std::vector<int64_t> tokens(count * max_length, prefix.pad_id_);
+    std::vector<int64_t> options(count * max_options, 0);
+    std::vector<int64_t> decide(count);
+    for (size_t i = 0; i < count; ++i) {
+      const auto& row = rows[start + i];
+      std::copy(
+          row.tokens.begin(),
+          row.tokens.end(),
+          tokens.begin() + i * max_length);
+      std::copy(
+          row.options.begin(),
+          row.options.end(),
+          options.begin() + i * max_options);
+      decide[i] = row.tokens.size() - 1;
     }
-    answers.push_back(std::move(answer));
+    auto input = from_blob(
+        tokens.data(),
+        {batch, static_cast<int32_t>(max_length)},
+        ScalarType::Long);
+    auto decide_input = from_blob(decide.data(), {batch}, ScalarType::Long);
+    auto option_input = from_blob(
+        options.data(),
+        {batch, static_cast<int32_t>(max_options)},
+        ScalarType::Long);
+    auto outputs = prefix.module_->execute(
+        "score",
+        {input,
+         decide_input,
+         option_input,
+         prefix.state_[0],
+         prefix.state_[1],
+         prefix.state_[2]});
+    if (!outputs.ok()) {
+      return outputs.error();
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        outputs->size() == 1 && outputs->front().isTensor(),
+        InvalidProgram,
+        "Expected Kev pointer logits");
+    const auto& logits = outputs->front().toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        logits.scalar_type() == ScalarType::Float && logits.dim() == 2 &&
+            logits.size(0) == batch && logits.size(1) == max_options &&
+            logits.strides()[1] == 1,
+        InvalidProgram,
+        "Expected float logits with shape [questions, options]");
+    for (size_t i = 0; i < count; ++i) {
+      const auto& [id, question] = questions[start + i];
+      const auto* begin =
+          logits.const_data_ptr<float>() + i * logits.strides()[0];
+      ET_ASSIGN_OR_RETURN(
+          answer, make_answer(question, begin, rows[start + i].options.size()));
+      answers.emplace_back(id, std::move(answer));
+    }
+    start += count;
   }
   return answers;
 }

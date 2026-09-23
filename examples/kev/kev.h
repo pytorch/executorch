@@ -13,9 +13,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <string>
-#include <vector>
+
+#include "api.h"
 
 namespace tokenizers {
 class Tokenizer;
@@ -23,27 +23,20 @@ class Tokenizer;
 
 namespace kev {
 
-struct Option {
-  std::string label;
-  std::optional<std::string> description;
-};
+// Borrows the Module and tokenizer, which must outlive it. Calls must be
+// serialized per Module, including calls through the prefix API below.
+class Kev final : public SystemOne {
+ public:
+  Kev(executorch::extension::Module& module,
+      const tokenizers::Tokenizer& tokenizer);
 
-struct Question {
-  std::string id;
-  std::string instructions;
-  std::vector<Option> options;
-};
+  executorch::runtime::Result<Answers> system_one(
+      const std::string& state,
+      const Questions& questions) override;
 
-struct OptionScores {
-  std::vector<double> logits;
-  std::vector<double> probabilities;
-  size_t selected_index;
-};
-
-struct Answer {
-  std::string question_id;
-  std::vector<std::string> labels;
-  OptionScores scores;
+ private:
+  executorch::extension::Module& module_;
+  const tokenizers::Tokenizer& tokenizer_;
 };
 
 // Owns the prefix tensors; borrows the Module and tokenizer, which must outlive
@@ -59,9 +52,9 @@ class Prefix {
       executorch::extension::Module&,
       const tokenizers::Tokenizer&,
       const std::string&);
-  friend executorch::runtime::Result<std::vector<Answer>> evaluate(
+  friend executorch::runtime::Result<Answers> evaluate(
       const Prefix&,
-      const std::vector<Question>&);
+      const Questions&);
 
   executorch::extension::Module* module_ = nullptr;
   const tokenizers::Tokenizer* tokenizer_ = nullptr;
@@ -81,8 +74,9 @@ executorch::runtime::Result<Prefix> prefill(
 
 // Every question starts from the same prefix. This call leaves it unchanged;
 // later calls can ask different questions. Answers own their values.
-executorch::runtime::Result<std::vector<Answer>> evaluate(
+// Requests are split into the program's batch limit and retain their order.
+executorch::runtime::Result<Answers> evaluate(
     const Prefix& prefix,
-    const std::vector<Question>& questions);
+    const Questions& questions);
 
 } // namespace kev
