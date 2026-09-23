@@ -239,6 +239,66 @@ def test_add_tensor_tosa_INT_2(test_data: input_t2):
     pipeline.run()
 
 
+# --- Equal non-simple IFM scale Add on Ethos-U55 -------------------------------
+# When both operands of an Add/Sub share one *equal* non-simple (non-power-of-2)
+# scale, the Ethos-U55 equal-scale code path writes both scales into 16-bit OPA/OPB
+# registers; the wide (pre-narrowing) value can exceed 16 bits and overflow to
+# zero, silently dropping an operand -- ``x + x`` then returns ``x`` (output
+# halved), and softmax's ``Sub(x, max)`` loses an operand. Correct lowering keeps
+# the operand as an explicit rescale so the on-device (FVP) result matches the
+# quantized reference.
+#
+# This is Ethos-U55-codegen-specific: it only reproduces on the FVP (the TOSA
+# reference path does not exhibit the register overflow).
+class EqualScaleAdd(torch.nn.Module):
+    """``x + x`` -> both Add operands share one (equal) IFM scale."""
+
+    def forward(self, x: torch.Tensor):
+        return x + x
+
+    # Non-power-of-2 magnitudes force a non-simple activation scale (max/127 with a
+    # non-power-of-2 max), i.e. exactly the equal-scale case that overflows the
+    # Ethos-U55 OPA/OPB registers.
+    test_data: dict[str, input_t1] = {
+        "equal_nonsimple_scale": lambda: (
+            torch.tensor([0.3, 1.7, 2.9, 5.1, 6.3, 6.9]),
+        ),
+        "equal_nonsimple_scale_4d": lambda: (0.7 * torch.randn(1, 3, 8, 8) + 3.1,),
+    }
+
+
+@common.parametrize("test_data", EqualScaleAdd.test_data)
+@common.XfailIfNoCorstone300
+def test_add_equal_scale_u55_INT(test_data: input_t1):
+    """Equal non-simple IFM scales must not drop an Add operand on Ethos-U55.
+
+    If the equal-scale operand is dropped, the FVP output is halved and the
+    comparison against the quantized reference fails.
+
+    """
+    pipeline = EthosU55PipelineINT[input_t1](
+        EqualScaleAdd(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", EqualScaleAdd.test_data)
+@common.XfailIfNoCorstone320
+def test_add_equal_scale_u85_INT(test_data: input_t1):
+    """U85 companion: U85 has an advanced-mode dual-IFM rescale so it is unaffected;
+    this guards against a future regression of the shared Add/Sub scaling path."""
+    pipeline = EthosU85PipelineINT[input_t1](
+        EqualScaleAdd(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", Add2.test_data)
 @common.XfailIfNoCorstone300
 def test_add_tensor_u55_INT_2(test_data: input_t2):
