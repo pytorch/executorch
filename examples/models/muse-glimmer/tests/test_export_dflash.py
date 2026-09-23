@@ -52,6 +52,23 @@ class DFlashExportOptionsTest(TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported DFlash backend: cpu"):
             export_dflash.validate_dflash_export_options("cpu")
 
+    def test_cuda_speculative_chain_is_device_resident(self) -> None:
+        configs = export_dflash._cuda_propagate_device_config()
+        for method in (
+            "embed_text",
+            "target_forward_from_embeddings",
+            "target_prefill_from_embeddings",
+            "dflash_sample_tokens",
+            "dflash_verify_speculative",
+        ):
+            with self.subTest(method=method):
+                self.assertTrue(configs[method].skip_h2d_for_method_inputs)
+                self.assertTrue(configs[method].skip_d2h_for_method_outputs)
+        for method in ("draft_forward", "draft_prefill"):
+            with self.subTest(method=method):
+                self.assertFalse(configs[method].skip_h2d_for_method_inputs)
+                self.assertTrue(configs[method].skip_d2h_for_method_outputs)
+
     def test_cuda_sampler_methods_accept_any_proposal_count(self) -> None:
         methods = export_dflash._export_cuda_sampler_methods(
             max_draft_tokens=3, vocab_size=5
