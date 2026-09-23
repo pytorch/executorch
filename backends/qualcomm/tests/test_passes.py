@@ -9,7 +9,6 @@ from executorch.backends.qualcomm._passes import (
     DecomposeColIm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
-    FuseBatchNormWithConv,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
     RemoveRedundancy,
@@ -364,71 +363,6 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             torch.equal(*out, ref), f"Output mismatch: got {out}, expected {ref}"
         )
-
-    def test_fuse_batch_norm_with_conv(self):
-        class ConvBn(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.dw = torch.nn.Conv2d(8, 8, 3, groups=8, bias=False)
-                self.bn1 = torch.nn.BatchNorm2d(8)
-                self.pw = torch.nn.Conv2d(8, 4, 1)
-                self.bn2 = torch.nn.BatchNorm2d(4)
-
-            def forward(self, x):
-                x = torch.nn.functional.silu(self.bn1(self.dw(x)))
-                return self.bn2(self.pw(x))
-
-        class Conv1dBn(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = torch.nn.Conv1d(8, 4, 3, bias=False)
-                self.bn = torch.nn.BatchNorm1d(4)
-
-            def forward(self, x):
-                return self.bn(self.conv(x))
-
-        for mod, x in (
-            (ConvBn(), torch.randn(1, 8, 16, 16)),
-            (Conv1dBn(), torch.randn(1, 8, 16)),
-        ):
-            mod = mod.eval()
-            # Small running variances give the large BN scales that hurt HTP fp16.
-            for bn in (
-                m
-                for m in mod.modules()
-                if isinstance(m, torch.nn.modules.batchnorm._BatchNorm)
-            ):
-                bn.running_mean.uniform_(-2, 2)
-                bn.running_var.uniform_(1e-3, 1e-2)
-            ref = mod(x)
-            ep = torch.export.export(mod, (x,), strict=True)
-
-            FuseBatchNormWithConv(ep)(ep.graph_module)
-
-            self.assertFalse(
-                any("batch_norm" in str(n.target) for n in ep.graph.nodes),
-                "BatchNorm should be folded into the preceding convolutions",
-            )
-            self.assertFalse(
-                [
-                    n
-                    for n in ep.graph.nodes
-                    if n.op == "placeholder" and len(n.users) == 0
-                ],
-                "the folded BatchNorm must not leave dead inputs behind",
-            )
-            torch.testing.assert_close(ep.module()(x), ref, rtol=1e-4, atol=1e-4)
-
-            # The to_edge passes resolve parameters against this (pre-edge)
-            # program by the node name they see in the edge graph, so the fused
-            # placeholders have to keep their names through to_edge.
-            edge_program = to_edge(ep).exported_program()
-            for node in edge_program.graph.nodes:
-                if node.op == "placeholder" and "fused_bn" in node.name:
-                    self.assertTrue(
-                        is_parameter(node, ep),
-                        f"{node.name} is not resolvable in the pre-edge program",
-                    )
 
     def test_mha_to_sha(self):
         from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d

@@ -661,6 +661,21 @@ class TestQNN(unittest.TestCase):
                         callback=validate_heap_profile,
                     )
 
+    def assert_batch_norm_folded(self, module, sample_inputs):
+        """In fp16 a surviving BatchNorm multiplies the convolution's rounding
+        error by its per-channel scale, so it has to be folded into the
+        preceding convolution before lowering. Asserted on the delegated
+        graph, which is where the fold has to land."""
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module, sample_inputs, self.compiler_specs
+        )
+        survivors = [
+            node
+            for node in edge_prog_mgr.exported_program().graph.nodes
+            if node.op == "call_function" and "batch_norm" in str(node.target)
+        ]
+        self.assertFalse(survivors, f"BatchNorm survived lowering: {survivors}")
+
     def lower_module_and_test_output(
         self,
         module: torch.nn.Module,

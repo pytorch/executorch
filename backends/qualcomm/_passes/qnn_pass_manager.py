@@ -55,7 +55,6 @@ from executorch.backends.qualcomm._passes import (
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
-    FuseBatchNormWithConv,
     FuseConsecutiveCast,
     FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
@@ -84,6 +83,9 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
+)
+from executorch.backends.transforms.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -151,6 +153,7 @@ class QnnPassManager(PassManager):
             (ExpandBroadcastTensorShape, True),
             (FixedLinearKeepDim, True),
             (FoldQDQ, True),
+            (FuseBatchNormWithConvPass, True),
             (FuseConsecutiveReshape, True),
             (I64toI32, True),
             (InsertCastForFpActQuantizedWeight, True),
@@ -228,7 +231,6 @@ class QnnPassManager(PassManager):
             DecomposeExpM1,
             DecomposeFill,
             DecomposeVar,
-            FuseBatchNormWithConv,
             # DecomposeFloorDivide does not apply to the annotation pipeline,
             # since the CPU QDQ model would reduce accuracy.
             # We keep div and floor operations in floating-point to maintain precision.
@@ -296,7 +298,7 @@ class QnnPassManager(PassManager):
             ],
             AnnotateStack: [RemoveRedundancy],
             AnnotateUnbind: [RemoveRedundancy],
-            CanonicalizeConv: [FoldQDQ],
+            CanonicalizeConv: [FoldQDQ, FuseBatchNormWithConvPass],
             ConvertBmmToMatmul: [RecomposePixelUnshuffle],
             ConvertLinearToConv2d: [FoldQDQ],
             DecomposeAcos: [RemoveRedundancy],
@@ -304,6 +306,7 @@ class QnnPassManager(PassManager):
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
+            FuseBatchNormWithConvPass: [FoldQDQ],
             FuseConsecutiveReshape: [FoldQDQ],
             DecomposePDist: [RemoveRedundancy],
             DecomposeDiagonal: [RemoveRedundancy],
@@ -408,6 +411,9 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            # the shared backends/transforms passes name it `exported_program`
+            if "exported_program" in kwargs:
+                kwargs["exported_program"] = exported_program
             if "compiler_specs" in kwargs:
                 kwargs["compiler_specs"] = compiler_specs
             if "skip_node_id_set" in kwargs:
