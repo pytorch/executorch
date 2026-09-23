@@ -329,6 +329,9 @@ class QnnPassManager(PassManager):
             InsertCastForFpActQuantizedWeight: [FoldQDQ, LayoutTransform],
             LayoutTransform: [
                 AnnotateQuantAttrs,
+                # conv1d is rewritten into conv2d, so it has to be canonicalized
+                # before the layout annotation the rewritten node inherits
+                CanonicalizeConv,
                 ExpandBroadcastTensorShape,
                 FixedLinearKeepDim,
             ],
