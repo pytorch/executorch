@@ -172,6 +172,7 @@ void validate_one_graph(const Graph& graph) {
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 void stable_topological_sort(Graph& graph) {
   std::vector<int64_t> positions(graph.nodes.size(), -1);
   for (size_t i = 0; i < graph.schedule.size(); ++i) {
@@ -252,6 +253,7 @@ void stable_topological_sort(Graph& graph) {
   graph.rebuild_def_use();
 }
 
+// cppcheck-suppress unusedFunction
 void validate_graph(const Graph& graph) {
   validate_one_graph(graph);
   for (const Graph& subgraph : graph.subgraphs) {
