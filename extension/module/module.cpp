@@ -312,7 +312,7 @@ runtime::Error Module::load_internal(
         return runtime::Error::NotSupported;
       }
       auto ptn_load_result =
-          native_module::load_ptn(*data_loader_, verification);
+          ET_PTN_MODULE_NAMESPACE::load_ptn(*data_loader_, verification);
       if (!ptn_load_result.ok()) {
         return ptn_load_result.error();
       }
