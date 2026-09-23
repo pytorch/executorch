@@ -110,6 +110,19 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    runtime.cxx_library(
+        name = "memory_planning",
+        srcs = ["MemoryPlanning.cpp"],
+        exported_headers = [
+            "MemoryPlanning.h",
+        ],
+        exported_deps = [
+            ":graph",
+            ":graph_utils",
+        ],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
     # utils/ has no BUCK of its own, so the IR printer's target lives here. Kept
     # separate from the IR libraries so only a consumer that dumps the IR links
     # the formatting code.
