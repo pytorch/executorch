@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <executorch/backends/native/extension/module/MethodMetaBridge.h>
@@ -752,42 +753,61 @@ class NativePtnModule final : public PtnModule {
 };
 
 runtime::Result<std::unique_ptr<PtnModule>> load_ptn(
-    runtime::DataLoader& loader,
+    const internal::PtnSource& source,
     ET_RUNTIME_NAMESPACE::Program::Verification verification) {
+  auto acquired = catch_boundary(
+      "acquiring a PTN package",
+      Error::AccessFailed,
+      [&]() -> runtime::Result<ptn::OwnedBytes> {
+        const auto* file = std::get_if<internal::PtnFileSource>(&source);
+        if (file != nullptr) {
+          return ptn::OwnedBytes::from_file(
+              std::string(file->path),
+              file->mode == internal::PtnFileSource::Mode::Mmap,
+              ptn::detail::kMaxPackageBytes);
+        }
+
+        runtime::DataLoader& loader =
+            std::get<std::reference_wrapper<runtime::DataLoader>>(source).get();
+        auto size = loader.size();
+        if (!size.ok()) {
+          return size.error();
+        }
+        if (*size > ptn::detail::kMaxPackageBytes) {
+          return Error::OutOfResources;
+        }
+
+        std::vector<uint8_t> bytes(*size);
+        if (*size != 0) {
+          auto loaded = loader.load(
+              /*offset=*/0,
+              *size,
+              runtime::DataLoader::SegmentInfo(
+                  runtime::DataLoader::SegmentInfo::Type::Program));
+          if (!loaded.ok()) {
+            return loaded.error();
+          }
+          if (loaded->size() != *size) {
+            return Error::InvalidProgram;
+          }
+          auto data = loaded->data_safe();
+          if (!data.ok()) {
+            return data.error();
+          }
+          if (*data == nullptr) {
+            return Error::InvalidProgram;
+          }
+          std::memcpy(bytes.data(), *data, bytes.size());
+        }
+        return ptn::OwnedBytes::from_vector(std::move(bytes));
+      });
+  if (!acquired.ok()) {
+    return acquired.error();
+  }
+
   try {
-    auto size = loader.size();
-    if (!size.ok()) {
-      return size.error();
-    }
-    if (*size > ptn::detail::kMaxPackageBytes) {
-      return Error::OutOfResources;
-    }
-
-    std::vector<uint8_t> bytes(*size);
-    if (*size != 0) {
-      auto loaded = loader.load(
-          0,
-          *size,
-          runtime::DataLoader::SegmentInfo(
-              runtime::DataLoader::SegmentInfo::Type::Program));
-      if (!loaded.ok()) {
-        return loaded.error();
-      }
-      if (loaded->size() != *size) {
-        return Error::InvalidProgram;
-      }
-      auto data = loaded->data_safe();
-      if (!data.ok()) {
-        return data.error();
-      }
-      if (*data == nullptr) {
-        return Error::InvalidProgram;
-      }
-      std::memcpy(bytes.data(), *data, bytes.size());
-    }
-
     auto package = std::make_shared<ptn::Package>(
-        ptn::Package::load(ptn::OwnedBytes::from_vector(std::move(bytes))));
+        ptn::Package::load(std::move(*acquired)));
     if (verification ==
         ET_RUNTIME_NAMESPACE::Program::Verification::InternalConsistency) {
       package->verify();
