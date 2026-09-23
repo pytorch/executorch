@@ -17,6 +17,8 @@
 #include <flatbuffers/flatbuffers.h>
 #include <gtest/gtest.h>
 
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
 
 namespace ptn {
@@ -82,6 +84,20 @@ std::vector<uint8_t> finish_program(
 
 Program load_program(const std::vector<uint8_t>& bytes) {
   return Program::load(bytes.data(), bytes.size());
+}
+
+std::vector<uint8_t> make_tensor_program(const std::vector<int64_t>& shape) {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<fbs::Dim>> sizes;
+  sizes.reserve(shape.size());
+  for (const int64_t size : shape) {
+    sizes.push_back(fbs::CreateDim(builder, size, size));
+  }
+  const auto meta =
+      fbs::CreateTensorMetaDirect(builder, fbs::ScalarType::FLOAT, &sizes);
+  const auto tensor = fbs::CreateTensorValueDirect(builder, "input", meta);
+  const auto graph = create_graph(builder, {}, {"input"}, {}, {tensor});
+  return finish_program(builder, {create_method(builder, "forward", graph)});
 }
 
 // cppcheck-suppress-begin syntaxError
@@ -224,6 +240,27 @@ TEST(ProgramTest, GetMethodRejectsDynamicTensorExtent) {
   const Program program = load_program(bytes);
 
   EXPECT_THROW(program.get_method("forward"), std::runtime_error);
+}
+
+TEST(ProgramTest, GetMethodRejectsTensorRankOverLimit) {
+  const Program program = load_program(
+      make_tensor_program(std::vector<int64_t>(detail::kMaxTensorRank + 1, 1)));
+
+  EXPECT_THROW(program.get_method("forward"), ResourceLimitError);
+}
+
+TEST(ProgramTest, GetMethodRejectsTensorDimensionOverLimit) {
+  const Program program = load_program(make_tensor_program(
+      {static_cast<int64_t>(detail::kMaxTensorDimension) + 1}));
+
+  EXPECT_THROW(program.get_method("forward"), ResourceLimitError);
+}
+
+TEST(ProgramTest, GetMethodRejectsTensorByteSizeOverLimit) {
+  const Program program =
+      load_program(make_tensor_program({int64_t{1} << 20, int64_t{1} << 20}));
+
+  EXPECT_THROW(program.get_method("forward"), ResourceLimitError);
 }
 
 TEST(ProgramTest, GetMethodRejectsUnknownEnumValues) {
