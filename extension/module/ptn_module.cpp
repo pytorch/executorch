@@ -11,7 +11,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace executorch::extension::native_module::internal {
+namespace executorch::extension::ET_PTN_MODULE_NAMESPACE::internal {
 namespace {
 
 struct PtnHookRegistry {
@@ -48,9 +48,9 @@ const PtnHooks* get_ptn_hooks() {
   return registry().hooks.load(std::memory_order_acquire);
 }
 
-} // namespace executorch::extension::native_module::internal
+} // namespace executorch::extension::ET_PTN_MODULE_NAMESPACE::internal
 
-namespace executorch::extension::native_module {
+namespace executorch::extension::ET_PTN_MODULE_NAMESPACE {
 
 runtime::Result<std::unique_ptr<internal::PtnModule>> load_ptn(
     const internal::PtnSource& source,
@@ -62,4 +62,4 @@ runtime::Result<std::unique_ptr<internal::PtnModule>> load_ptn(
   return hooks->load(source, verification);
 }
 
-} // namespace executorch::extension::native_module
+} // namespace executorch::extension::ET_PTN_MODULE_NAMESPACE
