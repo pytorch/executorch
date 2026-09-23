@@ -7,9 +7,11 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, Enum, List, Optional, Tuple
+from typing import Any, Callable, Dict, Enum, List, Optional, Tuple, TypeVar
 
-from executorch.exir._warnings import experimental
+_T = TypeVar("_T")
+
+def experimental(message: str) -> Callable[[_T], _T]: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class Verification(Enum):
@@ -22,6 +24,19 @@ class Verification(Enum):
 
     Minimal: ...
     InternalConsistency: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ResultMemory:
+    """Read-only tensor result storage used when ATen is not linked."""
+
+    @property
+    def shape(self) -> Tuple[int, ...]: ...
+    @property
+    def strides(self) -> Tuple[int, ...]: ...
+    @property
+    def dtype(self) -> Any: ...
+    @property
+    def nbytes(self) -> int: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:
