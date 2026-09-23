@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "dflash_speculative_verifier_test",
+    srcs = ["test_dflash_speculative_verifier.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/muse-glimmer/model:dflash_token_sampler",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "dflash_token_sampler_test",
+    srcs = ["test_dflash_token_sampler.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/muse-glimmer/model:dflash_token_sampler",
+    ],
+)
