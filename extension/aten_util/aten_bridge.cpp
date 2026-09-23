@@ -151,8 +151,10 @@ void alias_etensor_to_attensor(
     torch::executor::Tensor& mutable_et) {
   ET_CHECK_MSG(
       aten_tensor.is_contiguous() ||
-          aten_tensor.is_contiguous(at::MemoryFormat::ChannelsLast),
-      "Input tensor must have contiguous or channels last memory format");
+          aten_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) ||
+          aten_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d),
+      "Input tensor must have contiguous, channels last, or channels last 3d "
+      "memory format");
 
   check_tensor_meta(aten_tensor, mutable_et);
   mutable_et.unsafeGetTensorImpl()->set_data(

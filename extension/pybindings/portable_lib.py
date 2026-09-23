@@ -116,6 +116,8 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
     _uses_aten,  # noqa: F401
     BundledModule,  # noqa: F401
+    Device,  # noqa: F401
+    DeviceType,  # noqa: F401
     ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401

@@ -277,7 +277,7 @@ TEST(ATenBridgeTest, AliasETensorToATenTensorFailDimOrder) {
   ET_EXPECT_DEATH(alias_etensor_to_attensor(at_tensor, etensor), "");
 }
 
-TEST(ATenBridgeTest, AliasETensorToATenTensorFailUnsupportedDimOrder) {
+TEST(ATenBridgeTest, AliasETensorToATenTensorChannelsLast3d) {
   auto at_tensor =
       at::randn({1, 2, 3, 4, 5}).to(at::MemoryFormat::ChannelsLast3d);
   std::vector<Tensor::SizesType> sizes(
@@ -294,7 +294,8 @@ TEST(ATenBridgeTest, AliasETensorToATenTensorFailUnsupportedDimOrder) {
       dim_order.data(),
       strides.data());
   torch::executor::Tensor etensor(&tensor_impl);
-  ET_EXPECT_DEATH(alias_etensor_to_attensor(at_tensor, etensor), "");
+  alias_etensor_to_attensor(at_tensor, etensor);
+  EXPECT_EQ(at_tensor.const_data_ptr(), etensor.const_data_ptr());
 }
 
 TEST(ATenBridgeTest, DeviceMapping) {
