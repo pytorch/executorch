@@ -66,6 +66,23 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
+    runtime.cxx_library(
+        name = "validation",
+        srcs = ["Validation.cpp"],
+        exported_headers = ["Validation.h"],
+        exported_deps = [
+            ":method",
+            ":runtime",
+            "//executorch/backends/native/runtime/deserialize:package",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
     # utils/ has no BUCK of its own, so the DOT renderer's target lives here.
     runtime.cxx_library(
         name = "to_dot",

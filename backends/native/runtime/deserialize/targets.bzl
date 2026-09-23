@@ -122,3 +122,15 @@ def define_common_targets():
         exported_headers = ["test/PackageTestData.h"],
         visibility = ["//executorch/backends/native/..."],
     )
+
+    runtime.cxx_test(
+        name = "validation_test",
+        srcs = ["test/ValidationTest.cpp"],
+        deps = [
+            ":owned_bytes",
+            ":package",
+            ":package_test_data",
+            "//executorch/backends/native/runtime:native_graph_schema",
+            "//executorch/backends/native/runtime:validation",
+        ],
+    )
