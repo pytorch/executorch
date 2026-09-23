@@ -257,6 +257,7 @@ class _CombineAccumulator:
     mode_values: list = field(default_factory=list)
     pipeline_stages_values: list = field(default_factory=list)
     source_transform_in_place_values: list = field(default_factory=list)
+    release_intermediate_artifacts_values: list = field(default_factory=list)
     backend_config: object = None
     pre_partitioning_callbacks: list = field(default_factory=list)
 
@@ -295,6 +296,12 @@ class ExportRecipe:
         source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
                                stage and mutate the caller's model. Necessary for models
                                large enough that a second copy will not fit in memory.
+        release_intermediate_artifacts: Drop each stage's output once the next stage
+                               has consumed it, so only the final artifact stays
+                               resident. Necessary for models whose intermediates do
+                               not all fit in memory at once. Makes
+                               get_exported_program(), get_edge_program_manager(),
+                               and print_delegation_info() unavailable after export.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
@@ -318,6 +325,7 @@ class ExportRecipe:
         List[Callable[[torch.nn.Module], torch.nn.Module]]
     ] = None
     pre_trace_hooks: Optional[List[Callable[[str, torch.nn.Module], None]]] = None
+    release_intermediate_artifacts: bool = False
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
@@ -615,6 +623,9 @@ class ExportRecipe:
             acc.source_transform_in_place_values.append(
                 recipe.source_transform_in_place
             )
+            acc.release_intermediate_artifacts_values.append(
+                recipe.release_intermediate_artifacts
+            )
 
             # Use the executorch_backend_config from the first recipe that supplies one.
             if acc.backend_config is None and recipe.executorch_backend_config:
@@ -644,6 +655,10 @@ class ExportRecipe:
         cls._assert_scalar_fields_agree("pipeline_stages", acc.pipeline_stages_values)
         cls._assert_scalar_fields_agree(
             "source_transform_in_place", acc.source_transform_in_place_values
+        )
+        cls._assert_scalar_fields_agree(
+            "release_intermediate_artifacts",
+            acc.release_intermediate_artifacts_values,
         )
 
         combined_quantization_recipe = cls._combine_quantization_recipe(
@@ -681,6 +696,11 @@ class ExportRecipe:
             aten_transform_passes=acc.pre_edge_passes or None,
             source_transform_passes=acc.source_transform_passes or None,
             pre_trace_hooks=acc.pre_trace_hooks or None,
+            release_intermediate_artifacts=(
+                acc.release_intermediate_artifacts_values[0]
+                if acc.release_intermediate_artifacts_values
+                else False
+            ),
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=acc.backend_config,
             pipeline_stages=shared_pipeline_stages,
