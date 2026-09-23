@@ -5,7 +5,7 @@ load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extensio
 # targets.bzl. This file can contain fbcode-only targets.
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "executorch_pybindings")
+load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "PORTABLE_MODULE_DEPS_NO_ATEN", "executorch_pybindings")
 
 oncall("executorch")
 
@@ -57,6 +57,14 @@ fbcode_target(_kind = executorch_pybindings,
     # Give this an underscore prefix because it has a pure python wrapper.
     python_module_name = "_C",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[_C.pyi]"],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = executorch_pybindings,
+    cppdeps = PORTABLE_MODULE_DEPS_NO_ATEN + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
+    python_module_name = "_C_no_aten",
+    types = ["//executorch/extension/pybindings:pybindings_types_gen[_C.pyi]"],
+    use_aten = False,
     visibility = ["PUBLIC"],
 )
 

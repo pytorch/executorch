@@ -7,9 +7,11 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, Enum, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Enum, List, Optional, Sequence, Tuple, TypeVar
 
-from executorch.exir._warnings import experimental
+_T = TypeVar("_T")
+
+def experimental(message: str) -> Callable[[_T], _T]: ...
 
 _uses_aten: bool
 
