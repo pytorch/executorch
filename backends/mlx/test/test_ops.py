@@ -4478,6 +4478,12 @@ class AdvancedIndexTest(OpTestCase):
     name = "advanced_index"
     rtol = 1e-4
     atol = 1e-4
+    expected_node_counts = {
+        "GatherNode": 1,
+        "ReshapeNode": 1,
+        "TransposeNode": 0,
+        "SymSizeNode": 0,
+    }
 
     def __init__(
         self,
@@ -4516,6 +4522,145 @@ class AdvancedIndexTest(OpTestCase):
             idx = torch.randint(0, self.input_shape[dim], (self.num_indices,))
             indices.append(idx)
         return (x, *indices)
+
+
+class DynamicAdvancedIndexModel(nn.Module):
+    def __init__(self, has_leading_dim: bool):
+        super().__init__()
+        self.has_leading_dim = has_leading_dim
+
+    def forward(self, x, rows, columns):
+        if self.has_leading_dim:
+            return x[:, rows, columns]
+        return x[rows, columns]
+
+
+@register_test
+class DynamicAdvancedIndexTest(OpTestCase):
+    """Broadcast index dimensions must remain dynamic through gather/reshape."""
+
+    name = "dynamic_advanced_index"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        trailing_dim: bool = False,
+        leading_dim: Optional[int] = None,
+        test_rows: int = 4,
+        test_columns: int = 5,
+    ):
+        self.trailing_dim = trailing_dim
+        self.leading_dim = leading_dim
+        self.expected_node_counts = {
+            "GatherNode": 1,
+            "ReshapeNode": 1,
+            "TransposeNode": int(leading_dim is not None and leading_dim > 1),
+            "SymSizeNode": 2,
+        }
+        self.test_rows = test_rows
+        self.test_columns = test_columns
+        self.name = (
+            f"dynamic_advanced_index_tail{trailing_dim}_leading{leading_dim}"
+            f"_runtime{test_rows}x{test_columns}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["DynamicAdvancedIndexTest"]:
+        return [
+            cls(
+                trailing_dim=trailing,
+                leading_dim=leading,
+                test_rows=rows,
+                test_columns=columns,
+            )
+            for trailing, leading in (
+                (False, None),
+                (True, None),
+                (True, 1),
+                (False, 2),
+                (True, 2),
+            )
+            for rows, columns in ((4, 5), (3, 2))
+        ]
+
+    def create_model(self) -> nn.Module:
+        return DynamicAdvancedIndexModel(self.leading_dim is not None)
+
+    def _inputs(self, rows, columns):
+        shape = (6, 7) + ((4,) if self.trailing_dim else ())
+        if self.leading_dim is not None:
+            shape = (self.leading_dim,) + shape
+        return (
+            torch.randn(shape),
+            torch.arange(rows).reshape(-1, 1),
+            torch.arange(columns).reshape(1, -1),
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(2, 3)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.test_rows, self.test_columns)
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        return {
+            "x": None,
+            "rows": {0: Dim("rows", min=2, max=4)},
+            "columns": {1: Dim("columns", min=2, max=5)},
+        }
+
+
+class AdvancedIndexLayoutModel(nn.Module):
+    def __init__(self, axes: Tuple[int, int]):
+        super().__init__()
+        self.axes = axes
+
+    def forward(self, x, rows, columns):
+        indices = [None] * x.ndim
+        indices[self.axes[0]] = rows
+        indices[self.axes[1]] = columns
+        return torch.ops.aten.index.Tensor(x, indices)
+
+
+@register_test
+class AdvancedIndexLayoutTest(OpTestCase):
+    """Preserve index ordering without transposing singleton or separated blocks."""
+
+    name = "advanced_index_layout"
+
+    def __init__(self, input_shape, axes, index_shape, expected_transposes):
+        self.input_shape = input_shape
+        self.axes = axes
+        self.index_shape = index_shape
+        self.name = f"advanced_index_layout_{input_shape}_{axes}_{index_shape}"
+        self.expected_node_counts = {
+            "GatherNode": 1,
+            "ReshapeNode": 1,
+            "TransposeNode": expected_transposes,
+            "SymSizeNode": 0,
+        }
+
+    @classmethod
+    def get_test_configs(cls) -> List["AdvancedIndexLayoutTest"]:
+        return [
+            cls((2, 6, 7), (1, 2), (2, 3), 1),
+            cls((2, 3, 6, 7, 4), (2, 3), (2, 3), 1),
+            cls((1, 1, 6, 7), (2, 3), (2, 3), 0),
+            cls((2, 6, 7), (1, 2), (), 0),
+            cls((2, 6, 7), (1, 2), (1, 1), 0),
+            cls((2, 6, 4, 7, 3), (1, 3), (2, 3), 0),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return AdvancedIndexLayoutModel(self.axes)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(self.input_shape),
+            torch.randint(self.input_shape[self.axes[0]], self.index_shape),
+            torch.randint(self.input_shape[self.axes[1]], self.index_shape),
+        )
 
 
 class IndexUpdateModel(nn.Module):
@@ -5916,6 +6061,69 @@ class OnesTest(OpTestCase):
         return OnesModel(self.shape, self.dtype)
 
 
+class CastChainModel(nn.Module):
+    def __init__(self, intermediate_dtype: torch.dtype, output_dtype: torch.dtype):
+        super().__init__()
+        self.intermediate_dtype = intermediate_dtype
+        self.output_dtype = output_dtype
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Keep a delegated op even if the cast chain is incorrectly removed.
+        return x.to(self.intermediate_dtype).to(self.output_dtype) + 1
+
+
+@register_test
+class CastChainTest(OpTestCase):
+    """Default passes must preserve rounding and truncation in cast chains."""
+
+    name = "cast_chain"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        intermediate_dtype: torch.dtype = torch.int32,
+        source_dtype: torch.dtype = torch.float32,
+        dynamic: bool = False,
+    ):
+        self.intermediate_dtype = intermediate_dtype
+        self.source_dtype = source_dtype
+        self.dynamic = dynamic
+        self.name = f"cast_chain_{source_dtype}_{intermediate_dtype}_{dynamic}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["CastChainTest"]:
+        return [
+            cls(dtype, dynamic=dynamic)
+            for dtype in (torch.int32, torch.float16, torch.bfloat16)
+            for dynamic in (False, True)
+        ] + [
+            cls(torch.float32, source_dtype=dtype)
+            for dtype in (torch.float16, torch.bfloat16)
+        ]
+
+    def create_model(self) -> nn.Module:
+        return CastChainModel(self.intermediate_dtype, self.source_dtype)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.tensor([1.9, -2.9, 3.7, 0.1], dtype=self.source_dtype),)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = self.create_inputs()[0]
+        return (torch.cat((x, x)) if self.dynamic else x,)
+
+    def get_dynamic_shapes(self) -> Optional[Dict]:
+        return {"x": {0: Dim("length", min=2, max=16)}} if self.dynamic else None
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
+
+
 class ToDtypeModel(nn.Module):
     def __init__(self, target_dtype: torch.dtype):
         super().__init__()
@@ -6287,6 +6495,102 @@ class SDPATest(OpTestCase):
             mask[:, :, :, : self.kv_seq_len // 4] = False  # Mask out first quarter
             return (q, k, v, mask)
         return (q, k, v)
+
+
+class MaskedRowsSDPAModel(nn.Module):
+    def __init__(self, custom: bool):
+        super().__init__()
+        self.custom = custom
+
+    def forward(self, q, k, v, mask):
+        if self.custom:
+            return torch.ops.mlx.custom_sdpa(
+                q, k, v, start_pos=0, attn_mask=mask, is_causal=False
+            )
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v, mask)
+
+
+@register_test
+class SDPAMaskedRowsTest(OpTestCase):
+    """Empty rows must be zero, without zeroing finite biases or partial rows."""
+
+    name = "sdpa_masked_rows"
+    rtol = 0
+    atol = 0
+    expected_node_counts = {"SdpaNode": 1}
+
+    def __init__(
+        self,
+        mask_kind: str = "bool",
+        dtype: torch.dtype = torch.float32,
+        head_dim: int = 8,
+        seq_len: int = 4,
+        custom: bool = False,
+        per_batch: bool = False,
+    ):
+        self.mask_kind = mask_kind
+        self.dtype = dtype
+        self.head_dim = head_dim
+        self.seq_len = seq_len
+        self.custom = custom
+        self.per_batch = per_batch
+        self.name = (
+            f"sdpa_masked_rows_{mask_kind}_{dtype}_d{head_dim}_s{seq_len}"
+            f"_custom{custom}_batch{per_batch}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["SDPAMaskedRowsTest"]:
+        return (
+            [
+                cls(mask_kind, dtype, head_dim, seq_len)
+                for mask_kind in ("bool", "additive")
+                for dtype in (torch.float32, torch.float16, torch.bfloat16)
+                for head_dim, seq_len in ((8, 4), (64, 4), (64, 16))
+            ]
+            + [
+                cls("finite", dtype)
+                for dtype in (torch.float32, torch.float16, torch.bfloat16)
+            ]
+            + [cls(mask_kind, custom=True) for mask_kind in ("bool", "additive")]
+            + [cls(mask_kind, per_batch=True) for mask_kind in ("bool", "additive")]
+        )
+
+    def create_model(self) -> nn.Module:
+        return MaskedRowsSDPAModel(self.custom)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        shape = (2, 2, self.seq_len, self.head_dim)
+        q = torch.zeros(shape, dtype=self.dtype)
+        k = torch.zeros_like(q)
+        v = (
+            torch.arange(1, self.seq_len + 1, dtype=self.dtype)
+            .view(1, 1, -1, 1)
+            .expand(shape)
+            .contiguous()
+        )
+        allowed = torch.ones(self.seq_len, self.seq_len, dtype=torch.bool)
+        allowed[0] = False
+        allowed[2, 1:] = False
+        if self.per_batch:
+            allowed = allowed.expand(2, 1, -1, -1).clone()
+            allowed[1, :, 0] = True
+        if self.mask_kind == "bool":
+            mask = allowed
+        else:
+            masked_value = (
+                torch.finfo(self.dtype).min
+                if self.mask_kind == "finite"
+                else float("-inf")
+            )
+            mask = torch.zeros(allowed.shape, dtype=self.dtype)
+            mask.masked_fill_(~allowed, masked_value)
+        return q, k, v, mask
+
+    def get_transform_passes(self) -> Optional[list]:
+        from executorch.backends.mlx.passes import get_default_passes
+
+        return get_default_passes()
 
 
 @register_test
