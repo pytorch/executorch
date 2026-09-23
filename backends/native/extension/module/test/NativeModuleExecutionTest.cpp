@@ -253,6 +253,7 @@ runtime::Error bind_temporary_output(
                          : module.set_output(output);
 }
 
+// cppcheck-suppress-begin syntaxError
 TEST_F(NativeModuleExecutionTest, SessionsShareWithinModuleAndIsolateModules) {
   const auto bytes =
       testing::make_tensor_package(std::vector<std::string>{"first", "second"});
@@ -567,6 +568,7 @@ TEST_F(NativeModuleExecutionTest, SameHostFactoryCanBeRegisteredAgain) {
       internal::register_engine_host_factory(create_fake_host),
       runtime::Error::Ok);
 }
+// cppcheck-suppress-end syntaxError
 
 TEST_F(NativeModuleExecutionTest, MetadataOutlivesMethodUnload) {
   const auto bytes = testing::make_tensor_package();
@@ -580,7 +582,6 @@ TEST_F(NativeModuleExecutionTest, MetadataOutlivesMethodUnload) {
   EXPECT_STREQ(metadata->name(), "forward");
   EXPECT_EQ(metadata->num_inputs(), 1);
 }
-// cppcheck-suppress-end syntaxError
 
 } // namespace
 } // namespace executorch::extension::native_module
