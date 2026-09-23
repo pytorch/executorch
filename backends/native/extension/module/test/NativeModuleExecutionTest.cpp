@@ -267,6 +267,7 @@ void expect_values(const runtime::EValue& value, float first, float second) {
   EXPECT_FLOAT_EQ(tensor.const_data_ptr<float>()[1], second);
 }
 
+// cppcheck-suppress-begin syntaxError
 TEST_F(NativeModuleExecutionTest, SessionsShareWithinModuleAndIsolateModules) {
   const auto bytes =
       testing::make_tensor_package(std::vector<std::string>{"first", "second"});
