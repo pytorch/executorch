@@ -47,6 +47,51 @@ def _max_draft_prefill_len(draft_config, max_target_prefill: int) -> int:
     return max_target_prefill
 
 
+def _export_cuda_sampler_methods(
+    max_draft_tokens: int, vocab_size: int
+) -> dict[str, torch.export.ExportedProgram]:
+    from executorch.examples.models.muse_glimmer.model.dflash_token_sampler import (
+        DFlashSpeculativeVerifier,
+        DFlashTokenSampler,
+    )
+    from torch.export import Dim, export
+
+    proposals = Dim("dflash_proposals", min=1, max=max_draft_tokens)
+    temperature = torch.tensor([1.0])
+    top_k = torch.tensor([0], dtype=torch.long)
+    top_p = torch.tensor([1.0])
+    return {
+        "dflash_sample_tokens": export(
+            DFlashTokenSampler(),
+            (torch.zeros(max_draft_tokens, vocab_size), temperature, top_k, top_p),
+            dynamic_shapes=({0: proposals}, None, None, None),
+            strict=True,
+        ),
+        "dflash_verify_speculative": export(
+            DFlashSpeculativeVerifier(),
+            (
+                torch.zeros(max_draft_tokens + 1, vocab_size),
+                torch.zeros(max_draft_tokens, vocab_size),
+                torch.zeros(max_draft_tokens + 1, dtype=torch.long),
+                temperature,
+                top_k,
+                top_p,
+                torch.tensor([False]),
+            ),
+            dynamic_shapes=(
+                {0: proposals + 1},
+                {0: proposals},
+                {0: proposals + 1},
+                None,
+                None,
+                None,
+                None,
+            ),
+            strict=True,
+        ),
+    }
+
+
 def export_dflash(
     output_dir: str,
     target_gguf: str | None = None,
@@ -606,6 +651,14 @@ def _export_dflash_cuda(
             strict=True,
         )
 
+    print("=" * 60)
+    print("Exporting DFlash sampling methods...")
+    print("=" * 60)
+    sampler_methods = _export_cuda_sampler_methods(
+        max_draft_tokens=exported_block_size - 1,
+        vocab_size=target_config.vocab_size,
+    )
+
     mutable_buffer_metadata = common.mutable_buffer_metadata(combined)
     del combined, target_model, draft_model
     if vision_model is not None:
@@ -636,6 +689,7 @@ def _export_dflash_cuda(
         "embed_text": embed_text_ep,
         "draft_forward": draft_ep,
         "draft_prefill": draft_prefill_ep,
+        **sampler_methods,
     }
     if vision_ep is not None:
         methods["vision_encoder"] = vision_ep
@@ -677,6 +731,7 @@ def _export_dflash_cuda(
         embed_text_ep,
         draft_ep,
         draft_prefill_ep,
+        sampler_methods,
         vision_ep,
     )
     gc.collect()
