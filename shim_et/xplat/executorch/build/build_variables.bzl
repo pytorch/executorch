@@ -99,6 +99,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_bitwise_or.cpp",
     "kernels/portable/cpu/op_bitwise_xor.cpp",
     "kernels/portable/cpu/op_bmm.cpp",
+    "kernels/portable/cpu/op_bucketize.cpp",
     "kernels/portable/cpu/op_cat.cpp",
     "kernels/portable/cpu/op_cdist_forward.cpp",
     "kernels/portable/cpu/op_ceil.cpp",
@@ -298,6 +299,7 @@ QUANTIZED_KERNELS_SRCS = [
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/blas/KleidiBlas.cpp",
 ]
 
 OPTIMIZED_NATIVE_CPU_OPS_SRCS = [

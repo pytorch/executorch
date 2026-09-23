@@ -63,9 +63,12 @@ def disable_test(reason):
 
 
 def lower_module(
-    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    dynamic_shapes=None,
+    compile_options=None,
 ) -> EdgeProgramManager:
-    compile_options = {}
+    compile_options = dict(compile_options or {})
     if dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
 
@@ -251,6 +254,7 @@ class TestVulkanBackend(unittest.TestCase):
         test_inputs=None,
         first_output_only=False,
         expect_no_delegates=False,
+        compile_options=None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -262,7 +266,12 @@ class TestVulkanBackend(unittest.TestCase):
         model.eval()
         model(*sample_inputs)
 
-        edge_program = lower_module(model, sample_inputs, dynamic_shapes=dynamic_shapes)
+        edge_program = lower_module(
+            model,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            compile_options=compile_options,
+        )
 
         et_program = edge_program.to_executorch()
 
@@ -1094,6 +1103,33 @@ class TestVulkanBackend(unittest.TestCase):
             (torch.randn(size=(64,), dtype=torch.float32),),
         )
 
+    def test_vulkan_backend_conv1d_as_conv2d(self):
+        # Eligible for Conv1dAsConv2dPass: groups 1, unit dilation, kernel > 1,
+        # batch 1 and out_channels >= the im2col threshold, so this lowers via
+        # the conv2d im2col + GEMM path rather than conv1d.glsl.
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(
+                    in_channels=32,
+                    out_channels=128,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv1d_module = Conv1dModule()
+        sample_inputs = (torch.randn(size=(1, 32, 64), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv1d_module,
+            sample_inputs,
+        )
+
     @disable_test("layer norm compute shader not working with swiftshader")
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
@@ -1284,6 +1320,84 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_module_and_test_output(
             ViewModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_redundant_view_to_output(self):
+        # Returning a value and a redundant view of it: once the view is
+        # removed, both outputs are the same node. The serializer must still
+        # emit two output ids, or the runtime's argument count check fails.
+        class RedundantViewToOutputModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                return y, y.view(2, 48)
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            RedundantViewToOutputModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_duplicate_output(self):
+        # The same guarantee without any view involved: `all_input_nodes`
+        # de-duplicates, so this loses an output slot too.
+        class DuplicateOutputModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                return y, y
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            DuplicateOutputModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_buffer_mutation_aliasing_user_output(self):
+        # A mutated buffer returned through a redundant view, with the mutation
+        # aliased onto its input. Once the view is removed the buffer-mutation
+        # slot and the user output are the same node, but only the user output
+        # gets a slot in the delegate call, so keeping both would leave the
+        # serialized graph expecting one argument more than the call provides.
+        #
+        # Run it twice: the state has to carry over, which is what says the
+        # mutation is really being applied in place rather than quietly
+        # dropped along with its output slot.
+        class MutationAliasModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(2, 48))
+
+            def forward(self, x):
+                self.state.add_(x)
+                return self.state.view(2, 48)
+
+        sample_inputs = (torch.ones(size=(2, 48), dtype=torch.float32),)
+        test_inputs = [(torch.ones(size=(2, 48), dtype=torch.float32),)]
+
+        self.lower_module_and_test_output(
+            MutationAliasModule(),
+            sample_inputs,
+            test_inputs=test_inputs,
+            compile_options={"alias_buffer_mutations": True},
+        )
+
+    def test_vulkan_backend_view_chain_collapsing_to_input_shape(self):
+        # A chain of views whose net effect is the original shape. Fusing the
+        # chain leaves a view onto the shape it started from, which the
+        # redundant-op sweep then removes; the output count must survive both
+        # rewrites.
+        class ViewChainModule(torch.nn.Module):
+            def forward(self, x):
+                y = x + 1
+                z = y.view(4, 24).view(8, 12).view(2, 48)
+                return y, z
+
+        sample_inputs = (torch.randn(size=(2, 48), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ViewChainModule(),
             sample_inputs,
         )
 

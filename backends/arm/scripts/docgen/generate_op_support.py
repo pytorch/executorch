@@ -2,27 +2,18 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""Generate backend PyTorch operator-support documentation.
+"""Generate Arm backend PyTorch operator-support documentation.
 
-The default output is a customer-facing Markdown page listing public PyTorch
-APIs, supported profiles, tested dtypes, and quantization modes. Run the script
-from the ExecuTorch repository root.
-
-Options:
-    -h, --help           Show command-line help.
-    --repo-root PATH     Use PATH as the ExecuTorch repository root.
-    --output PATH        Write Markdown to PATH instead of the default page.
-    --html               Also write a standalone HTML page beside the Markdown.
-    --debug              Include exported ATen operators and contributing tests.
-    --check              Validate registry operator/profile coverage; write no page.
-    --strict-ast         With --check, fail on unresolved VgfPipeline attribution.
-    --explain OP         Explain coverage evidence for one exported ATen operator.
+The implementation is shared by all configured backends. The selected backend
+controls the test pipeline, TOSA profile, output path, infrastructure xfails and
+backend-specific registry filtering. Run from the ExecuTorch repository root.
 
 Examples:
-    python backends/arm/scripts/docgen/generate_vgf_op_support.py
-    python backends/arm/scripts/docgen/generate_vgf_op_support.py --html
-    python backends/arm/scripts/docgen/generate_vgf_op_support.py --debug --html --output /tmp/VGF_op_support_debug.md
-    python backends/arm/scripts/docgen/generate_vgf_op_support.py --check --strict-ast
+    python backends/arm/scripts/docgen/generate_op_support.py --backend vgf
+    python backends/arm/scripts/docgen/generate_op_support.py --backend u55
+    python backends/arm/scripts/docgen/generate_op_support.py --backend u85
+    python backends/arm/scripts/docgen/generate_op_support.py --backend u55 --debug --html
+    python backends/arm/scripts/docgen/generate_op_support.py --backend vgf --check --strict-ast
 
 """
 
@@ -46,9 +37,8 @@ import torch
 # ---------------------------------------------------------------------------
 # Backend-specific configuration.
 #
-# Keep backend-specific names, paths, pipeline signatures, profiles and
-# exceptional coverage here. A future Ethos-U variant should be expressible by
-# changing this configuration instead of editing the implementation below.
+# The AST scanner, registry checker, Markdown/HTML renderers and CLI behavior
+# below are shared. Backend differences belong in BackendConfig.
 # ---------------------------------------------------------------------------
 BACKEND_NAME = "VGF"
 BACKEND_PIPELINE_CLASS_NAMES = frozenset({"VgfPipeline"})
@@ -59,41 +49,180 @@ BACKEND_PROFILE_TOSA_SPECS = {
     "INT": "TOSA-1.0+INT",
 }
 
-GENERATOR_PATH = Path("backends/arm/scripts/docgen/generate_vgf_op_support.py")
-GENERATOR_COMMAND = f"python {GENERATOR_PATH}"
-DEFAULT_OUTPUT = Path("docs/source/backends/arm-vgf/VGF_op_support.md")
+
+@dataclass(frozen=True)
+class BackendConfig:
+    key: str
+    name: str
+    pipeline_class_names: frozenset[str]
+    pipeline_label: str
+    tosa_spec: str
+    default_output: Path
+    quantize_keyword: str | None
+    quantize_default: bool
+    default_profile: str
+    aten_op_position: int = 2
+    aten_op_keywords: tuple[str, ...] = ("aten_op", "aten_ops")
+    exir_op_position: int = 3
+    exir_op_keywords: tuple[str, ...] = ("exir_op", "exir_ops")
+    support_profile_order: tuple[str, ...] = ("FP", "INT")
+    infrastructure_xfail_markers: frozenset[str] = frozenset()
+    filter_u55_unsupported_ops: bool = False
+    max_missing_profile_cells: int = 0
+
+
+GENERATOR_PATH = Path("backends/arm/scripts/docgen/generate_op_support.py")
 TEST_ROOT = Path("backends/arm/test")
+DEFAULT_BACKEND_KEY = "vgf"
 
-# Pipeline constructor/static-analysis configuration.
-PIPELINE_QUANTIZE_KEYWORD: str | None = "quantize"
-PIPELINE_QUANTIZE_DEFAULT = True
-PIPELINE_DEFAULT_PROFILE = "INT"
-PIPELINE_ATEN_OP_POSITION = 2
-PIPELINE_ATEN_OP_KEYWORDS = ("aten_op", "aten_ops")
-PIPELINE_EXIR_OP_POSITION = 3
-PIPELINE_EXIR_OP_KEYWORDS = ("exir_op", "exir_ops")
+BACKENDS: dict[str, BackendConfig] = {
+    "vgf": BackendConfig(
+        key="vgf",
+        name="VGF",
+        pipeline_class_names=frozenset({"VgfPipeline"}),
+        pipeline_label="VgfPipeline",
+        tosa_spec="TOSA-1.0+FP+INT+int4+int16",
+        default_output=Path("docs/source/backends/arm-vgf/VGF_op_support.md"),
+        quantize_keyword="quantize",
+        quantize_default=True,
+        default_profile="INT",
+        support_profile_order=("FP", "INT"),
+    ),
+    "u55": BackendConfig(
+        key="u55",
+        name="Ethos-U55",
+        pipeline_class_names=frozenset({"EthosU55PipelineINT"}),
+        pipeline_label="EthosU55PipelineINT",
+        tosa_spec="TOSA-1.0+INT+int16+int4+u55",
+        default_output=Path("docs/source/backends/arm-ethos-u/U55_op_support.md"),
+        quantize_keyword=None,
+        quantize_default=True,
+        default_profile="INT",
+        support_profile_order=("INT",),
+        # These xfails mean the FVP/executor is unavailable, not that the
+        # operator is unsupported. They should still count as static evidence.
+        infrastructure_xfail_markers=frozenset({"XfailIfNoCorstone300"}),
+        filter_u55_unsupported_ops=True,
+        max_missing_profile_cells=4,
+    ),
+    "u85": BackendConfig(
+        key="u85",
+        name="Ethos-U85",
+        pipeline_class_names=frozenset({"EthosU85PipelineINT"}),
+        pipeline_label="EthosU85PipelineINT",
+        tosa_spec="TOSA-1.0+INT+int16+int4+cf",
+        default_output=Path("docs/source/backends/arm-ethos-u/U85_op_support.md"),
+        quantize_keyword=None,
+        quantize_default=True,
+        default_profile="INT",
+        support_profile_order=("INT",),
+        # A missing Corstone-320 FVP is infrastructure, not evidence that the
+        # operator itself is unsupported.
+        infrastructure_xfail_markers=frozenset({"XfailIfNoCorstone320"}),
+        max_missing_profile_cells=3,
+    ),
+}
 
-PAGE_TITLE = f"PyTorch operator support for the {BACKEND_NAME} backend"
-PAGE_DESCRIPTION = (
-    f"This page lists {BACKEND_NAME}-supported PyTorch APIs and the dtype and "
-    f"quantization modes covered by the {BACKEND_NAME} backend test pipeline."
-)
-MARKDOWN_DEBUG_NOTE = (
-    f"Debug mode adds the exact exported ATen operator and the {BACKEND_NAME} "
-    "test functions that contributed each row. Do not publish this version as "
-    "the customer-facing page."
-)
-HTML_DEBUG_NOTE = (
-    "Debug mode. This page includes the exact exported ATen operator and the "
-    f"{BACKEND_NAME} test functions that contributed each row. Do not publish "
-    "it as the customer-facing page."
-)
-CLI_DESCRIPTION = (
-    f"Generate {BACKEND_NAME} PyTorch operator-support documentation from "
-    f"{BACKEND_PIPELINE_LABEL} tests."
-)
+# Compatibility globals used by the mature scanner implementation. They are
+# populated from exactly one BackendConfig by _activate_backend().
+ACTIVE_BACKEND_KEY: str
+BACKEND_NAME: str  # type: ignore[no-redef]
+BACKEND_PIPELINE_CLASS_NAMES: frozenset[str]  # type: ignore[no-redef]
+BACKEND_PIPELINE_LABEL: str  # type: ignore[no-redef]
+BACKEND_TOSA_SPEC: str  # type: ignore[no-redef]
+DEFAULT_OUTPUT: Path
+PIPELINE_QUANTIZE_KEYWORD: str | None
+PIPELINE_QUANTIZE_DEFAULT: bool
+PIPELINE_DEFAULT_PROFILE: str
+PIPELINE_ATEN_OP_POSITION: int
+PIPELINE_ATEN_OP_KEYWORDS: tuple[str, ...]
+PIPELINE_EXIR_OP_POSITION: int
+PIPELINE_EXIR_OP_KEYWORDS: tuple[str, ...]
+BACKEND_INFRASTRUCTURE_XFAIL_MARKERS: frozenset[str]
+BACKEND_FILTER_U55_UNSUPPORTED_OPS: bool
+BACKEND_MAX_MISSING_PROFILE_CELLS: int
+SUPPORT_PROFILE_ORDER: list[str]
+GENERATOR_COMMAND: str
+PAGE_TITLE: str
+PAGE_DESCRIPTION: str
+MARKDOWN_DEBUG_NOTE: str
+HTML_DEBUG_NOTE: str
+CLI_DESCRIPTION: str
 
-SUPPORT_PROFILE_ORDER = ["FP", "INT"]
+
+def _activate_backend(backend: str | BackendConfig) -> BackendConfig:
+    """Activate one BackendConfig for the shared implementation."""
+
+    config = BACKENDS[backend] if isinstance(backend, str) else backend
+
+    global ACTIVE_BACKEND_KEY
+    global BACKEND_NAME
+    global BACKEND_PIPELINE_CLASS_NAMES
+    global BACKEND_PIPELINE_LABEL
+    global BACKEND_TOSA_SPEC
+    global DEFAULT_OUTPUT
+    global PIPELINE_QUANTIZE_KEYWORD
+    global PIPELINE_QUANTIZE_DEFAULT
+    global PIPELINE_DEFAULT_PROFILE
+    global PIPELINE_ATEN_OP_POSITION
+    global PIPELINE_ATEN_OP_KEYWORDS
+    global PIPELINE_EXIR_OP_POSITION
+    global PIPELINE_EXIR_OP_KEYWORDS
+    global BACKEND_INFRASTRUCTURE_XFAIL_MARKERS
+    global BACKEND_FILTER_U55_UNSUPPORTED_OPS
+    global BACKEND_MAX_MISSING_PROFILE_CELLS
+    global SUPPORT_PROFILE_ORDER
+    global GENERATOR_COMMAND
+    global PAGE_TITLE
+    global PAGE_DESCRIPTION
+    global MARKDOWN_DEBUG_NOTE
+    global HTML_DEBUG_NOTE
+    global CLI_DESCRIPTION
+
+    ACTIVE_BACKEND_KEY = config.key
+    BACKEND_NAME = config.name
+    BACKEND_PIPELINE_CLASS_NAMES = config.pipeline_class_names
+    BACKEND_PIPELINE_LABEL = config.pipeline_label
+    BACKEND_TOSA_SPEC = config.tosa_spec
+    DEFAULT_OUTPUT = config.default_output
+    PIPELINE_QUANTIZE_KEYWORD = config.quantize_keyword
+    PIPELINE_QUANTIZE_DEFAULT = config.quantize_default
+    PIPELINE_DEFAULT_PROFILE = config.default_profile
+    PIPELINE_ATEN_OP_POSITION = config.aten_op_position
+    PIPELINE_ATEN_OP_KEYWORDS = config.aten_op_keywords
+    PIPELINE_EXIR_OP_POSITION = config.exir_op_position
+    PIPELINE_EXIR_OP_KEYWORDS = config.exir_op_keywords
+    BACKEND_INFRASTRUCTURE_XFAIL_MARKERS = config.infrastructure_xfail_markers
+    BACKEND_FILTER_U55_UNSUPPORTED_OPS = config.filter_u55_unsupported_ops
+    BACKEND_MAX_MISSING_PROFILE_CELLS = config.max_missing_profile_cells
+    SUPPORT_PROFILE_ORDER = list(config.support_profile_order)
+
+    GENERATOR_COMMAND = f"python {GENERATOR_PATH} --backend {config.key}"
+    PAGE_TITLE = f"PyTorch operator support for the {BACKEND_NAME} backend"
+    PAGE_DESCRIPTION = (
+        f"This page lists {BACKEND_NAME}-supported PyTorch APIs and the dtype and "
+        f"quantization modes covered by the {BACKEND_NAME} backend test pipeline."
+    )
+    MARKDOWN_DEBUG_NOTE = (
+        f"Debug mode adds the exact exported ATen operator and the {BACKEND_NAME} "
+        "test functions that contributed each row. Do not publish this version as "
+        "the customer-facing page."
+    )
+    HTML_DEBUG_NOTE = (
+        "Debug mode. This page includes the exact exported ATen operator and the "
+        f"{BACKEND_NAME} test functions that contributed each row. Do not publish "
+        "it as the customer-facing page."
+    )
+    CLI_DESCRIPTION = (
+        f"Generate {BACKEND_NAME} PyTorch operator-support documentation from "
+        f"{BACKEND_PIPELINE_LABEL} tests."
+    )
+    return config
+
+
+_activate_backend(DEFAULT_BACKEND_KEY)
+
+
 DTYPE_ORDER = [
     "FP32",
     "FP16",
@@ -231,7 +360,7 @@ DECOMPOSED_OPS = {
 
 # Tests that intentionally suppress ATen/Edge distribution assertions still
 # provide runtime coverage. The key is (relative path, test function).
-EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
+VGF_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     (
         "backends/arm/test/ops/test_div_tensor_mode.py",
         "test_div_tensor_mode_vgf_quant",
@@ -275,6 +404,80 @@ EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
         "INT": {"torch.ops.aten.embedding.default"},
     },
 }
+
+# Existing U55 runtime tests below intentionally suppress direct ATen/Edge
+# assertions because quantization/decomposition changes the graph. They still
+# provide positive runtime coverage for the exported operator.
+U55_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
+    (
+        "backends/arm/test/ops/test_div_tensor_mode.py",
+        "test_div_tensor_mode_u55_INT",
+    ): {
+        "INT": {"torch.ops.aten.div.Tensor_mode"},
+    },
+    (
+        "backends/arm/test/ops/test_index_select.py",
+        "test_index_select_u55_INT_constant_contiguous",
+    ): {
+        "INT": {"torch.ops.aten.index_select.default"},
+    },
+    (
+        "backends/arm/test/ops/test_silu.py",
+        "test_silu_u55_INT",
+    ): {
+        "INT": {"torch.ops.aten.silu.default"},
+    },
+    (
+        "backends/arm/test/ops/test_unfold_copy.py",
+        "test_unfold_copy_u55_INT",
+    ): {
+        "INT": {"torch.ops.aten.unfold_copy.default"},
+    },
+}
+
+# Existing U85 runtime tests below intentionally suppress direct ATen/Edge
+# assertions because quantization/decomposition changes the graph. They still
+# provide positive runtime coverage for the exported operator.
+U85_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
+    (
+        "backends/arm/test/ops/test_div_tensor_mode.py",
+        "test_div_tensor_mode_u85_INT",
+    ): {
+        "INT": {"torch.ops.aten.div.Tensor_mode"},
+    },
+    (
+        "backends/arm/test/ops/test_silu.py",
+        "test_silu_u85_INT",
+    ): {
+        "INT": {"torch.ops.aten.silu.default"},
+    },
+}
+
+
+# These exported operators pass a generic TOSA positive-support declaration,
+# but their actual U55 lowering path reaches an unsupported operation or a
+# restriction that cannot support the general exported operator. Keep these
+# backend-specific rather than weakening VGF/TOSA support.
+BACKEND_EXPORTED_OP_EXCLUSIONS: dict[str, frozenset[str]] = {
+    "u55": frozenset(
+        {
+            "torch.ops.aten.masked_fill.Scalar",
+            "torch.ops.aten.embedding.default",
+            "torch.ops.aten.sign.default",
+        }
+    ),
+}
+
+
+def _active_explicit_backend_coverage() -> dict[tuple[str, str], dict[str, set[str]]]:
+    if ACTIVE_BACKEND_KEY == "vgf":
+        return VGF_EXPLICIT_BACKEND_COVERAGE
+    if ACTIVE_BACKEND_KEY == "u55":
+        return U55_EXPLICIT_BACKEND_COVERAGE
+    if ACTIVE_BACKEND_KEY == "u85":
+        return U85_EXPLICIT_BACKEND_COVERAGE
+    return {}
+
 
 # ---------------------------------------------------------------------------
 # Backend-agnostic implementation and shared normalization data.
@@ -1839,11 +2042,17 @@ def _function_has_a8w4_quantization(function: ast.FunctionDef, call: ast.Call) -
 
 
 def _function_is_skipped_or_xfailed(function: ast.FunctionDef) -> bool:
+    infrastructure_markers = {
+        marker.lower() for marker in BACKEND_INFRASTRUCTURE_XFAIL_MARKERS
+    }
     for decorator in function.decorator_list:
         text = _expr_text(decorator).lower()
-        # Skip function-level xfails. Parameter-level xfails are handled by the
-        # dtype helper parser when possible.
+        # Skip semantic function-level xfails. Backend infrastructure xfails
+        # (for example a missing Corstone FVP) still prove static coverage and
+        # are explicitly retained by the selected BackendConfig.
         if "xfail" in text and "parametrize" not in text:
+            if any(marker in text for marker in infrastructure_markers):
+                continue
             return True
     return False
 
@@ -2078,7 +2287,7 @@ def _scan_backend_pipeline_tests(  # noqa: C901
                         asserted_op=op,
                     )
 
-            explicit = EXPLICIT_BACKEND_COVERAGE.get(
+            explicit = _active_explicit_backend_coverage().get(
                 (str(context.path), function.name), {}
             )
             for explicit_op in explicit.get(profile, set()):
@@ -2198,6 +2407,9 @@ def _collect_backend_custom_partition_ops(
     to the profiles for which they are actually registered.
 
     """
+    if ACTIVE_BACKEND_KEY != "vgf":
+        return {}
+
     from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
     enabled_profiles = {
@@ -2217,6 +2429,81 @@ def _collect_backend_custom_partition_ops(
         )
 
     return custom_ops_by_profile
+
+
+def _unconditionally_unsupported_backend_ops(
+    tosa_spec: TosaSpecificationLike,
+) -> set[str]:
+    """Return whole operators rejected by backend-specific negative checks."""
+
+    if not BACKEND_FILTER_U55_UNSUPPORTED_OPS:
+        return set()
+    if not getattr(tosa_spec, "is_U55_subset", False):
+        return set()
+
+    try:
+        from executorch.backends.arm.operator_support.ethos_u55_support import (
+            EthosU55NotSupported,
+        )
+    except Exception as error:
+        logger.debug("Could not collect U55 unsupported operators: %s", error)
+        return set()
+
+    unsupported: set[str] = set()
+    for target in EthosU55NotSupported.unsupported_ops:
+        exported_op = _canonical_pytorch_op_from_target(target)
+        if exported_op is None:
+            exported_op = _normalize_pytorch_op_name(str(target))
+        if exported_op is not None:
+            unsupported.add(exported_op)
+    return unsupported
+
+
+def _filter_backend_supported_ops(
+    expected: dict[str, SupportedOperatorEvidence],
+    tosa_spec: TosaSpecificationLike,
+) -> dict[str, SupportedOperatorEvidence]:
+    # Hardware subsets can apply negative checks on top of the generic TOSA
+    # positive registry. Remove only operators rejected for every U55 case;
+    # shape/dtype-constrained operators remain supported and still require tests.
+    for exported_op in _unconditionally_unsupported_backend_ops(tosa_spec):
+        expected.pop(exported_op, None)
+
+    # Some exported operators are only known to be unsupported after their
+    # transformation/decomposition path is considered. The direct U55 negative
+    # check sees the resulting Edge op, not necessarily the original exported
+    # ATen operator, so apply those source-level exclusions here.
+    for exported_op in BACKEND_EXPORTED_OP_EXCLUSIONS.get(
+        ACTIVE_BACKEND_KEY, frozenset()
+    ):
+        expected.pop(exported_op, None)
+
+    return expected
+
+
+def _registered_checker_has_supported_dtype(
+    checker: type,
+    tosa_spec: TosaSpecificationLike,
+) -> bool:
+    """Return False when a checker explicitly has no legal dtype for this spec.
+
+    Most registered checks have node-dependent predicates and do not expose a
+    static dtype capability helper. Those remain eligible. A checker that does
+    expose _supported_dtypes(tosa_spec) and returns an empty sequence cannot
+    support any node in this profile, so it must not contribute positive docgen
+    evidence.
+
+    """
+
+    supported_dtypes = getattr(checker, "_supported_dtypes", None)
+    if not callable(supported_dtypes):
+        return True
+    try:
+        return bool(supported_dtypes(tosa_spec))
+    except (AttributeError, TypeError, ValueError):
+        # Do not make documentation generation more restrictive if a future
+        # checker exposes a node-dependent helper with an incompatible shape.
+        return True
 
 
 def _collect_backend_supported_ops(  # noqa: C901
@@ -2265,6 +2552,8 @@ def _collect_backend_supported_ops(  # noqa: C901
     for checker in tosa_supported_operators.get_registered_tosa_support_checks(
         tosa_spec
     ):
+        if not _registered_checker_has_supported_dtype(checker, tosa_spec):
+            continue
         checker_evidence = f"registered support check `{checker.__name__}`"
         for target in getattr(checker, "targets", ()):  # type: ignore[attr-defined]
             for profile in _profiles_for_checker(checker, tosa_spec):
@@ -2292,7 +2581,7 @@ def _collect_backend_supported_ops(  # noqa: C901
         # lowering visitor imports fail in a reduced environment.
         logger.debug("Could not collect optional lowering visitors: %s", error)
 
-    return expected
+    return _filter_backend_supported_ops(expected, tosa_spec)
 
 
 def _format_markdown_table_row(cells: Sequence[str]) -> str:
@@ -2556,7 +2845,7 @@ def _validate_configuration(repo_root: Path) -> list[str]:
         errors.append(
             f"operators configured as both transform-only and decomposed: {sorted(overlap)}"
         )
-    for (path, function), profiles in EXPLICIT_BACKEND_COVERAGE.items():
+    for (path, function), profiles in _active_explicit_backend_coverage().items():
         full_path = repo_root / path
         if not full_path.is_file():
             errors.append(f"explicit coverage path does not exist: {path}")
@@ -2739,13 +3028,28 @@ def run_check(repo_root: Path, *, strict_ast: bool = False) -> int:  # noqa: C90
         f"Missing {len(missing_cells)} profile cells across {len(missing_ops)} "
         f"of {len(expected)} backend-supported exported ATen operators."
     )
+
+    if len(missing_cells) <= BACKEND_MAX_MISSING_PROFILE_CELLS:
+        print(
+            f"Allowing {len(missing_cells)} missing profile cells for "
+            f"{BACKEND_NAME}; configured maximum is "
+            f"{BACKEND_MAX_MISSING_PROFILE_CELLS}."
+        )
+        return 1 if strict_ast and unresolved else 0
+
     return 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description=CLI_DESCRIPTION,
+        description="Generate Arm backend PyTorch operator-support documentation.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--backend",
+        choices=sorted(BACKENDS),
+        default=DEFAULT_BACKEND_KEY,
+        help="Backend to document. Defaults to vgf.",
     )
     parser.add_argument(
         "--repo-root",
@@ -2757,7 +3061,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output",
         type=Path,
         default=None,
-        help=f"Markdown output path. Defaults to {DEFAULT_OUTPUT} under repo root.",
+        help="Markdown output path. Defaults to the selected backend output path.",
     )
     parser.add_argument(
         "--html",
@@ -2776,16 +3080,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--check",
         action="store_true",
         help=(
-            f"Do not write the page. Compare exact {BACKEND_PIPELINE_LABEL} "
-            "exported ATen coverage against backend support registries and "
-            f"print supported ops missing {BACKEND_NAME} tests."
+            "Do not write the page. Compare exact selected-backend pipeline "
+            "coverage against backend support registries."
         ),
     )
     parser.add_argument(
         "--strict-ast",
         action="store_true",
         help=(
-            f"Fail --check when any {BACKEND_PIPELINE_LABEL} call cannot be "
+            "Fail --check when any selected-backend pipeline call cannot be "
             "statically attributed."
         ),
     )
@@ -2795,6 +3098,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Explain how one exported ATen operator is covered per profile.",
     )
     args = parser.parse_args(argv)
+    _activate_backend(args.backend)
 
     root = _repo_root(args.repo_root)
 

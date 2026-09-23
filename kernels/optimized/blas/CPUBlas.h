@@ -50,6 +50,9 @@ inline char to_blas(TransposeType trans) {
 // this library.
 bool gemm_uses_blas();
 
+// Whether the BF16-input, float-output gemm can use KleidiAI for this shape.
+bool gemm_uses_kleidiai_bfloat16(TransposeType transb, int64_t n);
+
 // Column-major c = beta * c + alpha * (a @ b), where a is BFloat16 and b and
 // c are float.
 void gemv(

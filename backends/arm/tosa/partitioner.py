@@ -38,12 +38,16 @@ from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
     is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -52,6 +56,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
+from torch._export.utils import _get_shape_env_from_gm
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.experimental.symbolic_shapes import statically_known_true
@@ -92,7 +97,7 @@ class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
         input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
         return can_decompose_large_stride_maxpool2d(
             node.args[1],
-            node.args[2] if len(node.args) >= 3 else node.args[1],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
             node.args[3] if len(node.args) >= 4 else (0, 0),
             node.args[4] if len(node.args) >= 5 else (1, 1),
             node.args[5] if len(node.args) >= 6 else False,
@@ -453,6 +458,7 @@ class TOSAPartitioner(Partitioner):
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._requires_resolved_tensor_shapes = False
         self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
@@ -493,51 +499,76 @@ class TOSAPartitioner(Partitioner):
 
         Remove delegation tags from quantize nodes with inputs outside the
         partition and from dequantize nodes with outputs outside the partition.
+        This applies to all variants in ``Q_OPS`` and ``DQ_OPS``, independent
+        of their integer dtype.
 
-        For non Q/DQ nodes, remove the tag from the first node in the partition
-        if any input has floating-point dtype.
+        For INT-only partitions, also remove floating-point nodes at input and
+        output boundaries. Repeat until removing one node no longer exposes
+        another invalid boundary node.
 
         Args:
             tag: The delegation tag assigned to the partition.
             reporter: A reporter to log rejected nodes.
             module: The GraphModule containing the partition.
-            detag_first_fp_node: Whether to de-tag the first floating-point
-                node in a partition.
+            detag_first_fp_node: Whether to de-tag floating-point nodes at the
+                input and output boundaries of a partition.
 
         """
-        # De-tag outermost q-nodes upwards and dq-nodes downwards.
-        # De-tag if at least one input/output is not part of the partition.
-        for node in module.graph.nodes:
-            if not is_partitioned(node, tag):
-                continue
+        # Q_OPS and DQ_OPS cover the supported conversion variants. Their
+        # parameters determine the integer dtype, so this handles INT8 and
+        # INT16 graphs.
+        #
+        # Keep conversions and floating-point operations outside INT-only
+        # delegates:
+        #
+        #     integer delegate -> portable [DQ -> floating-point operations]
+        #
+        # Removing one boundary node can expose another Q/DQ or floating-point
+        # node, so repeat until the partition has a valid boundary.
+        modified = True
+        while modified:
+            modified = False
+            for node in module.graph.nodes:
+                if not is_partitioned(node, tag):
+                    continue
 
-            is_q_node = node.target in Q_OPS
-            is_dq_node = node.target in DQ_OPS
-            is_boundary_q_node = is_q_node and not is_partitioned(
-                node.all_input_nodes[0], tag
-            )
-            is_boundary_dq_node = is_dq_node and any(
-                not is_partitioned(user, tag) for user in node.users
-            )
+                is_q_node = node.target in Q_OPS
+                is_dq_node = node.target in DQ_OPS
+                is_boundary_q_node = is_q_node and not is_partitioned(
+                    node.all_input_nodes[0], tag
+                )
+                has_external_user = any(
+                    not is_partitioned(user, tag) for user in node.users
+                )
+                is_boundary_dq_node = is_dq_node and has_external_user
+                is_boundary_fp_output = (
+                    detag_first_fp_node
+                    and not is_q_node
+                    and not is_dq_node
+                    and has_external_user
+                    and get_first_fake_tensor(node).dtype.is_floating_point
+                )
 
-            if is_boundary_q_node or is_boundary_dq_node:
-                # Remove tag from quantize node with input outside partition,
-                # or dequantize node with any output outside partition
-                del node.meta["delegation_tag"]
-            elif detag_first_fp_node and not is_q_node and not is_dq_node:
-                # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
-                for input in node.all_input_nodes:
-                    if is_partitioned(input, tag) or isinstance(
-                        input.meta["val"], torch.SymInt
-                    ):
-                        continue
-                    if get_first_fake_tensor(input).dtype.is_floating_point:
-                        reporter.report_reject(
-                            node,
-                            f"Was first node in partition and input {input.name} had fp dtype.",
-                        )
-                        del node.meta["delegation_tag"]
-                        break
+                if is_boundary_q_node or is_boundary_dq_node or is_boundary_fp_output:
+                    del node.meta["delegation_tag"]
+                    modified = True
+                    continue
+
+                if detag_first_fp_node and not is_q_node and not is_dq_node:
+                    # Remove the first floating-point node at an input boundary.
+                    for input in node.all_input_nodes:
+                        if is_partitioned(input, tag) or isinstance(
+                            input.meta["val"], torch.SymInt
+                        ):
+                            continue
+                        if get_first_fake_tensor(input).dtype.is_floating_point:
+                            reporter.report_reject(
+                                node,
+                                f"Was first node in partition and input {input.name} had fp dtype.",
+                            )
+                            del node.meta["delegation_tag"]
+                            modified = True
+                            break
 
     def _preserve_io_quantization_enabled(self) -> bool:
         """Return True if compile specs preserve IO quantization."""
@@ -746,11 +777,15 @@ class TOSAPartitioner(Partitioner):
             if self._custom_partition_ops
             else None
         )
+        additional_checks = list(self.additional_checks or ())
+        if self._requires_resolved_tensor_shapes:
+            additional_checks.append(CheckResolvedTensorShapes(reporter))
+
         return tosa_support_factory(
             self.tosa_spec,
             containing_program,
             reporter,
-            self.additional_checks,
+            additional_checks=additional_checks,
             additional_positive_checks=[
                 self._decomposable_resize_support,
                 DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
@@ -782,9 +817,12 @@ class TOSAPartitioner(Partitioner):
         )
 
         reporter = WhyNoPartitionReporter()
-        tags = self._tag_module(
-            exported_program.graph_module, exported_program, reporter
-        )
+        with TosaLoweringContext(
+            self.tosa_spec, _get_shape_env_from_gm(exported_program.graph_module)
+        ):
+            tags = self._tag_module(
+                exported_program.graph_module, exported_program, reporter
+            )
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)

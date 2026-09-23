@@ -34,6 +34,7 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
     VulkanDelegateHeader,
 )
+from torch.export.graph_signature import OutputKind
 
 
 class TestSerialization(unittest.TestCase):
@@ -167,6 +168,77 @@ class TestSerialization(unittest.TestCase):
                     graph.output_ids,
                     [builder.node_to_value_ids[mutation]],
                 )
+
+    def test_mutation_aliasing_user_output_gets_one_slot(self) -> None:
+        # A mutated buffer returned through a view: once the view is removed
+        # the mutation and the user output are the same node. With aliasing on
+        # the mutation is applied in place and only the user output takes a
+        # slot; without it the mutation still needs a slot to carry the new
+        # value back.
+        for prepack in (False, True):
+            for with_specs in (False, True):
+                program, _, mutation, _ = self._build_mutation_program(
+                    prepack, shared_user_output=True
+                )
+                if with_specs:
+                    program.graph_signature.output_specs = [
+                        SimpleNamespace(kind=OutputKind.BUFFER_MUTATION),
+                        SimpleNamespace(kind=OutputKind.USER_OUTPUT),
+                    ]
+                for alias, expected_slots in ((True, 1), (False, 2)):
+                    with self.subTest(
+                        prepack=prepack,
+                        output_specs=with_specs,
+                        alias_buffer_mutations=alias,
+                    ):
+                        builder = graph_builder_module.VkGraphBuilder(
+                            program,
+                            graph_builder_module.DelegateMappingBuilder(
+                                generated_identifiers=True
+                            ),
+                            alias_buffer_mutations=alias,
+                        )
+                        graph = builder.build_graph()
+                        self.assertEqual(
+                            graph.output_ids,
+                            [builder.node_to_value_ids[mutation]] * expected_slots,
+                        )
+
+    def test_duplicate_user_outputs_get_two_slots(self) -> None:
+        # `Node.all_input_nodes` de-duplicates, so a graph returning the same
+        # value twice must still serialize one output id per output, or the
+        # runtime's argument count check fails.
+        graph = torch.fx.Graph()
+        user_input = graph.placeholder("user_input")
+        user_input.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+            torch.ones(4)
+        )
+        output = graph.call_function(torch.ops.aten.mul.Tensor, (user_input, 2.0))
+        output.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(torch.ones(4))
+        graph.output((output, output))
+
+        program = SimpleNamespace(
+            constants={},
+            graph_module=torch.fx.GraphModule({}, graph),
+            graph_signature=SimpleNamespace(
+                buffers_to_mutate={},
+                inputs_to_buffers={},
+                inputs_to_lifted_tensor_constants={},
+                inputs_to_parameters={},
+                non_persistent_buffers=set(),
+                user_outputs=(output.name, output.name),
+            ),
+            state_dict={},
+        )
+        builder = graph_builder_module.VkGraphBuilder(
+            program,
+            graph_builder_module.DelegateMappingBuilder(generated_identifiers=True),
+        )
+        vk_graph = builder.build_graph()
+        self.assertEqual(
+            vk_graph.output_ids,
+            [builder.node_to_value_ids[output]] * 2,
+        )
 
     def _generate_random_const_tensors(self, num_tensors: int) -> List[torch.Tensor]:
         """

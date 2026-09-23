@@ -18,7 +18,7 @@ signature = "EthosUBackend.preprocess(edge_program: torch.export.exported_progra
 
 [python.EthosUCompileSpec]
 kind = "class"
-signature = "EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None)"
+signature = "EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None, max_scratch_size: int | None = None)"
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
