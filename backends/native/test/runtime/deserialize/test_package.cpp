@@ -132,7 +132,7 @@ TEST(PackageTest, LoadsConstantsOnDemand) {
       package.acquire_constant("tied_weight");
   ASSERT_TRUE(acquired);
   EXPECT_TRUE(std::ranges::equal(acquired->span(), destination));
-  EXPECT_NO_THROW(package.verify_constants());
+  EXPECT_NO_THROW(package.verify());
 }
 
 TEST(PackageTest, ReportsMissingConstantsAndWrongDestinations) {
