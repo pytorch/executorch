@@ -11,10 +11,10 @@
 #include <bit>
 #include <cstring>
 #include <limits>
-#include <numeric>
 #include <stdexcept>
 #include <string_view>
 
+#include <executorch/backends/native/runtime/deserialize/CheckedMath.h>
 #include <executorch/backends/native/runtime/deserialize/Json.h>
 
 namespace ptn {
@@ -103,12 +103,10 @@ size_t numel_of(const std::vector<int64_t>& sizes, const std::string& name) {
       throw std::runtime_error(
           "safetensors: entry '" + name + "' has a negative dimension");
     }
-    const size_t d = static_cast<size_t>(dim);
-    if (d != 0 && numel > SIZE_MAX / d) {
+    if (!detail::checked_mul(numel, static_cast<size_t>(dim), numel)) {
       throw std::runtime_error(
           "safetensors: entry '" + name + "' element count overflows");
     }
-    numel *= d;
   }
   return numel;
 }
@@ -209,13 +207,14 @@ SafeTensorsReader SafeTensorsReader::open_header(
     // The payload must be exactly as large as its dtype and shape imply.
     // Without this, a short entry becomes an out-of-bounds read in whatever
     // consumes it, sized from the metadata rather than the bytes.
-    const size_t numel = numel_of(parsed.sizes, name);
-    const size_t element_bytes = element_size(parsed.dtype);
-    if (element_bytes != 0 && numel > SIZE_MAX / element_bytes) {
+    size_t expected = 0;
+    if (!detail::checked_mul(
+            numel_of(parsed.sizes, name),
+            element_size(parsed.dtype),
+            expected)) {
       throw std::runtime_error(
           "safetensors: entry '" + name + "' byte size overflows");
     }
-    const size_t expected = numel * element_bytes;
     if (parsed.nbytes != expected) {
       throw std::runtime_error(
           "safetensors: entry '" + name + "' holds " +
@@ -238,13 +237,13 @@ const TensorEntry* SafeTensorsReader::find(const std::string& name) const {
 }
 
 size_t SafeTensorsReader::total_bytes() const {
-  return std::accumulate(
-      entries_.begin(),
-      entries_.end(),
-      size_t{0},
-      [](size_t total, const auto& entry) {
-        return total + entry.second.nbytes;
-      });
+  size_t total = 0;
+  for (const auto& entry : entries_) {
+    if (!detail::checked_add(total, entry.second.nbytes, total)) {
+      throw std::runtime_error("safetensors: total payload size overflows");
+    }
+  }
+  return total;
 }
 
 } // namespace ptn
