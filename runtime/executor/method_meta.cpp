@@ -152,6 +152,11 @@ std::string_view TensorInfo::name() const {
 MethodMeta::MethodMeta(const executorch_flatbuffer::ExecutionPlan* s_plan)
     : s_plan_(s_plan) {}
 
+MethodMeta MethodMeta::from_validated_execution_plan(
+    const executorch_flatbuffer::ExecutionPlan& plan) {
+  return MethodMeta(&plan);
+}
+
 const char* MethodMeta::name() const {
   return s_plan_->name()->c_str();
 }
