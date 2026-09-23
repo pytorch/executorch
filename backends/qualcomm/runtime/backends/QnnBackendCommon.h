@@ -12,6 +12,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnOpPackageManager.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 #include <unordered_set>
 #include <vector>
 

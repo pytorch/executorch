@@ -6,6 +6,7 @@ from typing import Dict, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
     QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
@@ -29,7 +30,7 @@ class QnnManagerRegistry:
         self,
         backend_type: QnnExecuTorchBackendType,
         option: bytes,
-        soc_model,
+        soc_model: QcomChipset,
     ) -> PyQnnManager.QnnManager:
         # Outside the branch below, so reusing a cached manager still re-applies them. Both are
         # cheap on a repeat call, and the AMD guard has to hold for every lowering, not only the
@@ -49,7 +50,11 @@ class QnnManagerRegistry:
             self._registry[key] = qnn_manager
         return self._registry[key]
 
-    def destroy_qnn_manager(self, backend_type: QnnExecuTorchBackendType, soc_model):
+    def destroy_qnn_manager(
+        self,
+        backend_type: QnnExecuTorchBackendType,
+        soc_model: QcomChipset,
+    ):
         key = (backend_type, soc_model)
         if key in self._registry:
             self._registry[key].Destroy()
@@ -58,23 +63,14 @@ class QnnManagerRegistry:
             logging.warning(
                 "Attempted to destroy non-existent QnnManager for backend type %s "
                 "and SoC %s",
-                backend_type.name,
-                soc_model.name,
+                backend_type,
+                soc_model,
             )
 
 
-def _get_soc_model(compile_specs: List[CompileSpec]):
-    option = generate_qnn_executorch_option(compile_specs)
+def _get_soc_model(option: bytes) -> QcomChipset:
     python_options = flatbuffer_to_option(option)
     return python_options.soc_info.soc_model
-
-
-def _get_current_registry() -> QnnManagerRegistry:
-    active_registry = getattr(_current_qnn_managers, "active_registry", None)
-    if active_registry is None:
-        active_registry = QnnManagerRegistry()
-        _current_qnn_managers.active_registry = active_registry
-    return active_registry
 
 
 @contextlib.contextmanager
@@ -106,11 +102,18 @@ def get_current_qnn_manager(
     Retrieves the QnnManager instance active for the current QnnManagerContext invocation.
     Return a new QnnManger if no QnnManager is active for the given backend_type in the current context.
     """
-    soc_model = _get_soc_model(compile_specs)
     option = generate_qnn_executorch_option(compile_specs)
+    soc_model = _get_soc_model(option)
     # Re-applied even though the manager already exists, because a caller may have turned the
     # setting back on since it was built, and this is a lowering about to run.
     disable_mkldnn_on_amd()
-    return _get_current_registry().get_or_create_qnn_manager(
-        backend_type, option, soc_model
-    )
+    active_registry = getattr(_current_qnn_managers, "active_registry", None)
+    if active_registry is None:
+        logging.warning(
+            "No QnnManager active for backend type %s in the current "
+            "QnnManagerContext. It would be better to use "
+            "to_edge_transform_and_lower_to_qnn to lower to the QNN backend.",
+            backend_type.name,
+        )
+        active_registry = QnnManagerRegistry()
+    return active_registry.get_or_create_qnn_manager(backend_type, option, soc_model)
