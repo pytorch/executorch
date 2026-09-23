@@ -22,16 +22,18 @@
 
 #ifdef USE_ATEN_LIB
 #define ET_MODULE_NAMESPACE module::aten
+#define ET_PTN_MODULE_NAMESPACE native_module::aten
 #else // !USE_ATEN_LIB
 #define ET_MODULE_NAMESPACE module
+#define ET_PTN_MODULE_NAMESPACE native_module
 #endif // USE_ATEN_LIB
 
 namespace executorch {
 namespace extension {
 
-namespace native_module::internal {
+namespace ET_PTN_MODULE_NAMESPACE::internal {
 class PtnModule;
-} // namespace native_module::internal
+} // namespace ET_PTN_MODULE_NAMESPACE::internal
 
 using ET_RUNTIME_NAMESPACE::Kernel;
 using ET_RUNTIME_NAMESPACE::Method;
@@ -748,7 +750,7 @@ class Module {
   std::vector<std::string> data_files_;
   LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
-  std::shared_ptr<native_module::internal::PtnModule> ptn_;
+  std::shared_ptr<ET_PTN_MODULE_NAMESPACE::internal::PtnModule> ptn_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
