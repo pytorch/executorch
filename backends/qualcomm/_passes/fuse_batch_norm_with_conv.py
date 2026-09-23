@@ -1,5 +1,5 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,7 +15,12 @@ from executorch.backends.transforms.utils import (
     is_param_node,
 )
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import (
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    TensorArgument,
+)
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 # The export pipeline sees pre-dispatch ops; a program exported otherwise
@@ -28,6 +33,9 @@ _CONV_OPS = {
 }
 _BATCH_NORM = torch.ops.aten.batch_norm.default
 _BATCH_NORM_NO_TRAINING = torch.ops.aten._native_batch_norm_legit_no_training.default
+
+# torch.export names a parameter placeholder "p_" + its state_dict key.
+_PARAMETER_PREFIX = "p_"
 
 
 class FuseBatchNormWithConv(ExportPass):
@@ -53,6 +61,46 @@ class FuseBatchNormWithConv(ExportPass):
 
     def _tensor(self, node) -> Optional[torch.Tensor]:
         return None if node is None else get_param_tensor(self.edge_program, node)
+
+    def _create_parameter(
+        self, graph: torch.fx.Graph, name: str, tensor: torch.Tensor
+    ) -> torch.fx.Node:
+        """Register `tensor` as a parameter and return its placeholder.
+
+        The to_edge passes look parameters up in this (pre-edge) program by the
+        node name they see in the edge graph, so a placeholder added here has to
+        survive to_edge unrenamed. to_edge renames a parameter placeholder to
+        "p_" + its state_dict key, so the node is named with that prefix and the
+        key is registered without it, leaving the name a fixed point.
+        """
+        program = self.edge_program
+        first_placeholder = next(n for n in graph.nodes if n.op == "placeholder")
+        with graph.inserting_before(first_placeholder):
+            node = create_constant_placeholder(
+                program,
+                graph,
+                f"{_PARAMETER_PREFIX}{name}",
+                InputKind.PARAMETER,
+                tensor.detach(),
+            )
+        # create_constant_placeholder keys the state_dict and the input spec on
+        # the (possibly deduplicated) node name; re-key both without the prefix.
+        target = node.name[len(_PARAMETER_PREFIX) :]
+        program.state_dict[target] = program.state_dict.pop(node.name)
+        program._graph_signature = ExportGraphSignature(
+            [
+                (
+                    InputSpec(
+                        spec.kind, TensorArgument(node.name), target, spec.persistent
+                    )
+                    if spec.arg.name == node.name
+                    else spec
+                )
+                for spec in program.graph_signature.input_specs
+            ],
+            program.graph_signature.output_specs,
+        )
+        return node
 
     def _match_bn(self, conv: torch.fx.Node) -> Optional[torch.fx.Node]:
         """The inference-mode BatchNorm consuming `conv`, if it can be folded."""
@@ -101,18 +149,14 @@ class FuseBatchNormWithConv(ExportPass):
             self._tensor(bn_bias),
         )
 
-        first_placeholder = next(n for n in graph.nodes if n.op == "placeholder")
-        with graph.inserting_before(first_placeholder):
-            fused = [
-                create_constant_placeholder(
-                    self.edge_program,
-                    graph,
-                    f"{conv.name}_fused_bn_{kind}",
-                    InputKind.PARAMETER,
-                    tensor.detach(),
-                )
-                for kind, tensor in (("weight", fused_weight), ("bias", fused_bias))
-            ]
+        # Every constant the pair consumed, so that whatever the fold leaves
+        # behind is collected below rather than surviving as a dead input.
+        folded_inputs = {weight, bias, *bn.args[1:]}
+
+        fused = [
+            self._create_parameter(graph, f"{conv.name}_fused_bn_{kind}", tensor)
+            for kind, tensor in (("weight", fused_weight), ("bias", fused_bias))
+        ]
         args = list(conv.args) + [None] * (3 - len(conv.args))
         args[1], args[2] = fused
         conv.args = tuple(args)
@@ -125,7 +169,7 @@ class FuseBatchNormWithConv(ExportPass):
                 graph.erase_node(user)
         graph.erase_node(bn)
 
-        for node in {weight, bias, bn_weight, bn_bias, running_mean, running_var}:
+        for node in folded_inputs:
             if isinstance(node, torch.fx.Node) and len(node.users) == 0:
                 delete_constant_placeholder(self.edge_program, node)
 
