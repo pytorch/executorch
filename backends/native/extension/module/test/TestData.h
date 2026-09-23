@@ -24,6 +24,7 @@ inline std::vector<uint8_t> make_tensor_package(
     const std::vector<int64_t>& sizes = {2},
     bool bind_missing_constant = false,
     const std::string& version = "1.0",
+    size_t num_outputs = 1,
     const std::vector<int32_t>& dim_order = {}) {
   flatbuffers::FlatBufferBuilder builder;
   std::vector<flatbuffers::Offset<native_backend::Method>> serialized_methods;
@@ -50,21 +51,34 @@ inline std::vector<uint8_t> make_tensor_package(
               builder.CreateVector(dimensions),
               builder.CreateVector(dim_order))));
     }
-    std::vector<flatbuffers::Offset<native_backend::Dim>> output_dimensions;
-    output_dimensions.reserve(sizes.size());
-    for (const int64_t size : sizes) {
-      output_dimensions.push_back(
-          native_backend::CreateDim(builder, size, size));
+    std::vector<flatbuffers::Offset<flatbuffers::String>> output_names;
+    std::vector<flatbuffers::Offset<native_backend::OutputSpec>> output_specs;
+    output_names.reserve(num_outputs);
+    output_specs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; ++i) {
+      std::vector<flatbuffers::Offset<native_backend::Dim>> output_dimensions;
+      output_dimensions.reserve(sizes.size());
+      for (const int64_t size : sizes) {
+        output_dimensions.push_back(
+            native_backend::CreateDim(builder, size, size));
+      }
+      const auto output_name =
+          builder.CreateString("output" + std::to_string(i));
+      output_names.push_back(output_name);
+      tensor_values.push_back(native_backend::CreateTensorValue(
+          builder,
+          output_name,
+          native_backend::CreateTensorMeta(
+              builder,
+              native_backend::ScalarType::FLOAT,
+              builder.CreateVector(output_dimensions),
+              builder.CreateVector(dim_order))));
+      output_specs.push_back(native_backend::CreateOutputSpec(
+          builder,
+          output_name,
+          native_backend::OutputKind::USER_OUTPUT,
+          builder.CreateString("")));
     }
-    const auto output_name = builder.CreateString("output");
-    tensor_values.push_back(native_backend::CreateTensorValue(
-        builder,
-        output_name,
-        native_backend::CreateTensorMeta(
-            builder,
-            native_backend::ScalarType::FLOAT,
-            builder.CreateVector(output_dimensions),
-            builder.CreateVector(dim_order))));
     if (bind_missing_constant) {
       std::vector<flatbuffers::Offset<native_backend::Dim>> dimensions;
       dimensions.reserve(sizes.size());
@@ -84,14 +98,8 @@ inline std::vector<uint8_t> make_tensor_package(
         builder.CreateVector(
             std::vector<flatbuffers::Offset<native_backend::Node>>{}),
         builder.CreateVector(input_names),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<flatbuffers::String>>{output_name}),
+        builder.CreateVector(output_names),
         builder.CreateVector(tensor_values));
-    const auto output_spec = native_backend::CreateOutputSpec(
-        builder,
-        output_name,
-        native_backend::OutputKind::USER_OUTPUT,
-        builder.CreateString(""));
     flatbuffers::Offset<flatbuffers::Vector<
         flatbuffers::Offset<native_backend::NamedTensorRef>>>
         constants = 0;
@@ -119,9 +127,7 @@ inline std::vector<uint8_t> make_tensor_package(
         builder.CreateString(method_name),
         graph,
         constants,
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<native_backend::OutputSpec>>{
-                output_spec})));
+        builder.CreateVector(output_specs)));
   }
   const auto methods = builder.CreateVector(serialized_methods);
   const auto program = native_backend::CreateProgram(
