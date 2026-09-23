@@ -142,6 +142,7 @@ described in the rest of this guide but with a concrete end-to-end sample.
 
 **→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
 
+**→{doc}`/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization` — Dynamic W8A8 quantization tutorial.**
 
 ```{toctree}
 :maxdepth: 2
@@ -153,4 +154,5 @@ arm-vgf-quantization
 arm-vgf-troubleshooting
 tutorials/vgf-getting-started
 VGF_op_support
+tutorials/vgf-dynamic-w8a8-quantization
 ```

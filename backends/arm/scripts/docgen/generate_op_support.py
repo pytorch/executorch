@@ -11,6 +11,7 @@ backend-specific registry filtering. Run from the ExecuTorch repository root.
 Examples:
     python backends/arm/scripts/docgen/generate_op_support.py --backend vgf
     python backends/arm/scripts/docgen/generate_op_support.py --backend u55
+    python backends/arm/scripts/docgen/generate_op_support.py --backend u85
     python backends/arm/scripts/docgen/generate_op_support.py --backend u55 --debug --html
     python backends/arm/scripts/docgen/generate_op_support.py --backend vgf --check --strict-ast
 
@@ -103,6 +104,22 @@ BACKENDS: dict[str, BackendConfig] = {
         infrastructure_xfail_markers=frozenset({"XfailIfNoCorstone300"}),
         filter_u55_unsupported_ops=True,
         max_missing_profile_cells=4,
+    ),
+    "u85": BackendConfig(
+        key="u85",
+        name="Ethos-U85",
+        pipeline_class_names=frozenset({"EthosU85PipelineINT"}),
+        pipeline_label="EthosU85PipelineINT",
+        tosa_spec="TOSA-1.0+INT+int16+int4+cf",
+        default_output=Path("docs/source/backends/arm-ethos-u/U85_op_support.md"),
+        quantize_keyword=None,
+        quantize_default=True,
+        default_profile="INT",
+        support_profile_order=("INT",),
+        # A missing Corstone-320 FVP is infrastructure, not evidence that the
+        # operator itself is unsupported.
+        infrastructure_xfail_markers=frozenset({"XfailIfNoCorstone320"}),
+        max_missing_profile_cells=3,
     ),
 }
 
@@ -418,6 +435,25 @@ U55_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     },
 }
 
+# Existing U85 runtime tests below intentionally suppress direct ATen/Edge
+# assertions because quantization/decomposition changes the graph. They still
+# provide positive runtime coverage for the exported operator.
+U85_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
+    (
+        "backends/arm/test/ops/test_div_tensor_mode.py",
+        "test_div_tensor_mode_u85_INT",
+    ): {
+        "INT": {"torch.ops.aten.div.Tensor_mode"},
+    },
+    (
+        "backends/arm/test/ops/test_silu.py",
+        "test_silu_u85_INT",
+    ): {
+        "INT": {"torch.ops.aten.silu.default"},
+    },
+}
+
+
 # These exported operators pass a generic TOSA positive-support declaration,
 # but their actual U55 lowering path reaches an unsupported operation or a
 # restriction that cannot support the general exported operator. Keep these
@@ -438,6 +474,8 @@ def _active_explicit_backend_coverage() -> dict[tuple[str, str], dict[str, set[s
         return VGF_EXPLICIT_BACKEND_COVERAGE
     if ACTIVE_BACKEND_KEY == "u55":
         return U55_EXPLICIT_BACKEND_COVERAGE
+    if ACTIVE_BACKEND_KEY == "u85":
+        return U85_EXPLICIT_BACKEND_COVERAGE
     return {}
 
 
@@ -2369,6 +2407,9 @@ def _collect_backend_custom_partition_ops(
     to the profiles for which they are actually registered.
 
     """
+    if ACTIVE_BACKEND_KEY != "vgf":
+        return {}
+
     from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
     enabled_profiles = {

@@ -19,7 +19,7 @@ import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.quantizer import QuantizationConfig
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor

@@ -47,6 +47,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeAtanPass,
     DecomposeAvgPool2dPass,
     DecomposeBatchNormNoStatsPass,
+    DecomposeChooseQParamsSymmetricPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -85,6 +86,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
+    DecomposePowTensorTensorPass,
     DecomposePReLUPass,
     DecomposeProdPass,
     DecomposeQuantNodesPass,
@@ -113,6 +115,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecorateFp32toInt32CastingPass,
     DeduplicateConstShapesPass,
     DeduplicateGetAttrPass,
+    DetectDynamicW8A8LinearPass,
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
     FoldAndAnnotateQParamsPass,
@@ -137,6 +140,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     InsertRescaleInt32Pass,
     InsertRescalePass,
     InsertTableOpsPass,
+    LowerDynamicW8A8LinearPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
     MoveDataMovementOpsToSmallerDtypePass,
@@ -153,6 +157,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RemoveGetItemPass,
     RemoveGraphAssertsPass,
     RemoveNoopPass,
+    RemoveRedundantTypeAsPass,
     RemoveSafeSoftmaxGuardPass,
     ReplaceInfAndLimitValuesPass,
     ReplaceScalarWithTensorByProfilePass,
@@ -161,6 +166,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     RewriteAvgPool2dPass,
     RewriteBoolBitwiseToLogicalPass,
     RewriteBoolToFp32CastViaInt8Pass,
+    RewriteCatSlicePass,
     RewriteConvPass,
     RewriteHighRankSingletonPermutePass,
     RewriteIndexPutPass,
@@ -550,6 +556,13 @@ class ArmPassManager(ExportedProgramPassManager):
         # Fold Q/DQ nodes, insert INT8/INT32 rescales, decompose quantization nodes.
         self.add_passes(
             [
+                # Dynamic activation qparams must be expressed as ordinary edge ops
+                # before Q/DQ folding and backend lowering.
+                DecomposeChooseQParamsSymmetricPass(exported_program),
+                # Runtime tensor qparams cannot be represented by the static Q/DQ fold.
+                # Lower dynamic W8A8 Linear while its DQ(Q(...)) pattern is intact.
+                DetectDynamicW8A8LinearPass(exported_program),
+                LowerDynamicW8A8LinearPass(),
                 FoldAndAnnotateQParamsPass(
                     exported_program,
                     preserve_partial_binary_tensor_qdq=(
@@ -708,6 +721,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 MoveDataMovementOpsToSmallerDtypePass(),
                 MatchArgRanksPass(exported_program),
                 RewriteHighRankSingletonPermutePass(),
+                RewriteCatSlicePass(),
                 FuseConsecutiveConcatsPass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
@@ -770,6 +784,7 @@ class ArmPassManager(ExportedProgramPassManager):
         with self._tosa_context(graph_module):
             # Preprocessing passes
             self.add_pass(RemoveGraphAssertsPass(tfa_pass=True))
+            self.add_pass(RemoveRedundantTypeAsPass())
             self.add_pass(ConstantFoldingPass())
 
             # Transformation passes (pre scalar -> tensor)
@@ -836,6 +851,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeCosineSimilarityPass(tfa_pass=True),
                     DecomposeGluPass(tfa_pass=True),
                     DecomposeDivPass(tfa_pass=True),
+                    DecomposePowTensorTensorPass(self.tosa_spec, tfa_pass=True),
                     DecomposeLinalgVectorNormPass(tfa_pass=True),
                     DecomposeSqrtPass(tfa_pass=True),
                     DecomposeSoftmaxPass(

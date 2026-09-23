@@ -9,6 +9,8 @@
 
 #include "arm_perf_monitor.h"
 
+using printf_size_t = unsigned long;
+
 #ifdef ETHOSU
 #include <ethosu_driver.h>
 #include <executorch/runtime/platform/log.h>
@@ -354,8 +356,8 @@ void StopMeasurements(int num_inferences) {
   for (size_t i = 0; i < ethosu_pmuCountersUsed; i++) {
     ET_LOG(
         Info,
-        "ethosu_pmu_cntr%zd : %" PRIu64 " (%.2f per inference)",
-        i,
+        "ethosu_pmu_cntr%lu : %" PRIu64 " (%.2f per inference)",
+        static_cast<printf_size_t>(i),
         ethosu_pmuEventCounts[i],
         (double)ethosu_pmuEventCounts[i] / num_inferences);
   }
@@ -366,36 +368,36 @@ void StopMeasurements(int num_inferences) {
     const DelegateStats& stats = ethosu_delegateStats[delegate_id];
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu: %" PRIu64 " backend invocations, %" PRIu64
+        "Ethos-U delegate %lu: %" PRIu64 " backend invocations, %" PRIu64
         " NPU invocations",
-        delegate_id,
+        static_cast<printf_size_t>(delegate_id),
         stats.backend_invocations,
         stats.npu_invocations);
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu PMU cycles: %" PRIu64,
-        delegate_id,
+        "Ethos-U delegate %lu PMU cycles: %" PRIu64,
+        static_cast<printf_size_t>(delegate_id),
         stats.pmu_cycles);
     for (size_t event = 0; event < ethosu_pmuCountersUsed; ++event) {
       ET_LOG(
           Info,
-          "Ethos-U delegate %zu PMU counter %zu: %" PRIu64,
-          delegate_id,
-          event,
+          "Ethos-U delegate %lu PMU counter %lu: %" PRIu64,
+          static_cast<printf_size_t>(delegate_id),
+          static_cast<printf_size_t>(event),
           stats.pmu_events[event]);
     }
 #if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
-        delegate_id,
+        "Ethos-U delegate %lu input copy: %" PRIu64 " calls, %" PRIu64 " bytes",
+        static_cast<printf_size_t>(delegate_id),
         stats.input_copies.calls,
         stats.input_copies.bytes);
     ET_LOG(
         Info,
-        "Ethos-U delegate %zu output copy: %" PRIu64 " calls, %" PRIu64
+        "Ethos-U delegate %lu output copy: %" PRIu64 " calls, %" PRIu64
         " bytes",
-        delegate_id,
+        static_cast<printf_size_t>(delegate_id),
         stats.output_copies.calls,
         stats.output_copies.bytes);
 #endif
@@ -403,8 +405,8 @@ void StopMeasurements(int num_inferences) {
   if (ethosu_delegateCapacityExceeded) {
     ET_LOG(
         Error,
-        "Ethos-U per-delegate profiling exceeded its capacity of %zu delegates",
-        ethosu_delegateStats.size());
+        "Ethos-U per-delegate profiling exceeded its capacity of %lu delegates",
+        static_cast<printf_size_t>(ethosu_delegateStats.size()));
   }
 #endif
 #if defined(ETHOSU55) || defined(ETHOSU65)

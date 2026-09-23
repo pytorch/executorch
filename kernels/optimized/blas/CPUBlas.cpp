@@ -8,7 +8,10 @@
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 
-#include <limits.h>
+#include <cstddef>
+#include <cstdint>
+
+#include <executorch/kernels/optimized/blas/KleidiBlas.h>
 
 #ifdef ET_BUILD_WITH_BLAS
 #ifdef ET_BUILD_FOR_APPLE
@@ -267,6 +270,12 @@ void gemm(
     const float beta,
     float *c, int64_t ldc) {
   normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+#if defined(ET_KLEIDIAI_HAS_NEON_BF16) || defined(ET_KLEIDIAI_HAS_SME2_BF16)
+  if (kleidiai_bfloat16_gemm(
+          transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)) {
+    return;
+  }
+#endif
   gemm_impl<BFloat16, float, float>(
       transa, transb,
       m, n, k,

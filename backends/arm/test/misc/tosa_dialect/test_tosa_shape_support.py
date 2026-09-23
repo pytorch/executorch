@@ -41,17 +41,41 @@ class Atan2(torch.nn.Module):
 
 
 class Conv2d(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, stride: int = 1, padding: int = 1) -> None:
         super().__init__()
-        self.conv = torch.nn.Conv2d(3, 4, 3, padding=1)
+        self.conv = torch.nn.Conv2d(3, 4, 3, padding=padding, stride=stride)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.conv(x)
 
 
 class AvgPool2d(torch.nn.Module):
+    def __init__(
+        self, kernel_size: int = 2, stride: int | None = None, padding: int = 0
+    ) -> None:
+        super().__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
+        if self.stride is None:
+            return torch.nn.functional.avg_pool2d(
+                x, kernel_size=self.kernel_size, padding=self.padding
+            )
+        return torch.nn.functional.avg_pool2d(
+            x, self.kernel_size, self.stride, self.padding
+        )
+
+
+class MaxPool2d(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.max_pool2d(x, kernel_size=2)
+
+
+class MaxPool2dEmptyStride(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.nn.functional.max_pool2d(x, kernel_size=2, stride=[])
 
 
 class MeanDim(torch.nn.Module):
@@ -101,6 +125,11 @@ class ReturnSymSizeArithmetic(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
         return x, self.operation(x.shape[0], 2)
+
+
+class Index(torch.nn.Module):
+    def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+        return x[indices]
 
 
 def _exported_program(
@@ -216,7 +245,7 @@ def test_ethos_rejects_unresolved_tensor_shapes(compile_spec):
     assert torch.ops.higher_order.executorch_call_delegate not in targets
 
 
-def test_without_shape_extension_rejects_symbolic_spatial_conv2d():
+def test_without_shape_extension_accepts_symbolic_spatial_conv2d_without_input_adjustment():
     inputs = (torch.randn(2, 3, 8, 8),)
     height = Dim("height", min=4, max=10)
     exported_program = _exported_program(
@@ -224,15 +253,49 @@ def test_without_shape_extension_rejects_symbolic_spatial_conv2d():
         inputs,
         dynamic_shapes=({2: height},),
     )
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
 
-    _assert_rejected_with_reason(
-        exported_program,
-        exir_ops.edge.aten.convolution.default,
-        "Symbolic spatial dims unsupported",
+    assert node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+def test_without_shape_extension_rejects_symbolic_spatial_conv2d_needing_input_adjustment():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        Conv2d(stride=3),
+        inputs,
+        dynamic_shapes=({2: height},),
     )
 
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
 
-def test_without_shape_extension_rejects_symbolic_spatial_pooling():
+    assert node.meta.get("delegation_tag") not in partition_result.partition_tags
+
+
+def test_without_shape_extension_rejects_symbolic_spatial_conv2d_needing_dynamic_padding():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        Conv2d(stride=3, padding=2),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(exported_program, exir_ops.edge.aten.convolution.default)
+
+    assert node.meta.get("delegation_tag") not in partition_result.partition_tags
+
+
+def test_without_shape_extension_accepts_symbolic_spatial_pooling_without_input_adjustment():
     inputs = (torch.randn(2, 3, 8, 8),)
     height = Dim("height", min=2, max=5) * 2
     exported_program = _exported_program(
@@ -241,11 +304,67 @@ def test_without_shape_extension_rejects_symbolic_spatial_pooling():
         dynamic_shapes=({2: height},),
     )
 
-    _assert_rejected_with_reason(
-        exported_program,
-        exir_ops.edge.aten.avg_pool2d.default,
-        "Symbolic spatial dims unsupported",
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
     )
+    node = _find_node(exported_program, exir_ops.edge.aten.avg_pool2d.default)
+
+    assert node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+def test_without_shape_extension_accepts_value_only_symbolic_max_pooling():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=2, max=5) * 2
+    exported_program = _exported_program(
+        MaxPool2d(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(
+        exported_program, exir_ops.edge.aten.max_pool2d_with_indices.default
+    )
+
+    assert node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+def test_without_shape_extension_accepts_symbolic_max_pooling_with_empty_stride():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=2, max=5) * 2
+    exported_program = _exported_program(
+        MaxPool2dEmptyStride(),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(
+        exported_program, exir_ops.edge.aten.max_pool2d_with_indices.default
+    )
+
+    assert node.meta.get("delegation_tag") in partition_result.partition_tags
+
+
+def test_without_shape_extension_rejects_symbolic_spatial_pooling_needing_dynamic_padding():
+    inputs = (torch.randn(2, 3, 8, 8),)
+    height = Dim("height", min=4, max=10)
+    exported_program = _exported_program(
+        AvgPool2d(kernel_size=5, stride=3, padding=2),
+        inputs,
+        dynamic_shapes=({2: height},),
+    )
+
+    partition_result = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP")).partition(
+        exported_program
+    )
+    node = _find_node(exported_program, exir_ops.edge.aten.avg_pool2d.default)
+
+    assert node.meta.get("delegation_tag") not in partition_result.partition_tags
 
 
 def test_without_shape_extension_rejects_symbolic_mean_reduction_dim():
@@ -349,6 +468,35 @@ def test_without_shape_extension_rejects_symbolic_shape_argument():
 
     assert support.is_node_supported(exported_program.graph_module, view_node) is False
     assert "Node has symbolic shape arguments" in reporter.get_table_report()
+
+
+@pytest.mark.parametrize(
+    "tosa_spec",
+    ["TOSA-1.1+FP+INT+shape", "TOSA-1.1+FP+INT"],
+)
+@pytest.mark.parametrize(
+    "dynamic_values, dynamic_index",
+    [(False, False), (True, False), (False, True)],
+)
+def test_index_tensor_shape_support(tosa_spec, dynamic_values, dynamic_index):
+    exported_program = _exported_program(
+        Index(),
+        (torch.randn(8, 4), torch.tensor([0, 2, 3], dtype=torch.int32)),
+        dynamic_shapes=(
+            {0: Dim("rows", min=4, max=16)} if dynamic_values else {},
+            {0: Dim("selected", min=2, max=6)} if dynamic_index else {},
+        ),
+    )
+    support, reporter = _support(tosa_spec, exported_program)
+    index_node = _find_node(exported_program, exir_ops.edge.aten.index.Tensor)
+
+    expected_support = not (dynamic_values or dynamic_index)
+    assert (
+        support.is_node_supported(exported_program.graph_module, index_node)
+        is expected_support
+    )
+    if not expected_support:
+        assert "Symbolic value or index shapes" in reporter.get_table_report()
 
 
 def test_without_shape_extension_rejects_sym_size_int():
