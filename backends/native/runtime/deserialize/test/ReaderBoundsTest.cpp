@@ -11,11 +11,16 @@
 #include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/deserialize/SafeTensorsReader.h>
 #include <executorch/backends/native/runtime/deserialize/ZipReader.h>
+#include <executorch/backends/native/runtime/deserialize/test/PackageTestData.h>
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -183,6 +188,41 @@ TEST(ZipReaderTest, Open_ValidDataDescriptor_ReturnsPayload) {
   const ZipReader reader = ZipReader::open(bytes);
 
   EXPECT_EQ(reader.read("member"), (std::vector<uint8_t>{'a', 'b', 'c'}));
+}
+
+TEST(ZipReaderTest, Read_SharedReaderSupportsConcurrentCalls) {
+  const std::vector<uint8_t> payload(64 * 1024, /*value=*/0x5a);
+  const std::vector<uint8_t> bytes = testing::make_zip({{"member", payload}});
+  const ZipReader reader = ZipReader::open(bytes);
+  constexpr size_t kThreadCount = 8;
+  std::atomic<bool> start = false;
+  std::array<std::exception_ptr, kThreadCount> errors{};
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadCount);
+  for (size_t i = 0; i < kThreadCount; ++i) {
+    threads.emplace_back([&, i]() {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      try {
+        for (size_t iteration = 0; iteration < 32; ++iteration) {
+          if (reader.read("member") != payload) {
+            throw std::runtime_error("concurrent ZIP read returned bad data");
+          }
+        }
+      } catch (...) {
+        errors[i] = std::current_exception();
+      }
+    });
+  }
+  start.store(true, std::memory_order_release);
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+
+  for (const std::exception_ptr& error : errors) {
+    EXPECT_EQ(error, nullptr);
+  }
 }
 
 TEST(ZipReaderTest, Verify_BadPayloadCrc_Throws) {
