@@ -4,4 +4,4 @@ load(":targets.bzl", "define_common_targets")
 oncall("executorch")
 
 non_fbcode_target(_kind = define_common_targets)
-fbcode_target(_kind = define_common_targets)
+fbcode_target(_kind = define_common_targets, is_fbcode = True)
