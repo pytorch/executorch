@@ -17,21 +17,14 @@ import logging
 import os
 import sys
 import warnings as _warnings
-
-import executorch.exir._warnings as _exir_warnings
-
-_warnings.warn(
-    "This API is experimental and subject to change without notice.",
-    _exir_warnings.ExperimentalWarning,
-)
-
-# When installed as a pip wheel, we must import `torch` before trying to import
-# the pybindings shared library extension. This will load libtorch.so and
-# related libs, ensuring that the pybindings lib can resolve those runtime
-# dependencies.
-import torch as _torch
+from importlib import import_module as _import_module
 
 logger = logging.getLogger(__name__)
+
+
+class _LightweightExperimentalWarning(UserWarning):
+    pass
+
 
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
 # package so the C++ backend's dlopen("libopenvino_c.so") works without the
@@ -73,6 +66,32 @@ if sys.platform == "win32":
             e,
         )
 
+# ATen-enabled builds may need torch to load its shared libraries before the
+# extension. Keep this after backend and DLL-path setup so extension module
+# initializers see the configured environment.
+try:
+    _bindings = _import_module("executorch.extension.pybindings._C")
+    _torch = None
+except ImportError as _initial_import_error:
+    try:
+        import torch as _torch
+    except ImportError:
+        raise _initial_import_error
+    _bindings = _import_module("executorch.extension.pybindings._C")
+
+if _bindings._uses_aten:
+    import executorch.exir._warnings as _exir_warnings
+
+    _warning_category = _exir_warnings.ExperimentalWarning
+else:
+    _exir_warnings = None
+    _warning_category = _LightweightExperimentalWarning
+
+_warnings.warn(
+    "This API is experimental and subject to change without notice.",
+    _warning_category,
+)
+
 # Let users import everything from the C++ _C extension as if this
 # python file defined them. Although we could import these dynamically, it
 # wouldn't preserve the static type annotations.
@@ -95,6 +114,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _reset_profile_results,  # noqa: F401
     _threadpool_get_thread_count,  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
+    _uses_aten,  # noqa: F401
     BundledModule,  # noqa: F401
     ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
@@ -107,6 +127,10 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
+del _bindings
+del _warning_category
+del _LightweightExperimentalWarning
+del _import_module
 del _torch
 del _exir_warnings
 del _warnings

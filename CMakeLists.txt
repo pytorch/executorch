@@ -904,16 +904,21 @@ if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
-# If CUDA, Metal, or pybind will need Torch, find it at root scope first so that
-# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
-# then duplicated when found again at root scope.
+# If CUDA, Metal, or an ATen-enabled pybind will need Torch, find it at root
+# scope first so that imported targets (e.g. MKL::MKL) aren't created in child
+# directory scopes and then duplicated when found again at root scope.
+set(_executorch_pybind_needs_torch OFF)
+if(EXECUTORCH_BUILD_PYBIND AND EXECUTORCH_PYBIND_USE_ATEN)
+  set(_executorch_pybind_needs_torch ON)
+endif()
 if(EXECUTORCH_BUILD_CUDA
    OR EXECUTORCH_BUILD_ROCM
    OR EXECUTORCH_BUILD_METAL
-   OR EXECUTORCH_BUILD_PYBIND
+   OR _executorch_pybind_needs_torch
 )
   find_package_torch()
 endif()
+unset(_executorch_pybind_needs_torch)
 
 # Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
 # vendored torch-tensorrt delegate). Built before backends/aoti and
@@ -1252,11 +1257,13 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
 
-  # find pytorch lib, to allow pybind to take at::Tensor as input/output
-  find_package_torch()
-  find_library(
-    TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
-  )
+  if(EXECUTORCH_PYBIND_USE_ATEN)
+    # Find PyTorch to allow the bindings to take at::Tensor as input/output.
+    find_package_torch()
+    find_library(
+      TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
+    )
+  endif()
 
   # When the consolidated shared runtime is built, the pybind extension links it
   # instead of whole-archiving the static core, so Python and C++ consumers
@@ -1267,26 +1274,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   # definitions; executorch_target_link_shared_runtime below is what fixes its
   # position on the link line.
   if(EXECUTORCH_BUILD_SHARED)
-    set(_dep_libs
-        ${TORCH_PYTHON_LIBRARY}
-        bundled_program
-        etdump
-        flatccrt
-        executorch_shared
-        util
-        torch
-    )
+    set(_dep_libs bundled_program etdump flatccrt executorch_shared)
   else()
-    set(_dep_libs
-        ${TORCH_PYTHON_LIBRARY}
-        bundled_program
-        etdump
-        flatccrt
-        executorch
-        extension_data_loader
-        util
-        torch
+    set(_dep_libs bundled_program etdump flatccrt executorch
+                  extension_data_loader extension_tensor
     )
+  endif()
+  if(EXECUTORCH_PYBIND_USE_ATEN)
+    list(APPEND _dep_libs ${TORCH_PYTHON_LIBRARY} util torch)
   endif()
   # The bindings call the threadpool control APIs directly, so static builds
   # must retain this library rather than relying on transitive linkage.
@@ -1311,13 +1306,15 @@ if(EXECUTORCH_BUILD_PYBIND)
   # list, because nothing else records it there. The other entries reach a
   # Mach-O build another way: executorch_target_shared_runtime_path emits lib
   # and src/executorch/lib, and setup.py's _SIBLING_LIBRARY_DIRECTORIES adds
-  # backends/cuda in the platform's own token at packaging time.
-  set(_python_extension_rpath "$ORIGIN/../../../torch/lib")
-  # An editable install copies this extension into a package directory whose
-  # subdirectories are symlinks to the checkout, and the loader resolves the
-  # origin token against the real path, so the runtime sits two levels up and
-  # then inside src/executorch/lib rather than beside the copy.
-  string(APPEND _python_extension_rpath ":$ORIGIN/../../src/executorch/lib")
+  # backends/cuda in the platform's own token at packaging time. An editable
+  # install copies this extension into a package directory whose subdirectories
+  # are symlinks to the checkout, and the loader resolves the origin token
+  # against the real path, so the runtime sits two levels up and then inside
+  # src/executorch/lib rather than beside the copy.
+  set(_python_extension_rpath "$ORIGIN/../../src/executorch/lib")
+  if(EXECUTORCH_PYBIND_USE_ATEN)
+    string(PREPEND _python_extension_rpath "$ORIGIN/../../../torch/lib:")
+  endif()
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # extension_module_static is already bundled into libexecutorch.so; linking
@@ -1406,21 +1403,23 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fexceptions>
   )
 
-  # util lib PyTorch requires C++20, so util must be compiled with C++20.
-  add_library(
-    util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-  )
-  set_target_properties(util PROPERTIES CXX_STANDARD 20)
-  target_include_directories(
-    util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
-  )
-  target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+  if(EXECUTORCH_PYBIND_USE_ATEN)
+    # util lib PyTorch requires C++20, so util must be compiled with C++20.
+    add_library(
+      util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
+    )
+    set_target_properties(util PROPERTIES CXX_STANDARD 20)
+    target_include_directories(
+      util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
+    )
+    target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 
-  target_compile_options(util PUBLIC ${_pybind_compile_options})
-  if(EXECUTORCH_BUILD_SHARED)
-    target_link_libraries(util PRIVATE torch c10 executorch_shared)
-  else()
-    target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+    target_compile_options(util PUBLIC ${_pybind_compile_options})
+    if(EXECUTORCH_BUILD_SHARED)
+      target_link_libraries(util PRIVATE torch c10 executorch_shared)
+    else()
+      target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+    endif()
   endif()
 
   # pybind portable_lib
@@ -1435,8 +1434,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_C
   )
-  target_compile_definitions(portable_lib PRIVATE EXECUTORCH_PYBIND_USE_ATEN)
-  target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+  if(EXECUTORCH_PYBIND_USE_ATEN)
+    target_compile_definitions(portable_lib PRIVATE EXECUTORCH_PYBIND_USE_ATEN)
+    target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+  endif()
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
