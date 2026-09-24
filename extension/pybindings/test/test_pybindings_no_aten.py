@@ -57,6 +57,10 @@ class PybindingsNoAtenTest(unittest.TestCase):
             re.search(r"lib(?:torch|aten|c10)", process_maps.read_text().lower())
         )
 
+    def test_missing_device_allocator(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "No allocator is registered"):
+            runtime.Tensor([1, 2], device=runtime.Device(runtime.DeviceType.CUDA))
+
 
 if __name__ == "__main__":
     unittest.main()

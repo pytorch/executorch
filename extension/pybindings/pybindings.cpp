@@ -34,6 +34,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -105,6 +106,9 @@ using ::executorch::runtime::prof_result_t;
 using ::executorch::runtime::Result;
 using ::executorch::runtime::Span;
 using ::executorch::runtime::Tag;
+using ::executorch::runtime::etensor::Device;
+using ::executorch::runtime::etensor::DeviceIndex;
+using ::executorch::runtime::etensor::DeviceType;
 using torch::executor::etdump_result;
 using torch::executor::ETDumpGen;
 
@@ -170,6 +174,41 @@ py::sequence normalize_inputs(const py::object& inputs) {
     throw py::type_error("inputs must be a Tensor or a sequence of inputs");
   }
   return py::reinterpret_borrow<py::sequence>(inputs);
+}
+
+template <typename SizesType, typename StridesType>
+void validate_input_layout(
+    const MethodMeta& method_meta,
+    size_t input_index,
+    const std::vector<SizesType>& sizes,
+    const std::vector<StridesType>& strides) {
+  const auto tensor_meta = method_meta.input_tensor_meta(input_index);
+  if (!tensor_meta.ok() || tensor_meta->dim_order().size() != sizes.size()) {
+    return;
+  }
+
+  std::vector<executorch::aten::StridesType> expected_strides(sizes.size());
+  const auto error = runtime::dim_order_to_stride(
+      sizes.data(),
+      tensor_meta->dim_order().data(),
+      sizes.size(),
+      expected_strides.data());
+  THROW_IF_ERROR(
+      error,
+      "Failed to determine the expected layout for input %zu of method %s",
+      input_index,
+      method_meta.name());
+
+  for (size_t dim = 0; dim < sizes.size(); ++dim) {
+    if (sizes[dim] > 1 && strides[dim] != expected_strides[dim]) {
+      throw std::runtime_error(
+          "Input " + std::to_string(input_index) + " for method " +
+          method_meta.name() + " has stride " + std::to_string(strides[dim]) +
+          " in dimension " + std::to_string(dim) +
+          ", but the exported dimension order requires " +
+          std::to_string(expected_strides[dim]) + ".");
+    }
+  }
 }
 
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
@@ -399,22 +438,68 @@ PyTensorScalarType from_runtime_scalar_type(executorch::aten::ScalarType type) {
   }
 }
 
-std::shared_ptr<PyTensor> make_py_tensor(
-    const executorch::aten::Tensor& tensor) {
-  if (!tensor.device().is_cpu()) {
-    throw std::runtime_error(
-        "Lightweight Tensor outputs currently support CPU tensors only");
-  }
-  std::vector<uint8_t> dim_order;
+Device runtime_device(const executorch::aten::Tensor& tensor) {
 #ifdef USE_ATEN_LIB
-  dim_order.resize(tensor.dim());
-  for (size_t i = 0; i < dim_order.size(); ++i) {
-    dim_order[i] = static_cast<uint8_t>(i);
+  const auto device = tensor.device();
+  if (device.is_cpu()) {
+    return Device(DeviceType::CPU);
+  }
+  if (device.is_cuda()) {
+    return Device(
+        DeviceType::CUDA,
+        device.has_index() ? static_cast<DeviceIndex>(device.index()) : 0);
+  }
+  throw std::runtime_error(
+      "Lightweight Tensor does not support this output device type");
+#else
+  return tensor.device();
+#endif
+}
+
+#ifdef USE_ATEN_LIB
+at::Device aten_device(Device device) {
+  switch (device.type()) {
+    case DeviceType::CPU:
+      return at::Device(at::kCPU);
+    case DeviceType::CUDA:
+      return at::Device(at::kCUDA, device.index());
+  }
+  throw std::runtime_error(
+      "Lightweight Tensor does not support this input device type");
+}
+
+std::vector<uint8_t> infer_dim_order(const at::Tensor& tensor) {
+  std::vector<uint8_t> ordered_non_singleton_dims;
+  std::vector<bool> singleton_positions(tensor.dim(), false);
+  for (size_t i = 0; i < tensor.dim(); ++i) {
+    if (tensor.size(i) == 1) {
+      singleton_positions[i] = true;
+    } else {
+      ordered_non_singleton_dims.push_back(static_cast<uint8_t>(i));
+    }
   }
   std::stable_sort(
-      dim_order.begin(), dim_order.end(), [&tensor](uint8_t a, uint8_t b) {
+      ordered_non_singleton_dims.begin(),
+      ordered_non_singleton_dims.end(),
+      [&tensor](uint8_t a, uint8_t b) {
         return tensor.stride(a) > tensor.stride(b);
       });
+
+  std::vector<uint8_t> dim_order(tensor.dim());
+  auto next_non_singleton = ordered_non_singleton_dims.begin();
+  for (size_t i = 0; i < dim_order.size(); ++i) {
+    dim_order[i] = singleton_positions[i] ? static_cast<uint8_t>(i)
+                                          : *next_non_singleton++;
+  }
+  return dim_order;
+}
+#endif
+
+std::shared_ptr<PyTensor> make_py_tensor(
+    const executorch::aten::Tensor& tensor) {
+  std::vector<uint8_t> dim_order;
+#ifdef USE_ATEN_LIB
+  dim_order = infer_dim_order(tensor);
 #else
   dim_order.assign(tensor.dim_order().begin(), tensor.dim_order().end());
 #endif
@@ -424,7 +509,8 @@ std::shared_ptr<PyTensor> make_py_tensor(
       std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
       std::vector<int64_t>(tensor.strides().begin(), tensor.strides().end()),
       dim_order,
-      from_runtime_scalar_type(tensor.scalar_type()));
+      from_runtime_scalar_type(tensor.scalar_type()),
+      runtime_device(tensor));
 }
 
 inline py::list evalues_to_py_list(
@@ -906,6 +992,13 @@ struct PyModule final {
       const std::string& method_name,
       const py::sequence& inputs,
       bool clone_outputs = true) {
+    auto method_meta_result = module_->method_meta(method_name);
+    THROW_IF_ERROR(
+        method_meta_result.error(),
+        "Failed to get method_meta for %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(method_meta_result.error()));
+    const auto method_meta = method_meta_result.get();
     const auto inputs_size = py::len(inputs);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
@@ -940,6 +1033,11 @@ struct PyModule final {
                 ? python_input.cast<std::shared_ptr<PyTensor>>()
                 : std::make_shared<PyTensor>(
                       py::reinterpret_borrow<py::object>(python_input)));
+        validate_input_layout(
+            method_meta,
+            i,
+            portable_inputs.back()->sizes_data(),
+            portable_inputs.back()->strides_data());
 #ifdef USE_ATEN_LIB
         const auto& portable_tensor = portable_inputs.back();
         const auto& portable_sizes = portable_tensor->sizes_data();
@@ -952,8 +1050,9 @@ struct PyModule final {
             portable_tensor->mutable_data(),
             sizes,
             strides,
-            at::TensorOptions().dtype(
-                to_runtime_scalar_type(portable_tensor->scalar_type())));
+            at::TensorOptions()
+                .dtype(to_runtime_scalar_type(portable_tensor->scalar_type()))
+                .device(aten_device(portable_tensor->device_data())));
         cpp_inputs.emplace_back(at_tensor);
 #else
         const auto& portable_tensor = portable_inputs.back();
@@ -973,12 +1072,19 @@ struct PyModule final {
             portable_tensor->mutable_data(),
             input_dim_order.back().data(),
             input_strides.back().data(),
-            executorch::aten::TensorShapeDynamism::STATIC);
+            executorch::aten::TensorShapeDynamism::STATIC,
+            portable_tensor->device_data().type(),
+            portable_tensor->device_data().index());
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
 #endif
 #ifdef EXECUTORCH_PYBIND_USE_ATEN
       } else if (is_torch_tensor(python_input)) {
         auto at_tensor = python_input.cast<at::Tensor>();
+        std::vector<int64_t> tensor_sizes(
+            at_tensor.sizes().begin(), at_tensor.sizes().end());
+        std::vector<int64_t> tensor_strides(
+            at_tensor.strides().begin(), at_tensor.strides().end());
+        validate_input_layout(method_meta, i, tensor_sizes, tensor_strides);
 
 #ifdef USE_ATEN_LIB
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
@@ -990,25 +1096,28 @@ struct PyModule final {
         size_t dim = at_tensor.dim();
         // cant directly alias at::Tensor sizes and strides due to int64 vs
         // int32 typing conflict
-        input_sizes.emplace_back(
-            at_tensor.sizes().begin(), at_tensor.sizes().end());
+        input_sizes.emplace_back(tensor_sizes.begin(), tensor_sizes.end());
         input_strides.emplace_back(
-            at_tensor.strides().begin(), at_tensor.strides().end());
+            tensor_strides.begin(), tensor_strides.end());
 
-        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
-        // inputs
+        // Only works for contiguous, channels-last, or channels-last-3d inputs.
         std::vector<torch::executor::Tensor::DimOrderType> dim_order;
         if (at_tensor.is_contiguous()) {
           for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
             dim_order.push_back(cur_dim);
           }
         } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
-            at_tensor.dim() == 4) {
+            at_tensor.dim() == 4 &&
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast)) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
+        } else if (
+            at_tensor.dim() == 5 &&
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d)) {
+          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
-              method_name + " should be contiguous or channels-last.";
+              method_name +
+              " should be contiguous, channels-last, or channels-last-3d.";
           throw std::runtime_error(error_msg);
         }
         input_dim_order.push_back(std::move(dim_order));
@@ -1037,7 +1146,6 @@ struct PyModule final {
             torch::executor::TensorShapeDynamism::STATIC,
             device.type(),
             device.index());
-
         torch::executor::Tensor temp =
             torch::executor::Tensor(&input_tensors.back());
         alias_etensor_to_attensor(at_tensor, temp);
@@ -1499,6 +1607,11 @@ struct PyMethod final {
                 ? python_input.cast<std::shared_ptr<PyTensor>>()
                 : std::make_shared<PyTensor>(
                       py::reinterpret_borrow<py::object>(python_input)));
+        validate_input_layout(
+            method_->method_meta(),
+            i,
+            portable_inputs.back()->sizes_data(),
+            portable_inputs.back()->strides_data());
 #ifdef USE_ATEN_LIB
         const auto& portable_tensor = portable_inputs.back();
         const auto& portable_sizes = portable_tensor->sizes_data();
@@ -1511,8 +1624,9 @@ struct PyMethod final {
             portable_tensor->mutable_data(),
             sizes,
             strides,
-            at::TensorOptions().dtype(
-                to_runtime_scalar_type(portable_tensor->scalar_type())));
+            at::TensorOptions()
+                .dtype(to_runtime_scalar_type(portable_tensor->scalar_type()))
+                .device(aten_device(portable_tensor->device_data())));
         cpp_inputs.emplace_back(at_tensor);
 #else
         const auto& portable_tensor = portable_inputs.back();
@@ -1529,6 +1643,7 @@ struct PyMethod final {
                 .dim_order(std::vector<uint8_t>(
                     portable_tensor->dim_order_data().begin(),
                     portable_tensor->dim_order_data().end()))
+                .device(portable_tensor->device_data())
                 .dynamism(executorch::aten::TensorShapeDynamism::STATIC)
                 .make_tensor_ptr();
         portable_tensor_ptrs.push_back(std::move(tensor));
@@ -1537,6 +1652,12 @@ struct PyMethod final {
 #ifdef EXECUTORCH_PYBIND_USE_ATEN
       } else if (is_torch_tensor(python_input)) {
         auto at_tensor = python_input.cast<at::Tensor>();
+        std::vector<int64_t> tensor_sizes(
+            at_tensor.sizes().begin(), at_tensor.sizes().end());
+        std::vector<int64_t> tensor_strides(
+            at_tensor.strides().begin(), at_tensor.strides().end());
+        validate_input_layout(
+            method_->method_meta(), i, tensor_sizes, tensor_strides);
 
 #ifdef USE_ATEN_LIB
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
@@ -1548,26 +1669,27 @@ struct PyMethod final {
         size_t dim = at_tensor.dim();
         // cant directly alias at::Tensor sizes and strides due to int64 vs
         // int32 typing conflict
-        std::vector<int> sizes(
-            at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> strides(
-            at_tensor.strides().begin(), at_tensor.strides().end());
+        std::vector<int> sizes(tensor_sizes.begin(), tensor_sizes.end());
+        std::vector<int> strides(tensor_strides.begin(), tensor_strides.end());
 
-        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
-        // inputs
+        // Only works for contiguous, channels-last, or channels-last-3d inputs.
         std::vector<torch::executor::Tensor::DimOrderType> dim_order;
         if (at_tensor.is_contiguous()) {
           for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
             dim_order.push_back(cur_dim);
           }
         } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
-            at_tensor.dim() == 4) {
+            at_tensor.dim() == 4 &&
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast)) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
+        } else if (
+            at_tensor.dim() == 5 &&
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d)) {
+          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
-              " should be contiguous or channels-last.";
+              " should be contiguous, channels-last, or channels-last-3d.";
           throw std::runtime_error(error_msg);
         }
         // Record where the buffer actually lives. The conversion copied every
@@ -2103,15 +2225,51 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       },
       call_guard);
 
+  py::enum_<DeviceType>(m, "DeviceType")
+      .value("CPU", DeviceType::CPU)
+      .value("CUDA", DeviceType::CUDA);
+
+  py::class_<Device>(m, "Device")
+      .def(
+          py::init<DeviceType, DeviceIndex>(),
+          py::arg("type"),
+          py::arg("index") = 0)
+      .def("type", &Device::type, call_guard)
+      .def("is_cpu", &Device::is_cpu, call_guard)
+      .def("index", &Device::index, call_guard)
+      .def(
+          "__eq__",
+          [](Device self, Device other) { return self == other; },
+          py::is_operator())
+      .def(
+          "__hash__",
+          [](Device device) {
+            return py::hash(py::make_tuple(
+                static_cast<int>(device.type()), device.index()));
+          })
+      .def(
+          "__repr__",
+          [](Device device) { return device_repr(device); },
+          call_guard);
+
   py::class_<PyTensor, std::shared_ptr<PyTensor>>(
       m, "Tensor", py::buffer_protocol())
       .def(
-          py::init<const py::object&, const py::object&>(),
+          py::init<
+              const py::object&,
+              const py::object&,
+              const py::object&,
+              Device>(),
           py::arg("data"),
           py::arg("dtype") = py::none(),
+          py::arg("dim_order") = py::none(),
+          py::arg("device") = Device(DeviceType::CPU),
           call_guard)
       .def("numpy", &PyTensor::numpy, call_guard)
       .def("sizes", &PyTensor::sizes, call_guard)
+      .def("strides", &PyTensor::strides, call_guard)
+      .def("dim_order", &PyTensor::dim_order, call_guard)
+      .def("device", &PyTensor::device, call_guard)
       .def("dtype", &PyTensor::dtype, call_guard)
       .def("nbytes", &PyTensor::nbytes, call_guard)
       .def_buffer(&PyTensor::buffer)

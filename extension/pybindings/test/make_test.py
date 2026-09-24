@@ -47,6 +47,26 @@ class ModuleChannelsLast(torch.nn.Module):
         return (torch.ones(1, 2, 3, 4).to(memory_format=torch.channels_last),)
 
 
+class ModuleChannelsLastSingleChannel(ModuleChannelsLast):
+    def forward(self, x, y):
+        return x, y
+
+    def get_inputs(self):
+        x = torch.arange(18, dtype=torch.float32).reshape(2, 1, 3, 3)
+        return (
+            x.to(memory_format=torch.channels_last),
+            torch.ones_like(x).to(memory_format=torch.channels_last),
+        )
+
+
+class ModuleChannelsLast3d(ModuleChannelsLast):
+    def forward(self, x):
+        return x
+
+    def get_inputs(self):
+        return (torch.ones(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
+
+
 class ModuleChannelsLastInDefaultOut(torch.nn.Module):
     """The module to serialize and execute."""
 

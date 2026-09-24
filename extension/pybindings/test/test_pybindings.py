@@ -26,7 +26,9 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
     ModuleChannelsLast,
+    ModuleChannelsLast3d,
     ModuleChannelsLastInDefaultOut,
+    ModuleChannelsLastSingleChannel,
     ModuleLinear,
     ModuleMulti,
 )
@@ -109,6 +111,39 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertIsInstance(output, self.runtime.Tensor)
         np.testing.assert_allclose(output.numpy(), (inputs[0] + inputs[0]).numpy())
+
+    def test_lightweight_tensor_dim_order(self):
+        array = np.arange(2 * 3 * 4 * 5, dtype=np.float32).reshape(2, 3, 4, 5)
+        tensor = self.runtime.Tensor(array, dim_order=(0, 2, 3, 1))
+
+        self.assertEqual(tensor.dim_order(), (0, 2, 3, 1))
+        self.assertEqual(tensor.strides(), (60, 1, 15, 3))
+        np.testing.assert_array_equal(tensor.numpy(), array)
+
+        numpy_copy = tensor.numpy()
+        numpy_copy[0, 0, 0, 0] = -1
+        self.assertEqual(tensor.numpy()[0, 0, 0, 0], array[0, 0, 0, 0])
+
+    def test_lightweight_tensor_rejects_invalid_dim_order(self):
+        array = np.ones((2, 3), dtype=np.float32)
+
+        with self.assertRaisesRegex(ValueError, "must be a permutation"):
+            self.runtime.Tensor(array, dim_order=(0, 0))
+        with self.assertRaisesRegex(ValueError, "one entry per dimension"):
+            self.runtime.Tensor(array, dim_order=(0,))
+
+    def test_lightweight_tensor_device(self):
+        device = self.runtime.Device(self.runtime.DeviceType.CPU, 0)
+        tensor = self.runtime.Tensor([1, 2], device=device)
+
+        self.assertEqual(device.type(), self.runtime.DeviceType.CPU)
+        self.assertTrue(device.is_cpu())
+        self.assertEqual(device.index(), 0)
+        self.assertEqual(tensor.device(), device)
+        self.assertEqual(
+            hash(device), hash(self.runtime.Device(self.runtime.DeviceType.CPU))
+        )
+        self.assertEqual(repr(device), "Device(type='cpu', index=0)")
 
     def test_lightweight_tensor_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
@@ -281,13 +316,53 @@ class PybindingsTest(unittest.TestCase):
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
 
-    def test_unsupported_dim_order(self) -> None:
+    def test_lightweight_tensor_channels_last(self) -> None:
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
-        inputs = (torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
+        lightweight_input = self.runtime.Tensor(
+            inputs[0].numpy(), dim_order=(0, 2, 3, 1)
+        )
 
         executorch_module = self.load_fn(exported_program.buffer)
-        self.assertRaises(RuntimeError, executorch_module, inputs[0])
+        output = executorch_module(lightweight_input)[0]
+
+        self.assertIsInstance(output, self.runtime.Tensor)
+        self.assertEqual(output.dim_order(), (0, 2, 3, 1))
+        np.testing.assert_allclose(output.numpy(), model(inputs[0]).numpy())
+
+    def test_lightweight_tensor_channels_last_single_channel(self) -> None:
+        model = ModuleChannelsLastSingleChannel()
+        exported_program, inputs = create_program(model)
+        lightweight_input = self.runtime.Tensor(
+            inputs[1].numpy(), dim_order=(0, 2, 1, 3)
+        )
+
+        executorch_module = self.load_fn(exported_program.buffer)
+        output = executorch_module((inputs[0], lightweight_input))[0]
+
+        self.assertIsInstance(output, self.runtime.Tensor)
+        if self.kernel_mode == "aten":
+            self.assertEqual(output.dim_order(), (0, 1, 2, 3))
+            self.assertEqual(output.strides(), (9, 1, 3, 1))
+        np.testing.assert_allclose(output.numpy(), inputs[0].numpy())
+
+    def test_channels_last_3d(self) -> None:
+        model = ModuleChannelsLast3d()
+        exported_program, inputs = create_program(model)
+
+        executorch_module = self.load_fn(exported_program.buffer)
+        output = executorch_module(inputs[0])[0]
+
+        self.assertTrue(torch.allclose(output, model(inputs[0])))
+
+    def test_rejects_input_layout_mismatch(self) -> None:
+        model = ModuleChannelsLast()
+        exported_program, inputs = create_program(model)
+        contiguous_input = self.runtime.Tensor(inputs[0].numpy())
+
+        executorch_module = self.load_fn(exported_program.buffer)
+        with self.assertRaisesRegex(RuntimeError, "dimension order requires"):
+            executorch_module(contiguous_input)
 
     def test_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
@@ -566,14 +641,25 @@ class PybindingsTest(unittest.TestCase):
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
 
-    def test_method_unsupported_dim_order(self) -> None:
-        model = ModuleChannelsLast()
+    def test_method_channels_last_3d(self) -> None:
+        model = ModuleChannelsLast3d()
         exported_program, inputs = create_program(model)
-        inputs = (torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
 
         executorch_program = self.load_prog_fn(exported_program.buffer)
         executorch_method = executorch_program.load_method("forward")
-        self.assertRaises(RuntimeError, executorch_method, inputs[0])
+        output = executorch_method(inputs[0])[0]
+
+        self.assertTrue(torch.allclose(output, model(inputs[0])))
+
+    def test_method_rejects_input_layout_mismatch(self) -> None:
+        model = ModuleChannelsLast()
+        exported_program, inputs = create_program(model)
+        contiguous_input = self.runtime.Tensor(inputs[0].numpy())
+
+        executorch_program = self.load_prog_fn(exported_program.buffer)
+        executorch_method = executorch_program.load_method("forward")
+        with self.assertRaisesRegex(RuntimeError, "dimension order requires"):
+            executorch_method(contiguous_input)
 
     def test_method_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
