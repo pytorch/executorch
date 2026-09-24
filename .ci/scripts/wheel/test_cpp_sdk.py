@@ -1589,11 +1589,13 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         "target_link_libraries(consumer PRIVATE ${EXECUTORCH_LIBRARIES})\n"
         "set_target_properties(consumer PROPERTIES CXX_STANDARD ${EXECUTORCH_CXX_STANDARD})\n"
         # No imported targets on this route, so no TARGET_RUNTIME_DLLS either. A Windows
-        # consumer copies the DLLs from the directory the package reports.
+        # consumer copies the DLLs from the directory the package reports, plus any the
+        # package lists separately because they ship elsewhere.
         "if(WIN32)\n"
         '  file(GLOB _dlls "${EXECUTORCH_RUNTIME_LIBRARY_DIR}/*.dll")\n'
         "  add_custom_command(TARGET consumer POST_BUILD COMMAND ${CMAKE_COMMAND} -E "
-        "copy_if_different ${_dlls} $<TARGET_FILE_DIR:consumer>)\n"
+        "copy_if_different ${_dlls} ${EXECUTORCH_RUNTIME_DLLS_EXTRA} "
+        "$<TARGET_FILE_DIR:consumer>)\n"
         "endif()\n"
     )
     build_dir = work_dir / "pre-328-build"

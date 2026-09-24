@@ -90,7 +90,9 @@ ExternalProject_Add(
     # flatc runs on the build machine, so it must target the host, not the app's
     # iOS platform. See _executorch_host_osx_args above.
     ${_executorch_host_osx_args}
-  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
+  # With the suffix, or Ninja on Windows has no rule producing the flatc.exe
+  # that the generated schema headers depend on.
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc${CMAKE_EXECUTABLE_SUFFIX}
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
@@ -155,7 +157,7 @@ ExternalProject_Add(
     -DCMAKE_TOOLCHAIN_FILE=
     ${_executorch_host_osx_args}
     ${_flatcc_extra_cmake_args}
-  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
+  BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc${CMAKE_EXECUTABLE_SUFFIX}
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )

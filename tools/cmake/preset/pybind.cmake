@@ -139,11 +139,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
 )
   # One shared runtime, as on Linux and macOS. The event tracer stays off here,
   # so the profiler library ships only because the Python extension links it.
-  # Not with CUDA: the Windows CUDA delegate has not been built as a DLL, so a
-  # CUDA build keeps the static layout it had.
-  if(NOT EXECUTORCH_BUILD_CUDA)
-    set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
-  endif()
+  set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 else()
   message(
     FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for pybind: ${CMAKE_SYSTEM_NAME}"
