@@ -191,7 +191,9 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       return error_;
     }
     for (size_t index = 0; index < geometry_.layers.size(); ++index) {
-      for (const char* suffix : {"k", "v", "capacity"}) {
+      // Not "capacity": the decomposed graph has no consumer for it, and the
+      // runtime supplies its own value to programs that do carry the slot.
+      for (const char* suffix : {"k", "v"}) {
         if (discovered_fqns_.find(fqn(static_cast<int64_t>(index), suffix)) ==
             discovered_fqns_.end()) {
           ET_LOG(
@@ -351,14 +353,18 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
         continue;
       }
       const cache::LayerGeometry& layer = geometry_.layers[index];
+      // Flat layers take their full capacity up front. The decomposed graph
+      // reaches storage through strides fixed at export from the declared
+      // shape, so head h sits at h * maximum_capacity * head_dim. Allocating
+      // less than that puts every head after the first past the end.
       const int64_t capacity =
-          is_ring(layer) ? ring_capacity(layer) : config_.initial_capacity;
+          is_ring(layer) ? ring_capacity(layer) : config_.capacity;
       ET_CHECK_OK_OR_RETURN_ERROR(
           allocate_layer(layer_id, layer, capacity, stream));
       allocated = true;
     }
     if (allocated) {
-      metrics_.flat_capacity = config_.initial_capacity;
+      metrics_.flat_capacity = config_.capacity;
       ET_LOG(
           Info,
           "offgraph_kv: initialized flat_capacity=%lld allocated_bytes=%lld",
@@ -442,15 +448,6 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     metrics_.flat_capacity = new_capacity;
     metrics_.growth_count++;
     bound_.clear();
-    // Growth moved every pointer a captured graph baked in, so any handle
-    // running a graph has to capture again. Done only once the growth has
-    // committed: an earlier sweep would throw away a still-valid graph on
-    // every path above that returns an error.
-    for (const auto& item : descriptors_) {
-      if (item.first->cuda_graph_state.phase != CudaGraphPhase::Disabled) {
-        item.first->cuda_graph_state.reset_for_recapture();
-      }
-    }
     ET_LOG(
         Info,
         "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
@@ -492,6 +489,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       const int64_t layer_id = static_cast<int64_t>(index);
       const int64_t max_capacity =
           is_ring(layer) ? ring_capacity(layer) : config_.capacity;
+      size_t found_storage = 0;
       for (const auto& [suffix, kind] :
            {std::pair{"k", Descriptor::Kind::Key},
             std::pair{"v", Descriptor::Kind::Value}}) {
@@ -500,6 +498,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
         if (found == internal_names.end()) {
           continue;
         }
+        ++found_storage;
         descriptors.emplace(
             name,
             Descriptor{
@@ -512,10 +511,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
                 slimc10::Device(slimc10::DeviceType::CUDA, device_)});
         discovered_fqns_.insert(name);
       }
+      // k and v are the witness for the all-or-nothing check below. Capacity
+      // cannot be: the decomposed graph emits none, so counting it there would
+      // leave the check unable to fire.
+      if (found_storage == 2) {
+        ++found_layers;
+      }
       const std::string capacity_name = fqn(layer_id, "capacity");
       const auto found = internal_names.find(capacity_name);
       if (found != internal_names.end()) {
-        ++found_layers;
         descriptors.emplace(
             capacity_name,
             Descriptor{
@@ -560,6 +564,27 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
           ? allocation->second.capacity_device
           : (descriptor.kind == Descriptor::Kind::Key ? allocation->second.k
                                                       : allocation->second.v);
+      // What this bind tells AOTI the buffer holds, versus what was actually
+      // allocated. build_descriptors() sizes the view from config_.capacity
+      // (flat) or ring_capacity() (ring), while the allocation is sized
+      // separately; nothing else forces the two to agree, and a view larger
+      // than its allocation is a silent out-of-bounds write that only surfaces
+      // later as corrupt attention output.
+      if (descriptor.kind != Descriptor::Kind::Capacity) {
+        const cache::LayerGeometry& layer =
+            geometry_.layers[static_cast<size_t>(descriptor.layer_id)];
+        const int64_t allocated_elements = static_cast<int64_t>(
+            layer.n_kv_heads * allocation->second.capacity * layer.head_dim);
+        ET_CHECK_OR_RETURN_ERROR(
+            descriptor.sizes.size() == 1 &&
+                descriptor.sizes[0] == allocated_elements,
+            InvalidProgram,
+            "offgraph_kv: layer %lld binds a %lld-element view onto a %lld-element allocation",
+            static_cast<long long>(descriptor.layer_id),
+            static_cast<long long>(
+                descriptor.sizes.empty() ? -1 : descriptor.sizes[0]),
+            static_cast<long long>(allocated_elements));
+      }
       auto tensor = std::make_unique<SlimTensor>(from_blob(
           pointer,
           ::executorch::runtime::makeArrayRef(
@@ -623,6 +648,23 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
       !storage_dtype_of(cfg.kv_dtype, storage_dtype)) {
     ET_LOG(Error, "offgraph_kv: invalid cache geometry or config");
     return nullptr;
+  }
+  // A ring layer is sized window + max_write - 1, and the decomposed graph
+  // bakes that same expression in as a literal when it traces index_copy_.
+  // Letting max_write default to the window here would allocate short of
+  // what the graph addresses; the bind-time element check compares two
+  // runtime-derived sizes and so cannot see the disagreement.
+  if (!cfg.max_write) {
+    for (const cache::LayerGeometry& layer : geometry.layers) {
+      if (is_ring(layer)) {
+        ET_LOG(
+            Error,
+            "offgraph_kv: ring layers require max_write; unset is supported "
+            "elsewhere but the decomposed graph bakes window + max_write - 1 "
+            "in at export, so defaulting it to the window under-allocates");
+        return nullptr;
+      }
+    }
   }
   return std::make_shared<CudaSequenceKVCache>(geometry, cfg, storage_dtype);
 }
