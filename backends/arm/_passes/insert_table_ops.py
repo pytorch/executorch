@@ -130,7 +130,7 @@ class TableOps:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
         else:
-            raise KeyError("Table op for {target} does not exist")
+            raise KeyError(f"Table op for {target} does not exist")
 
     @staticmethod
     def included_ops() -> Iterator[EdgeOpOverload]:

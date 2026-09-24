@@ -15,24 +15,44 @@ The following are required to install the ExecuTorch host libraries, needed to e
 - On Windows, Visual Studio 2022 or later.
 
 ## Installation
-To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.
+To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package. Consider installing it within a virtual environment, such as one provided by [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments) or [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments).
 
-This package includes the dependencies needed to export a PyTorch model, as well as Python runtime bindings for model testing and evaluation. Consider installing ExecuTorch within a virtual environment, such as one provided by [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#creating-environments) or [venv](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/#create-and-use-virtual-environments).
+Install PyTorch in the same command. The ExecuTorch package does not declare it
+as a dependency, because the build you need depends on your hardware, so pip
+cannot choose one for you. Installing ExecuTorch on its own gives an environment
+where exporting a model stops with `No module named 'torch'`.
 
-```
-pip install executorch
-```
-
-To get the latest features before they reach a stable release, install a nightly
-build instead. Nightly wheels are built from the `main` branch every day, so a
-change that has landed but is not yet in a stable release is available there first.
+Both packages come from the same package index. Find your machine in the table
+below and put the name from it in place of `<variant>`:
 
 ```
-pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+pip install executorch torch \
+  --index-url https://download.pytorch.org/whl/<variant> \
+  --extra-index-url https://pypi.org/simple
 ```
 
-`torch` is explicit because nightly ExecuTorch wheels do not declare it as a
-dependency.
+| Machine you export on | Variant |
+| --- | --- |
+| CPU only | `cpu` |
+| NVIDIA GPU, CUDA 13.0 | `cu130` |
+| NVIDIA GPU, CUDA 13.2 | `cu132` |
+| NVIDIA GPU, CUDA 13.4 | `cu134` |
+
+The CUDA packages are built for Linux, on x86_64 and ARM64. Use the `cpu`
+variant on macOS and on Windows. If your CUDA version is not in the table,
+choose the closest lower one with the same major version, because CUDA works
+across minor versions but not across major ones. There is no package for CUDA
+12, so on CUDA 12 use the `cpu` variant or build from source.
+
+To get a change that has landed on the `main` branch but is not in a release
+yet, use a nightly build. These are rebuilt every day. Put `nightly/` in front
+of the variant name, for example `nightly/cu130`, and add `--pre` to the
+command, otherwise pip skips development versions. Nightly builds cover the same
+variants. CUDA 13.4 is the newest, and until the next release it is in nightly
+builds only.
+
+The second index is needed because a bare `--index-url` replaces PyPI instead of
+adding to it, and some dependencies are published only on PyPI.
 
 To build the framework from source, see [Building From Source](using-executorch-building-from-source.md). Backend delegates may require additional dependencies. See the appropriate backend documentation for more information.
 
