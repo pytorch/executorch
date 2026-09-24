@@ -207,12 +207,9 @@ class LoweringRecipe:
                       per-method partitioner lists. Use the dict form when
                       backends need per-method compile specs.
         edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram)
-                               and return either List[PassType] or PassManager. Applied during
-                               TO_EDGE_TRANSFORM_AND_LOWER as per-ExportedProgram graph-module passes.
+                               and return either List[PassType] or PassManager to be applied during edge lowering.
         edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
-                                        and return passes to be applied. Applied sequentially by
-                                        EDGE_PROGRAM_MANAGER_TRANSFORM, which runs after
-                                        TO_EDGE_TRANSFORM_AND_LOWER in the default pipeline.
+                                        and return passes to be applied. Applied sequentially after TO_EDGE stage.
         edge_compile_config: Optional edge compilation configuration
         pre_partitioning_callback: Optional callable invoked just before partitioning with
                                    `(partitioners, programs)` arguments.
