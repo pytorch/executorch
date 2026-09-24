@@ -165,7 +165,7 @@ def quantize_output(exported_program, output_index):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         torch.ops.quantized_decomposed.dequantize_per_tensor.default,
     ]:
-        raise ValueError("Output {output_index} is not a dequantize op")
+        raise ValueError(f"Output {output_index} is not a dequantize op")
 
     dequant = target_output
     output_list[output_index] = dequant.args[0]
