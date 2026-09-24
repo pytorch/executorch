@@ -15,6 +15,9 @@ import pytest
 import torch
 
 from executorch.backends.qualcomm import _passes
+from executorch.backends.qualcomm._passes.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConv as FuseBatchNormWithConvQnn,
+)
 
 # Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
 from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
@@ -34,9 +37,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
-)
-from executorch.backends.transforms.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
 )
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -3897,6 +3897,19 @@ class FuseBatchNormWithConv:
             x = torch.nn.functional.silu(self.bn1(self.dw(x)))
             return self.bn2(self.pw(x))
 
+    class _ConvTranspose2dBn(torch.nn.Module):
+        """A transposed conv must NOT be folded: its weight is
+        [in, out/groups, *kernel], so scaling dim 0 hits the wrong axis."""
+
+        def __init__(self, cin=4, cout=8):
+            super().__init__()
+            self.conv = torch.nn.ConvTranspose2d(cin, cout, 3)
+            self.bn = torch.nn.BatchNorm2d(cout)
+            self.eval()
+
+        def forward(self, x):
+            return self.bn(self.conv(x))
+
     class _Conv3dBn(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -3933,7 +3946,7 @@ class FuseBatchNormWithConv:
         assertions: Assertions,
         pass_pipeline: PassPipeline,
     ):
-        target_pass = FuseBatchNormWithConvPass
+        target_pass = FuseBatchNormWithConvQnn
         conv = exir_ops.edge.aten.convolution.default
 
         cases = (
@@ -3966,6 +3979,23 @@ class FuseBatchNormWithConv:
                 # now carrying the folded weight and bias.
                 assertions.assert_no_target(gm, FuseBatchNormWithConv._BN_OPS)
                 assertions.assert_target_count(gm, conv, conv_count)
+
+        # Folding a transposed conv would scale the wrong weight axis, so the
+        # pass has to leave its BatchNorm standing.
+        with subtests.test(msg="conv_transpose2d_bn_is_skipped"):
+            module = FuseBatchNormWithConv._seed_batch_norms(
+                FuseBatchNormWithConv._ConvTranspose2dBn()
+            )
+            gm = pass_pipeline.lower_edge_ep(
+                module=module,
+                sample_input=(torch.randn(1, 4, 8, 8),),
+                target_pass=target_pass,
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            assertions.assert_target_count(gm, FuseBatchNormWithConv._BN_OPS, 1)
 
 
 class FuseConsecutiveCast:

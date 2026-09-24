@@ -55,6 +55,7 @@ from executorch.backends.qualcomm._passes import (
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseBatchNormWithConv,
     FuseConsecutiveCast,
     FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
@@ -83,9 +84,6 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
-)
-from executorch.backends.transforms.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
@@ -153,7 +151,7 @@ class QnnPassManager(PassManager):
             (ExpandBroadcastTensorShape, True),
             (FixedLinearKeepDim, True),
             (FoldQDQ, True),
-            (FuseBatchNormWithConvPass, True),
+            (FuseBatchNormWithConv, True),
             (FuseConsecutiveReshape, True),
             (I64toI32, True),
             (InsertCastForFpActQuantizedWeight, True),
@@ -298,7 +296,7 @@ class QnnPassManager(PassManager):
             ],
             AnnotateStack: [RemoveRedundancy],
             AnnotateUnbind: [RemoveRedundancy],
-            CanonicalizeConv: [FoldQDQ, FuseBatchNormWithConvPass],
+            CanonicalizeConv: [FoldQDQ, FuseBatchNormWithConv],
             ConvertBmmToMatmul: [RecomposePixelUnshuffle],
             ConvertLinearToConv2d: [FoldQDQ],
             DecomposeAcos: [RemoveRedundancy],
@@ -306,7 +304,7 @@ class QnnPassManager(PassManager):
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
-            FuseBatchNormWithConvPass: [FoldQDQ],
+            FuseBatchNormWithConv: [FoldQDQ],
             FuseConsecutiveReshape: [FoldQDQ],
             DecomposePDist: [RemoveRedundancy],
             DecomposeDiagonal: [RemoveRedundancy],
