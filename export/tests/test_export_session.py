@@ -757,6 +757,30 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._get_default_pipeline()
         )
 
+    def test_edge_transform_passes_not_duplicated_in_default_pipeline(self) -> None:
+        # Before the fix, from_recipe() gave edge_transform_passes to
+        # EDGE_PROGRAM_MANAGER_TRANSFORM as well as TO_EDGE_TRANSFORM_AND_LOWER,
+        # so they ran twice. Verify the stage no longer holds them at all.
+        from executorch.export.stages import EdgeProgramManagerTransformStage
+
+        edge_pass = Mock()
+        epm_pass = Mock()
+
+        stage = EdgeProgramManagerTransformStage.from_recipe(
+            LoweringRecipe(
+                edge_transform_passes=[edge_pass],
+                edge_manager_transform_passes=[epm_pass],
+            )
+        )
+
+        # The stage must only know about edge_manager_transform_passes.
+        self.assertEqual(stage._edge_manager_transform_passes, [epm_pass])
+        self.assertFalse(
+            hasattr(stage, "_edge_transform_passes"),
+            "EdgeProgramManagerTransformStage must not hold edge_transform_passes "
+            "because TO_EDGE_TRANSFORM_AND_LOWER already applies them.",
+        )
+
     def test_example_inputs_required_for_nn_module(self) -> None:
         """Test that example_inputs are required for nn.Module."""
         with self.assertRaises(ValueError) as cm:
