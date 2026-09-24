@@ -1601,7 +1601,6 @@ jobs:
 
         # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
         # Run e2e example with Simulator:
         PYTHON_EXECUTABLE=python bash examples/nxp/run.sh cifar10

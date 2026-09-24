@@ -273,9 +273,15 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
 
         # We need to use ordered collection for deterministic selection of samples
         classes = OrderedDict([(cl, None) for _, cl in self._dataset])
-        examples_per_class = self._num_examples // len(classes)
+
+        # If num_examples is less than number of classes, sample only from first num_examples classes
+        examples_per_class = (
+            self._num_examples // len(classes)
+            if self._num_examples >= len(classes)
+            else 1
+        )
         idx_list = []
-        for cl in classes.keys():
+        for cl in list(classes.keys())[: self._num_examples]:
             cl_idx_list = [
                 idx for idx in range(len(self._dataset)) if self._dataset[idx][1] == cl
             ]

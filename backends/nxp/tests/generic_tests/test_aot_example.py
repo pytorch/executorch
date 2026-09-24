@@ -127,6 +127,8 @@ def _assert_profiling(
 def test_aot_example__mobilenet_v2():
     """Test that mobilenet can be lowered to Neutron backend via `aot_neutron_compile.py` and all ops are delegated."""
 
+    num_random_samples = 1
+
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
         sys.executable,
@@ -139,6 +141,8 @@ def test_aot_example__mobilenet_v2():
         "--target",
         "imxrt700",
         "--use_random_dataset",  # Avoid downloading the dataset.
+        "--num_random_samples",
+        str(num_random_samples),
     ]
 
     # Output file will be created in executorch_root
@@ -152,6 +156,8 @@ def test_aot_example__mobilenet_v2():
 def test_aot_example__mobilenet_v2__profiling():
     """Test that mobilenet_v2 can be lowered to Neutron backend via `aot_neutron_compile.py`, all ops are delegated,
     the output model is profilable and ETRecord is generated properly."""
+
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -168,6 +174,8 @@ def test_aot_example__mobilenet_v2__profiling():
         "--use_channels_last_dim_order",
         "--use_profiling",  # Generate profilable model and create ETRecord
         "--use_random_dataset",  # Avoid downloading the dataset.
+        "--num_random_samples",
+        str(num_random_samples),
     ]
 
     # Output files will be created in executorch_root.
