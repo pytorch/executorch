@@ -230,6 +230,154 @@ class BackendDelegate final {
   DelegateHandle* handle_;
 };
 
+namespace internal {
+
+class ProgramBackendDataWriter final : public BackendDataWriter {
+ public:
+  ProgramBackendDataWriter(
+      const Program* program,
+      const NamedDataMap* named_data_map,
+      MemoryAllocator* temp_allocator)
+      : program_(program),
+        named_data_map_(named_data_map),
+        temp_allocator_(temp_allocator) {}
+
+  void set_delegate(const executorch_flatbuffer::BackendDelegate* delegate) {
+    delegate_ = delegate;
+  }
+
+  bool did_replace_data() const {
+    return did_replace_data_;
+  }
+
+  Error replace_processed_data(const BackendData& data) override {
+    ET_CHECK_OR_RETURN_ERROR(
+        !did_replace_data_, AlreadyLoaded, "Backend data was already replaced");
+    ET_CHECK_OR_RETURN_ERROR(
+        delegate_ != nullptr, InvalidState, "No backend delegate is active");
+    Error error = program_->replace_backend_delegate_data(
+        *delegate_, data, temp_allocator_);
+    if (error == Error::Ok) {
+      did_replace_data_ = true;
+    }
+    return error;
+  }
+
+  Error replace_named_data(Span<const NamedDataMap::Data> data) override {
+    ET_CHECK_OR_RETURN_ERROR(
+        !did_replace_data_, AlreadyLoaded, "Backend data was already replaced");
+    ET_CHECK_OR_RETURN_ERROR(
+        named_data_map_ != nullptr,
+        NotFound,
+        "Backend has no named data map");
+    Error error = named_data_map_->replace_data(data, temp_allocator_);
+    if (error == Error::Ok) {
+      did_replace_data_ = true;
+    }
+    return error;
+  }
+
+ private:
+  const Program* program_;
+  const executorch_flatbuffer::BackendDelegate* delegate_ = nullptr;
+  const NamedDataMap* named_data_map_;
+  MemoryAllocator* temp_allocator_;
+  bool did_replace_data_ = false;
+};
+
+} // namespace internal
+
+Error Program::prepare_backend_data(
+    const char* method_name,
+    MemoryAllocator* temp_allocator,
+    EventTracer* event_tracer,
+    const NamedDataMap* named_data_map,
+    const LoadBackendOptionsMap* backend_options) const {
+  ET_CHECK_OR_RETURN_ERROR(
+      method_name != nullptr, InvalidArgument, "Method name is null");
+  ET_CHECK_OR_RETURN_ERROR(
+      temp_allocator != nullptr,
+      InvalidArgument,
+      "Backend data preparation requires a temporary allocator");
+
+  const executorch_flatbuffer::ExecutionPlan* plan = nullptr;
+  const auto* plans = internal_program_->execution_plan();
+  if (plans != nullptr) {
+    for (const auto* candidate : *plans) {
+      if (candidate != nullptr && candidate->name() != nullptr &&
+          std::strcmp(candidate->name()->c_str(), method_name) == 0) {
+        plan = candidate;
+        break;
+      }
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      plan != nullptr, InvalidArgument, "Method %s was not found", method_name);
+
+  const NamedDataMap* effective_data_map = named_data_map;
+  std::optional<internal::MergedDataMap> merged_data_map;
+  auto pte_data_map = get_named_data_map();
+  ET_CHECK_OR_RETURN_ERROR(
+      pte_data_map.ok() || pte_data_map.error() == Error::NotFound,
+      InvalidProgram,
+      "Failed to get named data map from program: 0x%" PRIx32,
+      static_cast<uint32_t>(pte_data_map.error()));
+  if (named_data_map != nullptr && pte_data_map.ok()) {
+    auto merged =
+        internal::MergedDataMap::load(named_data_map, pte_data_map.get());
+    if (!merged.ok()) {
+      return merged.error();
+    }
+    merged_data_map.emplace(std::move(merged.get()));
+    effective_data_map = &*merged_data_map;
+  } else if (pte_data_map.ok()) {
+    effective_data_map = pte_data_map.get();
+  }
+
+  const auto* delegates = plan->delegates();
+  ET_CHECK_OR_RETURN_ERROR(
+      delegates != nullptr, InvalidProgram, "Missing delegates field");
+  internal::ProgramBackendDataWriter data_writer(
+      this, effective_data_map, temp_allocator);
+  for (const auto* delegate : *delegates) {
+    ET_CHECK_OR_RETURN_ERROR(
+        delegate != nullptr, InvalidProgram, "Backend delegate is null");
+    data_writer.set_delegate(delegate);
+    Span<const BackendOption> delegate_runtime_specs;
+    if (backend_options != nullptr && delegate->id() != nullptr) {
+      delegate_runtime_specs =
+          backend_options->get_options(delegate->id()->c_str());
+    }
+    BackendInitContext context(
+        temp_allocator,
+        event_tracer,
+        method_name,
+        effective_data_map,
+        delegate_runtime_specs,
+        &data_writer);
+    BackendDelegate* loaded_delegate =
+        temp_allocator->allocateInstance<BackendDelegate>();
+    ET_CHECK_OR_RETURN_ERROR(
+        loaded_delegate != nullptr,
+        MemoryAllocationFailed,
+        "Could not allocate temporary backend delegate");
+    Error error = BackendDelegate::Init(
+        *delegate, this, context, loaded_delegate);
+    if (error != Error::Ok) {
+      temp_allocator->reset();
+      return error;
+    }
+    loaded_delegate->~BackendDelegate();
+    const bool did_replace_data = data_writer.did_replace_data();
+    temp_allocator->reset();
+    if (did_replace_data) {
+      return Error::Ok;
+    }
+  }
+  temp_allocator->reset();
+  return Error::NotSupported;
+}
+
 /**
  * Runtime state for a chain of instructions.
  */

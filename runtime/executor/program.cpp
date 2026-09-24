@@ -10,8 +10,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include <c10/util/safe_numerics.h>
+#include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
@@ -51,6 +53,35 @@ constexpr size_t kMinimumAlignment = alignof(std::max_align_t);
 bool IsAligned(const void* data) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(data);
   return addr % kMinimumAlignment == 0;
+}
+
+Result<uint64_t> segment_alignment(uint64_t base, uint64_t offset) {
+  uint64_t absolute_offset;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(base, offset, &absolute_offset),
+      InvalidProgram,
+      "PTE segment offset overflows");
+  return absolute_offset == 0
+      ? 1
+      : absolute_offset & (~absolute_offset + 1);
+}
+
+Result<uint64_t> aligned_segment_offset(
+    uint64_t base,
+    uint64_t next_offset,
+    uint64_t alignment) {
+  uint64_t absolute_offset;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(base, next_offset, &absolute_offset),
+      InvalidArgument,
+      "Replacement segment offset overflows");
+  const uint64_t mask = alignment - 1;
+  ET_CHECK_OR_RETURN_ERROR(
+      absolute_offset <= UINT64_MAX - mask,
+      InvalidArgument,
+      "Replacement segment alignment overflows");
+  const uint64_t aligned_absolute_offset = (absolute_offset + mask) & ~mask;
+  return aligned_absolute_offset - base;
 }
 
 Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
@@ -623,6 +654,192 @@ Result<FreeableBuffer> Program::LoadSegment(
       seg_offset);
   return loader_->load(
       static_cast<size_t>(absolute_offset), segment->size(), segment_info);
+}
+
+Error Program::replace_backend_delegate_data(
+    const executorch_flatbuffer::BackendDelegate& delegate,
+    const BackendData& data,
+    MemoryAllocator* temp_allocator) const {
+  ET_CHECK_OR_RETURN_ERROR(
+      loader_ != nullptr, NotSupported, "Program has no replaceable source");
+  ET_CHECK_OR_RETURN_ERROR(
+      temp_allocator != nullptr,
+      InvalidArgument,
+      "Backend data replacement requires a temporary allocator");
+  ET_CHECK_OR_RETURN_ERROR(
+      data.bytes.data() != nullptr || data.bytes.empty(),
+      InvalidArgument,
+      "Replacement backend data is null");
+  if (data.alignment.has_value()) {
+    const size_t alignment = *data.alignment;
+    ET_CHECK_OR_RETURN_ERROR(
+        alignment > 0 && (alignment & (alignment - 1)) == 0,
+        InvalidArgument,
+        "Replacement alignment must be a power of two");
+  }
+
+  const auto* processed = delegate.processed();
+  ET_CHECK_OR_RETURN_ERROR(
+      processed != nullptr, InvalidProgram, "Missing backend data reference");
+  auto* program_data = static_cast<uint8_t*>(temp_allocator->allocate(
+      program_data_.size(), alignof(std::max_align_t)));
+  ET_CHECK_OR_RETURN_ERROR(
+      program_data != nullptr, MemoryAllocationFailed, "Could not copy PTE");
+  std::memcpy(program_data, program_data_.data(), program_data_.size());
+  auto* program = flatbuffers::GetMutableRoot<executorch_flatbuffer::Program>(
+      program_data);
+
+  if (processed->location() == executorch_flatbuffer::DataLocation::INLINE) {
+    ET_CHECK_OR_RETURN_ERROR(
+        !data.alignment.has_value(),
+        NotSupported,
+        "Inline backend data does not have independent alignment metadata");
+    auto* inline_data = program->mutable_backend_delegate_data();
+    ET_CHECK_OR_RETURN_ERROR(
+        inline_data != nullptr && processed->index() < inline_data->size(),
+        InvalidProgram,
+        "Backend data index is out of range");
+    auto* bytes =
+        inline_data->GetMutableObject(processed->index())->mutable_data();
+    ET_CHECK_OR_RETURN_ERROR(
+        bytes != nullptr && bytes->size() == data.bytes.size(),
+        NotSupported,
+        "Inline backend data can only be replaced with the same size");
+    std::memcpy(bytes->Data(), data.bytes.data(), data.bytes.size());
+    DataLoader::DataChunk chunks[2];
+    size_t chunk_count = 0;
+    chunks[chunk_count++] = DataLoader::DataChunk::from_buffer(
+        program_data, program_data_.size());
+    auto source_size = loader_->size();
+    if (!source_size.ok()) {
+      return source_size.error();
+    }
+    if (source_size.get() > program_data_.size()) {
+      chunks[chunk_count++] = DataLoader::DataChunk::from_loader(
+          program_data_.size(), source_size.get() - program_data_.size());
+    }
+    return loader_->replace_data(
+        Span<const DataLoader::DataChunk>(chunks, chunk_count));
+  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      processed->location() == executorch_flatbuffer::DataLocation::SEGMENT,
+      InvalidProgram,
+      "Unknown backend data location");
+  auto* segments = program->mutable_segments();
+  ET_CHECK_OR_RETURN_ERROR(
+      segments != nullptr && processed->index() < segments->size(),
+      InvalidProgram,
+      "Backend segment index is out of range");
+  size_t references = 0;
+  if (program->execution_plan() != nullptr) {
+    for (const auto* plan : *program->execution_plan()) {
+      if (plan->delegates() != nullptr) {
+        for (const auto* candidate : *plan->delegates()) {
+          const auto* candidate_data = candidate->processed();
+          if (candidate_data != nullptr &&
+              candidate_data->location() ==
+                  executorch_flatbuffer::DataLocation::SEGMENT &&
+              candidate_data->index() == processed->index()) {
+            ++references;
+          }
+        }
+      }
+    }
+  }
+  if (program->constant_segment() != nullptr &&
+      program->constant_segment()->offsets() != nullptr &&
+      program->constant_segment()->offsets()->size() > 0 &&
+      program->constant_segment()->segment_index() == processed->index()) {
+    ++references;
+  }
+  if (program->mutable_data_segments() != nullptr) {
+    for (const auto* mutable_data : *program->mutable_data_segments()) {
+      if (mutable_data->segment_index() == processed->index()) {
+        ++references;
+      }
+    }
+  }
+  if (program->named_data() != nullptr) {
+    for (const auto* named_data : *program->named_data()) {
+      if (named_data->segment_index() == processed->index()) {
+        ++references;
+      }
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      references == 1,
+      NotSupported,
+      "Cannot replace backend data in a shared segment");
+  ET_CHECK_OR_RETURN_ERROR(
+      program_data_.size() <= segment_base_offset_,
+      InvalidProgram,
+      "Program data extends beyond the segment base offset");
+
+  const size_t chunk_capacity = 2 + 2 * segments->size();
+  auto* chunks =
+      temp_allocator->allocateList<DataLoader::DataChunk>(chunk_capacity);
+  ET_CHECK_OR_RETURN_ERROR(
+      chunks != nullptr,
+      MemoryAllocationFailed,
+      "Could not allocate replacement chunks");
+  size_t chunk_count = 0;
+  chunks[chunk_count++] = DataLoader::DataChunk::from_buffer(
+      program_data, program_data_.size());
+  chunks[chunk_count++] = DataLoader::DataChunk::from_loader(
+      program_data_.size(), segment_base_offset_ - program_data_.size());
+  uint64_t next_offset = 0;
+  for (size_t i = 0; i < segments->size(); ++i) {
+    auto* segment = segments->GetMutableObject(i);
+    const bool replaced = i == processed->index();
+    uint64_t alignment;
+    if (replaced && data.alignment.has_value()) {
+      alignment = *data.alignment;
+    } else {
+      auto inferred_alignment =
+          segment_alignment(segment_base_offset_, segment->offset());
+      if (!inferred_alignment.ok()) {
+        return inferred_alignment.error();
+      }
+      alignment = inferred_alignment.get();
+    }
+    auto aligned_offset =
+        aligned_segment_offset(segment_base_offset_, next_offset, alignment);
+    if (!aligned_offset.ok()) {
+      return aligned_offset.error();
+    }
+    const uint64_t offset = aligned_offset.get();
+    chunks[chunk_count++] =
+        DataLoader::DataChunk::zero(offset - next_offset);
+    const uint64_t size = replaced ? data.bytes.size() : segment->size();
+    if (replaced) {
+      chunks[chunk_count++] = DataLoader::DataChunk::from_buffer(
+          data.bytes.data(), data.bytes.size());
+    } else {
+      chunks[chunk_count++] = DataLoader::DataChunk::from_loader(
+          segment_base_offset_ + segment->offset(), segment->size());
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        offset <= UINT64_MAX - size,
+        InvalidArgument,
+        "Replacement segment size overflows");
+    next_offset = offset + size;
+    ET_CHECK_OR_RETURN_ERROR(
+        segment->mutate_offset(offset) && segment->mutate_size(size),
+        InvalidProgram,
+        "Could not update backend segment metadata");
+  }
+
+  constexpr size_t kSegmentDataSizeOffset =
+      ExtendedHeader::kHeaderOffset + 24;
+  ET_CHECK_OR_RETURN_ERROR(
+      program_data_.size() >= kSegmentDataSizeOffset + sizeof(uint64_t),
+      InvalidProgram,
+      "PTE extended header does not contain a segment data size");
+  flatbuffers::WriteScalar<uint64_t>(
+      program_data + kSegmentDataSizeOffset, next_offset);
+  return loader_->replace_data(
+      Span<const DataLoader::DataChunk>(chunks, chunk_count));
 }
 
 Error Program::load_mutable_subsegment_into(

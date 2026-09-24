@@ -14,9 +14,12 @@
 
 using namespace ::testing;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendData;
+using executorch::runtime::BackendDataWriter;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::Error;
+using executorch::runtime::NamedDataMap;
 using executorch::runtime::Span;
 
 class BackendInitContextTest : public ::testing::Test {
@@ -24,6 +27,22 @@ class BackendInitContextTest : public ::testing::Test {
   void SetUp() override {
     executorch::runtime::runtime_init();
   }
+};
+
+class TestBackendDataWriter final : public BackendDataWriter {
+ public:
+  Error replace_processed_data(const BackendData& data) override {
+    processed_data = data;
+    return Error::Ok;
+  }
+
+  Error replace_named_data(Span<const NamedDataMap::Data> data) override {
+    named_data = data;
+    return Error::Ok;
+  }
+
+  BackendData processed_data{};
+  Span<const NamedDataMap::Data> named_data;
 };
 
 // Test default constructor without runtime specs
@@ -201,4 +220,51 @@ TEST_F(BackendInitContextTest, OtherFieldsStillWork) {
   EXPECT_EQ(context.event_tracer(), nullptr);
   EXPECT_STREQ(context.get_method_name(), "forward");
   EXPECT_EQ(context.get_named_data_map(), nullptr);
+}
+
+TEST_F(BackendInitContextTest, ReplacementsRequireWriter) {
+  BackendInitContext context(nullptr);
+  const uint8_t bytes[] = {1, 2, 3};
+  BackendData replacement{{bytes, sizeof(bytes)}, std::nullopt};
+
+  EXPECT_FALSE(context.is_data_replacement_supported());
+  EXPECT_EQ(
+      context.replace_processed_data(replacement), Error::NotSupported);
+  EXPECT_EQ(context.replace_named_data({}), Error::NotSupported);
+}
+
+TEST_F(BackendInitContextTest, ReplacementsAreForwardedToWriter) {
+  const uint8_t processed_bytes[] = {1, 2, 3};
+  const uint8_t named_bytes[] = {4, 5};
+  BackendData processed{{processed_bytes, sizeof(processed_bytes)}, 64};
+  NamedDataMap::Data named[] = {
+      {"weight", {named_bytes, sizeof(named_bytes)}, std::nullopt}};
+
+  TestBackendDataWriter processed_writer;
+  BackendInitContext processed_context(
+      nullptr, nullptr, nullptr, nullptr, {}, &processed_writer);
+  EXPECT_TRUE(processed_context.is_data_replacement_supported());
+  EXPECT_EQ(processed_context.replace_processed_data(processed), Error::Ok);
+  EXPECT_EQ(
+      processed_context.replace_processed_data(processed),
+      Error::AlreadyLoaded);
+  EXPECT_EQ(
+      processed_context.replace_named_data(named), Error::InvalidState);
+  EXPECT_EQ(processed_writer.processed_data.bytes.data(), processed_bytes);
+  EXPECT_EQ(
+      processed_writer.processed_data.bytes.size(), sizeof(processed_bytes));
+  ASSERT_TRUE(processed_writer.processed_data.alignment.has_value());
+  EXPECT_EQ(*processed_writer.processed_data.alignment, 64);
+
+  TestBackendDataWriter named_writer;
+  BackendInitContext named_context(
+      nullptr, nullptr, nullptr, nullptr, {}, &named_writer);
+  EXPECT_EQ(named_context.replace_named_data(named), Error::Ok);
+  EXPECT_EQ(named_context.replace_named_data(named), Error::AlreadyLoaded);
+  EXPECT_EQ(
+      named_context.replace_processed_data(processed), Error::InvalidState);
+  ASSERT_EQ(named_writer.named_data.size(), 1);
+  EXPECT_EQ(named_writer.named_data[0].key, "weight");
+  EXPECT_EQ(named_writer.named_data[0].bytes.data(), named_bytes);
+  EXPECT_FALSE(named_writer.named_data[0].alignment.has_value());
 }

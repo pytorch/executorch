@@ -27,11 +27,13 @@
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
 namespace executorch_flatbuffer {
+struct BackendDelegate;
 struct Program;
 } // namespace executorch_flatbuffer
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
+struct BackendData;
 namespace testing {
 // Provides test access to private Program methods.
 class ProgramTestFriend;
@@ -41,6 +43,9 @@ namespace deserialization {
 // Provides Tensor deserializaiton access to private Program methods.
 class TensorParser;
 } // namespace deserialization
+namespace internal {
+class ProgramBackendDataWriter;
+}
 
 /**
  * A deserialized ExecuTorch program binary.
@@ -165,6 +170,24 @@ class Program final {
       Span<const Kernel> kernel_registry = {}) const;
 
   /**
+   * Initializes delegates for the named method so one of them can replace its
+   * serialized data, then immediately destroys the temporary delegate handle.
+   * Unlike load_method(), this explicitly enables BackendInitContext data
+   * replacement APIs.
+   *
+   * This is a destructive, one-shot operation. On success, discard this
+   * Program and its DataLoader and reopen the modified source before loading
+   * or executing a method. `temp_allocator` is reset before this function
+   * returns and must not contain live allocations on entry.
+   */
+  ET_NODISCARD Error prepare_backend_data(
+      const char* method_name,
+      MemoryAllocator* temp_allocator,
+      EventTracer* event_tracer = nullptr,
+      const NamedDataMap* named_data_map = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr) const;
+
+  /**
    * Gathers metadata for the named method.
    *
    * @param[in] method_name The name of the method to get metadata for.
@@ -232,6 +255,7 @@ class Program final {
   friend class Method;
   friend class deserialization::TensorParser;
   friend class testing::ProgramTestFriend;
+  friend class internal::ProgramBackendDataWriter;
 
   const executorch_flatbuffer::Program* get_internal_program() const {
     return internal_program_;
@@ -259,6 +283,11 @@ class Program final {
    */
   ET_NODISCARD Result<FreeableBuffer> LoadSegment(
       const DataLoader::SegmentInfo& segment_info) const;
+
+  ET_NODISCARD Error replace_backend_delegate_data(
+      const executorch_flatbuffer::BackendDelegate& delegate,
+      const BackendData& data,
+      MemoryAllocator* temp_allocator) const;
 
   /**
    * Loads a portion of a mutable segment into the provided buffer.
@@ -293,8 +322,7 @@ class Program final {
       FreeableBuffer&& constant_segment_data,
       std::optional<internal::PteDataMap>&& pte_data_map)
       : program_data_(std::move(program_data)),
-        // Don't need the loader if there are no segments.
-        loader_(segment_base_offset > 0 ? loader : nullptr),
+        loader_(loader),
         internal_program_(internal_program),
         segment_base_offset_(segment_base_offset),
         constant_segment_data_(std::move(constant_segment_data)),
