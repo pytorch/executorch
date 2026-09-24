@@ -175,9 +175,7 @@ def _mask_fn(buf_size: int, window: int):
 
 def _ring_fn(scale: float, buf_size: int):
     def fn(q, k, v, position, k_storage, v_storage, mask):
-        return ring_step(
-            q, k, v, position, k_storage, v_storage, mask, scale, buf_size
-        )
+        return ring_step(q, k, v, position, k_storage, v_storage, mask, scale, buf_size)
 
     return fn
 

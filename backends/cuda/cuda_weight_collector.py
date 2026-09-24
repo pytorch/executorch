@@ -112,6 +112,42 @@ def _write_tensor_storage(tensor: torch.Tensor, path: str) -> bytes:
     return digest.digest()
 
 
+def _materialize_storage(tensor: torch.Tensor, directory: str) -> FileBackedData:
+    fd, storage_path = tempfile.mkstemp(
+        prefix=".cuda_weight_", suffix=".storage", dir=directory
+    )
+    os.close(fd)
+    try:
+        digest = _write_tensor_storage(tensor, storage_path)
+        return FileBackedData.move_from(storage_path, sha256=digest)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.remove(storage_path)
+        raise
+
+
+def _required_view_nbytes(
+    fqn: str,
+    sizes: Tuple[int, ...],
+    strides: Tuple[int, ...],
+    storage_offset: int,
+    element_size: int,
+) -> int:
+    if (
+        len(sizes) != len(strides)
+        or storage_offset < 0
+        or any(size < 0 for size in sizes)
+        or any(stride < 0 for stride in strides)
+    ):
+        raise RuntimeError(f"AOTI view {fqn!r} has invalid tensor metadata")
+    if any(size == 0 for size in sizes):
+        return 0
+    last_element = storage_offset + sum(
+        stride * (size - 1) for size, stride in zip(sizes, strides)
+    )
+    return (last_element + 1) * element_size
+
+
 def _storage_key(
     fqn: str, device_type: int, aoti_library_key: Optional[str] = None
 ) -> str:
@@ -379,19 +415,7 @@ class CudaWeightCollector:
 
             storage_key = _storage_key(fqn, device_type)
             if not is_offgraph_kv:
-                fd, storage_path = tempfile.mkstemp(
-                    prefix=".cuda_weight_", suffix=".storage", dir=directory
-                )
-                os.close(fd)
-                try:
-                    digest = _write_tensor_storage(tensor, storage_path)
-                    data = FileBackedData.move_from(storage_path, sha256=digest)
-                except Exception:
-                    try:
-                        os.remove(storage_path)
-                    except OSError:
-                        pass
-                    raise
+                data = _materialize_storage(tensor, directory)
                 if storage_key in storages:
                     data.close()
                     raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
@@ -404,19 +428,10 @@ class CudaWeightCollector:
                 int(stride) for stride in getattr(properties, "stride", tensor.stride())
             )
             storage_offset = int(getattr(properties, "offset", tensor.storage_offset()))
-            if (
-                len(sizes) != len(strides)
-                or storage_offset < 0
-                or any(size < 0 for size in sizes)
-                or any(stride < 0 for stride in strides)
-            ):
-                raise RuntimeError(f"AOTI view {fqn!r} has invalid tensor metadata")
-            required_nbytes = 0
-            if all(size != 0 for size in sizes):
-                last_element = storage_offset + sum(
-                    stride * (size - 1) for size, stride in zip(sizes, strides)
-                )
-                required_nbytes = (last_element + 1) * tensor.element_size()
+            required_nbytes = _required_view_nbytes(
+                fqn, sizes, strides, storage_offset, tensor.element_size()
+            )
+            if not
             if not is_offgraph_kv and required_nbytes > storage_nbytes:
                 raise RuntimeError(
                     f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "

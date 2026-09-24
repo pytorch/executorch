@@ -214,7 +214,5 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         # Slot j holds the newest logical position congruent to j mod 7.
         held = [7, 8, 9, 3, 4, 5, 6]
         for row, query_pos in enumerate((8, 9)):
-            expected = [
-                0 <= query_pos - p < window for p in held  # causal + sliding
-            ]
+            expected = [0 <= query_pos - p < window for p in held]  # causal + sliding
             self.assertEqual(mask[0, 0, row].tolist(), expected)
