@@ -444,6 +444,66 @@ TEST_F(MetalGraphViewTest, CopyToDeviceWaitsForPendingReads) {
   EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 2, 3, 4}));
 }
 
+// CPU memory under a view is not freed while queued GPU work still reads it
+// through the view's no-copy buffer, which does not own the memory.
+TEST_F(MetalGraphViewTest, QueuedCpuViewKeepsBackingStorageAlive) {
+  auto* stream = getCurrentMetalStream();
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  AOTITensorHandle identity = nullptr;
+  AOTITensorHandle out = nullptr;
+  createOffsetMatrix(kDeviceCpu, &base, &view);
+  createIdentity(&identity);
+  createMatrix(kDeviceMps, &out);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, view, identity), Error::Ok);
+  EXPECT_FALSE(stream->isEmpty());
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  stream->synchronize(SyncType::COMMIT_AND_WAIT);
+
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 7, 8}));
+}
+
+// A graph can write CPU memory through the no-copy buffer of a view of it. A
+// view of that memory which is not densely packed is copied on the CPU, and
+// the copy has to see the write.
+TEST_F(MetalGraphViewTest, MaterializingCpuMemoryWaitsForGpuWrites) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  std::fill_n(static_cast<float*>(base->mutable_data_ptr()), 12, 0.0f);
+  AOTITensorHandle target = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, kMatrixStrides, /*storage_offset=*/4, &target),
+      Error::Ok);
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(i + 1);
+  }
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  ASSERT_EQ(aoti_torch_mps_mm_out(target, input, identity), Error::Ok);
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+
+  // Elements 4, 5, 8 and 9: not densely packed, so copied on the CPU.
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, strides, /*storage_offset=*/4, &read),
+      Error::Ok);
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 2, 0, 0}));
+}
+
 class MetalStrideTest : public MetalMemoryTest {
  protected:
   AOTITensorHandle make(

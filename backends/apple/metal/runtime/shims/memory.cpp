@@ -295,6 +295,10 @@ static AOTITorchError release_memory(void* data_ptr) {
   if (metal_is_device_pointer(data_ptr)) {
     metal_deallocate_buffer(data_ptr);
   } else {
+    // Queued GPU work can still read or write this memory through the no-copy
+    // buffer of a view of it (metal_register_cpu_view). That buffer does not
+    // own the memory, so the work has to finish before it is freed.
+    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
     free(data_ptr);
     ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
   }
@@ -486,7 +490,6 @@ static bool is_packed_strides(
 // returned buffer. On failure returns nullptr.
 static void* materialize_packed(
     void* src,
-    bool src_is_device,
     const std::vector<aten::SizesType>& sizes,
     const std::vector<aten::StridesType>& strides,
     size_t element_size) {
@@ -500,14 +503,14 @@ static void* materialize_packed(
   if (!dst)
     return nullptr;
 
-  // Ensure pending GPU writes to the source buffer are complete. `src` may
-  // point partway into that buffer, at an address that is not itself known as
-  // a device pointer, so the caller tells us where the memory lives.
-  if (src_is_device) {
-    auto* stream = getCurrentMetalStream();
-    if (stream) {
-      stream->synchronize(SyncType::COMMIT_AND_WAIT);
-    }
+  // The copy is made on the CPU, so what the GPU still has to write to the
+  // source must be there first. That holds for CPU memory too: kernels and
+  // graphs can write it through the no-copy buffer of a view of it
+  // (metal_register_cpu_view). The wait also settles any queued work still
+  // using the buffer `dst` was recycled from.
+  auto* stream = getCurrentMetalStream();
+  if (stream) {
+    stream->synchronize(SyncType::COMMIT_AND_WAIT);
   }
 
   // Element-by-element strided copy
@@ -624,12 +627,8 @@ AOTITorchError aoti_torch__reinterpret_tensor(
         Debug,
         "aoti_torch__reinterpret_tensor: non-packed strides, "
         "materializing to packed buffer");
-    tensor_data = materialize_packed(
-        adjusted_data,
-        metal_is_device_pointer(data_ptr),
-        sizes,
-        strides,
-        element_size);
+    tensor_data =
+        materialize_packed(adjusted_data, sizes, strides, element_size);
     ET_CHECK_OR_RETURN_ERROR(
         tensor_data != nullptr,
         MemoryAllocationFailed,
