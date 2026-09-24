@@ -205,12 +205,26 @@ class DataLoaderSpy final : public DataLoader {
     return delegate_->size();
   }
 
+  Error replace_data(Span<const DataChunk> chunks) override {
+    ++replacement_count_;
+    replacement_chunk_count_ = chunks.size();
+    return Error::Ok;
+  }
+
   /**
    * Returns records of the operations performed on this DataLoader and the
    * FreeableBuffers it returned, in order they were performed.
    */
   const std::vector<Operation>& operations() const {
     return operations_;
+  }
+
+  size_t replacement_count() const {
+    return replacement_count_;
+  }
+
+  size_t replacement_chunk_count() const {
+    return replacement_chunk_count_;
   }
 
   /**
@@ -271,6 +285,8 @@ class DataLoaderSpy final : public DataLoader {
   DataLoader* delegate_;
 
   mutable std::vector<Operation> operations_;
+  size_t replacement_count_ = 0;
+  size_t replacement_chunk_count_ = 0;
 };
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024;
@@ -345,6 +361,56 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());
   EXPECT_EQ(method_res.error(), Error::Ok);
+}
+
+TEST_P(BackendIntegrationTest, DataReplacementRequiresExplicitPrepare) {
+  bool normal_init_called = false;
+  StubBackend::singleton().install_init(
+      [&](ET_UNUSED FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& context) -> Result<DelegateHandle*> {
+        normal_init_called = true;
+        EXPECT_FALSE(context.is_data_replacement_supported());
+        return nullptr;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  DataLoaderSpy spy_loader(&loader.get());
+  Result<Program> program = Program::load(&spy_loader);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+  EXPECT_TRUE(normal_init_called);
+  EXPECT_EQ(spy_loader.replacement_count(), 0);
+
+  bool prepare_init_called = false;
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          BackendInitContext& context) -> Result<DelegateHandle*> {
+        prepare_init_called = true;
+        EXPECT_TRUE(context.is_data_replacement_supported());
+        executorch::runtime::BackendData replacement_data{
+            {static_cast<const uint8_t*>(processed->data()), processed->size()},
+            std::nullopt};
+        Error error = context.replace_processed_data(replacement_data);
+        if (error != Error::Ok) {
+          return error;
+        }
+        return nullptr;
+      });
+
+  uint8_t temp_pool[kDefaultRuntimeMemBytes];
+  executorch::runtime::MemoryAllocator temp_allocator(
+      sizeof(temp_pool), temp_pool);
+  EXPECT_EQ(
+      program->prepare_backend_data("forward", &temp_allocator), Error::Ok);
+  EXPECT_TRUE(prepare_init_called);
+  EXPECT_EQ(spy_loader.replacement_count(), 1);
+  EXPECT_GT(spy_loader.replacement_chunk_count(), 0);
 }
 
 TEST_P(BackendIntegrationTest, UnavailableBackendFailsToLoad) {

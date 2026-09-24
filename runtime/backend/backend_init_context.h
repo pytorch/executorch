@@ -15,7 +15,9 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 
+#include <cstdint>
 #include <cstring>
+#include <optional>
 
 #ifdef __GNUC__
 // Disable -Wdeprecated-declarations, as some builds use 'Werror'.
@@ -25,6 +27,28 @@
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
+
+/** Bytes produced by a backend to replace serialized model data. */
+struct BackendData final {
+  Span<const uint8_t> bytes;
+  // A missing value preserves the original data's on-disk alignment.
+  std::optional<size_t> alignment;
+};
+
+/**
+ * Receives replacements for data used while initializing a backend.
+ *
+ * Implementations must finish consuming the supplied spans before returning.
+ */
+class BackendDataWriter {
+ public:
+  virtual ~BackendDataWriter() = default;
+
+  virtual Error replace_processed_data(const BackendData& data) = 0;
+
+  virtual Error replace_named_data(Span<const NamedDataMap::Data> data) = 0;
+};
+
 /**
  * BackendInitContext will be used to inject runtime info for to initialize
  * delegate.
@@ -36,7 +60,8 @@ class BackendInitContext final {
       EventTracer* event_tracer = nullptr,
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr,
-      Span<const BackendOption> runtime_specs = {})
+      Span<const BackendOption> runtime_specs = {},
+      BackendDataWriter* data_writer = nullptr)
       : runtime_allocator_(runtime_allocator),
 #ifdef ET_EVENT_TRACER_ENABLED
         event_tracer_(event_tracer),
@@ -45,7 +70,8 @@ class BackendInitContext final {
 #endif
         method_name_(method_name),
         named_data_map_(named_data_map),
-        runtime_specs_(runtime_specs) {
+        runtime_specs_(runtime_specs),
+        data_writer_(data_writer) {
   }
 
   /** Get the runtime allocator passed from Method. It's the same runtime
@@ -95,6 +121,58 @@ class BackendInitContext final {
   }
 
   /**
+   * Returns true when this context was created by the explicit backend-data
+   * preparation path and can publish a replacement.
+   */
+  bool is_data_replacement_supported() const {
+    return data_writer_ != nullptr;
+  }
+
+  /**
+   * Replaces this delegate's serialized processed data. The replacement is
+   * made visible to future program loads; the current load keeps using its
+   * original snapshot.
+   */
+  ET_NODISCARD Error replace_processed_data(const BackendData& data) {
+    if (data_writer_ == nullptr) {
+      return Error::NotSupported;
+    }
+    if (replaced_named_data_) {
+      return Error::InvalidState;
+    }
+    if (replaced_processed_data_) {
+      return Error::AlreadyLoaded;
+    }
+    Error error = data_writer_->replace_processed_data(data);
+    if (error == Error::Ok) {
+      replaced_processed_data_ = true;
+    }
+    return error;
+  }
+
+  /**
+   * Replaces named data read through get_named_data_map(). All replacements
+   * are submitted as one operation.
+   */
+  ET_NODISCARD Error replace_named_data(
+      Span<const NamedDataMap::Data> data) {
+    if (data_writer_ == nullptr) {
+      return Error::NotSupported;
+    }
+    if (replaced_processed_data_) {
+      return Error::InvalidState;
+    }
+    if (replaced_named_data_) {
+      return Error::AlreadyLoaded;
+    }
+    Error error = data_writer_->replace_named_data(data);
+    if (error == Error::Ok) {
+      replaced_named_data_ = true;
+    }
+    return error;
+  }
+
+  /**
    * Get a runtime spec value by key and type.
    *
    * @tparam T The expected type (bool, int, or const char*)
@@ -135,6 +213,9 @@ class BackendInitContext final {
   const char* method_name_ = nullptr;
   const NamedDataMap* named_data_map_ = nullptr;
   Span<const BackendOption> runtime_specs_;
+  BackendDataWriter* data_writer_ = nullptr;
+  bool replaced_processed_data_ = false;
+  bool replaced_named_data_ = false;
 };
 
 } // namespace ET_RUNTIME_NAMESPACE
@@ -145,5 +226,7 @@ namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using ::executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendData;
+using ::executorch::ET_RUNTIME_NAMESPACE::BackendDataWriter;
 } // namespace executor
 } // namespace torch
