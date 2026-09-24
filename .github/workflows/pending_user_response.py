@@ -35,7 +35,6 @@ def main():
             issue.get_comments(),
             key=lambda comment: comment.created_at,
         )
-
         
         # Find automation comments
         auto_comments = [
@@ -59,10 +58,8 @@ def main():
                 )
                 issue.remove_from_labels(LABEL)
                 continue
-
-            
+ 
             days_since_reminder = (now - latest_auto_comment.created_at).days
-
             
             # ---- CLOSE ISSUE AFTER 30 DAYS OF REMINDER ----
             if days_since_reminder >= DAYS_BEFORE_CLOSE:
