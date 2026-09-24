@@ -80,6 +80,13 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         else None
     )
 
+    # Portable constant_pad_nd does not support channels-last tensors.
+    ref_model = (
+        ReferenceModel.QUANTIZED_EDGE_PYTHON
+        if channels_last
+        else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
+    )
+
     lower_run_compare(
         model,
         [input_spec],
@@ -87,7 +94,7 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
-        reference_model=ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
+        reference_model=ref_model,
         mocker=mocker,
         use_qat=use_qat,
         train_fn=train_fn,
