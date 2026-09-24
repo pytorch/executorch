@@ -47,6 +47,7 @@ _PRIMITIVE_TYPES = (
     torch.device,
     torch.dtype,
     torch.layout,
+    torch.memory_format,
 )
 
 
