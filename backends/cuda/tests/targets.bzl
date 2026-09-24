@@ -50,6 +50,27 @@ def define_common_targets(is_fbcode = False):
         ),
     )
 
+    python_unittest_remote_gpu(
+        name = "test_offgraph_kv",
+        srcs = [
+            "test_offgraph_kv.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_passes",
+            # The oracle is the neutral op itself, not a reference rebuilt here.
+            "//executorch/extension/llm/cache:cache",
+        ],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+            subplatform = "A100-exclusive",
+        ),
+    )
+
     python_unittest(
         name = "test_cuda_partitioner",
         srcs = [

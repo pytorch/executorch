@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import torch
+from executorch.backends.cuda.passes.lower_offgraph_kv import OFFGRAPH_KV_FQN_PREFIX
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import PreprocessResult
@@ -130,6 +131,10 @@ def _is_aoti_library_local_fqn(fqn: str) -> bool:
     # model-level FQN. The numbering restarts in every independently compiled
     # AOTI library, so the library key is part of their global identity.
     return fqn.startswith("_tensor_constant")
+
+
+def _is_offgraph_kv_fqn(fqn: str) -> bool:
+    return fqn.startswith(OFFGRAPH_KV_FQN_PREFIX)
 
 
 def _validate_cuda_aoti_variant(
@@ -362,34 +367,35 @@ class CudaWeightCollector:
             storage_nbytes = storage.nbytes()
             del storage
             device_type = device_type_for_weight(tensor)
+            is_offgraph_kv = _is_offgraph_kv_fqn(fqn)
             expected_storage_nbytes = int(
                 getattr(properties, "storage_size", None) or 0
             )
-            if storage_nbytes < expected_storage_nbytes:
+            if not is_offgraph_kv and storage_nbytes < expected_storage_nbytes:
                 raise RuntimeError(
                     "AOTI cloned storage is smaller than its TensorProperties "
                     f"({storage_nbytes} < {expected_storage_nbytes} bytes)"
                 )
 
-            fd, storage_path = tempfile.mkstemp(
-                prefix=".cuda_weight_", suffix=".storage", dir=directory
-            )
-            os.close(fd)
-            try:
-                digest = _write_tensor_storage(tensor, storage_path)
-                data = FileBackedData.move_from(storage_path, sha256=digest)
-            except Exception:
-                try:
-                    os.remove(storage_path)
-                except OSError:
-                    pass
-                raise
-
             storage_key = _storage_key(fqn, device_type)
-            if storage_key in storages:
-                data.close()
-                raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
-            storages[storage_key] = data
+            if not is_offgraph_kv:
+                fd, storage_path = tempfile.mkstemp(
+                    prefix=".cuda_weight_", suffix=".storage", dir=directory
+                )
+                os.close(fd)
+                try:
+                    digest = _write_tensor_storage(tensor, storage_path)
+                    data = FileBackedData.move_from(storage_path, sha256=digest)
+                except Exception:
+                    try:
+                        os.remove(storage_path)
+                    except OSError:
+                        pass
+                    raise
+                if storage_key in storages:
+                    data.close()
+                    raise RuntimeError(f"Duplicate CUDA FQN weight key for {fqn!r}")
+                storages[storage_key] = data
 
             sizes = tuple(
                 int(size) for size in getattr(properties, "shape", tensor.shape)
@@ -411,10 +417,15 @@ class CudaWeightCollector:
                     stride * (size - 1) for size, stride in zip(sizes, strides)
                 )
                 required_nbytes = (last_element + 1) * tensor.element_size()
-            if required_nbytes > storage_nbytes:
+            if not is_offgraph_kv and required_nbytes > storage_nbytes:
                 raise RuntimeError(
                     f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "
                     f"{storage_nbytes}-byte cloned storage"
+                )
+            if is_offgraph_kv:
+                # Preserve the AOTI view contract; the runtime supplies storage.
+                storage_nbytes = max(
+                    storage_nbytes, expected_storage_nbytes, required_nbytes
                 )
             entries.append(
                 CudaWeightEntry(
@@ -500,13 +511,13 @@ class CudaWeightCollector:
         self._merge_aoti_data(
             parent_store,
             compatibility_blob_key,
-            keep_compatibility_blob=not artifact.storages,
+            keep_compatibility_blob=not artifact.entries,
         )
 
         external_tag = f"aoti_{device_name}_blob"
         serialized_entries = []
         for entry in artifact.entries:
-            data = artifact.storages[entry.storage_key]
+            data = artifact.storages.get(entry.storage_key)
             if _is_aoti_library_local_fqn(entry.fqn):
                 entry = replace(
                     entry,
@@ -514,7 +525,10 @@ class CudaWeightCollector:
                         entry.fqn, entry.device_type, aoti_library_key=so_blob_key
                     ),
                 )
-            self._add_weight(entry, data, external_tag)
+            if data is not None:
+                self._add_weight(entry, data, external_tag)
+            elif not _is_offgraph_kv_fqn(entry.fqn):
+                raise RuntimeError(f"Missing CUDA FQN weight storage for {entry.fqn!r}")
             serialized_entries.append(entry)
 
         result.processed_bytes = encode_cuda_aoti_metadata(
