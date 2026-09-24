@@ -146,7 +146,7 @@ class CanonicalizeConv(ExportPass):
                 filter_node = node.args[ConvParamIdx.WEIGHT]
                 filter_placeholder_node = (
                     # FP graph; a get_attr weight comes from an earlier pass
-                    # that rewrote it (e.g. FuseBatchNormWithConvPass)
+                    # that rewrote it (e.g. FuseBatchNormWithConv)
                     filter_node
                     if filter_node.op in ("placeholder", "get_attr")
                     # QDQ graph
