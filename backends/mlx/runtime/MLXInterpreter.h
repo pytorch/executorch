@@ -12,6 +12,7 @@
 #include "MLXExecutor.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include <mlx/array.h>
@@ -307,6 +308,17 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
       sinks,
       false,
       s);
+  if (n.mask) {
+    const auto& M = st.const_tensor_ref(*n.mask);
+    array allowed = M.dtype() == bool_
+        ? M
+        : not_equal(
+              M, array(-std::numeric_limits<float>::infinity(), M.dtype()), s);
+    array has_key = M.ndim() == 0 ? allowed : any(allowed, -1, true, s);
+    // MLX can return nonzero values or NaNs for empty rows. Select, rather
+    // than multiply, to preserve PyTorch's zero-row semantics in both cases.
+    out = where(has_key, out, array(0, out.dtype()), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
