@@ -105,7 +105,7 @@ to use the same memory format as the export example.
 
 ### 2. Lower to edge and apply Cortex-M passes
 
-Lower to the edge dialect with the backend's `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
+Lower to the edge dialect with the backend's `EdgeCompileConfig`, then apply `CortexMPassManager` through `EdgeProgramManager.transform()` to replace quantized subgraphs with CMSIS-NN operator implementations:
 
 ```python
 from executorch.exir import ExecutorchBackendConfig, to_edge
@@ -122,9 +122,11 @@ config = cortex_m_edge_compile_config()
 
 edge_program_manager = to_edge(quantized_exported_program, compile_config=config)
 
-pass_manager = CortexMPassManager(edge_program_manager.exported_program())
-edge_program_manager._edge_programs["forward"] = pass_manager.transform()
+edge_program_manager = edge_program_manager.transform(CortexMPassManager())
 ```
+
+Alternatively, pass `transform_passes=CortexMPassManager()` to
+`to_edge_transform_and_lower()` with the same compile configuration.
 
 ### 3. Serialize to .pte
 
