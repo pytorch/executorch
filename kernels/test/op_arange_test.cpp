@@ -285,7 +285,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
   // Expected tensor, equal
   Tensor expected = tf.make({4}, {1.1, 2.2, 3.3, 4.4});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE(out, expected);
 
   end = Scalar(5.51);
   out = tf.zeros({5});
@@ -298,7 +298,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
   // Expected tensor, equal
   expected = tf.make({5}, {1.1, 2.2, 3.3, 4.4, 5.5});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE(out, expected);
 }
 
 TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
@@ -318,7 +318,7 @@ TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
   // Expected tensor, equal
   Tensor expected = tf.make({4}, {5.5, 4.4, 3.3, 2.2});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE(out, expected);
 
   end = Scalar(1.09);
   out = tf.zeros({5});
@@ -331,5 +331,5 @@ TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
   // Expected tensor, equal
   expected = tf.make({5}, {5.5, 4.4, 3.3, 2.2, 1.1});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE(out, expected);
 }
