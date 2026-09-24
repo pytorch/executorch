@@ -228,15 +228,28 @@ if(EXECUTORCH_BUILD_SHARED)
     )
   endif()
   # Said here rather than left to fail somewhere downstream, where packaging
-  # looked for a library the build never emitted. Windows is still refused:
-  # there the runtime carries no export annotations, so a DLL would link against
-  # nothing, which is a missing capability rather than a different spelling of
-  # one.
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT APPLE)
+  # looked for a library the build never emitted. The runtime carries no export
+  # annotations, so on Windows each shipped component DLL exports all of its
+  # symbols instead; see executorch_target_shipped_runtime_path.
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux"
+     AND NOT APPLE
+     AND NOT (WIN32 AND MSVC)
+  )
     message(
       FATAL_ERROR
-        "EXECUTORCH_BUILD_SHARED is supported on Linux and macOS only, not "
+        "EXECUTORCH_BUILD_SHARED is supported on Linux, macOS and Windows (MSVC) only, not "
         "${CMAKE_SYSTEM_NAME}."
+    )
+  endif()
+  # The Windows DLLs take their components as objects through $<COMPILE_ONLY>,
+  # which CMake added in 3.27. Older versions fail at generate time with an
+  # expression error that does not name the cause.
+  if(MSVC AND CMAKE_VERSION VERSION_LESS 3.27)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_SHARED on Windows needs CMake 3.27 or newer, found "
+        "${CMAKE_VERSION}. Upgrade CMake (pip install 'cmake>=3.27,<4') or "
+        "build with -DEXECUTORCH_BUILD_SHARED=OFF."
     )
   endif()
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -1064,14 +1077,20 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
   )
 
-  # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
-  # (from executorch_target_link_options_shared_lib) already force
+  # Outside MSVC, link executorch without WHOLE_ARCHIVE because its INTERFACE
+  # link options (from executorch_target_link_options_shared_lib) already force
   # whole-archive. Everything else is pulled in through link options rather than
   # the WHOLE_ARCHIVE link feature, because these archives also reference each
   # other plainly and CMake before 3.29 refuses to mix a feature with a plain
   # reference to the same item.
-  target_link_libraries(executorch_shared PRIVATE executorch)
-  set(_executorch_shared_whole_archive executorch_core)
+  if(MSVC)
+    # Bundled as objects like the rest; linking it would bring its interface
+    # /WHOLEARCHIVE, which lld-link processes ahead of the bundled objects.
+    set(_executorch_shared_whole_archive executorch executorch_core)
+  else()
+    target_link_libraries(executorch_shared PRIVATE executorch)
+    set(_executorch_shared_whole_archive executorch_core)
+  endif()
   foreach(_ext_target
           extension_data_loader extension_flat_tensor extension_named_data_map
           extension_module_static extension_tensor

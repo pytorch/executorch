@@ -38,6 +38,10 @@ to run ExecuTorch `.pte` files, with some restrictions:
   prebuilt module. OpenVINO requires the runtime to be installed separately:
   `pip install executorch[openvino]`
 
+On Linux, macOS and Windows the runtime, kernels and backends also ship as shared libraries
+with headers and a CMake package, so a C++ application can link them without building
+ExecuTorch; see [Using ExecuTorch with C++](docs/source/using-executorch-cpp.md).
+
 Please visit the [ExecuTorch website](https://pytorch.org/executorch) for
 tutorials and documentation. Here are some starting points:
 * [Getting Started](https://pytorch.org/executorch/main/getting-started-setup)

@@ -47,7 +47,7 @@ cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
+On Linux, macOS and Windows, current main/nightly wheels ship the runtime as prebuilt
 shared libraries together with the headers and a CMake package. Stable releases
 from before this packaging was introduced do not contain the namespaced CMake
 targets used below; use the documentation for your installed release.
@@ -159,6 +159,17 @@ That is the two input arrays added together. The long `python -c` part just prin
 CMake package, so CMake can find it. Run `./build/app` from the folder holding `model.pte`, because
 the path in `main.cpp` is relative.
 
+On Windows, three things differ. Add the DLL copy step from [the Windows section](#on-windows) to
+`CMakeLists.txt`, since a Windows program finds the DLLs only next to itself. Build Release, because
+the DLLs use the release C++ library and a Debug build is refused at compile time. And the program ends
+up in a `Release` folder:
+
+```
+cmake -S . -B build -DCMAKE_PREFIX_PATH="..."
+cmake --build build --config Release
+.\build\Release\app.exe
+```
+
 #### Adding kernels and backends
 
 Add a component to both lines to get more. Nothing else in the program changes.
@@ -175,12 +186,12 @@ These are the components the package provides:
 
 | Component | What it gives you | Where |
 | --- | --- | --- |
-| `runtime` | The engine. Always needed. | Linux, macOS |
-| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS |
-| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS |
-| `threadpool` | Multi-threaded execution. | Linux, macOS |
+| `runtime` | The engine. Always needed. | Linux, macOS, Windows |
+| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS, Windows |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS, Windows |
+| `threadpool` | Multi-threaded execution. | Linux, macOS, Windows |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
-| `kernels_quantized` | The quantized operator kernels | Linux, macOS |
+| `kernels_quantized` | The quantized operator kernels | Linux, macOS, Windows |
 | `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
@@ -304,8 +315,9 @@ message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
   target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
   ```
 
-You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
-they find each other once the program links against the installed package.
+On Linux and macOS you should not need `LD_LIBRARY_PATH`. The shipped libraries record where their
+neighbours live, so they find each other once the program links against the installed package.
+Windows has no such record; see below.
 
 On Linux, linking the runtime asks the linker for `DT_RUNPATH` rather than the older `DT_RPATH`.
 That is deliberate: `DT_RPATH` is searched before `LD_LIBRARY_PATH` and applies to a dependency's
@@ -324,6 +336,30 @@ target_link_libraries(app PRIVATE executorch::runtime prefer_rpath)
 
 The order matters. A target's own link options are emitted before those of its dependencies, and the
 last of the two settings decides the tag for every entry in the link.
+
+#### On Windows
+
+A Windows DLL records no search path, so the loader finds the shipped DLLs only next to your
+program (or on `PATH`). Copy them there after each build; the imported targets name every DLL your
+program links:
+
+```cmake
+add_custom_command(
+  TARGET app POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:app> $<TARGET_FILE_DIR:app>
+  COMMAND_EXPAND_LISTS
+)
+```
+
+Build with `cmake --build build --config Release`. The DLLs are built against the release C++
+library, and a Debug program uses the debug one, whose types are laid out differently, so mixing the
+two would corrupt memory. The runtime headers therefore refuse a Debug build at compile time, with an
+error asking for Release. On CMake older than 3.28, copy the DLLs from
+`${EXECUTORCH_RUNTIME_LIBRARY_DIR}` instead, and apply `${EXECUTORCH_COMPILE_DEFINITIONS}`, which
+carries that check.
+
+The `etdump` component is not offered on Windows, because the Windows wheel is built without the
+event tracer.
 
 ### Running on a GPU with the CUDA package
 
