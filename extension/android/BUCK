@@ -3,20 +3,27 @@ load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_l
 
 oncall("executorch")
 
+# NOTE: the platform-neutral sources live in the shared source directory
+# extension/java/src/main/java and are consumed here as filegroup labels
+# exported from extension/java/BUCK, so the Android targets keep their
+# historical names, ownership, and attributes (required_for_source_only_abi,
+# pure_kotlin, deps) while compiling the exact same classes as before the
+# move. Log.kt is the Android-backed implementation of the
+# org.pytorch.executorch.Log facade that the shared sources reference.
+#
+# MAINTENANCE: both Gradle (java.srcDirs glob) and the filegroups in
+# extension/java/BUCK (glob) pick up new shared sources automatically, so no
+# per-file lists need updating. The ASR and image-processing sources are
+# intentionally Gradle-only (as before this change); add Buck targets for them
+# when an internal build needs them.
+
 non_fbcode_target(_kind = fb_android_library,
     name = "executorch",
     warnings_as_errors = False,
     required_for_source_only_abi = True,
     srcs = [
-        "executorch_android/src/main/java/org/pytorch/executorch/BackendOptionsMap.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/DType.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/EValue.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/ExecuTorchRuntime.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/ExecutorchRuntimeException.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/MethodMetadata.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/Module.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/Tensor.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/annotations/Experimental.kt",
+        "executorch_android/src/main/java/org/pytorch/executorch/Log.kt",
+        "//xplat/executorch/extension/java:core_sources",
     ],
     autoglob = False,
     language = "KOTLIN",
@@ -34,8 +41,7 @@ non_fbcode_target(_kind = fb_android_library,
     name = "executorch_training",
     warnings_as_errors = False,
     srcs = [
-        "executorch_android/src/main/java/org/pytorch/executorch/training/SGD.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/training/TrainingModule.kt",
+        "//xplat/executorch/extension/java:training_sources",
     ],
     autoglob = False,
     language = "KOTLIN",
@@ -50,10 +56,7 @@ non_fbcode_target(_kind = fb_android_library,
     name = "executorch_llama",
     warnings_as_errors = False,
     srcs = [
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmCallback.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmGenerationConfig.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmModule.kt",
-        "executorch_android/src/main/java/org/pytorch/executorch/extension/llm/LlmModuleConfig.kt",
+        "//xplat/executorch/extension/java:llm_sources",
     ],
     autoglob = False,
     language = "KOTLIN",
