@@ -23,8 +23,14 @@ from tqdm import tqdm
 log = logging.getLogger(__name__)
 
 
-class MLPerfTinyModel(model_base.EagerModelBase):
-    """Base class of the MLPerf Tiny models."""
+class NXPTestBaseModel(model_base.EagerModelBase):
+    """Base class NXP test models.
+
+    Provides common functionality for NXP test models including:
+    - Model initialization
+    - Dataset loading and calibration
+    - QAT (Quantization-Aware Training) setup
+    """
 
     # Default QAT training hyperparameters. Subclasses may override them.
     TRAIN_HYPERPARAMETERS = {
@@ -40,6 +46,7 @@ class MLPerfTinyModel(model_base.EagerModelBase):
         dataset_path: Path | str | None = None,
         use_random_dataset: bool = False,
         num_samples: int | None = None,
+        balanced_dataset: bool = True,
         num_workers: int = 4,
     ):
         """
@@ -51,6 +58,7 @@ class MLPerfTinyModel(model_base.EagerModelBase):
         self._num_samples = num_samples
         self._use_random_dataset = use_random_dataset
         self._dataset_path = dataset_path
+        self._balanced_dataset = balanced_dataset
 
         # throws ValueError if validation fails
         self._validate_args()
@@ -58,10 +66,15 @@ class MLPerfTinyModel(model_base.EagerModelBase):
         self._eager_model = self._init_eager_model()
         self.dataset = self._init_dataset()
 
-    @staticmethod
-    def _collate_fn(data: list[tuple]):
-        data, labels = zip(*data)
-        return torch.stack(list(data)), torch.tensor(list(labels))
+    # @staticmethod
+    def _collate_fn(self, data: list[tuple]):
+        examples, labels = zip(*data)
+        # If the example shape is already input_shape, we need to remove batch_size dim as the DataLoader adds it
+        if examples[0].shape == self.input_shape:
+            examples = [dt.squeeze(0) for dt in examples]
+        else:
+            examples = list(examples)
+        return torch.stack(examples), torch.tensor(list(labels))
 
     @abstractmethod
     def _init_eager_model(self) -> torch.nn.Module:
@@ -101,8 +114,13 @@ class MLPerfTinyModel(model_base.EagerModelBase):
         self, batch_size: int = 5, dataset_portion: float = 0.1
     ) -> Iterator[tuple[torch.Tensor]]:
         """Return an iterator over a portion of the model dataset, to be used for QAT."""
+        reduced_dataset_len = (
+            len(self.dataset) * dataset_portion
+            if len(self.dataset) * dataset_portion >= 1
+            else 1
+        )
         reduced_dataset = torch.utils.data.Subset(
-            self.dataset, range(int(len(self.dataset) * dataset_portion))
+            self.dataset, range(int(reduced_dataset_len))
         )
         reduced_loader = DataLoader(
             reduced_dataset,
@@ -178,7 +196,7 @@ class MLPerfTinyModel(model_base.EagerModelBase):
             num_classes = len(self.labels)
             sample_shape = tuple(self.input_shape)[1:]
             return RandomCalibrationDataset(
-                self._num_samples, sample_shape, num_classes
+                self._num_samples, sample_shape, num_classes, self._balanced_dataset
             )
         else:
             return CalibrationDataset(self._dataset_path)
