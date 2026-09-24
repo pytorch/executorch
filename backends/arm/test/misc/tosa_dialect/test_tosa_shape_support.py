@@ -12,10 +12,12 @@ import executorch.backends.arm.operator_support.reduce_sum_support  # noqa: F401
 import executorch.backends.arm.operator_support.sym_size_int_support  # noqa: F401
 import pytest
 import torch
+from executorch.backends.arm.operator_support.slice_copy_support import (
+    SliceCopySupported,
+)
 from executorch.backends.arm.operator_support.symint_arithmetic_support import (
     SymIntArithmeticSupport,
 )
-
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
@@ -604,3 +606,51 @@ def test_shape_extension_rejects_non_symint_arithmetic():
     )
 
     assert support.is_node_supported({}, arithmetic_node) is False
+
+
+def test_shape_extension_rejects_slice_with_symbolic_bound():
+    class SymbolicBoundSlice(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, x.shape[0], 1)
+
+    inputs = (torch.randn(4, 5),)
+    exported_program = _exported_program(
+        SymbolicBoundSlice(),
+        inputs,
+        dynamic_shapes=({0: Dim("batch", min=2, max=5)},),
+    )
+    support, reporter = _support("TOSA-1.1+FP+shape", exported_program)
+    slice_node = _find_node(exported_program, exir_ops.edge.aten.slice_copy.Tensor)
+
+    assert support.is_node_supported(exported_program.graph_module, slice_node) is False
+    assert "Symbolic slice bounds" in reporter.get_table_report()
+
+
+def test_shape_extension_rejects_slice_with_empty_unsliced_dimension():
+    class SliceSecondDimension(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, 3, 1)
+
+    exported_program = _exported_program(SliceSecondDimension(), (torch.randn(0, 5),))
+    reporter = WhyNoPartitionReporter()
+    support = SliceCopySupported(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), reporter
+    )
+    slice_node = _find_node(exported_program, exir_ops.edge.aten.slice_copy.Tensor)
+
+    assert support.is_node_supported(exported_program.graph_module, slice_node) is False
+
+
+def test_shape_extension_rejects_empty_slice():
+    class EmptySlice(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, -6, 1)
+
+    exported_program = _exported_program(EmptySlice(), (torch.randn(2, 5),))
+    reporter = WhyNoPartitionReporter()
+    support = SliceCopySupported(
+        TosaSpecification.create_from_string("TOSA-1.1+FP+shape"), reporter
+    )
+    slice_node = _find_node(exported_program, exir_ops.edge.aten.slice_copy.Tensor)
+
+    assert support.is_node_supported(exported_program.graph_module, slice_node) is False

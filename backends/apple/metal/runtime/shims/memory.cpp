@@ -12,12 +12,14 @@
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 #include <executorch/runtime/platform/log.h>
+#include <algorithm>
 #include <cstdint> // Ensure we have int64_t, int32_t definitions
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <unordered_map>
 
 #include <vector>
@@ -70,6 +72,33 @@ void hold_allocation(Tensor* handle, void* data_ptr, void* owner) {
   if (data_ptr != owner) {
     view_owner[handle] = owner;
   }
+}
+
+// Wraps `data` in a tensor whose strides are the ones given. from_blob() does
+// not keep the strides it is handed: it sorts them into a dim order and derives
+// the strides again from that. A dimension of size 1 has the same stride as the
+// dimension outside it, and the sort leaves such a tie in index order, so
+// channels-last strides {63, 1, 9, 1} of a {2, 1, 7, 9} tensor come back as
+// {63, 9, 9, 1}. The memory is the same, but the layout is no longer
+// recognizable, and the convolution needs it to pick its output layout. Putting
+// the size-1 dimension last among equal strides gives back the original ones.
+std::shared_ptr<Tensor> make_strided_tensor(
+    void* data,
+    std::vector<aten::SizesType> sizes,
+    std::vector<aten::StridesType> strides,
+    aten::ScalarType scalar_type) {
+  std::vector<aten::DimOrderType> dim_order(sizes.size());
+  std::iota(dim_order.begin(), dim_order.end(), 0);
+  std::stable_sort(dim_order.begin(), dim_order.end(), [&](size_t a, size_t b) {
+    if (strides[a] != strides[b]) {
+      return strides[a] > strides[b];
+    }
+    return sizes[a] != 1 && sizes[b] == 1;
+  });
+  return executorch::extension::for_blob(data, std::move(sizes), scalar_type)
+      .dim_order(std::move(dim_order))
+      .strides(std::move(strides))
+      .make_tensor_ptr();
 }
 
 } // namespace
@@ -142,7 +171,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // ETensor creation
   // Note: We're NOT copying the data, just wrapping it
-  auto tensor = executorch::extension::from_blob(
+  auto tensor = make_strided_tensor(
       adjusted_data, sizes, strides, dtype_to_scalar_type(dtype));
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -238,8 +267,7 @@ AOTITorchError aoti_torch_empty_strided(
   // ETensor creation
   // Note: We're NOT copying the data, just wrapping it
   executorch::aten::ScalarType scalar_type = dtype_to_scalar_type(dtype);
-  auto tensor =
-      executorch::extension::from_blob(ptr, sizes, strides, scalar_type);
+  auto tensor = make_strided_tensor(ptr, sizes, strides, scalar_type);
 
   // Store the tensor so it doesn't get destroyed
   tensors[tensor.get()] = tensor;
@@ -267,6 +295,10 @@ static AOTITorchError release_memory(void* data_ptr) {
   if (metal_is_device_pointer(data_ptr)) {
     metal_deallocate_buffer(data_ptr);
   } else {
+    // Queued GPU work can still read or write this memory through the no-copy
+    // buffer of a view of it (metal_register_cpu_view). That buffer does not
+    // own the memory, so the work has to finish before it is freed.
+    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
     free(data_ptr);
     ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
   }
@@ -401,6 +433,10 @@ AOTITorchError aoti_torch_copy_(
   // TODO: This should be improved to catch cases like (4, 1, 5) -> (4, 5)
   bool same_schema = true;
   for (int i = 0; i < self->dim(); i++) {
+    // A dimension of size 1 in both does not change where the elements are.
+    if (self_sizes[i] == 1 && src_sizes[i] == 1) {
+      continue;
+    }
     if (self_strides[i] != src_strides[i]) {
       same_schema = false;
       break;
@@ -483,9 +519,11 @@ static void* materialize_packed(
   if (!dst)
     return nullptr;
 
-  // Kernels can write CPU memory through the Metal buffers of views of it
-  // (metal_register_cpu_view), so what the GPU still has to write has to be
-  // there before the copy reads it.
+  // The copy is made on the CPU, so what the GPU still has to write to the
+  // source must be there first. That holds for CPU memory too: kernels and
+  // graphs can write it through the no-copy buffer of a view of it
+  // (metal_register_cpu_view). The wait also settles any queued work still
+  // using the buffer `dst` was recycled from.
   auto* stream = getCurrentMetalStream();
   if (stream) {
     stream->synchronize(SyncType::COMMIT_AND_WAIT);
@@ -641,7 +679,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     }
   }
 
-  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
+  std::shared_ptr<Tensor> tensor = make_strided_tensor(
       tensor_data, sizes, strides, dtype_to_scalar_type(dtype));
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -777,7 +815,7 @@ AOTITorchError aoti_torch_new_tensor_handle(
   // Create new tensor that shares the same memory as the original
   // This is similar to PyTorch's Tensor copy constructor - creates a new
   // tensor object that shares the same underlying storage
-  std::shared_ptr<Tensor> tensor = executorch::extension::from_blob(
+  std::shared_ptr<Tensor> tensor = make_strided_tensor(
       data_ptr, // Share the same memory from source tensor
       sizes, // Same sizes as original
       strides, // Same strides as original

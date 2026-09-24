@@ -12,6 +12,88 @@ namespace executorch {
 namespace backends {
 namespace metal {
 
+namespace {
+
+// How a 4D convolution operand is laid out in memory. Inductor's layout
+// optimization hands conv2d channels-last input and weight, and expects a
+// channels-last output back.
+enum class ConvMemoryFormat { Contiguous, ChannelsLast };
+
+// Mirrors c10's is_channels_last_strides_2d, which is what PyTorch's
+// suggest_memory_format() runs on a 4D tensor.
+bool suggests_channels_last(const Tensor& tensor) {
+  const auto sizes = tensor.sizes();
+  const auto strides = tensor.strides();
+  if (strides[1] == 0) {
+    return false;
+  }
+  int64_t min = 0;
+  for (int d : {1, 3, 2, 0}) {
+    if (sizes[d] == 0 || strides[d] < min) {
+      return false;
+    }
+    // Tells N111 (contiguous) apart from NC11 stored channels-last.
+    if (d == 0 && min == strides[1]) {
+      return false;
+    }
+    min = strides[d];
+    if (sizes[d] > 1) {
+      min *= sizes[d];
+    }
+  }
+  return true;
+}
+
+// Classifies a 4D tensor from its strides. A dimension of size 1 does not
+// change where the elements are, so it is ignored when checking that the data
+// is dense in one of the two layouts. A tensor with such a dimension can fit
+// both; its elements read the same either way, but the layout still decides
+// the layout of the output, and the generated wrapper expects the one PyTorch
+// would pick. Returns false for any other stride pattern.
+bool get_conv_memory_format(const Tensor& tensor, ConvMemoryFormat* format) {
+  const auto sizes = tensor.sizes();
+  const auto strides = tensor.strides();
+  const int64_t d1 = sizes[1], d2 = sizes[2], d3 = sizes[3];
+  const int64_t contiguous[4] = {d1 * d2 * d3, d2 * d3, d3, 1};
+  const int64_t channels_last[4] = {d2 * d3 * d1, 1, d3 * d1, d1};
+
+  bool is_contiguous = true;
+  bool is_channels_last = true;
+  for (int i = 0; i < 4; i++) {
+    if (sizes[i] == 1) {
+      continue;
+    }
+    is_contiguous = is_contiguous && strides[i] == contiguous[i];
+    is_channels_last = is_channels_last && strides[i] == channels_last[i];
+  }
+
+  if (is_contiguous && is_channels_last) {
+    *format = suggests_channels_last(tensor) ? ConvMemoryFormat::ChannelsLast
+                                             : ConvMemoryFormat::Contiguous;
+  } else if (is_contiguous) {
+    *format = ConvMemoryFormat::Contiguous;
+  } else if (is_channels_last) {
+    *format = ConvMemoryFormat::ChannelsLast;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// Reorders a 4D graph tensor from `N, d1, d2, C` to `N, C, d1, d2`.
+MPSGraphTensor* channels_last_to_first(MPSGraph* graph, MPSGraphTensor* tensor) {
+  tensor = [graph transposeTensor:tensor dimension:1 withDimension:3 name:nil];
+  return [graph transposeTensor:tensor dimension:2 withDimension:3 name:nil];
+}
+
+// Reorders a 4D graph tensor from `N, C, d1, d2` to `N, d1, d2, C`.
+MPSGraphTensor* channels_first_to_last(MPSGraph* graph, MPSGraphTensor* tensor) {
+  tensor = [graph transposeTensor:tensor dimension:1 withDimension:2 name:nil];
+  return [graph transposeTensor:tensor dimension:2 withDimension:3 name:nil];
+}
+
+} // namespace
+
 extern "C" {
 
 AOTITorchError aoti_torch_mps_convolution(
@@ -132,6 +214,29 @@ AOTITorchError aoti_torch_mps_convolution(
         }
       }
 
+      // Inductor picks channels-last for conv2d graphs, so the operands cannot
+      // be assumed to be contiguous. As in ATen, the output is channels-last
+      // when either operand is.
+      ConvMemoryFormat input_format = ConvMemoryFormat::Contiguous;
+      ConvMemoryFormat weight_format = ConvMemoryFormat::Contiguous;
+      if (!is_conv1d && is_input_4d) {
+        if (!get_conv_memory_format(*input_tensor, &input_format)) {
+          ET_LOG(Error, "aoti_torch_mps_convolution: input must be contiguous or channels-last, got strides [%d, %d, %d, %d]",
+                 (int)input_tensor->strides()[0], (int)input_tensor->strides()[1],
+                 (int)input_tensor->strides()[2], (int)input_tensor->strides()[3]);
+          return Error::InvalidArgument;
+        }
+        if (!get_conv_memory_format(*weight_tensor, &weight_format)) {
+          ET_LOG(Error, "aoti_torch_mps_convolution: weight must be contiguous or channels-last, got strides [%d, %d, %d, %d]",
+                 (int)weight_tensor->strides()[0], (int)weight_tensor->strides()[1],
+                 (int)weight_tensor->strides()[2], (int)weight_tensor->strides()[3]);
+          return Error::InvalidArgument;
+        }
+      }
+      const bool input_channels_last = input_format == ConvMemoryFormat::ChannelsLast;
+      const bool weight_channels_last = weight_format == ConvMemoryFormat::ChannelsLast;
+      const bool output_channels_last = input_channels_last || weight_channels_last;
+
       // Get weight dimensions
       int64_t C_out = weight_tensor->sizes()[0];  // output channels
       int64_t kernel_h = is_conv1d ? 1 : weight_tensor->sizes()[2];  // kernel height
@@ -220,13 +325,26 @@ AOTITorchError aoti_torch_mps_convolution(
       int64_t weight_C_in = weight_tensor->sizes()[1];  // This handles grouped convs correctly
 
       // Define tensor shapes for placeholders (needed for both cache hit and miss)
-      NSArray<NSNumber*>* inputShape = @[@(N), @(C_in), @(H_in), @(W_in)];
-      NSArray<NSNumber*>* weightShape = @[@(C_out), @(weight_C_in), @(kernel_h), @(kernel_w)];
+      // These describe the buffers as they sit in memory, so a channels-last
+      // operand is declared NHWC / OHWI and reordered inside the graph.
+      NSArray<NSNumber*>* inputShape = input_channels_last
+          ? @[@(N), @(H_in), @(W_in), @(C_in)]
+          : @[@(N), @(C_in), @(H_in), @(W_in)];
+      NSArray<NSNumber*>* weightShape = weight_channels_last
+          ? @[@(C_out), @(kernel_h), @(kernel_w), @(weight_C_in)]
+          : @[@(C_out), @(weight_C_in), @(kernel_h), @(kernel_w)];
 
       // Create cache key for this convolution
       GraphCacheKey cache_key;
       cache_key.op_name = "conv";
-      cache_key.shape_params = {N, C_in, H_in, W_in, C_out, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, dil_h, dil_w, groups};
+      // The layouts and the bias change the graph's topology, not just its
+      // shapes, and a transposed convolution's output padding changes its
+      // descriptor, so they all have to be part of the key.
+      const int64_t key_output_pad_h = transposed && output_padding && output_padding_len_ > 0 ? output_padding[0] : 0;
+      const int64_t key_output_pad_w = transposed && output_padding && output_padding_len_ > 1 ? output_padding[1] : 0;
+      cache_key.shape_params = {N, C_in, H_in, W_in, C_out, kernel_h, kernel_w, stride_h, stride_w, pad_h, pad_w, dil_h, dil_w, groups,
+                                input_channels_last, weight_channels_last, bias_tensor != nullptr,
+                                key_output_pad_h, key_output_pad_w};
       cache_key.dtype = dtype;
       cache_key.transpose_flag = (transposed != 0);
 
@@ -274,6 +392,14 @@ AOTITorchError aoti_torch_mps_convolution(
 
         ET_LOG(Debug, "aoti_torch_mps_convolution: Created input and weight placeholders");
 
+        // The convolution below is described as NCHW / OIHW.
+        MPSGraphTensor* convInput = input_channels_last
+            ? channels_last_to_first(mpsGraph, inputPlaceholder)
+            : inputPlaceholder;
+        MPSGraphTensor* convWeight = weight_channels_last
+            ? channels_last_to_first(mpsGraph, weightPlaceholder)
+            : weightPlaceholder;
+
         // Create convolution descriptor
         MPSGraphConvolution2DOpDescriptor* convDesc = [MPSGraphConvolution2DOpDescriptor descriptorWithStrideInX:stride_w
                                                                                                         strideInY:stride_h
@@ -318,14 +444,14 @@ AOTITorchError aoti_torch_mps_convolution(
                                                                                                                 dataLayout:MPSGraphTensorNamedDataLayoutNCHW
                                                                                                             weightsLayout:MPSGraphTensorNamedDataLayoutOIHW];
 
-          convOutput = [mpsGraph convolution2DWithSourceTensor:inputPlaceholder
-                                                    weightsTensor:weightPlaceholder
+          convOutput = [mpsGraph convolution2DWithSourceTensor:convInput
+                                                    weightsTensor:convWeight
                                                         descriptor:transposedConvDesc
                                                               name:@"transposed_convolution"];
         } else {
           ET_LOG(Debug, "aoti_torch_mps_convolution: Using regular convolution");
-          convOutput = [mpsGraph convolution2DWithSourceTensor:inputPlaceholder
-                                                    weightsTensor:weightPlaceholder
+          convOutput = [mpsGraph convolution2DWithSourceTensor:convInput
+                                                    weightsTensor:convWeight
                                                         descriptor:convDesc
                                                               name:@"convolution"];
         }
@@ -342,14 +468,23 @@ AOTITorchError aoti_torch_mps_convolution(
                                                     dataType:mps_dtype
                                                         name:@"bias"];
 
-          // Add bias to convolution output
+          // Add bias to convolution output. MPSGraph broadcasts from the
+          // trailing dimension, so the rank-1 bias has to be shaped to line up
+          // with the channels of the NCHW result rather than with its width.
+          MPSGraphTensor* biasPerChannel = [mpsGraph reshapeTensor:biasPlaceholder
+                                                         withShape:@[@1, @(C_out), @1, @1]
+                                                              name:@"bias_per_channel"];
           finalOutput = [mpsGraph additionWithPrimaryTensor:convOutput
-                                            secondaryTensor:biasPlaceholder
+                                            secondaryTensor:biasPerChannel
                                                         name:@"add_bias"];
 
           ET_LOG(Debug, "aoti_torch_mps_convolution: Added bias placeholder to graph");
         } else {
           finalOutput = convOutput;
+        }
+
+        if (output_channels_last) {
+          finalOutput = channels_first_to_last(mpsGraph, finalOutput);
         }
 
         // Cache the compiled graph and tensor references for reuse
@@ -409,7 +544,9 @@ AOTITorchError aoti_torch_mps_convolution(
       id<MTLBuffer> output_buffer = allocate_mtl_buffer(&output_contents_ptr, output_size_bytes);
 
       // Create results dictionary (MPSGraph output is 4D)
-      NSArray<NSNumber*>* outputShape = @[@(N), @(C_out), @(H_out), @(W_out)];
+      NSArray<NSNumber*>* outputShape = output_channels_last
+          ? @[@(N), @(H_out), @(W_out), @(C_out)]
+          : @[@(N), @(C_out), @(H_out), @(W_out)];
       MPSGraphTensorData* outputData = [[MPSGraphTensorData alloc] initWithMTLBuffer:output_buffer
                                                                                 shape:outputShape
                                                                               dataType:mps_dtype];
@@ -439,13 +576,23 @@ AOTITorchError aoti_torch_mps_convolution(
       std::vector<int64_t> output_strides;
       if (!is_conv1d && is_input_4d) {
         output_sizes_int64 = {N, C_out, H_out, W_out};
-        // Contiguous NCHW strides
-        output_strides = {
-            C_out * H_out * W_out,
-            H_out * W_out,
-            W_out,
-            1
-        };
+        if (output_channels_last) {
+          // Channels-last (NHWC) strides
+          output_strides = {
+              H_out * W_out * C_out,
+              1,
+              W_out * C_out,
+              C_out
+          };
+        } else {
+          // Contiguous NCHW strides
+          output_strides = {
+              C_out * H_out * W_out,
+              H_out * W_out,
+              W_out,
+              1
+          };
+        }
       } else if (!is_conv1d) {
         output_sizes_int64 = {C_out, H_out, W_out};
         // Contiguous CHW strides

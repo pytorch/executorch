@@ -14,6 +14,7 @@
 
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
+#include <executorch/backends/apple/metal/runtime/shims/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
 
@@ -441,4 +442,111 @@ TEST_F(MetalGraphViewTest, CopyToDeviceWaitsForPendingReads) {
   getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
   const auto* got = static_cast<const float*>(out->const_data_ptr());
   EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 2, 3, 4}));
+}
+
+// CPU memory under a view is not freed while queued GPU work still reads it
+// through the view's no-copy buffer, which does not own the memory.
+TEST_F(MetalGraphViewTest, QueuedCpuViewKeepsBackingStorageAlive) {
+  auto* stream = getCurrentMetalStream();
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  AOTITensorHandle identity = nullptr;
+  AOTITensorHandle out = nullptr;
+  createOffsetMatrix(kDeviceCpu, &base, &view);
+  createIdentity(&identity);
+  createMatrix(kDeviceMps, &out);
+
+  ASSERT_EQ(aoti_torch_mps_mm_out(out, view, identity), Error::Ok);
+  EXPECT_FALSE(stream->isEmpty());
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  stream->synchronize(SyncType::COMMIT_AND_WAIT);
+
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 7, 8}));
+}
+
+// A graph can write CPU memory through the no-copy buffer of a view of it. A
+// view of that memory which is not densely packed is copied on the CPU, and
+// the copy has to see the write.
+TEST_F(MetalGraphViewTest, MaterializingCpuMemoryWaitsForGpuWrites) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  std::fill_n(static_cast<float*>(base->mutable_data_ptr()), 12, 0.0f);
+  AOTITensorHandle target = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, kMatrixStrides, /*storage_offset=*/4, &target),
+      Error::Ok);
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(i + 1);
+  }
+  AOTITensorHandle identity = nullptr;
+  createIdentity(&identity);
+  ASSERT_EQ(aoti_torch_mps_mm_out(target, input, identity), Error::Ok);
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+
+  // Elements 4, 5, 8 and 9: not densely packed, so copied on the CPU.
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, strides, /*storage_offset=*/4, &read),
+      Error::Ok);
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 2, 0, 0}));
+}
+
+class MetalStrideTest : public MetalMemoryTest {
+ protected:
+  AOTITensorHandle make(
+      std::vector<int64_t> sizes,
+      std::vector<int64_t> strides,
+      int32_t device_type = kDeviceMps) {
+    AOTITensorHandle tensor = nullptr;
+    EXPECT_EQ(
+        aoti_torch_empty_strided(
+            static_cast<int64_t>(sizes.size()),
+            sizes.data(),
+            strides.data(),
+            kFloat32,
+            device_type,
+            0,
+            &tensor),
+        Error::Ok);
+    return tensor;
+  }
+};
+
+// The stride of a size-1 dimension is not looked at, as in PyTorch.
+TEST_F(MetalStrideTest, RowMajorDenseIgnoresSizeOneDims) {
+  EXPECT_TRUE(is_row_major_dense(*make({2, 1, 4}, {4, 4, 1})));
+  EXPECT_TRUE(is_row_major_dense(*make({2, 1, 4}, {4, 1, 1})));
+  EXPECT_TRUE(is_row_major_dense(*make({1, 8}, {1, 1})));
+  EXPECT_FALSE(is_row_major_dense(*make({4, 2}, {1, 4})));
+  EXPECT_FALSE(is_row_major_dense(*make({2, 1, 4}, {1, 1, 2})));
+}
+
+// Copying between tensors that differ only in the stride of a size-1
+// dimension is a plain copy.
+TEST_F(MetalStrideTest, CopyIgnoresStrideOfSizeOneDim) {
+  AOTITensorHandle src = make({2, 1, 4}, {4, 1, 1});
+  AOTITensorHandle dst = make({2, 1, 4}, {4, 4, 1}, /*device_type=*/0);
+  float* src_data = static_cast<float*>(src->mutable_data_ptr());
+  for (int i = 0; i < 8; i++) {
+    src_data[i] = static_cast<float>(i);
+  }
+
+  ASSERT_EQ(aoti_torch_copy_(dst, src, 0), Error::Ok);
+  const float* got = static_cast<const float*>(dst->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{0, 1, 2, 3, 4, 5, 6, 7}));
 }

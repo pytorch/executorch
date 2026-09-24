@@ -210,6 +210,31 @@ MODULE_REGISTRY["addmm"] = {
 
 
 # -------------------------------------------------------------------------
+class BmmSingletonDim(nn.Module):
+    """The constant is {2, 1, 4} with strides {4, 1, 1}: dense and row-major,
+    but its size-1 dimension does not have the row-major stride."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "weight",
+            torch.arange(8, dtype=torch.get_default_dtype())
+            .reshape(2, 4, 1)
+            .transpose(1, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        return torch.bmm(self.weight, x)
+
+
+MODULE_REGISTRY["bmm_singleton_dim"] = {
+    "model_class": BmmSingletonDim,
+    "input_shapes": [(2, 4, 3)],
+    "description": "bmm whose constant has a size-1 dim with a non-row-major stride",
+}
+
+
+# -------------------------------------------------------------------------
 # View / copy Modules
 # -------------------------------------------------------------------------
 
@@ -655,6 +680,185 @@ MODULE_REGISTRY["conv1d_voxtral"] = {
     "model_class": Conv1dVoxtral,
     "input_shapes": [(10, 128, 3000)],
     "description": "Conv1d layer with 128 input channels, 1280 output channels",
+}
+
+
+# -------------------------------------------------------------------------
+# Conv2d modules. Unlike conv1d, a 4D convolution makes inductor apply its
+# layout optimization, so the kernel receives channels-last input and weight
+# and must return a channels-last output. 1x1 convolutions are lowered to mm
+# and never reach the convolution kernel, hence the 3x3 kernels below.
+# -------------------------------------------------------------------------
+class Conv2dNoBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=3,
+            out_channels=8,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_nobias"] = {
+    "model_class": Conv2dNoBias,
+    "input_shapes": [(1, 3, 16, 16)],
+    "description": "Conv2d layer with 3 input channels, 8 output channels, 3x3 kernel",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=3,
+            out_channels=8,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_bias"] = {
+    "model_class": Conv2dBias,
+    "input_shapes": [(2, 3, 16, 16)],
+    "description": "Conv2d layer with bias and batch size 2",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dStride2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=3,
+            out_channels=8,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_stride2"] = {
+    "model_class": Conv2dStride2,
+    "input_shapes": [(1, 3, 16, 12)],
+    "description": "Strided Conv2d layer on a non-square input",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dDepthwise(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=8,
+            out_channels=8,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=8,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_depthwise"] = {
+    "model_class": Conv2dDepthwise,
+    "input_shapes": [(1, 8, 16, 16)],
+    "description": "Depthwise Conv2d layer (groups == channels)",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dStack(nn.Module):
+    """Two convolutions back to back: the first one's output feeds the second
+    without leaving the channels-last layout."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 8, kernel_size=3, stride=2, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(8, 4, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        return self.conv2(torch.relu(self.conv1(x)))
+
+
+MODULE_REGISTRY["conv2d_stack"] = {
+    "model_class": Conv2dStack,
+    "input_shapes": [(1, 3, 16, 16)],
+    "description": "Two stacked Conv2d layers with a ReLU in between",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dSingleChannel(nn.Module):
+    """With one channel, contiguous and channels-last strides describe the same
+    memory, so the layout cannot be read off the tensor. The first conv takes a
+    single-channel input, the second produces a single-channel output that the
+    third consumes."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(8, 1, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3 = nn.Conv2d(1, 6, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        return self.conv3(x)
+
+
+MODULE_REGISTRY["conv2d_single_channel"] = {
+    "model_class": Conv2dSingleChannel,
+    "input_shapes": [(2, 1, 16, 12)],
+    "description": "Conv2d layers with single-channel inputs and outputs",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dPointwiseToSingleChannel(nn.Module):
+    """The 1x1 conv lowers to a matmul whose single-channel result reaches the
+    second conv with channels-last strides. Those strides describe the same
+    memory as contiguous ones, but the wrapper still expects the second conv's
+    output in channels-last."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 1, kernel_size=1)
+        self.conv2 = nn.Conv2d(1, 4, kernel_size=3, padding=1)
+
+    def forward(self, x):
+        return self.conv2(self.conv1(x))
+
+
+MODULE_REGISTRY["conv2d_pointwise_to_single_channel"] = {
+    "model_class": Conv2dPointwiseToSingleChannel,
+    "input_shapes": [(2, 3, 7, 9)],
+    "description": "1x1 Conv2d producing one channel, followed by a 3x3 Conv2d",
 }
 
 

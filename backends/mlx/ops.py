@@ -2466,8 +2466,7 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     indices = [P.slot_to_tid(idx) for _, idx in non_none]
     axes = [i for i, _ in non_none]
 
-    # slice_sizes: 1 for indexed axes, full dim size for non-indexed axes
-    # Use int() to handle SymInt values from dynamic shapes
+    # slice_sizes: 1 for indexed axes, full static size for non-indexed axes.
     indexed_axes = set(axes)
     slice_sizes = []
     for dim in range(x_ndim):
@@ -2495,18 +2494,47 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
 
     # Reshape to match aten.index.Tensor output shape, which strips the
-    # trailing dimensions introduced by gather's slice_sizes
+    # trailing dimensions introduced by gather's slice_sizes.
     out_meta = n.meta.get("val")
     if out_meta is None:
         raise ValueError(
             "aten.index.Tensor: output shape metadata required for reshape after gather"
         )
-    out_shape = [P.to_int_or_vid(int(d)) for d in out_meta.shape]
+    # Non-indexed sizes are static above, so symbolic output sizes belong to
+    # the broadcast index shape, which leads the gather result. Read them at
+    # runtime instead of adding specialization guards through int(SymInt).
+    # Contiguous indexed axes keep the broadcast dimensions in place in ATen.
+    leading_dims = axes[0] if axes == list(range(axes[0], axes[-1] + 1)) else 0
+    # Read pre-transpose sizes; the offset maps broadcast dims back to gather axes.
+    out_shape = emit_shape(P, n, gather_slot, dim_offset=-leading_dims)
+
+    reshape_slot = gather_slot
+    broadcast_ndim = len(out_meta.shape) - x_ndim + len(axes)
+    broadcast_shape = out_meta.shape[leading_dims : leading_dims + broadcast_ndim]
+    # Moving singleton blocks does not change element order; keep those
+    # lowerings reshape-only, without extra instructions or tensor slots.
+    if any(size > 1 for size in slice_sizes[:leading_dims]) and any(
+        not isinstance(size, int) or size > 1 for size in broadcast_shape
+    ):
+        _, reshape_slot = P.make_tmp_slot()
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(gather_slot),
+                out=P.slot_to_tid(reshape_slot),
+                perm=(
+                    list(range(broadcast_ndim, broadcast_ndim + leading_dims))
+                    + list(range(broadcast_ndim))
+                    + list(
+                        range(broadcast_ndim + leading_dims, broadcast_ndim + x_ndim)
+                    )
+                ),
+            )
+        )
 
     out = P.make_or_get_slot(n)
     P.emit(
         ReshapeNode(
-            x=P.slot_to_tid(gather_slot),
+            x=P.slot_to_tid(reshape_slot),
             out=P.slot_to_tid(out),
             shape=out_shape,
         )

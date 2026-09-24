@@ -327,12 +327,12 @@ last of the two settings decides the tag for every entry in the link.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index
-matching the CUDA version you have (`cu126`, `cu130` or `cu132`). For CUDA 12.6:
+The CUDA build is a separate package. Releases cover CUDA 13.0, 13.2 and 13.4, so pick the index
+matching the CUDA version you have (`cu130`, `cu132` or `cu134`). For CUDA 13.0:
 
 ```
 pip install executorch torch \
-  --index-url https://download.pytorch.org/whl/cu126 \
+  --index-url https://download.pytorch.org/whl/cu130 \
   --extra-index-url https://pypi.org/simple
 ```
 
