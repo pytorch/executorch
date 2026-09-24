@@ -1,4 +1,5 @@
 import unittest
+from itertools import product
 from typing import List, Optional, Tuple
 
 import torch
@@ -8,6 +9,7 @@ from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
+from executorch.backends.vulkan.patterns.swiglu import find_swiglu_pattern
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
@@ -88,6 +90,119 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
         if canonical_name is not None and canonical_name == canonical_op_name:
             count += 1
     return count
+
+
+class TestSwiGLUFusion(unittest.TestCase):
+    def _fuse(self, model, inputs, dynamic_shapes=None):
+        program = torch.export.export(model, inputs, dynamic_shapes=dynamic_shapes)
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep = edge.exported_program()
+        matches = [
+            match
+            for node in ep.graph_module.graph.nodes
+            if (match := find_swiglu_pattern(node)) is not None
+        ]
+        for match in matches:
+            self.assertTrue(set(match.input_nodes).isdisjoint(match.all_nodes))
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+        result = fuse_pass(ep.graph_module)
+        result.graph_module.graph.lint()
+        return result.graph_module
+
+    def test_operand_order_and_broadcast(self):
+        class Model(torch.nn.Module):
+            def __init__(self, reverse_inner, reverse_outer):
+                super().__init__()
+                self.reverse_inner = reverse_inner
+                self.reverse_outer = reverse_outer
+
+            def forward(self, gate, up):
+                sigmoid = torch.sigmoid(gate)
+                silu = sigmoid * gate if self.reverse_inner else gate * sigmoid
+                return up * silu if self.reverse_outer else silu * up
+
+        for reverse_inner, reverse_outer, dtype, broadcast in product(
+            (False, True), (False, True), (torch.float16, torch.float32), (False, True)
+        ):
+            with self.subTest(
+                inner=reverse_inner,
+                outer=reverse_outer,
+                dtype=dtype,
+                broadcast=broadcast,
+            ):
+
+                inputs = (
+                    torch.randn(2, 7, 13, dtype=dtype),
+                    torch.randn(13 if broadcast else (2, 7, 13), dtype=dtype),
+                )
+                model = Model(reverse_inner, reverse_outer)
+                gm = self._fuse(model, inputs)
+                self.assertEqual(op_node_count(gm, "swiglu.default"), 1)
+                self.assertEqual(op_node_count(gm, "sigmoid.default"), 0)
+                self.assertEqual(op_node_count(gm, "mul.Tensor"), 0)
+                torch.testing.assert_close(
+                    gm(*inputs)[0], model(*inputs), rtol=0, atol=0
+                )
+
+    def test_silu_and_dynamic_projection_order(self):
+        class Model(torch.nn.Module):
+            def forward(self, x, gate_weight, up_weight):
+                gate = torch.nn.functional.linear(x, gate_weight)
+                silu = torch.nn.functional.silu(gate)
+                up = torch.nn.functional.linear(x, up_weight)
+                return silu * up
+
+        model = Model()
+        inputs = (torch.randn(3, 16), torch.randn(13, 16), torch.randn(13, 16))
+        gm = self._fuse(
+            model, inputs, ({0: torch.export.Dim("tokens", min=1, max=255)}, None, None)
+        )
+        self.assertEqual(op_node_count(gm, "swiglu.default"), 1)
+        for tokens in (1, 7, 255, 1):
+            args = (torch.randn(tokens, 16), *inputs[1:])
+            torch.testing.assert_close(gm(*args)[0], model(*args))
+
+    def test_shared_intermediates_are_not_fused(self):
+        class Model(torch.nn.Module):
+            def __init__(self, shared_sigmoid):
+                super().__init__()
+                self.shared_sigmoid = shared_sigmoid
+
+            def forward(self, gate, up):
+                sigmoid = torch.sigmoid(gate)
+                silu = gate * sigmoid
+                return silu * up, sigmoid if self.shared_sigmoid else silu
+
+        for shared_sigmoid in (False, True):
+
+            inputs = (torch.randn(2, 13), torch.randn(2, 13))
+            model = Model(shared_sigmoid)
+            gm = self._fuse(model, inputs)
+            self.assertEqual(op_node_count(gm, "swiglu.default"), 0)
+            torch.testing.assert_close(gm(*inputs), model(*inputs))
+
+    def test_different_sigmoid_input_is_not_fused(self):
+        class Model(torch.nn.Module):
+            def forward(self, gate, up):
+                return (gate * torch.sigmoid(up)) * up
+
+        inputs = (torch.randn(2, 13), torch.randn(2, 13))
+        self.assertEqual(
+            op_node_count(self._fuse(Model(), inputs), "swiglu.default"), 0
+        )
+
+    def test_mixed_precision_is_not_fused(self):
+        class Model(torch.nn.Module):
+            def forward(self, gate, up):
+                return (gate * torch.sigmoid(gate)) * up
+
+        inputs = (torch.randn(2, 13, dtype=torch.float16), torch.randn(2, 13))
+        self.assertEqual(
+            op_node_count(self._fuse(Model(), inputs), "swiglu.default"), 0
+        )
 
 
 def run_conv1d_as_conv2d(

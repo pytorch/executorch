@@ -22,6 +22,12 @@ binary_op_texture:
       OPERATOR: X - A * Y
     - NAME: binary_mul_texture3d
       OPERATOR: X * Y
+    - NAME: binary_swiglu_texture3d
+      OPERATOR: swiglu(X, Y)
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+          - VALUE: float
     - NAME: binary_div_texture3d
       OPERATOR: X / Y
       MASK_PADDING: 1

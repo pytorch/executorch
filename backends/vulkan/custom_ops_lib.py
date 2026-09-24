@@ -1132,6 +1132,18 @@ lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
 sdpa_op = getattr(getattr(torch.ops, namespace), name)
 
 ################
+## swiglu ##
+################
+
+
+def swiglu_impl(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
+    return (gate * torch.sigmoid(gate)) * up
+
+
+lib.define("swiglu(Tensor gate, Tensor up) -> Tensor")
+lib.impl("swiglu", swiglu_impl, "CompositeExplicitAutograd")
+
+################
 ## rms_norm ##
 ################
 
