@@ -15,6 +15,8 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>
 
+#include <cinttypes>
+
 #include <memory>
 #include <vector>
 
@@ -64,7 +66,8 @@ class EnnBackend final : public PyTorchBackendInterface {
       ET_CHECK_OR_RETURN_ERROR(
           args[index]->isTensor(),
           InvalidArgument,
-          "Expected argument to delegate at index %u to be a Tensor, but got %" PRIu32,
+          "Expected argument to delegate at index %" PRId32
+          " to be a Tensor, but got %" PRIu32,
           index,
           static_cast<uint32_t>(args[index]->tag));
       Tensor* tensor = &args[index]->toTensor();

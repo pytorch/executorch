@@ -7,6 +7,8 @@
  * Implementation of the backend for the NXP Neutron NPU.
  */
 
+#include <cinttypes>
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -393,7 +395,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
-          "Neutron model preparation failed with error code %ld",
+          "Neutron model preparation failed with error code %" PRId32,
           neutronRC);
       return Error::InvalidProgram;
     }
@@ -401,7 +403,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #ifdef EXTERNAL_MEM
     neutronRC = neutronSetConfig(&neutronMemCopyConfig);
     if (neutronRC != ENONE) {
-      ET_LOG(Error, "Neutron set config failed with error code %ld", neutronRC);
+      ET_LOG(
+          Error,
+          "Neutron set config failed with error code %" PRId32,
+          neutronRC);
       return Error::InvalidProgram;
     }
 #endif
@@ -592,7 +597,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
-          "Neutron model evaluation failed with error code %ld",
+          "Neutron model evaluation failed with error code %" PRId32,
           neutronRC);
       return Error::InvalidProgram;
     }
