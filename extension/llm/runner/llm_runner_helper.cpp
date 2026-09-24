@@ -56,7 +56,7 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
 #ifdef EXECUTORCH_USE_HF_RUST_TOKENIZER
   auto rust_tok_tokenizer = std::make_unique<tokenizers::RustHFTokenizer>();
   if (rust_tok_tokenizer->load(tokenizer_path) == ::tokenizers::Error::Ok) {
-    ET_LOG(Info, "Loaded Hugging Face .tok tokenizer");
+    ET_LOG(Info, "Loaded Hugging Face Rust tokenizer");
     return rust_tok_tokenizer;
   }
 #endif

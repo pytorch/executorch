@@ -102,7 +102,14 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_HF_RUST_TOKENIZER
-  "Build the opt-in Hugging Face .tok tokenizer backend" BOOL OFF
+  "Build the opt-in Hugging Face Rust tokenizer backend" BOOL OFF
+)
+set(EXECUTORCH_HF_RUST_FORMATS
+    "json"
+    CACHE STRING "Hugging Face Rust tokenizer formats: json, tok, or json,tok"
+)
+set_property(
+  CACHE EXECUTORCH_HF_RUST_FORMATS PROPERTY STRINGS json tok "json,tok"
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE "Build the ETDump Apple extension"
