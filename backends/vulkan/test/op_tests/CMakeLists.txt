@@ -90,6 +90,9 @@ function(vulkan_op_test test_name test_src)
 endfunction()
 
 if(TARGET vulkan_backend AND LIB_TORCH)
+  vulkan_op_test(
+    vulkan_sdpa_av_test ${CMAKE_CURRENT_SOURCE_DIR}/sdpa_av_test.cpp
+  )
   add_library(test_utils ${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp)
   target_include_directories(test_utils PRIVATE ${COMMON_INCLUDES})
   # ATen headers require C++20.
