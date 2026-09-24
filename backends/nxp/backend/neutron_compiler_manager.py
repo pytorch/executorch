@@ -41,14 +41,18 @@ def _build_compilation_context(compilation_opts):
     cctx.compilationOpts.dumpKernelSelectionCode = compilation_opts[
         "dumpKernelSelectionCode"
     ]
-    if (
-        hasattr(cctx.compilationOpts, "useProfiling")
-        and compilation_opts["useProfiling"]
-    ):
-        cctx.compilationOpts.useProfiling = compilation_opts["useProfiling"]
+    if compilation_opts["useProfiling"]:
+        if not _USING_NEUTRON_COMPILER:
+            raise RuntimeError(
+                "Profiling requires eIQ Neutron SDK >= 3.2.1. "
+                "The installed SDK (neutron_converter-based, <= 3.2.0) does not provide neutronGetSdkVersion(); "
+                "the ExecuTorch runtime will fail to link. Upgrade the SDK."
+            )
+        cctx.compilationOpts.useProfiling = True
         cctx.compilationOpts.dumpAfterImport = "console"
         cctx.compilationOpts.dumpAfterGenerate = "console"
-        cctx.compilationOpts.verbose = compilation_opts["useProfiling"]
+        cctx.compilationOpts.verbose = True
+        cctx.compilationOpts.dumpMicrocode = True
 
     return cctx
 

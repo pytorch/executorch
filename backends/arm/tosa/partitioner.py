@@ -18,9 +18,10 @@ import operator
 from collections import deque
 from itertools import count
 from pathlib import Path
-from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, cast, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
@@ -33,7 +34,9 @@ from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_ro
 from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
     is_exact_tosa_boundary_bilinear_downscale,
 )
-
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
+)
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
@@ -424,6 +427,108 @@ def _find_connected_components(nodes: set[torch.fx.Node]) -> list[set[torch.fx.N
     return components
 
 
+def _detag_mixed_delegate_gather_boundaries(
+    nodes: Iterable[torch.fx.Node],
+) -> set[str]:
+    """Keep shared gather compatibility boundaries entirely portable.
+
+    Returns the delegation tags whose regions were changed.
+
+    """
+    affected_tags: set[str] = set()
+    for node in nodes:
+        node_tag = node.meta.get("delegation_tag")
+        if is_safe_int32_to_int64_gather_boundary(node) and any(
+            user.meta.get("delegation_tag") != node_tag for user in node.users
+        ):
+            if node_tag is not None:
+                affected_tags.add(node_tag)
+            node.meta.pop("delegation_tag", None)
+            for user in node.users:
+                user_tag = user.meta.get("delegation_tag")
+                if user_tag is not None:
+                    affected_tags.add(user_tag)
+                user.meta.pop("delegation_tag", None)
+    return affected_tags
+
+
+def _is_computation_free_partition(nodes: Iterable[torch.fx.Node]) -> bool:
+    """Return whether all nodes disappear during TOSA lowering."""
+    return all(
+        _is_noop_clone(node)
+        or _is_noop_alias_copy(node)
+        or _is_noop_expand(node)
+        or _is_noop_detach_copy(node)
+        or _is_noop_to_dim_order_copy(node)
+        or _is_noop_squeeze(node)
+        or _is_noop_flip(node)
+        or _is_noop_permute(node)
+        or _is_view_copy(node)
+        or _is_noop_as_strided_copy(node)
+        or node.target in Q_OPS
+        or node.target in DQ_OPS
+        for node in nodes
+    )
+
+
+def _retag_affected_partitions(
+    nodes: Iterable[torch.fx.Node],
+    affected_tags: set[str],
+    tags: set[str],
+    tag_iterator: count,
+    reporter: WhyNoPartitionReporter,
+) -> None:
+    """Replace affected tags with tags for valid surviving components.
+
+    Detagging a mixed gather boundary can disconnect a partition or make its
+    remaining nodes invalid to extract. Split each affected partition into
+    connected components and assign fresh tags to components that are valid
+    and contain computation. Rejected components remain portable.
+
+    Args:
+        nodes (Iterable[torch.fx.Node]): Nodes in the graph.
+        affected_tags (set[str]): Tags affected by boundary detagging.
+        tags (set[str]): Active delegation tags, updated in place.
+        tag_iterator (count): Counter used to generate fresh tags.
+        reporter (WhyNoPartitionReporter): Records rejection reasons.
+
+    """
+    affected_tag_nodes = [
+        {node for node in nodes if node.meta.get("delegation_tag") == tag}
+        for tag in affected_tags
+    ]
+    affected_nodes = set().union(*affected_tag_nodes)
+    tags.difference_update(affected_tags)
+    for node in affected_nodes:
+        node.meta.pop("delegation_tag", None)
+
+    components = [
+        component
+        for tag_nodes in affected_tag_nodes
+        for component in _find_connected_components(tag_nodes)
+    ]
+    for component in components:
+        if not _validate_partition(component):
+            for node in component:
+                reporter.report_reject(
+                    node,
+                    "Partition became invalid after detagging a mixed gather boundary.",
+                )
+            continue
+        if _is_computation_free_partition(component):
+            for node in component:
+                reporter.report_reject(
+                    node,
+                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                )
+            continue
+
+        new_tag = f"tag{next(tag_iterator)}"
+        tags.add(new_tag)
+        for node in component:
+            node.meta["delegation_tag"] = new_tag
+
+
 class TOSAPartitioner(Partitioner):
     """Partition an exported program into TOSA-delegable subgraphs.
 
@@ -670,13 +775,15 @@ class TOSAPartitioner(Partitioner):
         )
         partition_list = capability_partitioner.propose_partitions()
 
+        tagged_partitions: list[tuple[Partition, str]] = []
         for partition in partition_list:
             tag = f"tag{next(tag_iterator)}"
             tags.add(tag)
-
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
+            tagged_partitions.append((partition, tag))
 
+        for partition, tag in tagged_partitions:
             if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
                 # Detag boundary Q/DQ since we cannot handle them without float support
                 self._detag_boundary_nodes(
@@ -741,22 +848,7 @@ class TOSAPartitioner(Partitioner):
                     continue
 
                 # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation.
-                is_nocompute_partition = all(
-                    _is_noop_clone(node)
-                    or _is_noop_alias_copy(node)
-                    or _is_noop_expand(node)
-                    or _is_noop_detach_copy(node)
-                    or _is_noop_to_dim_order_copy(node)
-                    or _is_noop_squeeze(node)
-                    or _is_noop_flip(node)
-                    or _is_noop_permute(node)
-                    or _is_view_copy(node)
-                    or _is_noop_as_strided_copy(node)
-                    or node.target in Q_OPS
-                    or node.target in DQ_OPS
-                    for node in nodes
-                )
-                if is_nocompute_partition:
+                if _is_computation_free_partition(nodes):
                     reject_partition(
                         "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
                         Partition(nodes=nodes),
@@ -764,6 +856,15 @@ class TOSAPartitioner(Partitioner):
                     )
                     if active_tag in tags:
                         tags.remove(active_tag)
+        affected_tags = _detag_mixed_delegate_gather_boundaries(module.graph.nodes)
+        if affected_tags:
+            _retag_affected_partitions(
+                module.graph.nodes,
+                affected_tags,
+                tags,
+                tag_iterator,
+                reporter,
+            )
         return tags
 
     def _create_operator_support(
