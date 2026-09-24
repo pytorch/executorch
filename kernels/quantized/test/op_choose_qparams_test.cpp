@@ -260,3 +260,21 @@ TEST(
     EXPECT_EQ(zero_point_out.const_data_ptr<int64_t>()[i], nudged_zero_point);
   }
 }
+
+TEST(OpChooseQparamsPerTokenAsymmetricTensorOutTest, ScalarInputDies) {
+  et_pal_init();
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  // Per-token scales index input.dim() - 1; a scalar input must be rejected
+  // instead of indexing before the output-shape buffer.
+  Tensor input = tf_float.make({}, {1.0});
+  Tensor scale_out = tf_double.zeros({1});
+  Tensor zero_point_out = tf_long.zeros({1});
+
+  ET_EXPECT_DEATH(
+      choose_qparams_per_token_asymmetric_out(
+          input, ScalarType::Float, scale_out, zero_point_out),
+      "must have rank");
+}
