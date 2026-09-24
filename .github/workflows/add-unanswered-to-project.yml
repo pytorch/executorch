@@ -12,6 +12,8 @@ on:
     paths:
       - .github/workflows/add-unanswered-to-project.yml
 
+permissions: {}
+
 jobs:
   add_to_project:
     runs-on: ubuntu-latest
