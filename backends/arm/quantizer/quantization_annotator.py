@@ -575,8 +575,6 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
     torch.ops.aten.squeeze_.dim,
-    # DecomposeMaxPool1dPass emits squeeze_copy.dims as a view-like intermediate;
-    # include here so it receives SharedQuantizationSpec from its input.
     torch.ops.aten.squeeze_copy.dims,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
