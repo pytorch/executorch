@@ -1,6 +1,7 @@
 [build-system]
 requires = [
-  "cmake>=3.26,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "cmake>=3.26,<4.0.0; sys_platform != 'win32'",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "cmake>=3.27,<4.0.0; sys_platform == 'win32'",  # The shared Windows build uses $<COMPILE_ONLY>, new in 3.27.
   "packaging>=24.2", # Lower bound required by setuptools
   "patchelf; sys_platform == 'linux'",  # Writes the runtime search paths that let the shipped libraries find each other.
   "pip>=23",  # For building the pip package.
