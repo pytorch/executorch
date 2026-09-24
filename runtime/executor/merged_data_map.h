@@ -128,6 +128,50 @@ class MergedDataMap final : public NamedDataMap {
     }
   }
 
+  ET_NODISCARD Error replace_data(
+      Span<const Data> data,
+      MemoryAllocator* temp_allocator) const override {
+    if (data.empty()) {
+      return Error::Ok;
+    }
+    const NamedDataMap* target = nullptr;
+    for (const auto& replacement : data) {
+      const NamedDataMap* owner = nullptr;
+      const NamedDataMap* maps[] = {first_, second_};
+      for (const NamedDataMap* candidate : maps) {
+        auto num_keys = candidate->get_num_keys();
+        if (!num_keys.ok()) {
+          return num_keys.error();
+        }
+        for (uint32_t i = 0; i < num_keys.get(); ++i) {
+          auto key = candidate->get_key(i);
+          if (!key.ok()) {
+            return key.error();
+          }
+          if (replacement.key == key.get()) {
+            owner = candidate;
+            break;
+          }
+        }
+        if (owner != nullptr) {
+          break;
+        }
+      }
+      ET_CHECK_OR_RETURN_ERROR(
+          owner != nullptr,
+          NotFound,
+          "Named data key %.*s was not found",
+          static_cast<int>(replacement.key.size()),
+          replacement.key.data());
+      ET_CHECK_OR_RETURN_ERROR(
+          target == nullptr || target == owner,
+          NotSupported,
+          "A replacement cannot span multiple named data sources");
+      target = owner;
+    }
+    return target->replace_data(data, temp_allocator);
+  }
+
   MergedDataMap(MergedDataMap&&) noexcept = default;
 
   ~MergedDataMap() override = default;

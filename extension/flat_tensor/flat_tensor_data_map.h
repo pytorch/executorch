@@ -105,6 +105,10 @@ class FlatTensorDataMap final
   ET_NODISCARD executorch::runtime::Result<const char*> get_key(
       uint32_t index) const override;
 
+  ET_NODISCARD executorch::runtime::Error replace_data(
+      executorch::runtime::Span<const Data> data,
+      executorch::runtime::MemoryAllocator* temp_allocator) const override;
+
   FlatTensorDataMap(FlatTensorDataMap&&) noexcept = default;
 
   ~FlatTensorDataMap() override = default;

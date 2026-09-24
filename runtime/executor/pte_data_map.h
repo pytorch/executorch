@@ -71,7 +71,8 @@ class PteDataMap final : public NamedDataMap {
       DataLoader* loader,
       size_t segment_base_offset,
       const flatbuffers::FlatbufferNamedData* named_data,
-      const flatbuffers::FlatbufferDataSegment* segments);
+      const flatbuffers::FlatbufferDataSegment* segments,
+      Span<const uint8_t> program_data = {});
 
   /**
    * The PteDataMap currently only handles opaque data that does not contain
@@ -113,6 +114,10 @@ class PteDataMap final : public NamedDataMap {
    */
   ET_NODISCARD Result<const char*> get_key(uint32_t index) const override;
 
+  ET_NODISCARD Error replace_data(
+      Span<const Data> data,
+      MemoryAllocator* temp_allocator) const override;
+
   // Moveable, to be compatible with Result.
   PteDataMap(PteDataMap&&) noexcept = default;
   ~PteDataMap() override = default;
@@ -122,11 +127,13 @@ class PteDataMap final : public NamedDataMap {
       DataLoader* loader,
       size_t segment_base_offset,
       const flatbuffers::FlatbufferNamedData* named_data,
-      const flatbuffers::FlatbufferDataSegment* segments)
+      const flatbuffers::FlatbufferDataSegment* segments,
+      Span<const uint8_t> program_data)
       : loader_(loader),
         segment_base_offset_(segment_base_offset),
         named_data_(named_data),
-        segments_(segments) {}
+        segments_(segments),
+        program_data_(program_data) {}
 
   // Not copyable or assignable.
   PteDataMap(const PteDataMap& rhs) = delete;
@@ -144,6 +151,10 @@ class PteDataMap final : public NamedDataMap {
 
   // Segments, to retrieve offset and size for the loader.
   const flatbuffers::FlatbufferDataSegment* segments_;
+
+  // Serialized program metadata. Owned by Program and used as the immutable
+  // source for a replacement snapshot.
+  Span<const uint8_t> program_data_;
 };
 
 } // namespace internal

@@ -250,7 +250,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
             loader,
             segment_base_offset,
             named_data,
-            flatbuffer_program->segments());
+            flatbuffer_program->segments(),
+            Span<const uint8_t>(
+                static_cast<const uint8_t*>(program_data->data()),
+                program_data->size()));
     if (!pte_data_map_result.ok()) {
       return pte_data_map_result.error();
     }
