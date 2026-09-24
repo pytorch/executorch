@@ -215,6 +215,42 @@ TEST_P(FileDataLoaderTest, MoveCtor) {
   EXPECT_EQ(0, std::memcmp(fb->data(), contents.data(), fb->size()));
 }
 
+TEST_P(FileDataLoaderTest, ReplacePublishesNewSnapshot) {
+  TempFile tf("abcdefghij");
+  Result<FileDataLoader> old_loader =
+      FileDataLoader::from(tf.path().c_str(), alignment());
+  ASSERT_EQ(old_loader.error(), Error::Ok);
+
+  const char replacement[] = "XYZ";
+  const DataLoader::DataChunk chunks[] = {
+      DataLoader::DataChunk::from_loader(0, 2),
+      DataLoader::DataChunk::from_buffer(replacement, 3),
+      DataLoader::DataChunk::zero(2),
+      DataLoader::DataChunk::from_loader(7, 3),
+  };
+  ASSERT_EQ(old_loader->replace_data(chunks), Error::Ok);
+
+  Result<FreeableBuffer> old_data = old_loader->load(
+      0,
+      10,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(old_data.error(), Error::Ok);
+  EXPECT_EQ(std::memcmp(old_data->data(), "abcdefghij", 10), 0);
+
+  Result<FileDataLoader> new_loader =
+      FileDataLoader::from(tf.path().c_str(), alignment());
+  ASSERT_EQ(new_loader.error(), Error::Ok);
+  ASSERT_EQ(new_loader->size().get(), 10);
+  Result<FreeableBuffer> new_data = new_loader->load(
+      0,
+      10,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(new_data.error(), Error::Ok);
+  EXPECT_EQ(std::memcmp(new_data->data(), "abXYZ\0\0hij", 10), 0);
+
+  EXPECT_EQ(old_loader->replace_data(chunks), Error::InvalidState);
+}
+
 // Test that the deprecated From method (capital 'F') still works.
 TEST_P(FileDataLoaderTest, DEPRECATEDFrom) {
   // Write some heterogeneous data to a file.
