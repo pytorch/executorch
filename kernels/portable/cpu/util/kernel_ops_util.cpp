@@ -7,7 +7,9 @@
  */
 
 #include <c10/util/irange.h>
+#include <algorithm>
 #include <cstring>
+#include <limits>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -616,12 +618,21 @@ bool check_constant_pad_args(
       pad.size() / 2,
       in.dim());
 
-  for (size_t i = 0; i < pad.size(); ++i) {
-    ET_CHECK_OR_RETURN_FALSE(
-        pad[i] >= 0,
-        "Padding values must be non-negative, but got pad[%zu] = %" PRId64,
-        i,
-        pad[i]);
+  for (const auto i : c10::irange(pad.size() / 2)) {
+    int64_t size = in.size(in.dim() - 1 - i);
+    for (const auto j : c10::irange(2)) {
+      const int64_t crop = std::min<int64_t>(pad[2 * i + j], 0);
+      ET_CHECK_OR_RETURN_FALSE(
+          crop >= -size, "Negative padding exceeds the input dimension.");
+      size += crop;
+    }
+    for (const auto j : c10::irange(2)) {
+      const int64_t padding = std::max<int64_t>(pad[2 * i + j], 0);
+      ET_CHECK_OR_RETURN_FALSE(
+          padding <= std::numeric_limits<Tensor::SizesType>::max() - size,
+          "Padded dimension exceeds the tensor size limit.");
+      size += padding;
+    }
   }
 
   return true;
