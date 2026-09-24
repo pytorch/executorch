@@ -162,6 +162,8 @@ The following command will build the ExecuTorch runtime components along with al
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.
 Copy them to your project and link them against your targets.
 
+When linking frameworks manually, also link `kleidiai.xcframework` for `backend_xnnpack`, `kernels_optimized`, and `kernels_torchao` built with KleidiAI. Use `kleidiai_debug.xcframework` for their Debug variants. Swift Package Manager includes this dependency automatically.
+
 ## Linkage
 
 ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like "unregistered kernel" or "unregistered backend" at runtime, you may need to explicitly force-load certain components. Use the `-all_load` or `-force_load` linker flags in your Xcode build configuration to ensure components are registered early.
