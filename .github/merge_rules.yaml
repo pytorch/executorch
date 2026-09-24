@@ -4,6 +4,5 @@
   approved_by:
   - pytorch/metamates
   mandatory_checks_name:
-  - Facebook CLA Check
   - Lint
   - pull
