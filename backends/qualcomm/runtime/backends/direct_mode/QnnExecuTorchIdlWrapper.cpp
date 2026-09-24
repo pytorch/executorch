@@ -317,7 +317,7 @@ Error QnnExecuTorchIdlWrapper::enable_intermediate_tensor_dump(
   debug_buffer_ = malloc(debug_buffer_size);
   debug_buffer_size_ = debug_buffer_size;
   Span<uint8_t> buffer((uint8_t*)debug_buffer_, debug_buffer_size_);
-  etdump_gen_.set_debug_buffer(buffer);
+  ET_CHECK_OK_OR_RETURN_ERROR(etdump_gen_.set_debug_buffer(buffer).error());
   etdump_gen_.set_event_tracer_debug_level(
       EventTracerDebugLogLevel::kIntermediateOutputs);
   return Error::Ok;

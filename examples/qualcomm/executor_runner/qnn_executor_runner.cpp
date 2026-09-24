@@ -420,7 +420,11 @@ int main(int argc, char** argv) {
   if (FLAGS_dump_intermediate_outputs) {
     debug_buffer = malloc(FLAGS_debug_buffer_size);
     Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
-    etdump_gen.set_debug_buffer(buffer);
+    Result<bool> debug_buffer_result = etdump_gen.set_debug_buffer(buffer);
+    ET_CHECK_MSG(
+        debug_buffer_result.ok(),
+        "Failed to set etdump debug buffer, status 0x%" PRIx32,
+        (int)debug_buffer_result.error());
     etdump_gen.set_event_tracer_debug_level(
         EventTracerDebugLogLevel::kIntermediateOutputs);
   }
