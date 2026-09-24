@@ -1,5 +1,6 @@
 # Owner(s): ["oncall: mobile"]
 import copy
+import itertools
 import operator
 
 import torch
@@ -1123,9 +1124,6 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         )
 
     def test_int64_scalar_add_used_as_index(self):
-        """Scalars lifted to attrs must keep the op's output dtype; an int64
-        add chain used as an index must not be promoted to float32."""
-
         class M(torch.nn.Module):
             def forward(self, x):
                 return x[:, torch.arange(4) + 0]
@@ -1136,15 +1134,49 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         example_inputs = (torch.randn(1, 4, 5),)
         m = export(M(), example_inputs, strict=True).module()
         m = quantizer.transform_for_annotation(m)
-        lifted_constants = [
-            m.get_buffer(n.target)
-            for n in m.graph.nodes
-            if n.op == "get_attr" and n.target.startswith("_tensor_constant_")
-        ]
-        self.assertEqual(len(lifted_constants), 1)
-        self.assertEqual(lifted_constants[0].dtype, torch.int64)
         m = prepare_pt2e(m, quantizer)
-        m(*example_inputs)
+        torch.testing.assert_close(m(*example_inputs), M()(*example_inputs))
+
+    def test_scalar_type_promotion(self):
+        class M(torch.nn.Module):
+            def __init__(self, op, scalar):
+                super().__init__()
+                self.op = op
+                self.scalar = scalar
+
+            def forward(self, x):
+                return self.op(x, self.scalar)
+
+        cases = [
+            (torch.float16, 1e-4, 100000.0),
+            (torch.float16, 1e-4, 100000),
+            (torch.float16, 10000.0, 1e-8),
+            (torch.bfloat16, 100.0, 1.0039),
+            (torch.float64, 1.0, 1.0 + 2**-30),
+            (torch.int64, 2**54 + 1, 1),
+            (torch.int32, 1, 1),
+            (torch.int32, 1, 2**31),
+            (torch.int8, 1, 256),
+            (torch.bool, True, False),
+            (torch.int32, 1, 0.5),
+            (torch.float32, 1.0, 2),
+            (torch.complex64, 1j, 1 + 2j),
+        ]
+        for op, (dtype, value, scalar), shape, configured in itertools.product(
+            (torch.add, torch.mul), cases, ((), (2,)), (False, True)
+        ):
+            with self.subTest(
+                op=op, dtype=dtype, scalar=scalar, shape=shape, configured=configured
+            ):
+                model = M(op, scalar)
+                example_inputs = (torch.full(shape, value, dtype=dtype),)
+                expected = model(*example_inputs)
+                quantizer = XNNPACKQuantizer()
+                if configured:
+                    quantizer.set_global(get_symmetric_quantization_config())
+                m = export(model, example_inputs, strict=True).module()
+                m = prepare_pt2e(m, quantizer)
+                torch.testing.assert_close(m(*example_inputs), expected, rtol=0, atol=0)
 
     def test_cat_same_node(self):
         """Ensure that concatenating the same node does not cause any unexpected behavior"""
