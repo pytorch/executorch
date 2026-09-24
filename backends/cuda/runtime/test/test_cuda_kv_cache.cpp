@@ -190,6 +190,17 @@ TEST(CudaKVCacheTest, AllocatesFullCapacityAndKeepsPointersStable) {
   EXPECT_EQ(reset.flat_capacity, 32);
   EXPECT_EQ(reset.growth_count, 0);
 
+  // Growth was the only thing that moved storage, and moving storage is what
+  // invalidated a captured graph. Flat layers now take their full capacity up
+  // front, so a step that fits capacity leaves every pointer where a captured
+  // graph baked it in. A handle mid-replay is therefore served without
+  // growing and without disturbing the capture.
+  handle.cuda_graph_state.enable(3);
+  handle.cuda_graph_state.phase = cu::CudaGraphPhase::Replay;
+  ASSERT_EQ(context.prepare_step(9), Error::Ok);
+  EXPECT_EQ(context.metrics().growth_count, 0);
+  EXPECT_EQ(context.metrics().flat_capacity, 32);
+  EXPECT_EQ(handle.cuda_graph_state.phase, cu::CudaGraphPhase::Replay);
   EXPECT_EQ(context.rebind_for_execute(&handle), Error::Ok);
   context.forget_handle(&handle);
 }

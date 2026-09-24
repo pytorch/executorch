@@ -174,10 +174,6 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       return error_;
     }
     ET_CHECK_OR_RETURN_ERROR(
-        handle->cuda_graph_state.phase == CudaGraphPhase::Disabled,
-        NotSupported,
-        "offgraph_kv: CUDA graph is not supported");
-    ET_CHECK_OR_RETURN_ERROR(
         !allocations_.empty(),
         InvalidState,
         "offgraph_kv: prepare_step must run before execute");
