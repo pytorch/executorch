@@ -244,6 +244,29 @@ class TestNeutronRecipeConfigFlags:
         spec_map = {s.key: s.value.decode() for s in captured[0].delegation_spec[1]}
         assert spec_map["use_profiling"] == "True"
 
+    def test_use_profiling_sets_generate_etrecord_true(self):
+        """use_profiling=True must cause the returned recipe to have generate_etrecord=True."""
+        rc = NeutronRecipeConfig(INPUT_SHAPE, use_profiling=True)
+        recipe = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
+        )
+        assert recipe.generate_etrecord is True
+
+    def test_use_profiling_false_leaves_generate_etrecord_false(self):
+        """use_profiling=False must leave generate_etrecord as False on the recipe."""
+        rc = NeutronRecipeConfig(INPUT_SHAPE, use_profiling=False)
+        recipe = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
+        )
+        assert recipe.generate_etrecord is False
+
+    def test_use_profiling_generates_etrecord(self):
+        """use_profiling=True must produce a non-None ETRecord after full export."""
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE, use_profiling=True)
+        sess = _run_export(model, rc)
+        assert sess.get_etrecord() is not None
+
     def test_dump_kernel_selection_code(self, tmp_path, monkeypatch):
         """dump_kernel_selection_code=True causes a kernel selection C file to be written."""
         monkeypatch.chdir(tmp_path)
