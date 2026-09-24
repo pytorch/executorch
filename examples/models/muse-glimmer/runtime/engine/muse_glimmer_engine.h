@@ -30,6 +30,8 @@
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
+#include <executorch/extension/llm/cache/cache.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #elif defined(EXECUTORCH_BUILD_MLX)
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/backends/mlx/runtime/mlx_mutable_state.h>
@@ -80,6 +82,7 @@ struct MuseGlimmerConfig {
   int32_t max_sessions = 1;
   int64_t eos_id = 200001;
   bool enable_cuda_graph = false;
+  int64_t offgraph_initial_capacity = 512;
   MuseGlimmerArtifactMode artifact_mode = MuseGlimmerArtifactMode::Auto;
   int32_t dflash_block_length = 0;
   int32_t dflash_n_draft = 0;
@@ -207,6 +210,20 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   std::unique_ptr<MuseGlimmerVisionRuntime> vision_runtime_;
   bool rebind_available_ = false;
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state_;
+#ifdef EXECUTORCH_BUILD_CUDA
+  // The installed off-graph KV cache, or nothing for an in-graph model. The
+  // shared_ptr owns it, the guard keeps it discoverable under its registry key
+  // for as long as methods may load, and the two raw pointers are its faces:
+  // one to step the cache, one to reset it.
+  // The installed off-graph KV cache, held as the neutral type. Stepping it
+  // needs a backend face, but that lookup lives in the .cpp so the runner's
+  // header stays free of CUDA cache types; SequenceControl is what the runner
+  // itself speaks.
+  std::unique_ptr<::executorch::extension::llm::cache::InstallGuard>
+      offgraph_guard_;
+  ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ =
+      nullptr;
+#endif
   std::atomic<int> live_sessions_{0};
 };
 
