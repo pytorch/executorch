@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections import deque
-from typing import Any, Deque, Dict, Hashable, List, Set, Tuple, Type
+from typing import Any, Callable, Deque, Dict, Hashable, List, Set, Tuple, Type
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -83,6 +83,12 @@ def build_node_signature(
     return (node.op, _get_target_key(node.target), normalized_args, normalized_kwargs)
 
 
+def _is_erased(node: Node) -> bool:
+    # FX currently retains graph after erase_node(), but also handle versions
+    # that detach erased nodes from their graph.
+    return node.graph is None or getattr(node, "_erased", False)
+
+
 class FuseDuplicateUsersPass(ExportPass):
     """Fuse identical users of a producer node into a single operation.
 
@@ -112,12 +118,20 @@ class FuseDuplicateUsersPass(ExportPass):
 
         node_order = {node: index for index, node in enumerate(graph.nodes)}
         producers: Deque[Node] = deque(node for node in graph.nodes)
+        queued_producers: Set[Node] = set(producers)
+
+        def enqueue_producer(node: Node) -> None:
+            if _is_erased(node) or node in queued_producers:
+                return
+            producers.append(node)
+            queued_producers.add(node)
 
         while producers:
             producer = producers.popleft()
+            queued_producers.discard(producer)
 
-            if producer.graph is None:
-                # Node was deleted by a previous rewrite while still queued.
+            if _is_erased(producer):
+                # Graph.erase_node marks nodes retained by iterators as erased.
                 continue
 
             # Only meaningful if a value is consumed by multiple users.
@@ -126,33 +140,9 @@ class FuseDuplicateUsersPass(ExportPass):
                 continue
 
             candidate_groups = self._get_candidate_groups(node_order, user_nodes)
-
-            signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
-            for group in candidate_groups:
-                for user in group:
-                    signature = self._build_user_signature(user)
-                    if signature is None:
-                        continue
-
-                    representative = signature_to_user.get(signature)
-                    if representative is None:
-                        # Check if we already encountered identical node that we can fuse with.
-                        signature_to_user[signature] = user
-                        continue
-
-                    if user is representative:
-                        # The queue can enqueue the surviving node again after rewrites.
-                        continue
-
-                    user.replace_all_uses_with(representative)
-                    graph.erase_node(user)
-                    modified = True
-
-                    # Revisit the current producer and the surviving user so that
-                    # newly formed duplicate chains can be fused in later
-                    # iterations.
-                    producers.append(producer)
-                    producers.append(representative)
+            modified |= self._fuse_candidate_groups(
+                graph, producer, candidate_groups, enqueue_producer
+            )
 
         if modified:
             if self._recompile_before_retrace:
@@ -162,10 +152,44 @@ class FuseDuplicateUsersPass(ExportPass):
 
         return PassResult(graph_module, modified)
 
+    def _fuse_candidate_groups(
+        self,
+        graph: torch.fx.Graph,
+        producer: Node,
+        candidate_groups: List[List[Node]],
+        enqueue_producer: Callable[[Node], None],
+    ) -> bool:
+        modified = False
+        signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
+        for group in candidate_groups:
+            for user in group:
+                signature = self._build_user_signature(user)
+                if signature is None:
+                    continue
+
+                representative = signature_to_user.get(signature)
+                if representative is None:
+                    signature_to_user[signature] = user
+                    continue
+
+                if user is representative:
+                    continue
+
+                user.replace_all_uses_with(representative)
+                graph.erase_node(user)
+                modified = True
+
+                # Revisit the producer and survivor because this fusion can expose
+                # another duplicate pair later in the chain.
+                enqueue_producer(producer)
+                enqueue_producer(representative)
+
+        return modified
+
     def _get_candidate_groups(self, node_order, user_nodes):
         users_by_target: Dict[Tuple[str, Hashable], List[Node]] = {}
         for user in user_nodes:
-            if user.graph is None:
+            if _is_erased(user):
                 # User might already have been removed by a prior rewrite.
                 continue
 
