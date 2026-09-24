@@ -220,6 +220,24 @@ class TestConv2d(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
 
+    def test_bf16_conv2d_fallback(self):
+        (
+            Tester(
+                torch.nn.Conv2d(2, 2, 3).eval().to(torch.bfloat16),
+                (torch.randn(2, 2, 7, 7, dtype=torch.bfloat16),),
+            )
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=0.01, rtol=0.01)
+        )
+
     def _test(
         self,
         m: torch.nn.Module,

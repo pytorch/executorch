@@ -90,13 +90,15 @@ bool has_cuda_device() {
 
 } // namespace
 
-TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
+TEST(CudaKVCacheTest, AllocatesFullCapacityAndKeepsPointersStable) {
   if (!has_cuda_device()) {
     GTEST_SKIP() << "CUDA device required";
   }
 
   cache::CacheConfig cfg;
   cfg.capacity = 32;
+  // Deliberately below capacity: flat layers must ignore it and take the full
+  // capacity, or the graph's static head stride addresses past the allocation.
   cfg.initial_capacity = 4;
   // The widest step below is 9 tokens, and a ring layer may not be handed
   // more than max_write at once.
@@ -137,7 +139,7 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
   ASSERT_EQ(context.prepare_step(3), Error::Ok);
   ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
   const auto initial = context.metrics();
-  EXPECT_EQ(initial.flat_capacity, 4);
+  EXPECT_EQ(initial.flat_capacity, 32);
   EXPECT_EQ(initial.growth_count, 0);
   EXPECT_EQ(initial.logical_length, 0);
   ASSERT_NE(container.pointers["flat_k"], nullptr);
@@ -158,10 +160,12 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
 
   ASSERT_EQ(context.prepare_step(2), Error::Ok);
   ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
-  EXPECT_NE(container.pointers["flat_k"], old_k);
+  // The allocation must not move: AOTI binds this pointer once and the strides
+  // baked into the graph assume it stays put.
+  EXPECT_EQ(container.pointers["flat_k"], old_k);
   const auto grown = context.metrics();
-  EXPECT_EQ(grown.flat_capacity, 8);
-  EXPECT_EQ(grown.growth_count, 1);
+  EXPECT_EQ(grown.flat_capacity, 32);
+  EXPECT_EQ(grown.growth_count, 0);
   EXPECT_EQ(grown.logical_length, 3);
 
   std::vector<uint16_t> copied(values.size());
@@ -176,15 +180,15 @@ TEST(CudaKVCacheTest, GrowsPreservesContentsAndResets) {
 
   ASSERT_EQ(context.commit_step(2), Error::Ok);
   ASSERT_EQ(context.prepare_step(1), Error::Ok);
-  EXPECT_EQ(context.metrics().flat_capacity, 8);
-  EXPECT_EQ(context.metrics().growth_count, 1);
+  EXPECT_EQ(context.metrics().flat_capacity, 32);
+  EXPECT_EQ(context.metrics().growth_count, 0);
   EXPECT_EQ(context.prepare_step(28), Error::InvalidArgument);
   EXPECT_EQ(context.metrics().logical_length, 5);
   ASSERT_EQ((control.clear(), Error::Ok), Error::Ok);
   const auto reset = context.metrics();
   EXPECT_EQ(reset.logical_length, 0);
-  EXPECT_EQ(reset.flat_capacity, 8);
-  EXPECT_EQ(reset.growth_count, 1);
+  EXPECT_EQ(reset.flat_capacity, 32);
+  EXPECT_EQ(reset.growth_count, 0);
 
   EXPECT_EQ(context.rebind_for_execute(&handle), Error::Ok);
   context.forget_handle(&handle);
@@ -238,12 +242,13 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
     const size_t element_size = slimc10::elementSize(dtype);
     EXPECT_EQ(
         context.metrics().allocated_bytes,
-        2 * 2 * 4 * 8 * static_cast<int64_t>(element_size) +
+        2 * 2 * 8 * 8 * static_cast<int64_t>(element_size) +
             static_cast<int64_t>(sizeof(int64_t)));
 
-    const size_t old_head_bytes = 4 * 8 * element_size;
-    const size_t new_head_bytes = 8 * 8 * element_size;
-    std::vector<uint8_t> values(2 * old_head_bytes);
+    // The head stride is fixed at full capacity from the first allocation, so
+    // a write stays where it was put instead of being relocated by a regrow.
+    const size_t head_bytes = 8 * 8 * element_size;
+    std::vector<uint8_t> values(2 * head_bytes);
     for (size_t index = 0; index < values.size(); ++index) {
       values[index] = static_cast<uint8_t>(index % 251 + 1);
     }
@@ -258,7 +263,7 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
 
     ASSERT_EQ(context.prepare_step(1), Error::Ok);
     ASSERT_EQ(context.rebind_for_execute(&handle), Error::Ok);
-    std::vector<uint8_t> copied(2 * new_head_bytes);
+    std::vector<uint8_t> copied(2 * head_bytes);
     ASSERT_EQ(
         cudaMemcpy(
             copied.data(),
@@ -266,15 +271,7 @@ TEST(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndDescriptors) {
             copied.size(),
             cudaMemcpyDeviceToHost),
         cudaSuccess);
-    for (size_t head = 0; head < 2; ++head) {
-      EXPECT_EQ(
-          std::vector<uint8_t>(
-              copied.begin() + head * new_head_bytes,
-              copied.begin() + head * new_head_bytes + old_head_bytes),
-          std::vector<uint8_t>(
-              values.begin() + head * old_head_bytes,
-              values.begin() + (head + 1) * old_head_bytes));
-    }
+    EXPECT_EQ(copied, values);
     context.forget_handle(&handle);
   }
 }
