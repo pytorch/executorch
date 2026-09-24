@@ -14,9 +14,13 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <string>
 
 #include <executorch/runtime/platform/compat_unistd.h>
 #include <fcntl.h>
+#ifndef _WIN32
+#include <sys/file.h>
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -36,6 +40,7 @@
 #define ET_HAVE_PREAD 1
 #endif // !ET_HAVE_PREAD
 
+using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
@@ -76,7 +81,147 @@ void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
 static bool is_power_of_2(size_t value) {
   return value > 0 && (value & ~(value - 1)) == value;
 }
+
+#ifndef _WIN32
+Error write_all(int fd, const void* data, size_t size) {
+  const uint8_t* cursor = static_cast<const uint8_t*>(data);
+  while (size > 0) {
+    const size_t chunk_size = std::min<size_t>(
+        size, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
+    const ssize_t written = ::write(fd, cursor, chunk_size);
+    if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    if (written <= 0) {
+      return Error::AccessFailed;
+    }
+    cursor += written;
+    size -= written;
+  }
+  return Error::Ok;
+}
+
+Error copy_from_fd(
+    int source_fd,
+    int destination_fd,
+    size_t offset,
+    size_t size) {
+  uint8_t buffer[64 * 1024];
+  while (size > 0) {
+    const size_t chunk_size = std::min(size, sizeof(buffer));
+    ssize_t nread = ::pread(source_fd, buffer, chunk_size, offset);
+    if (nread < 0 && errno == EINTR) {
+      continue;
+    }
+    if (nread <= 0 ||
+        write_all(destination_fd, buffer, static_cast<size_t>(nread)) !=
+            Error::Ok) {
+      return Error::AccessFailed;
+    }
+    offset += static_cast<size_t>(nread);
+    size -= static_cast<size_t>(nread);
+  }
+  return Error::Ok;
+}
+#endif
 } // namespace
+
+namespace internal {
+
+Error replace_file_data(
+    int fd,
+    const char* file_name,
+    size_t file_size,
+    runtime::Span<const DataLoader::DataChunk> chunks) {
+#ifdef _WIN32
+  (void)fd;
+  (void)file_name;
+  (void)file_size;
+  (void)chunks;
+  return Error::NotSupported;
+#else
+  ET_CHECK_OR_RETURN_ERROR(
+      fd >= 0 && file_name != nullptr,
+      InvalidState,
+      "Uninitialized");
+
+  for (const auto& chunk : chunks) {
+    if (chunk.source == DataLoader::DataChunk::Source::Loader) {
+      size_t end;
+      ET_CHECK_OR_RETURN_ERROR(
+          !c10::add_overflows(chunk.offset, chunk.size, &end) &&
+              end <= file_size,
+          InvalidArgument,
+          "Replacement source range is out of bounds");
+    } else if (chunk.source == DataLoader::DataChunk::Source::Buffer) {
+      ET_CHECK_OR_RETURN_ERROR(
+          chunk.data != nullptr || chunk.size == 0,
+          InvalidArgument,
+          "Replacement buffer is null");
+    }
+  }
+
+  if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    return Error::AccessFailed;
+  }
+
+  struct stat source_stat;
+  struct stat path_stat;
+  if (::fstat(fd, &source_stat) != 0 || ::stat(file_name, &path_stat) != 0 ||
+      source_stat.st_dev != path_stat.st_dev ||
+      source_stat.st_ino != path_stat.st_ino) {
+    ::flock(fd, LOCK_UN);
+    return Error::InvalidState;
+  }
+
+  std::string temporary_path(file_name);
+  temporary_path.append(".rewrite.XXXXXX");
+  int temporary_fd = ::mkstemp(temporary_path.data());
+  if (temporary_fd < 0) {
+    ::flock(fd, LOCK_UN);
+    return Error::AccessFailed;
+  }
+  (void)::fchmod(temporary_fd, source_stat.st_mode & 07777);
+
+  Error result = Error::Ok;
+  const uint8_t zeros[4096] = {};
+  for (const auto& chunk : chunks) {
+    if (chunk.source == DataLoader::DataChunk::Source::Loader) {
+      result = copy_from_fd(fd, temporary_fd, chunk.offset, chunk.size);
+    } else if (chunk.source == DataLoader::DataChunk::Source::Buffer) {
+      result = write_all(temporary_fd, chunk.data, chunk.size);
+    } else {
+      size_t remaining = chunk.size;
+      while (remaining > 0 && result == Error::Ok) {
+        const size_t zero_size = std::min(remaining, sizeof(zeros));
+        result = write_all(temporary_fd, zeros, zero_size);
+        remaining -= zero_size;
+      }
+    }
+    if (result != Error::Ok) {
+      break;
+    }
+  }
+
+  if (result == Error::Ok && ::fsync(temporary_fd) != 0) {
+    result = Error::AccessFailed;
+  }
+  if (::close(temporary_fd) != 0 && result == Error::Ok) {
+    result = Error::AccessFailed;
+  }
+  if (result == Error::Ok &&
+      ::rename(temporary_path.c_str(), file_name) != 0) {
+    result = Error::AccessFailed;
+  }
+  if (result != Error::Ok) {
+    (void)::unlink(temporary_path.c_str());
+  }
+  ::flock(fd, LOCK_UN);
+  return result;
+#endif
+}
+
+} // namespace internal
 
 FileDataLoader::~FileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
@@ -275,6 +420,11 @@ ET_NODISCARD Error FileDataLoader::load_into(
     ::close(dup_fd);
   }
   return Error::Ok;
+}
+
+Error FileDataLoader::replace_data(runtime::Span<const DataChunk> chunks) {
+  const std::lock_guard<std::mutex> lock(replace_mutex_);
+  return internal::replace_file_data(fd_, file_name_, file_size_, chunks);
 }
 
 } // namespace extension

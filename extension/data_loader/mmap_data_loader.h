@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <mutex>
+
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -106,6 +108,9 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
       ET_UNUSED const SegmentInfo& segment_info,
       void* buffer) const override;
 
+  ET_NODISCARD executorch::runtime::Error replace_data(
+      executorch::runtime::Span<const DataChunk> chunks) override;
+
  private:
   MmapDataLoader(
       int fd,
@@ -133,6 +138,7 @@ class MmapDataLoader final : public executorch::runtime::DataLoader {
   const size_t page_size_;
   const int fd_; // Owned by the instance.
   const MlockConfig mlock_config_;
+  std::mutex replace_mutex_;
 };
 
 } // namespace extension
