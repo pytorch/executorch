@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import os
 import warnings as _warnings
 
 from typing import (
@@ -39,12 +38,6 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     compare_rel_frobenius_and_cosine_similarity,
 )
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
-from executorch.backends.arm.test.tester.pte_diff_utils import (
-    _read_tosa_ops,
-    format_tosa_delegate_diff,
-    pte_diff_within_tolerance,
-    tosa_delegate_ops_equal,
-)
 from executorch.backends.arm.test.tester.quantize import ArmQuantize as Quantize
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
@@ -54,11 +47,6 @@ from executorch.backends.arm.tosa.specification import (
 from executorch.backends.arm.util._factory import create_quantizer
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
-from executorch.devtools.pte_tool.diff_pte import (
-    diff_pte as _diff_pte,
-    format_diff_result,
-    PTEDiffResult,
-)
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
@@ -316,83 +304,6 @@ class BasePipeline(Generic[T]):
         self.add_stage_after(stage_id, self.tester.visualize, suffix=suffix)
         return self
 
-    def _compare_pte(
-        self,
-        pte: bytes | str | os.PathLike[str],
-        verbose: bool = False,
-        max_samples: int = 10,
-        atol: float = 0.0,
-        rtol: float = 0.0,
-    ):
-        """Compare the to_executorch PTE with another PTE."""
-        reference_pte = self.tester.get_artifact(StageType.TO_EXECUTORCH).buffer
-
-        if isinstance(pte, bytes):
-            pte_data = pte
-            pte_path = "generated.pte"
-        else:
-            pte_path = os.fspath(pte)
-            with open(pte_path, "rb") as pte_file:
-                pte_data = pte_file.read()
-
-        result = _diff_pte(
-            reference_pte,
-            pte_data,
-            "to_executorch.pte",
-            pte_path,
-            max_samples=max_samples,
-        )
-        if not result.bitwise_equal and not self._pte_diff_within_tolerance(
-            result, reference_pte, pte_data, atol, rtol
-        ):
-            message = format_diff_result(result, verbose=verbose)
-            extra_diff = self._format_extra_pte_diff(
-                reference_pte, pte_data, max_samples=max_samples
-            )
-            if extra_diff:
-                message = message + "\n" + "\n".join(extra_diff)
-            print(message)
-            raise AssertionError(message)
-
-    def _format_extra_pte_diff(
-        self,
-        data_a: bytes,
-        data_b: bytes,
-        max_samples: int,
-    ) -> list[str]:
-        return []
-
-    def _pte_diff_within_tolerance(
-        self,
-        result: PTEDiffResult,
-        data_a: bytes,
-        data_b: bytes,
-        atol: float,
-        rtol: float,
-    ) -> bool:
-        return pte_diff_within_tolerance(result, data_a, data_b, atol=atol, rtol=rtol)
-
-    def diff_pte(
-        self,
-        pte: bytes | str | os.PathLike[str],
-        verbose: bool = False,
-        max_samples: int = 10,
-        atol: float = 0.0,
-        rtol: float = 0.0,
-    ):
-        """Add a stage to compare the to_executorch PTE with another PTE."""
-        self.add_stage_after(
-            "to_executorch",
-            self._compare_pte,
-            pte,
-            verbose=verbose,
-            max_samples=max_samples,
-            atol=atol,
-            rtol=rtol,
-            suffix="diff_pte",
-        )
-        return self
-
     def count_tosa_ops(self, expected_ops: Dict[str, int]):
         """Assert the number of TOSA ops in the graph,"""
         if not self.has_stage("to_edge_transform_and_lower"):
@@ -496,31 +407,6 @@ class TOSAPipeline(BasePipeline, Generic[T]):
             return bool(dir(tosa_reference_model))
         except ImportError:
             return False
-
-    def _format_extra_pte_diff(
-        self,
-        data_a: bytes,
-        data_b: bytes,
-        max_samples: int,
-    ) -> list[str]:
-        return format_tosa_delegate_diff(
-            data_a,
-            data_b,
-            max_samples=max_samples,
-            read_tosa_ops=_read_tosa_ops,
-        )
-
-    def _pte_diff_within_tolerance(
-        self,
-        result: PTEDiffResult,
-        data_a: bytes,
-        data_b: bytes,
-        atol: float,
-        rtol: float,
-    ) -> bool:
-        return super()._pte_diff_within_tolerance(
-            result, data_a, data_b, atol, rtol
-        ) or tosa_delegate_ops_equal(data_a, data_b, read_tosa_ops=_read_tosa_ops)
 
     def run(self):
         if (
