@@ -44,6 +44,7 @@ class Model(str, Enum):
     DSCNN = "ds_cnn"
     MobileNetV1025 = "mobilenet_v1_025"
     ResNet8 = "resnet8"
+    StreamingWakeWord = "streaming_wakeword"
     Sdpa = "sdpa"
     Qwen3 = "qwen3"
     SmolVLM = "smolvlm"
@@ -108,6 +109,10 @@ MODEL_NAME_TO_MODEL = {
         "MobileNetV1025Model",
     ),
     str(Model.ResNet8): ("mlperf_tiny.resnet8", "ResNet8Model"),
+    str(Model.StreamingWakeWord): (
+        "mlperf_tiny.streaming_wakeword",
+        "StreamingWakeWordModel",
+    ),
     str(Model.Sdpa): ("toy_model", "SdpaModule"),
     str(Model.Qwen3): ("qwen3", "Qwen3Model"),
     str(Model.SmolVLM): ("smolvlm", "SmolVLMModel"),
