@@ -16,9 +16,6 @@ from executorch.backends.cuda.triton.kernels.int4_matmul import (
     int4_matvec,
     int4_matvec_bf16,
 )
-from executorch.backends.cuda.triton.kernels.offgraph_kv import (
-    cuda_offgraph_update_and_attend,
-)
 from executorch.backends.cuda.triton.kernels.sdpa import (
     sdpa,
     sdpa_decode_splitk,
@@ -34,7 +31,6 @@ __all__ = [
     "fused_moe_batched_gemm_int8",
     "int4_matvec",
     "int4_matvec_bf16",
-    "cuda_offgraph_update_and_attend",
     "moe_align_block_size",
     "sdpa",
     "sdpa_decode_splitk",
