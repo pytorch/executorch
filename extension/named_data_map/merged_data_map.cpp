@@ -112,5 +112,30 @@ ET_NODISCARD Result<const char*> MergedDataMap::get_key(uint32_t index) const {
   return Error::Internal;
 }
 
+ET_NODISCARD Error MergedDataMap::replace_data(
+    Span<const Data> data,
+    executorch::runtime::MemoryAllocator* temp_allocator) const {
+  if (data.empty()) {
+    return Error::Ok;
+  }
+  const NamedDataMap* target = nullptr;
+  for (const auto& replacement : data) {
+    const auto it = key_to_map_index_.find(std::string(replacement.key));
+    ET_CHECK_OR_RETURN_ERROR(
+        it != key_to_map_index_.end(),
+        NotFound,
+        "Named data key %.*s was not found",
+        static_cast<int>(replacement.key.size()),
+        replacement.key.data());
+    const NamedDataMap* owner = named_data_maps_[it->second];
+    ET_CHECK_OR_RETURN_ERROR(
+        target == nullptr || target == owner,
+        NotSupported,
+        "A replacement cannot span multiple named data sources");
+    target = owner;
+  }
+  return target->replace_data(data, temp_allocator);
+}
+
 } // namespace ET_MERGED_DATA_MAP_NAMESPACE
 } // namespace executorch::extension

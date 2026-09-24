@@ -65,6 +65,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
             deps = [
+                "//executorch/schema:extended_header",
                 "//executorch/schema:program",
             ],
             exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL_FLATBUFFERS=1"],

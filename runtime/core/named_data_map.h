@@ -8,8 +8,14 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string_view>
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/freeable_buffer.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/core/tensor_layout.h>
@@ -23,6 +29,13 @@ namespace ET_RUNTIME_NAMESPACE {
  */
 class NamedDataMap {
  public:
+  struct Data {
+    std::string_view key;
+    Span<const uint8_t> bytes;
+    // A missing value preserves the original data's on-disk alignment.
+    std::optional<size_t> alignment;
+  };
+
   virtual ~NamedDataMap() = default;
   /**
    * Get tensor_layout by key.
@@ -70,6 +83,20 @@ class NamedDataMap {
    * the lifetime of the DataMap.
    */
   ET_NODISCARD virtual Result<const char*> get_key(uint32_t index) const = 0;
+
+  /**
+   * Atomically replaces the values for the specified keys in their original
+   * backing source. Existing readers must keep observing their original
+   * snapshot. Implementations that cannot provide this guarantee should
+   * return Error::NotSupported.
+   */
+  ET_NODISCARD virtual Error replace_data(
+      Span<const Data> data,
+      MemoryAllocator* temp_allocator) const {
+    (void)data;
+    (void)temp_allocator;
+    return Error::NotSupported;
+  }
 };
 
 } // namespace ET_RUNTIME_NAMESPACE

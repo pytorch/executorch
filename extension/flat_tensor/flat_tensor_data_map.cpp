@@ -22,6 +22,8 @@
 #include <executorch/runtime/platform/compiler.h>
 
 #include <cinttypes>
+#include <cstring>
+#include <vector>
 
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
@@ -109,6 +111,35 @@ Result<uint64_t> get_segment_end_offset(const FlatTensorHeader& header) {
       header.segment_base_offset,
       header.segment_data_size);
   return segment_end_offset;
+}
+
+Result<uint64_t> segment_alignment(uint64_t base, uint64_t offset) {
+  uint64_t absolute_offset;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(base, offset, &absolute_offset),
+      InvalidExternalData,
+      "FlatTensor segment offset overflows");
+  return absolute_offset == 0
+      ? 1
+      : absolute_offset & (~absolute_offset + 1);
+}
+
+Result<uint64_t> aligned_segment_offset(
+    uint64_t base,
+    uint64_t next_offset,
+    uint64_t alignment) {
+  uint64_t absolute_offset;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(base, next_offset, &absolute_offset),
+      InvalidArgument,
+      "Replacement segment offset overflows");
+  const uint64_t mask = alignment - 1;
+  ET_CHECK_OR_RETURN_ERROR(
+      absolute_offset <= UINT64_MAX - mask,
+      InvalidArgument,
+      "Replacement segment alignment overflows");
+  const uint64_t aligned_absolute_offset = (absolute_offset + mask) & ~mask;
+  return aligned_absolute_offset - base;
 }
 
 Result<const TensorLayout> create_tensor_layout(
@@ -228,6 +259,151 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       index,
       num_keys);
   return flat_tensor_->named_data()->Get(index)->key()->c_str();
+}
+
+ET_NODISCARD Error FlatTensorDataMap::replace_data(
+    Span<const Data> data,
+    ET_UNUSED executorch::runtime::MemoryAllocator* temp_allocator) const {
+  if (data.empty()) {
+    return Error::Ok;
+  }
+
+  auto prefix = loader_->load(
+      0,
+      header_.segment_base_offset,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  if (!prefix.ok()) {
+    return prefix.error();
+  }
+  std::vector<uint8_t> flat_tensor_data(header_.segment_base_offset);
+  std::memcpy(
+      flat_tensor_data.data(), prefix->data(), header_.segment_base_offset);
+  auto* flat_tensor =
+      flatbuffers::GetMutableRoot<flat_tensor_flatbuffer::FlatTensor>(
+          flat_tensor_data.data());
+  auto* segments = flat_tensor->mutable_segments();
+  auto* named_data = flat_tensor->mutable_named_data();
+  ET_CHECK_OR_RETURN_ERROR(
+      segments != nullptr && named_data != nullptr,
+      InvalidExternalData,
+      "FlatTensor has no named-data segments");
+
+  std::vector<int64_t> replacement_by_segment(segments->size(), -1);
+  for (size_t replacement_index = 0; replacement_index < data.size();
+       ++replacement_index) {
+    const auto& replacement = data[replacement_index];
+    ET_CHECK_OR_RETURN_ERROR(
+        replacement.bytes.data() != nullptr || replacement.bytes.empty(),
+        InvalidArgument,
+        "Replacement data for key %.*s is null",
+        static_cast<int>(replacement.key.size()),
+        replacement.key.data());
+    if (replacement.alignment.has_value()) {
+      const size_t alignment = *replacement.alignment;
+      ET_CHECK_OR_RETURN_ERROR(
+          alignment > 0 && (alignment & (alignment - 1)) == 0,
+          InvalidArgument,
+          "Replacement alignment must be a power of two");
+    }
+
+    size_t segment_index = segments->size();
+    for (size_t i = 0; i < named_data->size(); ++i) {
+      const auto* entry = named_data->Get(i);
+      if (entry->key()->size() == replacement.key.size() &&
+          (replacement.key.empty() ||
+           std::memcmp(
+               entry->key()->data(),
+               replacement.key.data(),
+               replacement.key.size()) == 0)) {
+        segment_index = entry->segment_index();
+        break;
+      }
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        segment_index < segments->size(),
+        NotFound,
+        "Named data key %.*s was not found",
+        static_cast<int>(replacement.key.size()),
+        replacement.key.data());
+    const int64_t previous_index = replacement_by_segment[segment_index];
+    if (previous_index >= 0) {
+      const auto& previous = data[static_cast<size_t>(previous_index)];
+      ET_CHECK_OR_RETURN_ERROR(
+          previous.bytes.size() == replacement.bytes.size() &&
+              previous.alignment == replacement.alignment &&
+              (replacement.bytes.empty() ||
+               std::memcmp(
+                   previous.bytes.data(),
+                   replacement.bytes.data(),
+                   replacement.bytes.size()) == 0),
+          InvalidArgument,
+          "Aliased named data replacements do not match");
+    } else {
+      replacement_by_segment[segment_index] =
+          static_cast<int64_t>(replacement_index);
+    }
+  }
+
+  std::vector<DataLoader::DataChunk> chunks;
+  chunks.reserve(1 + 2 * segments->size());
+  chunks.push_back(DataLoader::DataChunk::from_buffer(
+      flat_tensor_data.data(), flat_tensor_data.size()));
+  uint64_t next_offset = 0;
+  for (size_t i = 0; i < segments->size(); ++i) {
+    auto* segment = segments->GetMutableObject(i);
+    const int64_t replacement_index = replacement_by_segment[i];
+    const Data* replacement = replacement_index >= 0
+        ? &data[static_cast<size_t>(replacement_index)]
+        : nullptr;
+    uint64_t alignment;
+    if (replacement != nullptr && replacement->alignment.has_value()) {
+      alignment = *replacement->alignment;
+    } else {
+      auto inferred_alignment =
+          segment_alignment(header_.segment_base_offset, segment->offset());
+      if (!inferred_alignment.ok()) {
+        return inferred_alignment.error();
+      }
+      alignment = inferred_alignment.get();
+    }
+    auto aligned_offset = aligned_segment_offset(
+        header_.segment_base_offset, next_offset, alignment);
+    if (!aligned_offset.ok()) {
+      return aligned_offset.error();
+    }
+    const uint64_t offset = aligned_offset.get();
+    chunks.push_back(DataLoader::DataChunk::zero(offset - next_offset));
+    const uint64_t size =
+        replacement == nullptr ? segment->size() : replacement->bytes.size();
+    if (replacement == nullptr) {
+      chunks.push_back(DataLoader::DataChunk::from_loader(
+          header_.segment_base_offset + segment->offset(), segment->size()));
+    } else {
+      chunks.push_back(DataLoader::DataChunk::from_buffer(
+          replacement->bytes.data(), replacement->bytes.size()));
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        offset <= UINT64_MAX - size,
+        InvalidArgument,
+        "Replacement segment size overflows");
+    next_offset = offset + size;
+    ET_CHECK_OR_RETURN_ERROR(
+        segment->mutate_offset(offset) && segment->mutate_size(size),
+        InvalidExternalData,
+        "Could not update FlatTensor segment metadata");
+  }
+
+  constexpr size_t kSegmentDataSizeOffset =
+      FlatTensorHeader::kHeaderOffset + 32;
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor_data.size() >=
+          kSegmentDataSizeOffset + sizeof(uint64_t),
+      InvalidExternalData,
+      "FlatTensor header does not contain a segment data size");
+  flatbuffers::WriteScalar<uint64_t>(
+      flat_tensor_data.data() + kSegmentDataSizeOffset, next_offset);
+  return loader_->replace_data(
+      Span<const DataLoader::DataChunk>(chunks.data(), chunks.size()));
 }
 
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
