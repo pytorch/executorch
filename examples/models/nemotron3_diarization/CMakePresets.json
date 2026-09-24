@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "nemotron3-diarization-mlx",
+      "displayName": "Nemotron 3 Diarization runner (MLX)",
+      "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/nemotron3_diarization",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+      },
+      "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin"}
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "nemotron3-diarization-mlx",
+      "configurePreset": "nemotron3-diarization-mlx",
+      "configuration": "Release"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "nemotron3-diarization-mlx",
+      "steps": [
+        {"type": "configure", "name": "nemotron3-diarization-mlx"},
+        {"type": "build", "name": "nemotron3-diarization-mlx"}
+      ]
+    }
+  ]
+}

@@ -121,6 +121,7 @@ help:
 	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
 	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
+	@echo "  nemotron3-diarization-mlx - Build Nemotron 3 Diarization with MLX backend"
 	@echo "  supertonic-mlx      - Build Supertonic runner with MLX backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
@@ -284,6 +285,13 @@ dinov2-cuda-debug:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/dinov2/dinov2_runner"
+
+.PHONY: nemotron3-diarization-mlx
+nemotron3-diarization-mlx:
+	cmake --preset mlx-release -DEXECUTORCH_BUILD_EXTENSION_LLM=ON -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=OFF -DEXECUTORCH_BUILD_EXTENSION_ASR_RUNNER=OFF
+	cmake --build cmake-out --config Release --parallel
+	cmake --install cmake-out --config Release
+	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-mlx
 
 sortformer-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
