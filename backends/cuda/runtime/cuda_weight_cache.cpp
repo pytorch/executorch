@@ -136,6 +136,10 @@ bool is_supported_device_type(int32_t device_type) {
   return device_type == 0 || device_type == 1; // CPU or CUDA
 }
 
+bool is_offgraph_kv_fqn(const std::string& fqn) {
+  return fqn.rfind("__et_offgraph_kv_", 0) == 0;
+}
+
 } // namespace
 
 bool CudaWeightCache::is_serialized(const void* data, size_t size) {
@@ -560,6 +564,7 @@ Error CudaWeightCache::load(
   pairs.reserve(metadata.entries.size());
   std::unordered_set<std::string> bound_fqns;
   size_t reused_storages = 0;
+  size_t external_storages = 0;
   handle->fqn_weight_tensors.reserve(metadata.entries.size());
 
   for (const Entry& entry : metadata.entries) {
@@ -586,6 +591,11 @@ Error CudaWeightCache::load(
         InvalidProgram,
         "CUDA FQN weight '%s' appears more than once in serialized metadata",
         entry.fqn.c_str());
+
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      ++external_storages;
+      continue;
+    }
 
     std::shared_ptr<CudaWeightStorage> storage;
     bool reused = false;
@@ -628,19 +638,22 @@ Error CudaWeightCache::load(
     }
   }
 
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      handle->update_user_managed_constant_buffer_pairs(
-          handle->container_handle,
-          pairs.data(),
-          pairs.size(),
-          /*use_inactive=*/false,
-          /*validate_full_update=*/true),
-      "Failed to bind CUDA FQN weights");
+  if (!pairs.empty()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->update_user_managed_constant_buffer_pairs(
+            handle->container_handle,
+            pairs.data(),
+            pairs.size(),
+            /*use_inactive=*/false,
+            /*validate_full_update=*/external_storages == 0),
+        "Failed to bind CUDA FQN weights");
+  }
   ET_LOG(
       Info,
-      "Loaded %zu CUDA FQN weights (%zu reused across methods)",
-      metadata.entries.size(),
-      reused_storages);
+      "Loaded %zu CUDA FQN weights (%zu reused, %zu runtime-owned)",
+      metadata.entries.size() - external_storages,
+      reused_storages,
+      external_storages);
   return Error::Ok;
 }
 
