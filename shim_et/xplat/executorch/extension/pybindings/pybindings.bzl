@@ -56,11 +56,15 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         srcs = [
             "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
+        headers = [
+            "//executorch/extension/pybindings:pybindings_tensor.h",
+        ],
         types = types,
         base_module = "executorch.extension.pybindings",
         compiler_flags = compiler_flags,
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
+            "-DEXECUTORCH_PYBIND_USE_ATEN",
         ],
         deps = [
             "//executorch/runtime/core:core",

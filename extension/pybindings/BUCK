@@ -16,6 +16,11 @@ fbcode_target(_kind = runtime.export_file,
     visibility = ["//executorch/extension/pybindings/..."],
 )
 
+fbcode_target(_kind = runtime.export_file,
+    name = "pybindings_tensor.h",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
 # cxx_python_extension kwarg 'types' can't take export_file rules directly and we need to rename the .pyi
 # file to match the lib anyway, so we just expose the file like this and then have genrules consume and
 # rename it before passing it to executorch pybindings.

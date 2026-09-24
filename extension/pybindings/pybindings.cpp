@@ -27,6 +27,7 @@
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
+#include <executorch/extension/pybindings/pybindings_tensor.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -42,6 +43,7 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
 #include <ATen/core/functional.h>
@@ -52,6 +54,7 @@
 #ifndef USE_ATEN_LIB
 #include <c10/core/impl/LocalDispatchKeySet.h>
 #include <executorch/extension/aten_util/aten_bridge.h>
+#endif
 #endif
 
 /// Throws a runtime_error with the provided message if `error` is not `Ok`.
@@ -105,12 +108,12 @@ using ::executorch::runtime::Tag;
 using torch::executor::etdump_result;
 using torch::executor::ETDumpGen;
 
-#ifndef USE_ATEN_LIB
+#if defined(EXECUTORCH_PYBIND_USE_ATEN) && !defined(USE_ATEN_LIB)
 using ::executorch::extension::alias_attensor_to_etensor;
 using ::executorch::extension::alias_etensor_to_attensor;
 using ::executorch::extension::torch_to_executorch_device;
 using ::executorch::extension::torch_to_executorch_scalar_type;
-#endif // !USE_ATEN_LIB
+#endif
 
 namespace executorch {
 namespace extension {
@@ -118,6 +121,7 @@ namespace pybindings {
 
 namespace {
 
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
 void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
   if (tensor.numel() == 0) {
     return nullptr;
@@ -128,10 +132,44 @@ void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
                                               .unsafeGetStorageImpl()
                                               ->_mutable_data_ptr_no_checks()
                                               .mutable_get());
-  ET_CHECK_MSG(
-      storage_data != nullptr,
-      "Tensor has a non-zero number of elements, but its data is not allocated");
+  if (storage_data == nullptr) {
+    throw std::invalid_argument(
+        "Tensor has a non-zero number of elements, but its data is not "
+        "allocated");
+  }
   return storage_data + tensor.storage_offset() * tensor.itemsize();
+}
+#endif
+
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+bool is_torch_tensor(const py::handle& value) {
+  static const py::object tensor_type =
+      py::module_::import("torch").attr("Tensor");
+  return py::isinstance(value, tensor_type);
+}
+#endif
+
+bool is_single_tensor(const py::handle& value) {
+  if (py::isinstance<PyTensor>(value) || PyObject_CheckBuffer(value.ptr())) {
+    return true;
+  }
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+  return is_torch_tensor(value);
+#else
+  return false;
+#endif
+}
+
+py::sequence normalize_inputs(const py::object& inputs) {
+  if (is_single_tensor(inputs)) {
+    py::list result;
+    result.append(inputs);
+    return result;
+  }
+  if (!py::isinstance<py::sequence>(inputs)) {
+    throw py::type_error("inputs must be a Tensor or a sequence of inputs");
+  }
+  return py::reinterpret_borrow<py::sequence>(inputs);
 }
 
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
@@ -291,9 +329,112 @@ inline std::unique_ptr<Module> load_module_from_data_loader(
       nullptr); // data_map_loader
 }
 
-inline py::list get_outputs_as_py_list(
+executorch::aten::ScalarType to_runtime_scalar_type(PyTensorScalarType type) {
+  switch (type) {
+    case PyTensorScalarType::Byte:
+      return executorch::aten::ScalarType::Byte;
+    case PyTensorScalarType::Char:
+      return executorch::aten::ScalarType::Char;
+    case PyTensorScalarType::Short:
+      return executorch::aten::ScalarType::Short;
+    case PyTensorScalarType::Int:
+      return executorch::aten::ScalarType::Int;
+    case PyTensorScalarType::Long:
+      return executorch::aten::ScalarType::Long;
+    case PyTensorScalarType::Half:
+      return executorch::aten::ScalarType::Half;
+    case PyTensorScalarType::Float:
+      return executorch::aten::ScalarType::Float;
+    case PyTensorScalarType::Double:
+      return executorch::aten::ScalarType::Double;
+    case PyTensorScalarType::ComplexFloat:
+      return executorch::aten::ScalarType::ComplexFloat;
+    case PyTensorScalarType::ComplexDouble:
+      return executorch::aten::ScalarType::ComplexDouble;
+    case PyTensorScalarType::Bool:
+      return executorch::aten::ScalarType::Bool;
+    case PyTensorScalarType::UInt16:
+      return executorch::aten::ScalarType::UInt16;
+    case PyTensorScalarType::UInt32:
+      return executorch::aten::ScalarType::UInt32;
+    case PyTensorScalarType::UInt64:
+      return executorch::aten::ScalarType::UInt64;
+  }
+  throw std::runtime_error("Unsupported lightweight Tensor dtype");
+}
+
+PyTensorScalarType from_runtime_scalar_type(executorch::aten::ScalarType type) {
+  switch (type) {
+    case executorch::aten::ScalarType::Byte:
+      return PyTensorScalarType::Byte;
+    case executorch::aten::ScalarType::Char:
+      return PyTensorScalarType::Char;
+    case executorch::aten::ScalarType::Short:
+      return PyTensorScalarType::Short;
+    case executorch::aten::ScalarType::Int:
+      return PyTensorScalarType::Int;
+    case executorch::aten::ScalarType::Long:
+      return PyTensorScalarType::Long;
+    case executorch::aten::ScalarType::Half:
+      return PyTensorScalarType::Half;
+    case executorch::aten::ScalarType::Float:
+      return PyTensorScalarType::Float;
+    case executorch::aten::ScalarType::Double:
+      return PyTensorScalarType::Double;
+    case executorch::aten::ScalarType::ComplexFloat:
+      return PyTensorScalarType::ComplexFloat;
+    case executorch::aten::ScalarType::ComplexDouble:
+      return PyTensorScalarType::ComplexDouble;
+    case executorch::aten::ScalarType::Bool:
+      return PyTensorScalarType::Bool;
+    case executorch::aten::ScalarType::UInt16:
+      return PyTensorScalarType::UInt16;
+    case executorch::aten::ScalarType::UInt32:
+      return PyTensorScalarType::UInt32;
+    case executorch::aten::ScalarType::UInt64:
+      return PyTensorScalarType::UInt64;
+    default:
+      throw std::runtime_error(
+          "ExecuTorch Tensor dtype cannot be represented by NumPy");
+  }
+}
+
+std::shared_ptr<PyTensor> make_py_tensor(
+    const executorch::aten::Tensor& tensor) {
+  if (!tensor.device().is_cpu()) {
+    throw std::runtime_error(
+        "Lightweight Tensor outputs currently support CPU tensors only");
+  }
+  std::vector<uint8_t> dim_order;
+#ifdef USE_ATEN_LIB
+  dim_order.resize(tensor.dim());
+  for (size_t i = 0; i < dim_order.size(); ++i) {
+    dim_order[i] = static_cast<uint8_t>(i);
+  }
+  std::stable_sort(
+      dim_order.begin(), dim_order.end(), [&tensor](uint8_t a, uint8_t b) {
+        return tensor.stride(a) > tensor.stride(b);
+      });
+#else
+  dim_order.assign(tensor.dim_order().begin(), tensor.dim_order().end());
+#endif
+  return PyTensor::from_data(
+      tensor.const_data_ptr(),
+      tensor.nbytes(),
+      std::vector<int64_t>(tensor.sizes().begin(), tensor.sizes().end()),
+      std::vector<int64_t>(tensor.strides().begin(), tensor.strides().end()),
+      dim_order,
+      from_runtime_scalar_type(tensor.scalar_type()));
+}
+
+inline py::list evalues_to_py_list(
     const std::vector<EValue>& outputs,
-    bool clone_outputs = true) {
+    bool clone_outputs = true,
+    bool use_portable_tensors = false) {
+#ifndef EXECUTORCH_PYBIND_USE_ATEN
+  (void)clone_outputs;
+  (void)use_portable_tensors;
+#endif
   const auto outputs_size = outputs.size();
   py::list list(outputs_size);
   for (size_t i = 0; i < outputs_size; ++i) {
@@ -309,6 +450,11 @@ inline py::list get_outputs_as_py_list(
     } else if (Tag::String == v.tag) {
       list[i] = py::cast(std::string(v.toString().data()));
     } else if (Tag::Tensor == v.tag) {
+#if defined(EXECUTORCH_PYBIND_USE_ATEN)
+      if (use_portable_tensors) {
+        list[i] = py::cast(make_py_tensor(v.toTensor()));
+        continue;
+      }
 #ifdef USE_ATEN_LIB
       // Clone so the outputs in python do not share a lifetime with the
       // module object
@@ -323,6 +469,9 @@ inline py::list get_outputs_as_py_list(
       } else {
         list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
       }
+#endif
+#else
+      list[i] = py::cast(make_py_tensor(v.toTensor()));
 #endif
     } else {
       ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -383,7 +532,7 @@ struct PyBundledModule : public BundledModule {
 
     // Convert outputs to py::list
     const auto& outputs = result.get();
-    py::list py_outputs = get_outputs_as_py_list(outputs);
+    py::list py_outputs = evalues_to_py_list(outputs);
 
     Error status = BundledModule::verify_method_outputs(
         method_name, testset_idx, rtol, atol);
@@ -760,6 +909,9 @@ struct PyModule final {
     const auto inputs_size = py::len(inputs);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
+    std::vector<std::shared_ptr<PyTensor>> portable_inputs;
+    portable_inputs.reserve(inputs_size);
+    bool use_portable_tensors = false;
 
 #ifndef USE_ATEN_LIB // Portable mode
     // So the ETensors and their metadata stay in scope for
@@ -780,11 +932,56 @@ struct PyModule final {
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
-      const std::string& type_str = py::str(python_input.get_type());
-      if (type_str == "<class 'torch.Tensor'>") {
+      if (py::isinstance<PyTensor>(python_input) ||
+          PyObject_CheckBuffer(python_input.ptr())) {
+        use_portable_tensors = true;
+        portable_inputs.push_back(
+            py::isinstance<PyTensor>(python_input)
+                ? python_input.cast<std::shared_ptr<PyTensor>>()
+                : std::make_shared<PyTensor>(
+                      py::reinterpret_borrow<py::object>(python_input)));
+#ifdef USE_ATEN_LIB
+        const auto& portable_tensor = portable_inputs.back();
+        const auto& portable_sizes = portable_tensor->sizes_data();
+        const auto& portable_strides = portable_tensor->strides_data();
+        std::vector<int64_t> sizes(
+            portable_sizes.begin(), portable_sizes.end());
+        std::vector<int64_t> strides(
+            portable_strides.begin(), portable_strides.end());
+        auto at_tensor = at::from_blob(
+            portable_tensor->mutable_data(),
+            sizes,
+            strides,
+            at::TensorOptions().dtype(
+                to_runtime_scalar_type(portable_tensor->scalar_type())));
+        cpp_inputs.emplace_back(at_tensor);
+#else
+        const auto& portable_tensor = portable_inputs.back();
+        input_sizes.emplace_back(
+            portable_tensor->sizes_data().begin(),
+            portable_tensor->sizes_data().end());
+        input_strides.emplace_back(
+            portable_tensor->strides_data().begin(),
+            portable_tensor->strides_data().end());
+        input_dim_order.emplace_back(
+            portable_tensor->dim_order_data().begin(),
+            portable_tensor->dim_order_data().end());
+        input_tensors.emplace_back(
+            to_runtime_scalar_type(portable_tensor->scalar_type()),
+            input_sizes.back().size(),
+            input_sizes.back().data(),
+            portable_tensor->mutable_data(),
+            input_dim_order.back().data(),
+            input_strides.back().data(),
+            executorch::aten::TensorShapeDynamism::STATIC);
+        cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
+#endif
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+      } else if (is_torch_tensor(python_input)) {
         auto at_tensor = python_input.cast<at::Tensor>();
 
 #ifdef USE_ATEN_LIB
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         EValue evalue(at_tensor);
 #else
         // convert at::Tensor to torch::executor::Tensor
@@ -829,6 +1026,7 @@ struct PyModule final {
         }
         const auto device = mapped_device.value_or(
             torch::executor::Device(torch::executor::DeviceType::CPU));
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         input_tensors.emplace_back(
             type,
             dim,
@@ -847,6 +1045,7 @@ struct PyModule final {
 #endif
 
         cpp_inputs.push_back(evalue);
+#endif
       } else if (py::isinstance<py::none>(python_input)) {
         cpp_inputs.push_back(EValue());
       } else if (py::isinstance<py::bool_>(python_input)) {
@@ -856,6 +1055,8 @@ struct PyModule final {
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
+        const auto type_str =
+            py::str(py::type::of(python_input)).cast<std::string>();
         throw std::runtime_error(
             "Unsupported python type " + type_str +
             ". Ensure that inputs are passed as a flat list of tensors.");
@@ -872,19 +1073,12 @@ struct PyModule final {
         static_cast<uint32_t>(outputs.error()));
 
     // Retrieve outputs
-    return get_outputs_as_py_list(outputs.get(), clone_outputs);
+    return evalues_to_py_list(
+        outputs.get(), clone_outputs, use_portable_tensors);
   }
 
-  py::list forward(const py::sequence& inputs, bool clone_outputs = true) {
-    return run_method("forward", inputs, clone_outputs);
-  }
-
-  py::list forward_single_input(
-      const torch::Tensor& inputTensor,
-      bool clone_outputs = true) {
-    py::list py_list;
-    py_list.append(py::cast(inputTensor));
-    return run_method("forward", py_list, clone_outputs);
+  py::list forward(const py::object& inputs, bool clone_outputs = true) {
+    return run_method("forward", normalize_inputs(inputs), clone_outputs);
   }
 
   bool has_etdump() {
@@ -935,7 +1129,7 @@ struct PyModule final {
         output.error(),
         "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
         static_cast<uint32_t>(output.error()));
-    return get_outputs_as_py_list(output.get(), clone_outputs);
+    return evalues_to_py_list(output.get(), clone_outputs);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
@@ -1270,12 +1464,22 @@ struct PyMethod final {
         state_(std::move(state)),
         method_(std::move(method)) {}
 
-  void set_inputs(const py::sequence& inputs) {
+  void set_inputs(const py::object& python_inputs) {
+    const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
+    std::vector<std::shared_ptr<PyTensor>> portable_inputs;
+    portable_inputs.reserve(inputs_size);
+    std::vector<TensorPtr> portable_tensor_ptrs;
+    portable_tensor_ptrs.reserve(inputs_size);
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+    bool use_portable_tensors = false;
+#else
+    bool use_portable_tensors = true;
+#endif
 
-#ifndef USE_ATEN_LIB // Portable mode
+#if defined(EXECUTORCH_PYBIND_USE_ATEN) && !defined(USE_ATEN_LIB)
     // So the ETensors and their metadata stay in scope for
     // Module->set_inputs.
     std::vector<TensorPtr> input_tensors;
@@ -1287,11 +1491,55 @@ struct PyMethod final {
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
-      const std::string& type_str = py::str(python_input.get_type());
-      if (type_str == "<class 'torch.Tensor'>") {
+      if (py::isinstance<PyTensor>(python_input) ||
+          PyObject_CheckBuffer(python_input.ptr())) {
+        use_portable_tensors = true;
+        portable_inputs.push_back(
+            py::isinstance<PyTensor>(python_input)
+                ? python_input.cast<std::shared_ptr<PyTensor>>()
+                : std::make_shared<PyTensor>(
+                      py::reinterpret_borrow<py::object>(python_input)));
+#ifdef USE_ATEN_LIB
+        const auto& portable_tensor = portable_inputs.back();
+        const auto& portable_sizes = portable_tensor->sizes_data();
+        const auto& portable_strides = portable_tensor->strides_data();
+        std::vector<int64_t> sizes(
+            portable_sizes.begin(), portable_sizes.end());
+        std::vector<int64_t> strides(
+            portable_strides.begin(), portable_strides.end());
+        auto at_tensor = at::from_blob(
+            portable_tensor->mutable_data(),
+            sizes,
+            strides,
+            at::TensorOptions().dtype(
+                to_runtime_scalar_type(portable_tensor->scalar_type())));
+        cpp_inputs.emplace_back(at_tensor);
+#else
+        const auto& portable_tensor = portable_inputs.back();
+        TensorPtr tensor =
+            for_blob(
+                portable_tensor->mutable_data(),
+                std::vector<int>(
+                    portable_tensor->sizes_data().begin(),
+                    portable_tensor->sizes_data().end()),
+                to_runtime_scalar_type(portable_tensor->scalar_type()))
+                .strides(std::vector<int>(
+                    portable_tensor->strides_data().begin(),
+                    portable_tensor->strides_data().end()))
+                .dim_order(std::vector<uint8_t>(
+                    portable_tensor->dim_order_data().begin(),
+                    portable_tensor->dim_order_data().end()))
+                .dynamism(executorch::aten::TensorShapeDynamism::STATIC)
+                .make_tensor_ptr();
+        portable_tensor_ptrs.push_back(std::move(tensor));
+        cpp_inputs.emplace_back(portable_tensor_ptrs.back());
+#endif
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+      } else if (is_torch_tensor(python_input)) {
         auto at_tensor = python_input.cast<at::Tensor>();
 
 #ifdef USE_ATEN_LIB
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         EValue evalue(at_tensor);
 #else
         // convert at::Tensor to torch::executor::Tensor
@@ -1337,10 +1585,8 @@ struct PyMethod final {
         }
         const auto device =
             mapped_device.value_or(aten::Device(aten::DeviceType::CPU));
-        TensorPtr tensor = for_blob(
-                               mutable_tensor_data_ptr_no_cow(at_tensor),
-                               std::move(sizes),
-                               type)
+        auto* tensor_data = mutable_tensor_data_ptr_no_cow(at_tensor);
+        TensorPtr tensor = for_blob(tensor_data, std::move(sizes), type)
                                .strides(std::move(strides))
                                .dim_order(std::move(dim_order))
                                .dynamism(aten::TensorShapeDynamism::STATIC)
@@ -1351,6 +1597,7 @@ struct PyMethod final {
 #endif
 
         cpp_inputs.push_back(evalue);
+#endif
       } else if (py::isinstance<py::none>(python_input)) {
         cpp_inputs.push_back(EValue());
       } else if (py::isinstance<py::bool_>(python_input)) {
@@ -1360,6 +1607,8 @@ struct PyMethod final {
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
+        const auto type_str =
+            py::str(py::type::of(python_input)).cast<std::string>();
         throw std::runtime_error(
             "Unsupported python type " + type_str +
             ". Ensure that inputs are passed as a flat list of tensors.");
@@ -1375,6 +1624,9 @@ struct PyMethod final {
         "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
         method_->method_meta().name(),
         static_cast<uint32_t>(set_inputs_status));
+    portable_inputs_ = std::move(portable_inputs);
+    portable_tensor_ptrs_ = std::move(portable_tensor_ptrs);
+    use_portable_tensors_ = use_portable_tensors;
   }
 
   void execute() {
@@ -1418,21 +1670,13 @@ struct PyMethod final {
         static_cast<uint32_t>(get_outputs_status));
 
     // Retrieve outputs
-    return get_outputs_as_py_list(result, clone_outputs);
+    return evalues_to_py_list(result, clone_outputs, use_portable_tensors_);
   }
 
-  py::list call(const py::sequence& inputs, bool clone_outputs = true) {
+  py::list call(const py::object& inputs, bool clone_outputs = true) {
     set_inputs(inputs);
     execute();
     return get_outputs(clone_outputs);
-  }
-
-  py::list call_single_input(
-      const torch::Tensor& inputTensor,
-      bool clone_outputs = true) {
-    py::list py_list;
-    py_list.append(py::cast(inputTensor));
-    return call(py_list, clone_outputs);
   }
 
   py::object get_attribute(const std::string& name) {
@@ -1443,10 +1687,12 @@ struct PyMethod final {
         name.c_str(),
         method_->method_meta().name(),
         static_cast<uint32_t>(attr.error()));
-#ifdef USE_ATEN_LIB
+#if defined(EXECUTORCH_PYBIND_USE_ATEN) && defined(USE_ATEN_LIB)
     return py::cast(attr.get());
-#else
+#elif defined(EXECUTORCH_PYBIND_USE_ATEN)
     return py::cast(alias_attensor_to_etensor(attr.get()));
+#else
+    return py::cast(make_py_tensor(attr.get()));
 #endif
   }
 
@@ -1461,6 +1707,14 @@ struct PyMethod final {
   // Method keeps a reference to the program, so we also need to keep this alive
   std::shared_ptr<ProgramState> state_;
   std::unique_ptr<Method> method_;
+  std::vector<std::shared_ptr<PyTensor>> portable_inputs_;
+  std::vector<TensorPtr> portable_tensor_ptrs_;
+  bool use_portable_tensors_ =
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+      false;
+#else
+      true;
+#endif
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
@@ -1499,46 +1753,6 @@ struct PyMethod final {
       const size_t output_size = output_tensor_meta.get().nbytes();
       output_storages_.emplace_back(output_size);
     }
-  }
-
-  py::list get_outputs_as_py_list(
-      const std::vector<EValue>& outputs,
-      bool clone_outputs = true) {
-    const auto outputs_size = outputs.size();
-    py::list list(outputs_size);
-    for (size_t i = 0; i < outputs_size; ++i) {
-      auto& v = outputs[i];
-      if (Tag::None == v.tag) {
-        list[i] = py::none();
-      } else if (Tag::Int == v.tag) {
-        list[i] = py::cast(v.toInt());
-      } else if (Tag::Double == v.tag) {
-        list[i] = py::cast(v.toDouble());
-      } else if (Tag::Bool == v.tag) {
-        list[i] = py::cast(v.toBool());
-      } else if (Tag::String == v.tag) {
-        list[i] = py::cast(std::string(v.toString().data()));
-      } else if (Tag::Tensor == v.tag) {
-#ifdef USE_ATEN_LIB
-        // Clone so the outputs in python do not share a lifetime with the
-        // module object
-        if (clone_outputs) {
-          list[i] = py::cast(v.toTensor().clone());
-        } else {
-          list[i] = py::cast(v.toTensor());
-        }
-#else
-        if (clone_outputs) {
-          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
-        } else {
-          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
-        }
-#endif
-      } else {
-        ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
-      }
-    }
-    return list;
   }
 };
 
@@ -1780,6 +1994,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   auto call_guard = py::
       call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
 
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
+  m.attr("_uses_aten") = true;
+#else
+  m.attr("_uses_aten") = false;
+#endif
+
   // Bind the verification enum to python.
   py::enum_<Program::Verification>(m, "Verification")
       .value("Minimal", Program::Verification::Minimal)
@@ -1883,6 +2103,20 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       },
       call_guard);
 
+  py::class_<PyTensor, std::shared_ptr<PyTensor>>(
+      m, "Tensor", py::buffer_protocol())
+      .def(
+          py::init<const py::object&, const py::object&>(),
+          py::arg("data"),
+          py::arg("dtype") = py::none(),
+          call_guard)
+      .def("numpy", &PyTensor::numpy, call_guard)
+      .def("sizes", &PyTensor::sizes, call_guard)
+      .def("dtype", &PyTensor::dtype, call_guard)
+      .def("nbytes", &PyTensor::nbytes, call_guard)
+      .def_buffer(&PyTensor::buffer)
+      .def("__repr__", &PyTensor::repr, call_guard);
+
   py::class_<PyModule>(m, "ExecuTorchModule")
       .def(
           "plan_execute",
@@ -1919,12 +2153,6 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def(
           "__call__",
           &PyModule::forward,
-          py::arg("inputs") = py::list(),
-          py::arg("clone_outputs") = true,
-          call_guard)
-      .def(
-          "__call__",
-          &PyModule::forward_single_input,
           py::arg("inputs") = py::list(),
           py::arg("clone_outputs") = true,
           call_guard);
@@ -2024,20 +2252,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("clone_outputs") = true,
           call_guard)
       .def(
-          "call",
-          &PyMethod::call_single_input,
-          py::arg("inputs") = py::list(),
-          py::arg("clone_outputs") = true,
-          call_guard)
-      .def(
           "__call__",
           &PyMethod::call,
-          py::arg("inputs") = py::list(),
-          py::arg("clone_outputs") = true,
-          call_guard)
-      .def(
-          "__call__",
-          &PyMethod::call_single_input,
           py::arg("inputs") = py::list(),
           py::arg("clone_outputs") = true,
           call_guard)
