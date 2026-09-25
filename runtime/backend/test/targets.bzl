@@ -7,6 +7,15 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
     runtime.cxx_test(
+        name = "backend_data_test",
+        srcs = ["backend_data_test.cpp"],
+        deps = [
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "backend_options_test",
         srcs = ["backend_options_test.cpp"],
         deps = [
