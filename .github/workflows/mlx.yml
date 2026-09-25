@@ -17,6 +17,7 @@ on:
       - extension/audio/**
       - examples/models/gemma4_31b/**
       - examples/models/muse-glimmer/**
+      - examples/models/nemotron3_diarization/**
       - examples/models/parakeet/**
       - examples/models/supertonic/**
       - examples/models/voxtral_realtime/**
@@ -353,6 +354,31 @@ jobs:
         fi
         echo "Success: built solo_runner, dflash_runner and muse_glimmer_worker"
         echo "::endgroup::"
+
+  test-mlx-nemotron3-diarization-build:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-nemotron3-diarization-build
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        ${CONDA_RUN} make nemotron3-diarization-mlx
+        BIN_DIR=cmake-out/examples/models/nemotron3_diarization
+        test -x "${BIN_DIR}/nemotron3_diarization_runner"
+        test -f "${BIN_DIR}/mlx.metallib"
+        # Ensure the shared install still supplies the speech/LLM runner targets.
+        test -f cmake-out/lib/libextension_asr_runner.a
+        test -f cmake-out/lib/libextension_llm_runner.a
 
   backend-tester:
     needs: run-decision

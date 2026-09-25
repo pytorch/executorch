@@ -103,11 +103,10 @@ def export_cortex_m(model: MicroYolo):
         passes=[QuantizeInputs(edge, [0]), QuantizeOutputs(edge, [0])]
     )
     pass_manager = CortexMPassManager(
-        edge.exported_program(),
         target_config=CortexMTargetConfig(cpu=CortexM.M55),
         use_explicit_layout=True,
     )
-    edge._edge_programs["forward"] = pass_manager.transform()
+    edge = edge.transform(pass_manager)
 
     return edge
 
