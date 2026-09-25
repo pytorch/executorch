@@ -9592,11 +9592,11 @@ class TestExampleLLMScript(TestQNN):
 
         # TODO: Robust testing framework to check accuracy and performance metrics.
         golden_start_with = {
-            "llama3_2-1b": "Simply put, the theory of relativity states that the speed of light",
-            "qwen2_5-0_5b": "Simply put, the theory of relativity states that the laws of physics",
-            "qwen3-0_6b": "Simply put, the theory of relativity states that the laws of physics",
-            "smollm2_135m": "Simply put, the theory of relativity states that the speed of light",
-            "granite-3_3-2b": "Simply put, the theory of relativity states that the laws of physics",
+            "NousResearch/Llama-3.2-1B": "Simply put, the theory of relativity states that the speed of light",
+            "Qwen/Qwen2.5-0.5B": "Simply put, the theory of relativity states that the laws of physics",
+            "Qwen/Qwen3-0.6B": "Simply put, the theory of relativity states that the laws of physics",
+            "HuggingFaceTB/SmolLM2-135M": "Simply put, the theory of relativity states that the speed of light",
+            "ibm-granite/granite-3.3-2b-instruct": "Simply put, the theory of relativity states that the laws of physics",
         }
         assert (
             self.model_name in golden_start_with
@@ -9607,7 +9607,7 @@ class TestExampleLLMScript(TestQNN):
             f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
-            "--decoder_model",
+            "--decoder_model_id",
             self.model_name,
             "--max_seq_len",
             "128",
