@@ -24,8 +24,28 @@ from transformers import (
     Nemotron3DiarizationProcessor,
 )
 
-NEMO_PAD_TO = 16
 MIN_ENCODER_FRAMES = 2
+
+
+class Preprocessor(nn.Module):
+    """PCM with one pre-emphasis history sample and complete STFT windows."""
+
+    def __init__(self, feature_extractor):
+        super().__init__()
+        self.feature_extractor = feature_extractor
+
+    def forward(self, audio, lengths):
+        # lengths contains the valid PCM endpoint and number of valid mel frames.
+        waveform = audio[1:]
+        if self.feature_extractor.preemphasis is not None:
+            waveform = waveform - self.feature_extractor.preemphasis * audio[:-1]
+        positions = torch.arange(1, audio.shape[0], device=audio.device)
+        waveform = waveform.masked_fill(positions >= lengths[0], 0)
+        features = self.feature_extractor._torch_extract_fbank_features(
+            waveform[None], device=audio.device, center=False
+        )
+        frames = torch.arange(features.shape[1], device=audio.device)
+        return features.masked_fill((frames >= lengths[1])[None, :, None], 0)
 
 
 class PreEncode(nn.Module):
@@ -58,19 +78,6 @@ class Encode(nn.Module):
         return self.classifier(encoded.last_hidden_state).sigmoid().float()
 
 
-class FrontendConstants(nn.Module):
-    def __init__(self, feature_extractor, silence):
-        super().__init__()
-        self.register_buffer(
-            "window", torch.hann_window(feature_extractor.win_length, periodic=False)
-        )
-        self.register_buffer("mel_filters", feature_extractor.mel_filters.float())
-        self.register_buffer("silence", silence.detach().float())
-
-    def forward(self):
-        return self.window, self.mel_filters, self.silence
-
-
 def capture_model(model, feature_extractor):
     """Capture backend-independent programs; streaming state stays in the runner."""
     audio = model.config.audio_config
@@ -84,7 +91,7 @@ def capture_model(model, feature_extractor):
     model.eval().requires_grad_(False)
     model.model.audio_tower.set_attn_implementation("sdpa")
     metadata = {
-        "format_version": 1,
+        "format_version": 2,
         "sample_rate": feature_extractor.sampling_rate,
         "hop_length": feature_extractor.hop_length,
         "n_fft": feature_extractor.n_fft,
@@ -92,9 +99,7 @@ def capture_model(model, feature_extractor):
         "d_model": audio.hidden_size,
         "num_speakers": head.num_speakers,
         "subsampling_factor": audio.subsampling_factor,
-        # Preserve the runner's NeMo-compatible final-window padding.
-        "pad_to": NEMO_PAD_TO,
-        "preemphasis": float(feature_extractor.preemphasis),
+        "silence_embedding": model.silence_embeds.detach().float(),
         "spkcache_len": cache.speaker_cache_length,
         "silence_frames": cache.speaker_cache_silence_frames_per_speaker,
         "pred_score_threshold": cache.prediction_score_threshold,
@@ -116,7 +121,23 @@ def capture_model(model, feature_extractor):
             min=MIN_ENCODER_FRAMES,
             max=metadata["max_encoder_frames"],
         )
+        pcm_context = feature_extractor.n_fft + 1 - feature_extractor.hop_length
+        pcm_samples = 104 * feature_extractor.hop_length + pcm_context
         programs = {
+            "preprocessor": export(
+                Preprocessor(feature_extractor),
+                (torch.zeros(pcm_samples), torch.tensor([pcm_samples, 104])),
+                dynamic_shapes=(
+                    {
+                        0: audio.subsampling_factor
+                        * feature_extractor.hop_length
+                        * windows
+                        + pcm_context
+                    },
+                    {},
+                ),
+                strict=False,
+            ),
             "pre_encode": export(
                 PreEncode(model),
                 (torch.zeros(1, 104, audio.num_mel_bins),),
@@ -132,11 +153,6 @@ def capture_model(model, feature_extractor):
                 dynamic_shapes=({1: frames}, {}),
                 strict=False,
             ),
-            "frontend_constants": export(
-                FrontendConstants(feature_extractor, model.silence_embeds),
-                (),
-                strict=False,
-            ),
         }
     return programs, metadata
 
@@ -144,6 +160,9 @@ def capture_model(model, feature_extractor):
 def export_model(model_id, output_dir, revision=None, dtype=torch.bfloat16):
     from executorch.backends.mlx.partitioner import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
+    from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+        XnnpackPartitioner,
+    )
 
     model = Nemotron3DiarizationForAudioFrameClassification.from_pretrained(
         model_id, revision=revision, dtype=dtype
@@ -155,36 +174,20 @@ def export_model(model_id, output_dir, revision=None, dtype=torch.bfloat16):
     edge = to_edge_transform_and_lower(
         programs,
         partitioner={
+            "preprocessor": [XnnpackPartitioner()],
             "pre_encode": [MLXPartitioner()],
             "encode": [MLXPartitioner()],
-            "frontend_constants": [],
         },
         transform_passes={
+            "preprocessor": [],
             "pre_encode": get_default_passes(),
             "encode": get_default_passes(),
-            "frontend_constants": [],
         },
         constant_methods=metadata,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False, _skip_dim_order=True
         ),
     )
-    for name in ("pre_encode", "encode"):
-        calls = [
-            node
-            for node in edge.exported_program(name).graph.nodes
-            if node.op == "call_function"
-        ]
-        delegates = [
-            node for node in calls if "executorch_call_delegate" in str(node.target)
-        ]
-        fallback = [
-            str(node.target)
-            for node in calls
-            if node not in delegates and "getitem" not in str(node.target)
-        ]
-        if len(delegates) != 1 or fallback:
-            raise RuntimeError(f"{name}: expected one MLX partition, got {fallback}")
     program = edge.to_executorch(
         config=ExecutorchBackendConfig(
             extract_delegate_segments=True,

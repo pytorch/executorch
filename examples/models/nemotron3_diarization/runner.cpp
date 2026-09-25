@@ -7,7 +7,7 @@
  */
 
 /*
- * The audio frontend and streaming/cache behavior in this example are adapted
+ * The streaming/cache behavior in this example is adapted
  * from mlx-audio's Nemotron Diarization and Sortformer
  * implementations (https://github.com/Blaizzy/mlx-audio).
  *
@@ -38,20 +38,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <complex>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
 
 #include <executorch/extension/tensor/tensor.h>
-
-// MLX links a different pocketfft version; keep these template symbols
-// separate.
-#define pocketfft nemotron3_pocketfft
-#define POCKETFFT_CACHE_SIZE 1
-#include <pocketfft_hdronly.h>
-#undef POCKETFFT_CACHE_SIZE
-#undef pocketfft
 
 namespace nemotron3 {
 namespace {
@@ -112,10 +103,11 @@ Runner::Runner(const std::string& model_path, StreamingConfig config)
     return execute(model_, name).at(0).toInt();
   };
   const auto real = [this](const char* name) {
-    return static_cast<float>(execute(model_, name).at(0).toDouble());
+    return execute(model_, name).at(0).toDouble();
   };
-  if (integer("format_version") != 1) {
-    throw std::runtime_error("Unsupported Nemotron model format");
+  if (integer("format_version") != 2) {
+    throw std::runtime_error(
+        "Unsupported Nemotron model format; re-export the model");
   }
   sample_rate_ = integer("sample_rate");
   hop_ = integer("hop_length");
@@ -124,19 +116,17 @@ Runner::Runner(const std::string& model_path, StreamingConfig config)
   d_model_ = integer("d_model");
   num_speakers_ = integer("num_speakers");
   factor_ = integer("subsampling_factor");
-  pad_to_ = integer("pad_to");
   cache_capacity_ = integer("spkcache_len");
   silence_frames_ = integer("silence_frames");
   max_encoder_ = integer("max_encoder_frames");
   max_features_ = integer("max_feature_frames");
-  preemphasis_ = real("preemphasis");
   score_threshold_ = real("pred_score_threshold");
   latest_boost_ = real("scores_boost_latest");
   strong_boost_ = real("strong_boost_rate");
   weak_boost_ = real("weak_boost_rate");
   min_positive_ = real("min_pos_scores_rate");
   if (sample_rate_ <= 0 || hop_ <= 0 || hop_ > n_fft_ / 2 || num_mels_ <= 0 ||
-      d_model_ <= 0 || num_speakers_ <= 0 || factor_ != 8 || pad_to_ < 0 ||
+      d_model_ <= 0 || num_speakers_ <= 0 || factor_ != 8 ||
       silence_frames_ < 0 ||
       cache_capacity_ < (silence_frames_ + 1) * num_speakers_ ||
       config_.chunk <= 0 || config_.right_context < 0 || config_.fifo < 0 ||
@@ -145,7 +135,6 @@ Runner::Runner(const std::string& model_path, StreamingConfig config)
       (config_.chunk + config_.right_context) * factor_ > max_features_ ||
       cache_capacity_ + config_.fifo + config_.chunk + config_.right_context >
           max_encoder_ ||
-      !(preemphasis_ >= 0 && preemphasis_ <= 1) ||
       !(score_threshold_ > 0 && score_threshold_ < 1) ||
       !(min_positive_ >= 0 && min_positive_ <= 1) ||
       !std::isfinite(latest_boost_) || latest_boost_ < 0 ||
@@ -154,25 +143,10 @@ Runner::Runner(const std::string& model_path, StreamingConfig config)
     throw std::invalid_argument(
         "Invalid model metadata or streaming configuration");
   }
-  auto constants = execute(model_, "frontend_constants");
-  if (constants.size() != 3) {
-    throw std::runtime_error(
-        "Expected window, mel filters, and silence embedding");
+  silence_ = copy_floats(execute(model_, "silence_embedding").at(0));
+  if (silence_.size() != static_cast<size_t>(d_model_)) {
+    throw std::runtime_error("Unexpected silence embedding dimensions");
   }
-  auto window = copy_floats(constants[0]);
-  mel_filters_ = copy_floats(constants[1]);
-  silence_ = copy_floats(constants[2]);
-  if (window.empty() || window.size() > static_cast<size_t>(n_fft_) ||
-      mel_filters_.size() !=
-          static_cast<size_t>(num_mels_ * (n_fft_ / 2 + 1)) ||
-      silence_.size() != static_cast<size_t>(d_model_)) {
-    throw std::runtime_error("Unexpected frontend constant dimensions");
-  }
-  window_.resize(n_fft_, 0.0f);
-  std::copy(
-      window.begin(),
-      window.end(),
-      window_.begin() + (n_fft_ - window.size()) / 2);
 }
 
 void Runner::reset() {
@@ -184,49 +158,29 @@ void Runner::reset() {
   compressed_ = finished_ = false;
 }
 
-std::vector<float> Runner::features(int64_t count) const {
-  const int64_t bins = n_fft_ / 2 + 1;
-  std::vector<float> output(count * num_mels_, 0.0f);
-  std::vector<float> frame(n_fft_);
-  std::vector<std::complex<float>> spectrum(bins);
-  const auto sample = [this](int64_t position) {
-    if (position < 0 || position >= samples_received_) {
-      return 0.0f;
-    }
-    if (position < sample_offset_) {
-      throw std::logic_error("Missing PCM history for STFT");
-    }
-    return audio_.at(position - sample_offset_);
-  };
-  for (int64_t t = 0; t < count; ++t) {
-    const int64_t global = frames_processed_ + t;
-    if (global >= samples_received_ / hop_) {
-      continue;
-    }
-    for (int64_t j = 0; j < n_fft_; ++j) {
-      const int64_t position = global * hop_ + j - n_fft_ / 2;
-      frame[j] = position >= 0 && position < samples_received_
-          ? (sample(position) - preemphasis_ * sample(position - 1)) *
-              window_[j]
-          : 0.0f;
-    }
-    nemotron3_pocketfft::r2c<float>(
-        {static_cast<size_t>(n_fft_)},
-        {sizeof(float)},
-        {sizeof(std::complex<float>)},
-        0,
-        true,
-        frame.data(),
-        spectrum.data(),
-        1.0f);
-    for (int64_t mel = 0; mel < num_mels_; ++mel) {
-      double power = 0.0;
-      for (int64_t j = 0; j < bins; ++j) {
-        power += std::norm(spectrum[j]) * mel_filters_[mel * bins + j];
-      }
-      output[t * num_mels_ + mel] =
-          std::log(static_cast<float>(power) + 0x1p-24f);
-    }
+std::vector<float> Runner::features(int64_t count) {
+  const int64_t begin = frames_processed_ * hop_ - n_fft_ / 2 - 1;
+  const int64_t samples = (count - 1) * hop_ + n_fft_ + 1;
+  const int64_t first = std::max<int64_t>(begin, 0);
+  const int64_t last = std::min(begin + samples, samples_received_);
+  if (first < sample_offset_) {
+    throw std::logic_error("Missing PCM history for STFT");
+  }
+  std::vector<float> pcm(samples, 0.0f);
+  std::copy_n(
+      audio_.data() + first - sample_offset_,
+      last - first,
+      pcm.data() + first - begin);
+  int64_t lengths[] = {
+      last - begin,
+      std::min(count, samples_received_ / hop_ - frames_processed_)};
+  auto input = from_blob(
+      pcm.data(), {static_cast<SizesType>(samples)}, ScalarType::Float);
+  auto valid = from_blob(lengths, {2}, ScalarType::Long);
+  auto output =
+      copy_floats(execute(model_, "preprocessor", {input, valid}).at(0));
+  if (output.size() != static_cast<size_t>(count * num_mels_)) {
+    throw std::runtime_error("Unexpected preprocessor output dimensions");
   }
   return output;
 }
@@ -240,8 +194,8 @@ Runner::step(int64_t feature_frames, int64_t valid, int64_t central) {
     feature_frames =
         std::max(feature_frames, (kMinEncoderFrames - prefix) * factor_);
   }
-  // Keep the physical padded window: its masked queries still affect the
-  // neighboring valid frame through the subpixel convolution, as in NeMo.
+  // Keep Transformers' physical padding: masked queries still affect the
+  // neighboring valid frame through the subpixel convolution.
   feature_frames += (factor_ - feature_frames % factor_) % factor_;
   if (feature_frames > max_features_) {
     throw std::runtime_error("Feature window exceeds export bound");
@@ -439,11 +393,8 @@ std::vector<float> Runner::feed(const float* audio, size_t count, bool final) {
       const int64_t n = std::min(central, available);
       int64_t window = central + right;
       if (final) {
-        int64_t total_frames = samples_received_ / hop_ + 1;
-        if (pad_to_) {
-          total_frames += (pad_to_ - total_frames % pad_to_) % pad_to_;
-        }
-        window = std::min(window, total_frames - frames_processed_);
+        window =
+            std::min(window, samples_received_ / hop_ + 1 - frames_processed_);
       }
       auto probs = step(window, std::min(window, available), n);
       output.insert(output.end(), probs.begin(), probs.end());

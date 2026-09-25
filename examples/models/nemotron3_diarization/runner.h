@@ -49,7 +49,7 @@ class Runner {
   }
 
  private:
-  std::vector<float> features(int64_t count) const;
+  std::vector<float> features(int64_t count);
   std::vector<float>
   step(int64_t feature_frames, int64_t valid, int64_t central);
   void compress_cache();
@@ -58,12 +58,10 @@ class Runner {
   StreamingConfig config_;
   int64_t sample_rate_, hop_, n_fft_, num_mels_, d_model_, num_speakers_,
       factor_;
-  int64_t pad_to_, cache_capacity_, silence_frames_, max_encoder_,
-      max_features_;
-  float preemphasis_, score_threshold_, latest_boost_, strong_boost_,
-      weak_boost_;
-  float min_positive_;
-  std::vector<float> window_, mel_filters_, silence_;
+  int64_t cache_capacity_, silence_frames_, max_encoder_, max_features_;
+  float score_threshold_, latest_boost_;
+  double strong_boost_, weak_boost_, min_positive_;
+  std::vector<float> silence_;
 
   std::vector<float> audio_, cache_, cache_probs_, fifo_;
   int64_t samples_received_ = 0;

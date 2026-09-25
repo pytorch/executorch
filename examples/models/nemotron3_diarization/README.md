@@ -5,7 +5,7 @@
 python -m pip install git+https://github.com/huggingface/transformers "librosa>=0.10"
 
 # Export (approximate BF16; add --dtype fp32 for comparison with Transformers)
-# Uses the Transformers frontend and NeMo final-window padding.
+# Uses the Transformers frontend.
 python -m executorch.examples.models.nemotron3_diarization.export_nemotron \
   --hf-model nvidia/Nemotron-3-Diarization \
   --output-dir nemotron_exports

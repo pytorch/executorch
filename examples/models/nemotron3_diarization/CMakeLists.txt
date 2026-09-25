@@ -15,24 +15,38 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-if(NOT TARGET mlxdelegate OR NOT TARGET mlx)
+if(NOT TARGET mlxdelegate
+   OR NOT TARGET mlx
+   OR NOT TARGET xnnpack_backend
+)
   message(
-    FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON"
+    FATAL_ERROR
+      "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON and EXECUTORCH_BUILD_XNNPACK=ON"
   )
 endif()
 executorch_target_link_options_shared_lib(mlxdelegate)
+executorch_target_link_options_shared_lib(xnnpack_backend)
 
 add_library(nemotron3_diarization STATIC runner.cpp)
-target_include_directories(
-  nemotron3_diarization
-  PUBLIC ${EXECUTORCH_ROOT}/..
-  PRIVATE ${EXECUTORCH_ROOT}/third-party/pocketfft
-)
+target_include_directories(nemotron3_diarization PUBLIC ${EXECUTORCH_ROOT}/..)
 target_link_libraries(
   nemotron3_diarization
-  PUBLIC executorch extension_module extension_data_loader extension_tensor
+  PUBLIC executorch
+         extension_module
+         extension_data_loader
+         extension_tensor
          extension_flat_tensor
+         optimized_native_cpu_ops_lib
+         cpublas
+         eigen_blas
+         xnnpack_backend
+         XNNPACK
+         xnnpack-microkernels-prod
 )
+if(TARGET kleidiai)
+  target_link_libraries(nemotron3_diarization PUBLIC kleidiai)
+endif()
+executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 add_executable(nemotron3_diarization_runner main.cpp)
 target_include_directories(
   nemotron3_diarization_runner

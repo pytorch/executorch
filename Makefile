@@ -289,7 +289,8 @@ dinov2-cuda-debug:
 
 .PHONY: nemotron3-diarization-mlx
 nemotron3-diarization-mlx:
-	cmake --workflow --preset mlx-release
+	cmake --preset mlx-release -DEXECUTORCH_BUILD_XNNPACK=ON
+	cmake --build --preset mlx-release-install
 	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-mlx
 
 sortformer-cuda:
