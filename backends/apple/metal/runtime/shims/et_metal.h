@@ -403,13 +403,35 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 // for an address that is not a registered view.
 bool metal_register_view(void* view_ptr, void* base_ptr);
 void metal_retain_view(void* view_ptr);
-void metal_unregister_view(void* view_ptr);
+// Returns whether that was the last handle registered at `view_ptr`.
+bool metal_unregister_view(void* view_ptr);
 
-// A view of CPU memory that Metal kernels are to use gets a no-copy buffer of
-// its own, mapped at `view_ptr`. It is counted and released like a view of a
-// Metal buffer, and the buffer goes with its last handle.
-bool metal_register_cpu_view(void* view_ptr, size_t nbytes);
+// Records that `view_ptr`, `view_nbytes` long, is a view of the CPU memory
+// that starts at `region` and is `region_nbytes` long. A region's views and its
+// start are bound into one no-copy buffer over it, the way views of a Metal
+// buffer are bound into that buffer, so that Metal orders their uses. The
+// buffer is made with the region's first view. For memory the runtime
+// allocated (`owned`), it is kept until metal_release_cpu_region(), since views
+// come and go and a new buffer for the same memory would not be ordered with
+// work queued on the old one. Other memory can be freed and reused behind the
+// runtime's back, so its buffer is released, after a wait, with its last view.
+// Views are counted and released like views of a Metal buffer. If a view
+// reaches past `region_nbytes` (the extent is not always known up front), the
+// buffer is replaced by a longer one after queued work is done.
+bool metal_register_cpu_view(
+    void* view_ptr,
+    size_t view_nbytes,
+    void* region,
+    size_t region_nbytes,
+    bool owned);
 bool metal_is_cpu_view(void* ptr);
+// Whether `ptr` is a view of a CPU region or the start of one.
+bool metal_is_cpu_memory(void* ptr);
+// The start of the CPU region `ptr` is a view of, if it is one.
+bool metal_cpu_view_region(void* ptr, void** region);
+// Releases the buffer of the CPU region starting at `region`, after waiting for
+// queued work; call before freeing its memory. Returns whether there was one.
+bool metal_release_cpu_region(void* region);
 
 // Helper functions to access Metal objects
 MTLDevice_t get_metal_device();

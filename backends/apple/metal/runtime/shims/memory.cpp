@@ -47,6 +47,10 @@ std::unordered_map<void*, int32_t> memory_to_n_tensor;
 // it is deleted, so this maps it to the allocation its count went to.
 std::unordered_map<Tensor*, void*> view_owner;
 
+// Size of each CPU allocation the runtime owns, so that views of it can be
+// bound into one Metal buffer over all of it (metal_register_cpu_view).
+std::unordered_map<void*, size_t> cpu_allocation_bytes;
+
 namespace {
 
 // The owned allocation that `handle`, with data at `data_ptr`, lives in, or
@@ -243,6 +247,7 @@ AOTITorchError aoti_torch_empty_strided(
         MemoryAllocationFailed,
         "Failed to call posix_memalign");
     ET_LOG(Debug, "Allocated %lld bytes on CPU", nbytes);
+    cpu_allocation_bytes[ptr] = static_cast<size_t>(nbytes);
   } else {
     ET_CHECK_OR_RETURN_ERROR(
         false,
@@ -292,13 +297,18 @@ static AOTITorchError release_memory(void* data_ptr) {
     memory_it->second -= 1;
     return Error::Ok;
   }
-  if (metal_is_device_pointer(data_ptr)) {
+  auto cpu_allocation = cpu_allocation_bytes.find(data_ptr);
+  if (cpu_allocation != cpu_allocation_bytes.end()) {
+    // The GPU only reaches CPU memory through the buffer of a region of it
+    // (metal_register_cpu_view). If there is one, work queued through it has to
+    // finish before the memory goes; otherwise there is nothing to wait for.
+    metal_release_cpu_region(data_ptr);
+    cpu_allocation_bytes.erase(cpu_allocation);
+    free(data_ptr);
+    ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
+  } else if (metal_is_device_pointer(data_ptr)) {
     metal_deallocate_buffer(data_ptr);
   } else {
-    // Queued GPU work can still read or write this memory through the no-copy
-    // buffer of a view of it (metal_register_cpu_view). That buffer does not
-    // own the memory, so the work has to finish before it is freed.
-    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
     free(data_ptr);
     ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
   }
@@ -329,8 +339,12 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       "Internal error: memory not found during deletion");
 
   if (memory_it->second == NOT_OWN) {
-    // No-op unless this tensor is a view.
-    metal_unregister_view(data_ptr);
+    // No-op unless this tensor is a view. With the last handle at a view's
+    // address gone, nothing is there any more: a later allocation can land on
+    // that address.
+    if (metal_unregister_view(data_ptr)) {
+      memory_to_n_tensor.erase(memory_it);
+    }
     // Give back the count the view held on the allocation it lives in.
     auto owner = view_owner.find(tensor);
     if (owner != view_owner.end()) {
@@ -614,6 +628,17 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // Convert sizes using utility function from utils.h
   std::vector<aten::SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
 
+  // An empty view reads nothing. Its offset can put it at the very end of its
+  // buffer, which may be where the next allocation starts; point it at the
+  // start of its parent instead, so that it is not taken for a view there.
+  int64_t view_numel = 1;
+  for (auto size : sizes) {
+    view_numel *= size;
+  }
+  if (view_numel == 0) {
+    adjusted_data = data_ptr;
+  }
+
   // Convert strides using utility function from utils.h
   std::vector<aten::StridesType> strides =
       convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
@@ -653,10 +678,6 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       InvalidArgument,
       "Failed to create reinterpreted tensor view");
 
-  // Store the tensor so it doesn't get destroyed
-  tensors[tensor.get()] = tensor;
-  *ret_new_tensor = tensor.get();
-
   if (owns_buffer) {
     // The materialized buffer is a new allocation owned by this tensor
     memory_to_n_tensor[tensor_data] = 1;
@@ -671,7 +692,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
           element_size,
           adjusted_data);
 
-      if (metal_is_device_pointer(data_ptr) && !metal_is_cpu_view(data_ptr)) {
+      if (metal_is_device_pointer(data_ptr) && !metal_is_cpu_memory(data_ptr)) {
         // The view shares its parent's Metal buffer and is bound at an
         // offset. It must not get an MTLBuffer of its own: Metal would treat
         // the two as unrelated, and inductor both reads views of a buffer
@@ -684,14 +705,27 @@ AOTITorchError aoti_torch__reinterpret_tensor(
             adjusted_data,
             data_ptr);
       } else {
-        // CPU memory has no Metal buffer to be bound into, so the view gets a
-        // no-copy one of its own, as before.
+        // CPU memory has no Metal buffer of its own. Views of it are bound
+        // into a no-copy buffer over the CPU region they belong to, shared by
+        // all of them, so that Metal orders their uses: for memory the runtime
+        // allocated, the whole allocation; otherwise the region of `self`.
+        void* region = owning_allocation(self, data_ptr);
+        size_t region_nbytes = 0;
+        auto allocation = region != nullptr ? cpu_allocation_bytes.find(region)
+                                            : cpu_allocation_bytes.end();
+        const bool owned = allocation != cpu_allocation_bytes.end();
+        if (owned) {
+          region_nbytes = allocation->second;
+        } else if (!metal_cpu_view_region(data_ptr, &region)) {
+          region = data_ptr;
+          region_nbytes = self->nbytes();
+        }
         ET_CHECK_OR_RETURN_ERROR(
-            metal_register_cpu_view(adjusted_data, tensor->nbytes()),
+            metal_register_cpu_view(
+                adjusted_data, tensor->nbytes(), region, region_nbytes, owned),
             Internal,
-            "Failed to wrap adjusted_data=%p, nbytes=%zu in a Metal buffer",
-            adjusted_data,
-            static_cast<size_t>(tensor->nbytes()));
+            "Failed to wrap the CPU memory of adjusted_data=%p in a Metal buffer",
+            adjusted_data);
       }
 
       memory_to_n_tensor[adjusted_data] = NOT_OWN;
@@ -706,6 +740,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     hold_allocation(
         tensor.get(), adjusted_data, owning_allocation(self, data_ptr));
   }
+
+  // Only now that nothing can fail: a handle whose registration failed must
+  // not be left behind for cleanup to unregister.
+  tensors[tensor.get()] = tensor;
+  *ret_new_tensor = tensor.get();
 
   ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successful");
   return Error::Ok;
@@ -828,6 +867,7 @@ void cleanup_memory() {
   // as its constants land on an address used before.
   memory_to_n_tensor.clear();
   view_owner.clear();
+  cpu_allocation_bytes.clear();
 
   // Clean up Metal resources
   metal_cleanup_resources();
