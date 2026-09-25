@@ -65,9 +65,13 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
     // Optional args that are only relevant for quantized convolution
     // input zero point
     IT in_zero_point = 0,
-    // weight zero point
-    int32_t weight_zero_point = 0,
-    float bias_scale = 1,
+    // weight zero point and bias scale. A stride of 0 keeps every output
+    // channel on the same qparam (per-tensor); a stride of 1 walks one entry
+    // per output channel (per-channel).
+    const int32_t* __restrict__ p_weight_zero_point = nullptr,
+    int32_t weight_zero_point_stride = 0,
+    const float* __restrict__ p_bias_scale = nullptr,
+    int32_t bias_scale_stride = 0,
     float out_scale = 1,
     OT out_zero_point = 0) {
   const float inv_out_scale = 1.f / out_scale;
@@ -89,6 +93,13 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
       int soc = _g * ocpg;
       // Populate all the output channels in the group
       for (int _oc = soc; _oc < soc + ocpg; ++_oc) {
+        int32_t weight_zero_point = 0;
+        float bias_scale = 1.f;
+        if (quantized) {
+          weight_zero_point =
+              p_weight_zero_point[_oc * weight_zero_point_stride];
+          bias_scale = p_bias_scale[_oc * bias_scale_stride];
+        }
         OT* out_plane = out_batch + _oc * oh * ow;
         const WT* weight_batch = p_weight + _oc * wc * wh * ww;
         // We compute one output channel at a time. The computation can be
@@ -193,9 +204,13 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
     // Optional args that are only relevant for quantized convolution
     // input zero point
     IT in_zero_point = 0,
-    // weight zero point
-    int32_t weight_zero_point = 0,
-    float bias_scale = 1,
+    // weight zero point and bias scale. A stride of 0 keeps every output
+    // channel on the same qparam (per-tensor); a stride of 1 walks one entry
+    // per output channel (per-channel).
+    const int32_t* __restrict__ p_weight_zero_point = nullptr,
+    int32_t weight_zero_point_stride = 0,
+    const float* __restrict__ p_bias_scale = nullptr,
+    int32_t bias_scale_stride = 0,
     float out_scale = 1,
     OT out_zero_point = 0,
     // Whether this is a depthwise conv with [KH, KW, OC] weight layout
@@ -222,6 +237,13 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
           int soc = _g * ocpg;
           // Populate all the output channels in the group
           for (int _oc = soc; _oc < soc + ocpg; ++_oc) {
+            int32_t weight_zero_point = 0;
+            float bias_scale = 1.f;
+            if (quantized) {
+              weight_zero_point =
+                  p_weight_zero_point[_oc * weight_zero_point_stride];
+              bias_scale = p_bias_scale[_oc * bias_scale_stride];
+            }
             float acc = p_bias[_oc];
             if (zero_pad_unit_dilation) {
               for (int _wh = 0; _wh < wh; ++_wh) {
@@ -291,8 +313,10 @@ void quantized_conv2d_nchw(
     IntArrayRef dilation,
     int16_t groups,
     int32_t in_zero_point,
-    int32_t weight_zero_point,
-    float bias_scale,
+    const int32_t* __restrict__ p_weight_zero_point,
+    int32_t weight_zero_point_stride,
+    const float* __restrict__ p_bias_scale,
+    int32_t bias_scale_stride,
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
@@ -310,12 +334,6 @@ void quantized_conv2d_nchw(
   // output = [n, oc, oh, ow]
   const int oh = conv1d ? 1 : out.size(2);
   const int ow = conv1d ? out.size(2) : out.size(3);
-
-  ET_CHECK_MSG(
-      weight_zero_point >= -128 && weight_zero_point <= 127,
-      "weight_zero_point %" PRId32
-      " must be in range [-128, 127] for int8 cast",
-      weight_zero_point);
 
   // Handle W8A16 heterogeneous type (int16_t activations, int8_t weights)
   if (out.scalar_type() == ScalarType::Short &&
@@ -344,8 +362,10 @@ void quantized_conv2d_nchw(
         dilation[1],
         groups,
         static_cast<int16_t>(in_zero_point),
-        static_cast<int8_t>(weight_zero_point),
-        bias_scale,
+        p_weight_zero_point,
+        weight_zero_point_stride,
+        p_bias_scale,
+        bias_scale_stride,
         output_scale,
         static_cast<int16_t>(output_zero_point));
     return;
@@ -376,8 +396,10 @@ void quantized_conv2d_nchw(
         dilation[1],                                              \
         groups,                                                   \
         in_zero_point,                                            \
-        weight_zero_point,                                        \
-        bias_scale,                                               \
+        p_weight_zero_point,                                      \
+        weight_zero_point_stride,                                 \
+        p_bias_scale,                                             \
+        bias_scale_stride,                                        \
         output_scale,                                             \
         (ctype)output_zero_point);                                \
     break;                                                        \
@@ -407,8 +429,10 @@ void quantized_conv2d_nhwc_depthwise(
     IntArrayRef dilation,
     int16_t groups,
     int32_t in_zero_point,
-    int32_t weight_zero_point,
-    float bias_scale,
+    const int32_t* __restrict__ p_weight_zero_point,
+    int32_t weight_zero_point_stride,
+    const float* __restrict__ p_bias_scale,
+    int32_t bias_scale_stride,
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
@@ -437,44 +461,47 @@ void quantized_conv2d_nhwc_depthwise(
   // ocpg = oc / groups output channels per group.
   const int ocpg = oc / groups;
 
-#define typed_quantized_conv2d_nhwc_depthwise(ctype, dtype)                  \
-  case ScalarType::dtype: {                                                  \
-    const auto* p_in = input.const_data_ptr<ctype>();                        \
-    const auto* p_weight = weight.const_data_ptr<ctype>();                   \
-    const auto* p_bias = bias.const_data_ptr<int32_t>();                     \
-    auto* p_out = out.mutable_data_ptr<ctype>();                             \
-    for (int _n = 0; _n < n; ++_n) {                                         \
-      const ctype* in_batch = p_in + _n * h * w * c;                         \
-      ctype* out_batch = p_out + _n * oh * ow * oc;                          \
-      for (int _oh = 0; _oh < oh; ++_oh) {                                   \
-        for (int _ow = 0; _ow < ow; ++_ow) {                                 \
-          ctype* out_pixel = out_batch + (_oh * ow + _ow) * oc;              \
-          for (int _g = 0; _g < groups; ++_g) {                              \
-            int soc = _g * ocpg;                                             \
-            for (int _oc = soc; _oc < soc + ocpg; ++_oc) {                   \
-              float acc = p_bias[_oc];                                       \
-              for (int _kh = 0; _kh < kh; ++_kh) {                           \
-                for (int _kw = 0; _kw < kw; ++_kw) {                         \
-                  int ih = _oh * stride[0] + _kh * dilation[0] - padding[0]; \
-                  int iw = _ow * stride[1] + _kw * dilation[1] - padding[1]; \
-                  if (ih >= 0 && ih < h && iw >= 0 && iw < w) {              \
-                    float lhs =                                              \
-                        in_batch[ih * w * c + iw * c + _g] - in_zero_point;  \
-                    float rhs = p_weight[_kh * kw * oc + _kw * oc + _oc] -   \
-                        weight_zero_point;                                   \
-                    acc += lhs * rhs;                                        \
-                  }                                                          \
-                }                                                            \
-              }                                                              \
-              float val = bias_scale * acc;                                  \
-              out_pixel[_oc] = quantize<ctype>(                              \
-                  val, inv_out_scale, (ctype)output_zero_point);             \
-            }                                                                \
-          }                                                                  \
-        }                                                                    \
-      }                                                                      \
-    }                                                                        \
-    break;                                                                   \
+#define typed_quantized_conv2d_nhwc_depthwise(ctype, dtype)                   \
+  case ScalarType::dtype: {                                                   \
+    const auto* p_in = input.const_data_ptr<ctype>();                         \
+    const auto* p_weight = weight.const_data_ptr<ctype>();                    \
+    const auto* p_bias = bias.const_data_ptr<int32_t>();                      \
+    auto* p_out = out.mutable_data_ptr<ctype>();                              \
+    for (int _n = 0; _n < n; ++_n) {                                          \
+      const ctype* in_batch = p_in + _n * h * w * c;                          \
+      ctype* out_batch = p_out + _n * oh * ow * oc;                           \
+      for (int _oh = 0; _oh < oh; ++_oh) {                                    \
+        for (int _ow = 0; _ow < ow; ++_ow) {                                  \
+          ctype* out_pixel = out_batch + (_oh * ow + _ow) * oc;               \
+          for (int _g = 0; _g < groups; ++_g) {                               \
+            int soc = _g * ocpg;                                              \
+            for (int _oc = soc; _oc < soc + ocpg; ++_oc) {                    \
+              const int32_t weight_zero_point =                               \
+                  p_weight_zero_point[_oc * weight_zero_point_stride];        \
+              const float bias_scale = p_bias_scale[_oc * bias_scale_stride]; \
+              float acc = p_bias[_oc];                                        \
+              for (int _kh = 0; _kh < kh; ++_kh) {                            \
+                for (int _kw = 0; _kw < kw; ++_kw) {                          \
+                  int ih = _oh * stride[0] + _kh * dilation[0] - padding[0];  \
+                  int iw = _ow * stride[1] + _kw * dilation[1] - padding[1];  \
+                  if (ih >= 0 && ih < h && iw >= 0 && iw < w) {               \
+                    float lhs =                                               \
+                        in_batch[ih * w * c + iw * c + _g] - in_zero_point;   \
+                    float rhs = p_weight[_kh * kw * oc + _kw * oc + _oc] -    \
+                        weight_zero_point;                                    \
+                    acc += lhs * rhs;                                         \
+                  }                                                           \
+                }                                                             \
+              }                                                               \
+              float val = bias_scale * acc;                                   \
+              out_pixel[_oc] = quantize<ctype>(                               \
+                  val, inv_out_scale, (ctype)output_zero_point);              \
+            }                                                                 \
+          }                                                                   \
+        }                                                                     \
+      }                                                                       \
+    }                                                                         \
+    break;                                                                    \
   }
 
   ScalarType dtype = out.scalar_type();
@@ -497,8 +524,10 @@ void quantized_conv2d_nhwc(
     IntArrayRef dilation,
     int16_t groups,
     int32_t in_zero_point,
-    int32_t weight_zero_point,
-    float bias_scale,
+    const int32_t* __restrict__ p_weight_zero_point,
+    int32_t weight_zero_point_stride,
+    const float* __restrict__ p_bias_scale,
+    int32_t bias_scale_stride,
     float output_scale,
     int32_t output_zero_point,
     Tensor& out) {
@@ -556,8 +585,10 @@ void quantized_conv2d_nhwc(
         dilation[1],
         groups,
         static_cast<int16_t>(in_zero_point),
-        static_cast<int8_t>(weight_zero_point),
-        bias_scale,
+        p_weight_zero_point,
+        weight_zero_point_stride,
+        p_bias_scale,
+        bias_scale_stride,
         output_scale,
         static_cast<int16_t>(output_zero_point),
         is_depthwise);
@@ -589,8 +620,10 @@ void quantized_conv2d_nhwc(
         dilation[1],                                              \
         groups,                                                   \
         in_zero_point,                                            \
-        weight_zero_point,                                        \
-        bias_scale,                                               \
+        p_weight_zero_point,                                      \
+        weight_zero_point_stride,                                 \
+        p_bias_scale,                                             \
+        bias_scale_stride,                                        \
         output_scale,                                             \
         (ctype)output_zero_point,                                 \
         is_depthwise);                                            \
@@ -607,26 +640,25 @@ void quantized_conv2d_nhwc(
 #undef typed_quantized_conv2d_nhwc
 }
 
-Tensor& quantized_conv2d_nchw_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
+void quantized_conv2d_nchw(
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    ET_UNUSED const Tensor& out_multiplier,
-    ET_UNUSED const Tensor& out_shift,
+    int16_t groups,
+    int32_t in_zero_point,
+    int32_t weight_zero_point,
+    float bias_scale,
+    float output_scale,
+    int32_t output_zero_point,
     Tensor& out) {
-  const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
-  const int32_t weight_zero_point_int =
-      weight_zero_point.const_data_ptr<int32_t>()[0];
+  ET_CHECK_MSG(
+      weight_zero_point >= -128 && weight_zero_point <= 127,
+      "weight_zero_point %" PRId32
+      " must be in range [-128, 127] for int8 cast",
+      weight_zero_point);
   quantized_conv2d_nchw(
       input,
       weight,
@@ -636,34 +668,61 @@ Tensor& quantized_conv2d_nchw_out(
       dilation,
       groups,
       in_zero_point,
-      weight_zero_point_int,
-      bias_scale_float,
+      &weight_zero_point,
+      0,
+      &bias_scale,
+      0,
       output_scale,
       output_zero_point,
       out);
-  return out;
 }
 
-Tensor& quantized_conv2d_nhwc_out(
-    ET_UNUSED KernelRuntimeContext& ctx,
+void quantized_conv2d_nhwc_depthwise(
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    const Tensor& weight_zero_point,
-    const Tensor& bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    ET_UNUSED const Tensor& out_multiplier,
-    ET_UNUSED const Tensor& out_shift,
+    int16_t groups,
+    int32_t in_zero_point,
+    int32_t weight_zero_point,
+    float bias_scale,
+    float output_scale,
+    int32_t output_zero_point,
     Tensor& out) {
-  const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
-  const int32_t weight_zero_point_int =
-      weight_zero_point.const_data_ptr<int32_t>()[0];
+  quantized_conv2d_nhwc_depthwise(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      &weight_zero_point,
+      0,
+      &bias_scale,
+      0,
+      output_scale,
+      output_zero_point,
+      out);
+}
+
+void quantized_conv2d_nhwc(
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int16_t groups,
+    int32_t in_zero_point,
+    int32_t weight_zero_point,
+    float bias_scale,
+    float output_scale,
+    int32_t output_zero_point,
+    Tensor& out) {
   quantized_conv2d_nhwc(
       input,
       weight,
@@ -673,12 +732,13 @@ Tensor& quantized_conv2d_nhwc_out(
       dilation,
       groups,
       in_zero_point,
-      weight_zero_point_int,
-      bias_scale_float,
+      &weight_zero_point,
+      0,
+      &bias_scale,
+      0,
       output_scale,
       output_zero_point,
       out);
-  return out;
 }
 
 Tensor& quantized_conv2d_nchw_per_tensor_out(
@@ -1191,6 +1251,88 @@ Tensor& quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out(
       out);
   return out;
 }
+
+// weight_zero_point and bias_scale carry one entry per output channel.
+// out_multiplier/out_shift stay unused, matching the reference
+// implementation, which folds the accumulator scale into bias_scale.
+Tensor& quantized_conv2d_nchw_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    ET_UNUSED const Tensor& out_multiplier,
+    ET_UNUSED const Tensor& out_shift,
+    Tensor& out) {
+  quantized_conv2d_nchw(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point.const_data_ptr<int32_t>(),
+      weight_zero_point.numel() > 1 ? 1 : 0,
+      bias_scale.const_data_ptr<float>(),
+      bias_scale.numel() > 1 ? 1 : 0,
+      output_scale,
+      output_zero_point,
+      out);
+  return out;
+}
+
+// weight_zero_point and bias_scale carry one entry per output channel.
+// out_multiplier/out_shift stay unused, matching the reference
+// implementation, which folds the accumulator scale into bias_scale.
+Tensor& quantized_conv2d_nhwc_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    ET_UNUSED const Tensor& out_multiplier,
+    ET_UNUSED const Tensor& out_shift,
+    Tensor& out) {
+  quantized_conv2d_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point.const_data_ptr<int32_t>(),
+      weight_zero_point.numel() > 1 ? 1 : 0,
+      bias_scale.const_data_ptr<float>(),
+      bias_scale.numel() > 1 ? 1 : 0,
+      output_scale,
+      output_zero_point,
+      out);
+  return out;
+}
+
+// weight_zero_point and bias_scale carry one entry per output channel.
+// out_multiplier/out_shift stay unused, matching the reference
+// implementation, which folds the accumulator scale into bias_scale.
 
 } // namespace native
 } // namespace generic
