@@ -487,3 +487,8 @@ EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES=1 \
 
 If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
 to the Arm team developing this backend, or create an issue on [here](https://www.github.com/pytorch/executorch/issues) and add the "partner: arm" label.
+
+## Further documentation
+
+See [Generating operator support documentation](scripts/docgen/README.md)
+for generation commands, coverage checks, and CI troubleshooting.
