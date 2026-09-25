@@ -1364,6 +1364,64 @@ class TestActivationSpecSharing(unittest.TestCase):
         )
 
 
+class TestDeadChannelWeightScale(unittest.TestCase):
+    """Near-dead weight channels get a live per-channel scale.
+
+    8-bit weights floor at the 8-bit eps, not the 16-bit one, and a channel at
+    the floor takes the median live-channel scale. Otherwise a channel that
+    BatchNorm has all but killed keeps a scale ~1e6x below its neighbours, which
+    the HTP miscomputes, and an int32 bias scale (s_in * s_w) too small to hold
+    its bias, which saturates to ~0.
+    """
+
+    BIAS = 0.9
+
+    def _quantize(self, quant_dtype, is_qat):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+        from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
+            PerChannelParamObserver,
+        )
+        from torchao.quantization.pt2e.quantize_pt2e import (
+            convert_pt2e,
+            prepare_pt2e,
+            prepare_qat_pt2e,
+        )
+
+        torch.manual_seed(0)
+        conv = torch.nn.Conv2d(8, 4, 3)
+        with torch.no_grad():
+            conv.weight[0] *= 1e-8  # dead
+            conv.bias[0] = self.BIAS
+            # near-dead: its scale sits above the 16-bit eps, below the 8-bit one
+            conv.weight[1] *= 1e-4
+        x = torch.randn(1, 8, 8, 8)
+        prepare = prepare_qat_pt2e if is_qat else prepare_pt2e
+        prepared = prepare(
+            torch.export.export(conv, (x,)).module(),
+            make_quantizer(quant_dtype=quant_dtype, is_qat=is_qat),
+        )
+        prepared(x)
+        (observer,) = [
+            m for m in prepared.modules() if isinstance(m, PerChannelParamObserver)
+        ]
+        scale, _ = observer.calculate_qparams()
+        with torch.no_grad():
+            out = convert_pt2e(prepared)(x)
+        return scale, out
+
+    def test_near_dead_channels_get_a_live_scale(self):
+        for quant_dtype in (QuantDtype.use_8a8w, QuantDtype.use_16a8w):
+            for is_qat in (False, True):
+                with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat):
+                    scale, out = self._quantize(quant_dtype, is_qat)
+                    self.assertAlmostEqual(
+                        float(out[0, 0].mean()), self.BIAS, delta=0.01
+                    )
+                    live = float(scale[2:].median())
+                    self.assertEqual(float(scale[0]), live)
+                    self.assertEqual(float(scale[1]), live)
+
+
 class TestIoBindingCheck(unittest.TestCase):
     """_check_io_binding must fire when QNN publishes I/O the signature lacks.
 
