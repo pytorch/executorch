@@ -177,11 +177,15 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
   }
 
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  // args[1] is the `approximate` string
-  // https://fburl.com/code/9omngmyo
-  // currently only `approximate = "tanh"` is supported
+  const std::string approximate = graph.extract_string(args[1]);
+  VK_CHECK_COND(approximate == "none" || approximate == "tanh");
   return add_unary_op_node(
-      graph, args[0], kDummyFloat, kDummyFloat, args[2], "gelu");
+      graph,
+      args[0],
+      kDummyFloat,
+      kDummyFloat,
+      args[2],
+      approximate == "tanh" ? "gelu" : "gelu_erf");
 }
 
 DEFINE_ACTIVATION_FN(abs);
@@ -227,6 +231,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.log10.default, log10);
   VK_REGISTER_OP(aten.round.default, round);
   VK_REGISTER_OP(aten.bitwise_not.default, bitwise_not);
+  VK_REGISTER_OP(aten.logical_not.default, bitwise_not);
 }
 
 } // namespace vkcompute

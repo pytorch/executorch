@@ -21,6 +21,8 @@ binary_scalar_texture:
        - parameter_values: [int32, float]
   shader_variants:
     - NAME: pow_scalar_texture3d
+    - NAME: mul_scalar_texture3d
+      OPERATOR: X * Y
     - NAME: eq_scalar_texture3d
       OPERATOR: equal(X, Y)
       IS_COMPARISON_OP: true

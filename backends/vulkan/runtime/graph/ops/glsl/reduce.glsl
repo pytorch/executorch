@@ -10,6 +10,7 @@
 
 #define PRECISION ${PRECISION}
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+#define T ${texel_load_component_type(DTYPE, STORAGE)}
 
 ${define_active_storage_type(STORAGE)}
 
@@ -45,7 +46,7 @@ layout(constant_id = 6) const int NWORKERS = 4;
 #define MAX_NTHREADS 256
 
 
-shared vec4 shared_vecs[MAX_NTHREADS];
+shared VEC4_T shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
 #include "indexing.glslh"
@@ -103,7 +104,7 @@ void reduce_nonpacked_dim(
   // behaviour that hangs some GPUs. They still take a shared memory slot, but
   // it is one that no in-bounds group aggregates over, so what they leave in it
   // is never read.
-  vec4 accum = vec4(0);
+  VEC4_T accum = VEC4_T(0);
   if (in_bounds) {
     scan_pos[reduce_dim] = 0;
     accum = INIT_ACCUM(load_texel(tin, scan_pos));
@@ -175,10 +176,10 @@ void reduce_packed_dim(
   // behaviour that hangs some GPUs. They still take a shared memory slot, but
   // it is one that no in-bounds group aggregates over, so what they leave in it
   // is never read.
-  vec4 accum = vec4(0);
+  VEC4_T accum = VEC4_T(0);
   if (in_bounds) {
     scan_pos[reduce_dim] = 0;
-    accum = INIT_ACCUM(vec4(load_texel(tin, scan_pos).x));
+    accum = INIT_ACCUM(VEC4_T(load_texel(tin, scan_pos).x));
 
     // Partially accumulate over elements i, i + NWORKERS, i + 2*NWORKERS, ...
     // of the reduction row
@@ -192,7 +193,7 @@ void reduce_packed_dim(
     // padding elements are ignored
     if (scan_pos[reduce_dim] == safe_idx(tin_limits, reduce_dim) - 1 &&
         nspill > 0) {
-      const vec4 intex = load_texel(tin, scan_pos);
+      const VEC4_T intex = load_texel(tin, scan_pos);
       for (int i = 0; i < nspill; i++) {
         accum.x = UPDATE_ACCUM(accum.x, intex[i]);
       }
@@ -213,13 +214,13 @@ void reduce_packed_dim(
     }
     // Each element of the texel is itself a partial maximum; iterate over the
     // texel to find the actual maximum
-    float accum_final = accum.x;
+    T accum_final = accum.x;
     [[unroll]] for (int i = 1; i < 4; i++) {
       accum_final = UPDATE_ACCUM(accum[i], accum_final);
     }
 
     scan_pos[reduce_dim] = tid.x;
-    write_texel(tout, scan_pos, POSTPROCESS(vec4(accum_final, 0, 0, 0)));
+    write_texel(tout, scan_pos, POSTPROCESS(VEC4_T(accum_final, 0, 0, 0)));
   }
 }
 

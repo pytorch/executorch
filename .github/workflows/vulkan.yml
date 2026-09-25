@@ -123,6 +123,8 @@ jobs:
         # Run e2e testing for selected operators.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+        python -m unittest backends/vulkan/test/test_vulkan_graph_builder.py
+        python -m unittest backends/vulkan/test/test_vulkan_transformer.py
 
   build-vulkan-windows-msvc:
     needs: [changed-files, run-decision]
