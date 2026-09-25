@@ -509,7 +509,7 @@ static bool is_packed_strides(
   int64_t max_offset = 0;
   for (int64_t i = 0; i < ndim; i++) {
     if (sizes[i] > 1) {
-      max_offset += (sizes[i] - 1) * strides[i];
+      max_offset += static_cast<int64_t>(sizes[i] - 1) * strides[i];
     }
   }
   return (max_offset + 1) == numel;
@@ -529,17 +529,27 @@ static void* materialize_packed(
     numel *= sizes[i];
   }
 
-  void* dst = metal_allocate_buffer(numel * element_size);
+  bool dst_may_be_in_use = false;
+  void* dst = metal_allocate_buffer_tracking_use(
+      numel * element_size, &dst_may_be_in_use);
   if (!dst)
     return nullptr;
 
-  // The copy is made on the CPU, so what the GPU still has to write to the
-  // source must be there first. That holds for CPU memory too: kernels and
-  // graphs can write it through the no-copy buffer of a view of it
-  // (metal_register_cpu_view). The wait also settles any queued work still
-  // using the buffer `dst` was recycled from.
+  // The copy is made on the CPU, so queued GPU work on either side has to be
+  // done first: writes to the source, if it lies in memory the GPU can write
+  // (other CPU memory is only ever bound by copy, see
+  // ETMetalKernelFunction::setArg), and uses of `dst`, if its buffer was
+  // recycled before the stream last waited.
+  int64_t extent = 1;
+  for (int64_t i = 0; i < ndim; i++) {
+    if (sizes[i] > 1) {
+      extent += static_cast<int64_t>(sizes[i] - 1) * strides[i];
+    }
+  }
   auto* stream = getCurrentMetalStream();
-  if (stream) {
+  if (stream &&
+      (dst_may_be_in_use ||
+       metal_overlaps_gpu_memory(src, extent * element_size))) {
     stream->synchronize(SyncType::COMMIT_AND_WAIT);
   }
 

@@ -215,6 +215,10 @@ static const size_t kMaxHeadroom = 32768; // 32KB
 struct PoolEntry {
     id<MTLBuffer> buffer;
     size_t size;
+    // The stream, and how many waits it had completed, when the buffer was
+    // freed: work queued before that may still use it until the stream waits.
+    ETMetalStream* stream;
+    uint64_t waits;
 };
 
 class MetalBufferPool {
@@ -222,7 +226,7 @@ public:
     explicit MetalBufferPool(size_t max_bytes = 256 * 1024 * 1024)
         : max_bytes_(max_bytes), cached_bytes_(0) {}
 
-    id<MTLBuffer> reuse(size_t size) {
+    id<MTLBuffer> reuse(size_t size, bool* may_be_in_use) {
         auto it = size_map_.lower_bound(size);
         // Use saturating arithmetic to avoid size_t overflow.
         size_t double_size = (size > SIZE_MAX / 2) ? SIZE_MAX : 2 * size;
@@ -234,6 +238,8 @@ public:
 
         auto lru_it = it->second;
         id<MTLBuffer> buffer = lru_it->buffer;
+        ETMetalStream* stream = getCurrentMetalStream();
+        *may_be_in_use = lru_it->stream != stream || lru_it->waits == stream->completedWaits();
         cached_bytes_ -= lru_it->size;
         lru_list_.erase(lru_it);
         size_map_.erase(it);
@@ -250,7 +256,8 @@ public:
             return;
         }
 
-        lru_list_.push_front({buffer, size});
+        ETMetalStream* stream = getCurrentMetalStream();
+        lru_list_.push_front({buffer, size, stream, stream->completedWaits()});
         size_map_.insert({size, lru_list_.begin()});
         cached_bytes_ += size;
 
@@ -329,6 +336,12 @@ static thread_local ETMetalStream* currentStream_ = nullptr;
 extern "C" {
 
 void* metal_allocate_buffer(long bytes) {
+    bool may_be_in_use = false;
+    return metal_allocate_buffer_tracking_use(bytes, &may_be_in_use);
+}
+
+void* metal_allocate_buffer_tracking_use(long bytes, bool* may_be_in_use) {
+    *may_be_in_use = false;
     if (bytes <= 0) {
         ET_LOG(Error, "Invalid Metal buffer allocation size: %ld", bytes);
         return nullptr;
@@ -337,7 +350,7 @@ void* metal_allocate_buffer(long bytes) {
 
     // Check the buffer pool first (best-fit with bounded headroom)
     auto& pool = get_metal_buffer_pool();
-    id<MTLBuffer> buffer = pool.reuse(size);
+    id<MTLBuffer> buffer = pool.reuse(size, may_be_in_use);
     if (buffer) {
         void* ptr = [buffer contents];
         ptr_to_mtl_buffer[ptr] = buffer;
@@ -548,6 +561,25 @@ bool metal_is_device_pointer(void* ptr) {
     id<MTLBuffer> buffer = nil;
     size_t offset = 0;
     return metal_resolve_buffer(ptr, &buffer, &offset);
+}
+
+bool metal_overlaps_gpu_memory(const void* ptr, size_t nbytes) {
+    const auto* begin = static_cast<const uint8_t*>(ptr);
+    auto overlaps = [&](const void* start_ptr, id<MTLBuffer> buffer) {
+        const auto* start = static_cast<const uint8_t*>(start_ptr);
+        return begin < start + [buffer length] && start < begin + nbytes;
+    };
+    for (const auto& pair : ptr_to_mtl_buffer) {
+        if (overlaps(pair.first, pair.second)) {
+            return true;
+        }
+    }
+    for (const auto& pair : cpu_regions) {
+        if (overlaps(pair.first, pair.second.buffer)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_device, bool dst_is_device) {
@@ -1498,7 +1530,12 @@ void ETMetalStream::commit() {
     [commandBuffer_ commit];
     ET_LOG(Debug, "ETMetalStream::commit: Committed buffer %p", commandBuffer_);
 
-    [commandBuffer_ release];
+    // Kept so that commitAndWait() waits for it. Buffers on one queue complete
+    // in order, so it only needs the latest one.
+    if (prevCommandBuffer_) {
+        [prevCommandBuffer_ release];
+    }
+    prevCommandBuffer_ = commandBuffer_;
     commandBuffer_ = nil;
     dispatchCount_ = 0;
 }
@@ -1521,6 +1558,7 @@ void ETMetalStream::commitAndWait() {
     }
 
     dispatchCount_ = 0;
+    completedWaits_++;
     ET_LOG(Debug, "ETMetalStream::commitAndWait: Committed and waited for completion");
 }
 
