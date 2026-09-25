@@ -7619,7 +7619,7 @@ class CummaxTest(OpTestCase):
     def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
         self.shape = shape
         self.dim = dim
-        shape_str = "x".join(str(s) for s in shape)
+        shape_str = "x".join(str(s) for s in shape) or "scalar"
         self.name = f"cummax_dim{dim}_{shape_str}"
 
     @classmethod
@@ -7629,6 +7629,8 @@ class CummaxTest(OpTestCase):
             cls(shape=(3, 4), dim=0),
             cls(shape=(3, 4), dim=1),
             cls(shape=(2, 3, 4), dim=-1),
+            cls(shape=(), dim=0),
+            cls(shape=(), dim=-1),
         ]
 
     def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:

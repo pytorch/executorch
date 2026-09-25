@@ -5349,6 +5349,16 @@ def _cummax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     dim = args[1]
 
     output_slots = P.make_or_get_slots(n)
+    if len(n.args[0].meta["val"].shape) == 0:
+        # MLX rejects any axis on a 0-D array; cummax of a scalar is itself.
+        P.emit(
+            ContiguousNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(output_slots[0]),
+            )
+        )
+        return output_slots
+
     P.emit(
         CummaxNode(
             x=P.slot_to_tid(x),
