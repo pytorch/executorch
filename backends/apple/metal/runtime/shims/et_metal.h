@@ -437,7 +437,8 @@ extern "C" {
 // Memory management functions for Metal
 void* metal_allocate_buffer(long bytes);
 // Like metal_allocate_buffer, and sets `*may_be_in_use` when the buffer comes
-// from the pool and the stream has not waited since it was freed. Buffers are
+// from the pool and the stream has not waited since it was freed. The pool
+// only hands a buffer back to the stream it was freed on. Buffers are
 // recycled without a wait, so work queued before such a buffer was freed may
 // still use it: the CPU must wait for that work before writing it.
 void* metal_allocate_buffer_tracking_use(long bytes, bool* may_be_in_use);
@@ -464,15 +465,19 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 // same command buffer. Registrations are counted: every tensor handle at
 // `view_ptr` holds one, taken with metal_register_view when the view is created
 // or with metal_retain_view when another handle is made for the same address,
-// and gives it back with metal_unregister_view. metal_retain_view does nothing
-// for an address that is not a registered view.
+// and gives it back with metal_unregister_view. metal_retain_view does nothing,
+// and returns false, for an address that is not a registered view.
 bool metal_register_view(void* view_ptr, void* base_ptr);
-void metal_retain_view(void* view_ptr);
+bool metal_retain_view(void* view_ptr);
 // Returns whether that was the last handle registered at `view_ptr`.
 bool metal_unregister_view(void* view_ptr);
+// Whether a handle is registered as a view at `ptr` (metal_register_view or
+// metal_register_cpu_view).
+bool metal_is_view(void* ptr);
 
 // Records that `view_ptr`, `view_nbytes` long, is a view of the CPU memory
-// that starts at `region` and is `region_nbytes` long. A region's views and its
+// that starts at `region` and is `region_nbytes` long. Fails if that would
+// make the region overlap another one. A region's views and its
 // start are bound into one no-copy buffer over it, the way views of a Metal
 // buffer are bound into that buffer, so that Metal orders their uses. The
 // buffer is made with the region's first view. For memory the runtime
@@ -492,6 +497,13 @@ bool metal_register_cpu_view(
 bool metal_is_cpu_view(void* ptr);
 // Whether `ptr` is a view of a CPU region or the start of one.
 bool metal_is_cpu_memory(void* ptr);
+// Finds the memory `ptr` lies in, including a pointer into the middle of a
+// buffer or region that is not registered as a view (e.g. a tensor made from a
+// blob at an offset): sets `*base` to the Metal buffer's start as keyed in
+// ptr_to_mtl_buffer, or to the CPU region's start (`*cpu`), and `*nbytes` to
+// its length. Returns false for memory the GPU cannot reach. It scans every
+// buffer, so it is for registering tensors when they are made.
+bool metal_find_memory(void* ptr, void** base, bool* cpu, size_t* nbytes);
 // The start of the CPU region `ptr` is a view of, if it is one.
 bool metal_cpu_view_region(void* ptr, void** region);
 // Releases the buffer of the CPU region starting at `region`, after waiting for
@@ -537,8 +549,8 @@ bool metal_copy_strided_view(
 extern std::unordered_map<void*, MTLBuffer_t> ptr_to_mtl_buffer;
 
 // Finds the Metal buffer holding `ptr` and how far into it `ptr` is. Handles
-// both a buffer's own address and a registered view. Returns false for memory
-// Metal does not own.
+// a buffer's own address, the start of a CPU region, and a registered view.
+// Returns false for memory Metal does not own.
 bool metal_resolve_buffer(void* ptr, MTLBuffer_t* buffer, size_t* offset);
 
 // A packed, row-major copy of a strided view's elements in a new buffer. The

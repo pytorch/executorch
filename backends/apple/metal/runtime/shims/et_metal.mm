@@ -119,6 +119,59 @@ struct CpuRegion {
     int32_t views;
 };
 std::unordered_map<void*, CpuRegion> cpu_regions;
+
+bool contains(const void* start, id<MTLBuffer> buffer, const void* ptr) {
+    const auto* begin = static_cast<const uint8_t*>(start);
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    return begin <= p && p < begin + [buffer length];
+}
+
+// Finds the memory `ptr` lies in: a Metal buffer, given by the address it is
+// keyed at in ptr_to_mtl_buffer, or a CPU region (`*cpu`). Registered views and
+// buffer or region starts are looked up directly. Any other pointer, such as a
+// tensor made from a blob at an offset into a buffer, is found by address,
+// which scans every buffer: this is for registering such tensors when they are
+// made, not for lookups while running.
+bool find_memory(void* ptr, void** base, bool* cpu) {
+    auto view = ptr_to_view.find(ptr);
+    if (view != ptr_to_view.end()) {
+        *base = view->second.base;
+        *cpu = view->second.cpu;
+        return *cpu ? cpu_regions.find(*base) != cpu_regions.end()
+                    : ptr_to_mtl_buffer.find(*base) != ptr_to_mtl_buffer.end();
+    }
+    if (ptr_to_mtl_buffer.find(ptr) != ptr_to_mtl_buffer.end()) {
+        *base = ptr;
+        *cpu = false;
+        return true;
+    }
+    if (cpu_regions.find(ptr) != cpu_regions.end()) {
+        *base = ptr;
+        *cpu = true;
+        return true;
+    }
+    // A constant's buffer lies inside the buffer of all constants: take the
+    // innermost one, the one the constant's own tensor is bound to.
+    void* found = nullptr;
+    for (const auto& pair : ptr_to_mtl_buffer) {
+        if (contains(pair.first, pair.second, ptr) && pair.first > found) {
+            found = pair.first;
+        }
+    }
+    if (found != nullptr) {
+        *base = found;
+        *cpu = false;
+        return true;
+    }
+    for (const auto& pair : cpu_regions) {
+        if (contains(pair.first, pair.second.buffer, ptr)) {
+            *base = pair.first;
+            *cpu = true;
+            return true;
+        }
+    }
+    return false;
+}
 } // namespace
 
 bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
@@ -248,6 +301,15 @@ bool metal_copy_strided_view(
     }
 }
 
+bool metal_find_memory(void* ptr, void** base, bool* cpu, size_t* nbytes) {
+    if (!find_memory(ptr, base, cpu)) {
+        return false;
+    }
+    *nbytes = *cpu ? [cpu_regions.find(*base)->second.buffer length]
+                   : [ptr_to_mtl_buffer.find(*base)->second length];
+    return true;
+}
+
 // Metal buffer pool with best-fit matching and LRU eviction.
 // On free, buffers are recycled into a sorted pool. On alloc, the smallest
 // buffer >= requested size is returned (if within the headroom bound). When the
@@ -260,8 +322,10 @@ static const size_t kMaxHeadroom = 32768; // 32KB
 struct PoolEntry {
     id<MTLBuffer> buffer;
     size_t size;
-    // The stream, and how many waits it had completed, when the buffer was
-    // freed: work queued before that may still use it until the stream waits.
+    // The stream the buffer was freed on, which alone may reuse it, and how
+    // many waits it had completed then: work queued before that may still use
+    // the buffer until the stream waits again. Like every wait in this backend,
+    // this takes a buffer to be used on the stream that frees it.
     ETMetalStream* stream;
     uint64_t waits;
 };
@@ -277,14 +341,20 @@ public:
         size_t double_size = (size > SIZE_MAX / 2) ? SIZE_MAX : 2 * size;
         size_t size_plus_headroom = (size > SIZE_MAX - kMaxHeadroom) ? SIZE_MAX : size + kMaxHeadroom;
         size_t max_acceptable = std::min(double_size, size_plus_headroom);
+        // Only a buffer freed on this stream: waits here do not cover work
+        // another stream may still have queued on it.
+        ETMetalStream* stream = getCurrentMetalStream();
+        while (it != size_map_.end() && it->first <= max_acceptable &&
+               it->second->stream != stream) {
+            ++it;
+        }
         if (it == size_map_.end() || it->first > max_acceptable) {
             return nil;
         }
 
         auto lru_it = it->second;
         id<MTLBuffer> buffer = lru_it->buffer;
-        ETMetalStream* stream = getCurrentMetalStream();
-        *may_be_in_use = lru_it->stream != stream || lru_it->waits == stream->completedWaits();
+        *may_be_in_use = lru_it->waits == stream->completedWaits();
         cached_bytes_ -= lru_it->size;
         lru_list_.erase(lru_it);
         size_map_.erase(it);
@@ -492,17 +562,19 @@ bool metal_register_view(void* view_ptr, void* base_ptr) {
     return true;
 }
 
-void metal_retain_view(void* view_ptr) {
+bool metal_retain_view(void* view_ptr) {
     auto it = ptr_to_view.find(view_ptr);
-    if (it != ptr_to_view.end()) {
-        it->second.count++;
-        if (it->second.cpu) {
-            auto region = cpu_regions.find(it->second.base);
-            if (region != cpu_regions.end()) {
-                region->second.views++;
-            }
+    if (it == ptr_to_view.end()) {
+        return false;
+    }
+    it->second.count++;
+    if (it->second.cpu) {
+        auto region = cpu_regions.find(it->second.base);
+        if (region != cpu_regions.end()) {
+            region->second.views++;
         }
     }
+    return true;
 }
 
 bool metal_register_cpu_view(
@@ -522,6 +594,19 @@ bool metal_register_cpu_view(
         static_cast<size_t>(static_cast<uint8_t*>(view_ptr) - static_cast<uint8_t*>(region)) + view_nbytes);
     auto it = cpu_regions.find(region);
     if (it == cpu_regions.end() || [it->second.buffer length] < needed) {
+        // Two regions over the same bytes would be two buffers Metal does not
+        // order. That takes memory viewed through two different tensors, such
+        // as a blob inside another one viewed first, which is not supported.
+        const auto* begin = static_cast<const uint8_t*>(region);
+        for (const auto& other : cpu_regions) {
+            const auto* start = static_cast<const uint8_t*>(other.first);
+            if (other.first != region && begin < start + [other.second.buffer length] &&
+                start < begin + needed) {
+                ET_LOG(Error, "metal_register_cpu_view: %zu bytes at %p overlap the region at %p",
+                       needed, region, other.first);
+                return false;
+            }
+        }
         // Default CPU caching: the CPU keeps reading and writing this memory.
         id<MTLBuffer> buffer = [get_metal_device() newBufferWithBytesNoCopy:region
                                                                      length:needed
@@ -550,6 +635,10 @@ bool metal_register_cpu_view(
         view->second.count++;
     }
     return true;
+}
+
+bool metal_is_view(void* ptr) {
+    return ptr_to_view.find(ptr) != ptr_to_view.end();
 }
 
 bool metal_cpu_view_region(void* ptr, void** region) {
