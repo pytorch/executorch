@@ -14,6 +14,8 @@
 #include <thrust/execution_policy.h>
 #include <thrust/sort.h>
 
+#include <new>
+
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/sort.h>
@@ -108,6 +110,27 @@ void launch_permute(
   }
 }
 
+// Stream-ordered scratch for thrust. With par_nosync this keeps each slice sort
+// from blocking on cudaMalloc/cudaFree and synchronizing the stream.
+struct StreamOrderedAllocator {
+  using value_type = char;
+
+  char* allocate(std::ptrdiff_t bytes) {
+    void* ptr = nullptr;
+    if (cudaMallocAsync(&ptr, static_cast<size_t>(bytes), stream) !=
+        cudaSuccess) {
+      throw std::bad_alloc();
+    }
+    return static_cast<char*>(ptr);
+  }
+
+  void deallocate(char* ptr, size_t) {
+    (void)cudaFreeAsync(ptr, stream);
+  }
+
+  cudaStream_t stream;
+};
+
 template <typename T>
 void sort_slice_impl(
     T* keys,
@@ -118,17 +141,16 @@ void sort_slice_impl(
     cudaStream_t stream) {
   auto k = thrust::device_pointer_cast(keys);
   auto v = thrust::device_pointer_cast(values);
+  StreamOrderedAllocator allocator{stream};
+  const auto policy = thrust::cuda::par_nosync(allocator).on(stream);
   if (stable && descending) {
-    thrust::stable_sort_by_key(
-        thrust::cuda::par.on(stream), k, k + n, v, thrust::greater<T>());
+    thrust::stable_sort_by_key(policy, k, k + n, v, thrust::greater<T>());
   } else if (stable) {
-    thrust::stable_sort_by_key(
-        thrust::cuda::par.on(stream), k, k + n, v);
+    thrust::stable_sort_by_key(policy, k, k + n, v);
   } else if (descending) {
-    thrust::sort_by_key(
-        thrust::cuda::par.on(stream), k, k + n, v, thrust::greater<T>());
+    thrust::sort_by_key(policy, k, k + n, v, thrust::greater<T>());
   } else {
-    thrust::sort_by_key(thrust::cuda::par.on(stream), k, k + n, v);
+    thrust::sort_by_key(policy, k, k + n, v);
   }
 }
 

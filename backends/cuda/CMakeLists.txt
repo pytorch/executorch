@@ -16,9 +16,17 @@
 #
 cmake_minimum_required(VERSION 3.26)
 
-set(CMAKE_CXX_STANDARD 17)
+# The .cu shims include vendored c10's safe_numerics.h, whose MSVC-only branch
+# needs C++20 (see the top-level CMakeLists.txt). cxx_std_20 on executorch_core
+# does not reach nvcc, so the CUDA standard has to be raised here too.
+if(WIN32)
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD 20)
+else()
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
