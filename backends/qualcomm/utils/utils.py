@@ -347,8 +347,10 @@ def to_edge_transform_and_lower_to_qnn(
     module: Union[
         torch.nn.Module,
         torch.fx.GraphModule,
+        ExportedProgram,
         Dict[str, torch.nn.Module],
         Dict[str, torch.fx.GraphModule],
+        Dict[str, ExportedProgram],
     ],
     inputs: Union[Tuple[torch.Tensor], Dict[str, Tuple[torch.Tensor]]],
     compiler_specs: Union[List[Any], Dict[str, List[Any]]],
@@ -366,17 +368,19 @@ def to_edge_transform_and_lower_to_qnn(
     Transforms and lowers a given PyTorch module to the QNN backend.
 
     Args:
-        module (Union[torch.nn.Module, torch.fx.GraphModule,Dict[str, torch.nn.Module], Dict[str, torch.fx.GraphModule]]):
-            The PyTorch module or fx.GraphModule to be transformed.
+        module (Union[torch.nn.Module, torch.fx.GraphModule, ExportedProgram, Dict[str, torch.nn.Module], Dict[str, torch.fx.GraphModule], Dict[str, ExportedProgram]]):
+            The PyTorch module or fx.GraphModule to be transformed, or an already captured
+            ExportedProgram to lower as-is.
         inputs (Union[Tuple[torch.Tensor], Dict[str, Tuple[torch.Tensor]]]):
-            The input tensors for the module.
+            The input tensors for the module. Ignored (and may be None) for graphs supplied
+            as an ExportedProgram, which already carries its own example inputs.
         compiler_specs (Union[List[Any], Dict[str, List[Any]]]):
             Compiler specifications for Qualcomm AI Engine Direct.
         constant_methods (Optional[Dict[str, Any]]):
             An optional dictionary mapping method names to constant values returned by those methods in eager mode.
             Often used to store configuration information on Edge models.
         dynamic_shapes (Optional[Dict]):
-            Information about dynamic shapes.
+            Information about dynamic shapes. Ignored for graphs supplied as an ExportedProgram.
         dep_table (Optional[Dict]):
             Dependency table for the transformation passes.
         passes_job (Optional[Union[OrderedDict, Dict[str, OrderedDict]]]):
@@ -473,11 +477,15 @@ def to_edge_transform_and_lower_to_qnn(
     }
 
     for graph_name, m in module.items():
-        ep = torch.export.export(
-            m,
-            inputs[graph_name],
-            dynamic_shapes=dynamic_shapes[graph_name],
-            strict=True,
+        ep = (
+            m
+            if isinstance(m, ExportedProgram)
+            else torch.export.export(
+                m,
+                inputs[graph_name],
+                dynamic_shapes=dynamic_shapes[graph_name],
+                strict=True,
+            )
         )
         option = generate_qnn_executorch_option(compiler_specs[graph_name])
         python_options = flatbuffer_to_option(option)
