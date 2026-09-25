@@ -741,6 +741,28 @@ class TestVulkanBackend(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(TanhModule())
 
+    def test_vulkan_backend_any_dim(self):
+        class AnyDimModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # any() yields a boolean tensor, which cannot go through
+                # torch.allclose, so select through it instead.
+                m = (x > 0).any(dim=-1, keepdim=True)
+                return torch.where(m, torch.full_like(x, 7.0), torch.full_like(x, -3.0))
+
+        # Rows are mostly negative with a positive planted in every third one,
+        # so both branches are exercised. Uniformly random data would put a
+        # positive in every row and make the result all-True.
+        x = -torch.rand(size=(1, 6, 16, 20)) - 0.1
+        for c in range(6):
+            for r in range(16):
+                if (c * 16 + r) % 3 == 0:
+                    x[0, c, r, (c + r) % 20] = 0.5
+
+        self.lower_module_and_test_output(AnyDimModule(), (x,))
+
     def test_vulkan_backend_linear(self):
         class LinearModule(torch.nn.Module):
             def __init__(self):
