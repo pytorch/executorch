@@ -21,6 +21,7 @@
 #include <memory>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <vector>
 
@@ -47,11 +48,40 @@ std::unordered_map<void*, int32_t> memory_to_n_tensor;
 // it is deleted, so this maps it to the allocation its count went to.
 std::unordered_map<Tensor*, void*> view_owner;
 
+// Handles that took a registration on the view at their address
+// (metal_register_view, metal_register_cpu_view or metal_retain_view). Several
+// handles can share an address, e.g. a view and a blob, so only these give one
+// back when they are deleted.
+std::unordered_set<Tensor*> view_handles;
+
+// How many handles are at each address the runtime does not own (blobs and
+// views): the address stays tracked while any of them lives.
+std::unordered_map<void*, int32_t> not_own_handles;
+
 // Size of each CPU allocation the runtime owns, so that views of it can be
 // bound into one Metal buffer over all of it (metal_register_cpu_view).
 std::unordered_map<void*, size_t> cpu_allocation_bytes;
 
 namespace {
+
+// Records one more handle at `ptr`, memory the runtime does not own.
+void add_not_own_handle(void* ptr) {
+  memory_to_n_tensor[ptr] = NOT_OWN;
+  not_own_handles[ptr] += 1;
+}
+
+// The runtime's own CPU allocation that `ptr` lies in, or null.
+void* cpu_allocation_containing(const void* ptr, size_t* nbytes) {
+  const auto* p = static_cast<const uint8_t*>(ptr);
+  for (const auto& allocation : cpu_allocation_bytes) {
+    const auto* begin = static_cast<const uint8_t*>(allocation.first);
+    if (begin <= p && p < begin + allocation.second) {
+      *nbytes = allocation.second;
+      return allocation.first;
+    }
+  }
+  return nullptr;
+}
 
 // The owned allocation that `handle`, with data at `data_ptr`, lives in, or
 // null for memory the runtime does not own, such as a model's constants.
@@ -181,10 +211,6 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr, InvalidArgument, "Failed to create tensor from blob");
 
-  // Store the tensor so it doesn't get destroyed
-  tensors[tensor.get()] = tensor;
-  *ret_new_tensor = tensor.get();
-
   // Check if this memory address is already being tracked
   auto memory_it = memory_to_n_tensor.find(adjusted_data);
   ET_CHECK_OR_RETURN_ERROR(
@@ -193,9 +219,85 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
       "Memory address %p is already being tracked by another tensor",
       adjusted_data);
 
+  // A blob can lie inside memory the runtime already binds for the GPU: a
+  // Metal buffer, a CPU allocation of its own, or a CPU region. It is then
+  // registered as a view of that memory, as aoti_torch__reinterpret_tensor
+  // registers views, and holds the allocation it lies in. Otherwise kernels
+  // would bind it by copy, graphs would not bind it at all, and a view of it
+  // would get a Metal buffer of its own over bytes another buffer covers. This
+  // is decided when the blob is made: a region made later over a blob of plain
+  // CPU memory does not take it in, and views that would make two regions
+  // overlap are refused (metal_register_cpu_view). AOTInductor does not make
+  // blobs over CPU memory.
+  // The tensor is dense (make_tensor_ptr checks its strides), so its bytes
+  // are all it covers.
+  const size_t nbytes = tensor->nbytes();
+  const auto* blob_end = static_cast<const uint8_t*>(adjusted_data) + nbytes;
+  bool registered = false;
+  void* owner = nullptr;
+  if (!metal_is_device_pointer(adjusted_data)) {
+    size_t allocation_nbytes = 0;
+    void* allocation =
+        cpu_allocation_containing(adjusted_data, &allocation_nbytes);
+    void* base = nullptr;
+    bool cpu = false;
+    size_t base_nbytes = 0;
+    if (allocation != nullptr) {
+      ET_CHECK_OR_RETURN_ERROR(
+          blob_end <=
+                  static_cast<const uint8_t*>(allocation) + allocation_nbytes &&
+              metal_register_cpu_view(
+                  adjusted_data,
+                  nbytes,
+                  allocation,
+                  allocation_nbytes,
+                  /*owned=*/true),
+          InvalidArgument,
+          "Blob of %zu bytes at %p does not fit the CPU allocation at %p",
+          nbytes,
+          adjusted_data,
+          allocation);
+      owner = allocation;
+      registered = true;
+    } else if (metal_find_memory(adjusted_data, &base, &cpu, &base_nbytes)) {
+      if (cpu) {
+        ET_CHECK_OR_RETURN_ERROR(
+            metal_register_cpu_view(
+                adjusted_data, nbytes, base, 0, /*owned=*/false),
+            InvalidArgument,
+            "Failed to register blob %p in the CPU region at %p",
+            adjusted_data,
+            base);
+      } else {
+        ET_CHECK_OR_RETURN_ERROR(
+            blob_end <= static_cast<const uint8_t*>(base) + base_nbytes &&
+                metal_register_view(adjusted_data, base),
+            InvalidArgument,
+            "Blob of %zu bytes at %p does not fit the Metal buffer at %p",
+            nbytes,
+            adjusted_data,
+            base);
+        auto base_memory = memory_to_n_tensor.find(base);
+        if (base_memory != memory_to_n_tensor.end() &&
+            base_memory->second != NOT_OWN) {
+          owner = base;
+        }
+      }
+      registered = true;
+    }
+  }
+  hold_allocation(tensor.get(), adjusted_data, owner);
+
+  // Store the tensor so it doesn't get destroyed
+  tensors[tensor.get()] = tensor;
+  *ret_new_tensor = tensor.get();
+  if (registered) {
+    view_handles.insert(tensor.get());
+  }
+
   // Mark this memory as NOT_OWN since tensor created from blob never owns
   // memory
-  memory_to_n_tensor[adjusted_data] = NOT_OWN;
+  add_not_own_handle(adjusted_data);
 
   ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: successful");
   return Error::Ok;
@@ -312,6 +414,8 @@ static AOTITorchError release_memory(void* data_ptr) {
     free(data_ptr);
     ET_LOG(Debug, "aoti_torch_delete_tensor_object: freeing CPU memory");
   }
+  // An op can make its output a blob and then take ownership of it.
+  not_own_handles.erase(data_ptr);
   memory_to_n_tensor.erase(memory_it);
   return Error::Ok;
 }
@@ -339,18 +443,24 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       "Internal error: memory not found during deletion");
 
   if (memory_it->second == NOT_OWN) {
-    // No-op unless this tensor is a view. With the last handle at a view's
-    // address gone, nothing is there any more: a later allocation can land on
-    // that address.
-    if (metal_unregister_view(data_ptr)) {
-      memory_to_n_tensor.erase(memory_it);
-    }
-    // Give back the count the view held on the allocation it lives in.
+    // Give back the count the handle held on the allocation it lives in. That
+    // comes first: it is the only step that can fail.
     auto owner = view_owner.find(tensor);
     if (owner != view_owner.end()) {
-      void* allocation = owner->second;
+      ET_CHECK_OK_OR_RETURN_ERROR(release_memory(owner->second));
       view_owner.erase(owner);
-      ET_CHECK_OK_OR_RETURN_ERROR(release_memory(allocation));
+    }
+    if (view_handles.erase(tensor) != 0) {
+      metal_unregister_view(data_ptr);
+    }
+    // With the last handle at the address gone, nothing is there any more: a
+    // later allocation can land on that address.
+    auto handles = not_own_handles.find(data_ptr);
+    if (handles == not_own_handles.end() || --handles->second <= 0) {
+      if (handles != not_own_handles.end()) {
+        not_own_handles.erase(handles);
+      }
+      memory_to_n_tensor.erase(data_ptr);
     }
     tensors.erase(it);
     ET_LOG(
@@ -657,6 +767,8 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // materialize it into a new contiguous buffer.
   void* tensor_data = adjusted_data;
   bool owns_buffer = false;
+  // Whether the new handle took a registration on the view at its address.
+  bool registered = false;
   if (!is_packed_strides(sizes, strides)) {
     ET_LOG(
         Debug,
@@ -738,11 +850,15 @@ AOTITorchError aoti_torch__reinterpret_tensor(
             adjusted_data);
       }
 
-      memory_to_n_tensor[adjusted_data] = NOT_OWN;
+      add_not_own_handle(adjusted_data);
+      registered = true;
     } else {
       // Another handle at the address of `self`. If `self` is a view, deleting
       // either handle must leave the view registered for the other one.
-      metal_retain_view(data_ptr);
+      registered = metal_retain_view(data_ptr);
+      if (memory_to_n_tensor.find(data_ptr)->second == NOT_OWN) {
+        add_not_own_handle(data_ptr);
+      }
     }
 
     // The new handle keeps the allocation it lives in alive, including when
@@ -755,6 +871,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   // not be left behind for cleanup to unregister.
   tensors[tensor.get()] = tensor;
   *ret_new_tensor = tensor.get();
+  if (registered) {
+    view_handles.insert(tensor.get());
+  }
 
   ET_LOG(Debug, "aoti_torch__reinterpret_tensor: successful");
   return Error::Ok;
@@ -843,7 +962,13 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
   // If the original is a view into a Metal buffer, the new handle is one too,
   // and deleting either must leave the view registered for the other one.
-  metal_retain_view(data_ptr);
+  if (metal_retain_view(data_ptr)) {
+    view_handles.insert(tensor.get());
+  }
+  auto memory = memory_to_n_tensor.find(data_ptr);
+  if (memory != memory_to_n_tensor.end() && memory->second == NOT_OWN) {
+    add_not_own_handle(data_ptr);
+  }
 
   // The new handle keeps the allocation the original lives in alive.
   hold_allocation(
@@ -870,13 +995,13 @@ void cleanup_memory() {
   // tensors map should now be empty, but ensure it's cleared
   tensors.clear();
 
-  // Tensors created from a blob are tracked as NOT_OWN and
-  // aoti_torch_delete_tensor_object leaves their address in the map, since
-  // several of them may alias it. With every tensor gone nothing is tracked
-  // anymore, and a stale entry would make the next model fail to load as soon
-  // as its constants land on an address used before.
+  // With every tensor gone nothing is tracked anymore, and a stale entry would
+  // make the next model fail to load as soon as its constants land on an
+  // address used before.
   memory_to_n_tensor.clear();
+  not_own_handles.clear();
   view_owner.clear();
+  view_handles.clear();
   cpu_allocation_bytes.clear();
 
   // Clean up Metal resources
