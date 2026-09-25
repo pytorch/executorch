@@ -215,7 +215,11 @@ class TransformerBlock(nn.Module):
         ):
             self.feed_forward = LoRAFeedForward(args.dim, args.hidden_dim, args)
         else:
-            self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
+            self.feed_forward = FeedForward(
+                dim=args.dim,
+                hidden_dim=args.hidden_dim,
+                act_fn=args.act_fn.get_function(),
+            )
 
         if isinstance(self.attention, AttentionSkip):
             self.attention_norm = nn.Identity()
@@ -353,6 +357,7 @@ class Transformer(nn.Module):
         self.output_prune_map = params.output_prune_map
         # YOCO (You Only Cache Once) KV sharing configuration.
         self.num_kv_shared_layers = params.num_kv_shared_layers
+        self.layer_types = params.layer_types
 
     def _forward_layers(
         self,
@@ -361,6 +366,7 @@ class Transformer(nn.Module):
         freqs_sin: torch.Tensor,
         attn_options_: Dict,
         seqlen: int,
+        freqs_by_type: Optional[Dict[str, Tuple[torch.Tensor, torch.Tensor]]] = None,
     ) -> Tuple[torch.Tensor, Optional[Any]]:
         """Run transformer layers with YOCO KV sharing support."""
         attn_options_update = None
@@ -379,7 +385,14 @@ class Transformer(nn.Module):
                 if donor_idx in shared_kv:
                     attn_options_["shared_kv"] = shared_kv[donor_idx]
 
-            h, attn_options_update = layer(h, freqs_cos, freqs_sin, attn_options_)
+            # Per-layer-type RoPE: select freqs based on layer type when available.
+            l_cos, l_sin = freqs_cos, freqs_sin
+            if freqs_by_type is not None and self.layer_types is not None:
+                layer_type = self.layer_types[layer_idx]
+                if layer_type in freqs_by_type:
+                    l_cos, l_sin = freqs_by_type[layer_type]
+
+            h, attn_options_update = layer(h, l_cos, l_sin, attn_options_)
 
             if _is_kv_donor_layer(layer_idx, self.n_layers, self.num_kv_shared_layers):
                 assert (
@@ -421,10 +434,23 @@ class Transformer(nn.Module):
             attn_options.get("input_pos"), seqlen
         )
 
+        # Compute per-layer-type freqs when per-layer RoPE is configured.
+        freqs_by_type = None
+        if hasattr(self, "ropes"):
+            input_pos = attn_options.get("input_pos")
+            freqs_by_type = {
+                lt: r.get_freqs(input_pos, seqlen) for lt, r in self.ropes.items()
+            }
+
         attn_options_ = attn_options.copy() if attn_options is not None else {}
 
         h, attn_options_update = self._forward_layers(
-            h, freqs_cos, freqs_sin, attn_options_, seqlen
+            h,
+            freqs_cos,
+            freqs_sin,
+            attn_options_,
+            seqlen,
+            freqs_by_type=freqs_by_type,
         )
 
         if not self.generate_full_logits:
@@ -463,11 +489,35 @@ class Transformer(nn.Module):
         return logits
 
 
+def _build_ropes(model_args: ModelArgs) -> Tuple[Rope, Dict[str, Rope]]:
+    """Build Rope instances, creating per-layer-type ropes when rope_parameters is set.
+
+    Returns (default_rope, ropes_by_type). ropes_by_type is empty when no
+    per-layer-type configuration is provided.
+    """
+    import copy as _copy
+
+    if not model_args.rope_parameters:
+        return Rope(model_args), {}
+
+    ropes: Dict[str, Rope] = {}
+    for layer_type, rope_params in model_args.rope_parameters.items():
+        rope_args = _copy.copy(model_args)
+        if "rope_theta" in rope_params:
+            rope_args.rope_theta = rope_params["rope_theta"]
+            rope_args.rope_freq_base = rope_params["rope_theta"]
+        if "partial_rotary_factor" in rope_params:
+            rope_args.partial_rotary_factor = rope_params["partial_rotary_factor"]
+        ropes[layer_type] = Rope(rope_args)
+    return next(iter(ropes.values())), ropes
+
+
 def construct_transformer(model_args: ModelArgs) -> Transformer:
     """
     Construct a Transformer model from the given model arguments.
     """
-    rope = Rope(model_args)
+    rope, ropes = _build_ropes(model_args)
+
     if model_args.attention_type not in ATTENTION_REGISTRY:
         raise ValueError(
             f"Unknown attention type: {model_args.attention_type}. "
@@ -517,12 +567,20 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             )
             layers.append(transformer_block)
         else:
+            # Select per-layer-type RoPE when available.
+            layer_rope = rope
+            if ropes and model_args.layer_types:
+                layer_type = model_args.layer_types[layer_id]
+                layer_rope = ropes.get(layer_type, rope)
             attention = cls(
-                model_args, layer_id, rope, **model_args.attention_kwargs
+                model_args, layer_id, layer_rope, **model_args.attention_kwargs
             )  # pyre-ignore[45]
             transformer_block = TransformerBlock(
                 model_args, attention, layer_id=layer_id
             )
             layers.append(transformer_block)
 
-    return Transformer(model_args, layers, rope)
+    transformer = Transformer(model_args, layers, rope)
+    if ropes:
+        transformer.ropes = torch.nn.ModuleDict(ropes)
+    return transformer

@@ -56,6 +56,8 @@ class ModelType(str, Enum):
     lfm2_1_2b = "lfm2_1_2b"
     lfm2_5_350m = "lfm2_5_350m"
     lfm2_5_1_2b = "lfm2_5_1_2b"
+    spark_x2_5_1_7b = "spark_x2_5_1_7b"
+    spark_x2_5_4b = "spark_x2_5_4b"
 
 
 class PreqMode(str, Enum):
