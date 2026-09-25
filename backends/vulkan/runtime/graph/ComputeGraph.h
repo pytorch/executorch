@@ -17,6 +17,7 @@
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
+#include <executorch/backends/vulkan/runtime/graph/VulkanCache.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
@@ -225,6 +226,9 @@ class ComputeGraph final {
 
   // Flag to indicate if re-encoding is required
   bool requires_reencode_ = false;
+
+  // Off-graph KV cache, installed by the backend before the graph is built.
+  VulkanCache* kv_cache_ = nullptr;
 
  protected:
   size_t values_in_use_ = 0;
@@ -1195,6 +1199,14 @@ class ComputeGraph final {
   // Set the flag to indicate that re-encoding is required
   inline void set_requires_reencode() noexcept {
     requires_reencode_ = true;
+  }
+
+  inline void set_kv_cache(VulkanCache* cache) noexcept {
+    kv_cache_ = cache;
+  }
+
+  inline VulkanCache* kv_cache() const noexcept {
+    return kv_cache_;
   }
 
   //

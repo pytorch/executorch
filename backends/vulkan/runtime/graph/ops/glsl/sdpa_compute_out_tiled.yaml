@@ -20,6 +20,7 @@ sdpa_compute_out_tiled:
         - parameter_values: [texture3d, texture3d]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
+        - parameter_values: [texture3d, buffer]
     DTYPE:
       - VALUE: float
       - VALUE: half

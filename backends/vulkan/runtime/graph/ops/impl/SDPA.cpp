@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Permute.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/RepeatInterleave.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Slice.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Softmax.h>
@@ -696,7 +697,6 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(
       graph.val_is_none(dropout_p) ||
       graph.extract_scalar<double>(dropout_p) == 0);
-  VK_CHECK_COND(graph.val_is_none(scale));
   // is_causal is assumed to be true in the current implementation.
   VK_CHECK_COND(
       graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
@@ -763,7 +763,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       utils::kWidthPacked);
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : static_cast<float>(graph.extract_scalar<double>(scale));
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -836,6 +838,102 @@ void sdpa_with_kv_cache_impl(
        is_causal,
        scale,
        out});
+}
+
+// Writes this step's K/V into the installed cache's pools and attends over
+// them. Pool shape and dtype come from the cache, so the graph carries neither.
+void update_and_attend_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef q_projected = args[arg_idx++];
+  const ValueRef k_projected = args[arg_idx++];
+  const ValueRef v_projected = args[arg_idx++];
+  const ValueRef input_pos_symint = args[arg_idx++];
+  const ValueRef layer_id = args[arg_idx++];
+  const ValueRef scale = args[arg_idx++];
+  // `out` already carries this dtype; unpacked to keep the arg positions.
+  const ValueRef out_dtype = args[arg_idx++];
+  const ValueRef out = args[arg_idx++];
+  (void)out_dtype;
+
+  VulkanCache* cache = graph.kv_cache();
+  VK_CHECK_COND(cache != nullptr, "update_and_attend: no KV cache installed");
+
+  const int layer = graph.extract_scalar<int>(layer_id);
+  VK_CHECK_COND(
+      layer >= 0 && layer < cache->num_layers(),
+      "update_and_attend: layer out of range");
+
+  const std::vector<int64_t> cache_sizes = cache->pool_sizes(layer);
+
+  const ValueRef k_cache = graph.add_tensor(
+      cache_sizes,
+      cache->pool_dtype(),
+      utils::kWidthPacked,
+      cache->k_buffer(layer));
+  const ValueRef v_cache = graph.add_tensor(
+      cache_sizes,
+      cache->pool_dtype(),
+      utils::kWidthPacked,
+      cache->v_buffer(layer));
+
+  // q/k/v/out are [B, H, S, D] while the pools and the SDPA shaders index
+  // [B, S, H, D], so each crossing swaps the head and sequence dims. The swap
+  // is its own inverse, so one permute_dims value serves both directions.
+  const ValueRef hs_swap = graph.add_scalar_list<int64_t>({0, 2, 1, 3});
+
+  auto swap_hs = [&graph](const ValueRef t) {
+    std::vector<int64_t> sizes = graph.sizes_of(t);
+    std::swap(sizes.at(1), sizes.at(2));
+    return sizes;
+  };
+
+  TmpTensor q_bshd(
+      &graph,
+      swap_hs(q_projected),
+      graph.dtype_of(q_projected),
+      graph.storage_type_of(q_projected),
+      utils::kWidthPacked);
+  TmpTensor k_bshd(
+      &graph,
+      swap_hs(k_projected),
+      graph.dtype_of(k_projected),
+      graph.storage_type_of(k_projected),
+      utils::kWidthPacked);
+  TmpTensor v_bshd(
+      &graph,
+      swap_hs(v_projected),
+      graph.dtype_of(v_projected),
+      graph.storage_type_of(v_projected),
+      utils::kWidthPacked);
+  TmpTensor out_bshd(
+      &graph,
+      swap_hs(out),
+      graph.dtype_of(out),
+      graph.storage_type_of(out),
+      utils::kWidthPacked);
+
+  add_permute_node(graph, q_projected, hs_swap, q_bshd);
+  add_permute_node(graph, k_projected, hs_swap, k_bshd);
+  add_permute_node(graph, v_projected, hs_swap, v_bshd);
+
+  update_cache_impl(graph, {k_bshd, k_cache, input_pos_symint, -1});
+  update_cache_impl(graph, {v_bshd, v_cache, input_pos_symint, -1});
+
+  sdpa_impl(
+      graph,
+      {q_bshd,
+       k_cache,
+       v_cache,
+       input_pos_symint,
+       kDummyValueRef, // attn_mask: LLM mode derives causality from input_pos
+       kDummyValueRef, // dropout_p
+       kDummyValueRef, // is_causal
+       scale,
+       out_bshd});
+
+  add_permute_node(graph, out_bshd, hs_swap, out);
 }
 
 void compute_attn_weight_with_kv_cache_impl(
@@ -997,6 +1095,7 @@ REGISTER_OPERATORS {
       testing.compute_attn_weight_with_kv_cache.default,
       compute_attn_weight_with_kv_cache_impl);
   VK_REGISTER_OP(et_vk.sdpa.default, fused_sdpa_impl);
+  VK_REGISTER_OP(kvcache.update_and_attend.default, update_and_attend_impl);
 }
 
 } // namespace vkcompute

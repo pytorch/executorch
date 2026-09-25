@@ -22,6 +22,7 @@ sdpa_compute_attn_weights_tiled:
         - parameter_values: [texture3d, texture3d]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
+        - parameter_values: [texture3d, buffer]
     combination1:
       parameter_names: [IN_DTYPE, OUT_DTYPE]
       combos:
