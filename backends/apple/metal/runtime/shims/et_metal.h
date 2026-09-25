@@ -230,15 +230,18 @@ class ETMetalKernelFunction {
   void runCommandBlock(std::function<void(void)> f);
 
   // Encodes, on `encoder`, a copy of a strided view (see
-  // metal_record_strided_view) into a new packed buffer, and returns that
-  // buffer. Nothing is committed or waited for: the copy is ordered after the
-  // work already encoded on the stream, which is what fills the view. Leaves
-  // the encoder's pipeline state changed and buffers 28-30 bound; a kernel
-  // function encoding on the same encoder puts its own back (setArg). Returns
-  // nil if `tensor` is not a strided view.
+  // metal_record_strided_view) into a new packed buffer, or into `into` at
+  // `into_offset` if given, which must not overlap the view, and returns the
+  // buffer written. Nothing is committed or waited for: the copy is ordered
+  // after the work already encoded on the stream, which is what fills the view.
+  // Leaves the encoder's pipeline state changed and buffers 28-30 bound; a
+  // kernel function encoding on the same encoder puts its own back (setArg).
+  // Returns nil if `tensor` is not a strided view.
   static MTLBuffer_t encodePackedCopyOfStridedView(
       MTLComputeCommandEncoder_t encoder,
-      const executorch::runtime::etensor::Tensor& tensor);
+      const executorch::runtime::etensor::Tensor& tensor,
+      MTLBuffer_t into = nullptr,
+      size_t into_offset = 0);
 
  private:
   // What this function has bound since startEncoding(). Work encoded on the
@@ -520,8 +523,11 @@ void metal_share_strided_view(const void* from, const void* to);
 void metal_forget_strided_view(const void* tensor);
 bool metal_is_strided_view(const void* tensor);
 // Writes the elements of a strided view, packed in row-major order, to `dst`,
-// which must have room for tensor.nbytes() bytes. Waits for the GPU. Returns
-// false if `tensor` is not a strided view or cannot be packed.
+// which must have room for tensor.nbytes() bytes. Into memory that resolves
+// to a Metal buffer (metal_resolve_buffer) and is not CPU memory, the copy is
+// queued on the stream; otherwise it waits for the GPU. Returns false if
+// `tensor` is not a strided view, cannot be packed, or does not fit `dst`'s
+// buffer.
 bool metal_copy_strided_view(
     const executorch::runtime::etensor::Tensor& tensor,
     void* dst);

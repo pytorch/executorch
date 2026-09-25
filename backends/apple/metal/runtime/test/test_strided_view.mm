@@ -112,6 +112,123 @@ TEST_F(MetalStridedViewTest, PackedCopyGathersTheViewsElements) {
   }
 }
 
+// Copying a strided view into Metal memory stays on the stream: the gather
+// writes straight into the destination, here a view at an offset into another
+// buffer, and nothing is waited for.
+TEST_F(MetalStridedViewTest, CopyOfStridedViewIntoMetalMemoryDoesNotWait) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  const int64_t target_size = 16;
+  const int64_t target_stride = 1;
+  AOTITensorHandle target = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &target_size, &target_stride, kFloat32, kDeviceMps, 0, &target),
+      Error::Ok);
+  auto* target_data = static_cast<float*>(target->mutable_data_ptr());
+  std::fill_n(target_data, 16, -1.0f);
+  const int64_t sizes[2] = {4, 2};
+  const int64_t strides[2] = {2, 1};
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          target, 2, sizes, strides, /*storage_offset=*/4, &out),
+      Error::Ok);
+  const uint64_t waits = getCurrentMetalStream()->completedWaits();
+
+  ASSERT_EQ(aoti_torch_copy_(out, view, /*non_blocking=*/0), Error::Ok);
+  EXPECT_EQ(getCurrentMetalStream()->completedWaits(), waits);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  EXPECT_EQ(
+      std::vector<float>(target_data, target_data + 16),
+      (std::vector<float>{
+          -1, -1, -1, -1, 2, 3, 6, 7, 10, 11, 14, 15, -1, -1, -1, -1}));
+}
+
+// A destination overlapping the view is copied through a packed buffer. One
+// gather straight into it would race: element i of the view (at 2i) is where
+// element 2i - kCount of the destination goes, which an earlier thread writes.
+TEST_F(MetalStridedViewTest, CopyOfStridedViewIntoItsOwnBufferIsCorrect) {
+  constexpr int64_t kCount = 1 << 20;
+  const int64_t base_size = 2 * kCount;
+  const int64_t unit = 1;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &unit, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  auto* data = static_cast<float*>(base->mutable_data_ptr());
+  for (int64_t i = 0; i < base_size; i++) {
+    data[i] = static_cast<float>(i);
+  }
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &kCount, &two, /*storage_offset=*/0, &view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_strided_view(view));
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &kCount, &unit, /*storage_offset=*/kCount, &out),
+      Error::Ok);
+
+  ASSERT_EQ(aoti_torch_copy_(out, view, /*non_blocking=*/0), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  int64_t wrong = 0;
+  for (int64_t i = 0; i < kCount; i++) {
+    wrong += data[kCount + i] != static_cast<float>(2 * i);
+  }
+  EXPECT_EQ(wrong, 0);
+}
+
+// CPU code reads CPU memory directly, so a copy of a strided view into it is
+// done by the time aoti_torch_copy_ returns, even into a view of CPU memory,
+// which has a Metal buffer (metal_register_cpu_view).
+TEST_F(MetalStridedViewTest, CopyOfStridedViewIntoCpuMemoryIsDoneOnReturn) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  const int64_t cpu_size = 12;
+  const int64_t cpu_stride = 1;
+  AOTITensorHandle cpu = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &cpu_size, &cpu_stride, kFloat32, kDeviceCpu, 0, &cpu),
+      Error::Ok);
+  const int64_t sizes[2] = {4, 2};
+  const int64_t strides[2] = {2, 1};
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          cpu, 2, sizes, strides, /*storage_offset=*/4, &out),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_cpu_view(out->mutable_data_ptr()));
+
+  ASSERT_EQ(aoti_torch_copy_(out, view, /*non_blocking=*/0), Error::Ok);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{2, 3, 6, 7, 10, 11, 14, 15}));
+
+  // The start of the CPU allocation is bound into its region's buffer too.
+  AOTITensorHandle start = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          cpu, 2, sizes, strides, /*storage_offset=*/0, &start),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_cpu_memory(start->mutable_data_ptr()));
+  ASSERT_FALSE(metal_is_cpu_view(start->mutable_data_ptr()));
+  ASSERT_EQ(aoti_torch_copy_(start, view, /*non_blocking=*/0), Error::Ok);
+  got = static_cast<const float*>(start->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{2, 3, 6, 7, 10, 11, 14, 15}));
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+}
+
 // A hand-written kernel reads a strided view through a packed copy, encoded
 // on the same encoder the kernel is being set up on.
 TEST_F(MetalStridedViewTest, HandWrittenKernelReadsPackedCopy) {

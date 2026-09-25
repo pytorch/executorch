@@ -193,12 +193,57 @@ bool metal_copy_strided_view(
     const executorch::runtime::etensor::Tensor& tensor,
     void* dst) {
     @autoreleasepool {
+        auto view = strided_views.find(&tensor);
+        if (view == strided_views.end()) {
+            return false;
+        }
+        const size_t nbytes = tensor.nbytes();
+        // Into Metal memory the copy stays on the stream, with nothing to wait
+        // for. CPU code reads CPU memory directly, even with a buffer over it
+        // (metal_register_cpu_view), so a copy into it is made after a wait.
+        id<MTLBuffer> dst_buffer = nil;
+        size_t dst_offset = 0;
+        if (!metal_is_cpu_memory(dst) &&
+            metal_resolve_buffer(dst, &dst_buffer, &dst_offset)) {
+            if (dst_offset + nbytes > [dst_buffer length]) {
+                ET_LOG(Error, "metal_copy_strided_view: %zu bytes at offset %zu do not fit the destination buffer",
+                       nbytes, dst_offset);
+                return false;
+            }
+            id<MTLComputeCommandEncoder> encoder = getCurrentMetalStream()->commandEncoder();
+            if (!encoder) {
+                ET_LOG(Error, "metal_copy_strided_view: no command encoder");
+                return false;
+            }
+            // Gathered straight into `dst`, unless it overlaps the view: one
+            // gather would then read elements another thread already wrote.
+            size_t extent = 0;
+            for (size_t d = 0; d < view->second.sizes.size(); d++) {
+                if (view->second.sizes[d] > 0) {
+                    extent += static_cast<size_t>(view->second.sizes[d] - 1) *
+                        static_cast<size_t>(view->second.strides[d]);
+                }
+            }
+            const auto* src_begin = static_cast<const uint8_t*>(tensor.const_data_ptr());
+            const auto* src_end = src_begin + (extent + 1) * tensor.element_size();
+            const auto* dst_begin = static_cast<const uint8_t*>(dst);
+            if (dst_begin + nbytes <= src_begin || src_end <= dst_begin) {
+                return ETMetalKernelFunction::encodePackedCopyOfStridedView(
+                           encoder, tensor, dst_buffer, dst_offset) != nil;
+            }
+            id<MTLBuffer> packed = ETMetalKernelFunction::encodePackedCopyOfStridedView(encoder, tensor);
+            if (!packed) {
+                return false;
+            }
+            getCurrentMetalStream()->copy(packed, dst_buffer, nbytes, 0, dst_offset, SyncType::NONE);
+            return true;
+        }
         id<MTLBuffer> packed = metal_packed_copy_of_strided_view(tensor);
         if (!packed) {
             return false;
         }
         getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
-        std::memcpy(dst, [packed contents], tensor.nbytes());
+        std::memcpy(dst, [packed contents], nbytes);
         return true;
     }
 }
@@ -906,7 +951,9 @@ std::shared_ptr<ETMetalKernelFunction> gather_kernel(size_t element_size) {
 
 MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
     MTLComputeCommandEncoder_t encoder,
-    const executorch::runtime::etensor::Tensor& tensor) {
+    const executorch::runtime::etensor::Tensor& tensor,
+    MTLBuffer_t into,
+    size_t into_offset) {
     auto it = strided_views.find(&tensor);
     if (it == strided_views.end()) {
         return nil;
@@ -927,13 +974,18 @@ MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
         ET_LOG(Error, "encodePackedCopyOfStridedView: the view is not in a Metal buffer");
         return nil;
     }
-    id<MTLBuffer> dst = [get_metal_device() newBufferWithLength:std::max<size_t>(numel * element_size, 1)
-                                                        options:MTLResourceStorageModeShared];
+    id<MTLBuffer> dst = into;
+    size_t dst_offset = into_offset;
     if (!dst) {
-        ET_LOG(Error, "encodePackedCopyOfStridedView: failed to allocate %zu bytes", numel * element_size);
-        return nil;
+        dst = [get_metal_device() newBufferWithLength:std::max<size_t>(numel * element_size, 1)
+                                              options:MTLResourceStorageModeShared];
+        if (!dst) {
+            ET_LOG(Error, "encodePackedCopyOfStridedView: failed to allocate %zu bytes", numel * element_size);
+            return nil;
+        }
+        [dst autorelease];
+        dst_offset = 0;
     }
-    [dst autorelease];
 
     GatherParams params = {};
     params.ndim = static_cast<uint32_t>(view.sizes.size());
@@ -958,7 +1010,7 @@ MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
     id<MTLComputePipelineState> cps = gather->cps_;
     [encoder setComputePipelineState:cps];
     [encoder setBuffer:src offset:src_offset atIndex:kGatherSrcIndex];
-    [encoder setBuffer:dst offset:0 atIndex:kGatherDstIndex];
+    [encoder setBuffer:dst offset:dst_offset atIndex:kGatherDstIndex];
     [encoder setBytes:&params length:sizeof(params) atIndex:kGatherParamsIndex];
     const uint64_t group = std::min<uint64_t>([cps maxTotalThreadsPerThreadgroup], std::max<size_t>(numel, 1));
     // Straight onto the encoder: the stream's dispatch accounting may flush,
