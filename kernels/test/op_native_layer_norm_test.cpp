@@ -47,6 +47,44 @@ class OpNativeLayerNormTest : public OperatorTest {
   }
 
   template <ScalarType DTYPE>
+  void test_reduced_precision_large_rows() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    // PyTorch native_layer_norm: rows alternating -1/1 and 1/5 have
+    // mean 0/3 and variance 1/4. After rounding, rstd is exactly 1/0.5.
+    for (const int32_t width : {128, 256, 512, 514}) {
+      for (const bool affine : {false, true}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "width=" << width << " affine=" << affine);
+        std::vector<CTYPE> values(2 * width);
+        std::vector<CTYPE> expected_values(2 * width);
+        for (int32_t i = 0; i < width; ++i) {
+          const float sign = i % 2 == 0 ? -1.0f : 1.0f;
+          values[i] = sign;
+          values[width + i] = 3 + 2 * sign;
+          expected_values[i] = expected_values[width + i] =
+              affine ? 2 * sign + 0.5f : sign;
+        }
+        auto input = tf.make({2, width}, values);
+        optional<Tensor> weight;
+        optional<Tensor> bias;
+        if (affine) {
+          weight = tf.full({width}, 2);
+          bias = tf.full({width}, 0.5);
+        }
+        auto out = tf.zeros({2, width});
+        auto mean = tf.zeros({2, 1});
+        auto rstd = tf.zeros({2, 1});
+        op_native_layer_norm_out(
+            input, {width}, weight, bias, 1e-5, out, mean, rstd);
+        EXPECT_TENSOR_EQ(out, tf.make({2, width}, expected_values));
+        EXPECT_TENSOR_EQ(mean, tf.make({2, 1}, {0, 3}));
+        EXPECT_TENSOR_EQ(rstd, tf.make({2, 1}, {1, 0.5}));
+      }
+    }
+  }
+
+  template <ScalarType DTYPE>
   struct NativeLayerNormTestCase {
     using ctype = typename TensorFactory<DTYPE>::ctype;
 
@@ -543,4 +581,12 @@ TEST_F(OpNativeLayerNormTest, NonDefaultDimOrderBiasDies) {
           out0,
           out1,
           out2));
+}
+
+TEST_F(OpNativeLayerNormTest, HalfLargeRows) {
+  test_reduced_precision_large_rows<ScalarType::Half>();
+}
+
+TEST_F(OpNativeLayerNormTest, BFloat16LargeRows) {
+  test_reduced_precision_large_rows<ScalarType::BFloat16>();
 }

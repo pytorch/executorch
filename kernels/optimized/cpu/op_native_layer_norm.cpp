@@ -9,6 +9,7 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 #include <tuple>
+#include <type_traits>
 
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
@@ -72,11 +73,10 @@ void layer_norm(
   const bool gamma_null = gamma_data == nullptr;
   const bool beta_null = beta_data == nullptr;
 
-  // For small normalized dimensions, fall back to the portable scalar
-  // implementation since SIMD vectorization setup/tail-handling overhead
-  // exceeds the benefit for small N.
+  // RowwiseMoments lacks reduced-precision vector loads. The scalar path also
+  // avoids SIMD setup/tail-handling overhead for small normalized dimensions.
   constexpr size_t kSmallNThreshold = 256;
-  if (N < kSmallNThreshold) {
+  if (N < kSmallNThreshold || !std::is_same_v<CTYPE, acc_t<CTYPE>>) {
     layer_norm_scalar<CTYPE>(
         input_data,
         gamma_data,
