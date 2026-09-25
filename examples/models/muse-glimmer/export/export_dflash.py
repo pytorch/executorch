@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import argparse
 import gc
+from typing import TYPE_CHECKING
 
 import torch
-
 from executorch.examples.models.muse_glimmer.export import common
+
+if TYPE_CHECKING:
+    from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
 
 
 def validate_dflash_export_options(backend: str) -> None:
@@ -89,6 +92,26 @@ def _export_cuda_sampler_methods(
             ),
             strict=True,
         ),
+    }
+
+
+def _cuda_propagate_device_config() -> dict[str, PropagateDeviceConfig]:
+    """Keeps the speculative chain's vocabulary-wide tensors on the device."""
+    from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
+
+    device_resident = PropagateDeviceConfig(
+        skip_h2d_for_method_inputs=True,
+        skip_d2h_for_method_outputs=True,
+    )
+    draft = PropagateDeviceConfig(skip_d2h_for_method_outputs=True)
+    return {
+        "embed_text": device_resident,
+        "target_forward_from_embeddings": device_resident,
+        "target_prefill_from_embeddings": device_resident,
+        "draft_forward": draft,
+        "draft_prefill": draft,
+        "dflash_sample_tokens": device_resident,
+        "dflash_verify_speculative": device_resident,
     }
 
 
@@ -326,9 +349,10 @@ def _export_dflash_mlx(
     print("=" * 60)
     print("Exporting target_forward_from_embeddings...")
     print("=" * 60)
-    with common.BoundMethodForward(
-        combined, combined.target_forward_from_embeddings
-    ), torch.no_grad():
+    with (
+        common.BoundMethodForward(combined, combined.target_forward_from_embeddings),
+        torch.no_grad(),
+    ):
         target_from_embeddings_ep = export(
             combined,
             (
@@ -497,7 +521,6 @@ def _export_dflash_cuda(
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
-    from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
     from torch.export import Dim, export
 
     max_prefill = 512
@@ -533,9 +556,10 @@ def _export_dflash_cuda(
     print("=" * 60)
     print("Exporting target_forward_from_embeddings...")
     print("=" * 60)
-    with common.BoundMethodForward(
-        combined, combined.target_forward_from_embeddings
-    ), torch.no_grad():
+    with (
+        common.BoundMethodForward(combined, combined.target_forward_from_embeddings),
+        torch.no_grad(),
+    ):
         target_from_embeddings_ep = export(
             combined,
             (
@@ -577,13 +601,13 @@ def _export_dflash_cuda(
     target_prefill_dim = Dim("target_prefill_seq_len", min=5, max=max_target_prefill)
     print("=" * 60)
     print(
-        "Exporting target_prefill_from_embeddings "
-        f"(T in [5, {max_target_prefill}])..."
+        f"Exporting target_prefill_from_embeddings (T in [5, {max_target_prefill}])..."
     )
     print("=" * 60)
-    with common.BoundMethodForward(
-        combined, combined.target_prefill_from_embeddings
-    ), torch.no_grad():
+    with (
+        common.BoundMethodForward(combined, combined.target_prefill_from_embeddings),
+        torch.no_grad(),
+    ):
         target_prefill_from_embeddings_ep = export(
             combined,
             (
@@ -745,14 +769,7 @@ def _export_dflash_cuda(
                 share_mutable_buffers=_share_graph_mutable_buffers("cuda"),
             ),
             emit_mutable_buffer_names=True,
-            propagate_device_config={
-                "target_prefill_from_embeddings": PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
-                ),
-                "draft_prefill": PropagateDeviceConfig(
-                    skip_d2h_for_method_outputs=True
-                ),
-            },
+            propagate_device_config=_cuda_propagate_device_config(),
         ),
     )
 

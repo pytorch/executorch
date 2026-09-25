@@ -122,7 +122,10 @@ advanced inputs.
 | DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill`, `dflash_sample_tokens`, `dflash_verify_speculative` |
 | DFlash | MLX | `target_forward_from_embeddings`, `embed_text`, `draft_forward` |
 
-Vision adds `vision_encoder` to each method set.
+Vision adds `vision_encoder` to each method set. CUDA DFlash samples draft
+proposals, verifies them, and samples corrections through its two
+`dflash_*` methods, so vocabulary-wide logits and probabilities stay on the
+device; MLX DFlash samples on the host.
 
 ## Build the runners
 
