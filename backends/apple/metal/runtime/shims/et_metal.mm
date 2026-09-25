@@ -1631,12 +1631,11 @@ void ETMetalStream::flush() {
     if (commandBuffer_) {
         [commandBuffer_ commit];
 
-        if (!enableCommitAndContinue_) {
-            // Keep the command buffer for later waiting if commit-and-continue is disabled
-            prevCommandBuffer_ = commandBuffer_;
-        } else {
-            [commandBuffer_ release];
+        // Kept so that commitAndWait() waits for it, as in commit().
+        if (prevCommandBuffer_) {
+            [prevCommandBuffer_ release];
         }
+        prevCommandBuffer_ = commandBuffer_;
         commandBuffer_ = nil;
         dispatchCount_ = 0;
 

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
@@ -318,6 +319,31 @@ class MetalGraphViewTest : public MetalMemoryTest {
     });
   }
 
+  // Queues a large copy, submits it with `submit`, then waits: the copy must
+  // be done, since the pool takes a completed wait to mean that nothing
+  // queued before it still runs.
+  void expectWaitAfterSubmitWaitsForWork(const std::function<void()>& submit) {
+    constexpr int64_t kCount = 1 << 24;
+    AOTITensorHandle input = nullptr;
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            1, &kCount, &kStride, kFloat32, kDeviceMps, 0, &input),
+        Error::Ok);
+    std::fill_n(static_cast<float*>(input->mutable_data_ptr()), kCount, 1.0f);
+    AOTITensorHandle out = nullptr;
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            1, &kCount, &kStride, kFloat32, kDeviceMps, 0, &out),
+        Error::Ok);
+    auto* out_data = static_cast<float*>(out->mutable_data_ptr());
+    std::fill_n(out_data, kCount, 0.0f);
+
+    queueCopy(*input, *out, kCount);
+    submit();
+    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+    EXPECT_EQ(out_data[kCount - 1], 1.0f);
+  }
+
   static constexpr int64_t kMatrixSizes[2] = {2, 2};
   static constexpr int64_t kMatrixStrides[2] = {2, 1};
 };
@@ -596,25 +622,16 @@ TEST_F(MetalGraphViewTest, MaterializingIntoRecycledBufferWaitsForItsWork) {
 // A wait after a plain commit also waits for the committed work: the pool
 // takes a completed wait to mean that nothing queued before it still runs.
 TEST_F(MetalGraphViewTest, WaitAfterCommitWaitsForCommittedWork) {
-  constexpr int64_t kCount = 1 << 24;
-  AOTITensorHandle input = nullptr;
-  ASSERT_EQ(
-      aoti_torch_empty_strided(
-          1, &kCount, &kStride, kFloat32, kDeviceMps, 0, &input),
-      Error::Ok);
-  std::fill_n(static_cast<float*>(input->mutable_data_ptr()), kCount, 1.0f);
-  AOTITensorHandle out = nullptr;
-  ASSERT_EQ(
-      aoti_torch_empty_strided(
-          1, &kCount, &kStride, kFloat32, kDeviceMps, 0, &out),
-      Error::Ok);
-  auto* out_data = static_cast<float*>(out->mutable_data_ptr());
-  std::fill_n(out_data, kCount, 0.0f);
+  expectWaitAfterSubmitWaitsForWork(
+      [] { getCurrentMetalStream()->synchronize(SyncType::COMMIT); });
+}
 
-  queueCopy(*input, *out, kCount);
-  getCurrentMetalStream()->synchronize(SyncType::COMMIT);
-  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
-  EXPECT_EQ(out_data[kCount - 1], 1.0f);
+// Likewise after a flush, with or without commit-and-continue.
+TEST_F(MetalGraphViewTest, WaitAfterFlushWaitsForFlushedWork) {
+  expectWaitAfterSubmitWaitsForWork([] {
+    getCurrentMetalStream()->endKernelCoalescing();
+    getCurrentMetalStream()->flush();
+  });
 }
 
 // A buffer freed before the stream last waited has no work left on it, so
