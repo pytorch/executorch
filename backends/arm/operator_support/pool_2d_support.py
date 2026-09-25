@@ -14,6 +14,9 @@ from typing import cast
 import torch
 import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
+    can_decompose_large_stride_maxpool2d,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -248,6 +251,12 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
         dilation = (
             cast(tuple[int, int], node.args[4]) if len(node.args) >= 5 else (1, 1)
         )
+        ceil_mode = cast(bool, node.args[5]) if len(node.args) >= 6 else False
+
+        if tosa_spec.is_U55_subset and can_decompose_large_stride_maxpool2d(
+            kernel, stride, padding, dilation, ceil_mode, shape
+        ):
+            return True
 
         if not dilation_check(shape, kernel, stride, padding, dilation):
             self.reporter.report_reject(

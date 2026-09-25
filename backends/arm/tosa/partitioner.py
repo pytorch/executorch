@@ -27,30 +27,22 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
-from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
-    can_decompose_large_stride_maxpool2d,
-)
-from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_roll
-from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
-    is_exact_tosa_boundary_bilinear_downscale,
-)
 from executorch.backends.arm._passes.prepare_gather_indices_pass import (
     is_safe_int32_to_int64_gather_boundary,
 )
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.operator_support.roll_support import (
+    is_decomposable_roll_node,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckResolvedTensorShapes,
-    is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.specification import (
-    TosaLoweringContext,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa.specification import TosaLoweringContext
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -67,115 +59,6 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partit
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-
-
-class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
-    """Accept U55 max-pool nodes that backend preprocessing can legalize.
-
-    Non-U55 profiles, including U85, use the standard max-pool support path.
-    This positive check is only for the U55 stride > 3 workaround.
-
-    """
-
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
-        self.tosa_spec = tosa_spec
-
-    def is_node_supported(
-        self,
-        submodules: Mapping[str, torch.nn.Module],
-        node: torch.fx.Node,
-    ) -> bool:
-        """Return True when backend preprocessing can legalize the max pool."""
-        del submodules
-        # The with_indices form is accepted because RemoveGetItemPass runs
-        # before backend preprocessing and canonicalizes value-only users to
-        # max_pool2d.default. If indices are used, RemoveGetItemPass rejects
-        # the node, matching the existing MaxPool2dSupported contract.
-        if not self.tosa_spec.is_U55_subset or node.target not in {
-            exir_ops.edge.aten.max_pool2d.default,
-            exir_ops.edge.aten.max_pool2d_with_indices.default,
-        }:
-            return False
-
-        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
-        return can_decompose_large_stride_maxpool2d(
-            node.args[1],
-            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
-            node.args[3] if len(node.args) >= 4 else (0, 0),
-            node.args[4] if len(node.args) >= 5 else (1, 1),
-            node.args[5] if len(node.args) >= 6 else False,
-            input_shape,
-        )
-
-
-class DecomposableResizeSupported(OperatorSupportBase):
-    """Accept exact boundary bilinear downscales.
-
-    These are decomposed later.
-
-    """
-
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
-        """Initialize the check with the active TOSA specification."""
-        self.tosa_spec = tosa_spec
-
-    def is_node_supported(
-        self,
-        submodules: Mapping[str, torch.nn.Module],
-        node: torch.fx.Node,
-    ) -> bool:
-        """Return True when the resize matches the decomposable boundary case.
-
-        This keeps the node delegatable so a later pass can rewrite it.
-
-        """
-        del submodules
-        return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
-
-
-def _is_decomposable_roll_node(
-    node: torch.fx.Node, tosa_spec: TosaSpecification
-) -> bool:
-    """Return whether backend preprocessing can decompose a roll node."""
-    if node.target not in {
-        torch.ops.aten.roll.default,
-        exir_ops.edge.aten.roll.default,
-    }:
-        return False
-    if (
-        tosa_spec.support_integer()
-        and not tosa_spec.support_float()
-        and not is_quantized(node)
-    ):
-        return False
-    input_node = ensure_type(torch.fx.Node, node.args[0])
-    input_tensor = get_first_fake_tensor(input_node)
-    if not 0 < len(input_tensor.shape) <= MAX_RANK:
-        return False
-    if input_tensor.dtype not in {torch.float16, torch.float32} and not (
-        input_tensor.dtype == torch.bfloat16 and tosa_spec.support_extension("bf16")
-    ):
-        return False
-
-    dims = node.args[2] if len(node.args) > 2 else ()
-    return can_decompose_roll(input_tensor.shape, node.args[1], dims)
-
-
-class DecomposableRollSupported(OperatorSupportBase):
-    """Accept static rolls that backend preprocessing can decompose."""
-
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
-        """Initialize the check with the active TOSA specification."""
-        self.tosa_spec = tosa_spec
-
-    def is_node_supported(
-        self,
-        submodules: Mapping[str, torch.nn.Module],
-        node: torch.fx.Node,
-    ) -> bool:
-        """Return True when backend preprocessing can decompose the roll."""
-        del submodules
-        return _is_decomposable_roll_node(node, self.tosa_spec)
 
 
 def _is_custom_partition_op(
@@ -564,7 +447,6 @@ class TOSAPartitioner(Partitioner):
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self._requires_resolved_tensor_shapes = False
-        self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
 
@@ -887,11 +769,6 @@ class TOSAPartitioner(Partitioner):
             containing_program,
             reporter,
             additional_checks=additional_checks,
-            additional_positive_checks=[
-                self._decomposable_resize_support,
-                DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
-                DecomposableRollSupported(self.tosa_spec),
-            ],
             additional_positive_overrides=positive_overrides,
         )
 
@@ -1031,7 +908,7 @@ class TOSAPartitioner(Partitioner):
             ):
                 return False
             if node.target in ops_to_not_decompose_conditionally:
-                return _is_decomposable_roll_node(node, self.tosa_spec)
+                return is_decomposable_roll_node(node, self.tosa_spec)
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp
