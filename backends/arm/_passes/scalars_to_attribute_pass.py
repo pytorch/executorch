@@ -74,10 +74,18 @@ class ScalarsToAttributePass(ArmPass):
                 shape = get_first_fake_tensor(arg).shape
                 biggest_rank = max(biggest_rank, len(shape))
 
+        # rsub.Scalar takes alpha positionally, where add and sub keep it
+        # keyword-only, so the loop would convert it -- and sub.Tensor rejects a
+        # tensor there.
+        # DecomposeAddSubAlphaPass has already folded away any alpha that
+        # changes the result, so whatever is left here is a unit one and drops
+        # out with the rewrite. sub.Tensor would reject it as a tensor anyway.
+        operands = n.args[:2] if n.target == torch.ops.aten.rsub.Scalar else n.args
+
         modified = False
         output_fake_tensor = get_first_fake_tensor(n)
         new_args: list[Argument] = []
-        for arg in n.args:
+        for arg in operands:
             if isinstance(arg, Node):
                 new_args.append(arg)
                 continue
@@ -107,20 +115,31 @@ class ScalarsToAttributePass(ArmPass):
                     float_tensor, static_shapes=True
                 )
                 new_args.append(get_attr_node)
-            n.args = tuple(new_args)
-
-            # Replace rsub.Scalar with sub.Tensor as retracing will fail otherwise
-            if n.target == torch.ops.aten.rsub.Scalar:
-                with graph_module.graph.inserting_after(n):
-                    reversed_args = (n.args[1], n.args[0])
-                    sub = graph_module.graph.create_node(
-                        "call_function", torch.ops.aten.sub.Tensor, reversed_args, {}
-                    )
-                    n.replace_all_uses_with(sub)
-                    sub.meta["val"] = n.meta["val"]
-                graph_module.graph.erase_node(n)
             modified = True
-        return modified
+
+        # Nothing converted means nothing to rewrite: an integer rsub over an
+        # integer tensor keeps its own spelling rather than becoming a sub.
+        if not modified:
+            return False
+
+        n.args = tuple(new_args)
+
+        # Replace rsub.Scalar with sub.Tensor as retracing will fail otherwise.
+        # Needs the complete argument list, so it runs after the loop.
+        if n.target == torch.ops.aten.rsub.Scalar:
+            with graph_module.graph.inserting_after(n):
+                # sub(a, b, alpha) is a - alpha * b and rsub(self, other, alpha)
+                # is other - alpha * self, so the swap lands self under alpha.
+                sub = graph_module.graph.create_node(
+                    "call_function",
+                    torch.ops.aten.sub.Tensor,
+                    (n.args[1], n.args[0]),
+                    {},
+                )
+                n.replace_all_uses_with(sub)
+                sub.meta["val"] = n.meta["val"]
+            graph_module.graph.erase_node(n)
+        return True
 
     def handle_control_nodes(self, graph_module: GraphModule) -> bool:
         """Apply scalar argument conversion on subgraphs of control-flow
