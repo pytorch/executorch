@@ -20,9 +20,11 @@ set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_XNNPACK ON)
 
 # Turn on the quantized and LLM kernels unless on Windows with MSVC build since
-# they don't currently compile.
+# they don't currently compile. MSVC is also set for clang-cl, which does
+# compile them, so key off the compiler ID instead.
 if(NOT ((CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
-                                                 "WIN32") AND MSVC)
+                                                 "WIN32")
+        AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 )
   set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
   set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
