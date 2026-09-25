@@ -44,17 +44,17 @@ the serving path uses it to render prompts and tools.
 
 | File | Use |
 |---|---|
-| `muse-glimmer-30B-kquant-17gb.gguf` | Recommended target checkpoint |
-| `muse-glimmer-30B-kquant-dynamic.gguf` | Dynamic K-quant target checkpoint |
-| `mmproj-kquant.gguf` | Optional vision projector |
-| `dflash-kquant.gguf` | Optional DFlash draft checkpoint |
+| `Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf` | Recommended target checkpoint |
+| `Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf` | Dynamic K-quant target checkpoint |
+| `mmproj-Muse-Glimmer-30B-Q4_K_M.gguf` | Optional vision projector |
+| `dflash-Muse-Glimmer-30B-Q4_K_M.gguf` | Optional DFlash draft checkpoint |
 
 Set paths once for the commands below:
 
 ```bash
-TARGET="$(find assets/quant -type f -name 'muse-glimmer-30B-kquant-17gb.gguf' -print -quit)"
-DRAFT="$(find assets/quant -type f -name 'dflash-kquant.gguf' -print -quit)"
-MMPROJ="$(find assets/quant -type f -name 'mmproj-kquant.gguf' -print -quit)"
+TARGET="$(find assets/quant -type f -name 'Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf' -print -quit)"
+DRAFT="$(find assets/quant -type f -name 'dflash-Muse-Glimmer-30B-Q4_K_M.gguf' -print -quit)"
+MMPROJ="$(find assets/quant -type f -name 'mmproj-Muse-Glimmer-30B-Q4_K_M.gguf' -print -quit)"
 BACKEND=cuda  # use mlx on macOS
 ```
 
@@ -119,14 +119,29 @@ advanced inputs.
 |---|---|---|
 | Target | CUDA | `embed_text`, `forward_from_embeddings`, `decode_from_embedding` |
 | Target | MLX | `embed_text`, `forward_from_embeddings` |
-| DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill` |
+| DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill`, `dflash_sample_tokens`, `dflash_verify_speculative` |
 | DFlash | MLX | `target_forward_from_embeddings`, `embed_text`, `draft_forward` |
 
-Vision adds `vision_encoder` to each method set.
+Vision adds `vision_encoder` to each method set. CUDA DFlash samples draft
+proposals, verifies them, and samples corrections through its two
+`dflash_*` methods, so vocabulary-wide logits and probabilities stay on the
+device; MLX DFlash samples on the host.
 
 ## Build the runners
 
-Use the model-specific CMake workflow preset for the selected backend:
+From the repo root, the make targets build ExecuTorch with the backend and then
+the runners:
+
+```bash
+# CUDA
+make muse-glimmer-cuda
+
+# MLX
+make muse-glimmer-mlx
+```
+
+When ExecuTorch is already built for that backend, the model's CMake workflow
+preset rebuilds just the runners:
 
 ```bash
 # CUDA
@@ -187,3 +202,61 @@ template renders tool definitions, and the server converts Muse Glimmer 30B ATEM
 output into OpenAI-compatible `tool_calls`. See
 [`serving/tool_parsers/atem.py`](serving/tool_parsers/atem.py) and
 [`tests/test_atem_tool_parser.py`](tests/test_atem_tool_parser.py).
+
+### Use from pi
+
+Point pi at the server via `~/.pi/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "muse-glimmer-local": {
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "api": "openai-completions",
+      "apiKey": "x",
+      "models": [
+        {
+          "id": "muse-glimmer-30B",
+          "reasoning": true,
+          "contextWindow": 131072,
+          "maxTokens": 32768,
+          "compat": {
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "chat-template",
+            "chatTemplateKwargs": { "return_reasoning": true },
+            "sendSessionAffinityHeaders": true
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+```bash
+pi --provider muse-glimmer-local \
+  --model muse-glimmer-30B \
+  --thinking high \
+  --tools read,bash,edit,write
+```
+
+The model id must match `--model-id`. The `compat` entries:
+
+- `supportsDeveloperRole` — the template renders no `developer` turn, so pi's
+  system prompt is otherwise dropped silently.
+- `supportsReasoningEffort` — the server rejects `reasoning_effort` with a 400.
+- `return_reasoning` — defaults to `true`, returning the `to=self` channel as
+  `reasoning_content` (or `delta.reasoning_content` when streaming). Set
+  `"chatTemplateKwargs": { "return_reasoning": false }` to omit it. This only
+  controls the response; the model still computes reasoning.
+- `sendSessionAffinityHeaders` — optional, for per-conversation sessions; needs
+  `--max-sessions` above 1.
+
+Set `contextWindow` to the export's context length (`128K` is 131072) and pass
+the same value as `--max-context`. Add `"input": ["text", "image"]` for a vision
+export.
+
+For direct HTTP requests, the opt-out is
+`"chat_template_kwargs": { "return_reasoning": false }`. The flag must be a JSON
+boolean; strings, numbers, and `null` return a 400 error.

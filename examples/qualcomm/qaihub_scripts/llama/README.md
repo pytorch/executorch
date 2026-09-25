@@ -30,7 +30,7 @@ Please refer to [Check context binary version](../../README.md#check-context-bin
 #### Step4: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v2_7b_chat_quantized
-python examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
+python examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
 ```
 
 ## Llama-3-8b-chat-hf
@@ -53,5 +53,5 @@ Please refer to [Check context binary version](../../README.md#check-context-bin
 #### Step4: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v3_8b_chat_quantized
-python examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_model tokenizer.model --prompt "What is baseball?"
+python examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_model tokenizer.model --prompt "What is baseball?"
 ```

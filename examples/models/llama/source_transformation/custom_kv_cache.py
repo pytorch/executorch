@@ -1,10 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import math
 from enum import Enum
 from typing import Optional, Tuple
 
@@ -253,6 +255,250 @@ class QuantizedKVCache(nn.Module):
         )
 
 
+class StaticQuantizedKVCache(nn.Module):
+    def __init__(
+        self,
+        max_batch_size,
+        max_context_length,
+        n_heads,
+        head_dim,
+        scale: float = 1.0 / 127.0,
+        use_custom_update_cache_op: bool = True,
+        return_float_values: bool = True,
+        use_per_channel: bool = True,
+        dtype: torch.dtype = torch.float32,
+    ):
+        super().__init__()
+
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("Static KV cache scale must be finite and positive")
+
+        self.use_custom_update_cache_op = use_custom_update_cache_op
+        self.quantized_cache_dtype = torch.int8
+        self.return_float_values = return_float_values
+        self.max_context_length = max_context_length
+        self.use_per_channel = use_per_channel
+        self.k_cache_scale = scale
+        self.v_cache_scale = scale
+        self.calibration_enabled = False
+        cache_shape = (max_batch_size, max_context_length, n_heads, head_dim)
+        scale_shape = (1, 1, 1, head_dim) if use_per_channel else (1,)
+        self.register_buffer(
+            "k_cache",
+            torch.zeros(cache_shape, dtype=self.quantized_cache_dtype),
+            persistent=False,
+        )
+        self.register_buffer(
+            "v_cache",
+            torch.zeros(cache_shape, dtype=self.quantized_cache_dtype),
+            persistent=False,
+        )
+        self.register_buffer(
+            "k_cache_scales", torch.full(scale_shape, scale, dtype=torch.float32)
+        )
+        self.register_buffer(
+            "v_cache_scales", torch.full(scale_shape, scale, dtype=torch.float32)
+        )
+        self.register_buffer("k_calibration_cache", None, persistent=False)
+        self.register_buffer("v_calibration_cache", None, persistent=False)
+        self.register_buffer(
+            "k_observed_max",
+            torch.zeros(scale_shape, dtype=dtype),
+            persistent=False,
+        )
+        self.register_buffer(
+            "v_observed_max",
+            torch.zeros(scale_shape, dtype=dtype),
+            persistent=False,
+        )
+
+    def enable_calibration(self):
+        self.calibration_enabled = True
+        self.k_calibration_cache = self.k_observed_max.new_zeros(self.k_cache.shape)
+        self.v_calibration_cache = self.v_observed_max.new_zeros(self.v_cache.shape)
+        self.k_observed_max.zero_()
+        self.v_observed_max.zero_()
+
+    def finalize_calibration(self):
+        if not self.calibration_enabled:
+            raise RuntimeError("Static KV cache calibration is not enabled")
+        if not torch.any(self.k_observed_max) or not torch.any(self.v_observed_max):
+            raise RuntimeError("Static KV cache calibration observed no K/V values")
+
+        k_scales = self.k_observed_max.to(self.k_cache_scales.dtype) / 127.0
+        v_scales = self.v_observed_max.to(self.v_cache_scales.dtype) / 127.0
+        if torch.any(k_scales == 0) or torch.any(v_scales == 0):
+            qparam_scope = "channel" if self.use_per_channel else "cache"
+            logging.warning(
+                "Static KV cache calibration observed an all-zero K/V %s; "
+                "using the smallest positive scale.",
+                qparam_scope,
+            )
+        # This floor prevents division by zero; it is not an accuracy threshold.
+        self.k_cache_scales.copy_(
+            k_scales.clamp_min(torch.finfo(self.k_cache_scales.dtype).tiny)
+        )
+        self.v_cache_scales.copy_(
+            v_scales.clamp_min(torch.finfo(self.v_cache_scales.dtype).tiny)
+        )
+        if not self.use_per_channel:
+            self.k_cache_scale = self.k_cache_scales.item()
+            self.v_cache_scale = self.v_cache_scales.item()
+        self.calibration_enabled = False
+        self.k_calibration_cache = None
+        self.v_calibration_cache = None
+        self.k_cache.zero_()
+        self.v_cache.zero_()
+
+    def _observe_and_update(self, input_pos, k_val, v_val):
+        if self.k_calibration_cache is None or self.v_calibration_cache is None:
+            raise RuntimeError("Static KV cache calibration is not enabled")
+        self.k_observed_max.copy_(
+            torch.maximum(
+                self.k_observed_max,
+                (
+                    k_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True)
+                    if self.use_per_channel
+                    else k_val.detach().abs().amax().reshape_as(self.k_observed_max)
+                ),
+            )
+        )
+        self.v_observed_max.copy_(
+            torch.maximum(
+                self.v_observed_max,
+                (
+                    v_val.detach().abs().amax(dim=(0, 1, 2), keepdim=True)
+                    if self.use_per_channel
+                    else v_val.detach().abs().amax().reshape_as(self.v_observed_max)
+                ),
+            )
+        )
+        self.k_calibration_cache[:, input_pos] = k_val
+        self.v_calibration_cache[:, input_pos] = v_val
+        return self.k_calibration_cache, self.v_calibration_cache
+
+    def _quantize(self, value, scale):
+        if self.use_per_channel:
+            qmin = torch.iinfo(self.quantized_cache_dtype).min
+            qmax = torch.iinfo(self.quantized_cache_dtype).max
+            return torch.clamp(torch.round(value / scale), qmin, qmax).to(
+                self.quantized_cache_dtype
+            )
+        return torch.ops.quantized_decomposed.quantize_per_tensor.default(
+            value,
+            scale,
+            0,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
+            self.quantized_cache_dtype,
+        )
+
+    def _dequantize(self, value, scale, dtype):
+        if self.use_per_channel:
+            return value.to(dtype) * scale.to(dtype)
+        return torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+            value,
+            scale,
+            0,
+            torch.iinfo(self.quantized_cache_dtype).min,
+            torch.iinfo(self.quantized_cache_dtype).max,
+            self.quantized_cache_dtype,
+        ).to(dtype)
+
+    def _update_cache(self, value, cache, input_pos, indices=None):
+        start_pos = input_pos[0].item()
+        if self.use_custom_update_cache_op:
+            if indices is not None:
+                _ = torch.ops.llama.update_cache_with_indices(
+                    value, cache, start_pos, indices
+                )
+            else:
+                _ = torch.ops.llama.update_cache(value, cache, start_pos)
+        else:
+            assert indices is None, "Indices not supported for this path"
+            cache[:, input_pos] = value
+
+    def _quantize_and_update(self, input_pos, k_val, v_val, indices=None):
+        k_scale = self.k_cache_scales if self.use_per_channel else self.k_cache_scale
+        v_scale = self.v_cache_scales if self.use_per_channel else self.v_cache_scale
+        quantized_k_val = self._quantize(k_val, k_scale)
+        quantized_v_val = self._quantize(v_val, v_scale)
+
+        self._update_cache(quantized_k_val, self.k_cache, input_pos, indices)
+        self._update_cache(quantized_v_val, self.v_cache, input_pos, indices)
+
+    def _update_and_return_float_values(self, input_pos, k_val, v_val, indices=None):
+        self._quantize_and_update(input_pos, k_val, v_val, indices)
+
+        k_scale = self.k_cache_scales if self.use_per_channel else self.k_cache_scale
+        v_scale = self.v_cache_scales if self.use_per_channel else self.v_cache_scale
+        k_out = self._dequantize(self.k_cache, k_scale, k_val.dtype)
+        v_out = self._dequantize(self.v_cache, v_scale, v_val.dtype)
+
+        self._update_cache(k_val, k_out, input_pos, indices)
+        self._update_cache(v_val, v_out, input_pos, indices)
+
+        return k_out, v_out
+
+    def _update_and_return_quantized_values(
+        self, input_pos, k_val, v_val, indices=None
+    ):
+        self._quantize_and_update(input_pos, k_val, v_val, indices)
+
+        return self.k_cache, self.v_cache
+
+    def update(self, input_pos, k_val, v_val, indices=None):
+        """
+        k_val, v_val: [B, H, S, D]
+        return: [B, H, S, D]
+        Storage is [B, S, H, D], with static per-head-dim or per-tensor qparams.
+        """
+
+        k_val = k_val.transpose(1, 2)
+        v_val = v_val.transpose(1, 2)
+
+        if self.calibration_enabled:
+            if indices is not None:
+                raise ValueError("Static KV calibration does not support indices")
+            k_out, v_out = self._observe_and_update(input_pos, k_val, v_val)
+        elif self.return_float_values:
+            k_out, v_out = self._update_and_return_float_values(
+                input_pos, k_val, v_val, indices
+            )
+        else:
+            k_out, v_out = self._update_and_return_quantized_values(
+                input_pos, k_val, v_val, indices
+            )
+        return k_out.transpose(1, 2), v_out.transpose(1, 2)
+
+    @classmethod
+    def from_float(
+        cls,
+        kv_cache,
+        scale: float = 1.0 / 127.0,
+        use_custom_update_cache_op: bool = True,
+        use_per_channel: bool = True,
+    ):
+        if isinstance(kv_cache, CustomKVCache):
+            max_batch_size, max_context_length, n_heads, head_dim = (
+                kv_cache.k_cache.shape
+            )
+        else:
+            max_batch_size, n_heads, max_context_length, head_dim = (
+                kv_cache.k_cache.shape
+            )
+        return cls(
+            max_batch_size,
+            max_context_length,
+            n_heads,
+            head_dim,
+            scale=scale,
+            use_custom_update_cache_op=use_custom_update_cache_op,
+            use_per_channel=use_per_channel,
+            dtype=kv_cache.k_cache.dtype,
+        )
+
+
 def replace_kv_cache_with_quantized_kv_cache(module):
     try:
         op = torch.ops.quantized_decomposed.quantize_per_token.out
@@ -302,6 +548,71 @@ def _replace_kv_cache_with_quantized_kv_cache(module):
         else:
             _replace_kv_cache_with_quantized_kv_cache(child)
     return module
+
+
+def replace_kv_cache_with_static_quantized_kv_cache(
+    module, scale: float = 1.0 / 127.0, use_custom_update_cache_op: bool = True
+):
+    if use_custom_update_cache_op:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+    logging.info(
+        "Replacing KVCache with StaticQuantizedKVCache. This modifies the model "
+        "in place. use_custom_update_cache_op=%s, scale=%s",
+        use_custom_update_cache_op,
+        scale,
+    )
+    return _replace_kv_cache_with_static_quantized_kv_cache(
+        module, scale, use_custom_update_cache_op
+    )
+
+
+def _replace_kv_cache_with_static_quantized_kv_cache(
+    module, scale: float, use_custom_update_cache_op: bool
+):
+    for name, child in module.named_children():
+        if isinstance(child, KVCache) or isinstance(child, CustomKVCache):
+            if type(child) not in (KVCache, CustomKVCache):
+                raise ValueError(
+                    "Static quantized KV cache does not support specialized "
+                    f"cache type {type(child).__name__}"
+                )
+            setattr(
+                module,
+                name,
+                StaticQuantizedKVCache.from_float(
+                    child,
+                    scale=scale,
+                    use_custom_update_cache_op=use_custom_update_cache_op,
+                ),
+            )
+        else:
+            _replace_kv_cache_with_static_quantized_kv_cache(
+                child, scale, use_custom_update_cache_op
+            )
+    return module
+
+
+def enable_static_kv_cache_calibration(module):
+    caches = [
+        child for child in module.modules() if isinstance(child, StaticQuantizedKVCache)
+    ]
+    if not caches:
+        raise ValueError("No StaticQuantizedKVCache modules found for calibration")
+    for cache in caches:
+        cache.enable_calibration()
+    return caches
+
+
+def finalize_static_kv_cache_calibration(module):
+    caches = [
+        child for child in module.modules() if isinstance(child, StaticQuantizedKVCache)
+    ]
+    if not caches:
+        raise ValueError("No StaticQuantizedKVCache modules found for calibration")
+    for cache in caches:
+        cache.finalize_calibration()
+    return caches
 
 
 class CustomKVCache(nn.Module):

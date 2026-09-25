@@ -70,8 +70,10 @@ done < <(
     ':(exclude,glob)**/third_party/**'
   )
   if [ $# -eq 2 ]; then
-    for filename in $(git diff --name-only --unified=0 "$1..$2"); do
-      git diff --unified=0 "$1..$2" -- "$filename" "${excludes[@]}" \
+    # Three dots, not two. Against the base branch tip, a branch cut before recent
+    # commits looks like it is adding back every line those commits touched.
+    for filename in $(git diff --no-color --name-only --unified=0 "$1...$2"); do
+      git diff --no-color --unified=0 "$1...$2" -- "$filename" "${excludes[@]}" \
         | grep -E '^\+' \
         | grep -Ev '^\+\+\+' \
         | perl -nle 'print for m#'"$pattern"'#g' \

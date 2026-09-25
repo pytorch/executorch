@@ -11,13 +11,29 @@ This directory contains documentation and scripts to
 help you setup and run a PyTorch model on the Arm backend
 via ExecuTorch.
 
+## Python package setup
+
+For Ethos-U examples, install the current checkout and the dependencies needed
+for ahead-of-time (AOT) export in a clean Python environment:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+./install_executorch.sh --optional-dependency ethos_u
+```
+
+After the base dependencies are installed, the equivalent editable package
+command is `pip install -e '.[ethos_u]' --no-build-isolation`. The `ethos_u`
+extra provides host-side export dependencies; it does not install the Arm
+toolchain, FVPs, or target runtime. Run `setup.sh` below to install the cross
+compiler, FVPs, and backend tools used by these examples.
+
 ## setup.sh
 
 `setup.sh` downloads the Arm cross-compilation toolchain and Corstone FVP
-simulators, installs the Python dependencies for TOSA, Ethos-U Vela, and
-Cortex-M/CMSIS-NN, and generates `setup_path.sh` scripts for adding those tools
-to your environment. Optional flags also install VGF/MLSDK and Vulkan
-dependencies.
+simulators, installs the backend dependencies, and generates `setup_path.sh`
+scripts for adding those tools to your environment. Optional flags also install
+VGF/MLSDK and Vulkan dependencies.
 
 Example to install the default Arm backend dependencies and add them to your current shell:
 
@@ -25,6 +41,45 @@ Example to install the default Arm backend dependencies and add them to your cur
 ./examples/arm/setup.sh --i-agree-to-the-contained-eula
 source examples/arm/arm-scratch/setup_path.sh
 ```
+
+The Arm toolchain dependencies have their own Python constraints. In
+particular, the pinned `tosa-tools==2026.5.0` has no Python 3.14 distribution;
+making visualization optional does not remove that separate limitation.
+
+Model Explorer visualization is optional and currently supports Python
+3.10-3.12. Add `--enable-model-explorer` to install it and the TOSA/PTE adapters in
+an isolated directory, keeping their dependencies separate from the TOSA
+toolchain:
+
+```bash
+./examples/arm/setup.sh \
+  --i-agree-to-the-contained-eula \
+  --enable-model-explorer
+```
+
+Run visualization from an ExecuTorch environment on the same platform and
+Python major/minor version used for setup. The interpreter is resolved from
+the active environment, allowing a replacement environment or a moved
+scratch directory without retaining the original interpreter path.
+The PTE adapter currently also brings in the VGF adapter as a transitive
+dependency; `run.sh` exposes only TOSA/PTE visualization.
+
+Select the graph format explicitly when enabling Model Explorer. For example,
+to visualize the generated TOSA graph:
+
+```bash
+./examples/arm/run.sh \
+  --model_name=examples/arm/example_modules/add.py \
+  --target=ethos-u55-128 \
+  --build_only \
+  --model_explorer \
+  --visualize_tosa
+```
+
+Use `--visualize_pte` instead of `--visualize_tosa` to visualize the generated
+PTE and its delegated graphs.
+When `run.sh` automatically invokes setup on a fresh checkout,
+`--model_explorer` also enables installation of the visualization dependencies.
 
 ## run.sh
 
@@ -73,6 +128,8 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ### Application examples
 
+- [minimal_classic_ml](minimal_classic_ml/) - Minimal single-shot runtime
+  integration, intended for models such as MobileNetV2 and YOLO.
 - [image_classification_example_ethos_u](image_classification_example_ethos_u/)
   - End-to-end DEiT-Tiny image classification flow for Ethos-U, including
   model fine-tuning, export, bare-metal runtime build, and Corstone-320 FVP
@@ -90,8 +147,12 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
 
 ### Utility examples and guides
 
+- [executor_runner](executor_runner/) - Advanced test and diagnostic runner for
+  BundleIO, ETDump, profiling, semihosted files, and backend regression tests.
 - [ethos-u-porting-guide.md](ethos-u-porting-guide.md) - Notes for adapting
   the example Ethos-U runtime integration to another target.
+- [model-explorer.md](model-explorer.md) - Visualize PTE and TOSA graphs and
+  overlay per-operator Ethos-U cycle data collected from an FVP PMU trace.
 - [export_standalone_tosa_graph.py](export_standalone_tosa_graph.py) -
   Example of exporting a standalone TOSA graph with multiple outputs.
 - [visualize.py](visualize.py) - Helper used by `run.sh --model_explorer` to

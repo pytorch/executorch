@@ -4,16 +4,38 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from enum import IntEnum
 from typing import cast, Tuple
 
 import torch
 
-from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
+from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch._guards import detect_fake_mode
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
-from .utils import append_qdq, copy_meta
+from .utils import copy_meta
+
+
+class ConvParamIdx(IntEnum):
+    """
+    Spec for `aten.convolution` (https://docs.pytorch.org/docs/stable/torch.compiler_ir.html)
+    convolution(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding,
+                SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups) -> Tensor
+    """
+
+    INPUT = 0
+    WEIGHT = 1
+    BIAS = 2
+    STRIDE = 3
+    PADDING = 4
+    DILATION = 5
+    TRANSPOSED = 6
+    OUTPUT_PADDING = 7
+    GROUPS = 8
 
 
 class CanonicalizeConv(ExportPass):
@@ -27,17 +49,8 @@ class CanonicalizeConv(ExportPass):
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(CanonicalizeConv, self).__init__()
         self.edge_program = edge_program
-        self.conv1d_op_map = {
-            torch.ops.aten.conv1d.default: torch.ops.aten.conv2d.default,
-            torch.ops.aten.conv_transpose1d.default: torch.ops.aten.conv_transpose2d.input,
-        }
-        self.transpose_conv_set = {
-            torch.ops.aten.conv_transpose1d.default,
-            torch.ops.aten.conv_transpose2d.input,
-            torch.ops.aten.conv_transpose3d.input,
-        }
 
-    def dilate(self, tensor, dilation):
+    def _dilate(self, tensor, dilation):
         # e.g.
         # for 3x3 kernel with dilation == (2, 3)
         #             1, 0, 0, 2, 0, 0, 3
@@ -52,165 +65,135 @@ class CanonicalizeConv(ExportPass):
         new_tensor[indexing] = tensor
         return new_tensor
 
-    def call(self, graph_module: torch.fx.GraphModule):
+    def _replace_1d_conv(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        input_node: torch.fx.Node,
+    ):
         graph = graph_module.graph
-        # condition 1
-        for node in graph.nodes:
-            # arg order (https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.conv_transpose2d.html)
-            # > input, weight, bias, stride, padding, output_padding, groups, dilation
-            if node.target in self.transpose_conv_set and len(node.args) > 7:
-                dilation = cast(Tuple[int], node.args[7])
-                # dilate kernel in advance
-                filter_arg = node.args[1]
-                filter_node = (
-                    # fp graph
-                    filter_arg
-                    if filter_arg.op == "placeholder"
-                    # qdq graph
-                    else node.args[1].args[0]
-                )
-                filter_tensor = self.dilate(
-                    get_parameter(filter_node, self.edge_program),
-                    dilation,
-                )
-                # update tensor meta for kernel node
-                fake_mode = detect_fake_mode(filter_node.meta["val"])
-                converter = fake_mode.fake_tensor_converter
-                filter_node.meta["val"] = converter.from_real_tensor(
-                    fake_mode, filter_tensor
-                )
-                # update kernel
-                set_parameter(
-                    (
-                        torch.nn.Parameter(filter_tensor)
-                        if filter_tensor.dtype == torch.float
-                        else filter_tensor
-                    ),
-                    filter_node,
-                    self.edge_program,
-                )
-                # pop dilation for graph in cpu
-                node.args = node.args[0:-1]
+        with graph_module.graph.inserting_after(node):
+            unsqueeze_op = exir_ops.edge.aten.unsqueeze_copy.default
+            unsqueeze_node = graph.create_node(
+                "call_function",
+                unsqueeze_op,
+                (
+                    input_node,
+                    2,
+                ),
+            )
+            # This pass is scheduled after the `FoldQDQ` pass. After copying the metadata
+            # from the input node, the quantization attributes are also propagated to
+            # the corresponding `unsqueeze` node.
+            unsqueeze_node.meta = copy_meta(
+                input_node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
+            )
 
-        # condition 2
-        for node in graph.nodes:
-            if node.target in self.conv1d_op_map:
-                input_node = node.args[0]
-                with graph_module.graph.inserting_after(input_node):
-                    unsqueeze_op = torch.ops.aten.unsqueeze_copy.default
-                    unsqueeze_node = graph.create_node(
+            with graph_module.graph.inserting_after(unsqueeze_node):
+                conv_args = (
+                    unsqueeze_node,
+                    node.args[ConvParamIdx.WEIGHT],
+                    node.args[ConvParamIdx.BIAS],
+                    [1] + node.args[ConvParamIdx.STRIDE],
+                    [0] + node.args[ConvParamIdx.PADDING],
+                    [1] + node.args[ConvParamIdx.DILATION],
+                    node.args[ConvParamIdx.TRANSPOSED],
+                    [0] + node.args[ConvParamIdx.OUTPUT_PADDING],
+                    node.args[ConvParamIdx.GROUPS],
+                )
+                conv2d_node = graph.create_node(
+                    "call_function",
+                    exir_ops.edge.aten.convolution.default,
+                    conv_args,
+                )
+                conv2d_node.meta = copy_meta(
+                    node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
+                )
+
+                with graph_module.graph.inserting_after(conv2d_node):
+                    squeeze_op = exir_ops.edge.aten.squeeze_copy.dims
+                    squeeze_node = graph.create_node(
                         "call_function",
-                        unsqueeze_op,
+                        squeeze_op,
                         (
-                            input_node,
-                            2,
+                            conv2d_node,
+                            [2],
                         ),
                     )
-                    unsqueeze_node.meta = copy_meta(
-                        input_node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
+                    squeeze_node.meta = copy_meta(node.meta)
+
+        for user in node.users.copy():
+            user.replace_input_with(node, squeeze_node)
+
+    def call(self, graph_module: torch.fx.GraphModule):
+        graph = graph_module.graph
+        for node in graph.nodes:
+            # After decomposition to Core ATen, all variants within the conv and conv_transpose family
+            # are lowered to `aten.convolution`.
+            if node.target is exir_ops.edge.aten.convolution.default:
+                stride = cast(Tuple[int], node.args[ConvParamIdx.STRIDE])
+                dilation = cast(Tuple[int], node.args[ConvParamIdx.DILATION])
+                is_conv_transpose = node.args[ConvParamIdx.TRANSPOSED]
+                is_1d_op = len(stride) == 1
+                has_conv_transpose_dilation = is_conv_transpose and any(
+                    val != 1 for val in dilation
+                )
+                has_filter_update = is_1d_op or has_conv_transpose_dilation
+                if not has_filter_update:
+                    continue
+
+                input_node = node.args[ConvParamIdx.INPUT]
+                filter_placeholder_node = (
+                    # FP graph
+                    node.args[ConvParamIdx.WEIGHT]
+                    if node.args[ConvParamIdx.WEIGHT].op == "placeholder"
+                    # QDQ graph
+                    else node.args[ConvParamIdx.WEIGHT].args[0]
+                )
+                filter_tensor = (
+                    get_parameter(filter_placeholder_node, self.edge_program)
+                    .contiguous()
+                    .detach()
+                )
+
+                if has_conv_transpose_dilation:
+                    filter_tensor = self._dilate(filter_tensor, dilation)
+                    node.args = (
+                        *node.args[: ConvParamIdx.DILATION],
+                        [1] * len(dilation),
+                        *node.args[ConvParamIdx.TRANSPOSED :],
                     )
-                    qdq_node_after_unsqueeze = append_qdq(
-                        graph_module=graph_module,
-                        node=unsqueeze_node,
-                        qdq_node=input_node,
-                    )
+                if is_1d_op:
+                    filter_tensor = filter_tensor.unsqueeze(2)
 
-                    with graph_module.graph.inserting_after(qdq_node_after_unsqueeze):
-                        # conv2d must be inserted before conv1d in the graph to preserve correct
-                        # topological ordering. This is required due to conv-bn fusion: when conv1d
-                        # has no bias, the fused bias (from batchnorm) is introduced as a new node,
-                        # and its corresponding dq (dequantize) node must appear before conv2d in
-                        # the execution order.
-                        with graph_module.graph.inserting_before(node):
-                            filter_arg = node.args[1]
-                            filter_node = (
-                                filter_arg
-                                if filter_arg.op == "placeholder"
-                                else node.args[1].args[0]
+                if has_filter_update:
+                    buffer_name = get_new_attr_name_with_prefix(node.name)(graph_module)
+                    graph_module.register_buffer(buffer_name, filter_tensor)
+
+                    with graph_module.graph.inserting_after(filter_placeholder_node):
+                        get_attr_node = graph_module.graph.get_attr(buffer_name)
+                        fake_mode = detect_fake_mode(
+                            filter_placeholder_node.meta["val"]
+                        )
+                        converter = fake_mode.fake_tensor_converter
+                        get_attr_node.meta["val"] = converter.from_real_tensor(
+                            fake_mode, filter_tensor
+                        )
+
+                        if node.args[ConvParamIdx.WEIGHT].target in dq_ops:
+                            filter_dequant_node = node.args[ConvParamIdx.WEIGHT]
+                            # Reuse the dequant node and replace its input with the get_attr node.
+                            # The quant attrs of the get_attr node are populated by the `AnnotateGetAttr` pass.
+                            filter_dequant_node.replace_input_with(
+                                filter_placeholder_node, get_attr_node
                             )
-                            filter_node.meta["val"] = filter_node.meta["val"].unsqueeze(
-                                2
-                            )
-                            filter_tensor = get_parameter(
-                                filter_node, self.edge_program
-                            ).unsqueeze(2)
-                            set_parameter(
-                                (
-                                    torch.nn.Parameter(filter_tensor)
-                                    if filter_tensor.dtype == torch.float
-                                    else filter_tensor
-                                ),
-                                filter_node,
-                                self.edge_program,
+                        else:
+                            node.replace_input_with(
+                                filter_placeholder_node, get_attr_node
                             )
 
-                            num_args = len(node.args)
-
-                            bias_node = node.args[2] if num_args > 2 else None
-                            stride = [1] + node.args[3] if num_args > 3 else [1, 1]
-                            padding = [0] + node.args[4] if num_args > 4 else [0, 0]
-                            if node.target == torch.ops.aten.conv1d.default:
-                                dilation = (
-                                    [1] + node.args[5] if num_args > 5 else [1, 1]
-                                )
-                                groups = node.args[6] if num_args > 6 else 1
-                                conv_args = (
-                                    qdq_node_after_unsqueeze,
-                                    node.args[1],
-                                    bias_node,
-                                    stride,
-                                    padding,
-                                    dilation,
-                                    groups,
-                                )
-                            else:
-                                output_padding = (
-                                    [0] + node.args[5] if num_args > 5 else [0, 0]
-                                )
-                                groups = node.args[6] if num_args > 6 else 1
-                                dilation = (
-                                    [1] + node.args[7] if num_args > 7 else [1, 1]
-                                )
-                                conv_args = (
-                                    qdq_node_after_unsqueeze,
-                                    node.args[1],
-                                    bias_node,
-                                    stride,
-                                    padding,
-                                    output_padding,
-                                    groups,
-                                    dilation,
-                                )
-                            conv2d_node = graph.create_node(
-                                "call_function",
-                                self.conv1d_op_map[node.target],
-                                conv_args,
-                            )
-                            conv2d_node.meta = copy_meta(
-                                node.meta, lambda m: {**m, "val": m["val"].unsqueeze(2)}
-                            )
-                            qdq_node_after_conv2d = append_qdq(
-                                graph_module=graph_module,
-                                node=conv2d_node,
-                                qdq_node=list(node.users)[0],
-                            )
-
-                            with graph_module.graph.inserting_after(
-                                qdq_node_after_conv2d
-                            ):
-                                squeeze_op = torch.ops.aten.squeeze_copy.dims
-                                squeeze_node = graph.create_node(
-                                    "call_function",
-                                    squeeze_op,
-                                    (
-                                        qdq_node_after_conv2d,
-                                        [2],
-                                    ),
-                                )
-                                squeeze_node.meta = copy_meta(node.meta)
-
-                for user in node.users.copy():
-                    user.replace_input_with(node, squeeze_node)
+                if is_1d_op:
+                    self._replace_1d_conv(graph_module, node, input_node)
 
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

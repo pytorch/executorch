@@ -23,4 +23,4 @@ jobs:
       - name: Run needs-user-input script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .github/scripts/pending_user_response.py
+        run: python .github/workflows/pending_user_response.py

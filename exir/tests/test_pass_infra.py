@@ -7,6 +7,7 @@
 
 # pyre-strict
 
+import copy
 import unittest
 
 import executorch.exir as exir
@@ -24,6 +25,7 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.program import to_edge
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -513,6 +515,27 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
             any(dim is not None for dim in self._symbolic_input_shape(new_input))
         )
 
+    def test_export_pass_ignores_symbolic_metadata_for_constant_input(self) -> None:
+        graph_module = self._export_dynamic_graph_module()
+        original_input = self._find_input_node(graph_module)
+        original_value = original_input.meta["val"]
+        self.assertIsInstance(original_value, FakeTensor)
+        assert isinstance(original_value, FakeTensor)
+        constant = torch.randn(2, 3)
+        original_value.constant = constant
+
+        new_graph_module = ExportPass()(graph_module).graph_module
+        new_input = self._find_input_node(new_graph_module)
+        new_value = new_input.meta["val"]
+
+        self.assertIsInstance(new_value, FakeTensor)
+        assert isinstance(new_value, FakeTensor)
+        self.assertIs(new_value.constant, constant)
+        self.assertEqual(
+            self._symbolic_input_shape(new_input),
+            self._symbolic_input_shape(original_input),
+        )
+
     def test_export_pass_rejects_collapsed_symbolic_input_metadata(self) -> None:
         class CollapseSymbolicInputPass(ExportPass):
             def placeholder(
@@ -557,3 +580,153 @@ class TestPassBaseSymbolicInputs(unittest.TestCase):
         new_input = self._find_input_node(new_graph_module)
 
         self.assertNotEqual(self._symbolic_input_shape(new_input), original_snapshot)
+
+
+class ExportedProgramPassBaseOutputSpecTest(unittest.TestCase):
+    """__call__ realigns output specs with the graph before ensures() runs."""
+
+    class _Model(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + x
+
+    def _program(self) -> ExportedProgram:
+        return to_edge(export(self._Model(), (torch.randn(2, 2),))).exported_program()
+
+    def test_replacing_the_output_node_updates_the_signature(self) -> None:
+        class ReplaceOutputPass(ExportedProgramPassBase):
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                graph = ep.graph_module.graph
+                output_node = graph.output_node()
+                (old,) = output_node.args[0]
+                with graph.inserting_before(output_node):
+                    new = graph.call_function(
+                        exir_ops.edge.aten.mul.Tensor, (old.args[0], old.args[1])
+                    )
+                new.meta = dict(old.meta)
+                output_node.args = ((new,),)
+                return ExportedProgramPassResult(ep, True)
+
+        program = self._program()
+        result = ReplaceOutputPass()(program)
+
+        (spec,) = result.exported_program.graph_signature.output_specs
+        graph_output_name = result.exported_program.graph.output_node().args[0][0].name
+        self.assertEqual(spec.arg.name, graph_output_name)
+        result.exported_program.validate()
+
+    def test_a_signature_only_change_is_reported_as_modified(self) -> None:
+        """A pass that renames the output reports modified even if it says False."""
+
+        class RenameOutputPass(ExportedProgramPassBase):
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                ep.graph.output_node().args[0][0].name = "renamed_output"
+                return ExportedProgramPassResult(ep, False)
+
+        result = RenameOutputPass()(self._program())
+
+        self.assertTrue(result.modified)
+        (spec,) = result.exported_program.graph_signature.output_specs
+        self.assertEqual(spec.arg.name, "renamed_output")
+
+    def test_output_count_mismatch_is_rejected(self) -> None:
+        class DropOutputPass(ExportedProgramPassBase):
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                output_node = ep.graph.output_node()
+                output_node.args = ((*output_node.args[0], output_node.args[0][0]),)
+                return ExportedProgramPassResult(ep, True)
+
+        with self.assertRaisesRegex(ExportPassBaseError, "output specs"):
+            DropOutputPass()(self._program())
+
+    def test_the_replace_hook_updates_the_signature_during_the_pass(self) -> None:
+        """A pass using the replacement APIs sees a valid signature as it runs."""
+
+        signature_during_pass = []
+
+        class ReplaceViaApiPass(ExportedProgramPassBase):
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                graph = ep.graph_module.graph
+                (old,) = graph.output_node().args[0]
+                with graph.inserting_before(graph.output_node()):
+                    new = graph.call_function(
+                        exir_ops.edge.aten.mul.Tensor, (old.args[0], old.args[1])
+                    )
+                new.meta = dict(old.meta)
+                old.replace_all_uses_with(new)
+                signature_during_pass.append(
+                    ep.graph_signature.output_specs[0].arg.name
+                )
+                return ExportedProgramPassResult(ep, True)
+
+        result = ReplaceViaApiPass()(self._program())
+
+        graph_output_name = result.exported_program.graph.output_node().args[0][0].name
+        self.assertEqual(signature_during_pass, [graph_output_name])
+
+    def test_replacing_a_returned_buffer_leaves_input_specs_alone(self) -> None:
+        """The hook is output-only, so the replaced placeholder stays deletable."""
+
+        class TwoBuffers(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer("a", torch.ones(2, 2))
+                self.register_buffer("b", torch.ones(2, 2))
+
+            def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+                return self.a, x + self.b
+
+        replaced_name = []
+
+        class ReplaceReturnedBufferPass(ExportedProgramPassBase):
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                names = {
+                    target: name
+                    for name, target in ep.graph_signature.inputs_to_buffers.items()
+                }
+                placeholders = {
+                    node.name: node
+                    for node in ep.graph.nodes
+                    if node.op == "placeholder"
+                }
+                old = placeholders[names["a"]]
+                old.replace_all_uses_with(placeholders[names["b"]])
+                replaced_name.append(old.name)
+                return ExportedProgramPassResult(ep, True)
+
+        program = to_edge(export(TwoBuffers(), (torch.randn(2, 2),))).exported_program()
+
+        result = ReplaceReturnedBufferPass()(program)
+
+        signature = result.exported_program.graph_signature
+        self.assertIn(replaced_name[0], signature.inputs_to_buffers)
+        result.exported_program.validate()
+
+    def test_mutating_a_copied_graph_leaves_the_original_signature_alone(self) -> None:
+        """GraphModule.__deepcopy__ carries the replace hook over to the copy."""
+
+        signature_after_copy_edit = []
+
+        class MutateACopyPass(ExportedProgramPassBase):
+            def call(self, ep: ExportedProgram) -> ExportedProgramPassResult:
+                graph_module = copy.deepcopy(ep.graph_module)
+                graph = graph_module.graph
+                (old,) = graph.output_node().args[0]
+                with graph.inserting_before(graph.output_node()):
+                    new = graph.call_function(
+                        exir_ops.edge.aten.mul.Tensor, (old.args[0], old.args[1])
+                    )
+                new.meta = dict(old.meta)
+                old.replace_all_uses_with(new)
+                signature_after_copy_edit.append(
+                    ep.graph_signature.output_specs[0].arg.name
+                )
+                return ExportedProgramPassResult(ep, False)
+
+        program = self._program()
+        original_output_name = program.graph_signature.output_specs[0].arg.name
+
+        result = MutateACopyPass()(program)
+
+        self.assertEqual(signature_after_copy_edit, [original_output_name])
+        self.assertFalse(result.modified)
+        program.validate()

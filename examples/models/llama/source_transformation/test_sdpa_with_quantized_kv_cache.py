@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+import torch.nn.functional as F
 
 from executorch.examples.models.llama.attention import KVCache
 
@@ -17,6 +18,8 @@ from executorch.examples.models.llama.source_transformation.custom_kv_cache impo
 )
 
 from executorch.examples.models.llama.source_transformation.sdpa import SDPACustom
+
+from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
 
 class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
@@ -95,3 +98,41 @@ class SDPAWithQuantizedKVCacheTest(unittest.TestCase):
             rtol=1e-03,
             atol=1e-03,
         )
+
+    def test_bfloat16_custom_sdpa_export_has_no_dtype_conversions(self):
+        bsz = 1
+        seqlen = 3
+        n_heads = 4
+        head_dim = 16
+        dim = n_heads * head_dim
+        input_pos = torch.tensor([0], dtype=torch.int64)
+        q = torch.rand((bsz, n_heads, seqlen, head_dim), dtype=torch.bfloat16)
+        k = torch.rand((bsz, n_heads, seqlen, head_dim), dtype=torch.bfloat16)
+        v = torch.rand((bsz, n_heads, seqlen, head_dim), dtype=torch.bfloat16)
+        mask = torch.triu(torch.full((seqlen, seqlen), float("-inf")), diagonal=1)
+        sdpa = SDPACustom(dim, use_attention_mask=True)
+
+        output = sdpa(input_pos, q, k, v, bsz, seqlen, mask)
+        reference = (
+            F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            .transpose(1, 2)
+            .contiguous()
+            .view(bsz, seqlen, dim)
+        )
+        self.assertEqual(output.dtype, torch.bfloat16)
+        torch.testing.assert_close(
+            output.float(), reference.float(), atol=5e-2, rtol=5e-2
+        )
+
+        exported = torch.export.export(
+            sdpa,
+            (input_pos, q, k, v, bsz, seqlen, mask),
+        )
+        call_targets = [
+            node.target
+            for node in exported.graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+
+        self.assertIn(torch.ops.llama.custom_sdpa.default, call_targets)
+        self.assertNotIn(torch.ops.aten._to_copy.default, call_targets)

@@ -64,6 +64,17 @@ def pytest_configure(config):
         _set_random_seed(seed)
 
 
+def pytest_collectstart(collector):
+    """Reseed before each test module is imported. Model tests that build
+    calibration data at module scope draw during collection, so seeding only in
+    ``pytest_configure`` would leave their quantization dependent on how many
+    modules were imported first."""
+    if not isinstance(collector, pytest.Module):
+        return
+    if os.environ.get("TEST_RUNTIME_IS_NOT_OSS", "0") != "1":
+        _set_random_seed(collector.config._test_seed)
+
+
 @pytest.fixture(autouse=True)
 def set_random_seed(request):
     """Control random numbers in the Cortex-M test suite.

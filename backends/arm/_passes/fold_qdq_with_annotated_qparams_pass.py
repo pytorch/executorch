@@ -405,11 +405,13 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
             input_qparams: dict[int, QuantArgs] = {}
             input_nodes_to_remove: dict[int, set[Node]] = {}
+            input_nodes_seen: set[Node] = set()
             for i, arg in enumerate(n.args):
                 qparams, nodes_to_remove = self._extract_arg_input_params(arg)
                 if qparams is not None:
                     input_qparams[i] = qparams
-                    input_nodes_to_remove[i] = nodes_to_remove
+                    input_nodes_to_remove[i] = nodes_to_remove - input_nodes_seen
+                    input_nodes_seen.update(nodes_to_remove)
 
             preserve_qdq = self._has_partial_binary_tensor_qdq_inputs(n, input_qparams)
             graph_modified = graph_modified or not preserve_qdq
@@ -434,6 +436,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             users_copy = copy.copy(n.users)
             for i, user in enumerate(users_copy):
                 if user.target not in Q_OPS:
+                    continue
+                # A Q node may consume ``n`` as scale or zero point. It is an
+                # output quantizer only when ``n`` is its data input.
+                if not user.args or user.args[0] is not n:
                     continue
 
                 # quantization node found here, store the quantization parameters in meta value

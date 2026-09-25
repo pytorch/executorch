@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import tosa_serializer as ts
 from executorch.backends.arm.process_node import _add_const, process_placeholder
+from executorch.backends.arm.tosa.constant_pool import TosaSerializerWithConstantPool
 from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import to_edge
@@ -39,7 +40,7 @@ class CapturingTosaGraph:
         self.name = None
         self.serialized_bytes = None
 
-    def addConst(self, shape, dtype, values, name):
+    def addUnpooledConst(self, shape, dtype, values, name):
         self.shape = shape
         self.dtype = dtype
         self.values = np.asarray(values)
@@ -111,7 +112,7 @@ def test_add_const_fp4_in_packed_storage() -> None:
         TosaArg,
         SimpleNamespace(dtype=ts.DType.FP4E2M1, shape=(1, 1, 8)),
     )
-    tosa_graph = ts.TosaSerializer()
+    tosa_graph = TosaSerializerWithConstantPool()
 
     _add_const(tosa_graph, packed_values, tosa_arg, name="fp4_weight")
 
@@ -140,7 +141,7 @@ def _test_add_const_fp6_in_packed_storage(dtype: int) -> None:
         TosaArg,
         SimpleNamespace(dtype=dtype, shape=(1, 1, 32)),
     )
-    tosa_graph = ts.TosaSerializer()
+    tosa_graph = TosaSerializerWithConstantPool()
 
     _add_const(tosa_graph, values, tosa_arg, name="fp6_weight")
 

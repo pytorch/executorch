@@ -57,6 +57,8 @@ ${layout_declare_ubo(B, "ivec4", "input_sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "apply_bias", "0")}
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 
@@ -73,7 +75,7 @@ shared FPOutTile partial_sums[WGS];
 
 void main() {
   const int lid = int(gl_LocalInvocationID.z);
-  const int n8 = int(gl_GlobalInvocationID.x);
+  const int n8 = int(linear_idx_from_gid());
 
   // The output tensor will have a shape of [n, 1, 1, 1]. Each thread computes
   // 8 output elements, so each thread will write to 8 elements starting at the

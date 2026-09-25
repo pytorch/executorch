@@ -13,13 +13,14 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/extension/cuda/device_guard.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
-
-#include <cuda_runtime.h>
 
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -31,6 +32,7 @@ namespace aoti = ::executorch::backends::aoti;
 namespace slimc10 = ::executorch::backends::aoti::slim::c10;
 using ::executorch::backends::aoti::slim::from_blob;
 using ::executorch::backends::aoti::slim::SlimTensor;
+using ::executorch::extension::cuda::CUDAGuard;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
@@ -104,42 +106,6 @@ bool handle_has_symbols(CudaDelegateHandle* h) {
       h->update_user_managed_constant_buffer_pairs;
 }
 
-struct CudaDeviceGuard {
-  int prev_device{0};
-  bool restore{false};
-
-  Error set(int device) {
-    if (device < 0) {
-      return Error::Ok;
-    }
-    cudaError_t err = cudaGetDevice(&prev_device);
-    if (err != cudaSuccess) {
-      ET_LOG(Error, "mutable_state: cudaGetDevice failed");
-      return Error::Internal;
-    }
-    if (prev_device == device) {
-      return Error::Ok;
-    }
-    err = cudaSetDevice(device);
-    if (err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "mutable_state: cudaSetDevice(%d) failed: %s",
-          device,
-          cudaGetErrorString(err));
-      return Error::Internal;
-    }
-    restore = true;
-    return Error::Ok;
-  }
-
-  ~CudaDeviceGuard() {
-    if (restore) {
-      cudaSetDevice(prev_device);
-    }
-  }
-};
-
 Result<int> tensor_cuda_device_index(const SlimTensor& t) {
   const slimc10::Device device = t.device();
   ET_CHECK_OR_RETURN_ERROR(
@@ -153,7 +119,7 @@ Result<int> tensor_cuda_device_index(const SlimTensor& t) {
   cudaPointerAttributes attr{};
   const cudaError_t err = cudaPointerGetAttributes(&attr, t.data_ptr());
   if (err != cudaSuccess) {
-    cudaGetLastError();
+    (void)cudaGetLastError();
     ET_LOG(
         Error,
         "mutable_state: cudaPointerGetAttributes failed for template pointer");
@@ -172,16 +138,24 @@ void cuda_free_on_pointer_device(void* ptr, bool synchronize) {
   if (attr_err == cudaSuccess) {
     device = attr.device;
   } else {
-    cudaGetLastError();
+    (void)cudaGetLastError();
   }
 
-  CudaDeviceGuard guard;
-  if (device >= 0 && guard.set(device) != Error::Ok) {
-    ET_LOG(
-        Error,
-        "mutable_state: freeing pointer %p without switching to device %d",
-        ptr,
-        device);
+  // The guard refuses a negative index rather than ignoring it, and this path
+  // reaches one whenever the pointer's attributes could not be read. Freeing is
+  // best effort, so stay quiet.
+  std::optional<CUDAGuard> guard;
+  if (device >= 0) {
+    auto created = CUDAGuard::create(device);
+    if (created.ok()) {
+      guard.emplace(std::move(created.get()));
+    } else {
+      ET_LOG(
+          Error,
+          "mutable_state: freeing pointer %p without switching to device %d",
+          ptr,
+          device);
+    }
   }
   if (synchronize) {
     const cudaError_t sync_err = cudaDeviceSynchronize();
@@ -334,8 +308,8 @@ Error build_descriptors(Context& c, CudaDelegateHandle* h) {
     c.discovered_fqns.insert(fqn);
 
     if (c.template_ptr.find(fqn) == c.template_ptr.end()) {
-      CudaDeviceGuard guard;
-      ET_CHECK_OK_OR_RETURN_ERROR(guard.set(device));
+      auto guard = CUDAGuard::create(device);
+      ET_CHECK_OK_OR_RETURN_ERROR(guard.error());
 
       void* tpl = nullptr;
       if (cudaMalloc(&tpl, t->nbytes()) != cudaSuccess) {
@@ -373,8 +347,8 @@ Error ensure_session_buffers(Context& c, int token) {
       ET_LOG(Error, "mutable_state: no template device for '%s'", fqn.c_str());
       return Error::Internal;
     }
-    CudaDeviceGuard guard;
-    ET_CHECK_OK_OR_RETURN_ERROR(guard.set(device_it->second));
+    auto guard = CUDAGuard::create(device_it->second);
+    ET_CHECK_OK_OR_RETURN_ERROR(guard.error());
 
     void* p = nullptr;
     if (cudaMalloc(&p, nbytes) != cudaSuccess) {

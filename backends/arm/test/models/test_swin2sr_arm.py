@@ -40,7 +40,7 @@ swin2sr_int_lowered_outer_graph_ops = {
     "executorch_exir_dialects_edge__ops_aten_clamp_default": 4,
     "executorch_exir_dialects_edge__ops_aten_expand_copy_default": 4,
     "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
-    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 6,
+    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 5,
 }
 swin2sr_vgf_quant_lowered_outer_graph_ops = {
     "torch.ops.higher_order.executorch_call_delegate": 1,

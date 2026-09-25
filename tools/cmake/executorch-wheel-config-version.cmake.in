@@ -1,0 +1,60 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Version file for the wheel's CMake package, so `find_package(executorch 1.2)`
+# answers correctly instead of matching any version at all.
+#
+# Written by packaging rather than checked in, because the version is only known
+# when the wheel is built: version.txt gives the base, and BUILD_VERSION
+# overrides it for a nightly. A checked-in file would go stale the first time
+# either changed.
+#
+# The same shape as the torch wheel's TorchConfigVersion.cmake, which is the
+# file a consumer of this ecosystem will already have met.
+set(PACKAGE_VERSION "@EXECUTORCH_VERSION@")
+
+# The same version again, unabridged. find_package compares dotted integers
+# only, so the version above is read as its numeric release part and a consumer
+# cannot pin a nightly or a specific build through it: passing the full string
+# to find_package is a hard argument error. This variable is what a consumer
+# compares when an exact build pairing is required.
+set(EXECUTORCH_BUILD_VERSION "@EXECUTORCH_BUILD_VERSION@")
+
+# Any version at least as new as the one requested, within the same major.
+# ExecuTorch promises nothing across a major boundary, so a 2.x package must not
+# answer a request written and tested against 1.x: the consumer would configure
+# against a package it has never seen and fail at compile or run time instead of
+# at find_package. This is CMake's SameMajorVersion rule, which the other
+# package generators in this tree already use.
+string(REGEX MATCH "^[0-9]+" _executorch_installed_major "${PACKAGE_VERSION}")
+if("${PACKAGE_VERSION}" VERSION_LESS "${PACKAGE_FIND_VERSION}")
+  set(PACKAGE_VERSION_COMPATIBLE FALSE)
+elseif(PACKAGE_FIND_VERSION AND NOT "${PACKAGE_FIND_VERSION_MAJOR}" EQUAL
+                                "${_executorch_installed_major}"
+)
+  set(PACKAGE_VERSION_COMPATIBLE FALSE)
+else()
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+  if("${PACKAGE_VERSION}" VERSION_EQUAL "${PACKAGE_FIND_VERSION}")
+    set(PACKAGE_VERSION_EXACT TRUE)
+  endif()
+endif()
+
+# A range request names an upper bound, and without this branch the check above
+# sees only the lower one. The major rule already turns away a different major,
+# so what gets through is a package inside the same major and past the top of
+# the range: measured, find_package(executorch 1.0...<1.5) accepted an installed
+# 1.9. CMake sets these variables only for a range, so a plain request is
+# unaffected.
+if(PACKAGE_FIND_VERSION_RANGE AND PACKAGE_VERSION_COMPATIBLE)
+  if(PACKAGE_FIND_VERSION_RANGE_MAX STREQUAL "INCLUDE")
+    if("${PACKAGE_VERSION}" VERSION_GREATER "${PACKAGE_FIND_VERSION_MAX}")
+      set(PACKAGE_VERSION_COMPATIBLE FALSE)
+    endif()
+  elseif(NOT "${PACKAGE_VERSION}" VERSION_LESS "${PACKAGE_FIND_VERSION_MAX}")
+    set(PACKAGE_VERSION_COMPATIBLE FALSE)
+  endif()
+endif()

@@ -12,7 +12,7 @@ import logging
 import re
 
 from functools import partial
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import torch
 
@@ -21,7 +21,11 @@ from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
-from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.builders.utils import (
+    get_attr_from_target,
+    is_graph_output,
+    set_attr_from_target,
+)
 from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
@@ -84,11 +88,15 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.quantize import PTQStrategy
+from executorch.examples.qualcomm.oss_scripts.llama.quantize import (
+    PTQStrategy,
+    QATStrategy,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     StaticLLMQuantRecipe,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
+from executorch.examples.qualcomm.oss_scripts.llama.train.config import TrainingArgs
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
     Component,
     get_model_specific_kwargs,
@@ -105,8 +113,12 @@ from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
 from torch.utils.data import DataLoader
-from torchao.quantization.pt2e import MinMaxObserver
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import MinMaxObserver, move_exported_model_to_train
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from transformers import AutoModel, AutoModelForSpeechSeq2Seq
 
 
@@ -162,10 +174,13 @@ class TextDecoder(Component):
             self.pass_manager_cls.get_passes_dependency_for_capture_program()
         )
         self.meta = {}
+        recipe_cls = (
+            self.config.qat_recipe
+            if control_args.qat and self.config.qat_recipe
+            else self.config.quant_recipe
+        )
         self.quant_recipe: StaticLLMQuantRecipe = (
-            self.config.quant_recipe(mode == Mode.CALIBRATE)
-            if self.config.quant_recipe
-            else None
+            recipe_cls(mode == Mode.CALIBRATE) if recipe_cls else None
         )
 
         # For multimodal embedding
@@ -212,23 +227,32 @@ class TextDecoder(Component):
         self.tok_embedding, self.decoder = self._prepare_model()
 
         # check if sharding required
-        if self.decoder and self.config.num_sharding > 1:
-            layer_prefix_offsets = None
-            if self.control_args.decoder_model == "gemma4-e2b":
-                n_self = self.gemma4_config.num_self_decoder_layers
-                layer_prefix_offsets = {
-                    "model.self_decoder.layers": 0,
-                    "model.cross_decoder.layers": n_self,
-                }
-            SplitGraph, setting = model_sharding.get_split_graph_pass(
-                self.meta["get_n_layers"],
-                shares=self.config.num_sharding,
-                pattern=self._get_sharding_get_pattern(),
-                layer_prefix_offsets=layer_prefix_offsets,
-            )
-            self.passes_job[SplitGraph] = setting
-            self.dep_table[SplitGraph] = [FoldQDQ]
-            self.dep_table[TagQuantIO] = [SplitGraph]
+        if self.decoder is not None:
+            if self.meta["get_n_layers"] >= self.config.num_sharding > 1:
+                layer_prefix_offsets = None
+                if self.control_args.decoder_model == "gemma4-e2b":
+                    n_self = self.gemma4_config.num_self_decoder_layers
+                    layer_prefix_offsets = {
+                        "model.self_decoder.layers": 0,
+                        "model.cross_decoder.layers": n_self,
+                    }
+                SplitGraph, setting = model_sharding.get_split_graph_pass(
+                    self.meta["get_n_layers"],
+                    shares=self.config.num_sharding,
+                    pattern=self._get_sharding_get_pattern(),
+                    layer_prefix_offsets=layer_prefix_offsets,
+                )
+                self.passes_job[SplitGraph] = setting
+                self.dep_table[SplitGraph] = [FoldQDQ]
+                self.dep_table[TagQuantIO] = [SplitGraph]
+            else:
+                logging.info(
+                    f"Disabling sharding because the requested number of shards "
+                    f"({self.config.num_sharding}) is not valid for the number of layers "
+                    f"({self.meta['get_n_layers']}). "
+                    "Sharding is enabled only when the number of shards is greater than 1 "
+                    "and no greater than the number of layers."
+                )
 
         self._decoder_inference = (
             DecoderInference(
@@ -700,14 +724,14 @@ class TextDecoder(Component):
             soc_model=data.soc_model,
         )
 
+        use_qat = self.control_args.qat and self.mode == Mode.CALIBRATE
         with torch.no_grad():
             graph_module = None
             self.decoder = torch.export.export(
                 self.decoder, self.export_input, strict=True
             ).module()
-            if (
-                self.mode == Mode.CALIBRATE
-                and self.control_args.quant_recipe_suggestion
+            if self.mode == Mode.CALIBRATE and (
+                self.control_args.quant_recipe_suggestion or use_qat
             ):
                 graph_module = copy.deepcopy(self.decoder)
             if self.apply_embedding:
@@ -735,7 +759,11 @@ class TextDecoder(Component):
                     event_name="export_tasks",
                 )
 
-            self.decoder = prepare_pt2e(self.decoder, quantizer)
+            if use_qat:
+                self.decoder = prepare_qat_pt2e(self.decoder, quantizer)
+                move_exported_model_to_train(self.decoder)
+            else:
+                self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
                     self.tok_embedding, tok_embedding_quantizer
@@ -745,19 +773,47 @@ class TextDecoder(Component):
                 calibration_dataloaders = {
                     AUDIO_ENCODER: request.method_data[
                         AUDIO_ENCODER
-                    ].calibration_data.intermediate_outputs,
+                    ].quantization_data.intermediate_outputs,
                     VISION_ENCODER: request.method_data[
                         VISION_ENCODER
-                    ].calibration_data.intermediate_outputs,
-                    TEXT_DECODER: data.calibration_data.datasets,
+                    ].quantization_data.intermediate_outputs,
+                    TEXT_DECODER: data.quantization_data.calib_loader,
                 }
-                PTQStrategy(
-                    inference=self._decoder_inference,
-                    module=self.decoder,
-                    seq_mse_candidates=self.config.seq_mse_candidates,
-                    tok_embedding=self.tok_embedding,
-                ).quantize(calib_loader=calibration_dataloaders)
-                logging.info("Calibration complete for prepare_pt2e")
+
+                if use_qat:
+                    training_args = TrainingArgs.from_yaml(
+                        self.control_args.train_config
+                    )
+                    training_args.lr_config = self.control_args.lr_config
+                    frozen = (
+                        [".*"]
+                        if self.control_args.freeze_all_params
+                        # freeze_all_params: CI-only flag to verify QAT vs PTQ accuracy difference
+                        # by disabling weight updates and only updating scale/zero_point.
+                        else getattr(self.quant_recipe, "frozen_param_patterns", None)
+                    )
+                    QATStrategy(
+                        inference=self._decoder_inference,
+                        module=self.decoder,
+                        tok_embedding=self.tok_embedding,
+                        seq_mse_candidates=self.config.seq_mse_candidates,
+                    ).quantize(
+                        calib_loader=calibration_dataloaders,
+                        training_args=training_args,
+                        teacher=graph_module,
+                        train_loader=data.quantization_data.train_loader,
+                        val_loader=data.quantization_data.val_loader,
+                        frozen_param_patterns=frozen,
+                    )
+                    logging.info("QAT training complete")
+                else:
+                    PTQStrategy(
+                        inference=self._decoder_inference,
+                        module=self.decoder,
+                        tok_embedding=self.tok_embedding,
+                        seq_mse_candidates=self.config.seq_mse_candidates,
+                    ).quantize(calib_loader=calibration_dataloaders)
+                    logging.info("Calibration complete")
             else:
                 # one dummy inference to remove affine observer
                 # error happened in convert_pt2e
@@ -776,7 +832,7 @@ class TextDecoder(Component):
                     self.quant_recipe.recipe,
                 )
 
-            # FP32 model used for quant-recipe-suggestion reference; release after use.
+            # FP32 model used as QAT teacher or quant-recipe-suggestion reference; release after use.
             del graph_module
             gc.collect()
 
@@ -908,25 +964,10 @@ class HybridTextDecoder(Component):
 
         def parameter_override(quantized_node, unquantized_node):
             # Some parameters need to be iterated over to retrieve attributes such as static_llama.tok_embedding.weight
-            def _get_attr(graph_module: torch.fx.GraphModule, target: str) -> Any:
-                attr: Any = graph_module
-                for target_atom in target.split("."):
-                    attr = getattr(attr, target_atom)
-                return attr
-
-            def _set_attr(
-                graph_module: torch.fx.GraphModule, target: str, replacement: Any
-            ) -> Any:
-                attr: Any = graph_module
-                target_list = target.split(".")
-                for target_atom in target_list[:-1]:
-                    attr = getattr(attr, target_atom)
-                setattr(attr, target_list[-1], replacement)
-
-            _set_attr(
+            set_attr_from_target(
                 unquantized_model,
                 unquantized_node.target,
-                _get_attr(quantized_model, quantized_node.target),
+                get_attr_from_target(quantized_model, quantized_node.target),
             )
             # scale / zero point are part of op's attributes
             if list(quantized_node.users)[0].target in ptq_target:
@@ -1210,20 +1251,23 @@ class Modality(Component):
         if config := getattr(config, modality, None):
             if modality == AUDIO_ENCODER:
                 auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(repo_id)
-                self.num_layers = auto_model.config.encoder_config.num_layers
-                self.ctx_size = auto_model.config.encoder_config.context_size
             elif modality == TEXT_ENCODER:
                 raise NotImplementedError(f"{modality} is under development")
             elif modality == VISION_ENCODER:
                 auto_model = AutoModel.from_pretrained(
                     repo_id, _attn_implementation="eager"
                 )
-                self.num_layers = auto_model.config.vision_config.num_hidden_layers
             else:
                 raise NotImplementedError(f"Find no {modality}")
 
             auto_model = auto_model.to(torch.float32).eval()
             self.model = config().create_encoder(auto_model.config).eval()
+            self.meta = self.model.get_metadata()
+            if "get_n_layers" not in self.meta:
+                raise ValueError(
+                    f"{type(self.model).__name__}.get_metadata() must provide "
+                    "'get_n_layers'"
+                )
             self.model.load_state_dict(
                 auto_model.state_dict(), strict=False
             )  # set strict to false to simplify parameter loading for non-text models
@@ -1255,12 +1299,15 @@ class Modality(Component):
             quant_io_type = fixed_point_type["io_type"]
 
         # GraniteSpeech: tag _to_copy op as quantized tensors for attn dist. It is caused by sharding
+        ctx_size = self.meta.get("get_context_size")
         if (
             issubclass(self.config, GraniteSpeechEncoder)
             and node.target == exir_ops.edge.aten._to_copy.default
-            and node.meta["val"].size() == (self.ctx_size, self.ctx_size)
+            and ctx_size is not None
+            and node.meta["val"].size() == (ctx_size, ctx_size)
         ):
             quant_io_type = torch.int32
+            logging.info(f"Tagging {node} with {quant_io_type} quantized IO ")
 
         return quant_io_type
 
@@ -1279,9 +1326,9 @@ class Modality(Component):
 
         request_data = request.method_data[self.modality]
         # check if sharding required
-        if self.config.num_sharding > 1:
+        if self.meta["get_n_layers"] >= self.config.num_sharding > 1:
             SplitGraph, setting = model_sharding.get_split_graph_pass(
-                self.num_layers,
+                self.meta["get_n_layers"],
                 shares=self.config.num_sharding,
                 pattern=self._get_sharding_get_pattern(),
             )
@@ -1297,6 +1344,14 @@ class Modality(Component):
                 self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                     "get_quant_io_dtype_fn"
                 ] = partial(self._tag_ios, fixed_point_type=fixed_point_type)
+        else:
+            logging.info(
+                f"Disabling sharding for {self.modality} because the requested number "
+                f"of shards ({self.config.num_sharding}) is not valid for the number "
+                f"of layers ({self.meta['get_n_layers']}). "
+                "Sharding is enabled only when the number of shards is greater than 1 "
+                "and no greater than the number of layers."
+            )
 
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             module=self.model,
@@ -1341,7 +1396,7 @@ class Modality(Component):
             return
 
         request_data = request.method_data[self.modality]
-        calibration_datasets = request_data.calibration_data.datasets
+        calibration_datasets = request_data.quantization_data.calib_loader
 
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
@@ -1349,7 +1404,7 @@ class Modality(Component):
             if request_data.skip_quantize:
                 logging.info(f"skipping encoder quantization for {self.modality}")
                 intermediate_outputs = self._calibrate(self.model, calibration_datasets)
-                request_data.calibration_data.intermediate_outputs = (
+                request_data.quantization_data.intermediate_outputs = (
                     intermediate_outputs
                 )
                 return
@@ -1362,7 +1417,7 @@ class Modality(Component):
 
             # start calibration
             intermediate_outputs = self._calibrate(self.model, calibration_datasets)
-            request_data.calibration_data.intermediate_outputs = intermediate_outputs
+            request_data.quantization_data.intermediate_outputs = intermediate_outputs
 
             self.model = convert_pt2e(self.model)
 
@@ -1371,7 +1426,7 @@ class Modality(Component):
                 qdq_intermediate_outputs = self._calibrate(
                     self.model, calibration_datasets
                 )
-                request_data.calibration_data.qdq_intermediate_outputs = (
+                request_data.quantization_data.qdq_intermediate_outputs = (
                     qdq_intermediate_outputs
                 )
 
@@ -1450,14 +1505,23 @@ class MultiModalManager(Component):
             tokenizer_wrapper=tokenizer_wrapper,
             attn_mask=self.text_decoder.calibration_prefill.attn_mask,
         )
-        calibration_data = dataset_builder.build_calib_dataloaders()
+        if self.control_args.qat:
+            calib_loader, train_loader, val_loader = (
+                dataset_builder.build_qat_dataloaders()
+            )
+        else:
+            calib_loader = dataset_builder.build_calib_dataloaders()
+            train_loader = dict.fromkeys(calib_loader)
+            val_loader = dict.fromkeys(calib_loader)
 
         quantize_request = Request(
             inspect.currentframe().f_code.co_name,
             {
                 m: Request.Data(
-                    calibration_data=Request.CalibrationData(
-                        datasets=calibration_data[m]
+                    quantization_data=Request.QuantizationData(
+                        calib_loader=calib_loader[m],
+                        train_loader=train_loader[m],
+                        val_loader=val_loader[m],
                     ),
                     skip_quantize=skip_quantize.get(m, False),
                     tokenizer=tokenizer_wrapper.tokenizer,

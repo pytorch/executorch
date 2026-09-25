@@ -5,10 +5,11 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -17,6 +18,9 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 aten_op = "torch.ops.aten.argmax.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_argmax_default"
+to_copy_exir_op = (
+    "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+)
 input_t = Tuple[torch.Tensor]
 
 
@@ -63,6 +67,21 @@ class Argmax(torch.nn.Module):
         ),
     }
 
+    test_data_u55_int: dict[str, Tuple[input_t, int]] = {
+        "rank_1_dim_0_int8": lambda: (
+            (torch.randint(-128, 127, (10,), dtype=torch.int8),),
+            0,
+        ),
+        "rank_2_dim_1_int8": lambda: (
+            (torch.randint(-128, 127, (2, 5), dtype=torch.int8),),
+            1,
+        ),
+        "rank_4_dim_3_int8": lambda: (
+            (torch.randint(-128, 127, (1, 3, 4, 5), dtype=torch.int8),),
+            3,
+        ),
+    }
+
 
 class ArgmaxAll(torch.nn.Module):
     def forward(self, x: torch.Tensor):
@@ -88,7 +107,7 @@ def test_argmax_tosa_FP(test_data: Tuple[input_t, int]):
         Argmax(dim),
         data,
         aten_op,
-        exir_op,
+        [exir_op, to_copy_exir_op],
         tosa_extensions=["bf16"],
     )
     pipeline.count_tosa_ops({"ARGMAX": 1})
@@ -129,19 +148,38 @@ def test_argmax_tosa_INT(test_data: Tuple[input_t, int]):
         Argmax(dim),
         data,
         aten_op,
-        exir_op,
+        [exir_op, to_copy_exir_op],
     )
     pipeline.count_tosa_ops({"ARGMAX": 1})
     pipeline.run()
 
 
-@pytest.mark.xfail(
-    reason=(
-        "VGF ARGMAX output contract mismatch: MLTORCH-2372"
-        "ExecuTorch output is allocated as int64 while TOSA/VGF emits int32."
-    ),
-    strict=True,
-)
+@common.parametrize("test_data", Argmax.test_data_u55_int)
+@common.XfailIfNoCorstone300
+def test_argmax_u55_INT(test_data: Tuple[input_t, int]):
+    data, dim = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        Argmax(dim),
+        data,
+        aten_op,
+        [exir_op, to_copy_exir_op],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Argmax.test_data_int)
+@common.XfailIfNoCorstone320
+def test_argmax_u85_INT(test_data: Tuple[input_t, int]):
+    data, dim = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        Argmax(dim),
+        data,
+        aten_op,
+        [exir_op, to_copy_exir_op],
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data",
     Argmax.test_data | Argmax.test_data_fp16 | Argmax.test_data_bf16,
@@ -153,20 +191,13 @@ def test_argmax_vgf_no_quant(test_data: Tuple[input_t, int]):
         Argmax(dim),
         data,
         aten_op,
-        exir_op,
+        [exir_op, to_copy_exir_op],
         quantize=False,
         tosa_extensions=["bf16"],
     )
     pipeline.run()
 
 
-@pytest.mark.xfail(
-    reason=(
-        "VGF ARGMAX output contract mismatch: MLTORCH-2372"
-        "ExecuTorch output is allocated as int64 while TOSA/VGF emits int32."
-    ),
-    strict=True,
-)
 @common.parametrize("test_data", Argmax.test_data)
 @common.SkipIfNoModelConverter
 def test_argmax_vgf_quant(test_data: Tuple[input_t, int]):
@@ -175,7 +206,7 @@ def test_argmax_vgf_quant(test_data: Tuple[input_t, int]):
         Argmax(dim),
         data,
         aten_op,
-        exir_op,
+        [exir_op, to_copy_exir_op],
         quantize=True,
     )
     pipeline.run()

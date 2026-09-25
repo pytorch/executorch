@@ -12,7 +12,10 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
+#include <executorch/runtime/executor/test/managed_memory_manager.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
 
@@ -72,7 +75,10 @@ struct EValueConfig {
 // specifies which value indices appear in the execution plan's inputs list.
 std::vector<uint8_t> CreateTestProgram(
     const std::vector<EValueConfig>& configs,
-    const std::vector<int32_t>& input_indices = {}) {
+    const std::vector<int32_t>& input_indices = {},
+    // If true, emit a chain of two KernelCalls: the first's op_index is out of
+    // range so resolve_operator() fails on a non-final instruction.
+    bool with_out_of_range_kernel_call = false) {
   flatbuffers::FlatBufferBuilder builder(1024);
 
   std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>> evalues;
@@ -132,10 +138,37 @@ std::vector<uint8_t> CreateTestProgram(
   auto inputs_vec = builder.CreateVector(input_indices);
   auto empty_int_vec = builder.CreateVector(std::vector<int32_t>{});
   auto empty_int64_vec = builder.CreateVector(std::vector<int64_t>{0});
-  auto empty_chain_vec = builder.CreateVector(
-      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
-  auto empty_operators_vec = builder.CreateVector(
-      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>> chains;
+  if (with_out_of_range_kernel_call) {
+    auto kernel_call = executorch_flatbuffer::CreateKernelCall(
+        builder, /*op_index=*/5, builder.CreateVector(std::vector<int32_t>{}));
+    auto good_call = executorch_flatbuffer::CreateKernelCall(
+        builder, /*op_index=*/0, builder.CreateVector(std::vector<int32_t>{}));
+    std::vector<flatbuffers::Offset<executorch_flatbuffer::Instruction>>
+        instructions{
+            executorch_flatbuffer::CreateInstruction(
+                builder,
+                executorch_flatbuffer::InstructionArguments::KernelCall,
+                kernel_call.Union()),
+            // Resolves, so letting a later Ok overwrite the failure returns Ok.
+            executorch_flatbuffer::CreateInstruction(
+                builder,
+                executorch_flatbuffer::InstructionArguments::KernelCall,
+                good_call.Union())};
+    chains.push_back(executorch_flatbuffer::CreateChain(
+        builder,
+        /*inputs=*/builder.CreateVector(std::vector<int32_t>{}),
+        /*outputs=*/builder.CreateVector(std::vector<int32_t>{}),
+        builder.CreateVector(instructions),
+        /*stacktrace=*/0));
+  }
+  auto chain_vec = builder.CreateVector(chains);
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>> operators;
+  if (with_out_of_range_kernel_call) {
+    operators.push_back(executorch_flatbuffer::CreateOperator(
+        builder, builder.CreateString("test::noop"), builder.CreateString("")));
+  }
+  auto operators_vec = builder.CreateVector(operators);
   auto empty_delegates_vec = builder.CreateVector(
       std::vector<
           flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
@@ -147,8 +180,8 @@ std::vector<uint8_t> CreateTestProgram(
       values_vec,
       /*inputs=*/inputs_vec,
       /*outputs=*/empty_int_vec,
-      empty_chain_vec,
-      empty_operators_vec,
+      chain_vec,
+      operators_vec,
       empty_delegates_vec,
       empty_int64_vec);
 
@@ -338,4 +371,36 @@ TEST_F(ProgramValidationTest, TensorListWithOutOfBoundsIndexDetected) {
   Result<Program> program =
       Program::load(&loader, Program::Verification::InternalConsistency);
   EXPECT_EQ(program.error(), Error::InvalidProgram);
+}
+
+// A resolve_operator() failure is surfaced after the loop, so a later
+// instruction must not discard it.
+TEST_F(ProgramValidationTest, ResolveOperatorFailureSurfacesFromInit) {
+  std::vector<EValueConfig> configs = {
+      {EValueType::Tensor, {2, 2}, {}, /*is_dynamic=*/false}};
+
+  AlignedBuffer buf(CreateTestProgram(
+      configs,
+      /*input_indices=*/{},
+      /*with_out_of_range_kernel_call=*/true));
+  auto loader = buf.loader();
+
+  // Minimal, so validation doesn't reject the bad op_index before init() runs.
+  Result<Program> program =
+      Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // A keyless kernel matches any meta, so instruction 1 resolves.
+  static const auto noop = executorch::runtime::Kernel(
+      "test::noop",
+      [](executorch::runtime::KernelRuntimeContext&,
+         executorch::runtime::Span<executorch::runtime::EValue*>) {});
+  ASSERT_EQ(executorch::runtime::register_kernel(noop), Error::Ok);
+
+  executorch::runtime::testing::ManagedMemoryManager mmm(
+      /*planned_memory_bytes=*/32 * 1024U,
+      /*method_allocator_bytes=*/32 * 1024U);
+  Result<executorch::runtime::Method> method =
+      program->load_method("forward", &mmm.get());
+  EXPECT_EQ(method.error(), Error::InvalidProgram);
 }

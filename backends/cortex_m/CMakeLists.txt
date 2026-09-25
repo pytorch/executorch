@@ -23,7 +23,7 @@ include(FetchContent)
 
 # CMSIS-NN configuration with dynamic path detection
 set(CMSIS_NN_VERSION
-    "dbf45dbfcc515421dd6099037d3e2637b90748c8"
+    "v8.0.0"
     CACHE STRING "CMSIS-NN version to download"
 )
 set(CMSIS_NN_LOCAL_PATH
@@ -128,7 +128,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   target_link_libraries(
     cortex_m_kernels
     PRIVATE cmsis-nn
-    PRIVATE executorch
+    PRIVATE executorch_core
     PRIVATE kernels_util_all_deps
   )
   target_compile_definitions(
@@ -143,7 +143,8 @@ if(EXECUTORCH_BUILD_CORTEX_M)
   )
 
   gen_operators_lib(
-    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS executorch
+    LIB_NAME "cortex_m_ops_lib" KERNEL_LIBS cortex_m_kernels DEPS
+    executorch_core
   )
 
   install(

@@ -14,7 +14,7 @@ versions
 """
 
 import logging
-from typing import Callable
+from typing import Callable, Sequence
 
 import torch
 import torch.nn as nn
@@ -22,8 +22,8 @@ import torch.nn as nn
 from executorch.backends.mlx.llm.cache import (
     HFStaticCache,
     KVCache,
+    KVCacheLayerConfig,
     resolve_hf_cache_layout,
-    RingBufferKVCache,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,57 @@ def replace_et_kv_cache_with_mlx(
     )
 
 
+def replace_hf_cache_with_mlx_in_graph_cache(
+    module: nn.Module,
+    layer_configs: Sequence[KVCacheLayerConfig],
+    *,
+    max_cache_len: int,
+    max_write_len: int,
+    max_batch_size: int = 1,
+    dtype: torch.dtype = torch.float32,
+) -> nn.Module:
+    """Install full/ring caches from resolved cache-owner geometry, in place.
+
+    The wrapper's ``static_cache`` or ``cache`` must be None or a StaticCache.
+    All geometry is validated before allocation or wrapper mutation. Cache
+    tensors are registered as nonpersistent buffers for export capture.
+    """
+    from transformers.cache_utils import StaticCache
+
+    if hasattr(module, "static_cache"):
+        attr_name = "static_cache"
+    elif hasattr(module, "cache"):
+        attr_name = "cache"
+    else:
+        raise ValueError("Module must have 'static_cache' or 'cache' attribute")
+    original_cache = getattr(module, attr_name)
+    if original_cache is not None and not isinstance(original_cache, StaticCache):
+        raise ValueError(
+            f"module.{attr_name} must be None or a StaticCache, "
+            f"got {type(original_cache)}"
+        )
+
+    mlx_cache = HFStaticCache.from_layer_configs(
+        layer_configs,
+        max_cache_len=max_cache_len,
+        max_write_len=max_write_len,
+        max_batch_size=max_batch_size,
+        dtype=dtype,
+    )
+    for i, layer in enumerate(mlx_cache.layers):
+        for name, tensor in (
+            (f"key_cache_{i}", layer.keys),
+            (f"value_cache_{i}", layer.values),
+            (f"cumulative_length_{i}", layer.cumulative_length),
+        ):
+            # Older wrappers may expose plain tensor attributes, not buffers.
+            if hasattr(module, name) and name not in module._buffers:
+                delattr(module, name)
+            module.register_buffer(name, tensor, persistent=False)
+    setattr(module, attr_name, mlx_cache)
+    return module
+
+
 def replace_hf_cache_with_mlx(
     module: nn.Module,
     config,
@@ -117,45 +168,23 @@ def replace_hf_cache_with_mlx(
     Raises:
         ValueError: If module has no recognized cache attribute
     """
-    from transformers.cache_utils import StaticCache
-
-    mlx_cache = HFStaticCache(
-        config=config,
+    _, num_heads, head_dims = resolve_hf_cache_layout(config)
+    context_length = (
+        max_cache_len
+        if max_cache_len is not None
+        else getattr(config.get_text_config(), "max_position_embeddings", 2048)
+    )
+    return replace_hf_cache_with_mlx_in_graph_cache(
+        module,
+        [
+            KVCacheLayerConfig(num_kv_heads=num_head, head_dim=head_dim, window_size=0)
+            for num_head, head_dim in zip(num_heads, head_dims)
+        ],
         max_batch_size=max_batch_size,
-        max_cache_len=max_cache_len,
+        max_cache_len=context_length,
+        max_write_len=context_length,
         dtype=dtype,
     )
-
-    def _install_cache(attr_name):
-        setattr(module, attr_name, mlx_cache)
-        for i, (cache_layer, layer_cache) in enumerate(
-            zip(mlx_cache.layers, mlx_cache.kv_cache)
-        ):
-            setattr(module, f"key_cache_{i}", layer_cache.k_cache)
-            setattr(module, f"value_cache_{i}", layer_cache.v_cache)
-            if hasattr(cache_layer, "cumulative_length"):
-                setattr(
-                    module,
-                    f"cumulative_length_{i}",
-                    cache_layer.cumulative_length,
-                )
-
-    if hasattr(module, "static_cache"):
-        assert isinstance(
-            module.static_cache, StaticCache
-        ), f"Expected StaticCache, got {type(module.static_cache)}"
-        _install_cache("static_cache")
-    elif hasattr(module, "cache"):
-        if isinstance(module.cache, StaticCache):
-            _install_cache("cache")
-        else:
-            raise ValueError(
-                f"module.cache is not a StaticCache, got {type(module.cache)}"
-            )
-    else:
-        raise ValueError("Module must have 'static_cache' or 'cache' attribute")
-
-    return module
 
 
 def replace_hf_cache_with_mlx_ring_buffer(
@@ -165,6 +194,7 @@ def replace_hf_cache_with_mlx_ring_buffer(
     window_size: int = 512,
     max_cache_len: int | None = None,
     dtype: torch.dtype = torch.float32,
+    max_write_len: int | None = None,
 ) -> nn.Module:
     """
     Replace HuggingFace's StaticCache with RingBufferKVCache for sliding window models.
@@ -182,80 +212,32 @@ def replace_hf_cache_with_mlx_ring_buffer(
             ``window_size``, which is only correct for models with no
             full-attention layers
         dtype: Cache tensor dtype
+        max_write_len: Largest single write the sliding layers must accept;
+            sizes each ring as ``window_size + max_write_len - 1``. Defaults to
+            ``window_size``.
 
     Raises:
-        ValueError: If module has no recognized cache attribute
+        ValueError: If module has no recognized cache attribute, or if
+            ``max_write_len`` exceeds ``window_size``
     """
-    from transformers.cache_utils import StaticCache
-
-    # Full-attention layers retain every position, so they are sized to the whole
-    # context; only the sliding layers are bounded by the window.
+    layer_types, num_heads, head_dims = resolve_hf_cache_layout(config)
     full_cache_len = max_cache_len if max_cache_len is not None else window_size
-
-    # Create HFStaticCache with ring buffer layers
-    mlx_cache = HFStaticCache(
-        config=config,
+    ring_max_write = max_write_len if max_write_len is not None else window_size
+    return replace_hf_cache_with_mlx_in_graph_cache(
+        module,
+        [
+            KVCacheLayerConfig(
+                num_kv_heads=num_head,
+                head_dim=head_dim,
+                window_size=window_size if layer_type == "sliding_attention" else 0,
+            )
+            for layer_type, num_head, head_dim in zip(layer_types, num_heads, head_dims)
+        ],
         max_batch_size=max_batch_size,
         max_cache_len=full_cache_len,
+        max_write_len=ring_max_write,
         dtype=dtype,
     )
-
-    # Replace only the sliding-window cache entries with ring buffers, while
-    # preserving full-attention entries as linear caches. Hybrid models like
-    # Gemma 4 mix both layouts and can also vary head_dim per cache layer.
-    layer_types, num_heads, head_dims = resolve_hf_cache_layout(config)
-    num_cache_layers = len(mlx_cache.layers)
-    num_ring_layers = 0
-    for i, (layer_type, layer_num_heads, layer_head_dim) in enumerate(
-        zip(layer_types, num_heads, head_dims)
-    ):
-        if layer_type != "sliding_attention":
-            continue
-        mlx_cache.kv_cache[i] = RingBufferKVCache(
-            max_batch_size=max_batch_size,
-            max_context_length=window_size,
-            n_heads=layer_num_heads,
-            head_dim=layer_head_dim,
-            dtype=dtype,
-        )
-        num_ring_layers += 1
-
-    def _install_cache(attr_name):
-        setattr(module, attr_name, mlx_cache)
-        for i, (cache_layer, layer_cache) in enumerate(
-            zip(mlx_cache.layers, mlx_cache.kv_cache)
-        ):
-            setattr(module, f"key_cache_{i}", layer_cache.k_cache)
-            setattr(module, f"value_cache_{i}", layer_cache.v_cache)
-            if hasattr(cache_layer, "cumulative_length"):
-                setattr(
-                    module,
-                    f"cumulative_length_{i}",
-                    cache_layer.cumulative_length,
-                )
-
-    if hasattr(module, "static_cache"):
-        assert isinstance(
-            module.static_cache, StaticCache
-        ), f"Expected StaticCache, got {type(module.static_cache)}"
-        _install_cache("static_cache")
-    elif hasattr(module, "cache"):
-        if isinstance(module.cache, StaticCache):
-            _install_cache("cache")
-        else:
-            raise ValueError(
-                f"module.cache is not a StaticCache, got {type(module.cache)}"
-            )
-    else:
-        raise ValueError("Module must have 'static_cache' or 'cache' attribute")
-
-    logger.info(
-        f"Installed hybrid MLX cache: {num_ring_layers} ring-buffer layers "
-        f"(window_size={window_size}) / {num_cache_layers} total cache layers "
-        f"(full-attention length {full_cache_len})"
-    )
-
-    return module
 
 
 class MLXRope(nn.Module):

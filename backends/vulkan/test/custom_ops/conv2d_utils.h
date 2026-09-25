@@ -68,6 +68,7 @@ struct Conv2dConfig {
   Padding padding;
   Dilation dilation;
   int32_t groups; // Number of groups for grouped convolution
+  int32_t batch = 1;
   std::string test_case_name = "placeholder";
   std::string op_name = "conv2d";
 

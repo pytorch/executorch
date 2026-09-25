@@ -1,0 +1,17 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_native",
+    srcs = ["test_native.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/_serialize:ptn",
+        "//executorch/exir/native:native",
+    ],
+)

@@ -39,6 +39,10 @@ Tensor& unfold_copy_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
+
   // Copy data
   const size_t leading_dims = getLeadingDims(self, dim);
   const size_t trailing_dims = getTrailingDims(self, dim);

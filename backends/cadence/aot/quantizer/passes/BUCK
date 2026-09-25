@@ -8,7 +8,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "fuse_ops.py",
     ],
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",

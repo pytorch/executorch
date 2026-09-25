@@ -289,9 +289,56 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       flat_tensor_data->data(),
       kMinimumAlignment);
 
+  // Verify that the root table offset is within bounds before dereferencing it.
+  // GetFlatTensor() below reads the root offset from the first bytes of the
+  // buffer and returns a pointer at buf + root_offset; reading any field then
+  // walks that table's vtable. Nothing here runs full flatbuffer verification,
+  // so a corrupt offset would otherwise let version()/named_data()/segments()
+  // dereference memory outside the buffer.
+  //
+  // Minimum size: root offset + file identifier, i.e. the flatbuffer header
+  // before the FlatTensor header begins. The identifier check above already
+  // implies at least this many bytes, but check explicitly so the bound below
+  // cannot underflow.
+  constexpr size_t kMinBufferSize = FlatTensorHeader::kHeaderOffset;
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor_data->size() >= kMinBufferSize,
+      InvalidExternalData,
+      "FlatTensor data size %zu is too small (minimum %zu)",
+      flat_tensor_data->size(),
+      kMinBufferSize);
+  uint32_t root_offset =
+      flatbuffers::ReadScalar<flatbuffers::uoffset_t>(flat_tensor_data->data());
+  // The root table is at buf + root_offset. It must not point into the header
+  // and must leave room for at least a vtable offset (soffset_t) at its
+  // position.
+  ET_CHECK_OR_RETURN_ERROR(
+      root_offset >= kMinBufferSize &&
+          root_offset <=
+              flat_tensor_data->size() - sizeof(flatbuffers::soffset_t),
+      InvalidExternalData,
+      "FlatTensor root table offset %u is invalid for data size %zu",
+      root_offset,
+      flat_tensor_data->size());
+
   // Get pointer to root of flatbuffer table.
   const flat_tensor_flatbuffer::FlatTensor* flat_tensor =
       flat_tensor_flatbuffer::GetFlatTensor(flat_tensor_data->data());
+
+  // The file identifier above ("FT01") is bumped by convention only on a
+  // backward-incompatible schema change, so it selects a schema family. The
+  // version is the finer gate within that family: a file written by a newer
+  // exporter is refused here instead of being misread field by field. Older
+  // files stay loadable because the schema only grows by appending optional
+  // fields.
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor->version() <= kMaxSupportedSchemaVersion,
+      InvalidExternalData,
+      "FlatTensor schema version %u is newer than the highest this runtime "
+      "supports (%u). Export the data with an older ExecuTorch, or update the "
+      "runtime.",
+      flat_tensor->version(),
+      kMaxSupportedSchemaVersion);
 
   // Validate flat_tensor.
   ET_CHECK_OR_RETURN_ERROR(

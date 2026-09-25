@@ -32,14 +32,14 @@ void add_prepack_int8x4_buffer_node(
   // (e.g., kPackedInt8_4C with C=3 pads to C=4).
   uint32_t num_texels =
       utils::safe_downcast<uint32_t>(graph.padded_numel_of(tensor) / 4);
-  utils::uvec3 global_wg_size = {num_texels, 1, 1};
-  utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
+  const GlobalWorkGrid gwg({num_texels, 1u, 1u}, kTiledWorkGrid);
+  const LocalWorkGroup lwg = graph.create_lwg(gwg);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      local_wg_size,
+      gwg,
+      lwg,
       // Input and Output
       tensor_data,
       tensor,
@@ -49,7 +49,7 @@ void add_prepack_int8x4_buffer_node(
       {graph.hashed_layout_of(tensor)}));
 }
 
-static utils::uvec3 staging_to_int8x4_buffer_global_wg_size(
+static GlobalWorkGrid staging_to_int8x4_buffer_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -59,7 +59,7 @@ static utils::uvec3 staging_to_int8x4_buffer_global_wg_size(
   const ValueRef out_tensor = args.at(0).refs.at(0);
   const uint32_t num_texels =
       utils::safe_downcast<uint32_t>(graph->padded_numel_of(out_tensor) / 4);
-  return {num_texels, 1, 1};
+  return graph->create_linear_gwg(num_texels);
 }
 
 void add_staging_to_int8x4_buffer_node(
@@ -76,8 +76,8 @@ void add_staging_to_int8x4_buffer_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR("nchw_to_int8x4_buffer"),
-      staging_to_int8x4_buffer_global_wg_size,
-      default_pick_local_wg_size,
+      staging_to_int8x4_buffer_gwg,
+      default_pick_lwg,
       // Input and Output
       {{tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
@@ -92,7 +92,7 @@ void add_staging_to_int8x4_buffer_node(
       nullptr));
 }
 
-static utils::uvec3 int8x4_buffer_to_staging_global_wg_size(
+static GlobalWorkGrid int8x4_buffer_to_staging_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -104,7 +104,7 @@ static utils::uvec3 int8x4_buffer_to_staging_global_wg_size(
   const int32_t numel = graph->numel_of(in_tensor);
   const uint32_t num_out_int32s =
       utils::safe_downcast<uint32_t>((numel + 3) / 4);
-  return {num_out_int32s, 1, 1};
+  return graph->create_linear_gwg(num_out_int32s);
 }
 
 void add_int8x4_buffer_to_staging_node(
@@ -121,8 +121,8 @@ void add_int8x4_buffer_to_staging_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR("int8x4_buffer_to_nchw"),
-      int8x4_buffer_to_staging_global_wg_size,
-      default_pick_local_wg_size,
+      int8x4_buffer_to_staging_gwg,
+      default_pick_lwg,
       // Input and Output
       {{staging_data, vkapi::kWrite}, {tensor, vkapi::kRead}},
       // Parameter Buffers

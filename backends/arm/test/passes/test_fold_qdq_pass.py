@@ -8,10 +8,12 @@ from typing import Callable, ClassVar, Dict, Tuple
 import pytest
 import torch
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import PassResult
 
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
@@ -119,6 +121,31 @@ def test_fold_qdq_folds_default_partial_mul_qdq() -> None:
     )
 
 
+def test_fold_qdq_erases_shared_input_dq_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph_module, add, _, _ = _partial_binary_qdq_graph(exir_ops.edge.aten.add.Tensor)
+    shared_dq = add.args[0]
+    assert isinstance(shared_dq, torch.fx.Node)
+    add.update_arg(1, shared_dq)
+
+    erase_calls: list[torch.fx.Node] = []
+    erase_node = graph_module.graph.erase_node
+
+    def record_erase(node: torch.fx.Node) -> None:
+        erase_calls.append(node)
+        erase_node(node)
+
+    monkeypatch.setattr(graph_module.graph, "erase_node", record_erase)
+    monkeypatch.setattr(
+        ArmPass,
+        "call",
+        lambda self, module: PassResult(module, True),
+    )
+
+    FoldAndAnnotateQParamsPass()(graph_module)
+
+    assert erase_calls.count(shared_dq) == 1
+
+
 @pytest.mark.parametrize(
     "target",
     (
@@ -139,6 +166,44 @@ def test_fold_qdq_does_not_treat_index_as_binary_operand(
     )._has_partial_binary_tensor_qdq_inputs(  # noqa: SLF001
         node, {0: object()}  # type: ignore[dict-item]
     )
+
+
+def test_fold_qdq_does_not_fold_a_qparam_tensor_as_quantized_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dynamic zero point is a Q argument, not the value being quantized."""
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    scale = graph.placeholder("scale")
+    zero_point = graph.call_function(
+        exir_ops.edge.aten.full.default,
+        ((1,), 0),
+        {"dtype": torch.int32},
+    )
+    q = graph.call_function(
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        (x, scale, zero_point, -127, 127, torch.int8),
+    )
+    output = graph.call_function(
+        exir_ops.edge.aten.view_copy.default,
+        (q, (1,)),
+    )
+    graph.output(output)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    # This unit test checks rewiring only; avoid requiring fake metadata for the
+    # handcrafted graph when FoldAndAnnotateQParamsPass refreshes metadata.
+    monkeypatch.setattr(
+        ArmPass,
+        "call",
+        lambda self, module: PassResult(module, True),
+    )
+
+    FoldAndAnnotateQParamsPass()(graph_module)
+
+    assert q in graph_module.graph.nodes
+    assert output.args[0] is q
+    assert zero_point.args == ((1,), 0)
 
 
 def _check_fold_qdq_preserves_partial_binary_qdq(

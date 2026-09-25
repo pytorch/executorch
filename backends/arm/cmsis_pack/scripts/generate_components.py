@@ -24,6 +24,11 @@ from typing import Optional
 
 import yaml
 
+from op_guards import (  # type: ignore[import-not-found]
+    category_to_id,
+    discover_components,
+)
+
 
 @dataclass
 class OperatorComponent:
@@ -33,31 +38,8 @@ class OperatorComponent:
     category: str  # e.g., "Portable", "Quantized"
     source_file: Path  # Path to the op_*.cpp file
     condition_id: str  # e.g., "op_add"
+    guard: str  # e.g., "RTE_ML_EXECUTORCH_OP_PORTABLE_ADD"
     dependencies: list = field(default_factory=list)  # Other operators this depends on
-
-
-def extract_operator_name(filename: str) -> Optional[str]:
-    """Extract operator name from filename like op_add.cpp -> add."""
-    match = re.match(r"op_(.+)\.cpp$", filename)
-    if match:
-        return match.group(1)
-    return None
-
-
-def sanitize_component_name(name: str) -> str:
-    """Convert operator name to valid CMSIS component name."""
-    # Replace underscores and special chars
-    # e.g., "_to_dim_order_copy" -> "to_dim_order_copy"
-    name = name.lstrip("_")
-    # Convert to title case for display
-    return name
-
-
-def _id_safe_category(category: str) -> str:
-    """Convert a display category like "Cortex-M" into an identifier-safe token
-    ("cortex_m") usable inside CMSIS condition IDs and C macros.
-    """
-    return category.lower().replace("-", "_").replace(" ", "_")
 
 
 def sanitize_condition_id(name: str, category: str = "") -> str:
@@ -66,7 +48,7 @@ def sanitize_condition_id(name: str, category: str = "") -> str:
     name = name.lstrip("_")
     # Include category prefix to avoid duplicates between portable/quantized
     if category:
-        return f"op_{_id_safe_category(category)}_{name}"
+        return f"op_{category_to_id(category)}_{name}"
     return f"op_{name}"
 
 
@@ -100,36 +82,6 @@ def _op_uses_cmsis_nn(cpp_path: Path) -> bool:
     return False
 
 
-def scan_operators(
-    source_dir: Path, subdir: str, category: str
-) -> list[OperatorComponent]:
-    """Scan a directory for operator source files."""
-    operators: list[OperatorComponent] = []
-    op_dir = source_dir / subdir
-
-    if not op_dir.exists():
-        print(f"Warning: Operator directory not found: {op_dir}")
-        return operators
-
-    for cpp_file in sorted(op_dir.glob("op_*.cpp")):
-        op_name = extract_operator_name(cpp_file.name)
-        if op_name:
-            deps = []
-            if category == "Cortex-M" and _op_uses_cmsis_nn(cpp_file):
-                deps.append("CMSIS-NN")
-            operators.append(
-                OperatorComponent(
-                    name=sanitize_component_name(op_name),
-                    category=category,
-                    source_file=cpp_file.relative_to(source_dir),
-                    condition_id=sanitize_condition_id(op_name, category),
-                    dependencies=deps,
-                )
-            )
-
-    return operators
-
-
 def generate_operator_condition(op: OperatorComponent, relative_base: str = "") -> str:
     """Generate XML condition for an operator."""
     requires = ['<require condition="Kernel Utils"/>']
@@ -149,8 +101,7 @@ def generate_operator_component(
     """Generate XML component definition for an operator."""
     source_path = str(op.source_file).replace("\\", "/")
 
-    # Include category in define to avoid conflicts between portable/quantized ops with same name
-    define_name = f"RTE_ML_EXECUTORCH_OP_{_id_safe_category(op.category).upper()}_{op.name.upper()}"
+    define_name = op.guard
 
     component_xml = f"""    <component Cclass="Machine Learning" Cgroup="ExecuTorch Operators" Csub="{op.category} {op.name}" Cversion="{version_placeholder}" condition="{op.condition_id}">
       <description>ExecuTorch {op.category} Operator: {op.name}</description>
@@ -169,28 +120,32 @@ def generate_all_components(
 ) -> dict:
     """Generate all component definitions from source directory."""
 
-    # Try new structure first (src/...), fall back to old.
-    if (source_dir / "src" / "kernels").exists():
-        kernels_base = "src/kernels"
-        cortex_m_ops_subdir = "src/backends/cortex_m/ops"
-    else:
-        kernels_base = "kernels"
-        cortex_m_ops_subdir = "backends/cortex_m/ops"
+    # Operator discovery + guard naming are shared with the registration
+    # generator via op_guards.discover_components so the component #define set
+    # and the registration #ifdef set cannot drift.
+    ops_by_category: dict = {"Portable": [], "Quantized": [], "Cortex-M": []}
+    for component in discover_components(source_dir):
+        deps = []
+        if component.category == "Cortex-M" and _op_uses_cmsis_nn(
+            source_dir / component.source_file
+        ):
+            deps.append("CMSIS-NN")
+        ops_by_category[component.category].append(
+            OperatorComponent(
+                name=component.name,
+                category=component.category,
+                source_file=component.source_file,
+                condition_id=sanitize_condition_id(component.name, component.category),
+                guard=component.guard,
+                dependencies=deps,
+            )
+        )
 
-    # Scan for portable operators
-    portable_ops = scan_operators(
-        source_dir, f"{kernels_base}/portable/cpu", "Portable"
-    )
+    portable_ops = ops_by_category["Portable"]
+    quantized_ops = ops_by_category["Quantized"]
+    cortex_m_ops = ops_by_category["Cortex-M"]
     print(f"Found {len(portable_ops)} portable operators")
-
-    # Scan for quantized operators
-    quantized_ops = scan_operators(
-        source_dir, f"{kernels_base}/quantized/cpu", "Quantized"
-    )
     print(f"Found {len(quantized_ops)} quantized operators")
-
-    # Scan for cortex_m operators
-    cortex_m_ops = scan_operators(source_dir, cortex_m_ops_subdir, "Cortex-M")
     print(f"Found {len(cortex_m_ops)} cortex_m operators")
 
     # Generate conditions
@@ -265,6 +220,41 @@ def generate_runtime_files(source_dir: Path) -> str:
     # Add schema files
     if schema_dir.exists():
         for cpp_file in sorted(schema_dir.rglob("*.cpp")):
+            rel_path = cpp_file.relative_to(source_dir)
+            files.append(f'        <file category="sourceCpp" name="{rel_path}"/>')
+
+    return "\n".join(files)
+
+
+def generate_shared_kernel_files(source_dir: Path) -> str:
+    """File list for shared kernel implementation sources that are required
+    across operators but are not themselves op_*.cpp, so no operator component
+    owns them.
+
+    The pack models "one component == one op_*.cpp"; a kernel helper that lives
+    at the top of a cpu/ dir (not in util/ or pattern/, which Kernel Utils
+    already bundles) therefore falls through every net. e.g.
+    kernels/quantized/cpu/embeddingxb.cpp holds the bit-width-generic
+    quantized_embedding_xbit_out / _dtype_out that op_embedding2b.cpp and
+    op_embedding4b.cpp delegate to; without it those components compile but fail
+    to link with undefined references. These sources are bundled into the
+    always-present Runtime component so the symbols are available whenever a
+    dependent operator is selected.
+
+    """
+    if (source_dir / "src" / "kernels").exists():
+        kernels_base = source_dir / "src" / "kernels"
+    else:
+        kernels_base = source_dir / "kernels"
+
+    files = []
+    for cpu_subdir in ("portable/cpu", "quantized/cpu"):
+        cpu_dir = kernels_base / cpu_subdir
+        if not cpu_dir.exists():
+            continue
+        for cpp_file in sorted(cpu_dir.glob("*.cpp")):
+            if cpp_file.name.startswith("op_") or "_test.cpp" in cpp_file.name:
+                continue
             rel_path = cpp_file.relative_to(source_dir)
             files.append(f'        <file category="sourceCpp" name="{rel_path}"/>')
 
@@ -353,6 +343,32 @@ def generate_backend_files(
     return "\n".join(files)
 
 
+def generate_extension_tensor_files(source_dir: Path) -> str:
+    """Generate the file list for the Tensor extension component.
+
+    Ships extension/tensor's two sources (tensor_ptr.cpp, tensor_ptr_maker.cpp).
+    The headers reach consumers through the Runtime component's blanket include/
+    directory, so only the sources are listed here.
+
+    """
+    if (source_dir / "src" / "extension").exists():
+        extension_base = source_dir / "src" / "extension"
+    else:
+        extension_base = source_dir / "extension"
+
+    tensor_dir = extension_base / "tensor"
+    files = []
+    if tensor_dir.exists():
+        for cpp_file in sorted(tensor_dir.rglob("*.cpp")):
+            path_str = str(cpp_file)
+            if "/test/" in path_str or "_test.cpp" in cpp_file.name:
+                continue
+            rel_path = cpp_file.relative_to(source_dir)
+            files.append(f'        <file category="sourceCpp" name="{rel_path}"/>')
+
+    return "\n".join(files)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate CMSIS Pack components for ExecuTorch operators"
@@ -389,8 +405,14 @@ def main():
     # Generate components with version
     result = generate_all_components(source_dir, config, args.version)
 
-    # Generate runtime files
+    # Generate runtime files. Shared kernel implementation helpers that no
+    # op_*.cpp component owns (e.g. kernels/quantized/cpu/embeddingxb.cpp) are
+    # bundled into the always-present Runtime component so dependent operators
+    # link.
     runtime_files = generate_runtime_files(source_dir)
+    shared_kernel_files = generate_shared_kernel_files(source_dir)
+    if shared_kernel_files:
+        runtime_files = f"{runtime_files}\n{shared_kernel_files}"
 
     # Generate kernel utils files
     kernel_utils_files = generate_kernel_utils_files(source_dir)
@@ -402,6 +424,9 @@ def main():
     ethos_u_cortex_m_files = generate_backend_files(
         source_dir, "ethos_u", extra_exclude=["Cortex_A"]
     )
+
+    # Generate extension files (opt-in components that only need the Runtime).
+    tensor_extension_files = generate_extension_tensor_files(source_dir)
 
     # Output summary
     print("\nGenerated components:")
@@ -451,6 +476,7 @@ def main():
         pdsc = pdsc.replace(
             "%{ETHOS_U_BACKEND_CORTEX_M_FILES}%", ethos_u_cortex_m_files
         )
+        pdsc = pdsc.replace("%{TENSOR_EXTENSION_FILES}%", tensor_extension_files)
 
         with open(args.pdsc_output, "w") as f:
             f.write(pdsc)

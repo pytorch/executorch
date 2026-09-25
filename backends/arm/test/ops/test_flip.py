@@ -12,13 +12,16 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
 )
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 
 aten_op = "torch.ops.aten.flip.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_flip_default"
@@ -60,9 +63,9 @@ test_data_suite_fp8 = {
     ),
 }
 
-# U55 has no REVERSE, so flip must not be delegated there.
+# U55 supports selected REVERSE axes; width-axis flip remains unsupported.
 test_data_suite_u55_reject = {
-    "rank4_dim2": lambda: (torch.rand(2, 3, 4, 5), [2]),
+    "rank4_dim3": lambda: (torch.rand(1, 3, 4, 5), [3]),
 }
 
 # flip over no dims is the identity;
@@ -172,6 +175,30 @@ def test_flip_u55_INT_not_delegated(test_data):
     pipeline.run()
 
 
+@common.XfailIfNoCorstone300
+def test_flip_u55_INT_height():
+    data = torch.rand(1, 3, 4, 5)
+    pipeline = EthosU55PipelineINT[input_t1](
+        Flip([2]),
+        (data,),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone300
+def test_flip_u55_INT_channel():
+    data = torch.rand(1, 3, 4, 5)
+    pipeline = EthosU55PipelineINT[input_t1](
+        Flip([1]),
+        (data,),
+        aten_ops=[],
+        exir_ops=[],
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_suite_empty)
 def test_flip_empty_dims_not_delegated(test_data):
     """Flip over no dims is the identity."""
@@ -224,3 +251,21 @@ def test_flip_vgf_quant(test_data):
         quantize=True,
     )
     pipeline.run()
+
+
+def test_flip_u55_INT_symbolic_height_not_delegated():
+    height = torch.export.Dim("height", min=3, max=8)
+    tester = ArmTester(
+        Flip([2]),
+        (torch.rand(1, 3, 4, 5),),
+        common.get_u55_compile_spec(),
+        dynamic_shapes={"x": {2: height}},
+    )
+    tester.quantize().export().to_edge().partition()
+
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert exir_ops.edge.aten.flip.default in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets

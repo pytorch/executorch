@@ -187,6 +187,7 @@ def emit_shape(
     slot: Slot,
     *,
     end_dim: "Optional[int]" = None,
+    dim_offset: int = 0,
 ) -> "list[IntOrVid]":
     """Return the shape of ``node`` as a list of ``IntOrVid``.
 
@@ -197,11 +198,13 @@ def emit_shape(
     Args:
         P: program builder.
         node: FX node whose shape to walk (must have ``meta['val']``).
-        slot: slot corresponding to ``node`` (used as the
-            ``SymSize`` source for any dynamic dim).
+        slot: tensor slot used as the ``SymSize`` source for dynamic dims.
         end_dim: stop index (exclusive). ``None`` means the full ndim.
             Negative values index from the end (e.g. ``-1`` is "all
             leading dims, drop the last").
+        dim_offset: offset added to dynamic dimension indices when reading
+            ``slot``. Use when its runtime axes differ from the metadata axes;
+            static dimensions still use the metadata values.
 
     Returns:
         ``list[IntOrVid]`` of length ``end_dim`` (after normalization).
@@ -228,7 +231,7 @@ def emit_shape(
             P.emit(
                 SymSizeNode(
                     a=P.slot_to_tid(slot),
-                    dim=dim_idx,
+                    dim=dim_idx + dim_offset,
                     out=P.slot_to_vid(d_val),
                 )
             )
@@ -532,6 +535,28 @@ def emit_quantized_gather(
             dtype=torch_dtype_to_scalar_type(out_dtype),
         )
     )
+
+
+def mlx_qparams_supported(
+    in_features: int, num_groups: int, group_size: int, bits: int
+) -> bool:
+    """Whether to_mlx_qparams + regroup_affine_scales can consume this layout.
+
+    Mirrors their asserts using shape metadata only, so a handler can answer
+    "would I lower this?" without reading (and repacking) the weight:
+
+    * to_mlx_qparams packs a row into whole uint32 words, so
+      ``in_features * bits`` must be a multiple of 32.
+    * regroup_affine_scales repeat-interleaves, which only ever splits a group
+      finer, so the weight's own group must be a whole multiple of the
+      MLX-legal ``group_size``.
+    """
+    if in_features <= 0 or num_groups <= 0 or in_features % num_groups != 0:
+        return False
+    if (in_features * bits) % 32 != 0:
+        return False
+    weight_group_size = in_features // num_groups
+    return weight_group_size >= group_size and weight_group_size % group_size == 0
 
 
 def to_mlx_qparams(

@@ -30,10 +30,11 @@
 // Protocol (one JSON object per line; matches worker_client.py). stdout carries
 // ONLY protocol JSON; logs go to stderr (ET_LOG):
 //   worker -> stdout, once:    {"ready": true, "max_sessions": int,
-//                               "max_named_sessions": int}
+//                               "max_named_sessions": int,
+//                               "supports_cancel": bool}
 //   client -> stdin:
 //     generate: {"max_new_tokens": int, "temperature": float, "stop":
-//     [str,...],
+//     [str,...], "cancel_request_id"?: positive uint64,
 //                "session_id"?: str, and exactly one prompt form:
 //                  "prompt": str
 //                  "prompt_segments": [{"text": str} | {"ids": [int,...]}]}
@@ -47,7 +48,9 @@
 //                (new|exact_prefix|mismatch|dirty|equal),
 //                "prefill_ms": float, "decode_ms": float, "total_ms": float,
 //                "prefill_tok_s": float, "decode_tok_s": float,
-//                "generated_token_ids"?: [int,...],  // omitted if stop-trimmed
+//                "cancelled"?: true, // omitted unless cancelled out of band
+//                "generated_token_ids"?: [int,...],  // omitted if not
+//                resumable
 //                ...optional model-specific terminal stats}
 //     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
 //     error:    {"error": str, "code"?: str}  // capacity_exhausted |
@@ -62,17 +65,36 @@
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+#if defined(__unix__) || defined(__APPLE__)
+#define EXECUTORCH_LLM_WORKER_POSIX_CONTROL 1
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cerrno>
+#include <climits>
+#else
+#define EXECUTORCH_LLM_WORKER_POSIX_CONTROL 0
+#endif
 
 namespace executorch {
 namespace extension {
@@ -101,6 +123,400 @@ struct WorkerSessionState {
   bool dirty = false;
 };
 
+// Cancellation state belongs to one request. The controller thread only moves
+// it from active to cancelled; the request thread seals it at terminal
+// completion before constructing the terminal response.
+class WorkerCancellationState {
+ public:
+  bool request_cancel(LLMSession& session) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (sealed_ || cancel_requested_) {
+      return false;
+    }
+    cancel_requested_ = true;
+    deliver_stop_locked(session);
+    return true;
+  }
+
+  // reset()/prefill_tokens() may clear a stop flag. Defer delivery until both
+  // have completed, then deliver it exactly once at the decode boundary.
+  void enter_decode(LLMSession& session) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    decode_started_ = true;
+    deliver_stop_locked(session);
+  }
+
+  bool cancelled() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return cancel_requested_;
+  }
+
+  // Returns true exactly when cancellation won the race with terminal
+  // completion. Further cancellation attempts cannot change the result.
+  bool seal() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (sealed_) {
+      return false;
+    }
+    sealed_ = true;
+    return cancel_requested_;
+  }
+
+ private:
+  void deliver_stop_locked(LLMSession& session) {
+    if (cancel_requested_ && decode_started_ && !stop_delivered_ && !sealed_) {
+      stop_delivered_ = true;
+      session.stop();
+    }
+  }
+
+  mutable std::mutex mutex_;
+  bool cancel_requested_ = false;
+  bool decode_started_ = false;
+  bool stop_delivered_ = false;
+  bool sealed_ = false;
+};
+
+// Reads fixed-width little-endian cancellation IDs from the inherited control
+// descriptor. Parser state is bounded to one partial frame and one pending ID.
+class WorkerCancellationController {
+ public:
+  static constexpr const char* kControlFdEnv =
+      "EXECUTORCH_LLM_WORKER_CONTROL_FD";
+
+  class ActiveRequest {
+   public:
+    ActiveRequest() = default;
+    ActiveRequest(
+        WorkerCancellationController* controller,
+        WorkerSessionState* worker_state,
+        WorkerCancellationState* cancellation_state)
+        : controller_(controller),
+          worker_state_(worker_state),
+          cancellation_state_(cancellation_state) {}
+    ActiveRequest(const ActiveRequest&) = delete;
+    ActiveRequest& operator=(const ActiveRequest&) = delete;
+    ActiveRequest(ActiveRequest&& other) noexcept
+        : controller_(std::exchange(other.controller_, nullptr)),
+          worker_state_(std::exchange(other.worker_state_, nullptr)),
+          cancellation_state_(
+              std::exchange(other.cancellation_state_, nullptr)) {}
+    ActiveRequest& operator=(ActiveRequest&& other) noexcept {
+      if (this != &other) {
+        reset();
+        controller_ = std::exchange(other.controller_, nullptr);
+        worker_state_ = std::exchange(other.worker_state_, nullptr);
+        cancellation_state_ = std::exchange(other.cancellation_state_, nullptr);
+      }
+      return *this;
+    }
+    ~ActiveRequest() {
+      reset();
+    }
+
+    void reset() {
+      if (controller_ != nullptr) {
+        controller_->detach(worker_state_, cancellation_state_);
+        controller_ = nullptr;
+        worker_state_ = nullptr;
+        cancellation_state_ = nullptr;
+      }
+    }
+
+   private:
+    WorkerCancellationController* controller_ = nullptr;
+    WorkerSessionState* worker_state_ = nullptr;
+    WorkerCancellationState* cancellation_state_ = nullptr;
+  };
+
+  WorkerCancellationController()
+      : WorkerCancellationController(control_fd_from_environment()) {}
+
+  explicit WorkerCancellationController(int control_fd) {
+#if EXECUTORCH_LLM_WORKER_POSIX_CONTROL
+    if (control_fd < 0) {
+      return;
+    }
+    struct stat descriptor_stat {};
+    const int status_flags = ::fcntl(control_fd, F_GETFL, 0);
+    const int descriptor_flags = ::fcntl(control_fd, F_GETFD, 0);
+    if (control_fd <= STDERR_FILENO ||
+        ::fstat(control_fd, &descriptor_stat) < 0 ||
+        !S_ISFIFO(descriptor_stat.st_mode) || status_flags < 0 ||
+        descriptor_flags < 0 || (status_flags & O_ACCMODE) == O_WRONLY ||
+        ::fcntl(control_fd, F_SETFL, status_flags | O_NONBLOCK) < 0 ||
+        ::fcntl(control_fd, F_SETFD, descriptor_flags | FD_CLOEXEC) < 0) {
+      ::close(control_fd);
+      return;
+    }
+    control_fd_ = control_fd;
+    // Consume frames queued before worker startup deterministically. The reader
+    // is nonblocking, so this cannot delay readiness.
+    if (!read_available()) {
+      ::close(control_fd_);
+      control_fd_ = -1;
+      return;
+    }
+    try {
+      thread_ = std::thread([this]() { run(); });
+    } catch (...) {
+      ::close(control_fd_);
+      control_fd_ = -1;
+    }
+#else
+    (void)control_fd;
+#endif
+  }
+
+  WorkerCancellationController(const WorkerCancellationController&) = delete;
+  WorkerCancellationController& operator=(const WorkerCancellationController&) =
+      delete;
+
+  ~WorkerCancellationController() {
+    shutdown();
+  }
+
+  bool supported() const {
+    return control_fd_ >= 0;
+  }
+
+  uint64_t processed_frame_count_for_testing() const {
+    return processed_frame_count_.load(std::memory_order_acquire);
+  }
+
+  // Reject a stale/duplicate request ID before its session is selected. Control
+  // frames with such IDs are still ignored silently by handle_frame().
+  void validate_request_id(uint64_t request_id) {
+    if (!supported() || request_id == 0) {
+      throw std::runtime_error("invalid cancel_request_id");
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (request_id <= last_completed_request_id_) {
+      throw std::runtime_error("cancel_request_id is stale or duplicate");
+    }
+  }
+
+  ActiveRequest activate(
+      uint64_t request_id,
+      WorkerSessionState& worker_state,
+      WorkerCancellationState& cancellation_state) {
+    if (!supported() || request_id == 0) {
+      return {};
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_session_ != nullptr) {
+      throw std::runtime_error("worker cancellation request already active");
+    }
+    if (request_id <= last_completed_request_id_) {
+      throw std::runtime_error("cancel_request_id is stale or duplicate");
+    }
+
+    active_request_id_ = request_id;
+    active_session_ = worker_state.session.get();
+    active_cancellation_state_ = &cancellation_state;
+    if (pending_request_id_.has_value()) {
+      const bool matches = *pending_request_id_ == request_id;
+      pending_request_id_.reset();
+      if (matches) {
+        cancel_active_locked();
+      }
+    }
+    return ActiveRequest(this, &worker_state, &cancellation_state);
+  }
+
+  void shutdown() {
+    stopping_.store(true, std::memory_order_release);
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+#if EXECUTORCH_LLM_WORKER_POSIX_CONTROL
+    if (control_fd_ >= 0) {
+      ::close(control_fd_);
+    }
+#endif
+    control_fd_ = -1;
+  }
+
+ private:
+  static int control_fd_from_environment() {
+#if EXECUTORCH_LLM_WORKER_POSIX_CONTROL
+    const char* raw = std::getenv(kControlFdEnv);
+    if (raw == nullptr || *raw == '\0') {
+      return -1;
+    }
+    for (const char* cursor = raw; *cursor != '\0'; ++cursor) {
+      if (*cursor < '0' || *cursor > '9') {
+        ::unsetenv(kControlFdEnv);
+        return -1;
+      }
+    }
+    errno = 0;
+    char* end = nullptr;
+    const long value = std::strtol(raw, &end, 10);
+    const bool valid = errno == 0 && end != raw && *end == '\0' && value >= 0 &&
+        value <= INT_MAX;
+    ::unsetenv(kControlFdEnv);
+    return valid ? static_cast<int>(value) : -1;
+#else
+    return -1;
+#endif
+  }
+
+  void detach(
+      WorkerSessionState* worker_state,
+      WorkerCancellationState* cancellation_state) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_cancellation_state_ != cancellation_state) {
+      return;
+    }
+    // Seal on exceptional exits too. Only the request thread mutates dirty.
+    if (cancellation_state->seal()) {
+      worker_state->dirty = true;
+    }
+    last_completed_request_id_ =
+        std::max(last_completed_request_id_, active_request_id_);
+    if (pending_request_id_.has_value() &&
+        *pending_request_id_ <= last_completed_request_id_) {
+      pending_request_id_.reset();
+    }
+    active_request_id_ = 0;
+    active_session_ = nullptr;
+    active_cancellation_state_ = nullptr;
+  }
+
+  void cancel_active_locked() {
+    if (active_session_ != nullptr && active_cancellation_state_ != nullptr) {
+      // The request state defers delivery during prefill and guarantees exactly
+      // one stop() call after decode begins.
+      active_cancellation_state_->request_cancel(*active_session_);
+    }
+  }
+
+  void handle_frame(uint64_t request_id) {
+    if (request_id == 0) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_session_ != nullptr) {
+      if (request_id == active_request_id_) {
+        cancel_active_locked();
+      }
+      return; // conflicting active IDs are never queued for a later request
+    }
+    if (request_id <= last_completed_request_id_) {
+      return;
+    }
+    if (!pending_request_id_.has_value()) {
+      pending_request_id_ = request_id;
+    }
+    // A duplicate or conflicting preactivation frame is ignored. The first
+    // complete, non-stale ID owns the single bounded pending slot.
+  }
+
+#if EXECUTORCH_LLM_WORKER_POSIX_CONTROL
+  void consume_bytes(const uint8_t* bytes, size_t count) {
+    for (size_t index = 0; index < count; ++index) {
+      if (partial_frame_size_ < partial_frame_.size()) {
+        partial_frame_[partial_frame_size_++] = bytes[index];
+        continue;
+      }
+      uint64_t request_id = static_cast<uint64_t>(bytes[index]) << 56;
+      for (size_t byte = 0; byte < partial_frame_.size(); ++byte) {
+        request_id |= static_cast<uint64_t>(partial_frame_[byte]) << (byte * 8);
+      }
+      partial_frame_size_ = 0;
+      handle_frame(request_id);
+      processed_frame_count_.fetch_add(1, std::memory_order_release);
+    }
+  }
+
+  bool read_available() {
+    std::array<uint8_t, 64> bytes{};
+    while (true) {
+      const ssize_t count = ::read(control_fd_, bytes.data(), bytes.size());
+      if (count > 0) {
+        consume_bytes(bytes.data(), static_cast<size_t>(count));
+        return true;
+      }
+      if (count == 0) {
+        return false;
+      }
+      if (errno == EINTR) {
+        continue;
+      }
+      return errno == EAGAIN || errno == EWOULDBLOCK;
+    }
+  }
+
+  void run() {
+    while (!stopping_.load(std::memory_order_acquire)) {
+      pollfd descriptor{control_fd_, POLLIN, 0};
+      const int poll_result = ::poll(&descriptor, 1, 50);
+      if (poll_result < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        break;
+      }
+      if (poll_result == 0) {
+        continue;
+      }
+      if ((descriptor.revents & POLLIN) != 0) {
+        if (!read_available()) {
+          break;
+        }
+        continue;
+      }
+      if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+        break;
+      }
+    }
+  }
+#endif
+
+  int control_fd_ = -1;
+  std::atomic<bool> stopping_{false};
+  std::atomic<uint64_t> processed_frame_count_{0};
+  std::thread thread_;
+  std::mutex mutex_;
+  uint64_t active_request_id_ = 0;
+  uint64_t last_completed_request_id_ = 0;
+  std::optional<uint64_t> pending_request_id_;
+  std::array<uint8_t, sizeof(uint64_t) - 1> partial_frame_{};
+  size_t partial_frame_size_ = 0;
+  LLMSession* active_session_ = nullptr;
+  WorkerCancellationState* active_cancellation_state_ = nullptr;
+};
+
+// Strictly validate the optional protocol field. Legacy requests remain valid;
+// a cancellation ID is accepted only when the worker advertised the capability.
+inline std::optional<uint64_t> worker_cancel_request_id(
+    const nlohmann::json& request,
+    bool supports_cancel) {
+  if (!request.contains("cancel_request_id")) {
+    return std::nullopt;
+  }
+  if (!supports_cancel) {
+    throw std::runtime_error("cancel_request_id is not supported");
+  }
+  const auto& value = request.at("cancel_request_id");
+  uint64_t request_id = 0;
+  if (value.is_number_unsigned()) {
+    request_id = value.get<uint64_t>();
+  } else if (value.is_number_integer()) {
+    const int64_t signed_id = value.get<int64_t>();
+    if (signed_id > 0) {
+      request_id = static_cast<uint64_t>(signed_id);
+    }
+  } else {
+    throw std::runtime_error("cancel_request_id must be a positive uint64");
+  }
+  if (request_id == 0) {
+    throw std::runtime_error("cancel_request_id must be a positive uint64");
+  }
+  return request_id;
+}
+
 // One generation request against a session. Encodes the prompt, chooses a
 // prefill plan (warm suffix reuse for named sessions, or a full reset+prefill),
 // then streams complete-UTF-8 text pieces from decode_one(). A terminal step
@@ -114,8 +530,8 @@ inline void worker_handle_request(
     const std::unordered_map<std::string, int64_t>& metadata,
     const nlohmann::json& req,
     const std::vector<uint64_t>& prompt_prefix_ids = {},
-    const nlohmann::json& additional_terminal_stats =
-        nlohmann::json::object()) {
+    const nlohmann::json& additional_terminal_stats = nlohmann::json::object(),
+    WorkerCancellationState* cancellation = nullptr) {
   if (!additional_terminal_stats.is_object()) {
     throw std::runtime_error("additional terminal stats must be a JSON object");
   }
@@ -127,6 +543,7 @@ inline void worker_handle_request(
       "reused_prompt_tokens",
       "prefilled_prompt_tokens",
       "session_reset_reason",
+      "cancelled",
       "generated_token_ids",
       "prefill_ms",
       "decode_ms",
@@ -269,6 +686,12 @@ inline void worker_handle_request(
   // suffix, or the whole prompt). Keep the invariant
   // resident.size()==position().
   st.resident_token_ids = ids;
+  // reset()/prefill_tokens() may clear a stop requested before or during
+  // prefill. Entering decode delivers a latched request exactly once; later
+  // cancellation is delivered directly by the controller thread.
+  if (cancellation != nullptr) {
+    cancellation->enter_decode(session);
+  }
   const auto decode_start = std::chrono::steady_clock::now();
 
   std::string buf; // bytes not yet forming a complete UTF-8 prefix
@@ -276,7 +699,22 @@ inline void worker_handle_request(
   int64_t num_generated = 0;
   std::string finish = "length"; // EOS or stop string -> "stop"
   bool stop_string = false; // a request stop string was matched
+  bool cancelled = false;
+  bool cancellation_sealed = false;
+  auto seal_cancellation = [&]() {
+    if (!cancellation_sealed) {
+      cancelled = cancellation != nullptr && cancellation->seal();
+      cancellation_sealed = true;
+      if (cancelled) {
+        // Seal can precede fallible token bookkeeping/output on a terminal
+        // iteration. Mark dirty immediately so exceptions cannot expose a
+        // partially mutated session as warm-resumable.
+        st.dirty = true;
+      }
+    }
+  };
   for (int64_t step = 0; step < max_new; ++step) {
+    const bool reached_length = step + 1 == max_new;
     auto step_result = session.decode_one(sampling);
     if (step_result.error() != ::executorch::runtime::Error::Ok) {
       st.dirty = true;
@@ -284,6 +722,7 @@ inline void worker_handle_request(
     }
     const auto& d = step_result.get();
     if (d.is_terminal) {
+      seal_cancellation();
       finish = "stop";
       // Terminal step (EOS / cooperative stop): the terminal token is neither
       // emitted as text nor counted in num_generated -> completion_tokens. This
@@ -291,6 +730,9 @@ inline void worker_handle_request(
       // client received, not internal forward steps; an EOS the user never sees
       // is not part of that count.
       break;
+    }
+    if (reached_length) {
+      seal_cancellation();
     }
     // The token was forwarded into the cache (pos advanced); track it so the
     // resident-ids/position invariant holds. EOS/terminal tokens are not
@@ -305,6 +747,11 @@ inline void worker_handle_request(
     }
     bool stop_hit = false;
     const size_t safe = stop_safe_prefix_len(pending, stops, stop_hit);
+    if (stop_hit) {
+      // The request is terminal as soon as the stop sequence is recognized.
+      // Seal before worker_emit(), which may block while flushing stdout.
+      seal_cancellation();
+    }
     if (safe > 0) {
       worker_emit({{"token", pending.substr(0, safe)}});
       pending.erase(0, safe);
@@ -325,16 +772,23 @@ inline void worker_handle_request(
       break;
     }
   }
+  // Seal at the terminal decision, before formatting or emitting the terminal
+  // event. A late frame can no longer relabel or dirty this request.
+  seal_cancellation();
+  if (cancelled) {
+    finish = "stop";
+    st.dirty = true;
+  }
   if (!stop_string) {
-    // EOS or length: flush held-back text + any trailing incomplete bytes
+    // EOS, length, or cancellation: flush held-back text + any trailing bytes
     // (replaced if invalid). A stop-string hit drops the remainder instead.
     pending += buf;
     if (!pending.empty()) {
       worker_emit({{"token", pending}});
     }
   }
-  // finish_reason: "stop" if the model emitted EOS or hit a stop string, else
-  // "length" -- it ran to max_new (possibly clamped to the context window).
+  // finish_reason: "stop" if the model emitted EOS, hit a stop string, or was
+  // cancelled; otherwise "length" after max_new (possibly context-clamped).
   // reused/prefilled sum to prompt_tokens; session_reset_reason explains the
   // prefill plan (for measuring warm-resume hit rate).
   nlohmann::json done = {
@@ -345,6 +799,9 @@ inline void worker_handle_request(
       {"reused_prompt_tokens", reused},
       {"prefilled_prompt_tokens", prefilled},
       {"session_reset_reason", plan.reason}};
+  if (cancelled) {
+    done["cancelled"] = true;
+  }
   // generated_token_ids = the (non-terminal) tokens made resident this turn,
   // for the control plane to splice back as an `ids` segment. Only emit them
   // when they faithfully decode to the emitted text: a stop-string trim kept
@@ -352,7 +809,7 @@ inline void worker_handle_request(
   // them would inject text the client never saw. Omitting them makes the
   // control plane record this turn as not resumable (falls back to a text
   // re-render).
-  if (!stop_string) {
+  if (!stop_string && !cancelled) {
     done["generated_token_ids"] = std::vector<uint64_t>(
         st.resident_token_ids.end() - num_generated,
         st.resident_token_ids.end());
@@ -483,12 +940,14 @@ inline int run_worker_stdio_loop(
     bool enable_warm_resume = true,
     const std::vector<uint64_t>& prompt_prefix_ids = {}) {
   WorkerSessions sessions(engine);
+  WorkerCancellationController cancellation_controller;
   worker_emit(
       {{"ready", true},
        {"max_sessions",
         engine.serving_capacity()
             .max_physical_sessions_without_weight_duplication},
-       {"max_named_sessions", sessions.max_named()}});
+       {"max_named_sessions", sessions.max_named()},
+       {"supports_cancel", cancellation_controller.supported()}});
 
   std::string line;
   while (std::getline(std::cin, line)) {
@@ -532,6 +991,11 @@ inline int run_worker_stdio_loop(
       // Generation. A session_id routes to its named session (admitted on first
       // use, warm-resumable); its absence uses the shared scratch session,
       // which is always reset per request.
+      const auto cancel_request_id =
+          worker_cancel_request_id(req, cancellation_controller.supported());
+      if (cancel_request_id.has_value()) {
+        cancellation_controller.validate_request_id(*cancel_request_id);
+      }
       const std::string id = req.value("session_id", std::string{});
       WorkerSessionState* st = nullptr;
       bool warm = false;
@@ -549,8 +1013,23 @@ inline int run_worker_stdio_loop(
         }
         warm = enable_warm_resume;
       }
+      WorkerCancellationState cancellation;
+      WorkerCancellationController::ActiveRequest active_request;
+      WorkerCancellationState* cancellation_ptr = nullptr;
+      if (cancel_request_id.has_value()) {
+        active_request = cancellation_controller.activate(
+            *cancel_request_id, *st, cancellation);
+        cancellation_ptr = &cancellation;
+      }
       worker_handle_request(
-          *st, warm, tokenizer, metadata, req, prompt_prefix_ids);
+          *st,
+          warm,
+          tokenizer,
+          metadata,
+          req,
+          prompt_prefix_ids,
+          nlohmann::json::object(),
+          cancellation_ptr);
     } catch (const std::exception& e) { // report and keep serving
       worker_emit({{"error", std::string(e.what())}});
     }
@@ -561,3 +1040,5 @@ inline int run_worker_stdio_loop(
 } // namespace llm
 } // namespace extension
 } // namespace executorch
+
+#undef EXECUTORCH_LLM_WORKER_POSIX_CONTROL

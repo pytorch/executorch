@@ -32,18 +32,15 @@ class QnnGpuPassManager(QnnPassManager):
         return deps
 
     @classmethod
-    def get_annotation_passes(cls):
+    def get_annotation_passes(cls, convert_linear_to_conv2d: bool = False):
         # The annotation pipeline is skipped for the GPU backend, as it does not
         # support quantized data types. Return an empty list to indicate a no-op.
         return []
 
     @classmethod
-    def get_export_passes(
-        cls,
-        convert_linear_to_conv2d: bool = False,
-    ):
+    def get_export_passes(cls):
         # DecomposeReciprocal should be placed in the export pipeline, as it depends on
         # LiftConstantScalarOperands to lift the scalar operand.
         passes = [DecomposeReciprocal]
-        passes.extend(super().get_export_passes(convert_linear_to_conv2d))
+        passes.extend(super().get_export_passes())
         return passes

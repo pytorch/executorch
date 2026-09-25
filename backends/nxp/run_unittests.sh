@@ -10,6 +10,10 @@ EXECUTORCH_DIR=$(dirname $(dirname $SCRIPT_DIR))
 
 cd $EXECUTORCH_DIR
 
+# Cap pytest-xdist's workers to the container's CPU quota. Applies to
+# `-n logical` as well, despite the variable's name.
+source .ci/scripts/pytest-parallelism.sh
+
 # '-c /dev/null' is used to ignore root level pytest.ini.
 pytest -c /dev/null -n "logical" backends/nxp/tests/
 

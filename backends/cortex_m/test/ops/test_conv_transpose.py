@@ -317,13 +317,7 @@ def test_dialect_conv_transpose2d(test_case, cortex_m_target):
         tester.check_not(test_case.model.ops_after_absent)
 
 
-xfails_implementation: dict[str, xfail_type] = {
-    "conv_transpose2d_relu": "Fused transpose-conv + relu lowers correctly but current implementation is numerically incorrect.",
-    "conv_transpose2d_hardtanh": "Fused transpose-conv + hardtanh lowers correctly but current implementation is numerically incorrect.",
-}
-
-
-@parametrize("test_case", test_cases, xfails=xfails_implementation)
+@parametrize("test_case", test_cases)
 def test_implementation_conv_transpose2d(test_case, cortex_m_target):
     tester = CortexMTester(
         test_case.model, test_case.example_inputs, target_config=cortex_m_target

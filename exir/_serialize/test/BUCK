@@ -69,3 +69,15 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/exir/tests:lib",
     ],
 )
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_ptn",
+    srcs = [
+        "test_ptn.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "//caffe2:torch",
+        "//executorch/exir/_serialize:ptn",
+    ],
+)

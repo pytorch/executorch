@@ -8,6 +8,7 @@ import operator
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
 import pytest
 import torch
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_ops_with_channels_last_variants import (
     _NCHW_TO_NHWC_PERM,
     _NHWC_TO_NCHW_PERM,
@@ -131,6 +132,25 @@ class UpsampleNearestModule(torch.nn.Module):
 
 
 class TestReplaceOpsWithChannelsLastVariants:
+    def test_preserves_metadata_and_recomputes_shape(self):
+        ep = _export_to_edge(Conv2dModule(), (torch.randn(1, 4, 8, 8),))
+        conv = _find_nodes(ep.graph_module, exir_ops.edge.aten.convolution.default)[0]
+        metadata = {
+            "debug_handle": 1234,
+            "from_node": [("source", "convolution")],
+            "input_qparams": {0: "input"},
+            "output_qparams": {0: "output"},
+        }
+        conv.meta.update(metadata)
+
+        result = ReplaceOpsWithChannelsLastVariants(ep)(ep.graph_module)
+        replaced = _find_nodes(
+            result.graph_module, exir_ops.edge.channels_last.convolution.default
+        )[0]
+
+        for key, value in metadata.items():
+            assert replaced.meta[key] == value
+        assert tuple(replaced.meta["val"].shape) == (1, 8, 8, 4)
 
     def test_conv2d(self):
         ep = _export_to_edge(Conv2dModule(bias=True), (torch.randn(1, 4, 8, 8),))
@@ -251,7 +271,30 @@ class TestReplaceOpsWithChannelsLastVariants:
         assert output_permute.target == exir_ops.edge.channels_last.permute_copy.default
         assert list(output_permute.args[1]) == _NHWC_TO_NCHW_PERM
 
-    def test_max_pool2d__implicit_batch(self):
+    @pytest.mark.parametrize("input_shape", [(1, 4, 8, 8), (4, 8, 8)])
+    def test_single_output_max_pool2d(self, input_shape):
+        inputs = (torch.randn(*input_shape),)
+        ep = _export_to_edge(MaxPool2DModule(), inputs)
+        expected = ep.module()(*inputs)
+        removed = RemoveGetItemPass().call(ep.graph_module)
+
+        assert removed.modified
+        assert _count(removed.graph_module, exir_ops.edge.aten.max_pool2d.default) == 1
+
+        result = ReplaceOpsWithChannelsLastVariants(ep).call(removed.graph_module)
+        gm, modified = result.graph_module, result.modified
+
+        assert modified
+        assert _count(gm, exir_ops.edge.aten.max_pool2d.default) == 0
+        assert _count(gm, exir_ops.edge.channels_last.max_pool2d.default) == 1
+        permutes = _find_nodes(gm, exir_ops.edge.channels_last.permute_copy.default)
+        assert len(permutes) == 2
+        implicit_batch = len(input_shape) == 3
+        assert _count(gm, exir_ops.edge.aten.unsqueeze_copy.default) == implicit_batch
+        assert _count(gm, exir_ops.edge.aten.squeeze_copy.dims) == implicit_batch
+        torch.testing.assert_close(gm(*inputs)[0], expected)
+
+    def test_max_pool2d_with_indices__implicit_batch(self):
         input_shape = (4, 8, 8)  # Use implicit batch size of `1`.
         ep = _export_to_edge(MaxPool2DModule(), (torch.randn(*input_shape),))
         assert (

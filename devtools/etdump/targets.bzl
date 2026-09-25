@@ -132,8 +132,11 @@ def define_common_targets():
                 "etdump_flatcc.h",
             ],
             deps = [
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/platform:platform",
-            ],
+            ] + ([
+                "//executorch/extension/aten_util:aten_device",
+            ] if aten_mode else []),
             exported_deps = [
                 ":etdump_schema_flatcc",
                 ":utils",

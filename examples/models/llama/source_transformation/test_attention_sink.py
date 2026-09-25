@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import unittest
 
 import torch
@@ -51,6 +52,106 @@ class RopeWithAttentionSinkTest(unittest.TestCase):
 
         torch.testing.assert_close(freqs_cos, expected_cos)
         torch.testing.assert_close(freqs_sin, expected_sin)
+
+
+class RopeWithAttentionSinkWrapTest(unittest.TestCase):
+    """get_freqs over a chunk that crosses the top of the ring.
+
+    The cases above all stay below the first wrap, where remapping is the
+    identity, so none of them can tell a per-position remap from a remapped
+    start plus a contiguous slice. These can.
+    """
+
+    SINK_SIZE = 4
+    WINDOW_SIZE = 8
+
+    def setUp(self) -> None:
+        # Ring top is 20. The table is deliberately longer, so a slice running
+        # past the ring still lands on real rows instead of going out of bounds.
+        self.params = ModelArgs(
+            use_kv_cache=True, enable_dynamic_shape=True, max_context_len=64
+        )
+        self.rope = RopeWithAttentionSink(
+            params=self.params,
+            window_size=self.WINDOW_SIZE,
+            sink_size=self.SINK_SIZE,
+        )
+        self.ring_top = self.SINK_SIZE + 2 * self.WINDOW_SIZE
+
+    def test_a_chunk_crossing_the_ring_top_wraps(self) -> None:
+        """Ground truth: the rows are spelled out, not derived from the code.
+
+        Every other test here checks the implementation against itself -- the
+        sweep below uses _remap_input_pos as its own oracle, and the two tests
+        after it compare two calls of the same code. None of them would notice
+        a wrong modulus or a wrong sink boundary. This one would.
+        """
+        start, seq_len = 18, 5
+        self.assertGreater(start + seq_len, self.ring_top)
+
+        freqs_cos, freqs_sin = self.rope.get_freqs(
+            input_pos=torch.tensor([start], dtype=torch.int32), seq_len=seq_len
+        )
+
+        # Positions 18..22 with sink_size=4 and a ring of 16: 18 and 19 are
+        # still below the ring top, 20 is the first to come back around.
+        expected = [18, 19, 4, 5, 6]
+        torch.testing.assert_close(freqs_cos, self.rope.freqs_cos[expected])
+        torch.testing.assert_close(freqs_sin, self.rope.freqs_sin[expected])
+
+        # A contiguous slice from the remapped start is a different answer, not
+        # merely a different spelling of this one.
+        sliced = self.rope.freqs_cos.narrow(0, start, seq_len)
+        self.assertFalse(torch.allclose(freqs_cos, sliced))
+
+    def test_a_position_gets_the_same_freqs_whatever_chunk_it_lands_in(self) -> None:
+        """Chunk size must not change a token's rotation.
+
+        The only test that mixes chunk lengths. The sweep below is seq_len=5
+        throughout, and single-token decode is the one shape that is correct
+        even without this change, so a disagreement between the two is what
+        the previous code produced and what a caller would actually hit.
+        """
+        # True position 20 is the first position past the ring top. Ask for it
+        # as the third entry of a chunk, then as a chunk of its own.
+        in_chunk, _ = self.rope.get_freqs(
+            input_pos=torch.tensor([18], dtype=torch.int32), seq_len=5
+        )
+        alone, _ = self.rope.get_freqs(
+            input_pos=torch.tensor([20], dtype=torch.int32), seq_len=1
+        )
+
+        torch.testing.assert_close(in_chunk[2], alone[0])
+
+    def test_every_chunk_across_four_ring_cycles_gathers_in_bounds(self) -> None:
+        """Breadth: every start across four ring cycles, and no index escapes.
+
+        Consistency with _remap_input_pos rather than ground truth, so it
+        cannot catch a wrong remap -- it is here for the starts the other
+        tests do not name, and for the bound on the gathered indices.
+        """
+        seq_len = 5
+        table_len = self.rope.freqs_cos.shape[0]
+        wrapping = 0
+        for start in range(4 * self.ring_top):
+            with self.subTest(start=start):
+                expected = self.rope._remap_input_pos(
+                    torch.arange(start, start + seq_len)
+                )
+                wrapping += int(bool((expected.diff() != 1).any()))
+                self.assertGreaterEqual(int(expected.min()), 0)
+                self.assertLess(int(expected.max()), table_len)
+
+                freqs_cos, freqs_sin = self.rope.get_freqs(
+                    input_pos=torch.tensor([start], dtype=torch.int32), seq_len=seq_len
+                )
+                torch.testing.assert_close(freqs_cos, self.rope.freqs_cos[expected])
+                torch.testing.assert_close(freqs_sin, self.rope.freqs_sin[expected])
+
+        # Guard the fixture: 4 of every 16 starts put a chunk of 5 across the
+        # ring top. If a config change made that 0 the sweep would still pass
+        # while testing nothing this diff is about.
+        self.assertEqual(wrapping, 16)
 
 
 class CachePositionsManagerWithSinkTest(unittest.TestCase):
@@ -380,6 +481,23 @@ class AttentionSinkE2ETest(unittest.TestCase):
 
         return outputs
 
+    def _feed_in_chunks(self, model, tokens, chunk_size):
+        """Feed a fixed token sequence through the model chunk_size at a time.
+
+        Returns one output per chunk. chunk_size=1 is the decode loop; anything
+        larger is a chunked prefill, which is the only way to get a multi-token
+        chunk at a start position other than 0.
+        """
+        outputs = []
+        with torch.no_grad():
+            for pos in range(0, tokens.shape[1], chunk_size):
+                result = model(
+                    tokens=tokens[:, pos : pos + chunk_size],
+                    attn_options={"input_pos": torch.tensor([pos], dtype=torch.long)},
+                )
+                outputs.append(result[0] if isinstance(result, tuple) else result)
+        return outputs
+
     def test_beyond_context_window_basic(self):
         """Generate tokens well beyond the KV cache size using standard SDPA."""
         sink_size = 4
@@ -414,6 +532,50 @@ class AttentionSinkE2ETest(unittest.TestCase):
             self.assertTrue(
                 torch.isfinite(out).all(),
                 "Output contains non-finite values beyond max_context_len",
+            )
+
+    def test_chunked_prefill_across_the_ring_wrap(self):
+        """Chunked prefill where a chunk spans the ring wrap.
+
+        sink_size=4, window_size=16, so the ring is slots [4, 36). Feeding 5
+        tokens at a time puts chunk starts at 0, 5, ..., 95. The chunk at 35
+        covers positions 35..39 and needs rows 35, 4, 5, 6, 7; the chunk at 65
+        covers 65..69 and needs rows 33, 34, 35, 4, 5. Both span the wrap.
+
+        The other beyond-context-window tests decode one token at a time, and a
+        chunk of one can never span the wrap however far the position runs, so
+        none of them reach this.
+
+        The RopeWithAttentionSinkWrapTest cases call get_freqs directly at
+        window_size=8. This is the only one that goes through the model, and
+        the only one at window_size=16, so it also covers the mask and the KV
+        cache agreeing with the remapped frequencies rather than get_freqs
+        alone.
+        """
+        sink_size = 4
+        window_size = 16
+        args = self._make_args(max_context_len=64)
+
+        torch.manual_seed(0)
+        model = self._build_model(args, sink_size, window_size)
+        tokens = torch.randint(0, args.vocab_size, (1, 100))
+
+        chunked = self._feed_in_chunks(copy.deepcopy(model), tokens, chunk_size=5)
+        one_at_a_time = self._feed_in_chunks(copy.deepcopy(model), tokens, chunk_size=1)
+
+        self.assertEqual(len(chunked), 20)
+        self.assertEqual(len(one_at_a_time), 100)
+
+        # generate_full_logits is off, so each call returns logits for its last
+        # position only. How the input was chunked must not change the result:
+        # chunk i ends on the same token as one_at_a_time[5 * i + 4].
+        for i, out in enumerate(chunked):
+            self.assertTrue(torch.isfinite(out).all(), f"chunk {i} is not finite")
+            torch.testing.assert_close(
+                out,
+                one_at_a_time[5 * i + 4],
+                msg=lambda m, i=i: f"chunk {i}, positions {5 * i}..{5 * i + 4}, "
+                f"disagrees with feeding the same tokens one at a time:\n{m}",
             )
 
     def test_beyond_context_window_custom_sdpa(self):

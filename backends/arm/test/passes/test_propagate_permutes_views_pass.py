@@ -3,10 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Tuple
 
 import pytest
+import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm._passes import (
     MoveDataMovementOpsToSmallerDtypePass,
@@ -23,6 +24,8 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 input_t = Tuple[torch.Tensor]
 
@@ -334,6 +337,134 @@ def _run_pass_on_graph_module(
     return result.graph_module
 
 
+class _CountingDownPass(PropagateViewCopyPermuteDownPass):
+    def __init__(self) -> None:
+        super().__init__()
+        self.retrace_count = 0
+        self.local_refresh_count = 0
+
+    def _refresh_propagation_meta(self, moving_node, propagation_path):
+        self.local_refresh_count += 1
+        return super()._refresh_propagation_meta(moving_node, propagation_path)
+
+    def _retrace(self, graph_module):
+        self.retrace_count += 1
+        return super()._retrace(graph_module)
+
+
+def test_propagation_retraces_once_after_reaching_fixed_point() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    relu = graph.call_function(RELU, args=(permute,))
+    relu.meta["val"] = torch.empty((1, 3, 4, 2))
+    neg = graph.call_function(NEG, args=(relu,))
+    neg.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(neg)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    propagation_pass = _CountingDownPass()
+
+    result = propagation_pass.call(graph_module)
+
+    assert result.modified
+    assert propagation_pass.retrace_count == 1
+    assert propagation_pass.local_refresh_count == 1
+
+
+@pytest.mark.parametrize("target", [VIEW, PERMUTE], ids=["view", "permute"])
+def test_local_refresh_preserves_symbolic_view_permute_meta(target) -> None:
+    shape_env = ShapeEnv()
+    batch = shape_env.create_symintnode(sympy.Symbol("batch"), hint=2)
+    assert isinstance(batch, torch.SymInt)
+    shape_env.constrain_symbol_range(batch.node.expr, compiler_min=1, compiler_max=8)
+
+    with FakeTensorMode(shape_env=shape_env, allow_non_fake_inputs=True):
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.empty((batch, 2, 3))
+        if target == VIEW:
+            transform = graph.call_function(target, args=(x, [batch, 6]))
+            symbolic_axis = 0
+        else:
+            transform = graph.call_function(target, args=(x, [1, 0, 2]))
+            symbolic_axis = 1
+        transform.meta["val"] = torch.empty((2, 6))
+        graph.output(transform)
+
+        PropagateViewCopyPermuteDownPass()._refresh_node_meta(transform)
+
+    output_dim = transform.meta["val"].shape[symbolic_axis]
+    assert isinstance(output_dim, torch.SymInt)
+    assert output_dim.node.expr == batch.node.expr
+
+
+def test_down_propagation_visits_nodes_in_reverse_order() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    view = graph.call_function(VIEW, args=(x, [1, 2, 3, 4]))
+    view.meta["val"] = torch.empty((1, 2, 3, 4))
+    relu = graph.call_function(RELU, args=(view,))
+    relu.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(relu, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    neg = graph.call_function(NEG, args=(permute,))
+    neg.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(neg)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+    propagation_pass = PropagateViewCopyPermuteDownPass()
+
+    assert propagation_pass._propagate_iteration(graph_module)
+
+    targets = [
+        node.target for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    assert targets == [RELU, NEG, VIEW, PERMUTE]
+    assert not propagation_pass._propagate_iteration(graph_module)
+
+
+def test_down_propagation_refreshes_metadata_in_dependency_order() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    relu = graph.call_function(RELU, args=(permute,))
+    relu.meta["val"] = torch.empty((1, 3, 4, 2))
+    neg = graph.call_function(NEG, args=(relu,))
+    neg.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(neg)
+    torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    assert PropagateViewCopyPermuteDownPass()._propagate(permute)
+
+    assert relu.meta["val"].shape == torch.Size((1, 2, 3, 4))
+    assert neg.meta["val"].shape == torch.Size((1, 2, 3, 4))
+    assert permute.meta["val"].shape == torch.Size((1, 3, 4, 2))
+
+
+def test_up_propagation_refreshes_metadata_in_dependency_order() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    relu = graph.call_function(RELU, args=(x,))
+    relu.meta["val"] = torch.empty((1, 2, 3, 4))
+    neg = graph.call_function(NEG, args=(relu,))
+    neg.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(neg, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(permute)
+    torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    assert PropagateViewCopyPermuteUpPass()._propagate(permute)
+
+    assert permute.meta["val"].shape == torch.Size((1, 3, 4, 2))
+    assert relu.meta["val"].shape == torch.Size((1, 3, 4, 2))
+    assert neg.meta["val"].shape == torch.Size((1, 3, 4, 2))
+
+
 def _run_pass_on_graph(
     graph: torch.fx.Graph,
     pass_cls: type[ArmPass] = PropagateViewCopyPermuteUpPass,
@@ -347,13 +478,13 @@ def _run_pass_on_graph(
 def test_is_swappable_rejects_unnormalized_keep_dim_operator() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
-    sum_node = graph.call_function(SUM, args=(x, [1], False))
+    mean_node = graph.call_function(MEAN, args=(x, [1], False))
 
     with pytest.raises(
         RuntimeError,
         match="expects keep_dim=True for reduction ops to simplify propagation logic, got",
     ):
-        PropagateViewCopyPermuteUpPass().is_swappable(sum_node)
+        PropagateViewCopyPermuteUpPass().is_swappable(mean_node)
 
 
 def test_down_pass_moves_permute_after_transparent_chain() -> None:
@@ -373,7 +504,7 @@ def test_down_pass_moves_permute_after_transparent_chain() -> None:
     assert targets.index(RELU) < targets.index(NEG) < targets.index(PERMUTE)
 
 
-def test_down_pass_skips_propagation_for_u85_like_tosa_int_cf() -> None:
+def test_down_pass_propagates_for_u85_like_tosa_int_cf() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4))
@@ -388,7 +519,7 @@ def test_down_pass_skips_propagation_for_u85_like_tosa_int_cf() -> None:
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT+cf")):
         targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
 
-    assert targets.index(PERMUTE) < targets.index(RELU) < targets.index(NEG)
+    assert targets.index(RELU) < targets.index(NEG) < targets.index(PERMUTE)
 
 
 def test_down_pass_still_canonicalizes_for_u85_like_tosa_int_cf() -> None:
@@ -555,6 +686,25 @@ def test_up_pass_refreshes_permute_meta_before_view_slice_swap() -> None:
     assert slice_node.args == (view, 0, 0, 1)
 
 
+class ViewPermutePropagationMRE(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.ops.aten.slice_copy.Tensor(x, 1, 0, 1, 1)
+        x = torch.ops.aten.permute_copy.default(x, [2, 1, 0])
+        return torch.ops.aten.view_copy.default(x, [8, 1])
+
+    data = (torch.arange(24, dtype=torch.float32).reshape(2, 3, 4),)
+
+
+def test_up_pass_preserves_slice_permute_view_output() -> None:
+    pipeline = PassPipeline[input_t](
+        ViewPermutePropagationMRE(),
+        ViewPermutePropagationMRE.data,
+        quantize=False,
+        pass_list=[PropagateViewCopyPermuteUpPass],
+    )
+    pipeline.run()
+
+
 def test_up_pass_keeps_scatter_input_view_after_slice() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
@@ -699,6 +849,109 @@ def test_down_pass_moves_matching_input_permutations_after_binary_op() -> None:
 
     assert targets.count(PERMUTE) == 1
     assert targets.index(ADD) < targets.index(PERMUTE)
+
+
+def test_down_pass_moves_permute_through_single_exit_pointwise_region() -> None:
+    """Move a dimension reorder after related per-value operations.
+
+    Here ``P`` means permute, Both ``floor`` and ``sub`` process values independently:
+
+        Before:  P(x) --+-----------------> sub -> output
+                        |                    ^
+                        +-> floor -----------+
+
+        After:       x --+-----------------> sub -> P -> output
+                        |                    ^
+                        +-> floor -----------+
+
+    The first check confirms that the permute moved after both operations. The second
+    check confirms that the rewritten graph still calculates the same values.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    floor = graph.call_function(FLOOR, args=(permute,))
+    floor.meta["val"] = torch.empty((1, 3, 4, 2))
+    sub = graph.call_function(SUB, args=(permute, floor))
+    sub.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(sub)
+
+    x_data = torch.randn(1, 2, 3, 4)
+    expected = x_data.permute(0, 2, 3, 1)
+    expected = expected - expected.floor()
+    graph_module = _run_pass_on_graph_module(graph, PropagateViewCopyPermuteDownPass)
+    call_nodes = [
+        node for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    targets = [node.target for node in call_nodes]
+
+    assert targets.index(FLOOR) < targets.index(SUB) < targets.index(PERMUTE)
+    torch.testing.assert_close(graph_module(x_data), expected)
+
+
+class _BlockFloorToSubPass(PropagateViewCopyPermuteDownPass):
+    def blocks_moving(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        return frontier.target == FLOOR and any(
+            next_node.target == SUB for next_node in next_nodes
+        )
+
+
+def test_down_pass_checks_each_path_into_shared_pointwise_node() -> None:
+    """Keep a permute when a backend rejects one path into a shared node."""
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    floor = graph.call_function(FLOOR, args=(permute,))
+    floor.meta["val"] = torch.empty((1, 3, 4, 2))
+    sub = graph.call_function(SUB, args=(permute, floor))
+    sub.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(sub)
+
+    targets = _run_pass_on_graph(graph, _BlockFloorToSubPass)
+
+    assert targets.index(PERMUTE) < targets.index(FLOOR) < targets.index(SUB)
+
+
+def test_down_pass_keeps_permute_before_multiple_exit_pointwise_region() -> None:
+    """Keep a dimension reorder in place when two results are returned.
+
+    Here ``P`` means permute. Both ``floor`` and ``sub`` are returned from the graph:
+
+        P(x) --+-----------------> sub -> output 1
+               |                    ^
+               +-> floor -----------+
+                         |
+                         +---------------> output 0
+
+    Moving the permute would require adding a separate reorder before each output.
+    This rewrite deliberately handles only one outgoing result, so the graph
+    must remain unchanged.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    floor = graph.call_function(FLOOR, args=(permute,))
+    floor.meta["val"] = torch.empty((1, 3, 4, 2))
+    sub = graph.call_function(SUB, args=(permute, floor))
+    sub.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output((floor, sub))
+
+    targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
+
+    assert targets.index(PERMUTE) < targets.index(FLOOR) < targets.index(SUB)
 
 
 def test_down_pass_keeps_lower_rank_singleton_input_before_binary_op() -> None:
@@ -918,7 +1171,7 @@ def test_down_pass_keeps_shared_input_permutations_before_cat() -> None:
     assert cat_node.args[1] == 3
 
 
-def test_down_pass_moves_permutation_after_reduction() -> None:
+def test_down_pass_keeps_permutation_before_sum() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4))
@@ -936,9 +1189,53 @@ def test_down_pass_moves_permutation_after_reduction() -> None:
     sum_node = next(node for node in call_nodes if node.target == SUM)
     transform = next(node for node in call_nodes if node.target in (PERMUTE, VIEW))
 
-    assert targets.index(SUM) < targets.index(transform.target)
-    assert sum_node.args[1] == [1]
-    assert transform.meta["val"].shape == torch.Size((1, 3, 4, 1))
+    assert targets.index(transform.target) < targets.index(SUM)
+    assert sum_node.args[1] == [3]
+    assert transform.meta["val"].shape == torch.Size((1, 3, 4, 2))
+
+
+@pytest.mark.parametrize("mean_first", [False, True])
+def test_down_pass_keeps_permute_before_reduction_with_layout_dependent_user(
+    mean_first: bool,
+) -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 512, 796))
+    direct = graph.placeholder("direct")
+    direct.meta["val"] = torch.empty((1, 796, 512))
+    permute = graph.call_function(PERMUTE, args=(x, [0, 2, 1]))
+    permute.meta["val"] = torch.empty((1, 796, 512))
+    relu = graph.call_function(RELU, args=(permute,))
+    relu.meta["val"] = torch.empty((1, 796, 512))
+    mean = graph.call_function(MEAN, args=(relu, [1], True))
+    mean.meta["val"] = torch.empty((1, 1, 512))
+    sub_args = (mean, direct) if mean_first else (direct, mean)
+    sub = graph.call_function(SUB, args=sub_args)
+    sub.meta["val"] = torch.empty((1, 796, 512))
+    graph.output(sub)
+
+    graph_module = _run_pass_on_graph_module(graph, PropagateViewCopyPermuteDownPass)
+    call_nodes = [
+        node for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    mean = next(node for node in call_nodes if node.target == MEAN)
+    sub = next(node for node in call_nodes if node.target == SUB)
+    mean_input_shape = mean.all_input_nodes[0].meta["val"].shape
+    mean_output_shape = mean.meta["val"].shape
+    sub_input_shapes = [
+        input_node.meta["val"].shape for input_node in sub.all_input_nodes
+    ]
+    reduction_dims = [dim % len(mean_input_shape) for dim in mean.args[1]]
+
+    assert all(mean_output_shape[dim] == 1 for dim in reduction_dims)
+    assert all(
+        output_dim == 1 if dim in reduction_dims else output_dim == input_dim
+        for dim, (input_dim, output_dim) in enumerate(
+            zip(mean_input_shape, mean_output_shape)
+        )
+    )
+    assert torch.broadcast_shapes(*sub_input_shapes) == sub.meta["val"].shape
+    assert torch.Size((1, 512, 1)) not in sub_input_shapes
 
 
 def test_down_pass_splits_permute_over_elementwise_fanout() -> None:
@@ -1105,6 +1402,39 @@ def test_up_pass_fuses_equivalent_output_permutations_before_fan_out() -> None:
     assert targets.index(PERMUTE) < targets.index(RELU) < targets.index(ADD)
 
 
+def test_up_pass_fusion_enables_further_propagation() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 2, 3, 4))
+    relu = graph.call_function(RELU, args=(x,))
+    relu.meta["val"] = torch.empty((1, 2, 3, 4))
+    neg = graph.call_function(NEG, args=(relu,))
+    neg.meta["val"] = torch.empty((1, 2, 3, 4))
+    first_permute = graph.call_function(PERMUTE, args=(neg, [0, 2, 3, 1]))
+    first_permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    second_permute = graph.call_function(PERMUTE, args=(relu, [0, 2, 3, 1]))
+    second_permute.meta["val"] = torch.empty((1, 3, 4, 2))
+    add = graph.call_function(ADD, args=(first_permute, second_permute))
+    add.meta["val"] = torch.empty((1, 3, 4, 2))
+    graph.output(add)
+
+    graph_module = _run_pass_on_graph_module(graph, PropagateViewCopyPermuteUpPass)
+    call_nodes = [
+        node for node in graph_module.graph.nodes if node.op == "call_function"
+    ]
+    permutes = [node for node in call_nodes if node.target == PERMUTE]
+    x = next(node for node in graph_module.graph.nodes if node.op == "placeholder")
+    relu = next(node for node in call_nodes if node.target == RELU)
+    neg = next(node for node in call_nodes if node.target == NEG)
+    add = next(node for node in call_nodes if node.target == ADD)
+
+    assert len(permutes) == 1
+    assert permutes[0].args[0] is x
+    assert relu.args[0] is permutes[0]
+    assert neg.args[0] is relu
+    assert set(add.all_input_nodes) == {relu, neg}
+
+
 def test_propagate_moves_before_dtype_changing_rescale() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
@@ -1154,7 +1484,7 @@ def test_propagate_moves_through_elementwise_fork() -> None:
     assert targets.index(WHERE) < targets.index(PERMUTE)
 
 
-def test_propagate_moves_through_reduction_fork() -> None:
+def test_propagate_stops_at_sum_reduction_fork() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.float32)
@@ -1187,8 +1517,10 @@ def test_propagate_moves_through_reduction_fork() -> None:
     reductions = [node for node in call_nodes if node.target in {SUM, MEAN}]
 
     assert targets.count(PERMUTE) == 1
-    assert targets.index(WHERE) < targets.index(PERMUTE)
-    assert all(reduction.args[1] == [2] for reduction in reductions)
+    assert targets.index(PERMUTE) < min(
+        targets.index(reduction.target) for reduction in reductions
+    )
+    assert [reduction.args[1] for reduction in reductions] == [[1], [1], [1]]
 
 
 def test_propagate_view_moves_through_elementwise_fork() -> None:
@@ -1254,6 +1586,74 @@ def test_propagate_fuses_permute_view_around_table() -> None:
     ]
 
     assert targets == [TABLE]
+
+
+def test_propagate_down_keeps_view_before_table_with_batched_singleton_spatial() -> (
+    None
+):
+    """Ethos-U85 miscompiles a TABLE reading [N, 1, 1, C] with N > 1.
+
+    Sinking the view would leave the table on the [990, 1, 1, 64] operand, so it
+    has to stay in front of the table.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((990, 1, 1, 64), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    view = graph.call_function(VIEW, args=(x, [99, 10, 64]))
+    view.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(view, table))
+    table_node.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    graph.output(table_node)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
+
+    assert targets.index(VIEW) < targets.index(TABLE)
+
+
+def test_propagate_up_keeps_view_after_table_with_batched_singleton_spatial() -> None:
+    """The upward pass must not hoist the view above the table either.
+
+    Hoisting it would leave the table reading the view's [990, 1, 1, 64] output.
+
+    """
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(x, table))
+    table_node.meta["val"] = torch.empty((99, 10, 64), dtype=torch.int8)
+    view = graph.call_function(VIEW, args=(table_node, [990, 1, 1, 64]))
+    view.meta["val"] = torch.empty((990, 1, 1, 64), dtype=torch.int8)
+    graph.output(view)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteUpPass)
+
+    assert targets.index(TABLE) < targets.index(VIEW)
+
+
+def test_propagate_down_still_sinks_view_through_table_for_safe_shapes() -> None:
+    """The guard is limited to [N, 1, 1, C] with N > 1; other views sink."""
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 1, 1, 64), dtype=torch.int8)
+    table = graph.placeholder("table")
+    table.meta["val"] = torch.empty((256,), dtype=torch.int8)
+    view = graph.call_function(VIEW, args=(x, [1, 64]))
+    view.meta["val"] = torch.empty((1, 64), dtype=torch.int8)
+    table_node = graph.call_function(TABLE, args=(view, table))
+    table_node.meta["val"] = torch.empty((1, 64), dtype=torch.int8)
+    graph.output(table_node)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        targets = _run_pass_on_graph(graph, PropagateViewCopyPermuteDownPass)
+
+    assert targets.index(TABLE) < targets.index(VIEW)
 
 
 def test_propagate_stops_at_per_channel_rescale() -> None:
@@ -1429,7 +1829,7 @@ def test_smaller_dtype_pass_restores_permute_after_narrowing_rescale_behind_unar
     assert targets.index(RESCALE) < targets.index(PERMUTE)
 
 
-def test_propagate_moves_before_int48_special_dtype() -> None:
+def test_tagged_int48_permute_does_not_propagate() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
@@ -1444,10 +1844,26 @@ def test_propagate_moves_before_int48_special_dtype() -> None:
 
     targets = _run_pass_on_graph(graph)
 
-    assert targets.index(PERMUTE) < targets.index(RELU)
+    assert targets.index(RELU) < targets.index(PERMUTE)
 
 
-def test_propagate_moves_output_view_before_sum_with_split_dim_remap() -> None:
+def test_permute_does_not_cross_int48_rescale_input() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((2, 3, 5), dtype=torch.int32)
+    x.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
+    rescale = graph.call_function(RESCALE, args=(x, torch.int8, [0.25], 0, 0))
+    rescale.meta["val"] = torch.empty((2, 3, 5), dtype=torch.int8)
+    permute = graph.call_function(PERMUTE, args=(rescale, [1, 0, 2]))
+    permute.meta["val"] = torch.empty((3, 2, 5), dtype=torch.int8)
+    graph.output(permute)
+
+    targets = _run_pass_on_graph(graph)
+
+    assert targets.index(RESCALE) < targets.index(PERMUTE)
+
+
+def test_propagate_keeps_output_view_after_sum_with_split_dim_remap() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((6, 4))
@@ -1465,12 +1881,12 @@ def test_propagate_moves_output_view_before_sum_with_split_dim_remap() -> None:
     sum_node = next(node for node in call_nodes if node.target == SUM)
     view = next(node for node in call_nodes if node.target == VIEW)
 
-    assert targets.index(VIEW) < targets.index(SUM)
-    assert sum_node.args[1] == [0, 1]
-    assert view.args[1] == [6, 1, 4]
+    assert targets.index(SUM) < targets.index(VIEW)
+    assert sum_node.args[1] == [0]
+    assert view.args[1] == [1, 1, 4]
 
 
-def test_propagate_updates_view_map_between_arg_updates() -> None:
+def test_propagate_stops_view_map_update_before_sum() -> None:
     graph = torch.fx.Graph()
     x = graph.placeholder("x")
     x.meta["val"] = torch.empty((6, 4))
@@ -1491,10 +1907,10 @@ def test_propagate_updates_view_map_between_arg_updates() -> None:
     slice_node = next(node for node in call_nodes if node.target == SLICE)
     sum_node = next(node for node in call_nodes if node.target == SUM)
 
-    assert targets.index(VIEW) < targets.index(SLICE) < targets.index(SUM)
-    assert view.args[1] == [6, 1, 4]
+    assert targets.index(SLICE) < targets.index(SUM) < targets.index(VIEW)
+    assert view.args[1] == [1, 1, 4]
     assert slice_node.args[1] == 0
-    assert sum_node.args[1] == [0, 1]
+    assert sum_node.args[1] == [0]
 
 
 def test_propagate_moves_output_view_before_mean_with_split_dim_remap() -> None:

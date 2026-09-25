@@ -4,22 +4,27 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    Convolution,
+    ExecutorchDelegateCall,
+    ViewCopy,
+)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import Conv2dModule, Conv2dTransposedModule
 from executorch.backends.nxp.tests.nsys_testing import (
     AllCloseOutputComparator,
     lower_run_compare,
     ReferenceModel,
 )
-from executorch.backends.nxp.tests.ops_aliases import (
-    Convolution,
-    ExecutorchDelegateCall,
-    ViewCopy,
+from executorch.backends.nxp.tests.simple_models import (
+    Conv2dModule,
+    Conv2dTransposedModule,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
@@ -338,7 +343,7 @@ class TestTrConv:
                 oc := 7,
                 ks := (5, 3),
                 s := (2, 1),
-                d := (1, 2),
+                d := (1, 1),
                 p := (2, 1),
                 op := (0, 1),
                 b := True,
@@ -350,7 +355,7 @@ class TestTrConv:
                 oc := 9,
                 ks := (7, 7),
                 s := (2, 2),
-                d := (6, 5),
+                d := (1, 1),
                 p := (5, 4),
                 op := (2, 1),
                 b := False,
@@ -362,21 +367,20 @@ class TestTrConv:
                 oc := 11,
                 ks := (3, 5),
                 s := (2, 2),
-                d := (2, 2),
+                d := (1, 1),
                 p := (1, 2),
                 op := (1, 1),
                 b := True,
                 id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
-                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
             ),
             pytest.param(
                 ins := (3, 2, 40, 20),
                 oc := 13,
                 ks := (1, 5),
                 s := (1, 2),
-                d := (3, 1),
+                d := (1, 1),
                 p := (0, 4),
-                op := (1, 1),
+                op := (0, 1),
                 b := False,
                 id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
             ),
@@ -385,7 +389,7 @@ class TestTrConv:
                 oc := 5,
                 ks := (3, 3),
                 s := (2, 2),
-                d := (3, 3),
+                d := (1, 1),
                 p := (2, 2),
                 op := (2, 2),
                 b := True,
@@ -397,7 +401,7 @@ class TestTrConv:
                 oc := 7,
                 ks := (5, 5),
                 s := (1, 2),
-                d := (1, 3),
+                d := (1, 1),
                 p := (2, 4),
                 op := (0, 2),
                 b := False,
@@ -409,12 +413,11 @@ class TestTrConv:
                 oc := 9,
                 ks := (2, 2),
                 s := (2, 2),
-                d := (2, 2),
+                d := (1, 1),
                 p := (1, 1),
                 op := (1, 1),
                 b := True,
                 id=f"some params not default: {_conv_id(ins, oc, ks=ks, s=s, d=d, p=p, b=b, op=op)}",
-                marks=pytest.mark.xfail(reason="AIR-14852", strict=True),
             ),
         ],
     )
@@ -446,7 +449,7 @@ class TestTrConv:
         assert_delegated_and_correct(model, input_shape, mocker, request, use_qat)
 
     @pytest.mark.parametrize(
-        "input_shape, out_channels, kernel_size, stride, padding, groups",
+        "input_shape, out_channels, kernel_size, stride, padding, groups, dilation",
         [
             pytest.param(
                 ins := (3, 7, 5000, 11),
@@ -455,7 +458,8 @@ class TestTrConv:
                 s := 1,
                 p := 0,
                 g := 1,
-                id=f"kernel height too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"kernel height too big: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 5000),
@@ -464,7 +468,8 @@ class TestTrConv:
                 s := 1,
                 p := 0,
                 g := 1,
-                id=f"kernel width too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"kernel width too big: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 9, 11),
@@ -473,7 +478,8 @@ class TestTrConv:
                 s := (2, 1),
                 p := 0,
                 g := 1,
-                id=f"stride height > kernel height: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"stride height > kernel height: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 11),
@@ -482,7 +488,8 @@ class TestTrConv:
                 s := (1, 2),
                 p := 0,
                 g := 1,
-                id=f"stride width > kernel width: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"stride width > kernel width: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 11),
@@ -491,7 +498,8 @@ class TestTrConv:
                 s := (3, 1),
                 p := 0,
                 g := 1,
-                id=f"stride height too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"stride height too big: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 13, 11),
@@ -500,7 +508,8 @@ class TestTrConv:
                 s := (1, 3),
                 p := 0,
                 g := 1,
-                id=f"stride width too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"stride width too big: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 9, 11),
@@ -509,7 +518,8 @@ class TestTrConv:
                 s := 1,
                 p := (3, 1),
                 g := 1,
-                id=f"padding height >= kernel height: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"padding height >= kernel height: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 7, 9, 11),
@@ -518,7 +528,8 @@ class TestTrConv:
                 s := 1,
                 p := (1, 3),
                 g := 1,
-                id=f"padding width >= kernel width: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"padding width >= kernel width: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 113, 123, 133),
@@ -527,7 +538,8 @@ class TestTrConv:
                 s := 1,
                 p := 0,
                 g := 1,
-                id=f"kernel_h * kernel_w * round_ceil(input_channels, num_macs) too big: {_conv_id(ins, oc, ks=ks, s=s, p=p)}",
+                d := 1,
+                id=f"kernel_h * kernel_w * round_ceil(input_channels, num_macs) too big: {_conv_id(ins, oc, ks=ks, s=s, p=p, d=d)}",
             ),
             pytest.param(
                 ins := (3, 9, 11, 13),
@@ -536,12 +548,31 @@ class TestTrConv:
                 s := 1,
                 p := 0,
                 g := 3,
-                id=f"groups > 1: {_conv_id(ins, oc, ks=ks, s=s, p=p, g=g)}",
+                d := 1,
+                id=f"groups > 1: {_conv_id(ins, oc, ks=ks, s=s, p=p, g=g, d=d)}",
+            ),
+            pytest.param(
+                ins := (3, 9, 11, 13),
+                oc := 3,
+                ks := 3,
+                s := 1,
+                p := 0,
+                g := 1,
+                d := 2,
+                id=f"dilation != 1: {_conv_id(ins, oc, ks=ks, s=s, p=p, g=g, d=d)}",
             ),
         ],
     )
     def test__tr_no_deleg(
-        self, input_shape, out_channels, kernel_size, stride, padding, groups, use_qat
+        self,
+        input_shape,
+        out_channels,
+        kernel_size,
+        stride,
+        padding,
+        groups,
+        dilation,
+        use_qat,
     ):
         in_channels = input_shape[1]
 
@@ -552,6 +583,7 @@ class TestTrConv:
             stride=stride,
             padding=padding,
             groups=groups,
+            dilation=dilation,
         )
 
         assert_not_delegated(model, input_shape, use_qat)

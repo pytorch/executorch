@@ -1,3 +1,8 @@
+# Copyright 2024-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.abs_converter import (
     AbsConverter,
 )
@@ -101,8 +106,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_tensor_converter import (
-    SliceTensorConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_copy_tensor_converter import (
+    SliceCopyTensorConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
@@ -163,7 +168,7 @@ __all__ = [
     "ReLUConverter",
     "RsqrtConverter",
     "SigmoidConverter",
-    "SliceTensorConverter",
+    "SliceCopyTensorConverter",
     "SoftmaxConverter",
     "SubTensorConverter",
     "SumDimIntListConverter",

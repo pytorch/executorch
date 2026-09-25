@@ -526,7 +526,7 @@ def main() -> None:
     src.add_argument(
         "--gguf",
         default=None,
-        help="Path to a GGUF file (e.g. muse-glimmer-30B-kquant-17gb.gguf). Streams and "
+        help="Path to a GGUF file (e.g. Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf). Streams and "
         "converts weights for the target backend, preserving quant bit-widths.",
     )
     src.add_argument(
@@ -592,7 +592,7 @@ def main() -> None:
         "--mmproj",
         default=None,
         help="Optional path to the vision projector GGUF "
-        "(e.g. mmproj-kquant.gguf). When given (CUDA or "
+        "(e.g. mmproj-Muse-Glimmer-30B-Q4_K_M.gguf). When given (CUDA or "
         "MLX backend), a `vision_encoder` method is exported and the runner can "
         "take image input. Omit to export the text-only (TITO) model.",
     )

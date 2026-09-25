@@ -8,7 +8,8 @@
 Graph Transformation Pass for Integer Floor-Division Replacement.
 
 Rewrites integer (int64/int32) floor-division into a float64-domain floor to
-work around a torch-2.12 AOTInductor/Inductor CUDA miscompile:
+work around an AOTInductor/Inductor CUDA miscompile that is still present as
+of PyTorch 2.13:
 
     floor_divide(a, b)  ->  floor(a.to(float64) / b.to(float64)).to(orig_int_dtype)
 """
@@ -36,7 +37,7 @@ _DIV_MODE_OPS = (
 
 
 class ReplaceInt64FloorDivWithFloatPass(PassBase):
-    # Work around a torch-2.12 AOTInductor/Inductor CUDA miscompile of integer
+    # Work around an AOTInductor/Inductor CUDA miscompile of integer
     # (int64) floor-division: fused/broadcast int64 floor_divide is mis-lowered
     # (truncation instead of floor; cross-division term bleed under dynamic shapes).
     # TODO(gasoonjia): remove this pass once the upstream issue solved.

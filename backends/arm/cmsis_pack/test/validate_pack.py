@@ -17,26 +17,49 @@ import argparse
 import sys
 import xml.etree.ElementTree as ET  # nosec  # noqa: B405,S405
 import zipfile
+from collections import Counter
 
 
-def validate(pack_file: str) -> None:
+def validate(pack_file: str) -> None:  # noqa: C901
     with zipfile.ZipFile(pack_file, "r") as z:
         names = z.namelist()
         names_set = set(names)
 
+        # Use explicit sys.exit (not assert) so `python -O` does not
+        # silently strip these critical checks.
         pdsc_names = [n for n in names if n.endswith(".pdsc")]
-        assert pdsc_names, "No PDSC file found in pack"
-        assert any("runtime" in n for n in names), "No runtime sources found in pack"
-        assert any(
-            "RegisterAllKernels" in n for n in names
-        ), "No RegisterAllKernels.cpp found"
+        if not pdsc_names:
+            sys.exit("No PDSC file found in pack")
+        if not any("runtime" in n for n in names):
+            sys.exit("No runtime sources found in pack")
+        if not any("RegisterAllKernels" in n for n in names):
+            sys.exit("No RegisterAllKernels.cpp found")
+
+        # Build-tree-sourced files: copy_sources.sh takes these from the CMake
+        # build dir, and a pack without them compiles nothing on the consumer
+        # side (a skipped cross-compile step once produced such a pack).
+        for required in (
+            "include/flatbuffers/flatbuffers.h",
+            # Redistributing the flatbuffers headers requires shipping their
+            # licence; a pack without it must not be published.
+            "include/flatbuffers/LICENSE",
+            "include/executorch/schema/program_generated.h",
+            "include/executorch/schema/scalar_type_generated.h",
+        ):
+            if not any(n.endswith(required) for n in names):
+                sys.exit(
+                    f"Missing build-generated file: {required} "
+                    "(was the CMake configure+build step run before packing?)"
+                )
 
         if len(names) != len(names_set):
-            dupes = sorted({n for n in names if names.count(n) > 1})
+            counts = Counter(names)
+            dupes = sorted(n for n, c in counts.items() if c > 1)
             sys.exit(f"ERROR: duplicate entries in pack: {dupes[:5]}")
 
         py = [n for n in names if n.endswith(".py")]
-        assert not py, f"Python files leaked into pack: {py[:5]}"
+        if py:
+            sys.exit(f"Python files leaked into pack: {py[:5]}")
 
         pdsc = pdsc_names[0]
         content = z.read(pdsc).decode()
@@ -47,11 +70,21 @@ def validate(pack_file: str) -> None:
         except ET.ParseError as e:
             sys.exit(f"ERROR: PDSC is not well-formed XML: {e}")
 
+        # Precompute every directory prefix that exists in the archive so
+        # exists() is two O(1) set lookups instead of an O(n) scan per
+        # <file> reference (the PDSC has hundreds; the archive has
+        # thousands of entries).
+        all_prefixes = set()
+        for n in names:
+            parts = n.split("/")
+            for i in range(1, len(parts)):
+                all_prefixes.add("/".join(parts[:i]) + "/")
+
         def exists(ref: str) -> bool:
             if ref in names_set:
                 return True
             prefix = ref if ref.endswith("/") else ref + "/"
-            return any(n.startswith(prefix) for n in names)
+            return prefix in all_prefixes
 
         missing = [
             f.attrib["name"]

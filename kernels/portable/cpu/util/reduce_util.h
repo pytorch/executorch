@@ -107,11 +107,10 @@ void apply_on_flat_ix_with_dim_mask_and_base(
         // Reset dim_index[curr_dim] to 0. We need to update curr_index
         // accordingly. Reseting dim_index[curr_dim] from in.size(curr_dim)
         // to 0 means we need to subtract in.size(curr_dim) * strides[curr_dim]
-        // from curr_index. However in.size(curr_dim) * strides[curr_dim] is
-        // equal to strides[curr_dim - 1]. Notice that curr_dim > 0 at this
-        // point in the execution
+        // from curr_index. This is only equal to strides[curr_dim - 1] for a
+        // contiguous memory format, so it cannot be simplified to that.
         dim_index[curr_dim] = 0;
-        curr_index -= strides[curr_dim - 1];
+        curr_index -= in.size(curr_dim) * strides[curr_dim];
 
         // Decrease current dim
         curr_dim--;

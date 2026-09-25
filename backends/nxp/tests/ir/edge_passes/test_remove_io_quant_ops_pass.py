@@ -10,7 +10,7 @@ import executorch.kernels.quantized  # noqa F401
 
 import torch
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.models import Conv2dReLUModule
+from executorch.backends.nxp.tests.simple_models import Conv2dReLUModule
 from executorch.examples.nxp.experimental.cifar_net.cifar_net import CifarNet
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.quantize_io_pass import get_config_method_name

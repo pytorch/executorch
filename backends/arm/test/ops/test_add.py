@@ -184,7 +184,7 @@ def test_add_tensor_u55_INT(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
-@common.XfailIfNoCorstone300
+@common.XfailIfNoCorstone300_u65
 def test_add_tensor_u65_INT(test_data: input_t1):
     pipeline = EthosU65PipelineINT[input_t1](
         Add(),

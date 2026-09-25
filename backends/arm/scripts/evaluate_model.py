@@ -142,6 +142,12 @@ def _get_args():
         help="Batch size to use for ImageNet evaluation. (only applicable for ImageNet evaluation).",
     )
     parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Limit the number of samples evaluated.",
+    )
+    parser.add_argument(
         "-s",
         "--so_library",
         required=False,
@@ -272,6 +278,7 @@ def _evaluate(
                     batch_size=args.batch_size,
                     validation_dataset_path=args.evaluation_dataset,
                     eval_dtype=_DTYPE_MAP.get(args.dtype, None),
+                    max_samples=args.max_samples,
                 )
             case _:
                 raise AssertionError(f"Unknown evaluator {evaluator_name}")

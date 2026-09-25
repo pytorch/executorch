@@ -118,6 +118,11 @@ class Conv1d(torch.nn.Module):
         return x
 
 
+class Conv1dWithLeakyReLU(Conv1d):
+    def forward(self, x):
+        return torch.nn.functional.leaky_relu(super().forward(x), negative_slope=0.0)
+
+
 conv1d_2_3x2x40_nobias = Conv1d(
     in_channels=2,
     out_channels=3,
@@ -210,6 +215,20 @@ conv1d_3_1x3x224_st2_pd1 = Conv1d(
     padding=1,
     length=224,
     batches=1,
+)
+
+# This is grouped but not depthwise: each group consumes two input channels.
+# Arm therefore decomposes it into three ordinary convolutions whose weights
+# are graph-local slices rather than lifted model parameters.
+conv1d_6_6x3x50_groups3 = Conv1d(
+    in_channels=6,
+    out_channels=6,
+    kernel_size=3,
+    stride=1,
+    padding=0,
+    groups=3,
+    length=50,
+    batches=4,
 )
 
 conv1d_7_1x3x16_st2_pd1_dl2 = Conv1d(
@@ -313,6 +332,42 @@ def test_convolution_1d_tosa_FP(test_data):
     pipeline.run()
 
 
+def test_convolution_1d_grouped_tosa_FP():
+    """Ensure sliced grouped-Conv1d weights are converted in the FP flow."""
+    pipeline = TosaPipelineFP[input_t](
+        conv1d_6_6x3x50_groups3,
+        conv1d_6_6x3x50_groups3.get_inputs(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "per_channel_quantization", {"per_channel": True, "per_tensor": False}
+)
+def test_convolution_1d_grouped_tosa_INT(per_channel_quantization):
+    """Ensure sliced grouped-Conv1d weights are converted in the INT flow.
+
+    The decomposition must preserve both per-channel and per-tensor weight
+    quantization while converting each three-dimensional slice for Conv2d.
+
+    Args:
+        per_channel_quantization (bool): Whether weights use per-channel
+            instead of per-tensor quantization.
+
+    """
+    pipeline = TosaPipelineINT[input_t](
+        conv1d_6_6x3x50_groups3,
+        conv1d_6_6x3x50_groups3.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", test_data_INT)
 def test_convolution_1d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
@@ -322,6 +377,18 @@ def test_convolution_1d_tosa_INT(test_data):
         aten_op,
         exir_op,
         per_channel_quantization=per_channel_quantization,
+        qtol=1,
+    )
+    pipeline.run()
+
+
+def test_convolution_1d_with_leaky_relu_tosa_INT():
+    model = Conv1dWithLeakyReLU()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        [aten_op, "torch.ops.aten.leaky_relu.default"],
+        [exir_op, "executorch_exir_dialects_edge__ops_aten_leaky_relu_default"],
         qtol=1,
     )
     pipeline.run()

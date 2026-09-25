@@ -1,0 +1,27 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "webgpu_partitioner",
+    srcs = [
+        "__init__.py",
+        "partitioner.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:op_registry",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/exir/backend:partitioner",
+    ],
+    typing = True,
+)

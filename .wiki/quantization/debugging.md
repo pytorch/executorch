@@ -22,7 +22,7 @@ Quantized LLMs (especially 1B parameter models with 4-bit weights) frequently pr
 ```bash
 # Use the QNN-specific script with better quantization
 python examples/qualcomm/oss_scripts/llama/llama.py \
-  --compile_only -m SM8750 \
+  --compile_only --soc_model SM8750 \
   --model_mode hybrid \
   --decoder_model <model> \
   ...

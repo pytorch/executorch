@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import List, Optional, Tuple, Union
 
 import torch
+
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 # module with related operator only
 
@@ -263,6 +266,17 @@ class ArgminViewSqueezeConv2D(torch.nn.Module):
         view_out = argmin_out.view(-1)
         squeeze_out = view_out.squeeze(-1)
         return squeeze_out, conv_out
+
+
+class AsStrided(torch.nn.Module):
+    def __init__(self, size, stride, storage_offset=0):
+        super().__init__()
+        self.size = size
+        self.stride = stride
+        self.storage_offset = storage_offset
+
+    def forward(self, x):
+        return torch.as_strided(x, self.size, self.stride, self.storage_offset)
 
 
 class Asinh(torch.nn.Module):
@@ -971,15 +985,26 @@ class ConvFullLike(torch.nn.Module):
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
-    def __init__(self, bias=True, dilation=1):
+    def __init__(
+        self,
+        bias=True,
+        in_channels=1,
+        out_channels=3,
+        kernel_size=3,
+        stride=2,
+        padding=1,
+        dilation=1,
+        groups=1,
+    ):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose1d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=3,
-            stride=2,
-            padding=1,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
             dilation=dilation,
+            groups=groups,
             bias=bias,
         )
 
@@ -1178,6 +1203,40 @@ class Embedding(torch.nn.Module):
 
     def forward(self, x):
         return self.embedding(x)
+
+
+class EmptyMemoryFormat(torch.nn.Module):
+    def __init__(self, shape=None, dtype=None, memory_format=torch.contiguous_format):
+        super().__init__()
+        self.shape = shape
+        self.dtype = dtype
+        self.memory_format = memory_format
+
+    def forward(self, x):
+        empty = torch.empty(
+            x.shape if self.shape is None else self.shape,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+            memory_format=self.memory_format,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+
+class EmptyStrided(torch.nn.Module):
+    def __init__(self, shape, strides, dtype=None):
+        super().__init__()
+        self.shape = shape
+        self.strides = strides
+        self.dtype = dtype
+
+    def forward(self, x):
+        # empty_strided() returns uninitialized memory, so zeros_like is used to
+        # make the result deterministic and comparable against the eager reference
+        empty = torch.empty_strided(
+            self.shape,
+            self.strides,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
 
 
 class Equal(torch.nn.Module):
@@ -1682,6 +1741,44 @@ class Linear(torch.nn.Module):
         return self.linear(x)
 
 
+class HadamardLinear(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.linear = torch.nn.Linear(dim, dim, bias=False).eval()
+        # nn.Linear computes x @ Wᵀ; the Hadamard matrix is symmetric so
+        # x @ Hᵀ == x @ H, matching hadamard_transform(x).
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        self.linear.weight.data.copy_(H)
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+class HadamardMatMul(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # The Hadamard matrix is symmetric, so matmul(x, H) applies the transform
+        # along the last dim of x, matching hadamard_transform(x).
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        self.register_buffer("weight", H)
+
+    def forward(self, x):
+        return torch.matmul(x, self.weight)
+
+
+class HadamardConv(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # A 1x1 conv mixing channels is a matmul over the channel dim; a Hadamard
+        # filter makes it equivalent to hadamard_transform along channels.
+        self.conv = torch.nn.Conv2d(dim, dim, kernel_size=1, bias=False).eval()
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        self.conv.weight.data.copy_(H.reshape(dim, dim, 1, 1))
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 class LinearLeakyReLU(torch.nn.Module):
     def __init__(self, negative_slope=0.01):
         super().__init__()
@@ -1710,6 +1807,26 @@ class LinearNonConstantWeight(torch.nn.Module):
         k = torch.nn.functional.linear(x, w_k, b_k)
         v = torch.nn.functional.linear(x, w_v, b_v)
         return q * k * v
+
+
+class LinearSharedWeight(torch.nn.Module):
+    def __init__(self, in_features, out_features):
+        super().__init__()
+        self.shared_weight_0 = torch.nn.Parameter(
+            torch.randn(out_features, in_features)
+        )
+        self.shared_weight_1 = torch.nn.Parameter(
+            torch.randn(out_features, in_features)
+        )
+
+    def forward(self, x, y):
+        x_0 = torch.nn.functional.linear(x, self.shared_weight_0)
+        y_0 = torch.nn.functional.linear(y, self.shared_weight_0)
+
+        x_1 = torch.nn.functional.linear(x, self.shared_weight_1)
+        y_1 = torch.nn.functional.linear(y, self.shared_weight_1)
+
+        return (x_0 + y_0) + (x_1 + y_1)
 
 
 class Log(torch.nn.Module):
@@ -2341,6 +2458,25 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim=1, reduce="sum"):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
+
+
 class ScatterSrc(torch.nn.Module):
     def __init__(self, dim=1):
         super().__init__()
@@ -2841,6 +2977,16 @@ class Threshold(torch.nn.Module):
         )
 
 
+class ConvRelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 8, kernel_size=3, padding=1)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(self.conv(x))
+
+
 class TopKandIndex(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2904,16 +3050,18 @@ class Unflatten(torch.nn.Module):
 
 
 class Unfold(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, kernel_size, stride, padding=0):
         super().__init__()
-        self.patch_height = 2
-        self.patch_width = 2
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
 
     def forward(self, x):
         unfold = torch.nn.functional.unfold(
             x,
-            kernel_size=(self.patch_height, self.patch_width),
-            stride=(self.patch_height, self.patch_width),
+            kernel_size=self.kernel_size,
+            stride=self.stride,
+            padding=self.padding,
         )
         return unfold
 

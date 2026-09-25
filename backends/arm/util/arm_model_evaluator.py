@@ -8,6 +8,7 @@ import logging
 import os
 import tempfile
 import zipfile
+from collections.abc import Sized
 
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -15,7 +16,7 @@ from typing import Any, Optional, Tuple
 import torch
 from torch.nn.modules import Module
 from torch.utils._pytree import tree_flatten
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms  # type: ignore[import-untyped]
 
 
@@ -109,32 +110,49 @@ class ImageNetEvaluator(Evaluator):
         batch_size: int,
         validation_dataset_path: str,
         eval_dtype: Optional[torch.dtype] = None,
+        max_samples: Optional[int] = None,
+        validation_dataset: Optional[Dataset[Any]] = None,
     ) -> None:
         self._model_name = model_name
         self._eval_model = eval_model
         self._batch_size = batch_size
         self._validation_set_path = validation_dataset_path
         self._eval_dtype = eval_dtype
+        if max_samples is not None and max_samples <= 0:
+            raise ValueError("max_samples must be greater than zero")
+        self._max_samples = max_samples
+        self._validation_dataset = validation_dataset
 
     def evaluate(self) -> dict[str, Any]:
         metrics: dict[str, Any] = {}
 
-        dataset = ImageNetEvaluator.load_imagenet_folder(self._validation_set_path)
+        dataset: Dataset[Any]
+        if self._validation_dataset is None:
+            dataset = ImageNetEvaluator.load_imagenet_folder(self._validation_set_path)
+        else:
+            dataset = self._validation_dataset
+        if not isinstance(dataset, Sized):
+            raise TypeError("validation dataset must define __len__")
+        dataset_size = len(dataset)
+        if self._max_samples is not None:
+            dataset_size = min(self._max_samples, dataset_size)
+            dataset = Subset(dataset, range(dataset_size))
         logger.debug(
             "Starting ImageNet evaluation for model '%s' on dataset '%s' with %d samples.",
             self._model_name,
             self._validation_set_path,
-            len(dataset),
+            dataset_size,
         )
 
         top1, top5 = self._evaluate_topk(dataset, topk=5)
+        metrics["num_samples"] = dataset_size
         metrics["accuracy"] = {"top-1": top1, "top-5": top5}
 
         return metrics
 
     def _evaluate_topk(
         self,
-        dataset: datasets.ImageFolder,
+        dataset: Dataset[Any],
         topk: int = 5,
         log_every: int = 50,
     ) -> Tuple[float, float]:
@@ -170,6 +188,11 @@ class ImageNetEvaluator(Evaluator):
                 logger.debug(
                     "Model eval() unsupported and torchao allow_exported_model_train_eval not available; proceeding."
                 )
+        if not isinstance(dataset, Sized):
+            raise TypeError("validation dataset must define __len__")
+        dataset_size = len(dataset)
+        if dataset_size == 0:
+            raise ValueError("validation dataset must contain at least one sample")
         loaded_dataset = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
         top1_correct = 0
         topk_correct = 0
@@ -187,17 +210,17 @@ class ImageNetEvaluator(Evaluator):
                 topk_correct += (topk_indices == target_view).sum().item()
                 batch_sz = image.size(0)
                 total += batch_sz
-                if (i + 1) % log_every == 0 or total == len(dataset):
+                if (i + 1) % log_every == 0 or total == dataset_size:
                     logger.info(
                         "Eval progress: %d / %d  top1=%.4f top%d=%.4f",
                         total,
-                        len(dataset),
+                        dataset_size,
                         top1_correct / total,
                         topk,
                         topk_correct / total,
                     )
-        top1_accuracy = top1_correct / len(dataset)
-        topk_accuracy = topk_correct / len(dataset)
+        top1_accuracy = top1_correct / dataset_size
+        topk_accuracy = topk_correct / dataset_size
 
         return top1_accuracy, topk_accuracy
 

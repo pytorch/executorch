@@ -7,8 +7,8 @@
 """Unit tests for the export-friendly Muse Glimmer vision encoder (vision_tower.py).
 
 Checks (CPU):
-  * ``MuseGlimmerVisionEncoder`` reproduces an inline eager reference (the onyx vision
-    math) to bf16 tolerance, given shared random weights.
+  * ``MuseGlimmerVisionEncoder`` reproduces an inline eager reference (the Muse
+    Glimmer vision math) to bf16 tolerance, given shared random weights.
   * The forward runs on a single-tile image (identity sparse perm) and a
     multi-tile image (non-trivial sparse perm), producing the right shapes.
   * ``torch.export(strict=True)`` traces the encoder with a dynamic num_patches.
@@ -60,11 +60,11 @@ def _init_random(model: torch.nn.Module, seed: int = 0) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Inline eager reference (mirrors OnyxVisionEncoder math on float32).
+# Inline eager reference (mirrors MuseGlimmerVisionEncoder math on float32).
 
 
 def _rotate_interleaved_complex(x, cos, sin):
-    """Adjacent-pair rotation via complex mul (eager onyx formulation)."""
+    """Adjacent-pair rotation via complex mul (eager Muse Glimmer formulation)."""
     freqs = torch.complex(cos, sin)  # [P, d/2]
     xc = torch.view_as_complex(x.float().reshape(*x.shape[:-1], -1, 2))
     out = torch.view_as_real(xc * freqs.unsqueeze(0).unsqueeze(2)).flatten(-2)

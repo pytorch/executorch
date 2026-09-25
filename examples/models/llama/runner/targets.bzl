@@ -83,3 +83,9 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
         ]
     )
+
+    runtime.cxx_test(
+        name = "static_attention_io_manager_test",
+        srcs = ["static_attention_io_manager_test.cpp"],
+        deps = [":static_attention_io_manager"],
+    )

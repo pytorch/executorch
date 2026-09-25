@@ -14,7 +14,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-add_library(extension_llm_cache cache_registry.cpp)
+add_library(extension_llm_cache cache_registry.cpp cell_cache.cpp)
 target_link_libraries(extension_llm_cache executorch_core)
 target_include_directories(
   extension_llm_cache PUBLIC ${_common_include_directories}

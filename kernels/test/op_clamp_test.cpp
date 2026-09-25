@@ -368,6 +368,10 @@ TEST_F(OpClampOutTest, ByteTensorNegativeClampDies) {
 }
 
 TEST_F(OpClampOutTest, ByteTensorTooLargeClampDies) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel treats an out-of-range integer clamp bound as a no-op or an "
+      "error depending on direction");
   // Cannot be represented by a uint8_t.
   expect_bad_clamp_value_dies<ScalarType::Byte>(256);
 }

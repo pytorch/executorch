@@ -8,16 +8,16 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
 import torch
-from executorch.examples.qualcomm.oss_scripts.llama.inference import ModelInference
+from executorch.examples.qualcomm.oss_scripts.llama.inference import DecoderInference
 from torch.utils.data import DataLoader
 
 
 class QuantizationStrategy(ABC):
-    """Base class for quantization strategies."""
+    """Base class for PTQ and QAT quantization strategies."""
 
     def __init__(
         self,
-        inference: ModelInference,
+        inference: DecoderInference,
         module: torch.fx.GraphModule,
         tok_embedding: Optional[torch.fx.GraphModule] = None,
     ):

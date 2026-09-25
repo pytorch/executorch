@@ -179,8 +179,9 @@ void choose_qparams(
     Tensor& zero_point_out) {
   const float* x_fp32 = input.const_data_ptr<float>();
   // Compute x_min, x_max and q_params (scale, zero_point)
-  float min = torch::executor::vec_minf(x_fp32, input.numel());
-  float max = torch::executor::vec_maxf(x_fp32, input.numel());
+  float min;
+  float max;
+  torch::executor::vec_minmaxf(x_fp32, input.numel(), &min, &max);
 
   double scale;
   int32_t zero_point;
@@ -216,8 +217,10 @@ void choose_qparams_per_token(
         0, num_tokens, 1, [&](const int64_t begin, const int64_t end) {
           for (int64_t i = begin; i < end; i++) {
             const float* token_data = x_fp32 + i * token_dim_size;
-            float min = torch::executor::vec_minf(token_data, token_dim_size);
-            float max = torch::executor::vec_maxf(token_data, token_dim_size);
+            float min;
+            float max;
+            torch::executor::vec_minmaxf(
+                token_data, token_dim_size, &min, &max);
             double scale;
             int32_t zero_point;
             calculate_scale_and_zero_point(
@@ -228,10 +231,9 @@ void choose_qparams_per_token(
         });
   } else {
     for (auto i = 0; i < num_tokens; i++) {
-      // vec_minf uses std::min_element. Check if it actually
-      // gets vectorized.
-      float min = torch::executor::vec_minf(x_fp32, token_dim_size);
-      float max = torch::executor::vec_maxf(x_fp32, token_dim_size);
+      float min;
+      float max;
+      torch::executor::vec_minmaxf(x_fp32, token_dim_size, &min, &max);
       double scale;
       int32_t zero_point;
       calculate_scale_and_zero_point(min, max, qmin, qmax, scale, zero_point);

@@ -95,6 +95,66 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def set_param_tensor(
+    exp_prog: ExportedProgram, node: torch.fx.Node, data: torch.Tensor
+) -> None:
+    """Replace the tensor represented by a parameter-like graph node."""
+    if is_param(exp_prog, node):
+        target = exp_prog.graph_signature.inputs_to_parameters[node.name]
+        parameter = exp_prog.state_dict[target]
+        exp_prog.state_dict[target] = torch.nn.Parameter(
+            data, requires_grad=parameter.requires_grad
+        )
+    elif is_buffer(exp_prog, node):
+        target = exp_prog.graph_signature.inputs_to_buffers[node.name]
+        if target in exp_prog.graph_signature.non_persistent_buffers:
+            exp_prog.constants[target] = data
+        else:
+            exp_prog.state_dict[target] = data
+    elif is_lifted_tensor_constant(exp_prog, node):
+        target = exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+        exp_prog.constants[target] = data
+    elif is_get_attr_node(node):
+        module = node.graph.owning_module
+        try:
+            current = getattr(module, node.target)
+        except (AttributeError, TypeError):
+            module = exp_prog.graph_module
+            current = getattr(module, node.target)
+        if isinstance(current, torch.nn.Parameter):
+            data = torch.nn.Parameter(data, requires_grad=current.requires_grad)
+        setattr(module, node.target, data)
+    else:
+        raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
+def _buffer_target(node_name: str) -> str:
+    """Map a placeholder name to its state_dict target per the export
+    convention: placeholder "b_foo" corresponds to buffer target "foo"."""
+    return node_name[2:] if node_name.startswith("b_") else node_name
+
+
+def _find_placeholder(graph: torch.fx.Graph, name: str) -> Optional[torch.fx.Node]:
+    """Return the placeholder previously created for this requested name, if any."""
+    for n in graph.nodes:
+        if n.op == "placeholder" and n.meta.get("requested_name") == name:
+            return n
+    return None
+
+
+def _create_placeholder_node(graph: torch.fx.Graph, name: str) -> torch.fx.Node:
+    """Create a placeholder at the current insertion point.
+
+    torch.fx may rename the node (invalid identifier or collision); the target,
+    state_dict key and graph signature must follow the assigned name, so the
+    target is set to node.name and the requested name is kept in node.meta.
+    """
+    node = graph.create_node(op="placeholder", name=name, target=name)
+    node.target = node.name
+    node.meta["requested_name"] = name
+    return node
+
+
 def create_constant_placeholder(
     exp_program: ExportedProgram,
     graph: torch.fx.Graph,
@@ -110,19 +170,21 @@ def create_constant_placeholder(
     """
 
     # Multiple pattern replacements may request the same shared weight; return
-    # the existing node to avoid duplicate parameter names on recompile.
-    for n in graph.nodes:
-        if n.op == "placeholder" and n.meta.get("requested_name") == name:
-            return n
+    # the existing node to avoid duplicate parameter names on recompile. A
+    # mutable buffer of the same name is not a constant and cannot be shared.
+    existing = _find_placeholder(graph, name)
+    if existing is not None:
+        if existing.name in exp_program.graph_signature.buffers_to_mutate:
+            raise RuntimeError(
+                f"Placeholder '{name}' already exists as a mutable buffer"
+            )
+        return existing
 
     fake_tensor = _get_fake_tensor_mode(graph, data)
 
-    # torch.fx may rename the node (invalid identifier or collision); the
-    # target, state_dict key and graph signature must follow the assigned name.
-    node = graph.create_node(op="placeholder", name=name, target=name)
-    target = node.target = node.name
+    node = _create_placeholder_node(graph, name)
+    target = node.name
     node.meta["val"] = fake_tensor
-    node.meta["requested_name"] = name
 
     # Add data to state_dict/ constants
     match kind:
@@ -298,11 +360,7 @@ def create_mutable_buffer(
     if not isinstance(data, torch.Tensor):
         raise ValueError("Data must be a torch.Tensor")
 
-    # Extract target name (remove "b_" prefix if present, following export convention)
-    if name.startswith("b_"):
-        target = name[2:]
-    else:
-        target = name
+    target = _buffer_target(name)
 
     # Check if target already exists
     if target in exp_program.state_dict:
@@ -311,9 +369,13 @@ def create_mutable_buffer(
     _validate_graph_signature(exp_program)
 
     persistent_buffer = True
-    exp_program.state_dict[target] = data
 
     graph = exp_program.graph_module.graph
+
+    # Unlike create_constant_placeholder, a mutable buffer cannot be silently
+    # shared, so a repeated request is an error rather than a dedup hit.
+    if _find_placeholder(graph, name) is not None:
+        raise RuntimeError(f"Placeholder for '{name}' already exists in the graph")
 
     # Create fake tensor using helper function
     fake_tensor = _get_fake_tensor_mode(graph, data)
@@ -338,20 +400,30 @@ def create_mutable_buffer(
     ):
         # No const or user input nodes
         node_index = len(input_specs)
-        node = graph.create_node(op="placeholder", name=name, target=name)
+        node = _create_placeholder_node(graph, name)
     else:
         # Find the first constant or user input node
         for i, spec in enumerate(input_specs):
             if spec.kind in [InputKind.CONSTANT_TENSOR, InputKind.USER_INPUT]:
                 node_index = i
                 with graph.inserting_before(_spec_to_node(exp_program, spec)):
-                    node = graph.create_node(op="placeholder", name=name, target=name)
+                    node = _create_placeholder_node(graph, name)
                 break
 
     assert node is not None, "node should be created at this point"
+
+    # If fx renamed the node, the caller's name is stale; re-apply the target
+    # convention to the assigned name.
+    if node.name != name:
+        target = _buffer_target(node.name)
+        if target in exp_program.state_dict:
+            graph.erase_node(node)
+            raise RuntimeError(f"Buffer target '{target}' already exists in state_dict")
+    exp_program.state_dict[target] = data
+
     node.meta["val"] = fake_tensor
     buffer_input_spec = InputSpec(
-        InputKind.BUFFER, TensorArgument(name), target, persistent_buffer
+        InputKind.BUFFER, TensorArgument(node.name), target, persistent_buffer
     )
     input_specs.insert(node_index, buffer_input_spec)
 
@@ -367,7 +439,7 @@ def create_mutable_buffer(
 
     output_specs = exp_program.graph_signature.output_specs
     mutation_output_spec = OutputSpec(
-        OutputKind.BUFFER_MUTATION, TensorArgument(name), target
+        OutputKind.BUFFER_MUTATION, TensorArgument(node.name), target
     )
     output_specs.insert(output_index, mutation_output_spec)
 

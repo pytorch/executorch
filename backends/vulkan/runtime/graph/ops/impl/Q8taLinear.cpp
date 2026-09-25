@@ -29,7 +29,7 @@ bool q8ta_linear_check_packed_dim_info(const api::PackedDimInfo& info) {
 // Workgroup size selection
 //
 
-utils::uvec3 q8ta_linear_global_wg_size(
+GlobalWorkGrid q8ta_linear_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -50,17 +50,16 @@ utils::uvec3 q8ta_linear_global_wg_size(
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
-  return {num_N_tiles, num_M_tiles, 1};
+  return GlobalWorkGrid({num_N_tiles, num_M_tiles, 1u}, kTiledWorkGrid);
 }
 
-utils::uvec3 q8ta_linear_local_wg_size(
+LocalWorkGroup q8ta_linear_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
 }
 
 //
@@ -144,8 +143,8 @@ void add_q8ta_linear_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      q8ta_linear_global_wg_size,
-      q8ta_linear_local_wg_size,
+      q8ta_linear_gwg,
+      q8ta_linear_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,

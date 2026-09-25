@@ -19,10 +19,7 @@ from __future__ import annotations
 from executorch.backends.mlx.builder.op_helpers import emit_quantized_gather
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.custom_kernel_ops.gguf.q5k.repack_mlx import (
-    _BITS,
-    repack_mlx,
-)
+from executorch.backends.mlx.custom_kernel_ops.gguf.repack_mlx import Q5_K, repack_mlx
 from torch.fx.node import Node
 
 
@@ -40,7 +37,7 @@ def emit_embedding(
     embedding.
     """
     w_slot, scales_slot, biases_slot, group_size = repack_mlx(
-        P, weight_node, scale_dtype=output_dtype
+        P, weight_node, Q5_K, scale_dtype=output_dtype
     )
     (indices_slot,) = P.slot_map([indices_node])
 
@@ -53,7 +50,7 @@ def emit_embedding(
         scales_slot,
         biases_slot,
         group_size=group_size,
-        bits=_BITS,
+        bits=Q5_K.bits,
         mode="affine",
         out_dtype=output_dtype,
     )

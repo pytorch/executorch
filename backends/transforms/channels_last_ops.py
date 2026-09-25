@@ -99,6 +99,19 @@ def _max_pool2d_with_indices(
     return values, indices
 
 
+def _max_pool2d(
+    input, kernel_size, stride=None, padding=0, dilation=1, ceil_mode=False
+):
+    if stride is None:
+        stride = []  # Default value of max_pool2d.
+
+    nchw = input.permute(0, 3, 1, 2)
+    out = torch.ops.aten.max_pool2d.default(
+        nchw, kernel_size, stride, padding, dilation, ceil_mode
+    )
+    return out.permute(0, 2, 3, 1).contiguous()
+
+
 def _grid_sampler_2d(input, grid, interpolation_mode, padding_mode, align_corners):
     nchw = input.permute(0, 3, 1, 2)
     out = torch.ops.aten.grid_sampler_2d(
@@ -154,6 +167,13 @@ lib.impl(
 register_fake(
     "channels_last::max_pool2d_with_indices", _max_pool2d_with_indices, lib=lib
 )
+
+lib.define(
+    "max_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], "
+    "int[2] padding=0, int[2] dilation=1, bool ceil_mode=False) -> Tensor"
+)
+lib.impl("max_pool2d", _max_pool2d, "CompositeExplicitAutograd")
+register_fake("channels_last::max_pool2d", _max_pool2d, lib=lib)
 
 lib.define(
     "grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, "

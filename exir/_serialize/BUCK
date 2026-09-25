@@ -23,6 +23,21 @@ fbcode_target(_kind = runtime.cxx_python_extension,
 )
 
 # Use runtime.python_library instead of the one defined in python_library.bzl,
+# The .ptn format. Its own target so safetensors stays out of :lib, and therefore
+# out of everything that depends on exir.
+fbcode_target(_kind = runtime.python_library,
+    name = "ptn",
+    typing = True,
+    srcs = [
+        "_ptn.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "//caffe2:torch",
+    ],
+)
+
 # so we can have access to EXECUTORCH_CLIENTS list.
 fbcode_target(_kind = runtime.python_library,
     name = "lib",

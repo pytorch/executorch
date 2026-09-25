@@ -17,7 +17,7 @@
 namespace vkcompute {
 
 // Custom global workgroup size function for flip
-utils::uvec3 flip_global_wg_size(
+GlobalWorkGrid flip_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -25,7 +25,7 @@ utils::uvec3 flip_global_wg_size(
   (void)shader;
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
-  return graph->create_global_wg_size(out);
+  return graph->create_gwg(out);
 }
 
 void check_flip_args(
@@ -75,8 +75,8 @@ void add_flip_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      flip_global_wg_size,
-      default_pick_local_wg_size,
+      flip_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {
           {out, vkapi::kWrite},

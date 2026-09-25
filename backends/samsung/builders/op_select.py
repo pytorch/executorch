@@ -26,7 +26,7 @@ class SelectVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ):
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -49,4 +49,7 @@ class SelectVisitor(NodeVisitor):
             "shrink_axis_mask": pow(2, dim),
         }
 
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(node.name, "STRIDEDSLICE", [input_id], [output_id], params)
+
+        return True

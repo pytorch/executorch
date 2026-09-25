@@ -4,13 +4,35 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+param(
+    [switch]$SkipX86Windows,
+    [switch]$SkipArm64Windows
+)
+
 $ErrorActionPreference = "Stop"
 
-conda create --yes --quiet -n et python=3.12
-conda activate et
+if ($SkipX86Windows -eq $SkipArm64Windows) {
+    Write-Error "Specify exactly one of -SkipArm64Windows (to build x86_64) or -SkipX86Windows (to build arm64)."
+    exit 1
+}
 
-# Install CI requirements
-pip install -r .ci/docker/requirements-ci.txt
+if ($SkipX86Windows) {
+    $ArchLabel = "arm64"
+    py -3.12 -m venv et
+    .\et\Scripts\Activate.ps1
+    # ARM64 prebuilt wheels are not available for some Python modules.
+    # To unblock the build process, only a minimal set of dependencies
+    # is installed via pip. `PyYAML`/`torch` for ExecuTorch's codegen,
+    # `requests` for download_qnn_sdk.py.
+    pip install pyyaml requests
+    pip install torch --index-url https://download.pytorch.org/whl/cpu
+} else {
+    $ArchLabel = "x86_64"
+    conda create --yes --quiet -n et python=3.12
+    conda activate et
+    # Install CI requirements
+    pip install -r .ci/docker/requirements-ci.txt
+}
 
 # Provision the QNN SDK
 if ($env:QNN_SDK_ROOT -and (Test-Path -Path $env:QNN_SDK_ROOT)) {
@@ -44,27 +66,26 @@ if (-not (Test-Path -Path (Join-Path $env:QNN_SDK_ROOT "include\QNN"))) {
     exit 1
 }
 
-# Test x86_64 Windows host build
-.\backends\qualcomm\scripts\build.ps1 -SkipArm64Windows -Release
+if ($SkipArm64Windows) {
+    .\backends\qualcomm\scripts\build.ps1 -SkipArm64Windows -Release
+} else {
+    .\backends\qualcomm\scripts\build.ps1 -SkipX86Windows -Release
+}
 
-$x86Artifacts = @(
-    "build-x86_64-windows\backends\qualcomm\Release\PyQnnManagerAdaptor*.pyd",
-    "build-x86_64-windows\backends\qualcomm\Release\qnn_executorch_backend.dll",
-    "build-x86_64-windows\examples\qualcomm\executor_runner\Release\qnn_executor_runner.exe"
+$Artifacts = @(
+    "build-$ArchLabel-windows\backends\qualcomm\Release\qnn_executorch_backend.dll",
+    "build-$ArchLabel-windows\examples\qualcomm\executor_runner\Release\qnn_executor_runner.exe"
 )
-foreach ($artifact in $x86Artifacts) {
+if ($SkipArm64Windows) {
+    # Only run PyQnnManagerAdaptor validation for x86_64 Windows artifacts,
+    # since AOT is not fully supported on native ARM64 Windows.
+    $Artifacts += "build-x86_64-windows\backends\qualcomm\Release\PyQnnManagerAdaptor*.pyd"
+}
+foreach ($artifact in $Artifacts) {
     if (-not (Get-ChildItem -Path $artifact -ErrorAction SilentlyContinue)) {
-        Write-Error "ERROR: x86_64 artifact not found: $artifact"
+        Write-Error "ERROR: $ArchLabel artifact not found: $artifact"
         exit 1
     }
 }
 
-# The ARM64 MSVC toolchain is currently not installed in the Windows CI
-# environment. Enabling this build configuration results in build failures
-# due to the missing ARM64 platform definition.
-# `.\backends\qualcomm\scripts\build.ps1 -SkipX86Windows -Release`
-#
-# Temporarily disable this build option until ARM64 MSVC support is available
-# in CI. The configuration can be re-enabled in a future update.
-
-Write-Host "PASSED: QNN backend Windows MSVC build completed"
+Write-Host "PASSED: QNN backend Windows MSVC build ($ArchLabel) completed"

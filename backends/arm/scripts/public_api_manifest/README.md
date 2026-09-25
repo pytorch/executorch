@@ -4,6 +4,14 @@ Manifests are used to track the current public API of the Arm backend. They are
 generated with
 `python backends/arm/scripts/public_api_manifest/generate_public_api_manifest.py`.
 
+The `[python]` section is generated from `executorch.backends.arm.LAZY_IMPORTS`.
+The `[cmake]` section is generated from the command kinds and signatures in
+`backends/arm/cmake/ArmRunnerUtils.cmake`. CMake keyword-only arguments are
+represented after `*`, optional one-value arguments use `None`, options use
+`False`, and optional multi-value arguments use `()`. A static manifest without
+a `[cmake]` section predates the stable CMake API and does not establish a CMake
+compatibility contract.
+
 ## Running manifest
 
 There is always one running manifest which has the main purpose of tracking the

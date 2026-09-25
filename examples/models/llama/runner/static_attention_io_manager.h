@@ -297,14 +297,16 @@ class StaticAttentionMask {
       size_t head_dim,
       T zero_val,
       T mask_val,
-      StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK)
+      StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK,
+      bool is_sliding_window = false)
       : cache_len_(cache_len),
         input_len_(input_len),
         head_dim_(head_dim),
         cache_valid_len_(0),
         zero_val_(zero_val),
         mask_val_(mask_val),
-        style_(style) {
+        style_(style),
+        is_sliding_window_(is_sliding_window) {
     data_size_ = input_len_ * (cache_len_ + input_len_);
     data_ = allocator_.allocate(data_size_);
     ET_CHECK(data_ != nullptr);
@@ -351,8 +353,39 @@ class StaticAttentionMask {
   void set_causal_mask() {
     for (size_t i = 0; i < input_len_; i++) {
       auto* p = data_ + (cache_len_ + input_len_) * i;
-      std::fill(p + cache_len_, p + cache_len_ + 1 + i, zero_val_);
+      size_t first_visible = 0;
+      if (is_sliding_window_ && i + 1 > cache_len_) {
+        first_visible = i + 1 - cache_len_;
+      }
+      std::fill(p + cache_len_, p + cache_len_ + first_visible, mask_val_);
+      std::fill(
+          p + cache_len_ + first_visible, p + cache_len_ + 1 + i, zero_val_);
       std::fill(p + cache_len_ + 1 + i, p + cache_len_ + input_len_, mask_val_);
+    }
+  }
+
+  void set_sliding_window_mask(size_t input_pos) {
+    if (!is_sliding_window_ || cache_len_ == 0) {
+      return;
+    }
+
+    const size_t valid_cache_len = std::min(input_pos, cache_len_);
+    const size_t cache_pos = input_pos % cache_len_;
+    for (size_t row = 0; row < input_len_; row++) {
+      auto* p = data_ + (cache_len_ + input_len_) * row;
+      std::fill(p, p + cache_len_, mask_val_);
+      // Row k already sees k + 1 in-chunk keys, leaving W - k - 1
+      // cache keys. cache_pos is the next ring slot, so the previous slot has
+      // age zero.
+      const size_t max_age = row + 1 < cache_len_
+          ? std::min(valid_cache_len, cache_len_ - row - 1)
+          : 0;
+      for (size_t col = 0; col < cache_len_; col++) {
+        const size_t age = (cache_pos + cache_len_ - 1 - col) % cache_len_;
+        if (age < max_age) {
+          p[col] = zero_val_;
+        }
+      }
     }
   }
 
@@ -376,6 +409,7 @@ class StaticAttentionMask {
   T zero_val_;
   T mask_val_;
   StaticAttentionUpdateStyle style_;
+  bool is_sliding_window_;
   AllocatorT allocator_;
   size_t data_size_ = 0;
   T* data_;
@@ -496,6 +530,10 @@ class StaticAttentionIOManager {
    */
   PerCacheLenMasks& add_mask(size_t input_len, MaskT zero_val, MaskT mask_val) {
     PerCacheLenMasks masks;
+    size_t global_cache_len = 0;
+    for (const auto& pair : config_.cache_len_to_mask_idx) {
+      global_cache_len = std::max(global_cache_len, pair.first);
+    }
     for (auto& pair : config_.cache_len_to_mask_idx) {
       masks.emplace_back(
           pair.first,
@@ -505,7 +543,8 @@ class StaticAttentionIOManager {
               config_.head_dim,
               zero_val,
               mask_val,
-              config_.style));
+              config_.style,
+              pair.first > 0 && pair.first < global_cache_len));
     }
     auto it = attentionMasks_.emplace(input_len, std::move(masks));
     return it.first->second;
@@ -688,6 +727,9 @@ class StaticAttentionIOManager {
             *config_.last_valid_token_pos_index,
             &last_valid_token_pos_);
       }
+      for (auto& pair : masks) {
+        pair.second->set_sliding_window_mask(input_pos_);
+      }
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
       update(
@@ -739,6 +781,9 @@ class StaticAttentionIOManager {
       if (input_pos_ + 1 > config_.max_context_len) {
         ET_LOG(Error, "Maximum context size reached, stopping decode.");
         break;
+      }
+      for (auto& pair : masks) {
+        pair.second->set_sliding_window_mask(input_pos_);
       }
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);

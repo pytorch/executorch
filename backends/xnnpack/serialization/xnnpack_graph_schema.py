@@ -302,6 +302,11 @@ class XNNGelu(XNNNode1x1):
 
 
 @dataclass
+class XNNApproxGelu(XNNNode1x1):
+    pass
+
+
+@dataclass
 class XNNHardswish(XNNNode1x1):
     pass
 
@@ -421,6 +426,7 @@ XNodeUnion = Union[
     XNNSin,
     XNNCopy,
     XNNCos,
+    XNNApproxGelu,
 ]
 
 

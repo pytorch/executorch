@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from typing import Any, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 

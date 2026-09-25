@@ -35,20 +35,19 @@ TextLLMRunner::TextLLMRunner(
     std::unique_ptr<IOManager> io_manager,
     std::unique_ptr<TextTokenGenerator> text_token_generator,
     std::unique_ptr<Stats> stats,
-    float temperature)
+    float temperature,
+    std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner)
     : tokenizer_(std::move(tokenizer)),
       metadata_(std::move(metadata)),
       module_(std::move(module)),
       text_decoder_runner_(std::move(text_decoder_runner)),
+      decode_text_decoder_runner_(std::move(decode_text_decoder_runner)),
       text_prefiller_(std::move(text_prefiller)),
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
       temperature_(temperature),
-      pos_(0) {
-  // Note: This constructor assumes that text_prefiller and text_token_generator
-  // already have references to the Module and TextDecoderRunner they need
-}
+      pos_(0) {}
 
 bool TextLLMRunner::is_loaded() const {
   return text_prefiller_->is_loaded() && text_token_generator_->is_loaded();

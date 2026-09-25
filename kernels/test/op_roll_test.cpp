@@ -56,7 +56,23 @@ class OpRollOutTest : public ::testing::Test {
 
 TEST_F(OpRollOutTest, SmokeTest) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ScalarType::dtype>();
-  // TODO: enable bool test after #7856 lands.
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
+}
+
+TEST_F(OpRollOutTest, BoolTensor) {
+  TensorFactory<ScalarType::Bool> tf;
+
+  Tensor input =
+      tf.make({4, 2}, {true, false, false, true, true, true, false, false});
+  int64_t shifts_data[2] = {2, 1};
+  ArrayRef<int64_t> shifts = ArrayRef<int64_t>(shifts_data, 2);
+  int64_t dims_data[2] = {0, 1};
+  ArrayRef<int64_t> dims = ArrayRef<int64_t>(dims_data, 2);
+  Tensor out = tf.zeros({4, 2});
+  Tensor out_expected =
+      tf.make({4, 2}, {true, true, false, false, false, true, true, false});
+
+  op_roll_out(input, shifts, dims, out);
+  EXPECT_TENSOR_EQ(out, out_expected);
 }

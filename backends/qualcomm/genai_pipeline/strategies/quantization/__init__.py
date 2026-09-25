@@ -10,5 +10,12 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.executo
 from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.quantization_strategy import (
     QuantizationStrategy,
 )
+from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.quantizer_adapter import (
+    QuantizerAdapter,
+)
 
-__all__ = ["ExecuTorchQuantizationStrategy", "QuantizationStrategy"]
+__all__ = [
+    "ExecuTorchQuantizationStrategy",
+    "QuantizationStrategy",
+    "QuantizerAdapter",
+]

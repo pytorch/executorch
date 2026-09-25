@@ -2,7 +2,7 @@
 
 The Arm&reg; Ethos&trade;-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
 [Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U65 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
-[Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://www.mlplatform.org/tosa/) and the
+[Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://github.com/arm/tosa-specification) and the
 [ethos-u-vela](https://pypi.org/project/ethos-u-vela/) graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
 please refer to the [Arm Ethos-U Backend Tutorial](tutorials/ethos-u-getting-started.md). <!-- @lint-ignore -->
 
@@ -24,7 +24,7 @@ All requirements can be downloaded using `examples/arm/setup.sh --i-agree-to-the
 ```
 
 For the AOT flow, compilation of a model to `.pte` format using the Ethos-U backend, the requirements are:
-- [TOSA Serialization Library](https://www.mlplatform.org/tosa/software.html) for serializing the Exir IR graph into TOSA IR.
+- [TOSA Serialization Library](https://gitlab.arm.com/tosa/tosa-tools) for serializing the Exir IR graph into TOSA IR.
 - [Ethos-U Vela graph compiler](https://pypi.org/project/ethos-u-vela/) for compiling TOSA flatbuffers into an Ethos-U command stream.
 
 And for building and running the example application available in `examples/arm/executor_runner/` through the standalone CMake entry point:
@@ -40,7 +40,7 @@ The main configuration point for the lowering is the `EthosUCompileSpec` consume
 The full user-facing API is documented below.
 
 ```python
-class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini')
+class EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None, max_scratch_size: int | None = None)
 ```
 Normalise Ethos-U compile configuration and compiler flags.
 
@@ -55,6 +55,11 @@ Args:
         Vela.
 - **config_ini (str | None)**: Path to a Vela .ini configuration file.
         Defaults to ``"Arm/vela.ini"``.
+- **external_block_placements (VelaExternalBlockPlacements | None)**: Command
+        and weight data to emit as named data with their placement tags.
+- **max_scratch_size (int | None)**: Maximum delegate scratch arena size in
+        bytes for the deployment platform. Checked against Vela's output;
+        independent of Vela's arena cache size. None disables the check.
 
 ```python
 def EthosUCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
@@ -73,25 +78,30 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
-```
-Gets whether the output order workaround is being applied.
-
-```python
-def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
-```
-Sets whether to apply the output order workaround.
-
-Args:
-- **output_order_workaround**: Boolean indicating whether to apply the workaround.
-
-```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
 Set the configuration for the Arm pass pipeline.
 
 Args:
 - **config**: The custom ArmPassPipelineConfig to set.
+
+```python
+class VelaExternalBlockPlacements(cmd_data: str | None = None, weight_data: str | None = None) -> None
+```
+Placement tags for external Vela command and weight data.
+
+Tags are arbitrary build-time identifiers used to group named data into
+external PTD outputs. Deployment decides where those artifacts live and
+supplies them to the runtime.
+
+Attributes:
+- **cmd_data**: Placement tag for command data, or ``None`` to keep it inline.
+- **weight_data**: Placement tag for weight data, or ``None`` to keep it inline.
+
+```python
+def VelaExternalBlockPlacements.to_block_placements(self) -> dict[str, str]:
+```
+Return configured placement tags keyed by Vela block name.
 
 
 
@@ -148,6 +158,24 @@ The placement of the scratch buffer and the Neural Network determine the memory 
 | **SRAM-Only**      | On-chip SRAM                     | On-chip SRAM               | When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC | Limited by SRAM size; often not feasible for larger NNs |
 | **Shared-SRAM**    | On-chip SRAM                     | External memory (Flash/DRAM) | Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage | Requires enough SRAM to hold the largest intermediate tensor |
 | **Dedicated-SRAM** | External memory  | External memory (Flash/DRAM) | Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM  | Need high-bandwidth external memory to deliver good performance |
+
+Set `EthosUCompileSpec(max_scratch_size=...)` to the number of bytes reserved for
+delegate scratch on the deployment platform. After Vela compilation, the backend
+checks each delegate's generated scratch arena against this budget and rejects
+oversized arenas with the required size, available capacity, and excess in bytes.
+This budget covers delegate scratch; other runtime allocations need their own
+memory budgets.
+
+The U55 test helper (`get_u55_compile_spec`) and AOT compiler
+(`aot_arm_compiler.py`) default to a 2 MiB (2,097,152 byte) scratch budget only
+for the Corstone-300 test configuration: U55 `Shared_Sram` with
+`Ethos_U55_High_End_Embedded` and `Arm/vela.ini`, including when these settings
+are omitted. Custom system configurations or INI files have no implicit scratch
+limit in either flow.
+For another deployment platform, pass its actual capacity through
+`max_scratch_size` or the AOT compiler's `--max_scratch_size` option. Vela's
+`--arena-cache-size` does not impose a hard limit on the total `Shared_Sram`
+scratch arena.
 
 Here is an in-depth explanation of the different modes:
 
