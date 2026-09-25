@@ -1,0 +1,9 @@
+prefix=${pcfiledir}/../..
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: ExecuTorch
+Description: On-device AI framework for PyTorch models
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir} -I${includedir}/executorch/runtime/core/portable_type/c10 @_executorch_pc_definitions@
+Libs: -L${libdir} @_executorch_pc_rpath@ -lexecutorch

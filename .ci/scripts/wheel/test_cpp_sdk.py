@@ -1494,6 +1494,72 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
     )
 
 
+def test_pkg_config_builds_a_consumer(work_dir: Path) -> None:
+    """A program built only from the flags pkg-config prints finds, links and runs the runtime.
+
+    Meson, Autotools and plain Makefiles read pkg-config files rather than CMake packages. The
+    kernels are named on the command line because the file describes only the runtime, the same
+    split as the CMake components. The flags come from the pkgconf package on the index, so the
+    check does not depend on a pkg-config the build machine happens to have.
+    """
+    pc_dir = _installed_package_dir() / "lib" / "pkgconfig"
+    assert (pc_dir / "executorch.pc").is_file(), (
+        f"the wheel ships no pkg-config file in {pc_dir}, so a build system that reads "
+        "pkg-config cannot find the runtime"
+    )
+    venv_dir = work_dir / "pkgconf-venv"
+    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    subprocess.run(
+        [str(venv_dir / "bin" / "pip"), "install", "--quiet", "pkgconf"], check=True
+    )
+    pkg_config = str(venv_dir / "bin" / "pkg-config")
+
+    # PKG_CONFIG_LIBDIR alone, so a system executorch.pc cannot be found instead of this one.
+    environment = dict(os.environ, PKG_CONFIG_LIBDIR=str(pc_dir))
+    environment.pop("PKG_CONFIG_PATH", None)
+    flags = []
+    for query in ("--cflags", "--libs"):
+        result = subprocess.run(
+            [pkg_config, query, "executorch"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
+        )
+        assert result.returncode == 0, (
+            f"pkg-config {query} executorch failed against the installed file:\n"
+            f"{result.stdout}{result.stderr}"
+        )
+        flags += result.stdout.split()
+
+    source = work_dir / "pkg-config-consumer.cpp"
+    source.write_text(_CONSUMER_SOURCE)
+    consumer = work_dir / "pkg-config-consumer"
+    kernels = [] if sys.platform == "darwin" else ["-Wl,--no-as-needed"]
+    kernels.append("-lexecutorch_kernels_optimized")
+    built = subprocess.run(
+        [
+            _tool("c++"),
+            "-std=c++17",
+            str(source),
+            "-o",
+            str(consumer),
+            *flags,
+            *kernels,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, (
+        f"a program built with only the pkg-config flags did not compile and link:\n"
+        f"{built.stdout[-3000:]}{built.stderr[-3000:]}"
+    )
+    model, reference = _export(work_dir, "plain")
+    output = _run_consumer(consumer, model, reference, work_dir)
+    print(f"✓ a C++ app built from pkg-config flags runs a model ({output})")
+
+
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
     test_profiler_component_is_usable(work_dir)
@@ -1502,6 +1568,7 @@ def run_tests(work_dir: Path) -> None:
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_cannot_compute(work_dir)
     test_kernels_component_runs_a_model(work_dir)
+    test_pkg_config_builds_a_consumer(work_dir)
     test_pre_3_28_route_builds_a_consumer_through_variables(work_dir)
     test_quantized_kernels_component_runs_a_model(work_dir)
     test_aggregate_variable_excludes_the_quantized_kernels(work_dir)

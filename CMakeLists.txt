@@ -1090,6 +1090,23 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
+  # pip decides where the wheel lands, so its copy locates everything relative
+  # to the file itself.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    set(_executorch_pc_definitions "-DC10_USING_CUSTOM_GENERATED_MACROS")
+    if(EXECUTORCH_ENABLE_EVENT_TRACER)
+      string(APPEND _executorch_pc_definitions " -DET_EVENT_TRACER_ENABLED")
+    endif()
+    if(APPLE)
+      set(_executorch_pc_rpath "-Wl,-rpath,\${libdir}")
+    else()
+      set(_executorch_pc_rpath "-Wl,--enable-new-dtags,-rpath,\${libdir}")
+    endif()
+    configure_file(
+      tools/cmake/executorch-wheel.pc.in
+      ${CMAKE_CURRENT_BINARY_DIR}/executorch-wheel.pc @ONLY
+    )
+  endif()
 endif()
 
 # The macro changes the layout of the tracer scope objects, so a consumer

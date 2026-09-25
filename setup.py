@@ -2897,6 +2897,13 @@ setup(
                     dst="executorch/lib/" + get_dynamic_lib_name("executorch"),
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                 ),
+                # For build systems that read pkg-config rather than CMake packages.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name="executorch-wheel.pc",
+                    dst="executorch/lib/pkgconfig/executorch.pc",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
                 # Install the profiler next to it, as its own library rather than
                 # code fused into the Python extension, so a process has one copy of
                 # it however many consumers load.

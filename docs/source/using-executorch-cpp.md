@@ -261,6 +261,22 @@ find_package(executorch REQUIRED COMPONENTS backend_mlx)
 message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
 ```
 
+#### Using pkg-config instead of CMake
+
+Build systems such as Meson read pkg-config files. The wheel ships one for the runtime. Point
+pkg-config at it, and name the kernel libraries yourself, because the file covers only the engine:
+
+```
+export PKG_CONFIG_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "lib" / "pkgconfig")')"
+c++ -std=c++17 main.cpp $(pkg-config --cflags --libs executorch) -Wl,--no-as-needed -lexecutorch_kernels_optimized -o app
+```
+
+The kernels register themselves when they load, and nothing in `main.cpp` names them. On Linux,
+`-Wl,--no-as-needed` stops the linker from dropping them. On macOS, leave that flag out: the
+linker there keeps them anyway and rejects the flag. Add `-lexecutorch_kernels_quantized` or a
+backend such as `-lexecutorch_backend_xnnpack` the same way, because they sit next to the runtime
+library.
+
 #### When something does not work
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
