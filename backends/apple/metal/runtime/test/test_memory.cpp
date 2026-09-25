@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <new>
 #include <vector>
 
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
@@ -685,6 +686,42 @@ TEST_F(MetalGraphViewTest, PoolReusesBuffersOnlyOnTheirOwnStream) {
   EXPECT_EQ(again->mutable_data_ptr(), freed_ptr);
 }
 
+// A stream that goes away takes the buffers freed on it out of the pool, so a
+// later stream at the same address does not get them.
+TEST_F(MetalGraphViewTest, PoolForgetsBuffersOfADestroyedStream) {
+  ETMetalStream* original = getCurrentMetalStream();
+  struct Restore {
+    ETMetalStream* stream;
+    ~Restore() {
+      setCurrentMetalStream(stream);
+    }
+  } restore{original};
+  alignas(ETMetalStream) unsigned char storage[sizeof(ETMetalStream)];
+
+  auto* first = new (storage) ETMetalStream();
+  setCurrentMetalStream(first);
+  AOTITensorHandle freed = nullptr;
+  createMatrix(kDeviceMps, &freed);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(freed), Error::Ok);
+  setCurrentMetalStream(original);
+  first->~ETMetalStream();
+
+  // A new stream at the same address, with no waits yet like the old one
+  // when it freed the buffer: an entry left behind would be handed to it as
+  // possibly still in use.
+  auto* second = new (storage) ETMetalStream();
+  ASSERT_EQ(static_cast<void*>(second), static_cast<void*>(first));
+  setCurrentMetalStream(second);
+  bool may_be_in_use = true;
+  void* fresh =
+      metal_allocate_buffer_tracking_use(4 * sizeof(float), &may_be_in_use);
+  ASSERT_NE(fresh, nullptr);
+  EXPECT_FALSE(may_be_in_use);
+  metal_deallocate_buffer(fresh);
+  setCurrentMetalStream(original);
+  second->~ETMetalStream();
+}
+
 // A buffer freed before the stream last waited has no work left on it, so
 // getting it back from the pool does not make the packed copy wait.
 TEST_F(MetalGraphViewTest, MaterializingIntoSettledRecycledBufferDoesNotWait) {
@@ -767,11 +804,13 @@ TEST_F(MetalGraphViewTest, MaterializingBlobInsideMetalBufferWaits) {
   EXPECT_EQ(std::vector<float>(got, got + 2), (std::vector<float>{2, 4}));
 }
 
-// A tensor can start inside the region of another one without being a view of
-// it, e.g. two blobs over the same memory. The GPU still writes it through that
-// region's buffer, so materializing a view of it waits.
+// A blob of plain CPU memory made before a region covers it is not registered
+// in that region (see aoti_torch_create_tensor_from_blob_v2). The GPU still
+// writes it through the region's buffer, so materializing a view of it waits.
 TEST_F(MetalGraphViewTest, MaterializingMemoryInsideAnotherRegionWaits) {
   std::vector<float> memory(12, 0.0f);
+  AOTITensorHandle inner = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 5, &inner), Error::Ok);
   AOTITensorHandle outer = nullptr;
   ASSERT_EQ(createFromBlob(memory.data(), &outer), Error::Ok);
   AOTITensorHandle written = nullptr;
@@ -784,8 +823,7 @@ TEST_F(MetalGraphViewTest, MaterializingMemoryInsideAnotherRegionWaits) {
           /*storage_offset=*/4,
           &written),
       Error::Ok);
-  AOTITensorHandle inner = nullptr;
-  ASSERT_EQ(createFromBlob(memory.data() + 5, &inner), Error::Ok);
+  ASSERT_FALSE(metal_is_view(memory.data() + 5));
   AOTITensorHandle input = nullptr;
   createMatrix(kDeviceMps, &input);
   auto* input_data = static_cast<float*>(input->mutable_data_ptr());

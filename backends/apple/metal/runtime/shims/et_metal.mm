@@ -276,6 +276,27 @@ public:
         }
     }
 
+    // Releases the buffers freed on `stream`, which is going away: no other
+    // stream may reuse them.
+    void forget_stream(ETMetalStream* stream) {
+        for (auto it = lru_list_.begin(); it != lru_list_.end();) {
+            if (it->stream != stream) {
+                ++it;
+                continue;
+            }
+            auto range = size_map_.equal_range(it->size);
+            for (auto entry = range.first; entry != range.second; ++entry) {
+                if (entry->second == it) {
+                    size_map_.erase(entry);
+                    break;
+                }
+            }
+            cached_bytes_ -= it->size;
+            [it->buffer release];
+            it = lru_list_.erase(it);
+        }
+    }
+
     void clear() {
         for (auto& entry : lru_list_) {
             [entry.buffer release];
@@ -1193,6 +1214,7 @@ ETMetalStream::~ETMetalStream() {
     @autoreleasepool {
         // Synchronize before cleanup
         synchronize(SyncType::COMMIT_AND_WAIT);
+        get_metal_buffer_pool().forget_stream(this);
 
         // Clean up command encoder
         if (commandEncoder_) {
