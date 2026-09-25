@@ -31,51 +31,69 @@ def main():
 
     for issue in issues:
         print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
-        comments = []  # Replace with mock comments if needed
-        last_comment = comments[-1] if comments else None
-
-        # Find automation comments
-        auto_comments = [c for c in comments if REMINDER_MARKER in c.body]
-        user_comments = [c for c in comments if REMINDER_MARKER not in c.body]
-
-        # ---- REMINDER LOGIC ----
-        # Only remind if NO reminder in last 7 days
-        recent_auto_reminder = any(
-            (now - c.created_at).days < REMINDER_COOLDOWN_DAYS for c in auto_comments
+        comments = sorted(
+            issue.get_comments(),
+            key=lambda comment: comment.created_at,
         )
+        
+        # Find automation comments
+        auto_comments = [
+            comment for comment in comments if REMINDER_MARKER in (comment.body or "")
+        ]
+        latest_auto_comment = auto_comments[-1] if auto_comments else None
 
-        if not auto_comments:
-            if (
-                last_comment
-                and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER
-            ):
-                user = issue.user.login
-                print(f"[VALIDATION] Would remind {user} on issue/PR #{issue.number}")
-        elif auto_comments and not recent_auto_reminder:
-            # Only post new reminder if last was > REMINDER_COOLDOWN_DAYS ago
-            last_auto = auto_comments[-1]
-            user = issue.user.login
-            if (now - last_auto.created_at).days >= REMINDER_COOLDOWN_DAYS:
-                print(
-                    f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}"
-                )
-
-        # ---- EXISTING CLOSE/REMOVE LABEL LOGIC ----
-        if auto_comments:
-            last_auto = auto_comments[-1]
+        if latest_auto_comment is not None:
             user_responded = any(
-                c.created_at > last_auto.created_at and c.user.login == issue.user.login
-                for c in user_comments
+                comment.created_at > latest_auto_comment.created_at
+                and comment.user is not None
+                and comment.user.login == issue.user.login
+                and REMINDER_MARKER not in (comment.body or "")
+                for comment in comments
             )
-            if not user_responded:
-                if (now - last_auto.created_at).days >= DAYS_BEFORE_CLOSE:
-                    print(
-                        f"[VALIDATION] Would close issue/PR #{issue.number} due to inactivity."
-                    )
+            # ---- REMOVE LABEL WHEN USER HAS RESPONDED ----
+            if user_responded:
+                print(
+                    f"User responded to issue/PR #{issue.number}; "
+                    f"removing '{LABEL}' label."
+                )
+                issue.remove_from_labels(LABEL)
+                continue
+ 
+            days_since_reminder = (now - latest_auto_comment.created_at).days
+            
+            # ---- CLOSE ISSUE AFTER 30 DAYS OF REMINDER ----
+            if days_since_reminder >= DAYS_BEFORE_CLOSE:
+                print(
+                    f"Closing issue/PR #{issue.number} due to no response from author."
+                )
+                issue.create_comment(CLOSE_COMMENT)
+                issue.edit(state="closed")
+                continue
+            # ---- POST REMINDER AFTER 7 DAYS OF INITIAL REMINDER ----
+            if days_since_reminder >= REMINDER_COOLDOWN_DAYS:
+                print(f"Posting reminder for issue/PR #{issue.number}.")
+                issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
             else:
                 print(
-                    f"[VALIDATION] Would remove label from issue/PR #{issue.number} after user response."
+                    f"Skipping issue/PR #{issue.number}; "
+                    "a reminder was posted recently."
                 )
+            continue
+
+        # ---- INITIAL REMINDER AFTER 30 DAYS OF INACTIVITY ----
+        last_comment = comments[-1] if comments else None
+
+        if (
+            last_comment is not None
+            and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER
+        ):
+            print(f"Posting initial reminder for issue/PR #{issue.number}.")
+            issue.create_comment(REMINDER_COMMENT.format(issue.user.login))
+        else:
+            print(
+                f"Skipping issue/PR #{issue.number}; "
+                "it has not been inactive for 30 days."
+            )
 
 
 if __name__ == "__main__":
