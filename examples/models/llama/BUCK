@@ -262,6 +262,9 @@ fbcode_target(_kind = runtime.python_test,
     srcs = [
         "source_transformation/test_sdpa_with_quantized_kv_cache.py",
     ],
+    env = {
+        "MKL_NUM_THREADS": "1",
+    },
     preload_deps = [
         "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
     ],
