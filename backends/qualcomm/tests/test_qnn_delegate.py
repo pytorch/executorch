@@ -7246,6 +7246,36 @@ class TestQNNFloatingPointUtils(TestQNN):
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
 
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.49"),
+        "feature is enable after 2.49.",
+    )
+    def test_qnn_backend_graph_splitting(self):
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_graph_splitting=True,
+        )
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=3,
+        )
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = Relu()  # noqa: F405
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module, sample_input, compiler_spec
+        ).to_executorch()
+        # file for subgraph 0
+        # delete artifact before assertion to avoid leak
+        file_name = "forward_schematic.bin_sg_0.py"
+        file_exist = os.path.isfile(file_name)
+        if file_exist:
+            os.remove(file_name)
+        self.assertTrue(file_exist)
+        self.verify_output(
+            module=module, sample_inputs=sample_input, executorch_prog=edge_prog_mgr
+        )
+
     def test_qnn_backend_multi_graphs(self):
         if self.enable_x86_64:
             self.skipTest("weight sharing is not supported on host machine")
@@ -8323,6 +8353,35 @@ class TestQNNQuantizedUtils(TestQNN):
         update_spill_fill_size(edge_prog.exported_program())
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than("2.49"),
+        "feature is enable after 2.49.",
+    )
+    def test_qnn_backend_graph_splitting(self):
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_graph_splitting=True,
+        )
+        compiler_spec = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            profile_level=3,
+        )
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = Relu()  # noqa: F405
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_8a8w
+        )
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module, sample_input, compiler_spec
+        ).to_executorch()
+        # file for subgraph 0
+        self.assertTrue(os.path.isfile("forward_schematic.bin_sg_0.py"))
+        os.remove("forward_schematic.bin_sg_0.py")
+        self.verify_output(
+            module=module, sample_inputs=sample_input, executorch_prog=edge_prog_mgr
+        )
 
     def test_qnn_backend_multi_graphs(self):
         if self.enable_x86_64:
