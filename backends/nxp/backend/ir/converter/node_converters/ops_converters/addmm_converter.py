@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import numpy as np
 import torch
 
 from executorch.backends.nxp.backend.edge_helper import (
@@ -15,6 +16,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
 )
+from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     fully_connected_options,
 )
@@ -137,5 +139,22 @@ class AddMMConverter(NodeConverter):
         # Insert a `Transpose` operator to permute the weights to achieve correct conversion. (The `Transpose` will not
         #  be present in the output model if the weights are static.)
         ops.add_pre(self.builder.create_transpose_operator_before(t_op, 1, [1, 0]))
+
+        # Neutron IR requires the bias scale to be the product of the input and weight scale. During quantization the
+        #  bias may have been shared across ops, so its annotated scale can be incorrect.
+        #  Recompute the bias scale now that the tensor is unique per op.
+        if (
+            bias.quantization is not None
+            and x.quantization is not None
+            and w.quantization is not None
+        ):
+            expected_scale = np.array(x.quantization.scale.vector) * np.array(
+                w.quantization.scale.vector
+            )
+            if not np.allclose(bias.quantization.scale.vector, expected_scale):
+                bias.quantization = tflite_model.Quantization(
+                    scale=tflite_model.Scale(list(expected_scale)),
+                    zero_point=tflite_model.ZeroPoint([0] * len(expected_scale)),
+                )
 
         self.builder.append_operators(ops.flatten())
