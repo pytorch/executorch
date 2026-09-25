@@ -355,6 +355,7 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
       "op_fft_c2r_test.cpp"
       "op_fft_r2c_test.cpp"
       "op_gelu_test.cpp"
+      "op_grid_sampler_2d_test.cpp"
       "op_le_test.cpp"
       "op_linear_test.cpp"
       "op_log_softmax_test.cpp"

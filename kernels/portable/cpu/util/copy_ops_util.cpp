@@ -9,6 +9,7 @@
 
 #include <c10/util/irange.h>
 #include <cstring>
+#include <limits>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
@@ -127,7 +128,7 @@ bool check_cat_args(
   return true;
 }
 
-void get_cat_out_target_size(
+bool get_cat_out_target_size(
     executorch::aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     executorch::aten::SizesType* out_sizes,
@@ -152,9 +153,17 @@ void get_cat_out_target_size(
     if (static_cast<int64_t>(d) != dim) {
       out_sizes[d] = tensors[ref_i].size(d);
     } else {
-      out_sizes[d] = cat_dim_size;
+      ET_CHECK_OR_RETURN_FALSE(
+          cat_dim_size <=
+              static_cast<size_t>(
+                  std::numeric_limits<executorch::aten::SizesType>::max()),
+          "Concatenated size %zu along dim %" PRId64 " overflows SizesType",
+          cat_dim_size,
+          dim);
+      out_sizes[d] = static_cast<executorch::aten::SizesType>(cat_dim_size);
     }
   }
+  return true;
 }
 bool check_expand_copy_args(
     const Tensor& input,

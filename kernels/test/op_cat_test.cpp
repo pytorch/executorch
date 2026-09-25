@@ -17,6 +17,11 @@
 
 #include <gtest/gtest.h>
 
+#ifndef USE_ATEN_LIB
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <limits>
+#endif
+
 using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
@@ -382,6 +387,47 @@ TEST_F(OpCatOutTest, WrongOutShapeDies) {
       op_cat_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+
+#ifndef USE_ATEN_LIB
+TEST_F(OpCatOutTest, CatDimSizeOverflowDies) {
+  // The concatenated size along the cat dim is summed in 64-bit but stored
+  // into 32-bit SizesType. Inputs whose sizes sum past the SizesType max must
+  // fail instead of silently truncating the output size.
+  // Declare huge sizes via bare TensorImpls without backing storage; the
+  // kernel must reject them before touching data.
+  Tensor::SizesType sizes_a[1] = {
+      std::numeric_limits<Tensor::SizesType>::max()};
+  Tensor::SizesType sizes_b[1] = {2};
+  Tensor::SizesType sizes_out[1] = {1};
+  Tensor::DimOrderType dim_order[1] = {0};
+  Tensor::StridesType strides[1] = {1};
+  uint8_t out_data[1] = {0};
+
+  torch::executor::TensorImpl impl_a(
+      ScalarType::Byte, 1, sizes_a, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_b(
+      ScalarType::Byte, 1, sizes_b, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_out(
+      ScalarType::Byte, 1, sizes_out, out_data, dim_order, strides);
+  Tensor a(&impl_a);
+  Tensor b(&impl_b);
+  Tensor out(&impl_out);
+  std::vector<Tensor> inputs = {a, b};
+
+  Tensor::SizesType out_sizes[executorch::runtime::kTensorDimensionLimit];
+  size_t out_ndim = 0;
+  EXPECT_FALSE(torch::executor::get_cat_out_target_size(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()),
+      /*dim=*/0,
+      out_sizes,
+      &out_ndim));
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_cat_out(
+          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+}
+#endif
 
 /* %python
 import torch
