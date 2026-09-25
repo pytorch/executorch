@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import math
 import operator
+from functools import partial
 from typing import TYPE_CHECKING
 
 import pytest
@@ -484,6 +485,329 @@ class CanonicalizeConv:
                 ).graph_module
                 assertions.assert_target_count(gm, conv, 1)
                 CanonicalizeConv._assert_no_dilation(gm)
+
+
+class ConstantFolding:
+    # --- Group 1: foldable const chains ---
+    class _ConstChain(torch.nn.Module):
+        """relu(a*b) -> permute -> reshape: whole chain collapses to one const."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(1, 3, 4, 4))
+            self.register_buffer("b", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x):
+            t = torch.relu(self.a * self.b).permute(0, 1, 3, 2).reshape(1, 3, 4, 4)
+            return x + t
+
+    class _ComplicatedChain(torch.nn.Module):
+        """Ensure the pass handles the case where mutli user and a user can be folded while another cannot."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(1, 3, 4, 4))
+            self.register_buffer("b", torch.randn(1, 3, 4, 4))
+            self.register_buffer("c", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x):
+            const1 = self.a + self.b
+            const2 = const1 + self.c
+            non_const1 = x + const1
+            return const2 + non_const1
+
+    class _MultiUserConst(torch.nn.Module):
+        """One folded const feeding two distinct real ops: fold once, share it."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(1, 3, 4, 4))
+            self.register_buffer("b", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x, y):
+            t = self.a * self.b
+            return x + t, y - t
+
+    class _Bicubic(torch.nn.Module):
+        """Motivating case: bicubic upsample of a position-embedding buffer."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("pos_emb", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x):
+            up = torch.nn.functional.interpolate(
+                self.pos_emb, scale_factor=2.0, mode="bicubic"
+            )
+            return x + up
+
+    class _ConstReduction(torch.nn.Module):
+        """Reduction over a const view: shape args are ints, result is a tensor."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(2, 6))
+
+        def forward(self, x):
+            return x + self.a.reshape(2, 3, 2).sum(-1)
+
+    class _ConstDtypeChange(torch.nn.Module):
+        """Const compare + cast: the folded value changes dtype (bool) mid-chain,
+        so the materialized constant must carry the final dtype, not the leaves'."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(4, 4))
+            self.register_buffer("b", torch.randn(4, 4))
+
+        def forward(self, x):
+            return x + (self.a > self.b).to(torch.float32)
+
+    class _ConstGraphOutput(torch.nn.Module):
+        """A folded const that *is* a graph output must stay materialized."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(4, 4))
+            self.register_buffer("b", torch.randn(4, 4))
+
+        def forward(self, x):
+            return self.a * self.b, x + x
+
+    # --- Group 2: chains that must NOT fold ---
+    class _MutableBuffer(torch.nn.Module):
+        """Ensure Mutable Buffer is not folded"""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("cache", torch.zeros(1, 3, 4, 4))
+            self.register_buffer("w", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x, idx):
+            scaled = self.cache * self.w
+            self.cache.index_put_((idx,), x)
+            return x + scaled
+
+    class _UserInputChain(torch.nn.Module):
+        """Const mixed with a user input: the op depends on x, so it cannot fold."""
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x):
+            return (self.a * x) + self.a
+
+    class _Conv2D(torch.nn.Module):
+        # Ensure weight and bias dq is not folded
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 4, 3, padding=1, bias=True)
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    def _lower(pass_pipeline, module, inputs, backend_type, compile_spec, quantizer):
+        return pass_pipeline.lower_edge_ep(
+            module=module,
+            sample_input=inputs,
+            target_pass=_passes.ConstantFolding,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            quantizer=quantizer,
+        )
+
+    # TODO: Make this a general helper test and verify in all passes.
+    @staticmethod
+    def _assert_numeric_match(edge_ep, module, inputs, is_fp):
+        """
+        Bigger tolerance for quantized since weights got quantized.
+        """
+        got = edge_ep.module()(*inputs)
+        got = got if isinstance(got, (tuple, list)) else (got,)
+        ref = module(*inputs)
+        ref = ref if isinstance(ref, (tuple, list)) else (ref,)
+        tolerance = 1e-5 if is_fp else 3e-1
+        for i, (g, r) in enumerate(zip(got, ref)):
+            assert torch.allclose(g, r, atol=tolerance, rtol=tolerance), (
+                f"ConstantFolding changed output {i}: "
+                f"max abs diff = {(g - r).abs().max().item()}"
+            )
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        subtests,
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        lower = partial(
+            ConstantFolding._lower,
+            pass_pipeline,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            quantizer=quantizer,
+        )
+        is_fp = quantizer is None
+
+        # --- Group 1: const chains that fold on an unquantized graph ---
+        with subtests.test(msg="const_chain_collapses"):
+            inputs = (torch.randn(1, 3, 4, 4),)
+            module = ConstantFolding._ConstChain()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            for target in (
+                exir_ops.edge.aten.mul.Tensor,
+                exir_ops.edge.aten.relu.default,
+                exir_ops.edge.aten.permute_copy.default,
+                exir_ops.edge.aten.view_copy.default,
+            ):
+                assertions.assert_no_target(gm, target)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="complicated_chain"):
+            inputs = (torch.randn(1, 3, 4, 4),)
+            module = ConstantFolding._ComplicatedChain()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 2)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="upsample_bicubic2d"):
+            inputs = (torch.randn(1, 3, 8, 8),)
+            module = ConstantFolding._Bicubic()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.upsample_bicubic2d.vec)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="const_shared_by_two_users"):
+            inputs = (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4))
+            module = ConstantFolding._MultiUserConst()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            # One fold serves both users; neither real op is duplicated.
+            assertions.assert_no_target(gm, exir_ops.edge.aten.mul.Tensor)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.sub.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="const_reduction"):
+            inputs = (torch.randn(2, 3),)
+            module = ConstantFolding._ConstReduction()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.sum.dim_IntList)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="const_dtype_change"):
+            inputs = (torch.randn(4, 4),)
+            module = ConstantFolding._ConstDtypeChange()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.gt.Tensor)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="folded_const_as_graph_output"):
+            inputs = (torch.randn(4, 4),)
+            module = ConstantFolding._ConstGraphOutput()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_no_target(gm, exir_ops.edge.aten.mul.Tensor)
+            out_args = gm.graph.output_node().args[0]
+            assert len(out_args) == 2, f"expected 2 graph outputs, got {len(out_args)}"
+            const_out = out_args[0]
+            assert const_out.op in ("placeholder", "get_attr"), (
+                f"folded const output should be a materialized constant, "
+                f"got {const_out.op} ({const_out.target})"
+            )
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        # --- Group 2: chains that must never fold, quantized or not ---
+        with subtests.test(msg="mutable_buffer_not_folded"):
+            inputs = (torch.randn(1, 3, 4, 4), torch.tensor([0]))
+            module = ConstantFolding._MutableBuffer()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_target_count(gm, exir_ops.edge.aten.mul.Tensor, 1)
+            cache_nodes = [
+                n for n in gm.graph.nodes if n.op == "placeholder" and "cache" in n.name
+            ]
+            assert (
+                len(cache_nodes) == 1
+            ), "mutable buffer placeholder disappeared entirely"
+            mul_nodes = [
+                n
+                for n in gm.graph.nodes
+                if n.op == "call_function" and n.target == exir_ops.edge.aten.mul.Tensor
+            ]
+            assert len(mul_nodes) == 1, "mul node disappeared entirely"
+            cache_node = cache_nodes[0]
+            mul_node = mul_nodes[0]
+            assert (
+                len(cache_node.users) == 2
+            ), "mutable buffer has no users left: should have multiply and index_put"
+            assert cache_node in mul_node.args, (
+                f"mul no longer reads the mutable buffer directly; "
+                f"args={[getattr(a, 'name', a) for a in mul_node.args]}"
+            )
+
+        with subtests.test(msg="user_input_blocks_fold"):
+            inputs = (torch.randn(1, 3, 4, 4),)
+            module = ConstantFolding._UserInputChain()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            # `a * x` depends on x, so neither it nor the following add is_fp.
+            assertions.assert_target_count(gm, exir_ops.edge.aten.mul.Tensor, 1)
+            assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        # --- Group 3: quantized-only invariant ---
+        if quantizer is not None:
+            with subtests.test(msg="preserve_conv_dq"):
+                inputs = (torch.randn(1, 3, 8, 8),)
+                module = ConstantFolding._Conv2D()
+                edge_ep = lower(module, inputs)
+                gm = edge_ep.graph_module
+                assertions.assert_target_count(gm, dq_ops, 2)
+                assertions.assert_target_count(
+                    gm, exir_ops.edge.aten.convolution.default, 1
+                )
+                ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test_idempotent(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        """Ensuring that running this pass 1 time V.S multiple times returns the same graph."""
+        inputs = (torch.randn(1, 3, 4, 4),)
+        edge_ep = ConstantFolding._lower(
+            pass_pipeline,
+            ConstantFolding._ConstChain(),
+            inputs,
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            quantizer=quantizer,
+        )
+        before = [n.name for n in edge_ep.graph.nodes]
+        gm = _passes.ConstantFolding(edge_ep)(edge_ep.graph_module).graph_module
+        after = [n.name for n in gm.graph.nodes]
+        assert (
+            before == after
+        ), f"ConstantFolding is not idempotent:\nbefore={before}\nafter ={after}"
 
 
 class ConvertBmmToMatmul:
