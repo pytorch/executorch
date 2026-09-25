@@ -12,6 +12,8 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -76,7 +78,8 @@ struct CudaWeightStorage {
 //   input/output GPU buffers are allocated and the work is recorded into
 //   `graph` / `graph_exec` via stream capture.
 //
-// - Replay:   The captured `graph_exec` is launched on every execute() call.
+// - Replay:   Matching shapes replay `graph_exec`; other shapes run eagerly
+//   without replacing the captured graph.
 //   Inputs are memcpy'd into the static input buffers, the graph is replayed,
 //   and outputs are memcpy'd back from the static output buffers. No tensor
 //   setup or kernel launches happen on the host hot path.
@@ -84,6 +87,31 @@ enum class CudaGraphPhase {
   Disabled = 0,
   Warmup = 1,
   Replay = 2,
+};
+
+struct CudaGraphTensorMetadata {
+  std::vector<int64_t> sizes;
+  std::vector<int64_t> strides;
+  executorch::aten::ScalarType dtype;
+
+  explicit CudaGraphTensorMetadata(const executorch::aten::Tensor& tensor)
+      : sizes(tensor.sizes().begin(), tensor.sizes().end()),
+        strides(tensor.strides().begin(), tensor.strides().end()),
+        dtype(tensor.scalar_type()) {}
+
+  bool matches(const executorch::aten::Tensor& tensor) const {
+    return dtype == tensor.scalar_type() &&
+        std::equal(
+               sizes.begin(),
+               sizes.end(),
+               tensor.sizes().begin(),
+               tensor.sizes().end()) &&
+        std::equal(
+               strides.begin(),
+               strides.end(),
+               tensor.strides().begin(),
+               tensor.strides().end());
+  }
 };
 
 // All CUDA graph related state grouped into a single struct.
@@ -102,6 +130,7 @@ struct CudaGraphState {
   std::vector<void*> static_output_ptrs;
   std::vector<size_t> static_input_nbytes;
   std::vector<size_t> static_output_nbytes;
+  std::vector<CudaGraphTensorMetadata> io_metadata;
 
   CudaGraphState() = default;
 
@@ -133,7 +162,8 @@ struct CudaGraphState {
         static_input_ptrs(std::move(other.static_input_ptrs)),
         static_output_ptrs(std::move(other.static_output_ptrs)),
         static_input_nbytes(std::move(other.static_input_nbytes)),
-        static_output_nbytes(std::move(other.static_output_nbytes)) {
+        static_output_nbytes(std::move(other.static_output_nbytes)),
+        io_metadata(std::move(other.io_metadata)) {
     other.graph = nullptr;
     other.graph_exec = nullptr;
   }
@@ -158,6 +188,7 @@ struct CudaGraphState {
       static_output_ptrs = std::move(other.static_output_ptrs);
       static_input_nbytes = std::move(other.static_input_nbytes);
       static_output_nbytes = std::move(other.static_output_nbytes);
+      io_metadata = std::move(other.io_metadata);
 
       other.graph = nullptr;
       other.graph_exec = nullptr;
@@ -168,6 +199,8 @@ struct CudaGraphState {
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
+  aoti::AOTInductorModelContainerRunFunc run_single_threaded{nullptr};
+
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 

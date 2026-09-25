@@ -471,13 +471,29 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
-      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
-      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
-      ET_LOG(
-          Info,
-          "CUDA graph enabled for method '%s' (warmup=%d)",
-          method_name.c_str(),
-          kCudaGraphWarmupSteps);
+      // Graph execution already requires serialized calls. Use AOTI's
+      // single-threaded entry point for warmup, capture and shape fallback:
+      // the regular entry point queries a completion event that becomes
+      // unqueryable after its record is captured.
+      auto single_threaded_run = get_function(
+          lib_handle, "AOTInductorModelContainerRunSingleThreaded");
+      if (single_threaded_run.ok()) {
+        handle->run_single_threaded =
+            reinterpret_cast<AOTInductorModelContainerRunFunc>(
+                single_threaded_run.get());
+        handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
+        handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
+        ET_LOG(
+            Info,
+            "CUDA graph enabled for method '%s' (warmup=%d)",
+            method_name.c_str(),
+            kCudaGraphWarmupSteps);
+      } else {
+        ET_LOG(
+            Info,
+            "CUDA graph disabled for '%s': artifact lacks single-threaded AOTI execution",
+            method_name.c_str());
+      }
     }
 
     mutable_state_note_handle(handle);
@@ -594,7 +610,19 @@ class ET_EXPERIMENTAL CudaBackend final
     // ---------------------------------------------------------------
     // CUDA graph REPLAY path — skip all tensor setup and just replay
     // ---------------------------------------------------------------
-    if (handle->cuda_graph_state.phase == CudaGraphPhase::Replay) {
+    auto& graph_state = handle->cuda_graph_state;
+    bool can_replay = graph_state.phase == CudaGraphPhase::Replay;
+    if (can_replay) {
+      for (size_t i = 0; i < args.size(); ++i) {
+        if (!graph_state.io_metadata[i].matches(args[i]->toTensor())) {
+          can_replay = false;
+          break;
+        }
+      }
+    }
+    // Keep the usual shape captured while shorter verification calls run
+    // eagerly on the same stream. A later request can reuse the graph.
+    if (can_replay) {
       Result<cudaStream_t> csr = getCurrentCUDAStream(0);
       ET_CHECK_OK_OR_RETURN_ERROR(csr.error());
       cudaStream_t cs = csr.get();
@@ -602,14 +630,6 @@ class ET_EXPERIMENTAL CudaBackend final
       // Copy new input data (GPU-resident) into static input buffers (D2D)
       for (size_t i = 0; i < n_inputs; i++) {
         auto* et_input = &(args[i]->toTensor());
-        ET_CHECK_OR_RETURN_ERROR(
-            et_input->nbytes() ==
-                handle->cuda_graph_state.static_input_nbytes[i],
-            InvalidArgument,
-            "CUDA graph replay: input %zu size mismatch (expected %zu, got %zu)",
-            i,
-            handle->cuda_graph_state.static_input_nbytes[i],
-            et_input->nbytes());
         ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpyAsync(
             handle->cuda_graph_state.static_input_ptrs[i],
             et_input->const_data_ptr(),
@@ -685,6 +705,7 @@ class ET_EXPERIMENTAL CudaBackend final
         state_->static_output_ptrs.clear();
         state_->static_input_nbytes.clear();
         state_->static_output_nbytes.clear();
+        state_->io_metadata.clear();
         // Same order as ~CudaGraphState: the exec depends on the graph.
         if (state_->graph_exec != nullptr) {
           (void)cudaGraphExecDestroy(state_->graph_exec);
@@ -713,6 +734,9 @@ class ET_EXPERIMENTAL CudaBackend final
 
     if (is_capture_step) {
       capture_guard.arm(&handle->cuda_graph_state);
+      for (size_t i = 0; i < args.size(); ++i) {
+        graph_state.io_metadata.emplace_back(args[i]->toTensor());
+      }
     }
 
     // Process input tensors: wrap the GPU-resident ETensor buffers directly.
@@ -844,14 +868,17 @@ class ET_EXPERIMENTAL CudaBackend final
       end_capture_guard.arm(cuda_stream);
     }
 
-    AOTIRuntimeError error = handle->run(
-        handle->container_handle,
-        reinterpret_cast<Tensor**>(slim_inputs.data()),
-        n_inputs,
-        reinterpret_cast<Tensor**>(slim_outputs.data()),
-        n_outputs,
-        static_cast<void*>(cuda_stream),
-        nullptr);
+    const auto run = graph_state.phase == CudaGraphPhase::Disabled
+        ? handle->run
+        : handle->run_single_threaded;
+    AOTIRuntimeError error =
+        run(handle->container_handle,
+            reinterpret_cast<Tensor**>(slim_inputs.data()),
+            n_inputs,
+            reinterpret_cast<Tensor**>(slim_outputs.data()),
+            n_outputs,
+            static_cast<void*>(cuda_stream),
+            nullptr);
     run_called = true;
 
     // Delete orphaned pre-created outputs that run() replaced.
@@ -898,6 +925,11 @@ class ET_EXPERIMENTAL CudaBackend final
       // copies fails.
       for (size_t i = 0; i < n_outputs; i++) {
         SlimTensor* out = slim_outputs[i];
+        ET_CHECK_OR_RETURN_ERROR(
+            out->nbytes() <= args[i + n_inputs]->toTensor().nbytes(),
+            InvalidArgument,
+            "CUDA graph output %zu exceeds its planned buffer",
+            i);
         handle->cuda_graph_state.static_output_ptrs.push_back(out->data_ptr());
         handle->cuda_graph_state.static_output_nbytes.push_back(out->nbytes());
         slim_outputs[i] = nullptr;

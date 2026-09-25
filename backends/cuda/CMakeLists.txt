@@ -451,6 +451,14 @@ if(BUILD_TESTING)
   )
   target_compile_definitions(test_cuda_allocator PRIVATE CUDA_AVAILABLE=1)
 
+  if(NOT EXECUTORCH_BUILD_ROCM)
+    et_cxx_test(
+      test_cuda_graph SOURCES runtime/test/test_cuda_graph.cpp EXTRA_LIBS
+      aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_graph PRIVATE CUDA_AVAILABLE=1)
+  endif()
+
   et_cxx_test(
     test_cuda_mutable_state SOURCES runtime/test/test_cuda_mutable_state.cpp
     EXTRA_LIBS aoti_cuda_backend
