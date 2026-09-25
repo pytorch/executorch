@@ -10,6 +10,8 @@
 
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <system_error>
 
 #include <cstring>
 #include <memory>
@@ -268,7 +270,111 @@ std::vector<uint8_t> CreateProgramWithVersion(uint32_t version) {
   return std::vector<uint8_t>(data, data + builder.GetSize());
 }
 
+// Builds a program whose constant segment exists but holds no bytes. A program
+// whose only constants are zero-length tensors looks exactly like this: the
+// offsets vector has a real entry per constant, while the segment itself is
+// empty.
+std::vector<uint8_t> CreateProgramWithEmptyConstantSegment() {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  auto plan_name = builder.CreateString("forward");
+  auto empty_values = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{});
+  auto empty_inputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_outputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
+  auto empty_operators = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  auto empty_delegates = builder.CreateVector(
+      std::vector<
+          flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
+  auto buffer_sizes = builder.CreateVector(std::vector<int64_t>{0});
+
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      plan_name,
+      /*container_meta_type=*/0,
+      empty_values,
+      empty_inputs,
+      empty_outputs,
+      empty_chains,
+      empty_operators,
+      empty_delegates,
+      buffer_sizes);
+  auto execution_plans = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+          execution_plan});
+
+  // Index 0 is the usual non-constant placeholder; index 1 is a zero-length
+  // constant, which occupies no bytes in the segment.
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0, 0}));
+  auto segments = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{
+          executorch_flatbuffer::CreateDataSegment(
+              builder, /*offset=*/0, /*size=*/0)});
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      Program::kMaxSupportedSchemaVersion,
+      execution_plans,
+      /*constant_buffer=*/0,
+      /*backend_delegate_data=*/0,
+      segments,
+      constant_segment);
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  const uint8_t* data = builder.GetBufferPointer();
+  return std::vector<uint8_t>(data, data + builder.GetSize());
+}
+
 } // namespace
+
+// An empty constant segment loads to a null pointer, which must not be mistaken
+// for "this program uses the deprecated inline constant_buffer". Doing so fails
+// the load outright in builds that compile that path out.
+TEST_F(ProgramTest, EmptyConstantSegmentIsStillASegment) {
+  std::vector<uint8_t> data = CreateProgramWithEmptyConstantSegment();
+
+  // Must go through a loader that returns a null pointer for a zero-length
+  // read, which is what FileDataLoader does ("don't bother allocating for
+  // empty segments") and what makes the segment indistinguishable from an
+  // absent one. BufferDataLoader hands back a pointer into its own buffer and
+  // would hide this.
+  // std::filesystem::path, not std::string: path::value_type is wchar_t on
+  // Windows, so there is no implicit conversion to std::string there.
+  const std::filesystem::path path = std::filesystem::temp_directory_path() /
+      "et_empty_constant_segment_test.pte";
+  {
+    std::ofstream out(path, std::ios::binary);
+    ASSERT_TRUE(out.good());
+    out.write(reinterpret_cast<const char*>(data.data()), data.size());
+  }
+
+  // Declared before the loader so that it runs after the loader has closed the
+  // file: Windows refuses to delete a file that still has an open handle. The
+  // non-throwing overload keeps a failed cleanup from failing the test.
+  struct RemoveOnExit {
+    const std::filesystem::path& path;
+    ~RemoveOnExit() {
+      std::error_code ec;
+      std::filesystem::remove(path, ec);
+    }
+  } remove_on_exit{path};
+
+  Result<FileDataLoader> loader = FileDataLoader::from(path.string().c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // The zero-length constant at index 1 resolves, rather than being rejected.
+  Result<const void*> constant_data =
+      program->get_constant_buffer_data(/*buffer_idx=*/1, /*nbytes=*/0);
+  EXPECT_EQ(constant_data.error(), Error::Ok);
+}
 
 TEST_F(ProgramTest, SupportedSchemaVersionLoads) {
   std::vector<uint8_t> data =
