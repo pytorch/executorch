@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -9,9 +9,11 @@
 
 #include <executorch/devtools/bundled_program/bundled_program.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h>
@@ -39,6 +41,42 @@ namespace BUNDLED_PROGRAM_NAMESPACE {
 namespace {
 
 constexpr size_t kMaxDim = 16;
+
+template <typename T>
+void update_error_stats(
+    const T* expected,
+    const T* actual,
+    int64_t numel,
+    double eps,
+    double& sum_abs,
+    double& max_abs,
+    double& sum_rel,
+    double& max_rel) {
+  for (int64_t index = 0; index < numel; ++index) {
+    const double expected_value = static_cast<double>(expected[index]);
+    const double actual_value = static_cast<double>(actual[index]);
+    double abs_err;
+    double relative_err;
+    if (!std::isfinite(actual_value) || !std::isfinite(expected_value)) {
+      const bool non_finite_values_match =
+          (std::isnan(actual_value) && std::isnan(expected_value)) ||
+          actual_value == expected_value;
+      abs_err = relative_err = non_finite_values_match
+          ? 0.0
+          : std::numeric_limits<double>::infinity();
+    } else {
+      abs_err = std::abs(actual_value - expected_value);
+      const double relative_divider =
+          std::max({std::abs(actual_value), std::abs(expected_value), eps});
+      relative_err = abs_err / relative_divider;
+    }
+
+    sum_abs += abs_err;
+    max_abs = std::max(max_abs, abs_err);
+    sum_rel += relative_err;
+    max_rel = std::max(max_rel, relative_err);
+  }
+}
 
 #ifdef USE_ATEN_LIB
 
@@ -390,13 +428,8 @@ ET_NODISCARD ErrorStats compute_method_output_error_stats(
     return {Error::InvalidArgument, 0, 0, 0, 0};
   }
 
-  // abs_err = (a - b).abs()
-  // relative_err = (a - b).abs() / torch.maximum(torch.tensor(1e-8),
-  // torch.maximum(a.abs(), b.abs()))
   double sum_abs = 0.0, max_abs = 0.0;
   double sum_rel = 0.0, max_rel = 0.0;
-  // Make sure divider is bigger then eps=1e-8f to behave better around 0 values
-  const double eps = 1e-8f;
 
   int64_t total_elems = 0;
 
@@ -418,29 +451,16 @@ ET_NODISCARD ErrorStats compute_method_output_error_stats(
         TensorImpl impl = impl_like(bundled_expected_output_tensor);
         Tensor expected = Tensor(&impl);
 #endif
-        // sanity check
         int64_t nelem = expected.numel();
-        if (method_output_tensor.numel() != nelem) {
-          ET_LOG(Error, "Tensor size mismatch");
-          return {Error::InvalidArgument, 0, 0, 0, 0};
+        ErrorStats output_stats =
+            compute_tensor_error_stats(method_output_tensor, expected);
+        if (output_stats.status != Error::Ok) {
+          return output_stats;
         }
-
-        // we assume float32 here; adapt for other dtypes as needed
-        const float* e_data = expected.data_ptr<float>();
-        const float* a_data = method_output_tensor.data_ptr<float>();
-
-        for (int64_t k = 0; k < nelem; ++k) {
-          double abs_err = std::abs(a_data[k] - e_data[k]);
-          double relative_divider =
-              std::max(std::abs(a_data[k]), std::abs(e_data[k]));
-          relative_divider = std::max(relative_divider, eps);
-          double relative_err = abs_err / relative_divider;
-
-          sum_abs += abs_err;
-          max_abs = std::max(max_abs, abs_err);
-          sum_rel += relative_err;
-          max_rel = std::max(max_rel, relative_err);
-        }
+        sum_abs += output_stats.mean_abs_error * nelem;
+        max_abs = std::max(max_abs, output_stats.max_abs_error);
+        sum_rel += output_stats.mean_relative_error * nelem;
+        max_rel = std::max(max_rel, output_stats.max_relative_error);
         total_elems += nelem;
         break;
       }
@@ -464,6 +484,60 @@ ET_NODISCARD ErrorStats compute_method_output_error_stats(
       max_abs,
       sum_rel / total_elems,
       max_rel};
+}
+
+ET_NODISCARD ErrorStats compute_tensor_error_stats(
+    const Tensor& method_output,
+    const Tensor& expected_output) {
+  if (method_output.sizes() != expected_output.sizes()) {
+    ET_LOG(Error, "Tensor size mismatch");
+    return {Error::InvalidArgument, 0, 0, 0, 0};
+  }
+  if (method_output.scalar_type() != expected_output.scalar_type()) {
+    ET_LOG(Error, "Tensor dtype mismatch");
+    return {Error::InvalidArgument, 0, 0, 0, 0};
+  }
+
+  double sum_abs = 0.0, max_abs = 0.0;
+  double sum_rel = 0.0, max_rel = 0.0;
+  const double eps = 1e-8;
+  const int64_t numel = method_output.numel();
+
+  switch (method_output.scalar_type()) {
+    case ScalarType::Float:
+      update_error_stats(
+          expected_output.const_data_ptr<float>(),
+          method_output.const_data_ptr<float>(),
+          numel,
+          eps,
+          sum_abs,
+          max_abs,
+          sum_rel,
+          max_rel);
+      break;
+    case ScalarType::Half:
+      update_error_stats(
+          expected_output.const_data_ptr<Half>(),
+          method_output.const_data_ptr<Half>(),
+          numel,
+          eps,
+          sum_abs,
+          max_abs,
+          sum_rel,
+          max_rel);
+      break;
+    default:
+      ET_LOG(
+          Error,
+          "Tensor dtype %hhd not supported for error statistics",
+          static_cast<uint8_t>(method_output.scalar_type()));
+      return {Error::NotSupported, 0, 0, 0, 0};
+  }
+
+  if (numel == 0) {
+    return {Error::Ok, 0, 0, 0, 0};
+  }
+  return {Error::Ok, sum_abs / numel, max_abs, sum_rel / numel, max_rel};
 }
 
 ET_NODISCARD Error verify_method_outputs(

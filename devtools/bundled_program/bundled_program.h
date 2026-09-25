@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -24,6 +24,7 @@ namespace BUNDLED_PROGRAM_NAMESPACE {
  * An opaque pointer to a serialized bundled program.
  */
 using SerializedBundledProgram = const void;
+using executorch::aten::Tensor;
 using ::executorch::ET_RUNTIME_NAMESPACE::Method;
 /**
  * Load testset_idx-th bundled input of method_idx-th Method test in
@@ -48,6 +49,16 @@ struct ErrorStats {
   double mean_relative_error;
   double max_relative_error;
 };
+
+/**
+ * Compute error statistics between two floating-point tensors.
+ *
+ * Float and Half tensors are supported. The tensors must have matching sizes
+ * and scalar types.
+ */
+ET_NODISCARD ErrorStats compute_tensor_error_stats(
+    const Tensor& method_output,
+    const Tensor& expected_output);
 
 /**
  * Compute error stats for method.outputs() vs. the bundled "expected_outputs"
