@@ -650,6 +650,7 @@ def collect_specs_from_nodes(  # noqa: C901
                     operator.getitem,
                     torch.ops.higher_order.cond,
                     exir_while,
+                    torch.ops.higher_order.while_loop,
                     torch.ops.higher_order.map_impl,
                     executorch_call_delegate,
                 ],
@@ -1301,7 +1302,7 @@ def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
 
 def get_while_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
     for nd in graph_module.graph.nodes:
-        if nd.target is exir_while:
+        if nd.target is exir_while or nd.target is torch.ops.higher_order.while_loop:
             yield nd
 
 

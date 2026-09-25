@@ -73,6 +73,7 @@ from executorch.exir.passes.remove_graph_asserts_pass import (
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_sym_sum_pass import ReplaceSymSumPass
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -829,6 +830,8 @@ def _generate_edge_program(
     passes = [
         # Remove invalid assert ops, such as _assert_tensor_metadata
         RemoveNonCoreAtenOpGraphAssertsPass(),
+        # sym_sum has no ExecuTorch prim op; lower it to operator.add
+        ReplaceSymSumPass(),
         # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
         ReplaceViewOpsWithViewCopyOpsPass(),
     ]
