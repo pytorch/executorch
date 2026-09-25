@@ -435,7 +435,6 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
 
   const auto& tensor_ptr = it->second;
   void* data_ptr = tensor_ptr->mutable_data_ptr();
-  metal_forget_strided_view(tensor);
 
   auto memory_it = memory_to_n_tensor.find(data_ptr);
   ET_CHECK_OR_RETURN_ERROR(
@@ -463,6 +462,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       }
       memory_to_n_tensor.erase(data_ptr);
     }
+    metal_forget_strided_view(tensor);
     tensors.erase(it);
     ET_LOG(
         Debug,
@@ -471,6 +471,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   }
   ET_CHECK_OK_OR_RETURN_ERROR(release_memory(data_ptr));
 
+  metal_forget_strided_view(tensor);
   tensors.erase(it);
   ET_LOG(Debug, "aoti_torch_delete_tensor_object: successful");
   return Error::Ok;
