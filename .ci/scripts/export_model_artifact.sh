@@ -492,9 +492,7 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
   EXPORT_LOG=$(mktemp)
   TMPDIR="$INDUCTOR_TMPDIR" \
   TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
-  CUDA_LAUNCH_BLOCKING=1 \
-  PYTHONFAULTHANDLER=1 \
-  python .ci/scripts/diag_run_module.py executorch.examples.models.qwen3_5_moe.export \
+  python -m executorch.examples.models.qwen3_5_moe.export \
       --prequantized "$LOCAL_MODEL_DIR" \
       --output-dir "${OUTPUT_DIR}" \
       --dense-prefill dequant \

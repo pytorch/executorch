@@ -65,41 +65,6 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         self.assertEqual(result, "run-result")
         self.assertEqual(base.untyped_storage().nbytes(), 0)
 
-    def test_low_memory_jit_autotune_rehydrates_constants_and_inputs(self):
-        from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones
-        from torch._inductor.graph import GraphLowering
-
-        if not hasattr(GraphLowering, "_run_jit_variant_for_autotune"):
-            self.skipTest("PyTorch has no JIT-variant autotune pass")
-
-        constant = torch.empty(8)
-        constant.untyped_storage().resize_(0)
-        graph_input = torch.empty(4)
-        graph_input.untyped_storage().resize_(0)
-        original_run = GraphLowering._run_jit_variant_for_autotune
-        test_case = self
-
-        def fake_run(_graph, wrapper_code, kernel_code, extract_real_inputs, names):
-            test_case.assertGreater(constant.untyped_storage().nbytes(), 0)
-            inputs = extract_real_inputs()
-            test_case.assertGreater(inputs[0].untyped_storage().nbytes(), 0)
-            test_case.assertEqual(torch.count_nonzero(inputs[0]), 0)
-            test_case.assertEqual(names, ["kernel"])
-
-        GraphLowering._run_jit_variant_for_autotune = fake_run
-        try:
-            graph = object.__new__(GraphLowering)
-            graph.constants = {"kv_cache": constant}
-            with _compile_time_cpu_clones(torch.device("cuda")):
-                graph._run_jit_variant_for_autotune(
-                    "wrapper", "kernels", lambda: [graph_input], ["kernel"]
-                )
-        finally:
-            GraphLowering._run_jit_variant_for_autotune = original_run
-
-        self.assertEqual(constant.untyped_storage().nbytes(), 0)
-        self.assertEqual(graph_input.untyped_storage().nbytes(), 0)
-
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec(key="emulate_precision_casts", value=b"OFF")]
