@@ -26,6 +26,11 @@ from torch.library import triton_op, wrap_triton
 # -- Autotune configs ---------------------------------------------------------
 
 _INT4_MATMUL_CONFIGS = [
+    triton.Config(
+        {"BLOCK_SIZE_M": 16, "BLOCK_SIZE_N": 16, "BLOCK_SIZE_K": 128},
+        num_warps=4,
+        num_stages=5,
+    ),
     # Large-M prefill configs (tensor core saturated)
     triton.Config(
         {"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128},
@@ -91,10 +96,22 @@ _INT4_MATMUL_CONFIGS = [
 ]
 
 
+def _int4_matmul_prune(configs, nargs, **kwargs):
+    m = kwargs.get("M", nargs.get("M"))
+    # Let small ROCm queries trade tile width for more CTAs on the target GPU.
+    if torch.version.hip is not None and isinstance(m, int) and 1 <= m <= 4:
+        return configs
+    return [config for config in configs if config.kwargs["BLOCK_SIZE_N"] != 16]
+
+
 # -- Triton kernel ------------------------------------------------------------
 
 
-@triton.autotune(configs=_INT4_MATMUL_CONFIGS, key=["M", "N", "K"])
+@triton.autotune(
+    configs=_INT4_MATMUL_CONFIGS,
+    key=["M", "N", "K"],
+    prune_configs_by={"early_config_prune": _int4_matmul_prune},
+)
 @triton.jit
 def _int4_matmul_kernel(
     # Pointers
