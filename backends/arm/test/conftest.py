@@ -158,6 +158,39 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 @pytest.fixture(autouse=True)
+def enable_vulkan_validation_for_vgf_tests(request, monkeypatch) -> None:
+    """Configure Vulkan validation for VGF tests only when explicitly requested.
+
+    Dedicated VGF/VKML test entry points set EXECUTORCH_VGF_VULKAN_VALIDATION
+    when validation is required. Generic pytest/Buck runs leave it unset, so
+    validation-specific integration tests can skip cleanly on hosts without the
+    Vulkan SDK or Khronos validation layer.
+
+    """
+    if "vgf" not in request.node.nodeid.lower():
+        return
+
+    from executorch.backends.arm.test import runner_utils
+
+    if not runner_utils._vulkan_validation_requested():
+        return
+
+    configured_env = runner_utils._enable_vulkan_validation(dict(os.environ))
+    for variable in (
+        "VK_LAYER_PATH",
+        "VK_ADD_LAYER_PATH",
+        "VK_INSTANCE_LAYERS",
+        "VK_KHRONOS_VALIDATION_REPORT_FLAGS",
+        "VK_KHRONOS_VALIDATION_LOG_FILENAME",
+        "VK_KHRONOS_VALIDATION_DEBUG_ACTION",
+        runner_utils.VULKAN_VALIDATION_MESSAGE_FILTER_ENV,
+    ):
+        value = configured_env.get(variable)
+        if value is not None:
+            monkeypatch.setenv(variable, value)
+
+
+@pytest.fixture(autouse=True)
 def set_random_seed(request):
     """Control random numbers in Arm test suite. Default behavior is to use a
     fixed seed (0), which ensures reproducible tests. Use the env variable

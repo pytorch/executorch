@@ -183,6 +183,11 @@ class Idefics3VisionEncoder(Idefics3PreTrainedModel):
             ),
         )
 
+    def get_metadata(self):
+        return {
+            "get_n_layers": self.config.vision_config.num_hidden_layers,
+        }
+
     def forward(
         self,
         pixel_values: torch.FloatTensor,
@@ -257,6 +262,11 @@ class InternVL3VisionEncoder(torch.nn.Module):
                 (1, 3, self.img_resized_h, self.img_resized_w), dtype=torch.float32
             ),
         )
+
+    def get_metadata(self):
+        return {
+            "get_n_layers": self.config.vision_config.num_hidden_layers,
+        }
 
     def pixel_shuffle(self, vision_features: torch.Tensor, scale_factor: float = 0.5):
         """Perform pixel shuffle downsampling on vision features.

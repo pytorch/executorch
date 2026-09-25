@@ -15,8 +15,11 @@ fbcode_target(
     name = "lib",
     srcs = [
         "__init__.py",
+        "custom_ops.py",
         "partitioner.py",
         "passes/__init__.py",
+        "passes/_utils.py",
+        "passes/fuse_rope.py",
         "passes/reinplace.py",
         "passes/replace_copy_with_alias.py",
         "preprocess.py",
@@ -32,6 +35,9 @@ fbcode_target(
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "//caffe2:torch",
         "//executorch/backends/transforms:collapse_view_copy",
+        "//executorch/backends/transforms:fuse_gqa_with_sdpa",
+        "//executorch/backends/transforms:fuse_rms_norm",
+        "//executorch/backends/transforms:normalize_sdpa_input_rank",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
@@ -39,5 +45,6 @@ fbcode_target(
         "//executorch/exir/backend:utils",
         "//executorch/exir/passes:cse_pass",
         "//executorch/exir/passes:lib",
+        "//executorch/extension/llm/export:gguf",
     ],
 )

@@ -43,11 +43,17 @@ from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
     train_cifarnet_model,
     verify_cifarnet_model,
 )
+from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_anomaly_detection import (
+    MLPerfTinyAnomalyDetection,
+)
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
 )
 from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_keyword_spotting import (
     MLPerfTinyKeywordSpotting,
+)
+from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_visual_wake_words import (
+    MLPerfTinyVisualWakeWords,
 )
 from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import (
@@ -67,8 +73,10 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt
 MODELS = {
     "cifar10": CifarNet,
     "mobilenetv2": MobilenetV2,
+    "mlperf_tiny_anomaly_detection": MLPerfTinyAnomalyDetection,
     "mlperf_tiny_image_classification": MLPerfTinyImageClassification,
     "mlperf_tiny_keyword_spotting": MLPerfTinyKeywordSpotting,
+    "mlperf_tiny_visual_wake_words": MLPerfTinyVisualWakeWords,
 }
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -126,7 +134,12 @@ def _get_model_info_from_name(
                 )
             model_cls_inst = model_cls()
 
-        elif model_cls in (MLPerfTinyImageClassification, MLPerfTinyKeywordSpotting):
+        elif model_cls in (
+            MLPerfTinyImageClassification,
+            MLPerfTinyKeywordSpotting,
+            MLPerfTinyVisualWakeWords,
+            MLPerfTinyAnomalyDetection,
+        ):
             model_cls_inst = model_cls(
                 dataset_path=dataset_path,
                 use_random_dataset=use_random_dataset,
@@ -337,7 +350,13 @@ if __name__ == "__main__":  # noqa C901
         if args.use_qat:
             if not isinstance(
                 model_cls_inst,
-                (CifarNet, MLPerfTinyImageClassification, MLPerfTinyKeywordSpotting),
+                (
+                    CifarNet,
+                    MLPerfTinyImageClassification,
+                    MLPerfTinyKeywordSpotting,
+                    MLPerfTinyVisualWakeWords,
+                    MLPerfTinyAnomalyDetection,
+                ),
             ):
                 raise ValueError(
                     f"QAT training is not supported for model '{args.model_name}'"

@@ -81,7 +81,8 @@ inline constexpr const char* kBatchedSequence = "batched-sequence";
 // Cache kind is expressed by which factory you call: backends register a
 // builder per (backend_id, kind) and the kind survives only as an internal
 // lookup tag.
-using CacheBuilder = std::function<std::shared_ptr<Cache>(const CacheConfig&)>;
+using CacheBuilder = std::function<
+    std::shared_ptr<Cache>(const CacheGeometry&, const CacheConfig&)>;
 
 class ET_EXPERIMENTAL CacheFactory {
  public:
@@ -102,6 +103,7 @@ class ET_EXPERIMENTAL CacheFactory {
   Result<std::shared_ptr<Cache>> build(
       const std::string& backend_id,
       const std::string& kind,
+      const CacheGeometry& geometry,
       const CacheConfig& cfg) const;
 
  private:

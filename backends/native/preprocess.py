@@ -51,8 +51,6 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 
-from pyre_extensions import none_throws
-
 from torch._subclasses.fake_tensor import FakeTensor
 
 
@@ -113,9 +111,9 @@ class NativeBackend(BackendDetails):
         edge_program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
-        graph_module = none_throws(
-            ReplaceCopyWithAliasPass()(edge_program.graph_module)
-        ).graph_module
+        pass_result = ReplaceCopyWithAliasPass()(edge_program.graph_module)
+        assert pass_result is not None
+        graph_module = pass_result.graph_module
 
         flatbuffer_bytes, constant_data = serialize_graph(
             graph_module,

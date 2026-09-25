@@ -10,9 +10,9 @@ oncall("executorch")
 
 fbcode_target(
     _kind = runtime.python_library,
-    name = "generate_vgf_op_support",
+    name = "generate_op_support",
     srcs = [
         "__init__.py",
-        "generate_vgf_op_support.py",
+        "generate_op_support.py",
     ],
 )

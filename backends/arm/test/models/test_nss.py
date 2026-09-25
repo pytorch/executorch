@@ -212,3 +212,38 @@ def test_nss_vgf_INT(use_real_data):
     if use_real_data:
         _set_nss_calibration_samples(pipeline)
     pipeline.run()
+
+
+def test_nss_qat_tosa_INT() -> None:
+    pipeline = TosaPipelineINT[input_t](
+        nss().eval(),
+        example_inputs(),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        is_qat=True,
+        frobenius_threshold=None,
+        cosine_threshold=None,
+        qtol=12,
+    )
+    _set_nss_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_nss_qat_vgf_INT() -> None:
+    pipeline = VgfPipeline[input_t](
+        nss().eval(),
+        example_inputs(),
+        aten_op=[],
+        exir_op=[],
+        symmetric_io_quantization=True,
+        use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=True,
+        quantize=True,
+        is_qat=True,
+        tosa_version="TOSA-1.0+INT",
+        qtol=12,
+    )
+    _set_nss_calibration_samples(pipeline)
+    pipeline.run()

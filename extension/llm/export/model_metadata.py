@@ -29,6 +29,10 @@ MAX_SEQ_LEN_METHOD = "get_max_seq_len"
 VOCAB_SIZE_METHOD = "get_vocab_size"
 ACTIVATION_DTYPE_METHOD = "get_activation_dtype"
 LOGITS_TO_KEEP_MODE_METHOD = "get_logits_to_keep_mode"
+N_CACHES_METHOD = "get_n_caches"
+KV_HEADS_METHOD = "get_kv_heads"
+HEAD_DIMS_METHOD = "get_head_dims"
+WINDOWS_METHOD = "get_windows"
 
 # Serialized logits-to-keep modes. Keep in sync with LogitsToKeepMode in
 # extension/llm/runner/model_metadata.h.
@@ -81,6 +85,26 @@ def write_logits_to_keep_mode(logits_to_keep: str) -> dict[str, int]:
         raise ValueError(
             f"Unsupported logits-to-keep mode: {logits_to_keep}"
         ) from error
+
+
+def write_cache_geometry(
+    kv_heads: list[int], head_dims: list[int], windows: list[int]
+) -> dict[str, object]:
+    """Serialize one KV-cache geometry entry per model layer."""
+    if not kv_heads or len(kv_heads) != len(head_dims) or len(kv_heads) != len(windows):
+        raise ValueError("Cache geometry vectors must be nonempty and the same length")
+    if any(value <= 0 for value in kv_heads):
+        raise ValueError("KV head counts must be positive")
+    if any(value <= 0 for value in head_dims):
+        raise ValueError("KV head dimensions must be positive")
+    if any(value < 0 for value in windows):
+        raise ValueError("KV cache windows must be nonnegative")
+    return {
+        N_CACHES_METHOD: len(kv_heads),
+        KV_HEADS_METHOD: torch.tensor(kv_heads, dtype=torch.int32),
+        HEAD_DIMS_METHOD: torch.tensor(head_dims, dtype=torch.int32),
+        WINDOWS_METHOD: torch.tensor(windows, dtype=torch.int32),
+    }
 
 
 def model_vocab_size(model: torch.nn.Module) -> int:

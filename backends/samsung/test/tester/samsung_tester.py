@@ -9,6 +9,7 @@ from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import executorch.backends.test.harness.stages as BaseStages
 import torch
+from executorch.backends.samsung._passes.enn_pass_manager import EnnPassManager
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer.quantizer import EnnQuantizer, Precision
 from executorch.backends.samsung.serialization.compile_options import (
@@ -20,9 +21,6 @@ from executorch.backends.samsung.test.utils.utils import TestConfig
 from executorch.backends.samsung.utils.export_utils import get_edge_compile_config
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
-from executorch.backends.transforms.decompose_sdpa import (
-    DecomposeScaledDotProductAttention,
-)
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 
@@ -71,8 +69,6 @@ class Quantize(BaseStages.Quantize):
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
 
-        DecomposeScaledDotProductAttention()(captured_graph)
-
         if self.is_qat:
             prepared = prepare_qat_pt2e(captured_graph, self.quantizer)
         else:
@@ -111,8 +107,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
     ) -> None:
         artifact_copy = copy.deepcopy(artifact)
+        ep = EnnPassManager().transform_for_export_pass(artifact_copy)
         self.edge_dialect_program = to_edge_transform_and_lower(
-            artifact_copy,
+            ep,
             transform_passes=self.transform_passes,
             partitioner=self.partitioners,
             compile_config=self.edge_compile_config,

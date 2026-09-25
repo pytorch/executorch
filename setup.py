@@ -167,6 +167,7 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF",
         "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF",
         "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=OFF",
+        "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF",
         "-DEXECUTORCH_BUILD_MLX=OFF",
         "-DEXECUTORCH_BUILD_OPENVINO=OFF",
         "-DEXECUTORCH_BUILD_PORTABLE_OPS=OFF",
@@ -2299,15 +2300,21 @@ class CustomBuildPy(build_py):
                 "devtools/etdump/utils.h",
                 "devtools/etdump/data_sinks/",
             ] + (
-                # The CUDA stream helper's public header, and the export macros it includes. Its library is
-                # shared so the process has one copy of the caller-stream state, and that is a handshake the
-                # caller takes part in, so a consumer needs the declarations to take part at all.
+                # The CUDA stream helper's public header, the device guard beside it, and the export macros
+                # they include. The stream helper's library is shared so the process has one copy of the
+                # caller-stream state, and that is a handshake the caller takes part in, so a consumer needs
+                # the declarations to take part at all. The device guard's own definitions are compiled into that
+                # same library, so a consumer needs this header to reach them.
                 #
                 # Only when this wheel carries the CUDA delegate, and decided from the same CMake cache the
                 # libraries ship on. Keying it off the release row's CUDA version instead meant a build on
                 # an unrecognised toolkit shipped both CUDA libraries and both CMake components with no
                 # header, so a consumer got a component it could link and not include.
-                ["extension/cuda/caller_stream.h", "extension/cuda/export.h"]
+                [
+                    "extension/cuda/caller_stream.h",
+                    "extension/cuda/device_guard.h",
+                    "extension/cuda/export.h",
+                ]
                 if _cuda_libraries_built(cmake_cache_dir)
                 else []
             ):

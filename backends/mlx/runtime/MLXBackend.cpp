@@ -286,6 +286,23 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         handle->clear_cache_interval_ = spec.get();
       }
 
+      // Per-model lazy-graph evaluation threshold (optional runtime spec,
+      // keyed per delegate). Configured here, before the init chain runs
+      // below, so the init chain is covered by the same setting. 0/unset
+      // disables the mechanism and is the default.
+      if (auto spec = context.get_runtime_spec<int>(kEvalThresholdBytesKey);
+          spec.ok()) {
+        const int bytes = spec.get();
+        if (bytes < 0) {
+          throw std::runtime_error(
+              std::string(kEvalThresholdBytesKey) +
+              " must be >= 0 (0 disables the mechanism), got " +
+              std::to_string(bytes));
+        }
+        handle->interpreter.set_eval_threshold_bytes(
+            static_cast<size_t>(bytes));
+      }
+
       if (!processed || !processed->data() || processed->size() == 0) {
         throw std::runtime_error("init: null or empty delegate payload");
       }
@@ -608,9 +625,11 @@ static auto success_with_compiler = register_backend(backend);
 // Cache it installs under a cache_key. Adding a kind is a new builder here.
 const int cache_builders_registered = [] {
   const Error single = cache::CacheFactory::global().register_builder(
-      kMLXBackendId, cache::kind::kSingle, [](const cache::CacheConfig& cfg) {
+      kMLXBackendId,
+      cache::kind::kSingle,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXSequenceCache>(cfg));
+            std::make_shared<MLXSequenceCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       single == Error::Ok,
@@ -620,9 +639,9 @@ const int cache_builders_registered = [] {
   const Error batched_cell = cache::CacheFactory::global().register_builder(
       kMLXBackendId,
       cache::kind::kBatchedCell,
-      [](const cache::CacheConfig& cfg) {
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXCellCache>(cfg));
+            std::make_shared<MLXCellCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       batched_cell == Error::Ok,
@@ -632,9 +651,9 @@ const int cache_builders_registered = [] {
   const Error batched_seq = cache::CacheFactory::global().register_builder(
       kMLXBackendId,
       cache::kind::kBatchedSequence,
-      [](const cache::CacheConfig& cfg) {
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXBatchedSequenceCache>(cfg));
+            std::make_shared<MLXBatchedSequenceCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       batched_seq == Error::Ok,
@@ -643,9 +662,11 @@ const int cache_builders_registered = [] {
       cache::kind::kBatchedSequence);
   // The layout kBatched points at, also registered under its own name above.
   const Error batched = cache::CacheFactory::global().register_builder(
-      kMLXBackendId, cache::kind::kBatched, [](const cache::CacheConfig& cfg) {
+      kMLXBackendId,
+      cache::kind::kBatched,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
         return std::shared_ptr<cache::Cache>(
-            std::make_shared<MLXBatchedSequenceCache>(cfg));
+            std::make_shared<MLXBatchedSequenceCache>(geometry, cfg));
       });
   ET_CHECK_MSG(
       batched == Error::Ok,

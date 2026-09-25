@@ -33,8 +33,10 @@ class MLXBatchedSequenceCache : public cache::Cache,
                                 public cache::BatchControl,
                                 public MLXCache {
  public:
-  explicit MLXBatchedSequenceCache(const cache::CacheConfig& cfg)
-      : cfg_(checked(cfg)) {}
+  MLXBatchedSequenceCache(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg)
+      : geometry_(checked(geometry, cfg)), cfg_(cfg) {}
 
   int capacity() const override {
     return cfg_.capacity;
@@ -74,7 +76,7 @@ class MLXBatchedSequenceCache : public cache::Cache,
 
   std::optional<int32_t> seq_new() override {
     const int32_t id = free_id();
-    rows_.try_emplace(id, cfg_);
+    rows_.try_emplace(id, geometry_, cfg_);
     return id;
   }
 
@@ -193,7 +195,7 @@ class MLXBatchedSequenceCache : public cache::Cache,
       const Tensor& q,
       const Tensor& k,
       const Tensor& v) const {
-    if (layer < 0 || layer >= cfg_.n_layers) {
+    if (layer < 0 || layer >= static_cast<int>(geometry_.layers.size())) {
       throw std::out_of_range("attend: layer out of range");
     }
     if (q.ndim() != 4 || k.ndim() != 4 || v.ndim() != 4) {
@@ -278,13 +280,17 @@ class MLXBatchedSequenceCache : public cache::Cache,
     placed_ = false;
   }
 
-  static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
-    if (!cache::valid(cfg)) {
-      throw std::runtime_error("MLXBatchedSequenceCache: invalid CacheConfig");
+  static const cache::CacheGeometry& checked(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg) {
+    if (!cache::valid(geometry, cfg)) {
+      throw std::runtime_error(
+          "MLXBatchedSequenceCache: invalid geometry or config");
     }
-    return cfg;
+    return geometry;
   }
 
+  cache::CacheGeometry geometry_;
   cache::CacheConfig cfg_;
   std::map<int32_t, MLXSequenceCache> rows_;
   // Set at init by the delegate that resolved this cache.

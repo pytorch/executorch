@@ -4,15 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from functools import partial
-
 import pytest
 import torch
-from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-from executorch.backends.cortex_m.test.tester import CortexMTester
-from executorch.backends.test.harness.stages import Quantize, RunPasses, StageType
+from executorch.backends.cortex_m.test.tester import CortexMRunPasses, CortexMTester
+from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 
@@ -55,6 +52,19 @@ class UnsupportedAvgPool(torch.nn.Module):
         )
 
 
+class NHWCPaddedConv(torch.nn.Module):
+    def __init__(self, channels, shared_pad):
+        super().__init__()
+        out_channels = 64 if channels == 1 else 8
+        self.conv = torch.nn.Conv2d(channels, out_channels, (10, 4), stride=2)
+        self.shared_pad = shared_pad
+
+    def forward(self, x):
+        padded = torch.nn.functional.pad(x.permute(0, 3, 1, 2), (1, 1, 4, 5))
+        output = self.conv(padded).permute(0, 2, 3, 1)
+        return (output, padded) if self.shared_pad else output
+
+
 def _count(exported_program, target) -> int:
     return sum(node.target == target for node in exported_program.graph.nodes)
 
@@ -62,13 +72,9 @@ def _count(exported_program, target) -> int:
 def _run_explicit_layout_pass_manager(tester: CortexMTester) -> CortexMTester:
     target_config = CortexMTargetConfig(cpu=CortexM.M55)
     tester.run_passes(
-        RunPasses(
-            partial(
-                CortexMPassManager,
-                target_config=target_config,
-                use_explicit_layout=True,
-            ),  # type: ignore[arg-type]
-            CortexMPassManager.explicit_layout_pass_list,  # type: ignore[arg-type]
+        CortexMRunPasses(
+            target_config=target_config,
+            use_explicit_layout=True,
         )
     )
     return tester
@@ -148,6 +154,37 @@ def test_explicit_layout_reuses_pad():
     assert _count(program, exir_ops.edge.cortex_m.pad.default) == 1
 
 
+def _lower_nhwc_padded_conv(channels, shared_pad):
+    torch.manual_seed(7)
+    tester = _run_explicit_layout_passes(
+        CortexMTester(
+            NHWCPaddedConv(channels, shared_pad).eval(),
+            (torch.randn(1, 49, 10, channels),),
+        )
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.pad.default) == int(shared_pad)
+    if not shared_pad:
+        assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
+    return tester
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+@pytest.mark.parametrize("shared_pad", [False, True])
+def test_explicit_layout_fuses_same_padding(channels, shared_pad):
+    tester = _lower_nhwc_padded_conv(channels, shared_pad)
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs, qtol=1)
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+@pytest.mark.parametrize("shared_pad", [False, True])
+def test_implementation_explicit_layout_fuses_same_padding(channels, shared_pad):
+    tester = _lower_nhwc_padded_conv(channels, shared_pad)
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs, qtol=1)
+
+
 @pytest.mark.parametrize("hardtanh", [False, True])
 def test_implementation_transpose_conv2d_strided_pointwise(hardtanh):
     torch.manual_seed(0)
@@ -172,5 +209,7 @@ def test_explicit_layout_rejects_unsupported_spatial_operator():
     with pytest.raises(Exception) as caught:
         _run_explicit_layout_passes(tester)
 
-    assert caught.value.__cause__ is not None
-    assert "NHWC-eligible" in str(caught.value.__cause__)
+    error = caught.value
+    while error.__cause__ is not None:
+        error = error.__cause__
+    assert "NHWC-eligible" in str(error)

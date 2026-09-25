@@ -12,7 +12,7 @@ import logging
 import re
 
 from functools import partial
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import torch
 
@@ -21,7 +21,11 @@ from executorch.backends.qualcomm._passes.build_quant_io import BuildQuantIo
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
-from executorch.backends.qualcomm.builders.utils import is_graph_output
+from executorch.backends.qualcomm.builders.utils import (
+    get_attr_from_target,
+    is_graph_output,
+    set_attr_from_target,
+)
 from executorch.backends.qualcomm.export_utils import make_quantizer
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
@@ -223,23 +227,32 @@ class TextDecoder(Component):
         self.tok_embedding, self.decoder = self._prepare_model()
 
         # check if sharding required
-        if self.decoder and self.config.num_sharding > 1:
-            layer_prefix_offsets = None
-            if self.control_args.decoder_model == "gemma4-e2b":
-                n_self = self.gemma4_config.num_self_decoder_layers
-                layer_prefix_offsets = {
-                    "model.self_decoder.layers": 0,
-                    "model.cross_decoder.layers": n_self,
-                }
-            SplitGraph, setting = model_sharding.get_split_graph_pass(
-                self.meta["get_n_layers"],
-                shares=self.config.num_sharding,
-                pattern=self._get_sharding_get_pattern(),
-                layer_prefix_offsets=layer_prefix_offsets,
-            )
-            self.passes_job[SplitGraph] = setting
-            self.dep_table[SplitGraph] = [FoldQDQ]
-            self.dep_table[TagQuantIO] = [SplitGraph]
+        if self.decoder is not None:
+            if self.meta["get_n_layers"] >= self.config.num_sharding > 1:
+                layer_prefix_offsets = None
+                if self.control_args.decoder_model == "gemma4-e2b":
+                    n_self = self.gemma4_config.num_self_decoder_layers
+                    layer_prefix_offsets = {
+                        "model.self_decoder.layers": 0,
+                        "model.cross_decoder.layers": n_self,
+                    }
+                SplitGraph, setting = model_sharding.get_split_graph_pass(
+                    self.meta["get_n_layers"],
+                    shares=self.config.num_sharding,
+                    pattern=self._get_sharding_get_pattern(),
+                    layer_prefix_offsets=layer_prefix_offsets,
+                )
+                self.passes_job[SplitGraph] = setting
+                self.dep_table[SplitGraph] = [FoldQDQ]
+                self.dep_table[TagQuantIO] = [SplitGraph]
+            else:
+                logging.info(
+                    f"Disabling sharding because the requested number of shards "
+                    f"({self.config.num_sharding}) is not valid for the number of layers "
+                    f"({self.meta['get_n_layers']}). "
+                    "Sharding is enabled only when the number of shards is greater than 1 "
+                    "and no greater than the number of layers."
+                )
 
         self._decoder_inference = (
             DecoderInference(
@@ -951,25 +964,10 @@ class HybridTextDecoder(Component):
 
         def parameter_override(quantized_node, unquantized_node):
             # Some parameters need to be iterated over to retrieve attributes such as static_llama.tok_embedding.weight
-            def _get_attr(graph_module: torch.fx.GraphModule, target: str) -> Any:
-                attr: Any = graph_module
-                for target_atom in target.split("."):
-                    attr = getattr(attr, target_atom)
-                return attr
-
-            def _set_attr(
-                graph_module: torch.fx.GraphModule, target: str, replacement: Any
-            ) -> Any:
-                attr: Any = graph_module
-                target_list = target.split(".")
-                for target_atom in target_list[:-1]:
-                    attr = getattr(attr, target_atom)
-                setattr(attr, target_list[-1], replacement)
-
-            _set_attr(
+            set_attr_from_target(
                 unquantized_model,
                 unquantized_node.target,
-                _get_attr(quantized_model, quantized_node.target),
+                get_attr_from_target(quantized_model, quantized_node.target),
             )
             # scale / zero point are part of op's attributes
             if list(quantized_node.users)[0].target in ptq_target:
@@ -1253,20 +1251,23 @@ class Modality(Component):
         if config := getattr(config, modality, None):
             if modality == AUDIO_ENCODER:
                 auto_model = AutoModelForSpeechSeq2Seq.from_pretrained(repo_id)
-                self.num_layers = auto_model.config.encoder_config.num_layers
-                self.ctx_size = auto_model.config.encoder_config.context_size
             elif modality == TEXT_ENCODER:
                 raise NotImplementedError(f"{modality} is under development")
             elif modality == VISION_ENCODER:
                 auto_model = AutoModel.from_pretrained(
                     repo_id, _attn_implementation="eager"
                 )
-                self.num_layers = auto_model.config.vision_config.num_hidden_layers
             else:
                 raise NotImplementedError(f"Find no {modality}")
 
             auto_model = auto_model.to(torch.float32).eval()
             self.model = config().create_encoder(auto_model.config).eval()
+            self.meta = self.model.get_metadata()
+            if "get_n_layers" not in self.meta:
+                raise ValueError(
+                    f"{type(self.model).__name__}.get_metadata() must provide "
+                    "'get_n_layers'"
+                )
             self.model.load_state_dict(
                 auto_model.state_dict(), strict=False
             )  # set strict to false to simplify parameter loading for non-text models
@@ -1298,12 +1299,15 @@ class Modality(Component):
             quant_io_type = fixed_point_type["io_type"]
 
         # GraniteSpeech: tag _to_copy op as quantized tensors for attn dist. It is caused by sharding
+        ctx_size = self.meta.get("get_context_size")
         if (
             issubclass(self.config, GraniteSpeechEncoder)
             and node.target == exir_ops.edge.aten._to_copy.default
-            and node.meta["val"].size() == (self.ctx_size, self.ctx_size)
+            and ctx_size is not None
+            and node.meta["val"].size() == (ctx_size, ctx_size)
         ):
             quant_io_type = torch.int32
+            logging.info(f"Tagging {node} with {quant_io_type} quantized IO ")
 
         return quant_io_type
 
@@ -1322,9 +1326,9 @@ class Modality(Component):
 
         request_data = request.method_data[self.modality]
         # check if sharding required
-        if self.config.num_sharding > 1:
+        if self.meta["get_n_layers"] >= self.config.num_sharding > 1:
             SplitGraph, setting = model_sharding.get_split_graph_pass(
-                self.num_layers,
+                self.meta["get_n_layers"],
                 shares=self.config.num_sharding,
                 pattern=self._get_sharding_get_pattern(),
             )
@@ -1340,6 +1344,14 @@ class Modality(Component):
                 self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                     "get_quant_io_dtype_fn"
                 ] = partial(self._tag_ios, fixed_point_type=fixed_point_type)
+        else:
+            logging.info(
+                f"Disabling sharding for {self.modality} because the requested number "
+                f"of shards ({self.config.num_sharding}) is not valid for the number "
+                f"of layers ({self.meta['get_n_layers']}). "
+                "Sharding is enabled only when the number of shards is greater than 1 "
+                "and no greater than the number of layers."
+            )
 
         edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
             module=self.model,

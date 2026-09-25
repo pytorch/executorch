@@ -33,6 +33,7 @@ from .protocol import (
     ChunkChoice,
     DeltaMessage,
     FunctionCall,
+    PromptTokensDetails,
     ResponseMessage,
     ToolCall,
     Usage,
@@ -138,9 +139,9 @@ class ServingChat:
 
     @staticmethod
     def _return_reasoning(req: ChatCompletionRequest) -> bool:
+        # Response visibility only; the model still computes reasoning on opt-out.
         kwargs = req.chat_template_kwargs or {}
-        value = kwargs.get("return_reasoning", False)
-        return value if isinstance(value, bool) else False
+        return kwargs.get("return_reasoning", True)
 
     @staticmethod
     def _to_openai_tool_call(item: ToolCallItem) -> ToolCall:
@@ -348,8 +349,16 @@ class ServingChat:
 
     @staticmethod
     def _reject_invalid_values(req: ChatCompletionRequest) -> None:
-        """Reject out-of-range values (invalid_value); these take precedence over
+        """Reject invalid types/ranges (invalid_value); these take precedence over
         the unsupported-parameter error."""
+        template_kwargs = req.chat_template_kwargs or {}
+        if not isinstance(template_kwargs.get("return_reasoning", True), bool):
+            raise APIError(
+                400,
+                "chat_template_kwargs.return_reasoning must be a boolean.",
+                "invalid_request_error",
+                "invalid_value",
+            )
         if req.temperature is not None and (
             not math.isfinite(req.temperature)
             or req.temperature < 0.0
@@ -549,13 +558,12 @@ class ServingChat:
         tool_calls, reasoning, content = self._extract_response(
             req, self._truncate_raw(text, req)
         )
-        # Record after the response is finalized: the fingerprint is of exactly
-        # what we return (content + tool_calls), so the next turn can confirm the
-        # client echoed this turn before splicing its ids.
+        # Compare future echoes against the finalized client-visible response.
         self._transcript.record_assistant_turn(
             session_id=req.session_id,
             content=content,
             tool_calls=tool_calls,
+            reasoning_content=reasoning,
             generated_token_ids=stats.generated_token_ids,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
@@ -580,6 +588,9 @@ class ServingChat:
                 prompt_tokens=stats.prompt_tokens,
                 completion_tokens=stats.completion_tokens,
                 total_tokens=stats.prompt_tokens + stats.completion_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=stats.reused_prompt_tokens
+                ),
             ),
         )
 
@@ -738,6 +749,7 @@ class ServingChat:
             session_id=req.session_id,
             content=content,
             tool_calls=tool_calls,
+            reasoning_content=reasoning or None,
             generated_token_ids=stats.generated_token_ids,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
@@ -763,6 +775,9 @@ class ServingChat:
                     prompt_tokens=stats.prompt_tokens,
                     completion_tokens=stats.completion_tokens,
                     total_tokens=stats.prompt_tokens + stats.completion_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=stats.reused_prompt_tokens
+                    ),
                 ),
             )
             yield f"data: {usage_chunk.model_dump_json(exclude_none=True)}\n\n"

@@ -61,7 +61,6 @@ class RemoveNoopPass(ExportPass):
 
             if node.target not in (
                 torch.ops.aten.to.dtype,
-                torch.ops.aten.dropout.default,
                 torch.ops.aten.slice_copy.Tensor,
             ):
                 continue

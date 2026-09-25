@@ -14,23 +14,24 @@ The MLX delegate compiles PyTorch models to run on Apple Silicon GPUs via the
 
 ## Getting Started
 
-The MLX delegate requires **Apple Silicon** (M1 or later) and the **Metal
-compiler**, which ships with Xcode (not the standalone Command Line Tools).
+The MLX delegate requires **Apple Silicon** (M1 or later), the full **Xcode**
+application (not just Command Line Tools), and the separately installed **Metal
+Toolchain** component.
 
 **Check if Metal is available:**
 
 ```bash
-xcrun -sdk macosx --find metal
+xcrun -sdk macosx metal --version
 ```
 
-If this prints a path (e.g. `/Applications/Xcode.app/.../metal`), you're set.
-If it errors, you either need to install Xcode from the
+If this prints version information, you're set. If it errors, install Xcode from the
 [App Store](https://apps.apple.com/us/app/xcode/id497799835) or
-<https://developer.apple.com/xcode/>, or — if Xcode is already installed but the
-command line developer directory points at Command Line Tools — switch it:
+<https://developer.apple.com/xcode/>, select it as the active developer
+directory, and download the Metal Toolchain:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -downloadComponent MetalToolchain
 ```
 
 ### Python (pybindings)

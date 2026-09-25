@@ -57,12 +57,14 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
     )
 
 
-def maybe_get_tosa_artifact_path() -> str | None:
+def maybe_get_tosa_artifact_path(*, allow_unresolved: bool = False) -> str | None:
     """Return the configured artifact directory for the current test."""
     artifact_base_path = getattr(pytest, "_test_options", {}).get("dump_artifacts")
     if artifact_base_path:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
         if current_test is None:
+            if allow_unresolved:
+                return None
             raise RuntimeError("Could not determine the current pytest test name")
         test_name = (
             current_test.split(" (")[0]
@@ -72,16 +74,20 @@ def maybe_get_tosa_artifact_path() -> str | None:
         )
         return os.path.join(artifact_base_path, test_name)
 
-    return maybe_get_tosa_collate_path()
+    return maybe_get_tosa_collate_path(allow_unresolved=allow_unresolved)
 
 
-def maybe_get_tosa_collate_path() -> str | None:
+def maybe_get_tosa_collate_path(*, allow_unresolved: bool = False) -> str | None:
     """Return the current test's TOSA collation directory, when configured."""
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
+        if current_test is None:
+            if allow_unresolved:
+                return None
+            raise RuntimeError("Could not determine the current pytest test name")
         # '::test_collate_tosa_INT_tests[randn] (call)'
-        test_name = current_test.split("::")[1].split(" ")[0]  # type: ignore[union-attr]
+        test_name = current_test.split("::")[1].split(" ")[0]
         if "INT" in test_name:
             tosa_test_base = os.path.join(tosa_test_base, "tosa-int")
         elif "FP" in test_name:
@@ -100,7 +106,7 @@ def get_tosa_compile_spec(
 ) -> TosaCompileSpec:
     """Get the compile spec for default TOSA tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_artifact_path()
+        custom_path = maybe_get_tosa_artifact_path(allow_unresolved=True)
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -123,7 +129,7 @@ def get_u55_compile_spec(
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U55 tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_artifact_path()
+        custom_path = maybe_get_tosa_artifact_path(allow_unresolved=True)
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -134,6 +140,13 @@ def get_u55_compile_spec(
         extra_flags_list = extra_flags.split(" ")
     else:
         extra_flags_list = []
+    max_scratch_size = None
+    if (
+        system_config in (None, "Ethos_U55_High_End_Embedded")
+        and memory_mode in (None, "Shared_Sram")
+        and config in (None, "Arm/vela.ini")
+    ):
+        max_scratch_size = 2 * 1024 * 1024
     compile_spec = (
         EthosUCompileSpec(
             f"ethos-u55-{macs}",
@@ -141,6 +154,7 @@ def get_u55_compile_spec(
             memory_mode=memory_mode,
             extra_flags=extra_flags_list,
             config_ini=config,
+            max_scratch_size=max_scratch_size,
         )
         .dump_intermediate_artifacts_to(custom_path)
         .dump_debug_info(tosa_debug_mode)
@@ -159,7 +173,7 @@ def get_u85_compile_spec(
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U85 tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_artifact_path()
+        custom_path = maybe_get_tosa_artifact_path(allow_unresolved=True)
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -195,7 +209,7 @@ def get_u65_compile_spec(
 ) -> EthosUCompileSpec:
     """Default compile spec for Ethos-U65 tests."""
     if not custom_path:
-        custom_path = maybe_get_tosa_artifact_path()
+        custom_path = maybe_get_tosa_artifact_path(allow_unresolved=True)
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 
@@ -231,7 +245,7 @@ def get_vgf_compile_spec(
     spec before calling .build() to finalize it.
     """
     if not custom_path:
-        custom_path = maybe_get_tosa_artifact_path()
+        custom_path = maybe_get_tosa_artifact_path(allow_unresolved=True)
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
 

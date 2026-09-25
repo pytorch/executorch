@@ -133,6 +133,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     RoundNode,
     RsqrtNode,
     ScatterAddNode,
+    SdpaNode,
     SigmoidNode,
     SignNode,
     SiluNode,
@@ -178,6 +179,7 @@ from executorch.exir.passes.reinplace import _derive_edge_inplace_overload
 from executorch.extension.llm.cache import (  # noqa: F401
     update_and_attend as _kvcache_op,
 )
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.node import Node
 
 _LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE = 0.01
@@ -2464,8 +2466,7 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     indices = [P.slot_to_tid(idx) for _, idx in non_none]
     axes = [i for i, _ in non_none]
 
-    # slice_sizes: 1 for indexed axes, full dim size for non-indexed axes
-    # Use int() to handle SymInt values from dynamic shapes
+    # slice_sizes: 1 for indexed axes, full static size for non-indexed axes.
     indexed_axes = set(axes)
     slice_sizes = []
     for dim in range(x_ndim):
@@ -2493,18 +2494,47 @@ def _index_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     )
 
     # Reshape to match aten.index.Tensor output shape, which strips the
-    # trailing dimensions introduced by gather's slice_sizes
+    # trailing dimensions introduced by gather's slice_sizes.
     out_meta = n.meta.get("val")
     if out_meta is None:
         raise ValueError(
             "aten.index.Tensor: output shape metadata required for reshape after gather"
         )
-    out_shape = [P.to_int_or_vid(int(d)) for d in out_meta.shape]
+    # Non-indexed sizes are static above, so symbolic output sizes belong to
+    # the broadcast index shape, which leads the gather result. Read them at
+    # runtime instead of adding specialization guards through int(SymInt).
+    # Contiguous indexed axes keep the broadcast dimensions in place in ATen.
+    leading_dims = axes[0] if axes == list(range(axes[0], axes[-1] + 1)) else 0
+    # Read pre-transpose sizes; the offset maps broadcast dims back to gather axes.
+    out_shape = emit_shape(P, n, gather_slot, dim_offset=-leading_dims)
+
+    reshape_slot = gather_slot
+    broadcast_ndim = len(out_meta.shape) - x_ndim + len(axes)
+    broadcast_shape = out_meta.shape[leading_dims : leading_dims + broadcast_ndim]
+    # Moving singleton blocks does not change element order; keep those
+    # lowerings reshape-only, without extra instructions or tensor slots.
+    if any(size > 1 for size in slice_sizes[:leading_dims]) and any(
+        not isinstance(size, int) or size > 1 for size in broadcast_shape
+    ):
+        _, reshape_slot = P.make_tmp_slot()
+        P.emit(
+            TransposeNode(
+                x=P.slot_to_tid(gather_slot),
+                out=P.slot_to_tid(reshape_slot),
+                perm=(
+                    list(range(broadcast_ndim, broadcast_ndim + leading_dims))
+                    + list(range(broadcast_ndim))
+                    + list(
+                        range(broadcast_ndim + leading_dims, broadcast_ndim + x_ndim)
+                    )
+                ),
+            )
+        )
 
     out = P.make_or_get_slot(n)
     P.emit(
         ReshapeNode(
-            x=P.slot_to_tid(gather_slot),
+            x=P.slot_to_tid(reshape_slot),
             out=P.slot_to_tid(out),
             shape=out_shape,
         )
@@ -3069,6 +3099,108 @@ def _arange_start_step_handler(P: MLXProgramBuilder, n: Node) -> Slot:
             stop=P.to_int_or_vid(stop),
             step=P.to_int_or_vid(step),
             scalar_type=scalar_type_val,
+        )
+    )
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.scaled_dot_product_attention.default])
+def _aten_sdpa_handler(P: MLXProgramBuilder, n: Node) -> Slot:  # noqa: C901
+    op_name = "aten.scaled_dot_product_attention"
+    require_args(n.args, 0, 6, op_name)
+    require_kwargs(
+        n.kwargs,
+        {
+            "query",
+            "key",
+            "value",
+            "attn_mask",
+            "dropout_p",
+            "is_causal",
+            "scale",
+            "enable_gqa",
+        },
+        op_name,
+    )
+
+    def arg(index, name, default=None):
+        return n.args[index] if len(n.args) > index else n.kwargs.get(name, default)
+
+    q_node, k_node, v_node = (
+        arg(i, name) for i, name in enumerate(("query", "key", "value"))
+    )
+    attn_mask = arg(3, "attn_mask")
+    dropout_p = arg(4, "dropout_p", 0.0)
+    is_causal = arg(5, "is_causal", False)
+    scale = n.kwargs.get("scale")
+    enable_gqa = n.kwargs.get("enable_gqa", False)
+    operand_vals = [
+        node.meta.get("val") if isinstance(node, Node) else None
+        for node in (q_node, k_node, v_node)
+    ]
+    if any(not isinstance(val, torch.Tensor) or val.dim() != 4 for val in operand_vals):
+        raise NotImplementedError("SDPA requires normalized rank-4 Q/K/V")
+    q_val, k_val, v_val = operand_vals
+    if any(
+        not statically_known_true(val.shape[0] == q_val.shape[0])
+        for val in (k_val, v_val)
+    ):
+        raise NotImplementedError("SDPA batch broadcasting is not supported")
+
+    q_heads, k_heads, v_heads = (val.shape[1] for val in operand_vals)
+    if not statically_known_true(k_heads > 0):
+        raise NotImplementedError("SDPA requires positive KV heads")
+    if not statically_known_true(k_heads == v_heads) or not statically_known_true(
+        q_heads % k_heads == 0
+    ):
+        raise NotImplementedError("SDPA head counts are not supported")
+    if attn_mask is not None:
+        mask_val = attn_mask.meta.get("val") if isinstance(attn_mask, Node) else None
+        if not isinstance(mask_val, torch.Tensor) or mask_val.dim() > 4:
+            raise NotImplementedError("SDPA mask rank is not supported")
+
+    require_static_float(dropout_p, "dropout_p", op_name)
+    if dropout_p != 0.0:
+        raise NotImplementedError("SDPA with dropout is not supported")
+    if not isinstance(is_causal, bool) or not isinstance(enable_gqa, bool):
+        raise NotImplementedError("SDPA flags must be static booleans")
+    q_len, k_len = q_val.shape[-2], k_val.shape[-2]
+    if is_causal and not statically_known_true(q_len <= k_len):
+        raise NotImplementedError("Causal SDPA requires query length <= key length")
+    if scale is None:
+        scale = q_val.shape[-1] ** -0.5
+    require_static_float(scale, "scale", op_name)
+
+    q, k, v, mask = P.slot_map([q_node, k_node, v_node, attn_mask])
+    inputs = [q, k, v]
+    # Slicing K/V makes causal attention square, reconciling PyTorch's top-left
+    # mask with MLX's bottom-right mask. Keys past the last query are never read.
+    if is_causal and not statically_known_true(q_len == k_len):
+        rows = emit_shape(P, q_node, q)[-2]
+        for i in (1, 2):
+            _, sliced = P.make_tmp_slot()
+            P.emit(
+                SliceNode(
+                    x=P.slot_to_tid(inputs[i]),
+                    out=P.slot_to_tid(sliced),
+                    axis=IntOrVid.from_literal(2),
+                    start=IntOrVid.from_literal(0),
+                    stop=rows,
+                )
+            )
+            inputs[i] = sliced
+
+    out = P.make_or_get_slot(n)
+    # MLX infers GQA from the Q/KV head counts; no separate flag is serialized.
+    P.emit(
+        SdpaNode(
+            q=P.slot_to_tid(inputs[0]),
+            k=P.slot_to_tid(inputs[1]),
+            v=P.slot_to_tid(inputs[2]),
+            out=P.slot_to_tid(out),
+            scale=scale,
+            mask=P.slot_to_tid(mask) if mask is not None else None,
+            causal=is_causal,
         )
     )
     return out

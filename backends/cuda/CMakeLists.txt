@@ -16,9 +16,17 @@
 #
 cmake_minimum_required(VERSION 3.26)
 
-set(CMAKE_CXX_STANDARD 17)
+# The .cu shims include vendored c10's safe_numerics.h, whose MSVC-only branch
+# needs C++20 (see the top-level CMakeLists.txt). cxx_std_20 on executorch_core
+# does not reach nvcc, so the CUDA standard has to be raised here too.
+if(WIN32)
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD 20)
+else()
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -409,10 +417,17 @@ endif()
 
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
 
-if(EXECUTORCH_BUILD_SHARED)
+if(_executorch_cuda_ships_libraries)
   # Resolve the runtime from the shared library rather than from the static
-  # core, so the delegate registers into the one registry the process has. True
-  # of a static delegate in a shared build too, which is what ROCm builds.
+  # core, so the delegate registers into the one registry the process has.
+  # Through the helper, not as an ordinary dependency: CMake orders an archive
+  # ahead of what it depends on, so the static core would satisfy the runtime
+  # symbols first and this library would carry its own registry.
+  executorch_target_link_shared_runtime(aoti_cuda_backend)
+elseif(EXECUTORCH_BUILD_SHARED)
+  # Static delegate in a shared build, which is what ROCm produces. It carries
+  # no link step of its own, so the helper cannot apply and its consumer
+  # resolves the runtime instead.
   target_link_libraries(aoti_cuda_backend PUBLIC executorch_shared)
 endif()
 

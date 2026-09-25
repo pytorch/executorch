@@ -11,6 +11,7 @@ import logging
 import platform
 
 from collections import Counter, defaultdict
+from pathlib import Path
 from pprint import pformat
 from typing import (
     Any,
@@ -41,6 +42,7 @@ from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer import get_symmetric_quantization_config
+from executorch.backends.arm.test.common import maybe_get_tosa_artifact_path
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_output_quantization_params,
@@ -370,6 +372,12 @@ class ArmTester(tester.Tester):
         self.transform_passes = transform_passes
         self.constant_methods = constant_methods
         self.compile_spec = compile_spec
+        if compile_spec._get_intermediate_path() is None:
+            artifact_path = maybe_get_tosa_artifact_path()
+            if artifact_path is not None:
+                Path(artifact_path).mkdir(parents=True, exist_ok=True)
+                self.compile_spec = copy.deepcopy(compile_spec)
+                self.compile_spec.dump_intermediate_artifacts_to(artifact_path)
         stage_classes = tester.Tester.default_stage_classes() | {
             StageType.PARTITION: Partition,
             StageType.TO_EDGE_TRANSFORM_AND_LOWER: ToEdgeTransformAndLower,

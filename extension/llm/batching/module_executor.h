@@ -48,9 +48,11 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   // program must be loaded and its method must not be, since the delegate
   // resolves the cache while that load runs.
   //
-  // Capacity is `max_sessions` x `max_session_tokens` cells exactly, and
-  // open_session() holds the count, so exhaustion is unreachable rather than
-  // handled. `kv_dtype` is the ET ScalarType K/V is stored in; a negative
+  // `max_sessions` includes every resident session, including retained and
+  // transient clones. Capacity reserves `max_session_tokens` per session.
+  // These are logical cells, not a byte budget; the cache layout determines
+  // whether a clone shares or copies storage.
+  // `kv_dtype` is the ET ScalarType K/V is stored in; a negative
   // `initial_capacity` leaves the pools to grow from their own default.
   // `cache_kind` must name a builder that carries batch control -- a cache
   // serving one sequence cannot back a batch of them.
@@ -80,6 +82,7 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
 
   std::optional<SessionId> open_session() override;
   void close_session(SessionId session) override;
+  std::optional<SessionId> clone(SessionId source, Position upto) override;
   void set_sampling(
       SessionId session,
       const SamplingParams& params,
@@ -100,6 +103,9 @@ class ET_EXPERIMENTAL ModuleExecutor : public Executor {
   };
 
   ::executorch::runtime::Result<Step> build_step(const BatchInput& batch);
+  std::optional<SessionId> publish_session(
+      std::int32_t seq_id,
+      Position position);
 
   ModuleExecutor(
       std::unique_ptr<Module> module,

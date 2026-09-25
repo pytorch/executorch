@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "dflash_token_sampler",
+    srcs = ["dflash_token_sampler.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.muse_glimmer.model",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

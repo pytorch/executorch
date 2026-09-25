@@ -20,6 +20,7 @@ using ::executorch::extension::Module;
 using ::executorch::extension::llm::check_vocab_size;
 using ::executorch::extension::llm::LogitsToKeepMode;
 using ::executorch::extension::llm::read_activation_dtype;
+using ::executorch::extension::llm::read_cache_geometry;
 using ::executorch::extension::llm::read_logits_to_keep_mode;
 using ::executorch::extension::llm::read_max_context_length;
 using ::executorch::extension::llm::read_max_seq_len;
@@ -60,6 +61,24 @@ TEST_P(ModelMetadataTest, ReadsPythonExportedConstants) {
   const auto activation_dtype = read_activation_dtype(*module);
   ASSERT_TRUE(activation_dtype.ok());
   EXPECT_EQ(*activation_dtype, GetParam().expected_dtype);
+
+  const auto geometry = read_cache_geometry(*module);
+  ASSERT_TRUE(geometry.ok());
+  ASSERT_EQ(geometry->layers.size(), 3);
+  const int expected_heads[] = {8, 4, 2};
+  const int expected_dims[] = {64, 80, 96};
+  const int expected_windows[] = {0, 512, 128};
+  for (std::size_t layer = 0; layer < geometry->layers.size(); ++layer) {
+    const auto& value = geometry->layers[layer];
+    EXPECT_EQ(value.n_kv_heads, expected_heads[layer]);
+    EXPECT_EQ(value.head_dim, expected_dims[layer]);
+    EXPECT_EQ(value.policy.window, expected_windows[layer]);
+    EXPECT_EQ(
+        value.policy.kind,
+        expected_windows[layer] == 0
+            ? ::executorch::extension::llm::cache::LayerPolicy::Kind::Flat
+            : ::executorch::extension::llm::cache::LayerPolicy::Kind::Ring);
+  }
 
   const auto logits_to_keep_mode = read_logits_to_keep_mode(*module);
   ASSERT_TRUE(logits_to_keep_mode.ok());
@@ -104,6 +123,23 @@ TEST(ModelMetadataTest, RejectsMissingRequiredFields) {
   EXPECT_FALSE(read_vocab_size(*module).ok());
   EXPECT_FALSE(read_activation_dtype(*module).ok());
   EXPECT_FALSE(read_logits_to_keep_mode(*module).ok());
+  EXPECT_FALSE(read_cache_geometry(*module).ok());
+}
+
+TEST(ModelMetadataTest, RejectsMalformedCacheGeometry) {
+  for (const char* variable : {
+           "ET_MODEL_METADATA_GEOMETRY_WRONG_TYPE_PATH",
+           "ET_MODEL_METADATA_GEOMETRY_MISMATCHED_PATH",
+           "ET_MODEL_METADATA_GEOMETRY_INVALID_HEADS_PATH",
+           "ET_MODEL_METADATA_GEOMETRY_INVALID_DIMS_PATH",
+           "ET_MODEL_METADATA_GEOMETRY_INVALID_WINDOWS_PATH",
+           "ET_MODEL_METADATA_GEOMETRY_EMPTY_PATH",
+       }) {
+    auto module = load_fixture(variable);
+    const auto geometry = read_cache_geometry(*module);
+    ASSERT_FALSE(geometry.ok()) << variable;
+    EXPECT_EQ(geometry.error(), Error::InvalidProgram) << variable;
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

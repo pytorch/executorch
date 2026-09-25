@@ -1064,7 +1064,8 @@ Error Method::init(
               num_instructions_missing_op++;
             } else if (err == Error::MemoryAllocationFailed) {
               return err;
-            } else {
+            } else if (err != Error::Ok && delayed_error == Error::Ok) {
+              // delayed_error is read after the loop; keep the first error.
               delayed_error = err;
             }
           } break;

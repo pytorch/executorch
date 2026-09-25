@@ -16,6 +16,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -134,6 +135,146 @@ struct Fixture {
 
   Runner runner;
 };
+
+class CloneExecutor : public FakeExecutor {
+ public:
+  struct CloneCall {
+    SessionId source;
+    Position upto;
+    std::size_t inputs_before_clone;
+    std::thread::id thread;
+  };
+
+  std::optional<SessionId> open_session() override {
+    auto sid = FakeExecutor::open_session();
+    if (sid) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      history_.emplace(*sid, std::vector<Token>{});
+    }
+    return sid;
+  }
+
+  void close_session(SessionId sid) override {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      history_.erase(sid);
+    }
+    FakeExecutor::close_session(sid);
+  }
+
+  std::optional<SessionId> clone(SessionId source, Position upto) override {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      clones_.push_back(
+          {source, upto, seen().size(), std::this_thread::get_id()});
+    }
+    {
+      std::unique_lock<std::mutex> lock(gate_mutex_);
+      in_clone_ = true;
+      gate_cv_.notify_all();
+      gate_cv_.wait(lock, [this] { return !held_; });
+      in_clone_ = false;
+    }
+#if ET_HAS_EXCEPTIONS
+    if (throw_clone) {
+      throw std::runtime_error("clone failed");
+    }
+#endif
+    if (refuse_clone) {
+      return std::nullopt;
+    }
+    std::vector<Token> prefix;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      const auto source_history = history_.find(source);
+      if (source_history == history_.end() || upto < 0 ||
+          static_cast<std::size_t>(upto) > source_history->second.size()) {
+        return std::nullopt;
+      }
+      prefix.assign(
+          source_history->second.begin(),
+          source_history->second.begin() + upto);
+    }
+    auto sid = open_session();
+    if (sid) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      history_.at(*sid) = std::move(prefix);
+    }
+    return sid;
+  }
+
+  bool execute(
+      const executorch::extension::llm::batching::BatchInput& batch,
+      executorch::extension::llm::batching::BatchOutput& out) override {
+    if (!FakeExecutor::execute(batch, out)) {
+      return false;
+    }
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
+      const auto& input = batch.inputs[i];
+      auto& history = history_.at(input.sid);
+      const auto start = input.position + static_cast<Position>(input.offset);
+      if (start < 0 || static_cast<std::size_t>(start) > history.size()) {
+        return false;
+      }
+      history.resize(start);
+      history.insert(
+          history.end(),
+          input.tokens->begin() + input.offset,
+          input.tokens->begin() + input.offset + input.size);
+      const auto& output = out.outputs[i];
+      if (output && !output->tokens.empty()) {
+        history.insert(
+            history.end(), output->tokens.begin(), output->tokens.end() - 1);
+      }
+    }
+    return true;
+  }
+
+  std::vector<Token> history(SessionId sid) const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return history_.at(sid);
+  }
+
+  std::vector<CloneCall> clones() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return clones_;
+  }
+
+  void hold_clone() {
+    std::lock_guard<std::mutex> lock(gate_mutex_);
+    held_ = true;
+  }
+
+  void release_clone() {
+    {
+      std::lock_guard<std::mutex> lock(gate_mutex_);
+      held_ = false;
+    }
+    gate_cv_.notify_all();
+  }
+
+  bool wait_for_clone() {
+    std::unique_lock<std::mutex> lock(gate_mutex_);
+    return gate_cv_.wait_for(lock, kTimeout, [this] { return in_clone_; });
+  }
+
+  bool refuse_clone = false;
+  bool throw_clone = false;
+
+ private:
+  mutable std::mutex state_mutex_;
+  std::map<SessionId, std::vector<Token>> history_;
+  std::vector<CloneCall> clones_;
+  std::mutex gate_mutex_;
+  std::condition_variable gate_cv_;
+  bool held_ = false;
+  bool in_clone_ = false;
+};
+
+enum class CloneStop { Cancel, Close, Shutdown };
+
+class CloneStopTest : public ::testing::TestWithParam<CloneStop> {};
 
 Session open(Runner& runner) {
   auto future = runner.open_session_async();
@@ -706,8 +847,502 @@ TEST(GenerationTest, ANewGenerationReseedsTheExistingSession) {
   EXPECT_EQ(second_tokens[0], session_id * 1000 + second_rng() % 1000);
 }
 
-// A session opens at position 0 and the caller never names a position, so the
-// first slice of a fresh session always lands there.
+TEST(CloneTest, DefaultMovedFromAndClosedSessionsRefuseSynchronously) {
+  Session empty;
+  auto invalid = empty.clone_async(0);
+  ASSERT_EQ(
+      invalid.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(invalid.get());
+
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  Session owner = std::move(source);
+  auto moved = source.clone_async(0);
+  ASSERT_EQ(moved.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(moved.get());
+
+  fixture.runner.shutdown();
+  auto closed = owner.clone_async(0);
+  ASSERT_EQ(
+      closed.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(closed.get());
+  EXPECT_TRUE(executor.clones().empty());
+}
+
+TEST(CloneTest, DefaultExecutorRefusesWithoutPoisoningSource) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto first = std::make_shared<Updates>();
+  auto generation = generate(source, tokens(3), config(1), first);
+  ASSERT_TRUE(first->wait());
+  generation.wait();
+
+  auto unsupported = source.clone_async(3);
+  ASSERT_EQ(unsupported.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(unsupported.get());
+  EXPECT_EQ(source.position(), 3);
+  auto next = std::make_shared<Updates>();
+  auto continued = generate(source, tokens(2), config(1), next);
+  ASSERT_TRUE(next->wait());
+  continued.wait();
+  EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(executor.open_count(), 1);
+}
+
+TEST(CloneTest, CopiesOnlyCommittedPrefixAndStartsIdleWithoutSampling) {
+  CloneExecutor executor;
+  Fixture fixture(executor, 1, 3);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  auto source_updates = std::make_shared<Updates>();
+  auto initial_config = config(1);
+  initial_config.seed = 11;
+  auto initial = generate(source, tokens(6), initial_config, source_updates);
+  ASSERT_TRUE(source_updates->wait());
+  initial.wait();
+  ASSERT_EQ(source.position(), 6);
+
+  auto future = source.clone_async(3);
+  ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+  auto child = future.get();
+  ASSERT_TRUE(child);
+  const auto child_id = last_opened(executor);
+  EXPECT_NE(child_id, source_id);
+  EXPECT_EQ(child->position(), 3);
+  EXPECT_EQ(executor.history(child_id), tokens(3));
+  EXPECT_FALSE(executor.has_sampling_state(child_id));
+  EXPECT_EQ(executor.sampling_seed(source_id), 11u);
+
+  auto child_updates = std::make_shared<Updates>();
+  auto child_config = config(1);
+  child_config.seed = 29;
+  auto branch = generate(*child, tokens(5, 200), child_config, child_updates);
+  ASSERT_TRUE(child_updates->wait());
+  branch.wait();
+  EXPECT_EQ(branch.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(child->position(), 8);
+  EXPECT_EQ(branch.metrics().n_prompt_tokens, 5);
+  const auto seen = executor.seen();
+  ASSERT_EQ(seen.size(), 4u);
+  EXPECT_EQ(seen[2].session, child_id);
+  EXPECT_EQ(seen[2].effective_position(), 3);
+  EXPECT_EQ(seen[2].size, 3u);
+  EXPECT_EQ(seen[3].effective_position(), 6);
+  EXPECT_EQ(seen[3].size, 2u);
+  auto expected = tokens(3);
+  const auto suffix = tokens(5, 200);
+  expected.insert(expected.end(), suffix.begin(), suffix.end());
+  EXPECT_EQ(executor.history(child_id), expected);
+  EXPECT_EQ(executor.history(source_id), tokens(6));
+  EXPECT_EQ(source.position(), 6);
+
+  auto continued_updates = std::make_shared<Updates>();
+  auto continued =
+      generate(source, tokens(1, 300), config(1), continued_updates);
+  ASSERT_TRUE(continued_updates->wait());
+  continued.wait();
+  EXPECT_EQ(executor.seen().back().effective_position(), 6);
+  EXPECT_EQ(executor.seen().back().size, 2u);
+  EXPECT_EQ(executor.history(source_id)[6], source_updates->tokens().back());
+  EXPECT_EQ(executor.history(child_id), expected);
+}
+
+TEST(CloneTest, EmptyBoundaryIsDelegatedAndCloneCanBeCloned) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto first = source.clone_async(0);
+  ASSERT_EQ(first.wait_for(kTimeout), std::future_status::ready);
+  auto child = first.get();
+  ASSERT_TRUE(child);
+  EXPECT_EQ(child->position(), 0);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(*child, tokens(3), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+
+  auto second = child->clone_async(2);
+  ASSERT_EQ(second.wait_for(kTimeout), std::future_status::ready);
+  auto grandchild = second.get();
+  ASSERT_TRUE(grandchild);
+  const auto grandchild_id = last_opened(executor);
+  child.reset();
+  source = Session{};
+  ASSERT_TRUE(wait_for_open_count(executor, 1));
+  EXPECT_EQ(grandchild->position(), 2);
+  EXPECT_EQ(executor.history(grandchild_id), tokens(2));
+}
+
+TEST(CloneTest, RejectsNegativeFutureAndPendingTokenBoundaries) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(3), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(source.position(), 3);
+  ASSERT_EQ(updates->tokens().size(), 1u);
+
+  for (Position upto :
+       {Position{-1}, Position{4}, std::numeric_limits<Position>::max()}) {
+    auto refused = source.clone_async(upto);
+    ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+  }
+  EXPECT_TRUE(executor.clones().empty());
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(3));
+}
+
+TEST(CloneTest, FirstOutputCallbackClonesBeforeNextForward) {
+  CloneExecutor executor;
+  Fixture fixture(executor, 1, 3);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(9), config(3), [&](const GenerationUpdate& update) {
+        if (!update.tokens.empty() && !snapshot.valid()) {
+          snapshot = source.clone_async(9);
+        }
+        (*updates)(update);
+      });
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  auto child = snapshot.get();
+  ASSERT_TRUE(child);
+  const auto calls = executor.clones();
+  ASSERT_EQ(calls.size(), 1u);
+  EXPECT_EQ(calls[0].source, source_id);
+  EXPECT_EQ(calls[0].upto, 9);
+  EXPECT_EQ(calls[0].inputs_before_clone, 3u);
+  EXPECT_NE(calls[0].thread, std::this_thread::get_id());
+  EXPECT_EQ(executor.seen().size(), 5u);
+  EXPECT_EQ(source.position(), 11);
+  EXPECT_EQ(child->position(), 9);
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(9));
+}
+
+TEST(CloneTest, TerminalCallbackCloneSurvivesImmediateSourceDestruction) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(3), config(1), [&](const GenerationUpdate& update) {
+        if (update.finish_reason == FinishReason::NewTokenLimit) {
+          snapshot = source.clone_async(3);
+          source = Session{};
+        }
+        (*updates)(update);
+      });
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  auto child = snapshot.get();
+  ASSERT_TRUE(child);
+  ASSERT_TRUE(wait_for_open_count(executor, 1));
+  EXPECT_EQ(executor.closed(), (std::vector<SessionId>{source_id}));
+  EXPECT_EQ(child->position(), 3);
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(3));
+}
+
+TEST(CloneTest, SpeculativeStatePastAcceptedPositionCannotBeCloned) {
+  CloneExecutor executor;
+  executor.tokens_per_prefill = 4;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  const auto source_id = last_opened(executor);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(4), config(2), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(source.position(), 6);
+  ASSERT_EQ(executor.history(source_id).size(), 7u);
+
+  auto refused = source.clone_async(7);
+  ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(refused.get());
+  EXPECT_TRUE(executor.clones().empty());
+
+  auto prompt_future = source.clone_async(4);
+  ASSERT_EQ(prompt_future.wait_for(kTimeout), std::future_status::ready);
+  auto prompt = prompt_future.get();
+  ASSERT_TRUE(prompt);
+  const auto prompt_id = last_opened(executor);
+  EXPECT_EQ(executor.history(prompt_id), tokens(4));
+
+  auto accepted_future = source.clone_async(6);
+  ASSERT_EQ(accepted_future.wait_for(kTimeout), std::future_status::ready);
+  auto accepted = accepted_future.get();
+  ASSERT_TRUE(accepted);
+  auto expected = tokens(4);
+  const auto emitted = updates->tokens();
+  expected.insert(expected.end(), emitted.begin(), emitted.end());
+  EXPECT_EQ(executor.history(last_opened(executor)), expected);
+  EXPECT_EQ(accepted->position(), 6);
+  EXPECT_EQ(executor.history(source_id).size(), 7u);
+}
+
+TEST(CloneTest, RefusalAndCapacityPressureLeaveSourceUsable) {
+  for (bool capacity_refusal : {false, true}) {
+    CloneExecutor executor;
+    executor.refuse_clone = !capacity_refusal;
+    executor.capacity = capacity_refusal ? 1 : 8;
+    Fixture fixture(executor);
+    Session source = open(fixture.runner);
+    auto updates = std::make_shared<Updates>();
+    auto handle = generate(source, tokens(3), config(1), updates);
+    ASSERT_TRUE(updates->wait());
+    handle.wait();
+
+    auto refused = source.clone_async(2);
+    ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+    EXPECT_EQ(executor.open_count(), 1);
+    EXPECT_EQ(source.position(), 3);
+    auto next = std::make_shared<Updates>();
+    auto continued = generate(source, tokens(1), config(1), next);
+    ASSERT_TRUE(next->wait());
+    continued.wait();
+    EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_EQ(source.position(), 5);
+  }
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST(CloneTest, ExecutorExceptionSettlesFutureAndKeepsEngineRunning) {
+  CloneExecutor executor;
+  executor.throw_clone = true;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  auto refused = source.clone_async(0);
+  ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(refused.get());
+  EXPECT_EQ(executor.open_count(), 1);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(3), config(1), updates);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+}
+#endif
+
+TEST(CloneTest, FailedOrMalformedExecutorStateIsNotCloned) {
+  for (int failure = 0; failure < 3; ++failure) {
+    CloneExecutor executor;
+    executor.fail_batches_from = failure == 0 ? 0 : -1;
+    executor.empty_tokens = failure == 1;
+    executor.wrong_sid = failure == 2;
+    Fixture fixture(executor);
+    Session source = open(fixture.runner);
+    auto updates = std::make_shared<Updates>();
+    auto handle = generate(source, tokens(3), config(1), updates);
+    ASSERT_TRUE(updates->wait());
+    handle.wait();
+    ASSERT_EQ(handle.finish_reason(), FinishReason::Failed);
+    auto refused = source.clone_async(0);
+    ASSERT_EQ(refused.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+    EXPECT_TRUE(executor.clones().empty());
+  }
+}
+
+TEST(CloneTest, CancelledPrefillExposesOnlyItsConsumedPrefix) {
+  CloneExecutor executor;
+  executor.hold();
+  Fixture fixture(executor, 1, 2);
+  Session source = open(fixture.runner);
+  auto updates = std::make_shared<Updates>();
+  auto handle = generate(source, tokens(8), config(1), updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  const bool executing = executor.in_execute();
+  handle.cancel();
+  auto consumed = source.clone_async(4);
+  auto unconsumed = source.clone_async(8);
+  executor.release();
+  ASSERT_TRUE(executing);
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  ASSERT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+  EXPECT_EQ(source.position(), 4);
+  ASSERT_EQ(consumed.wait_for(kTimeout), std::future_status::ready);
+  auto child = consumed.get();
+  ASSERT_TRUE(child);
+  EXPECT_EQ(child->position(), 4);
+  EXPECT_EQ(executor.history(last_opened(executor)), tokens(4));
+  ASSERT_EQ(unconsumed.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(unconsumed.get());
+  EXPECT_EQ(executor.clones().size(), 1u);
+}
+
+TEST_P(CloneStopTest, CloneCompletesIndependentlyUnlessRunnerStops) {
+  CloneExecutor executor;
+  executor.hold_clone();
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(4), config(2), [&](const GenerationUpdate& update) {
+        if (!update.tokens.empty() && !snapshot.valid()) {
+          snapshot = source.clone_async(4);
+        }
+        (*updates)(update);
+      });
+  const bool cloning = executor.wait_for_clone();
+  if (!cloning) {
+    executor.release_clone();
+    fixture.runner.shutdown();
+  }
+  ASSERT_TRUE(cloning);
+  std::thread stopping;
+  bool stopped_admission = false;
+  switch (GetParam()) {
+    case CloneStop::Cancel:
+      handle.cancel();
+      break;
+    case CloneStop::Close:
+      source = Session{};
+      break;
+    case CloneStop::Shutdown:
+      stopping = std::thread([&] { fixture.runner.shutdown(); });
+      const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+      while (std::chrono::steady_clock::now() < deadline) {
+        auto probe = fixture.runner.open_session_async();
+        if (probe.wait_for(std::chrono::seconds(0)) ==
+            std::future_status::ready) {
+          stopped_admission = !probe.get();
+          if (stopped_admission) {
+            break;
+          }
+        }
+        std::this_thread::yield();
+      }
+      break;
+  }
+  executor.release_clone();
+  if (stopping.joinable()) {
+    stopping.join();
+  }
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+  EXPECT_EQ(updates->tokens().size(), 1u);
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  auto child = snapshot.get();
+  if (GetParam() == CloneStop::Shutdown) {
+    EXPECT_TRUE(stopped_admission);
+    EXPECT_FALSE(child);
+    EXPECT_EQ(executor.opened().size(), 2u);
+    EXPECT_EQ(executor.closed().size(), 2u);
+    EXPECT_EQ(executor.open_count(), 0);
+  } else {
+    ASSERT_TRUE(child);
+    EXPECT_EQ(child->position(), 4);
+    EXPECT_EQ(executor.history(last_opened(executor)), tokens(4));
+  }
+  EXPECT_EQ(executor.seen().size(), 1u);
+  if (GetParam() == CloneStop::Cancel) {
+    auto next = std::make_shared<Updates>();
+    auto continued = generate(source, tokens(1), config(1), next);
+    ASSERT_TRUE(next->wait());
+    continued.wait();
+    EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_EQ(executor.seen().back().effective_position(), 4);
+    EXPECT_EQ(executor.seen().back().size, 2u);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CloneTest,
+    CloneStopTest,
+    ::testing::Values(CloneStop::Cancel, CloneStop::Close, CloneStop::Shutdown),
+    [](const ::testing::TestParamInfo<CloneStop>& info) {
+      switch (info.param) {
+        case CloneStop::Cancel:
+          return "Cancel";
+        case CloneStop::Close:
+          return "Close";
+        case CloneStop::Shutdown:
+          return "Shutdown";
+      }
+      return "Unknown";
+    });
+
+TEST(CloneTest, CallbackShutdownSettlesQueuedCloneWithoutCallingExecutor) {
+  CloneExecutor executor;
+  Fixture fixture(executor);
+  Session source = open(fixture.runner);
+  std::future<std::optional<Session>> snapshot;
+  auto updates = std::make_shared<Updates>();
+  auto handle = source.generate_async(
+      tokens(4), config(2), [&](const GenerationUpdate& update) {
+        if (!update.tokens.empty()) {
+          snapshot = source.clone_async(4);
+          fixture.runner.shutdown();
+        }
+        (*updates)(update);
+      });
+  ASSERT_TRUE(updates->wait());
+  handle.wait();
+  fixture.runner.shutdown();
+  ASSERT_TRUE(snapshot.valid());
+  ASSERT_EQ(snapshot.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(snapshot.get());
+  EXPECT_TRUE(executor.clones().empty());
+  EXPECT_EQ(executor.open_count(), 0);
+}
+
+TEST(CloneTest, AbandonedFutureReleasesItsOwnedSession) {
+  for (bool abandon_before_completion : {false, true}) {
+    CloneExecutor executor;
+    Fixture fixture(executor);
+    Session source = open(fixture.runner);
+    auto updates = std::make_shared<Updates>();
+    auto handle = generate(source, tokens(4), config(1), updates);
+    ASSERT_TRUE(updates->wait());
+    handle.wait();
+    if (abandon_before_completion) {
+      executor.hold_clone();
+    }
+    auto future = source.clone_async(3);
+    if (abandon_before_completion) {
+      const bool cloning = executor.wait_for_clone();
+      future = {};
+      executor.release_clone();
+      ASSERT_TRUE(cloning);
+    } else {
+      ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+      future = {};
+    }
+    // The barrier is processed after the clone, so an open_count of one below
+    // cannot pass before the abandoned clone has actually been created.
+    Session barrier = open(fixture.runner);
+    barrier = Session{};
+    ASSERT_TRUE(wait_for_open_count(executor, 1));
+    EXPECT_EQ(executor.opened().size(), 3u);
+    EXPECT_EQ(executor.closed().size(), 2u);
+    EXPECT_TRUE(source.valid());
+    EXPECT_EQ(source.position(), 4);
+    fixture.runner.shutdown();
+    EXPECT_EQ(executor.closed().size(), executor.opened().size());
+  }
+}
+
 TEST(DeltaTest, FreshSessionStartsAtZero) {
   FakeExecutor executor;
   Fixture fixture(executor);

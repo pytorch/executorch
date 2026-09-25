@@ -6,6 +6,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
 import copy
 import dataclasses
 import logging
@@ -239,6 +241,8 @@ class _CombineAccumulator:
     quantizers: list = field(default_factory=list)
     ao_quantization_configs: list = field(default_factory=list)
     pre_edge_passes: list = field(default_factory=list)
+    source_transform_passes: list = field(default_factory=list)
+    pre_trace_hooks: list = field(default_factory=list)
     edge_transform_passes: list = field(default_factory=list)
     edge_manager_transform_passes: list = field(default_factory=list)
     pre_prepare_passes: list = field(default_factory=list)
@@ -253,6 +257,8 @@ class _CombineAccumulator:
     mode_values: list = field(default_factory=list)
     pipeline_stages_values: list = field(default_factory=list)
     source_transform_in_place_values: list = field(default_factory=list)
+    release_intermediate_artifacts_values: list = field(default_factory=list)
+    generate_etrecord_values: list = field(default_factory=list)
     backend_config: object = None
     pre_partitioning_callbacks: list = field(default_factory=list)
 
@@ -273,14 +279,37 @@ class ExportRecipe:
         quantization_recipe: Optional quantization recipe for model quantization
         aten_transform_passes: Optional list of functions to apply transformation passes to the program before edge lowering.
                                These callables are invoked to modify and return the transformed program.
+        source_transform_passes: Optional list of nn.Module transforms applied once
+                               during the SOURCE_TRANSFORM stage, before quantization.
+                               Each is applied once per distinct model object, so a
+                               model shared by several methods is transformed once.
+                               Each pass must return the nn.Module to use, even when
+                               it mutates its input in place.
+        pre_trace_hooks: Optional list of (method_name, model) callables invoked
+                               before each method's first trace: in QUANTIZE for PT2E,
+                               otherwise in TORCH_EXPORT.
+                               Hooks may only change Python configuration, such as
+                               kernel selection, never tensor state or module structure.
+                               Tensor storage remains shared. Configuration persists
+                               on shared models, so hooks must overwrite the settings
+                               they own for each method. Return values are ignored.
+                               Hooks are not repeated on converted PT2E graphs.
         source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
                                stage and mutate the caller's model. Necessary for models
                                large enough that a second copy will not fit in memory.
+        release_intermediate_artifacts: Drop each stage's output once the next stage
+                               has consumed it, so only the final artifact stays
+                               resident. Necessary for models whose intermediates do
+                               not all fit in memory at once. Makes
+                               get_exported_program(), get_edge_program_manager(),
+                               and print_delegation_info() unavailable after export.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
         strict: Set the strict flag in the torch export call.
+        generate_etrecord: When True, the export pipeline captures an ETRecord for
+                           use with the ExecuTorch devtools (profiling, debugging).
     """
 
     name: Optional[str] = None
@@ -295,6 +324,12 @@ class ExportRecipe:
     pipeline_stages: Optional[List[StageType]] = None
     mode: Mode = Mode.RELEASE
     strict: bool = True
+    source_transform_passes: Optional[
+        List[Callable[[torch.nn.Module], torch.nn.Module]]
+    ] = None
+    pre_trace_hooks: Optional[List[Callable[[str, torch.nn.Module], None]]] = None
+    release_intermediate_artifacts: bool = False
+    generate_etrecord: bool = False
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
@@ -573,6 +608,10 @@ class ExportRecipe:
         for recipe in backend_recipes:
             if recipe.aten_transform_passes:
                 acc.pre_edge_passes.extend(recipe.aten_transform_passes)
+            if recipe.source_transform_passes:
+                acc.source_transform_passes.extend(recipe.source_transform_passes)
+            if recipe.pre_trace_hooks:
+                acc.pre_trace_hooks.extend(recipe.pre_trace_hooks)
 
             if lr := recipe.lowering_recipe:
                 cls._collect_lowering_fields(acc, lr)
@@ -588,6 +627,10 @@ class ExportRecipe:
             acc.source_transform_in_place_values.append(
                 recipe.source_transform_in_place
             )
+            acc.release_intermediate_artifacts_values.append(
+                recipe.release_intermediate_artifacts
+            )
+            acc.generate_etrecord_values.append(recipe.generate_etrecord)
 
             # Use the executorch_backend_config from the first recipe that supplies one.
             if acc.backend_config is None and recipe.executorch_backend_config:
@@ -617,6 +660,10 @@ class ExportRecipe:
         cls._assert_scalar_fields_agree("pipeline_stages", acc.pipeline_stages_values)
         cls._assert_scalar_fields_agree(
             "source_transform_in_place", acc.source_transform_in_place_values
+        )
+        cls._assert_scalar_fields_agree(
+            "release_intermediate_artifacts",
+            acc.release_intermediate_artifacts_values,
         )
 
         combined_quantization_recipe = cls._combine_quantization_recipe(
@@ -652,6 +699,13 @@ class ExportRecipe:
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
             aten_transform_passes=acc.pre_edge_passes or None,
+            source_transform_passes=acc.source_transform_passes or None,
+            pre_trace_hooks=acc.pre_trace_hooks or None,
+            release_intermediate_artifacts=(
+                acc.release_intermediate_artifacts_values[0]
+                if acc.release_intermediate_artifacts_values
+                else False
+            ),
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=acc.backend_config,
             pipeline_stages=shared_pipeline_stages,
@@ -662,4 +716,6 @@ class ExportRecipe:
                 if acc.source_transform_in_place_values
                 else False
             ),
+            # OR semantics: generate ETRecord when at least one recipe requests it.
+            generate_etrecord=any(acc.generate_etrecord_values),
         )

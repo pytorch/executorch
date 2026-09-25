@@ -29,19 +29,25 @@ from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decomp
 
 
 # Python's json module spells the non-finite floats "Infinity" / "-Infinity" /
-# "NaN"; flatc spells the infinities "inf" / "-inf" and rejects Python's
+# "NaN"; flatc spells the infinities "+inf" / "-inf" and rejects Python's
 # spelling, so both directions need translating. A graph carries a non-finite
 # scalar whenever the model does -- the -inf fill value of a transformer
 # attention mask is the common case -- and without this the failure surfaces as
 # a flatc byte offset into a temporary file rather than anything pointing at
 # the graph.
 #
+# The infinity token must carry an explicit sign. flatc parses a union member's
+# value before it knows the member's type, so a bare "inf" -- a token that
+# starts with a letter -- is rejected as an unknown value, while "+inf" / "-inf"
+# take the numeric path and parse. flatc emits the bare "inf" back on decompile,
+# which the reverse rewrite maps to json's "Infinity".
+#
 # The rewrite runs over the serialized text rather than over the encoder's
 # chunks: json only emits a float as a chunk of its own inside an object, and
 # inside a list the chunk carries the delimiter with it ("[-Infinity"), so
 # matching whole chunks silently missed every DoubleList.
 _JSON_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
-_PY_NONFINITE_RE = re.compile(r"(?<![\w.])(Infinity|NaN)(?![\w.])")
+_PY_NONFINITE_RE = re.compile(r"(?<![\w.])(-?)(Infinity|NaN)(?![\w.])")
 _FLATC_INF_RE = re.compile(r"(?<![\w.])inf(?![\w.])")
 
 
@@ -62,19 +68,19 @@ def _rewrite_outside_strings(text: str, sub) -> str:
 
 
 def _python_json_to_flatc_json(text: str) -> str:
-    """Rewrite json's ``Infinity`` tokens into the ``inf`` flatc accepts."""
+    """Rewrite json's ``Infinity`` tokens into the ``+inf`` / ``-inf`` flatc accepts."""
     if "Infinity" not in text and "NaN" not in text:
         return text
 
     def replace(m: "re.Match[str]") -> str:
-        if m.group(1) == "NaN":
+        if m.group(2) == "NaN":
             raise ValueError(
                 "Cannot serialize a NaN float value into a Vulkan graph: "
                 "flatc rejects every spelling of NaN for a value inside a "
                 "union, and every float in the Vulkan schema is a member of "
                 "the VkValue union."
             )
-        return "inf"
+        return f"{m.group(1) or '+'}inf"
 
     return _rewrite_outside_strings(
         text, lambda segment: _PY_NONFINITE_RE.sub(replace, segment)

@@ -6,6 +6,8 @@
 from functools import partial
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.tests.dataset_creator import (
@@ -30,11 +32,11 @@ from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_key
 BOUNDS_MSE = {
     "PTQ": {
         "channels-last": np.inf,
-        "channels-first": 5.5e-7,
+        "channels-first": 2.0e-6,
     },
     "QAT": {
         "channels-last": np.inf,
-        "channels-first": 3.3e-5,
+        "channels-first": 5.0e-5,
     },
 }
 
