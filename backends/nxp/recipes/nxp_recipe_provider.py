@@ -108,8 +108,9 @@ class NeutronRecipeConfig:
         use_neutron_for_format_conversion: Whether Neutron handles data-format conversion.
         fetch_constants_to_sram: Place constant tensors in SRAM on the target.
         dump_kernel_selection_code: Generate kernel-selection files after compilation.
-        use_profiling: Enable Neutron execution profiling. IMPORTANT: To also generate an
-                       ETRecord, pass generate_etrecord=True to export() separately.
+        use_profiling: Enable Neutron execution profiling. When True, the recipe
+                       automatically sets generate_etrecord=True so that a matching
+                       ETRecord is produced without any extra configuration.
         train_fn: Training function required for QAT recipe types (INT8_QAT_NEUTRON and
                   INT8_QAT_NO_DELEGATE). Receives the prepared GraphModule and must
                   perform the training loop. Ignored for PTQ recipe types.
@@ -219,6 +220,9 @@ class NXPRecipeProvider(BackendRecipeProvider):
             executorch_backend_config=ExecutorchBackendConfig(
                 extract_delegate_segments=False
             ),
+            # Profiling requires an ETRecord; set the flag here so callers do
+            # not need to pass generate_etrecord=True to export() separately.
+            generate_etrecord=rc.use_profiling,
         )
 
 
