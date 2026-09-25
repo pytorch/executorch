@@ -745,11 +745,63 @@ ETMetalKernelFunction::~ETMetalKernelFunction() {
         }
 
         encoder_ = nil; // Clear reference without releasing
+        clearBindings();
     }
+}
+
+void ETMetalKernelFunction::bindBuffer(unsigned idx, id<MTLBuffer> buffer, size_t offset) {
+    [encoder_ setBuffer:buffer offset:offset atIndex:idx];
+    if (bindings_.size() <= idx) {
+        bindings_.resize(idx + 1);
+    }
+    Binding& binding = bindings_[idx];
+    [buffer retain];
+    [binding.buffer release];
+    binding.buffer = buffer;
+    binding.offset = offset;
+    binding.bytes.clear();
+    binding.set = true;
+}
+
+void ETMetalKernelFunction::bindBytes(unsigned idx, const void* data, size_t size) {
+    [encoder_ setBytes:data length:size atIndex:idx];
+    if (bindings_.size() <= idx) {
+        bindings_.resize(idx + 1);
+    }
+    Binding& binding = bindings_[idx];
+    [binding.buffer release];
+    binding.buffer = nil;
+    binding.offset = 0;
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    binding.bytes.assign(bytes, bytes + size);
+    binding.set = true;
+}
+
+void ETMetalKernelFunction::restoreBindings() {
+    [encoder_ setComputePipelineState:cps_];
+    for (size_t idx = 0; idx < bindings_.size(); idx++) {
+        const Binding& binding = bindings_[idx];
+        if (!binding.set) {
+            continue;
+        }
+        if (binding.buffer) {
+            [encoder_ setBuffer:binding.buffer offset:binding.offset atIndex:idx];
+        } else {
+            [encoder_ setBytes:binding.bytes.data() length:binding.bytes.size() atIndex:idx];
+        }
+    }
+}
+
+void ETMetalKernelFunction::clearBindings() {
+    for (Binding& binding : bindings_) {
+        [binding.buffer release];
+    }
+    bindings_.clear();
 }
 
 void ETMetalKernelFunction::startEncoding() {
     @autoreleasepool {
+        clearBindings();
         // Don't retain/release the encoder - just get reference from stream
         ETMetalStream* stream = getCurrentMetalStream();
         encoder_ = stream->commandEncoder(); // Use stream's managed encoder
@@ -768,8 +820,8 @@ void ETMetalKernelFunction::startEncoding() {
 namespace {
 
 // Copies the elements of a strided view, in row-major order, into a packed
-// buffer. Bound at the top of the argument table so that the arguments an op
-// has already set are left alone.
+// buffer. Any slots would do: a kernel function whose arguments the gather
+// overwrites binds them again afterwards (restoreBindings).
 constexpr uint32_t kGatherMaxDims = 16;
 constexpr unsigned kGatherSrcIndex = 28;
 constexpr unsigned kGatherDstIndex = 29;
@@ -899,15 +951,18 @@ void ETMetalKernelFunction::setArg(
         // elements.
         if (access == ArgAccess::kWrite) {
             ET_LOG(Error, "ETMetalKernelFunction::setArg: argument %u is written through a view that is not densely packed, which is unsupported", idx);
+            // The kernel will not be dispatched: let go of what it bound.
+            clearBindings();
             throw std::runtime_error("kernel writes through a non-packed view");
         }
         id<MTLBuffer> packed = encodePackedCopyOfStridedView(encoder_, tensor);
         if (!packed) {
             ET_LOG(Error, "ETMetalKernelFunction::setArg: failed to pack the view for argument %u", idx);
+            clearBindings();
             throw std::runtime_error("failed to pack a non-packed view");
         }
-        [encoder_ setComputePipelineState:cps_];
-        [encoder_ setBuffer:packed offset:0 atIndex:idx];
+        restoreBindings();
+        bindBuffer(idx, packed, 0);
         return;
     }
 
@@ -918,13 +973,13 @@ void ETMetalKernelFunction::setArg(
     size_t bufferOffset = 0;
     if (metal_resolve_buffer(data_ptr, &mtlBuffer, &bufferOffset)) {
         // Use existing Metal buffer; a view binds its parent at an offset
-        [encoder_ setBuffer:mtlBuffer offset:bufferOffset atIndex:idx];
+        bindBuffer(idx, mtlBuffer, bufferOffset);
         ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set Metal buffer at index %u (size: %zu)", idx, totalSize);
     } else {
         // Handle CPU tensor data
         if (totalSize <= 4096) {
             // Use setBytes for small data (more efficient)
-            [encoder_ setBytes:data_ptr length:totalSize atIndex:idx];
+            bindBytes(idx, data_ptr, totalSize);
             ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set CPU tensor via setBytes at index %u (size: %zu)", idx, totalSize);
         } else {
             // Create temporary buffer for large data (should be rare)
@@ -935,7 +990,10 @@ void ETMetalKernelFunction::setArg(
                                                                    length:totalSize
                                                                   options:MTLResourceStorageModeShared];
                     if (tempBuffer) {
-                        [encoder_ setBuffer:tempBuffer offset:0 atIndex:idx];
+                        // The binding keeps it until dispatch, and the command
+                        // buffer after that.
+                        bindBuffer(idx, tempBuffer, 0);
+                        [tempBuffer release];
                         ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set large CPU tensor via temporary buffer at index %u (size: %zu)", idx, totalSize);
                     } else {
                         ET_LOG(Error, "ETMetalKernelFunction::setArg: Failed to create temporary buffer for index %u", idx);
@@ -954,7 +1012,7 @@ void ETMetalKernelFunction::setArg(unsigned idx, int64_t val) {
         return;
     }
 
-    [encoder_ setBytes:&val length:sizeof(int64_t) atIndex:idx];
+    bindBytes(idx, &val, sizeof(int64_t));
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set int64_t value %lld at index %u", val, idx);
 }
 
@@ -964,7 +1022,7 @@ void ETMetalKernelFunction::setArg(unsigned idx, uint32_t val) {
         return;
     }
 
-    [encoder_ setBytes:&val length:sizeof(uint32_t) atIndex:idx];
+    bindBytes(idx, &val, sizeof(uint32_t));
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set uint32_t value %u at index %u", val, idx);
 }
 
@@ -974,7 +1032,7 @@ void ETMetalKernelFunction::setArg(unsigned idx, float val) {
         return;
     }
 
-    [encoder_ setBytes:&val length:sizeof(float) atIndex:idx];
+    bindBytes(idx, &val, sizeof(float));
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set float value %f at index %u", val, idx);
 }
 
@@ -984,7 +1042,7 @@ void ETMetalKernelFunction::setArg(unsigned idx, bool val) {
         return;
     }
 
-    [encoder_ setBytes:&val length:sizeof(bool) atIndex:idx];
+    bindBytes(idx, &val, sizeof(bool));
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bool value %s at index %u", val ? "true" : "false", idx);
 }
 
@@ -994,7 +1052,7 @@ void ETMetalKernelFunction::setArg(unsigned idx, const void* data, size_t size) 
         return;
     }
 
-    [encoder_ setBytes:data length:size atIndex:idx];
+    bindBytes(idx, data, size);
     ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set bytes at index %u (size: %zu)", idx, size);
 }
 
@@ -1006,7 +1064,7 @@ void ETMetalKernelFunction::setArgUint3(unsigned idx, uint32_t x, uint32_t y, ui
 
     // Use SIMD library's uint3 type which matches Metal shader's uint3 layout
     simd_uint3 val = {x, y, z};
-    [encoder_ setBytes:&val length:sizeof(simd_uint3) atIndex:idx];
+    bindBytes(idx, &val, sizeof(simd_uint3));
     ET_LOG(Debug, "ETMetalKernelFunction::setArgUint3: Set uint3{%u, %u, %u} at index %u", x, y, z, idx);
 }
 
@@ -1024,6 +1082,7 @@ void ETMetalKernelFunction::dispatchSingle(uint64_t length) {
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
     getCurrentMetalStream()->notifyDispatch();
+    clearBindings();
     encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingle: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
@@ -1043,6 +1102,7 @@ void ETMetalKernelFunction::dispatchSingleWithGroupSize(uint64_t length, uint64_
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
     getCurrentMetalStream()->notifyDispatch();
+    clearBindings();
     encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchSingleWithGroupSize: Dispatched with length %llu, group size %llu", length, actualGroupSize);
 
@@ -1082,6 +1142,7 @@ void ETMetalKernelFunction::dispatchArray(const uint64_t* length, size_t length_
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
     getCurrentMetalStream()->notifyDispatch();
+    clearBindings();
     encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchArray: Dispatched %zuD with size [%lu, %lu, %lu], group [%lu, %lu, %lu]",
            length_size, size.width, size.height, size.depth,
@@ -1136,6 +1197,7 @@ void ETMetalKernelFunction::dispatchArrayWithGroupSize(const uint64_t* length, s
 
     [encoder_ dispatchThreads:size threadsPerThreadgroup:threadGroupSize];
     getCurrentMetalStream()->notifyDispatch();
+    clearBindings();
     encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchArrayWithGroupSize: Dispatched %zuD with size [%lu, %lu, %lu], group [%lu, %lu, %lu]",
            length_size, size.width, size.height, size.depth,
@@ -1172,6 +1234,7 @@ void ETMetalKernelFunction::dispatchThreadgroups(uint64_t gridX, uint64_t gridY,
 
     [encoder_ dispatchThreadgroups:threadgroupsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
     getCurrentMetalStream()->notifyDispatch();
+    clearBindings();
     encoder_ = nil; // May be invalidated by flush; re-obtain via startEncoding()
 
     ET_LOG(Debug, "ETMetalKernelFunction::dispatchThreadgroups: Dispatched grid [%llu, %llu, %llu] with threadgroup [%llu, %llu, %llu]",

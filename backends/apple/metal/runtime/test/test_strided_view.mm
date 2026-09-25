@@ -273,3 +273,52 @@ TEST_F(MetalStridedViewTest, MaterializingCpuMemoryWaitsForGpuWrites) {
   EXPECT_EQ(
       std::vector<float>(got, got + 4), (std::vector<float>{31, 32, 0, 0}));
 }
+
+// The packed copy of a strided view is encoded on the same encoder and uses
+// argument slots of its own. A kernel's arguments in those slots, bound before
+// the strided one, have to be bound again afterwards.
+TEST_F(MetalStridedViewTest, PackingKeepsArgumentsAlreadyBound) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  const int64_t size = 8;
+  const int64_t unit = 1;
+  AOTITensorHandle addend = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(1, &size, &unit, kFloat32, kDeviceMps, 0, &addend),
+      Error::Ok);
+  std::fill_n(static_cast<float*>(addend->mutable_data_ptr()), 8, 100.0f);
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(1, &size, &unit, kFloat32, kDeviceMps, 0, &out),
+      Error::Ok);
+
+  static ETMetalShaderLibrary library(R"(
+    #include <metal_stdlib>
+    using namespace metal;
+    kernel void add_float(
+        device const float* a [[buffer(0)]],
+        device float* out [[buffer(1)]],
+        device const float* b [[buffer(29)]],
+        constant float& scale [[buffer(30)]],
+        uint i [[thread_position_in_grid]]) {
+      out[i] = a[i] + b[i] * scale;
+    }
+  )");
+  auto add = library.getKernelFunction("add_float");
+  ASSERT_NE(add, nullptr);
+  add->runCommandBlock([&]() {
+    add->startEncoding();
+    add->setArg(29, *addend);
+    add->setArg(30, 2.0f);
+    add->setArg(1, *out, ETMetalKernelFunction::ArgAccess::kWrite);
+    add->setArg(0, *view);
+    add->dispatchSingle(8);
+  });
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+
+  const float* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{202, 203, 206, 207, 210, 211, 214, 215}));
+}
