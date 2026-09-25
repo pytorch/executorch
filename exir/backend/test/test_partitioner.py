@@ -10,6 +10,7 @@ from types import MappingProxyType
 
 import torch
 from executorch import exir
+from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec, ExportedProgram
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
@@ -541,6 +542,66 @@ class TestPartitioner(unittest.TestCase):
             "is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)"
             in str(error.exception),
         )
+
+    def test_duplicate_constant_used_in_list_arg(self):
+        """
+        A constant shared by two partitions is duplicated so each partition
+        owns a copy. The user's reference to it is not always the argument
+        itself: aten.cat takes a list, so the rewrite has to look inside it.
+        """
+
+        class SharedConstInCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const = torch.ones(2, 2)
+
+            def forward(self, x):
+                return (
+                    torch.cat([x, self.const], dim=0),
+                    torch.cat([x + 1.0, self.const], dim=0),
+                )
+
+        class PartitionerTagData(Partitioner):
+            def __init__(self):
+                super().__init__()
+                self.delegation_spec = DelegationSpec(
+                    ExecutorBackend.__name__,
+                    [CompileSpec(key, value) for key, value in self.spec.items()],
+                )
+
+            def partition(
+                self, edge_exported_program: ExportedProgram
+            ) -> PartitionResult:
+                partition_tags = {}
+                # Put each cat in its own partition so the constant they share
+                # has two distinct user tags.
+                cat_index = 0
+                for node in edge_exported_program.graph.nodes:
+                    if (
+                        node.op != "call_function"
+                        or node.target != exir_ops.edge.aten.cat.default
+                    ):
+                        continue
+                    delegation_tag = f"tag{cat_index}"
+                    cat_index += 1
+                    node.meta["delegation_tag"] = delegation_tag
+                    partition_tags[delegation_tag] = self.delegation_spec
+
+                tag_constant_data(edge_exported_program)
+
+                return PartitionResult(
+                    tagged_exported_program=edge_exported_program,
+                    partition_tags=partition_tags,
+                )
+
+        inputs = (torch.ones(2, 2),)
+        edge = to_edge_transform_and_lower(
+            export(SharedConstInCat(), inputs, strict=True),
+            partitioner=[PartitionerTagData()],
+        )
+
+        graph_module = edge.exported_program().graph_module
+        self.assertEqual(len(get_delegates(graph_module.graph)), 2)
 
     def test_not_delegate_mutable_buffers(self) -> None:
         """
