@@ -7601,6 +7601,53 @@ class CumsumTest(OpTestCase):
         return (torch.randn(self.shape),)
 
 
+class CummaxModel(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.cummax(x, dim=self.dim).values
+
+
+@register_test
+class CummaxTest(OpTestCase):
+    name = "cummax"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(self, shape: Tuple[int, ...] = (3, 4), dim: int = 0):
+        self.shape = shape
+        self.dim = dim
+        shape_str = "x".join(str(s) for s in shape) or "scalar"
+        self.name = f"cummax_dim{dim}_{shape_str}"
+
+    @classmethod
+    def get_test_configs(cls) -> List["CummaxTest"]:
+        return [
+            cls(shape=(8,), dim=0),
+            cls(shape=(3, 4), dim=0),
+            cls(shape=(3, 4), dim=1),
+            cls(shape=(2, 3, 4), dim=-1),
+            cls(shape=(), dim=0),
+            cls(shape=(), dim=-1),
+        ]
+
+    def get_edge_compile_config(self) -> Optional[exir.EdgeCompileConfig]:
+        # cummax is not in the core ATen opset. The partitioner preserves it
+        # through ops_to_not_decompose, but exir still runs the core-ATen
+        # verifier over the result, so the op has to be excused explicitly.
+        return exir.EdgeCompileConfig(
+            _core_aten_ops_exception_list=[torch.ops.aten.cummax.default]
+        )
+
+    def create_model(self) -> nn.Module:
+        return CummaxModel(self.dim)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
 class StackModel(nn.Module):
     def __init__(self, dim: int = 0, n: int = 3):
         super().__init__()

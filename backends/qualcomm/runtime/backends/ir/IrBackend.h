@@ -8,7 +8,7 @@
 #pragma once
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 23)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 23)
 #include "IR/QnnIrCommon.h"
 #endif
 #include "QnnTypes.h"
@@ -24,7 +24,7 @@ class IrBackend : public QnnBackend {
 
   Qnn_Version_t GetExpectedBackendVersion() const override {
     Qnn_Version_t backend_version;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 23)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 23)
     backend_version.major = QNN_IR_API_VERSION_MAJOR;
     backend_version.minor = QNN_IR_API_VERSION_MINOR;
     backend_version.patch = QNN_IR_API_VERSION_PATCH;

@@ -15,6 +15,9 @@ import pytest
 import torch
 
 from executorch.backends.qualcomm import _passes
+from executorch.backends.qualcomm._passes.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConv as FuseBatchNormWithConvQnn,
+)
 
 # Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
 from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
@@ -3862,6 +3865,137 @@ class FoldQDQ:
             # Everything is force-folded after preprocess pass.
             assertions.assert_no_target(gm, q_targets)
             assertions.assert_no_target(gm, dq_targets)
+
+
+class FuseBatchNormWithConv:
+    """The shared backends/transforms fold, run from the QNN edge pipeline.
+
+    Left in place, BatchNorm becomes a standalone QNN op whose per-channel
+    scale multiplies the convolution's fp16 rounding error on HTP.
+    """
+
+    class _Conv1dBn(torch.nn.Module):
+        def __init__(self, bias=True):
+            super().__init__()
+            self.conv = torch.nn.Conv1d(4, 8, kernel_size=3, bias=bias)
+            self.bn = torch.nn.BatchNorm1d(8)
+            self.eval()
+
+        def forward(self, x):
+            return self.bn(self.conv(x))
+
+    class _DepthwiseConv2dBn(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dw = torch.nn.Conv2d(8, 8, 3, groups=8, bias=False)
+            self.bn1 = torch.nn.BatchNorm2d(8)
+            self.pw = torch.nn.Conv2d(8, 4, 1)
+            self.bn2 = torch.nn.BatchNorm2d(4)
+            self.eval()
+
+        def forward(self, x):
+            x = torch.nn.functional.silu(self.bn1(self.dw(x)))
+            return self.bn2(self.pw(x))
+
+    class _ConvTranspose2dBn(torch.nn.Module):
+        """A transposed conv must NOT be folded: its weight is
+        [in, out/groups, *kernel], so scaling dim 0 hits the wrong axis."""
+
+        def __init__(self, cin=4, cout=8):
+            super().__init__()
+            self.conv = torch.nn.ConvTranspose2d(cin, cout, 3)
+            self.bn = torch.nn.BatchNorm2d(cout)
+            self.eval()
+
+        def forward(self, x):
+            return self.bn(self.conv(x))
+
+    class _Conv3dBn(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv3d(4, 8, kernel_size=3)
+            self.bn = torch.nn.BatchNorm3d(8)
+            self.eval()
+
+        def forward(self, x):
+            return self.bn(self.conv(x))
+
+    # The pass matches both inference BatchNorm forms in the edge dialect.
+    _BN_OPS = {
+        exir_ops.edge.aten.native_batch_norm.default,
+        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+    }
+
+    @staticmethod
+    def _seed_batch_norms(module: torch.nn.Module) -> torch.nn.Module:
+        """Small running variances give the large BatchNorm scales that hurt
+        HTP fp16; folding them away is the point of the pass."""
+        for m in module.modules():
+            if isinstance(m, torch.nn.modules.batchnorm._BatchNorm):
+                m.running_mean.uniform_(-2, 2)
+                m.running_var.uniform_(1e-3, 1e-2)
+        return module
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        subtests,
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        target_pass = FuseBatchNormWithConvQnn
+        conv = exir_ops.edge.aten.convolution.default
+
+        cases = (
+            ("conv1d_bn", FuseBatchNormWithConv._Conv1dBn(), (1, 4, 16), 1),
+            (
+                "conv1d_bn_no_bias",
+                FuseBatchNormWithConv._Conv1dBn(bias=False),
+                (1, 4, 16),
+                1,
+            ),
+            (
+                "depthwise_conv2d_bn",
+                FuseBatchNormWithConv._DepthwiseConv2dBn(),
+                (1, 8, 16, 16),
+                2,
+            ),
+            ("conv3d_bn", FuseBatchNormWithConv._Conv3dBn(), (1, 4, 8, 8, 8), 1),
+        )
+        for msg, module, shape, conv_count in cases:
+            with subtests.test(msg=msg):
+                gm = pass_pipeline.lower_edge_ep(
+                    module=FuseBatchNormWithConv._seed_batch_norms(module),
+                    sample_input=(torch.randn(*shape),),
+                    target_pass=target_pass,
+                    backend_type=backend_type,
+                    compile_spec=compile_spec,
+                    quantizer=quantizer,
+                ).graph_module
+                # The BatchNorm is gone and the convolutions it fed survive,
+                # now carrying the folded weight and bias.
+                assertions.assert_no_target(gm, FuseBatchNormWithConv._BN_OPS)
+                assertions.assert_target_count(gm, conv, conv_count)
+
+        # Folding a transposed conv would scale the wrong weight axis, so the
+        # pass has to leave its BatchNorm standing.
+        with subtests.test(msg="conv_transpose2d_bn_is_skipped"):
+            module = FuseBatchNormWithConv._seed_batch_norms(
+                FuseBatchNormWithConv._ConvTranspose2dBn()
+            )
+            gm = pass_pipeline.lower_edge_ep(
+                module=module,
+                sample_input=(torch.randn(1, 4, 8, 8),),
+                target_pass=target_pass,
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                quantizer=quantizer,
+            ).graph_module
+            assertions.assert_target_count(gm, conv, 1)
+            assertions.assert_target_count(gm, FuseBatchNormWithConv._BN_OPS, 1)
 
 
 class FuseConsecutiveCast:
