@@ -215,6 +215,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         return orig_determine_aoti_mmap_flags(consts_size)
 
     orig_autotuner_run = _Autotuner.run
+    orig_run_jit_variant = getattr(_GL, "_run_jit_variant_for_autotune", None)
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -259,6 +260,36 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         with _rehydrate_emptied_tensors(tensors):
             return orig_autotuner_run(self, *args, **kwargs)
 
+    def _run_jit_variant_with_rehydrated_emptied(
+        self, wrapper_code, kernel_code, extract_real_inputs, *args, **kwargs
+    ):
+        # With autotune_at_compile_time off, PyTorch 2.14 autotunes by running a
+        # C++ JIT wrapper on self.constants and the real inputs directly, so
+        # emptied KV tensors never pass through CachingAutotuner.run and their
+        # null storage reaches the kernels. Keep them valid for the whole run.
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                _rehydrate_emptied_tensors(list(self.constants.values()))
+            )
+
+            def _extract_rehydrated_inputs():
+                inputs = extract_real_inputs()
+                stack.enter_context(
+                    _rehydrate_emptied_tensors(
+                        [x for x in inputs if isinstance(x, torch.Tensor)]
+                    )
+                )
+                return inputs
+
+            return orig_run_jit_variant(
+                self,
+                wrapper_code,
+                kernel_code,
+                _extract_rehydrated_inputs,
+                *args,
+                **kwargs,
+            )
+
     def _get_const_synthesize_zeros(self, name):
         # AOTI serializes each constant via get_original_value_of_constant ->
         # _to_bytes. For KV buffers we freed with resize_(0) this would otherwise
@@ -292,6 +323,8 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
     )
     _codecache.determine_aoti_mmap_flags = _force_external_weights_for_fqn_binding
     _Autotuner.run = _autotuner_run_with_rehydrated_emptied_args
+    if orig_run_jit_variant is not None:
+        _GL._run_jit_variant_for_autotune = _run_jit_variant_with_rehydrated_emptied
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
     try:
@@ -305,6 +338,8 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         _codecache.TensorProperties = orig_tensor_properties
         _codecache.determine_aoti_mmap_flags = orig_determine_aoti_mmap_flags
         _Autotuner.run = orig_autotuner_run
+        if orig_run_jit_variant is not None:
+            _GL._run_jit_variant_for_autotune = orig_run_jit_variant
 
 
 def _is_kv_buffer(name, v) -> bool:
