@@ -6,6 +6,7 @@
       "displayName": "Nemotron 3 Diarization runner (MLX)",
       "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/nemotron3_diarization",
       "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "ON",
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",

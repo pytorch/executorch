@@ -12,27 +12,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
-# Build MLX here to keep precompiled kernels local to this example.
-set(MLX_BUILD_METAL ON)
-set(MLX_METAL_JIT OFF)
-set(MLX_BUILD_CPU OFF)
-set(MLX_BUILD_CUDA OFF)
-set(MLX_BUILD_PYTHON_BINDINGS OFF)
-set(MLX_BUILD_PYTHON_STUBS OFF)
-set(MLX_BUILD_TESTS OFF)
-set(MLX_BUILD_EXAMPLES OFF)
-set(MLX_BUILD_BENCHMARKS OFF)
-set(MLX_BUILD_GGUF OFF)
-set(MLX_BUILD_SAFETENSORS OFF)
-set(BUILD_SHARED_LIBS OFF)
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/backends/mlx/third-party/mlx mlx EXCLUDE_FROM_ALL
-)
-
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-if(NOT TARGET mlxdelegate)
+if(NOT TARGET mlxdelegate OR NOT TARGET mlx)
   message(
     FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON"
   )
@@ -59,12 +42,4 @@ target_link_libraries(
   nemotron3_diarization_runner PRIVATE nemotron3_diarization gflags mlxdelegate
                                        mlx
 )
-add_custom_command(
-  TARGET nemotron3_diarization_runner
-  POST_BUILD
-  COMMAND
-    ${CMAKE_COMMAND} -E copy_if_different
-    ${CMAKE_CURRENT_BINARY_DIR}/mlx/mlx/backend/metal/kernels/mlx.metallib
-    $<TARGET_FILE_DIR:nemotron3_diarization_runner>/mlx.metallib
-  VERBATIM
-)
+executorch_target_copy_mlx_metallib(nemotron3_diarization_runner)

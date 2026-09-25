@@ -9,7 +9,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -32,6 +31,7 @@ class Runner {
 
   // Returns new 10 ms frames, with num_speakers() probabilities per frame.
   // Audio is mono at sample_rate(). final=true flushes the remaining lookahead.
+  // Reset after an execution failure before starting another stream.
   std::vector<float> feed(const float* audio, size_t count, bool final = false);
   void reset();
 

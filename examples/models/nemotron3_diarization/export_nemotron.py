@@ -7,7 +7,6 @@
 """Export the Transformers Nemotron 3 Diarization model to ExecuTorch."""
 
 import argparse
-import json
 from pathlib import Path
 
 import torch
@@ -24,6 +23,9 @@ from transformers import (
     Nemotron3DiarizationForAudioFrameClassification,
     Nemotron3DiarizationProcessor,
 )
+
+NEMO_PAD_TO = 16
+MIN_ENCODER_FRAMES = 2
 
 
 class PreEncode(nn.Module):
@@ -91,7 +93,7 @@ def capture_model(model, feature_extractor):
         "num_speakers": head.num_speakers,
         "subsampling_factor": audio.subsampling_factor,
         # Preserve the runner's NeMo-compatible final-window padding.
-        "pad_to": 16,
+        "pad_to": NEMO_PAD_TO,
         "preemphasis": float(feature_extractor.preemphasis),
         "spkcache_len": cache.speaker_cache_length,
         "silence_frames": cache.speaker_cache_silence_frames_per_speaker,
@@ -104,8 +106,16 @@ def capture_model(model, feature_extractor):
         "max_feature_frames": 4096,
     }
     with torch.no_grad():
-        windows = Dim("window_frames", min=1, max=4096 // audio.subsampling_factor)
-        frames = Dim("encoder_frames", min=2, max=1000)
+        windows = Dim(
+            "window_frames",
+            min=1,
+            max=metadata["max_feature_frames"] // audio.subsampling_factor,
+        )
+        frames = Dim(
+            "encoder_frames",
+            min=MIN_ENCODER_FRAMES,
+            max=metadata["max_encoder_frames"],
+        )
         programs = {
             "pre_encode": export(
                 PreEncode(model),
@@ -186,9 +196,6 @@ def export_model(model_id, output_dir, revision=None, dtype=torch.bfloat16):
     path = output_dir / "nemotron3_diarization.pte"
     with path.open("wb") as output:
         program.write_to_file(output)
-    (output_dir / "metadata.json").write_text(
-        json.dumps({**metadata, "model_dtype": str(dtype)}, indent=2) + "\n"
-    )
     print(f"Saved {path} ({path.stat().st_size / 2**20:.1f} MiB)")
     return path
 

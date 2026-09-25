@@ -61,6 +61,8 @@ using executorch::extension::from_blob;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 
+constexpr int64_t kMinEncoderFrames = 2;
+
 std::vector<EValue> execute(
     executorch::extension::Module& model,
     const char* method,
@@ -69,7 +71,7 @@ std::vector<EValue> execute(
   if (!result.ok()) {
     throw std::runtime_error(
         std::string(method) +
-        " failed: " + std::to_string(static_cast<int>(result.error())));
+        " failed: " + executorch::runtime::to_string(result.error()));
   }
   return std::move(result.get());
 }
@@ -133,15 +135,22 @@ Runner::Runner(const std::string& model_path, StreamingConfig config)
   strong_boost_ = real("strong_boost_rate");
   weak_boost_ = real("weak_boost_rate");
   min_positive_ = real("min_pos_scores_rate");
-  if (sample_rate_ <= 0 || hop_ <= 0 || n_fft_ <= 0 || num_mels_ <= 0 ||
+  if (sample_rate_ <= 0 || hop_ <= 0 || hop_ > n_fft_ / 2 || num_mels_ <= 0 ||
       d_model_ <= 0 || num_speakers_ <= 0 || factor_ != 8 || pad_to_ < 0 ||
       silence_frames_ < 0 ||
       cache_capacity_ < (silence_frames_ + 1) * num_speakers_ ||
       config_.chunk <= 0 || config_.right_context < 0 || config_.fifo < 0 ||
       config_.update_period <= 0 ||
+      config_.chunk + config_.right_context < kMinEncoderFrames ||
       (config_.chunk + config_.right_context) * factor_ > max_features_ ||
       cache_capacity_ + config_.fifo + config_.chunk + config_.right_context >
-          max_encoder_) {
+          max_encoder_ ||
+      !(preemphasis_ >= 0 && preemphasis_ <= 1) ||
+      !(score_threshold_ > 0 && score_threshold_ < 1) ||
+      !(min_positive_ >= 0 && min_positive_ <= 1) ||
+      !std::isfinite(latest_boost_) || latest_boost_ < 0 ||
+      !std::isfinite(strong_boost_) || strong_boost_ < 0 ||
+      !std::isfinite(weak_boost_) || weak_boost_ < 0) {
     throw std::invalid_argument(
         "Invalid model metadata or streaming configuration");
   }
@@ -224,6 +233,13 @@ std::vector<float> Runner::features(int64_t count) const {
 
 std::vector<float>
 Runner::step(int64_t feature_frames, int64_t valid, int64_t central) {
+  const int64_t cache_len = cache_.size() / d_model_;
+  const int64_t fifo_len = fifo_.size() / d_model_;
+  const int64_t prefix = cache_len + fifo_len;
+  if (prefix < kMinEncoderFrames) {
+    feature_frames =
+        std::max(feature_frames, (kMinEncoderFrames - prefix) * factor_);
+  }
   // Keep the physical padded window: its masked queries still affect the
   // neighboring valid frame through the subpixel convolution, as in NeMo.
   feature_frames += (factor_ - feature_frames % factor_) % factor_;
@@ -243,11 +259,8 @@ Runner::step(int64_t feature_frames, int64_t valid, int64_t central) {
       static_cast<size_t>(feature_frames / factor_ * d_model_)) {
     throw std::runtime_error("Unexpected pre_encode output dimensions");
   }
-  const int64_t cache_len = cache_.size() / d_model_;
-  const int64_t fifo_len = fifo_.size() / d_model_;
-  const int64_t prefix = cache_len + fifo_len;
   const int64_t total = prefix + feature_frames / factor_;
-  if (total < 2 || total > max_encoder_) {
+  if (total < kMinEncoderFrames || total > max_encoder_) {
     throw std::runtime_error("Encoder window outside export bounds");
   }
   std::vector<float> combined;
@@ -342,8 +355,10 @@ void Runner::compress_cache() {
     for (const auto& boost :
          {std::make_pair(strong_boost_, 2.0f),
           std::make_pair(weak_boost_, 1.0f)}) {
-      const int64_t k = std::min(
-          count, static_cast<int64_t>(std::floor(budget * boost.first)));
+      const int64_t k = static_cast<int64_t>(std::min(
+          static_cast<double>(count),
+          std::floor(static_cast<double>(budget) * boost.first)));
+      // Prefer earlier frames on ties; torch.topk does not guarantee tie order.
       std::partial_sort(
           order.begin(), order.begin() + k, order.end(), [&](auto a, auto b) {
             return first[a] == first[b] ? a < b : first[a] > first[b];
@@ -406,41 +421,47 @@ std::vector<float> Runner::feed(const float* audio, size_t count, bool final) {
       throw std::invalid_argument("Audio contains non-finite samples");
     }
   }
-  if (count) {
-    audio_.insert(audio_.end(), audio, audio + count);
-  }
-  samples_received_ += count;
-  std::vector<float> output;
-  const int64_t central = config_.chunk * factor_;
-  const int64_t right = config_.right_context * factor_;
-  while (true) {
-    const int64_t available = samples_received_ / hop_ - frames_processed_;
-    const int64_t needed =
-        (frames_processed_ + central + right - 1) * hop_ + n_fft_ / 2;
-    if (available <= 0 || (!final && samples_received_ < needed)) {
-      break;
+  try {
+    if (count) {
+      audio_.insert(audio_.end(), audio, audio + count);
     }
-    const int64_t n = std::min(central, available);
-    int64_t window = central + right;
-    if (final) {
-      int64_t total_frames = samples_received_ / hop_ + 1;
-      if (pad_to_) {
-        total_frames += (pad_to_ - total_frames % pad_to_) % pad_to_;
+    samples_received_ += count;
+    std::vector<float> output;
+    const int64_t central = config_.chunk * factor_;
+    const int64_t right = config_.right_context * factor_;
+    while (true) {
+      const int64_t available = samples_received_ / hop_ - frames_processed_;
+      const int64_t needed =
+          (frames_processed_ + central + right - 1) * hop_ + n_fft_ / 2;
+      if (available <= 0 || (!final && samples_received_ < needed)) {
+        break;
       }
-      window = std::min(window, total_frames - frames_processed_);
+      const int64_t n = std::min(central, available);
+      int64_t window = central + right;
+      if (final) {
+        int64_t total_frames = samples_received_ / hop_ + 1;
+        if (pad_to_) {
+          total_frames += (pad_to_ - total_frames % pad_to_) % pad_to_;
+        }
+        window = std::min(window, total_frames - frames_processed_);
+      }
+      auto probs = step(window, std::min(window, available), n);
+      output.insert(output.end(), probs.begin(), probs.end());
+      const int64_t keep_from =
+          std::max<int64_t>(0, frames_processed_ * hop_ - n_fft_ / 2 - 1);
+      audio_.erase(
+          audio_.begin(), audio_.begin() + (keep_from - sample_offset_));
+      sample_offset_ = keep_from;
     }
-    auto probs = step(window, std::min(window, available), n);
-    output.insert(output.end(), probs.begin(), probs.end());
-    const int64_t keep_from =
-        std::max<int64_t>(0, frames_processed_ * hop_ - n_fft_ / 2 - 1);
-    audio_.erase(audio_.begin(), audio_.begin() + (keep_from - sample_offset_));
-    sample_offset_ = keep_from;
+    finished_ = final;
+    if (final) {
+      audio_.clear();
+    }
+    return output;
+  } catch (...) {
+    finished_ = true;
+    throw;
   }
-  finished_ = final;
-  if (final) {
-    audio_.clear();
-  }
-  return output;
 }
 
 } // namespace nemotron3

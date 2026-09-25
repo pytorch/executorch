@@ -24,10 +24,7 @@ DEFINE_string(
     model_path,
     "nemotron_exports/nemotron3_diarization.pte",
     "Exported model");
-DEFINE_string(
-    audio_path,
-    "",
-    "Mono 16 kHz WAV file (PCM16, PCM32, or float32)");
+DEFINE_string(audio_path, "", "Mono 16 kHz WAV file (PCM16 or float32)");
 DEFINE_string(preset, "offline", "offline, low, very_low, or ultra_low");
 DEFINE_int32(feed_samples, 4096, "Samples per streaming feed");
 DEFINE_double(threshold, 0.5, "Speaker activity threshold");
@@ -43,7 +40,8 @@ int main(int argc, char** argv) {
         !std::isfinite(FLAGS_threshold) || FLAGS_threshold < 0 ||
         FLAGS_threshold > 1) {
       throw std::invalid_argument(
-          "Provide --audio_path, positive --feed_samples, and --threshold in [0,1]");
+          "Provide --audio_path, positive --feed_samples and --mlx_memory_limit_mb, "
+          "nonnegative --mlx_cache_limit_mb, and --threshold in [0,1]");
     }
     mlx::core::set_cache_limit(
         static_cast<size_t>(FLAGS_mlx_cache_limit_mb) << 20);
