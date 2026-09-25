@@ -51,7 +51,6 @@ from executorch.backends.qualcomm.tests.utils import (
     validate_context_binary,
 )
 from executorch.backends.qualcomm.utils.check_qnn_version import (
-    is_qnn_sdk_version_greater_than,
     is_qnn_sdk_version_less_than,
 )
 from executorch.backends.qualcomm.utils.constants import (
@@ -1115,16 +1114,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_fp16a8w_conv2d(self):
-        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1]
+        # fp16a8w: FP16 activation + INT8 weight; weight kernel must be [1,1],
+        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0
+                in_channel=4, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 2, 3, 3]),)
+        sample_input = (torch.randn([1, 4, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(
@@ -1135,15 +1135,16 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_fp16a8w_conv2d_qat(self):
         # fp16a8w QAT: FP16 activation + INT8 weight; weight kernel must be [1,1]
         # QAT fake quantize (FusedMovingAvgObsFakeQuantize) requires float32 tensors,
+        # in channel must be multiple of 32/bw = 4
         modules = [
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0
+                in_channel=4, out_channel=4, kernel_size=1, padding=0
             ),
             Conv2dSingle(  # noqa: F405
-                in_channel=2, out_channel=4, kernel_size=1, padding=0, bias=False
+                in_channel=4, out_channel=4, kernel_size=1, padding=0, bias=False
             ),
         ]
-        sample_input = (torch.randn([1, 2, 3, 3]),)
+        sample_input = (torch.randn([1, 4, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 # QAT in float32
@@ -1270,8 +1271,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             Gather(),  # noqa: F405
             # TODO: resolve accuracy problem
             # GatherArgmin(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # GatherWhere(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
         ]
         # shape = (2, 2, 3, 4)
         sample_inputs = [
@@ -2804,15 +2804,14 @@ class TestQNNFloatingPointOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # WhereConstantAll(),  # noqa: F405
+            WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
             (torch.randn(3, 2),),
-            # (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):
@@ -2876,11 +2875,6 @@ class TestQNNFloatingPointModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
-    # TODO: Needs to be fixed in HTP
-    @unittest.skipIf(
-        is_qnn_sdk_version_greater_than("2.37"),
-        "Failed to prepare the graph because of an index operation with argmin output.",
-    )
     def test_qnn_backend_argmin_view_squeeze_conv2d(self):
         module = ArgminViewSqueezeConv2D()  # noqa: F405
         sample_input = (torch.randn(32), torch.randn(32, 3, 32, 32))
@@ -2920,11 +2914,6 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(16, 3, 16, 16),)
         self.lower_module_and_test_output(module, sample_input)
 
-    # TODO: Needs to be fixed in HTP
-    @unittest.skipIf(
-        is_qnn_sdk_version_greater_than("2.40"),
-        "UT did not pass because of aten.mean.dim when using keep_dim for some devices after QNN 2.41.",
-    )
     def test_qnn_backend_conv2d_bn_hardtanh_mean(self):
         module = Conv2dBnHardtanhMean()  # noqa: F405
         sample_input = (torch.randn(1, 1, 6, 6),)
@@ -4445,8 +4434,7 @@ class TestQNNQuantizedOperator(TestQNN):
             Gather(),  # noqa: F405
             # TODO: resolve accuracy problem
             # GatherArgmin(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # GatherWhere(),  # noqa: F405
+            GatherWhere(),  # noqa: F405
         ]
         # shape = (2, 2, 3, 4)
         sample_inputs = [
@@ -6438,15 +6426,14 @@ class TestQNNQuantizedOperator(TestQNN):
             Where(),  # noqa: F405
             WhereConstant(torch.randn(3, 2), torch.randn(3, 2)),  # noqa: F405
             WhereConstantOther(),  # noqa: F405
-            # TODO: There is a accuracy regression after 2.37
-            # WhereConstantAll(),  # noqa: F405
+            WhereConstantAll(),  # noqa: F405
             WhereConstantInf(),  # noqa: F405
         ]
         sample_inputs = [
             (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2)),
             (torch.randn(3, 2),),
             (torch.randn(3, 2),),
-            # (torch.randn(3, 2),),
+            (torch.randn(3, 2),),
             (torch.randn(30, 20),),
         ]
         for i, module in enumerate(modules):

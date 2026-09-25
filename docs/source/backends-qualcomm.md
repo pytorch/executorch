@@ -79,27 +79,30 @@ The target SoC must be one of those listed in the `QcomChipset` enum; see [qc_sc
 
 [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
  - Click the "Get Software" button to download the latest version of the QNN SDK.
- - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
- - You can download it directly from the following link: [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
+ - Although newer versions are available, we have verified and recommend using QNN 2.50.0 for stability.
+ - You can download it directly from the following link: [QNN 2.50.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.50.0.260828/v2.50.0.260828.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
-├── benchmarks
-├── bin
-├── docs
-├── examples
-├── include
-├── lib
-├── LICENSE.pdf
-├── NOTICE.txt
-├── NOTICE_WINDOWS.txt
-├── QNN_NOTICE.txt
-├── QNN_README.txt
-├── QNN_ReleaseNotes.txt
-├── ReleaseNotes.txt
-├── ReleaseNotesWindows.txt
-├── sdk.yaml
-└── share
+|-- GENIE_README.txt
+|-- LICENSE.pdf
+|-- NOTICE.txt
+|-- NOTICE_WINDOWS.txt
+|-- QAIRT_ReleaseNotes.txt
+|-- QNN_NOTICE.txt
+|-- QNN_README.txt
+|-- QNN_TFLITE_DELEGATE_NOTICE.txt
+|-- QNN_TFLITE_DELEGATE_README.txt
+|-- QNN_TFLITE_DELEGATE_ReleaseNotes.txt
+|-- benchmarks
+|-- bin
+|-- docs
+|-- examples
+|-- include
+|-- lib
+|-- lib-safe
+|-- sdk.yaml
+`-- share
 ```
 
 On Android / Linux devices:
@@ -492,7 +495,7 @@ cd $DEMO_APP
 unzip -l app/build/outputs/apk/debug/app-debug.apk | grep "libQnnHtp.so"
 ```
 
-Expected size for QNN 2.37.0: ~2,465,440 bytes
+Expected size for QNN 2.50.0: ~2,601,473,189 bytes
 
 ***Step 3***. Monitor Logs During Model Loading
 
