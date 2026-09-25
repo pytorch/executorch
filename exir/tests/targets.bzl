@@ -459,6 +459,21 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "replace_slice_copy_with_slice_pass",
+        srcs = [
+            "test_replace_slice_copy_with_slice_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir:memory",
+            "//executorch/exir/passes:lib",
+            "//executorch/exir/passes:replace_slice_copy_with_slice_pass",
+            "//executorch/extension/pybindings:portable_lib",  # @manual
+        ],
+    )
+
+    python_unittest(
         name = "test_remove_view_copy",
         srcs = [
             "test_remove_view_copy.py",
