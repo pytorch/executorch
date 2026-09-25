@@ -32,6 +32,7 @@ def define_common_targets(is_fbcode = False):
         python_unittest(
             name = "test_vulkan_transformer",
             srcs = ["test_vulkan_transformer.py"],
+            env = {"ETVK_USING_SWIFTSHADER": "1"},
             preload_deps = [
                 "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
                 "//executorch/backends/vulkan:vulkan_backend_lib",
@@ -43,6 +44,17 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/vulkan/serialization:lib",
                 "//executorch/exir:lib",
                 "//executorch/extension/pybindings:portable_lib",  # @manual
+            ],
+        )
+
+        python_unittest(
+            name = "test_vulkan_graph_builder",
+            srcs = ["test_vulkan_graph_builder.py"],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/backends/vulkan:vulkan_preprocess",
+                "//executorch/exir:lib",
             ],
         )
 

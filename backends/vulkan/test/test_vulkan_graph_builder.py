@@ -8,6 +8,11 @@ import unittest
 
 import torch
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    Bool,
+    Double,
+    Int,
+)
 from executorch.backends.vulkan.vulkan_preprocess import apply_passes
 from executorch.exir import to_edge
 from executorch.exir.backend.utils import DelegateMappingBuilder
@@ -15,6 +20,27 @@ from executorch.exir.passes import SpecPropPass
 
 
 class TestVkGraphBuilderScalarTensor(unittest.TestCase):
+    def test_scalar_cache_preserves_types_and_signed_zero(self):
+        program = torch.export.export(torch.nn.Identity(), (torch.ones(1),))
+        builder = VkGraphBuilder(
+            program, DelegateMappingBuilder(generated_identifiers=True)
+        )
+        scalars = (1.0, 1, True, 0.0, -0.0, 0, False)
+        expected = (
+            Double(1.0),
+            Int(1),
+            Bool(True),
+            Double(0.0),
+            Double(-0.0),
+            Int(0),
+            Bool(False),
+        )
+        ids = [builder.get_or_create_scalar_value(value) for value in scalars]
+        self.assertEqual(len(set(ids)), len(scalars))
+        for value, value_id, serialized in zip(scalars, ids, expected):
+            self.assertEqual(builder.get_or_create_scalar_value(value), value_id)
+            self.assertEqual(builder.values[value_id].value, serialized)
+
     def test_aten_scalar_tensor_keeps_namespace(self):
         class Mask(torch.nn.Module):
             def forward(self, x):

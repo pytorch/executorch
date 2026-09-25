@@ -202,6 +202,13 @@ class VulkanSupportedOperators(OperatorSupportBase):
         return r
 
     def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        # Keep symbolic scalars needed by CPU operators outside the delegate.
+        if utils.is_symint_node(node) and any(
+            not self._is_node_supported(user) for user in node.users
+        ):
+            self.log_skip(node, "symbolic scalar has an unsupported consumer")
+            return False
+
         # Check if tensor node dtype is supported by vulkan
         if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
             self.log_skip(node, "dtype not supported")

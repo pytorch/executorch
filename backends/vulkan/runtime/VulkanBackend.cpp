@@ -660,6 +660,26 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     VkGraphPtr flatbuffer_graph = vkgraph::GetVkGraph(flatbuffer_data);
 
+    if (!compute_graph->context()
+             ->adapter_ptr()
+             ->supports_8bit_storage_buffers()) {
+      for (const auto* value : *flatbuffer_graph->values()) {
+        const auto* tensor = value->value_as_VkTensor();
+        if (tensor == nullptr || tensor->constant_id() >= 0 ||
+            tensor->datatype() != vkgraph::VkDataType::BOOL) {
+          continue;
+        }
+        const auto storage =
+            tensor->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
+            ? compute_graph->suggested_storage_type()
+            : get_storage_type(tensor->storage_type());
+        ET_CHECK_OR_RETURN_ERROR(
+            storage != utils::kBuffer,
+            NotSupported,
+            "Vulkan bool buffer tensors require 8-bit storage buffer support");
+      }
+    }
+
     GraphBuilder builder(
         compute_graph,
         flatbuffer_graph,
@@ -703,6 +723,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     processed->Free();
 
     if (err != Error::Ok) {
+      compute_graph->~ComputeGraph();
       return err;
     }
 
