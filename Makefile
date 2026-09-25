@@ -19,7 +19,7 @@
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal, MLX)
 # - sortformer: Speaker diarization model (CPU, CUDA)
-# - nemotron3-diarization: Speaker diarization model (MLX, XNNPACK)
+# - nemotron3-diarization: Speaker diarization model (MLX, XNNPACK, Vulkan)
 # - supertonic: Text-to-speech model (MLX)
 # - silero_vad: Voice activity detection model (CPU)
 # - llama:    Text generation model (CPU)
@@ -124,6 +124,7 @@ help:
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
 	@echo "  nemotron3-diarization-mlx - Build Nemotron 3 Diarization runner with MLX backend"
 	@echo "  nemotron3-diarization-cpu - Build Nemotron 3 Diarization runner with XNNPACK backend"
+	@echo "  nemotron3-diarization-vulkan - Build Nemotron 3 Diarization runner with Vulkan backend"
 	@echo "  supertonic-mlx      - Build Supertonic runner with MLX backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
@@ -294,10 +295,15 @@ nemotron3-diarization-mlx:
 	cmake --build --preset mlx-release-install
 	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-mlx
 
-.PHONY: nemotron3-diarization-cpu
+.PHONY: nemotron3-diarization-cpu nemotron3-diarization-vulkan
 nemotron3-diarization-cpu:
 	cmake --workflow --preset llm-release
 	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-cpu
+
+nemotron3-diarization-vulkan:
+	cmake --preset llm-release -DEXECUTORCH_BUILD_VULKAN=ON
+	cmake --build --preset llm-release-install
+	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-vulkan
 
 sortformer-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
