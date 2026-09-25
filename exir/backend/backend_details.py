@@ -6,7 +6,7 @@
 
 import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -72,7 +72,7 @@ class PreprocessResult:
     # Scratch buffers the delegate needs at execute() time, memory planned into
     # the arena and delivered through BackendExecutionContext::scratch_buffers()
     # in this order. They are not arguments of the delegate call.
-    scratch_specs: List[DelegateScratchSpec] = field(default_factory=list)
+    scratch_specs: Optional[List[DelegateScratchSpec]] = None
 
 
 """

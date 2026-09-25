@@ -156,6 +156,19 @@ class SharedLabelScratchTestBackend(BackendDetails):
         )
 
 
+@final
+class EmptyListScratchTestBackend(BackendDetails):
+    """Declares an empty list rather than leaving the field at its None default."""
+
+    @staticmethod
+    def preprocess(
+        edge_program: ExportedProgram, compile_specs: List[CompileSpec]
+    ) -> PreprocessResult:
+        return PreprocessResult(
+            processed_bytes=b"empty-list-scratch-backend-blob", scratch_specs=[]
+        )
+
+
 class AddSupport(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         return (
@@ -944,6 +957,15 @@ class TestDelegateScratch(unittest.TestCase):
         self.assertEqual(
             (spill.allocation.memory_id, weights.allocation.memory_id), (2, 3)
         )
+
+    def test_declaring_an_empty_list_is_the_same_as_declaring_nothing(self):
+        inputs = (torch.randn(3, 4), torch.randn(3, 4))
+        plan = _execution_plan(
+            SingleDelegateModule(), inputs, "EmptyListScratchTestBackend"
+        )
+
+        (delegate_call,) = _delegate_calls(plan)
+        self.assertIsNone(delegate_call.scratch)
 
     def test_unusable_requests_are_rejected_at_declaration(self):
         # A backend author should see these at preprocess(), not deep inside
