@@ -56,6 +56,7 @@ from executorch.backends.qualcomm._passes import (
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseBatchNormWithConv,
     FuseConsecutiveCast,
     FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
@@ -151,6 +152,7 @@ class QnnPassManager(PassManager):
             (ExpandBroadcastTensorShape, True),
             (FixedLinearKeepDim, True),
             (FoldQDQ, True),
+            (FuseBatchNormWithConv, True),
             (FuseConsecutiveReshape, True),
             (I64toI32, True),
             (InsertCastForFpActQuantizedWeight, True),
@@ -297,7 +299,7 @@ class QnnPassManager(PassManager):
             ],
             AnnotateStack: [RemoveRedundancy],
             AnnotateUnbind: [RemoveRedundancy],
-            CanonicalizeConv: [FoldQDQ],
+            CanonicalizeConv: [FoldQDQ, FuseBatchNormWithConv],
             ConvertBmmToMatmul: [RecomposePixelUnshuffle],
             ConvertLinearToConv2d: [FoldQDQ],
             DecomposeAcos: [RemoveRedundancy],
@@ -305,6 +307,7 @@ class QnnPassManager(PassManager):
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
+            FuseBatchNormWithConv: [FoldQDQ],
             FuseConsecutiveReshape: [FoldQDQ],
             DecomposePDist: [RemoveRedundancy],
             DecomposeDiagonal: [RemoveRedundancy],
@@ -327,6 +330,9 @@ class QnnPassManager(PassManager):
             InsertCastForFpActQuantizedWeight: [FoldQDQ, LayoutTransform],
             LayoutTransform: [
                 AnnotateQuantAttrs,
+                # conv1d is rewritten into conv2d, so it has to be canonicalized
+                # before the layout annotation the rewritten node inherits
+                CanonicalizeConv,
                 ExpandBroadcastTensorShape,
                 FixedLinearKeepDim,
             ],
@@ -409,6 +415,9 @@ class QnnPassManager(PassManager):
             kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
             if "edge_program" in kwargs:
                 kwargs["edge_program"] = exported_program
+            # the shared backends/transforms passes name it `exported_program`
+            if "exported_program" in kwargs:
+                kwargs["exported_program"] = exported_program
             if "compiler_specs" in kwargs:
                 kwargs["compiler_specs"] = compiler_specs
             if "skip_node_id_set" in kwargs:
