@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from unittest import TestCase
 
+import torch
+
 from executorch.examples.models.muse_glimmer.export import export_dflash
 
 
@@ -49,3 +51,24 @@ class DFlashExportOptionsTest(TestCase):
     def test_callable_rejects_unknown_backend(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported DFlash backend: cpu"):
             export_dflash.validate_dflash_export_options("cpu")
+
+    def test_cuda_sampler_methods_accept_any_proposal_count(self) -> None:
+        methods = export_dflash._export_cuda_sampler_methods(
+            max_draft_tokens=3, vocab_size=5
+        )
+        scalars = (torch.tensor([0.0]), torch.tensor([0]), torch.tensor([1.0]))
+        for proposals in (1, 3):
+            with self.subTest(proposals=proposals):
+                tokens, probabilities = methods["dflash_sample_tokens"].module()(
+                    torch.randn(proposals, 5), *scalars
+                )
+                result = methods["dflash_verify_speculative"].module()(
+                    torch.randn(proposals + 1, 5),
+                    probabilities,
+                    torch.cat([torch.tensor([4]), tokens]),
+                    *scalars,
+                    torch.tensor([False]),
+                )
+                self.assertEqual(tokens.shape, torch.Size([proposals]))
+                self.assertEqual(result.shape, torch.Size([proposals + 3]))
+                self.assertEqual(result.dtype, torch.int64)

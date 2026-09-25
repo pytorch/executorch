@@ -119,7 +119,7 @@ advanced inputs.
 |---|---|---|
 | Target | CUDA | `embed_text`, `forward_from_embeddings`, `decode_from_embedding` |
 | Target | MLX | `embed_text`, `forward_from_embeddings` |
-| DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill` |
+| DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill`, `dflash_sample_tokens`, `dflash_verify_speculative` |
 | DFlash | MLX | `target_forward_from_embeddings`, `embed_text`, `draft_forward` |
 
 Vision adds `vision_encoder` to each method set.
