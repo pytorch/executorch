@@ -42,6 +42,13 @@ if(TARGET kleidiai)
   target_link_libraries(nemotron3_diarization PUBLIC kleidiai)
 endif()
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  target_link_libraries(nemotron3_diarization PUBLIC aoti_cuda_backend)
+  if(NOT MSVC)
+    executorch_target_link_options_shared_lib(aoti_cuda_backend)
+  endif()
+endif()
 add_executable(nemotron3_diarization_runner main.cpp)
 target_include_directories(
   nemotron3_diarization_runner
@@ -62,4 +69,13 @@ if(EXECUTORCH_BUILD_MLX)
     nemotron3_diarization_runner PRIVATE EXECUTORCH_BUILD_MLX
   )
   executorch_target_copy_mlx_metallib(nemotron3_diarization_runner)
+endif()
+if(MSVC AND EXECUTORCH_BUILD_CUDA)
+  add_custom_command(
+    TARGET nemotron3_diarization_runner
+    POST_BUILD
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
+      $<TARGET_FILE_DIR:nemotron3_diarization_runner>
+  )
 endif()
