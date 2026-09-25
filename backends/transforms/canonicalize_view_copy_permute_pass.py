@@ -14,14 +14,14 @@ from executorch.backends.transforms.dim_maps import (
     _is_permutation,
     _normalize_dim,
     _normalize_dims,
+    normalize_view_shape,
     ViewMap,
 )
-
-from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
+from executorch.backends.transforms.symbolic_shape_utils import materialize_symints
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, Node
-from torch.fx.node import Target
+from torch.fx.node import map_arg, Target
 from torch.fx.passes.infra.pass_base import PassResult
 
 _Dim = int | torch.SymInt
@@ -397,7 +397,22 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         return permuted_non_singleton_axes == non_singleton_axes
 
     @staticmethod
-    def _view_map(view_node: Node) -> ViewMap | None:
+    def _contains_fx_node_arg(arg: Any) -> bool:
+        contains_node = False
+
+        def visit_node(node: Node) -> Node:
+            nonlocal contains_node
+            contains_node = True
+            return node
+
+        map_arg(arg, visit_node)
+        return contains_node
+
+    @classmethod
+    def _view_map(cls, view_node: Node) -> ViewMap | None:
+        if cls._contains_fx_node_arg(view_node.args[1]):
+            return None
+
         try:
             return ViewMap(view_node)
         except AssertionError:
@@ -423,6 +438,17 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         graph_module.graph.erase_node(node)
         del chain[index]
 
+    def _materialize_shape_arg(
+        self, node: Node, target: Target, arg: Sequence[_Dim]
+    ) -> list[Any]:
+        if target != self._VIEW_TARGET or not any(
+            isinstance(dim, torch.SymInt) for dim in arg
+        ):
+            return list(arg)
+
+        with node.graph.inserting_before(node):
+            return materialize_symints(node.graph, arg)
+
     def _set_node_op(
         self,
         node: Node,
@@ -431,12 +457,41 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         arg: Sequence[_Dim],
     ) -> None:
         node.target = target
-        node.args = (input_node, list(arg))
-        refresh_permute_view_meta(node)
+        node.args = (input_node, self._materialize_shape_arg(node, target, arg))
+        self._refresh_meta(node, arg)
 
     def _permute_dims(self, node: Node) -> list[int]:
         assert self._is_permute(node), "Expected permute node"
         return list(cast(Sequence[int], node.args[1]))
+
+    def _refresh_meta(self, node: Node, shape: Sequence[_Dim] | None = None) -> None:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        input_val = input_node.meta.get("val")
+        if input_val is None or node.target not in self._targets:
+            return
+
+        # Compute new meta shapes to preserve SymInts.
+        if isinstance(input_val, torch.Tensor):
+            if node.target == self._VIEW_TARGET:
+                view_shape = (
+                    shape if shape is not None else cast(Sequence[_Dim], node.args[1])
+                )
+                node.meta["val"] = input_val.new_empty(
+                    tuple(normalize_view_shape(input_val.shape, view_shape))
+                )
+                return
+
+            if self._is_permute(node):
+                dims = _normalize_dims(
+                    cast(Sequence[int], node.args[1]), len(input_val.shape)
+                )
+                node.meta["val"] = input_val.new_empty(
+                    tuple(input_val.shape[dim] for dim in dims)
+                )
+                return
+
+        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
 
     @staticmethod
     def _shape(node: Node) -> list[_Dim]:
