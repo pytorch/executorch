@@ -403,6 +403,15 @@ class ConvolutionConfig(GEMMConfig):
             )
             return False
 
+        kernel_val = kernel_node.meta.get("val", None)
+        if (
+            is_transpose
+            and kernel_val is not None
+            and kernel_val.dtype == torch.bfloat16
+        ):
+            why(node, "XNNPACK does not support bf16 transpose convolutions")
+            return False
+
         if (
             is_transpose
             and weight_quant_params is not None

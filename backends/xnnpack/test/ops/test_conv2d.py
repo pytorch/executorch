@@ -320,6 +320,47 @@ class TestConv2d(unittest.TestCase):
             for has_bias in (True, False):
                 self._test(Conv2d(bias=has_bias, transpose=transpose))
 
+    def _test_bf16(self, m: torch.nn.Module):
+        (
+            Tester(m.eval(), m.get_inputs())
+            .export()
+            .check_count({"torch.ops.aten.conv2d": 1})
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower([XnnpackPartitioner(enable_bf16=True)])
+            )
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=2e-2, rtol=2e-2)
+        )
+
+    def test_bf16_conv2d(self) -> None:
+        for has_bias in (True, False):
+            self._test_bf16(Conv2d(bias=has_bias, dtype=torch.bfloat16))
+
+    def test_bf16_conv2d_depthwise(self) -> None:
+        for out_channels in (4, 12):
+            self._test_bf16(
+                Conv2d(
+                    groups=4,
+                    in_channels=4,
+                    out_channels=out_channels,
+                    dtype=torch.bfloat16,
+                )
+            )
+
+    def test_bf16_conv_transpose2d_is_not_delegated(self) -> None:
+        m = Conv2d(dtype=torch.bfloat16, transpose=True)
+        (
+            Tester(m.eval(), m.get_inputs())
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower([XnnpackPartitioner(enable_bf16=True)])
+            )
+            .check(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+        )
+
     def test_fp32_conv2d_single_element_spatial_params(self) -> None:
         # ATen broadcasts a single stride/padding/dilation value over every
         # spatial dim, so a 2d conv can carry length-1 spatial params.
