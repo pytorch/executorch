@@ -67,9 +67,10 @@ flatbuffers::Offset<fbs::Method> create_method(
 
 std::vector<uint8_t> finish_program(
     flatbuffers::FlatBufferBuilder& builder,
-    const std::vector<flatbuffers::Offset<fbs::Method>>& methods) {
+    const std::vector<flatbuffers::Offset<fbs::Method>>& methods,
+    const std::string& version = "2") {
   const auto program = fbs::CreateProgram(
-      builder, builder.CreateString("1"), builder.CreateVector(methods));
+      builder, builder.CreateString(version), builder.CreateVector(methods));
   fbs::FinishProgramBuffer(builder, program);
   return {
       builder.GetBufferPointer(),
@@ -81,6 +82,17 @@ Program load_program(const std::vector<uint8_t>& bytes) {
 }
 
 // cppcheck-suppress-begin syntaxError
+TEST(ProgramTest, LoadRejectsSchemaVersionMismatch) {
+  for (const std::string version : {"", "1"}) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto graph = create_graph(builder);
+    const auto bytes = finish_program(
+        builder, {create_method(builder, "forward", graph)}, version);
+
+    EXPECT_THROW(load_program(bytes), std::runtime_error) << version;
+  }
+}
+
 TEST(ProgramTest, LoadRejectsEmptyMethodName) {
   flatbuffers::FlatBufferBuilder builder;
   const auto graph = create_graph(builder);
@@ -166,6 +178,169 @@ TEST(ProgramTest, GetMethodRejectsDynamicTensorExtent) {
   const Program program = load_program(bytes);
 
   EXPECT_THROW(program.get_method("forward"), std::runtime_error);
+}
+
+TEST(ProgramTest, GetMethodPreservesAffineQuantizationMetadata) {
+  flatbuffers::FlatBufferBuilder builder;
+  const std::vector<flatbuffers::Offset<fbs::Dim>> sizes = {
+      fbs::CreateDim(builder, 8, 8), fbs::CreateDim(builder, 64, 64)};
+  const std::vector<int64_t> block_shape = {1, 32};
+  const auto external_scale = fbs::CreateExternalQuantParamDirect(
+      builder, "weight.scale", fbs::ScalarType::HALF);
+  const auto scale = fbs::CreateQuantParam(
+      builder,
+      fbs::QuantParamValue::ExternalQuantParam,
+      external_scale.Union());
+  const auto inline_zero_point = fbs::CreateInlineFloatQuantParam(
+      builder, -0.5, fbs::ScalarType::BFLOAT16);
+  const auto zero_point = fbs::CreateQuantParam(
+      builder,
+      fbs::QuantParamValue::InlineFloatQuantParam,
+      inline_zero_point.Union());
+  const auto packed_bits = fbs::CreatePackedBitsQuantizedStorage(
+      builder,
+      4,
+      fbs::QuantBitOrder::LSB_FIRST,
+      fbs::QuantSignedEncoding::OFFSET,
+      -8);
+  const auto storage = fbs::CreateQuantizedStorage(
+      builder,
+      fbs::QuantizedStorageValue::PackedBitsQuantizedStorage,
+      packed_bits.Union());
+  const auto affine = fbs::CreateAffineQuantization(
+      builder,
+      fbs::ScalarType::FLOAT,
+      -8,
+      7,
+      builder.CreateVector(block_shape),
+      scale,
+      zero_point,
+      fbs::QuantRoundingMode::TO_NEAREST_EVEN,
+      storage);
+  const auto quant = fbs::CreateQuantSpec(
+      builder, fbs::QuantScheme::AffineQuantization, affine.Union());
+  const auto meta = fbs::CreateTensorMeta(
+      builder, fbs::ScalarType::BYTE, builder.CreateVector(sizes), 0, quant);
+  const auto tensor = fbs::CreateTensorValueDirect(builder, "weight", meta);
+  const auto graph = create_graph(builder, {}, {"weight"}, {}, {tensor});
+  const auto bytes =
+      finish_program(builder, {create_method(builder, "forward", graph)});
+  const Program program = load_program(bytes);
+
+  const AffineQuantization expected{
+      .expressed_dtype = ScalarType::Float,
+      .quant_min = -8,
+      .quant_max = 7,
+      .block_shape = block_shape,
+      .scale = ExternalQuantParam{"weight.scale", ScalarType::Half},
+      .zero_point = InlineFloatQuantParam{-0.5, ScalarType::BFloat16},
+      .rounding = QuantRoundingMode::ToNearestEven,
+      .storage = PackedBitsQuantizedStorage{
+          4, QuantBitOrder::LsbFirst, QuantSignedEncoding::Offset, -8}};
+  const TensorMeta& loaded =
+      program.get_method("forward").graph.value(ValueId{0}).tensor_meta();
+  EXPECT_EQ(loaded.quantization, Quantization{expected});
+}
+
+TEST(ProgramTest, GetMethodPreservesOpaqueQuantizationMetadata) {
+  flatbuffers::FlatBufferBuilder builder;
+  const std::vector<flatbuffers::Offset<fbs::Dim>> sizes = {
+      fbs::CreateDim(builder, 8, 8), fbs::CreateDim(builder, 256, 256)};
+  const auto opaque = fbs::CreateOpaqueQuantizationDirect(builder, "gguf:q4_k");
+  const auto quant = fbs::CreateQuantSpec(
+      builder, fbs::QuantScheme::OpaqueQuantization, opaque.Union());
+  const auto meta = fbs::CreateTensorMeta(
+      builder, fbs::ScalarType::BYTE, builder.CreateVector(sizes), 0, quant);
+  const auto tensor = fbs::CreateTensorValueDirect(builder, "weight", meta);
+  const auto graph = create_graph(builder, {}, {"weight"}, {}, {tensor});
+  const auto bytes =
+      finish_program(builder, {create_method(builder, "forward", graph)});
+  const Program program = load_program(bytes);
+
+  const TensorMeta& loaded =
+      program.get_method("forward").graph.value(ValueId{0}).tensor_meta();
+  ASSERT_TRUE(loaded.quantization.has_value());
+  const auto* loaded_opaque =
+      std::get_if<OpaqueQuantization>(&*loaded.quantization);
+  ASSERT_NE(loaded_opaque, nullptr);
+  EXPECT_EQ(loaded_opaque->codec, "gguf:q4_k");
+}
+
+TEST(ProgramTest, GetMethodRejectsInvalidQuantMetadata) {
+  const auto expect_rejected = [](const auto& create_quant) {
+    flatbuffers::FlatBufferBuilder builder;
+    const std::vector<flatbuffers::Offset<fbs::Dim>> sizes = {
+        fbs::CreateDim(builder, 4, 4)};
+    const auto quant = create_quant(builder);
+    const auto meta = fbs::CreateTensorMeta(
+        builder, fbs::ScalarType::CHAR, builder.CreateVector(sizes), 0, quant);
+    const auto tensor = fbs::CreateTensorValueDirect(builder, "value", meta);
+    const auto graph = create_graph(builder, {}, {"value"}, {}, {tensor});
+    const auto bytes =
+        finish_program(builder, {create_method(builder, "forward", graph)});
+    const Program program = load_program(bytes);
+    EXPECT_THROW(program.get_method("forward"), std::runtime_error);
+  };
+  const auto create_affine = [](flatbuffers::FlatBufferBuilder& builder,
+                                flatbuffers::Offset<fbs::QuantParam> scale,
+                                flatbuffers::Offset<fbs::QuantizedStorage>
+                                    storage) {
+    const std::vector<int64_t> block_shape = {0};
+    const auto affine = fbs::CreateAffineQuantization(
+        builder,
+        fbs::ScalarType::FLOAT,
+        -128,
+        127,
+        builder.CreateVector(block_shape),
+        scale,
+        0,
+        fbs::QuantRoundingMode::TO_NEAREST_EVEN,
+        storage);
+    return fbs::CreateQuantSpec(
+        builder, fbs::QuantScheme::AffineQuantization, affine.Union());
+  };
+  const auto create_scale = [](flatbuffers::FlatBufferBuilder& builder,
+                               double scale = 0.5,
+                               fbs::ScalarType dtype = fbs::ScalarType::FLOAT) {
+    const auto value = fbs::CreateInlineFloatQuantParam(builder, scale, dtype);
+    return fbs::CreateQuantParam(
+        builder, fbs::QuantParamValue::InlineFloatQuantParam, value.Union());
+  };
+  const auto create_storage = [](flatbuffers::FlatBufferBuilder& builder) {
+    const auto value = fbs::CreateDenseQuantizedStorage(builder);
+    return fbs::CreateQuantizedStorage(
+        builder,
+        fbs::QuantizedStorageValue::DenseQuantizedStorage,
+        value.Union());
+  };
+
+  expect_rejected([](flatbuffers::FlatBufferBuilder& builder) {
+    return fbs::CreateQuantSpec(
+        builder, fbs::QuantScheme::OpaqueQuantization, 0);
+  });
+  expect_rejected([&](flatbuffers::FlatBufferBuilder& builder) {
+    const auto scale = fbs::CreateQuantParam(
+        builder, fbs::QuantParamValue::InlineFloatQuantParam, 0);
+    return create_affine(builder, scale, create_storage(builder));
+  });
+  expect_rejected([&](flatbuffers::FlatBufferBuilder& builder) {
+    const auto storage = fbs::CreateQuantizedStorage(
+        builder, fbs::QuantizedStorageValue::PackedBitsQuantizedStorage, 0);
+    return create_affine(builder, create_scale(builder), storage);
+  });
+  expect_rejected([](flatbuffers::FlatBufferBuilder& builder) {
+    const auto opaque = fbs::CreateOpaqueQuantizationDirect(builder, "gguf:q4_k");
+    return fbs::CreateQuantSpec(
+        builder, fbs::QuantScheme::OpaqueQuantization, opaque.Union());
+  });
+  for (const double scale : {1e5, 1e-9}) {
+    expect_rejected([&](flatbuffers::FlatBufferBuilder& builder) {
+      return create_affine(
+          builder,
+          create_scale(builder, scale, fbs::ScalarType::HALF),
+          create_storage(builder));
+    });
+  }
 }
 
 TEST(ProgramTest, GetMethodRejectsUnknownEnumValues) {
