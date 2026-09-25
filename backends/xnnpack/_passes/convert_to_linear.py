@@ -13,8 +13,8 @@ from executorch.backends.transforms import get_shape
 from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
 )
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
 
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.source_matcher_utils import (
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
-class ConvertToLinearPass(ExportPass):
+class ConvertToLinearPass(XNNPACKPass):
     linear_modules = [
         torch.nn.Linear,
         torch.nn.functional.linear,
@@ -185,7 +185,9 @@ class ConvertToLinearPass(ExportPass):
                 break
 
         # fall back to linear transform
-        graph_module.graph = apply_addmm_mm_to_linear_transform(graph_module.graph)
+        graph_module.graph = apply_addmm_mm_to_linear_transform(
+            graph_module.graph, self.exported_program
+        )
 
         graph_module.recompile()
 
