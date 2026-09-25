@@ -20,7 +20,6 @@ from typing import Any, List, Optional
 import torch
 from executorch.exir import memory
 from executorch.exir.dialects._ops import ops
-from executorch.exir.sym_util import eval_shape
 from executorch.exir.tensor import (
     contiguous_stride_from_shape,
     determine_tensor_dynanism,
@@ -71,17 +70,25 @@ def is_contiguous_slice_copy(node: torch.fx.Node) -> bool:
     return dim == 0
 
 
-def _slice_start_as_int(start: Any) -> int:
+def _slice_start_as_int(start: Optional[int]) -> int:
     if start is None:
         return 0
-    if isinstance(start, int):
-        return start
-    if isinstance(start, torch.SymInt):
-        return int(eval_shape([start])[0])
-    return int(start)
+    return start
 
 
-def _compute_slice_byte_offset(base: TensorSpec, dim: int, start: Any) -> int:
+def _is_static_slice_argument(value: Any) -> bool:
+    """Whether a slice parameter is known when the program is lowered.
+
+    ``memory.slice`` encodes a byte offset in the emitted tensor metadata, so
+    it cannot represent an FX node or a symbolic value that is resolved only
+    at runtime. Keep those slices as ``aten.slice_copy``.
+    """
+    return value is None or isinstance(value, int)
+
+
+def _compute_slice_byte_offset(
+    base: TensorSpec, dim: int, start: Optional[int]
+) -> int:
     start_int = _slice_start_as_int(start)
     if start_int < 0:
         raise ValueError("memory.slice does not support negative slice starts.")
@@ -263,6 +270,14 @@ class ReplaceSliceCopyWithSlicePass(PassBase):
                         # pass.  Skip bare FX graphs so the pass remains safe to use
                         # in isolation as well.
                         continue
+                    output_spec = node.meta.get("spec")
+                    if (
+                        not isinstance(output_spec, TensorSpec)
+                        or not output_spec.is_static_shape_tensor
+                    ):
+                        # A static base can still produce a dynamic slice when
+                        # bounds originate in the runtime graph.
+                        continue
                     if _is_aliasing_base(base):
                         # The base is itself an alias (a slice or a view), so it
                         # has no allocation of its own to offset from.  Chaining
@@ -271,6 +286,21 @@ class ReplaceSliceCopyWithSlicePass(PassBase):
                         continue
                     dim = node.args[1] if len(node.args) > 1 else 0
                     start = node.args[2] if len(node.args) > 2 else None
+                    end = node.args[3] if len(node.args) > 3 else None
+                    step = node.args[4] if len(node.args) > 4 else 1
+                    if not all(
+                        _is_static_slice_argument(arg)
+                        for arg in (dim, start, end, step)
+                    ):
+                        # Do not turn symbolic bounds into a fixed byte offset.
+                        # The regular slice_copy kernel handles runtime values.
+                        continue
+                    if base.op == "placeholder":
+                        # Placeholders are externally owned buffers rather than
+                        # intermediate allocations. Unlike memory.view, this
+                        # pass has no runtime-kernel fallback, so only alias
+                        # storage that memory planning owns.
+                        continue
                     if _slice_start_as_int(start) < 0:
                         # Negative starts are relative to the end of the
                         # dimension.  They cannot be expressed as a static

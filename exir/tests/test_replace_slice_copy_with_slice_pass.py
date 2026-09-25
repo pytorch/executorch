@@ -14,9 +14,11 @@ from executorch.exir import memory, to_edge
 from executorch.exir.passes.replace_slice_copy_with_slice_pass import (
     _compute_slice_byte_offset,
     _is_slice_copy,
+    _is_static_slice_argument,
     is_contiguous_slice_copy,
     ReplaceSliceCopyWithSlicePass,
 )
+from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
@@ -76,15 +78,23 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
             if isinstance(val, torch.Tensor):
                 node.meta["spec"] = TensorSpec.from_tensor(val)
 
+    def _annotate_tensor_specs(self, gm: torch.fx.GraphModule) -> None:
+        """Populate static specs for all tensor nodes in a small FX test graph."""
+        for node in gm.graph.nodes:
+            val = node.meta.get("val")
+            if isinstance(val, torch.Tensor):
+                node.meta["spec"] = TensorSpec.from_tensor(val)
+
     def test_pass_replaces_annotated_contiguous_slice(self) -> None:
         """A statically annotated dim-0 slice becomes a memory alias."""
 
         class M(torch.nn.Module):
             def forward(self, x):
-                return x[0:2] + 1.0
+                base = x + 0.0
+                return base[0:2] + 1.0
 
         gm = self._edge_graph_module(M(), (torch.randn(4, 8),))
-        self._annotate_input_spec(gm)
+        self._annotate_tensor_specs(gm)
         result = ReplaceSliceCopyWithSlicePass()(gm)
         self.assertIsNotNone(result)
         self.assertTrue(result.modified)
@@ -104,10 +114,11 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
 
         class M(torch.nn.Module):
             def forward(self, x):
-                return x[0:2] + 1.0
+                base = x + 0.0
+                return base[0:2] + 1.0
 
         gm = self._edge_graph_module(M(), (torch.randn(4, 8),))
-        self._annotate_input_spec(gm)
+        self._annotate_tensor_specs(gm)
         # Mutate the layout of the slice's own base, not just any placeholder.
         slice_node = next(n for n in gm.graph.nodes if _is_slice_copy(n))
         slice_node.args[0].meta["spec"].dim_order = (1, 0)
@@ -120,10 +131,11 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
 
         class M(torch.nn.Module):
             def forward(self, x):
-                return x[-2:] + 1.0
+                base = x + 0.0
+                return base[-2:] + 1.0
 
         gm = self._edge_graph_module(M(), (torch.randn(4, 8),))
-        self._annotate_input_spec(gm)
+        self._annotate_tensor_specs(gm)
 
         result = ReplaceSliceCopyWithSlicePass()(gm)
         self.assertFalse(result.modified)
@@ -133,6 +145,68 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
                 0,
                 -2,
             )
+
+    def test_static_slice_argument_check_rejects_runtime_nodes(self) -> None:
+        """Runtime graph values cannot be encoded as fixed alias offsets."""
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        start = graph.placeholder("start")
+        base = graph.call_function(torch.ops.aten.relu.default, (x,))
+        sliced = graph.call_function(
+            torch.ops.aten.slice_copy.Tensor, (base, 0, start, 2)
+        )
+        relu = graph.call_function(torch.ops.aten.relu.default, (sliced,))
+        graph.output(relu)
+
+        x.meta["val"] = torch.empty(4, 8)
+        x.meta["spec"] = TensorSpec.from_tensor(x.meta["val"])
+        base.meta["val"] = torch.empty(4, 8)
+        base.meta["spec"] = TensorSpec.from_tensor(base.meta["val"])
+        sliced.meta["val"] = torch.empty(2, 8)
+        sliced.meta["spec"] = TensorSpec.from_tensor(sliced.meta["val"])
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        self.assertFalse(_is_static_slice_argument(start))
+        self.assertTrue(_is_static_slice_argument(1))
+        self.assertTrue(_is_static_slice_argument(None))
+        result = ReplaceSliceCopyWithSlicePass()(gm)
+        self.assertFalse(result.modified)
+        self.assertEqual(sliced.target, torch.ops.aten.slice_copy.Tensor)
+
+    def test_pass_skips_dynamic_output_shape(self) -> None:
+        """A dynamic slice must retain its copy kernel even with a static base."""
+
+        class M(torch.nn.Module):
+            def forward(self, x):
+                base = x + 0.0
+                return base[0:2] + 1.0
+
+        gm = self._edge_graph_module(M(), (torch.randn(4, 8),))
+        self._annotate_tensor_specs(gm)
+        slice_node = next(n for n in gm.graph.nodes if _is_slice_copy(n))
+        slice_node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+
+        result = ReplaceSliceCopyWithSlicePass()(gm)
+        self.assertFalse(result.modified)
+
+    def test_pass_skips_placeholder_base(self) -> None:
+        """External input tensors have no memory-planned allocation to alias."""
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        sliced = graph.call_function(
+            torch.ops.aten.slice_copy.Tensor, (x, 0, 1, 3)
+        )
+        relu = graph.call_function(torch.ops.aten.relu.default, (sliced,))
+        graph.output(relu)
+        x.meta["val"] = torch.empty(4, 8)
+        x.meta["spec"] = TensorSpec.from_tensor(x.meta["val"])
+        sliced.meta["val"] = torch.empty(2, 8)
+        sliced.meta["spec"] = TensorSpec.from_tensor(sliced.meta["val"])
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        result = ReplaceSliceCopyWithSlicePass()(gm)
+        self.assertFalse(result.modified)
+        self.assertEqual(sliced.target, torch.ops.aten.slice_copy.Tensor)
 
     def _emitted_operators(self, program) -> List[str]:
         return [
@@ -144,7 +218,8 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
 
         class M(torch.nn.Module):
             def forward(self, x):
-                return x[1:3] + 1.0
+                base = x + 0.0
+                return base[1:3] + 1.0
 
         model = M().eval()
         example_input = torch.arange(32, dtype=torch.float32).reshape(4, 8)
@@ -165,10 +240,11 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
 
         class M(torch.nn.Module):
             def forward(self, x):
-                sliced = x[1:3] + 1.0
-                # ``x`` is consumed *after* the slice, so the planner has to keep
+                base = x + 0.0
+                sliced = base[1:3] + 1.0
+                # ``base`` is consumed *after* the slice, so the planner has to keep
                 # the base alive across the alias's lifetime.
-                return sliced.sum() + x.sum()
+                return sliced.sum() + base.sum()
 
         model = M().eval()
         example_input = torch.arange(32, dtype=torch.float32).reshape(4, 8)

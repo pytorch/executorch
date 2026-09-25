@@ -183,9 +183,9 @@ class TestQuantFusionPass(unittest.TestCase):
         )
 
         m = m.to_executorch()
-        # check that we are using out variant of add and slice_copy
+        # The static dim-0 slice is now represented as a zero-copy memory alias.
         FileCheck().check("torch.ops.quantized_decomposed.add.out").check(
-            "torch.ops.aten.slice_copy.Tensor_out"
+            "executorch.exir.memory.slice"
         ).run(m.exported_program().graph_module.code)
 
     def test_cat(self) -> None:
