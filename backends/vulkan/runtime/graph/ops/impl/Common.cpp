@@ -132,6 +132,15 @@ LocalWorkGroup pick_required_lwg(
   return gwg.required_lwg_size();
 }
 
+// Adreno drivers miscompute the tiled GEMM family of shaders for near-square
+// local work groups. With an 8x8x1 group (and with 4x16x1) entire work groups
+// intermittently write garbage while every other block is bit-exact. These
+// shaders have no shared memory and no barriers and their invocations are
+// independent, so the result cannot legitimately depend on the group shape.
+// A 2:1 x:y ratio, which yields 16x4x1 at the default 64 threads, is correct
+// across every run measured and is the cheapest correct shape. See #22327.
+const LwgShape kWideXLwg{2u, 1u, 0u};
+
 LocalWorkGroup pick_xy_square_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -142,7 +151,8 @@ LocalWorkGroup pick_xy_square_lwg(
   (void)args;
   (void)resize_args;
   LocalWorkGroup lwg(
-      kSquareLwg, graph->context()->adapter_ptr()->recommended_lwg_nthreads());
+      graph->device_is_adreno() ? kWideXLwg : kSquareLwg,
+      graph->context()->adapter_ptr()->recommended_lwg_nthreads());
   lwg.fit_to_global(gwg);
   return lwg;
 }
