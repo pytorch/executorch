@@ -522,6 +522,224 @@ TEST_F(MetalGraphViewTest, MaterializingCpuMemoryWaitsForGpuWrites) {
   EXPECT_EQ(std::vector<float>(got, got + 4), (std::vector<float>{1, 2, 0, 0}));
 }
 
+// CPU memory the GPU has no buffer over cannot have pending GPU writes, so
+// materializing a view of it leaves unrelated queued work alone.
+TEST_F(MetalGraphViewTest, MaterializingUnreachableCpuMemoryDoesNotWait) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* data = static_cast<float*>(base->mutable_data_ptr());
+  for (int i = 0; i < 12; i++) {
+    data[i] = static_cast<float>(i + 1);
+  }
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  queueCopy(*input, *out, 4);
+
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, strides, /*storage_offset=*/4, &read),
+      Error::Ok);
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 9, 10}));
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+}
+
+// Freed Metal buffers go back to the pool without a wait. When the packed copy
+// gets one that queued work still writes, that work has to be done before the
+// CPU fills it, or it overwrites the copy.
+TEST_F(MetalGraphViewTest, MaterializingIntoRecycledBufferWaitsForItsWork) {
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(100 + i);
+  }
+  AOTITensorHandle freed = nullptr;
+  createMatrix(kDeviceMps, &freed);
+  queueCopy(*input, *freed, 4);
+  void* freed_ptr = freed->mutable_data_ptr();
+  ASSERT_EQ(aoti_torch_delete_tensor_object(freed), Error::Ok);
+
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* data = static_cast<float*>(base->mutable_data_ptr());
+  for (int i = 0; i < 12; i++) {
+    data[i] = static_cast<float>(i + 1);
+  }
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, strides, /*storage_offset=*/4, &read),
+      Error::Ok);
+  ASSERT_EQ(read->const_data_ptr(), freed_ptr);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 9, 10}));
+}
+
+// A wait after a plain commit also waits for the committed work: the pool
+// takes a completed wait to mean that nothing queued before it still runs.
+TEST_F(MetalGraphViewTest, WaitAfterCommitWaitsForCommittedWork) {
+  constexpr int64_t kCount = 1 << 24;
+  AOTITensorHandle input = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &kCount, &kStride, kFloat32, kDeviceMps, 0, &input),
+      Error::Ok);
+  std::fill_n(static_cast<float*>(input->mutable_data_ptr()), kCount, 1.0f);
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &kCount, &kStride, kFloat32, kDeviceMps, 0, &out),
+      Error::Ok);
+  auto* out_data = static_cast<float*>(out->mutable_data_ptr());
+  std::fill_n(out_data, kCount, 0.0f);
+
+  queueCopy(*input, *out, kCount);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  EXPECT_EQ(out_data[kCount - 1], 1.0f);
+}
+
+// A buffer freed before the stream last waited has no work left on it, so
+// getting it back from the pool does not make the packed copy wait.
+TEST_F(MetalGraphViewTest, MaterializingIntoSettledRecycledBufferDoesNotWait) {
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  AOTITensorHandle freed = nullptr;
+  createMatrix(kDeviceMps, &freed);
+  void* freed_ptr = freed->mutable_data_ptr();
+  ASSERT_EQ(aoti_torch_delete_tensor_object(freed), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  queueCopy(*input, *out, 4);
+
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* data = static_cast<float*>(base->mutable_data_ptr());
+  for (int i = 0; i < 12; i++) {
+    data[i] = static_cast<float>(i + 1);
+  }
+  const int64_t strides[2] = {4, 1};
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, kMatrixSizes, strides, /*storage_offset=*/4, &read),
+      Error::Ok);
+  ASSERT_EQ(read->const_data_ptr(), freed_ptr);
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 4), (std::vector<float>{5, 6, 9, 10}));
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+}
+
+// A tensor can start inside a Metal buffer without being registered as a view
+// of it, e.g. a blob at an offset into it. Materializing a view of it still
+// waits for queued writes to that buffer.
+TEST_F(MetalGraphViewTest, MaterializingBlobInsideMetalBufferWaits) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  auto* memory = static_cast<float*>(base->mutable_data_ptr());
+  std::fill_n(memory, 12, 0.0f);
+  AOTITensorHandle written = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base,
+          2,
+          kMatrixSizes,
+          kMatrixStrides,
+          /*storage_offset=*/4,
+          &written),
+      Error::Ok);
+  AOTITensorHandle inner = nullptr;
+  ASSERT_EQ(createFromBlob(memory + 5, &inner), Error::Ok);
+  ASSERT_FALSE(metal_is_device_pointer(inner->mutable_data_ptr()));
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(i + 1);
+  }
+  queueCopy(*input, *written, 4);
+
+  // Elements 5 and 7 of `base`: not densely packed, so copied on the CPU.
+  const int64_t size = 2;
+  const int64_t stride = 2;
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          inner, 1, &size, &stride, /*storage_offset=*/0, &read),
+      Error::Ok);
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 2), (std::vector<float>{2, 4}));
+}
+
+// A tensor can start inside the region of another one without being a view of
+// it, e.g. two blobs over the same memory. The GPU still writes it through that
+// region's buffer, so materializing a view of it waits.
+TEST_F(MetalGraphViewTest, MaterializingMemoryInsideAnotherRegionWaits) {
+  std::vector<float> memory(12, 0.0f);
+  AOTITensorHandle outer = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data(), &outer), Error::Ok);
+  AOTITensorHandle written = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          outer,
+          2,
+          kMatrixSizes,
+          kMatrixStrides,
+          /*storage_offset=*/4,
+          &written),
+      Error::Ok);
+  AOTITensorHandle inner = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 5, &inner), Error::Ok);
+  ASSERT_FALSE(metal_is_device_pointer(inner->mutable_data_ptr()));
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(i + 1);
+  }
+  queueCopy(*input, *written, 4);
+
+  // Elements 5 and 7 of `memory`: not densely packed, so copied on the CPU.
+  const int64_t size = 2;
+  const int64_t stride = 2;
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          inner, 1, &size, &stride, /*storage_offset=*/0, &read),
+      Error::Ok);
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 2), (std::vector<float>{2, 4}));
+}
+
 // Views of the same CPU memory are bound into one Metal buffer, so a graph
 // reading through one view sees what a graph before it wrote through another,
 // overlapping one.

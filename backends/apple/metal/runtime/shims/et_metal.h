@@ -283,6 +283,11 @@ class ETMetalStream {
   void synchronize(SyncType syncType = SyncType::COMMIT_AND_WAIT);
   void synchronize(); // Overload for backward compatibility
   bool isEmpty() const;
+  // How many COMMIT_AND_WAIT syncs have completed. Work queued before one is
+  // done once it completes.
+  uint64_t completedWaits() const {
+    return completedWaits_;
+  }
 
   // Command buffer management with lazy creation
   MPSCommandBuffer_t commandBuffer();
@@ -343,6 +348,7 @@ class ETMetalStream {
   bool enableCommitAndContinue_;
   int flushInterval_; // 0 = disabled, >0 = flush every N dispatches
   std::atomic<int> dispatchCount_; // dispatches since last flush
+  uint64_t completedWaits_ = 0;
 
   // Singleton instance
   static ETMetalStream* defaultStream_;
@@ -381,8 +387,18 @@ extern "C" {
 
 // Memory management functions for Metal
 void* metal_allocate_buffer(long bytes);
+// Like metal_allocate_buffer, and sets `*may_be_in_use` when the buffer comes
+// from the pool and the stream has not waited since it was freed. Buffers are
+// recycled without a wait, so work queued before such a buffer was freed may
+// still use it: the CPU must wait for that work before writing it.
+void* metal_allocate_buffer_tracking_use(long bytes, bool* may_be_in_use);
 void metal_deallocate_buffer(void* ptr);
 bool metal_is_device_pointer(void* ptr);
+// Whether any of the `nbytes` at `ptr` lie in memory the GPU can write: a Metal
+// buffer, or CPU memory in a region with a buffer (metal_register_cpu_view).
+// Unlike metal_is_device_pointer, this does not need `ptr` to be a buffer start
+// or a registered view. It scans every buffer, so it is for rare paths.
+bool metal_overlaps_gpu_memory(const void* ptr, size_t nbytes);
 int metal_copy_memory(
     void* dst,
     const void* src,
