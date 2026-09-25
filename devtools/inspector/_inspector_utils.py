@@ -791,13 +791,15 @@ def _map_sequence_aot_output(
 def _find_matching_runtime_output_by_shape_and_dtype(
     aot_intermediate_output: torch.Tensor,
     runtime_intermediate_output: Sequence,
+    fallback_index: int,
 ) -> Any:
     """
     Find the runtime output that matches the AOT output shape and dtype.
-    Used for multi-output operations (like native_layer_norm.out, native_dropout.out).
+    Used for multi-output operations (like native_layer_norm.out, native_dropout.out)
+    and for delegates that return more than one tensor.
 
     Returns:
-        The matching runtime output, or runtime_intermediate_output[-1] as fallback.
+        The matching runtime output, or runtime_intermediate_output[fallback_index].
     """
     # Find all runtime outputs that match the AOT shape
     matching_indices = []
@@ -824,14 +826,13 @@ def _find_matching_runtime_output_by_shape_and_dtype(
             # Exactly one dtype match - use it (e.g., dropout case where mask is bool)
             return runtime_intermediate_output[dtype_matching_indices[0]]
 
-    # No unique match found, return the last element as fallback
-    return runtime_intermediate_output[-1]
+    # No unique match found, fall back to positional pairing
+    return runtime_intermediate_output[fallback_index]
 
 
 def _map_non_sequence_aot_output(
     aot_intermediate_output: Any,
     runtime_intermediate_output: Any,
-    num_outputs: int,
     negative_index: int,
 ) -> Any:
     """
@@ -843,21 +844,33 @@ def _map_non_sequence_aot_output(
     if not isinstance(runtime_intermediate_output, Sequence):
         return runtime_intermediate_output
 
-    # Use the last element of the runtime output as fallback if no match is found
+    # Positional pairing is the fallback if no shape/dtype match is found.
     aot_mapped_runtime_intermediate_output = runtime_intermediate_output[negative_index]
 
-    # delegate runtime call and AOT intermediate is not a sequence.
-    # For multi-output operations (like native_layer_norm.out, native_dropout.out),
-    # the runtime captures all outputs but AOT only captures the primary output.
-    # We need to find the runtime output that matches the AOT output shape and dtype.
-    if (
-        num_outputs == 1
-        and len(runtime_intermediate_output) > 1
-        and isinstance(aot_intermediate_output, torch.Tensor)
+    # The runtime event carries every tensor the op or delegate returned, while
+    # the AOT side has one tensor per node. Two cases land here:
+    #
+    #   one runtime output per AOT node: a multi-output aten op
+    #     (native_layer_norm.out, native_dropout.out) whose extra outputs AOT
+    #     never captured.
+    #   several runtime outputs: a delegate returning more than one tensor. The
+    #     caller walks them positionally, taking the i-th-from-last debug handle
+    #     in the delegate's handle tuple for the i-th-from-last runtime output.
+    #     Nothing in the debug handles records which fused node produced which
+    #     output, so handle order and output order agree only by luck -- with one
+    #     output it is trivially true, with several it usually is not.
+    #
+    # Both cases are answered the same way: pick the runtime output whose shape
+    # and dtype match the AOT tensor, and only fall back to position when that
+    # search cannot single one out.
+    if len(runtime_intermediate_output) > 1 and isinstance(
+        aot_intermediate_output, torch.Tensor
     ):
         aot_mapped_runtime_intermediate_output = (
             _find_matching_runtime_output_by_shape_and_dtype(
-                aot_intermediate_output, runtime_intermediate_output
+                aot_intermediate_output,
+                runtime_intermediate_output,
+                fallback_index=negative_index,
             )
         )
 
@@ -903,7 +916,6 @@ def _process_single_runtime_output(
         aot_mapped_runtime_intermediate_output = _map_non_sequence_aot_output(
             aot_intermediate_output,
             runtime_intermediate_output,
-            num_outputs,
             negative_index,
         )
 

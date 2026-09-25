@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import math
 import tempfile
 import unittest
 from typing import Dict, Tuple
@@ -44,6 +45,7 @@ from executorch.devtools.inspector._inspector_utils import (
     propagate_back_debug_handle,
     TimeScale,
 )
+from executorch.devtools.inspector.numerical_comparator import SNRComparator
 
 from executorch.exir import to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY, UNSET_DEBUG_HANDLE
@@ -422,6 +424,150 @@ class TestInspectorUtils(unittest.TestCase):
                     )
                     break
             self.assertTrue(found)
+
+    def _multi_output_delegate_fixture(self):
+        """A delegate whose output order does not match its debug handle order.
+
+        A delegate is logged as one runtime event carrying every tensor it
+        returned, and the mapping walks those outputs positionally: the
+        i-th-from-last debug handle in the delegate's handle tuple is paired with
+        the i-th-from-last runtime output. Nothing in the debug handles records
+        which fused node produced which output, so the two orders line up only
+        when the delegate has a single output. Here they deliberately disagree,
+        which is the shape a real fused delegate has.
+        """
+        aot_intermediate_outputs = {
+            (1,): torch.randn(1, 4, 512),
+            (2,): torch.randn(1, 4, 1408),
+            (3,): torch.randn(1, 4, 2048),
+        }
+        runtime_intermediate_outputs = {
+            (1, 2, 3): (
+                [
+                    aot_intermediate_outputs[(2,)].clone(),
+                    aot_intermediate_outputs[(3,)].clone(),
+                    aot_intermediate_outputs[(1,)].clone(),
+                ],
+                3,
+            ),
+        }
+        return aot_intermediate_outputs, runtime_intermediate_outputs
+
+    def test_map_runtime_aot_intermediate_outputs_multi_output_delegate(self):
+        # Each AOT tensor must be paired with the runtime tensor of the same
+        # shape. Pairing by position instead hands the 512-wide AOT tensor the
+        # 1408-wide runtime one.
+        aot_intermediate_outputs, runtime_intermediate_outputs = (
+            self._multi_output_delegate_fixture()
+        )
+
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+
+        self.assertEqual(len(actual), 3)
+        for (_, aot_output), (runtime_debug_handle, runtime_output) in actual.items():
+            self.assertEqual(runtime_debug_handle, (1, 2, 3))
+            self.assertEqual(aot_output.shape, runtime_output.shape)
+            self.assertTrue(torch.allclose(aot_output, runtime_output))
+
+    def test_snr_comparator_on_multi_output_delegate(self):
+        # The mispairing surfaced inside the comparator rather than the mapper:
+        # subtracting two differently shaped tensors raised
+        #   Error computing SNR difference between tensors: The size of tensor a
+        #   (512) must match the size of tensor b (1408) at non-singleton
+        #   dimension 2
+        # which aborted the whole comparison, not just the offending row.
+        aot_intermediate_outputs, runtime_intermediate_outputs = (
+            self._multi_output_delegate_fixture()
+        )
+        mapping = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+
+        df = SNRComparator().compare(mapping, {}, {})
+
+        self.assertEqual(len(df), 3)
+        for gap in df["gap"]:
+            self.assertEqual(len(gap), 1)
+            self.assertFalse(math.isnan(gap[0]))
+
+    def test_map_runtime_aot_intermediate_outputs_delegate_with_interior_nodes(self):
+        # A delegate that fused more nodes than it returns tensors, which is the
+        # usual shape once a whole block lands in one partition:
+        #
+        #   10 linear_gate -> [1, 4, 1408]
+        #   11 linear_up   -> [1, 4, 1408]
+        #   12 silu        -> [1, 4, 1408]
+        #   13 mul         -> [1, 4, 1408]   escapes the partition
+        #   14 linear_down -> [1, 4, 512]    escapes the partition
+        #
+        # Handles 10-12 are interior. The two that escape are the last two in
+        # the handle tuple, so both positional AOT picks do land on real
+        # delegate outputs -- but the delegate's output list is ordered the
+        # other way round, because the partition's output spec is built
+        # independently of the backend's handle serialization order. Pairing by
+        # position therefore hands the 512-wide AOT tensor the 1408-wide runtime
+        # one and vice versa, and the comparator aborts on the shape mismatch.
+        aot_intermediate_outputs = {
+            (10,): torch.randn(1, 4, 1408),
+            (11,): torch.randn(1, 4, 1408),
+            (12,): torch.randn(1, 4, 1408),
+            (13,): torch.randn(1, 4, 1408),
+            (14,): torch.randn(1, 4, 512),
+        }
+        runtime_intermediate_outputs = {
+            (10, 11, 12, 13, 14): (
+                [
+                    aot_intermediate_outputs[(14,)].clone(),
+                    aot_intermediate_outputs[(13,)].clone(),
+                ],
+                2,
+            ),
+        }
+
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+
+        self.assertEqual(len(actual), 2)
+        for (_, aot_output), (_, runtime_output) in actual.items():
+            self.assertEqual(aot_output.shape, runtime_output.shape)
+            self.assertTrue(torch.allclose(aot_output, runtime_output))
+
+        # The mismatch surfaces in the comparator, and one bad pair aborts the
+        # whole DataFrame rather than a single row.
+        df = SNRComparator().compare(actual, {}, {})
+        self.assertEqual(len(df), 2)
+        for gap in df["gap"]:
+            self.assertEqual(len(gap), 1)
+            self.assertFalse(math.isnan(gap[0]))
+
+    def test_map_runtime_aot_intermediate_outputs_multi_output_ambiguous_shapes(self):
+        # Shape and dtype cannot separate outputs that share both, so pairing
+        # stays positional there. Guards against the search falling back to the
+        # last runtime output, which would collapse every AOT tensor onto it.
+        aot_intermediate_outputs = {
+            (1,): torch.tensor([1.0, 2.0, 3.0]),
+            (2,): torch.tensor([4.0, 5.0, 6.0]),
+        }
+        runtime_intermediate_outputs = {
+            (1, 2): (
+                [
+                    aot_intermediate_outputs[(1,)].clone(),
+                    aot_intermediate_outputs[(2,)].clone(),
+                ],
+                2,
+            ),
+        }
+
+        actual = map_runtime_aot_intermediate_outputs(
+            aot_intermediate_outputs, runtime_intermediate_outputs
+        )
+
+        self.assertEqual(len(actual), 2)
+        for (_, aot_output), (_, runtime_output) in actual.items():
+            self.assertTrue(torch.allclose(aot_output, runtime_output))
 
     def test_convert_input_to_tensor_convertible_inputs(self):
         # Scalar -> tensor
