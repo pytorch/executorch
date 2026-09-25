@@ -67,12 +67,14 @@ class VulkanSupportedOperators(OperatorSupportBase):
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
         nn_module_blocklist: Optional[Set[str]] = None,
         nn_module_allowlist: Optional[Set[str]] = None,
+        downcast_64_bit: bool = True,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
         self.skip_bool_tensors = skip_bool_tensors
+        self.downcast_64_bit = downcast_64_bit
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -213,6 +215,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
         if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
             self.log_skip(node, "dtype not supported")
             return False
+
+        if not self.downcast_64_bit:
+            native_dtypes = utils.DtypeSetList(
+                utils.ALL_T - {torch.int64, torch.float64}
+            )
+            dtype_valid, dtype_reason = utils.check_node_dtypes(
+                node, native_dtypes, native_dtypes
+            )
+            if not dtype_valid:
+                self.log_skip(node, f"{dtype_reason} with downcast_64_bit disabled")
+                return False
 
         if node.op == "call_function":
             # Apply nn module allowlist and blocklist
@@ -422,6 +435,7 @@ class VulkanPartitioner(Partitioner):
                 fusable_subgraphs=fusable_subgraphs,
                 nn_module_blocklist=self.nn_module_blocklist,
                 nn_module_allowlist=self.nn_module_allowlist,
+                downcast_64_bit=self.options.get("downcast_64_bit", True),
             ),
             allows_single_node_partition=True,
         )

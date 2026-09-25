@@ -75,8 +75,13 @@ class TestVulkanTransformer(unittest.TestCase):
         storage=VkStorageType.TEXTURE_3D,
         *,
         fully_delegated=True,
+        downcast_64_bit=True,
     ):
-        options = {"require_dynamic_shapes": True, "storage_type_override": storage}
+        options = {
+            "require_dynamic_shapes": True,
+            "storage_type_override": storage,
+            "downcast_64_bit": downcast_64_bit,
+        }
         if storage == VkStorageType.BUFFER:
             options["texture_limits"] = (1, 1, 1)
         edge = to_edge_transform_and_lower(
@@ -429,6 +434,69 @@ class TestVulkanTransformer(unittest.TestCase):
                     edge = self._lower(model, inputs[0], fully_delegated=False)
                     self.assertEqual(_vulkan_graphs(edge), [])
                     self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_integer_factories_without_downcasting(self):
+        class IntegerFactories(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (
+                    torch.scalar_tensor(16777217, dtype=self.dtype),
+                    torch.full(x.shape, 2**31 - 1, dtype=self.dtype),
+                    torch.full_like(x, -(2**31), dtype=self.dtype),
+                )
+
+        inputs = [(torch.zeros(3, s),) for s in (7, 2, 15, 7)]
+        for dtype in (torch.int32, torch.int64):
+            for downcast in (True, False):
+                with self.subTest(dtype=dtype, downcast=downcast):
+                    model = IntegerFactories(dtype)
+                    delegated = dtype == torch.int32 or downcast
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: Dim("s", min=2, max=16)},),
+                        fully_delegated=delegated,
+                        downcast_64_bit=downcast,
+                    )
+                    self.assertEqual(bool(_vulkan_graphs(edge)), delegated)
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_64_bit_inputs_without_downcasting(self):
+        class Input64Bit(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    x + x,
+                    torch.full_like(x, 3, dtype=torch.int32),
+                    torch.ones(x.shape, dtype=torch.float32),
+                )
+
+        model = Input64Bit()
+        for dtype in (torch.int64, torch.float64):
+            with self.subTest(dtype=dtype):
+                inputs = [
+                    (torch.arange(3 * s, dtype=dtype).reshape(3, s),)
+                    for s in (7, 2, 15, 7)
+                ]
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=16)},),
+                    fully_delegated=False,
+                    downcast_64_bit=False,
+                )
+                graphs = _vulkan_graphs(edge)
+                self.assertTrue(graphs)
+                for graph in graphs:
+                    for value in graph.values:
+                        if isinstance(value.value, VkTensor):
+                            self.assertNotIn(
+                                value.value.datatype,
+                                (VkDataType.INT64, VkDataType.FLOAT64),
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
 
     def test_bool_fill_values(self):
         class BoolFill(torch.nn.Module):
