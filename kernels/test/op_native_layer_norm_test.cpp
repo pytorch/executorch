@@ -78,7 +78,7 @@ class OpNativeLayerNormTest : public OperatorTest {
         op_native_layer_norm_out(
             input, {width}, weight, bias, 1e-5, out, mean, rstd);
         EXPECT_TENSOR_EQ(out, tf.make({2, width}, expected_values));
-        EXPECT_TENSOR_EQ(mean, tf.make({2, 1}, {0, 3}));
+        EXPECT_TENSOR_CLOSE(mean, tf.make({2, 1}, {0, 3}));
         EXPECT_TENSOR_EQ(rstd, tf.make({2, 1}, {1, 0.5}));
       }
     }

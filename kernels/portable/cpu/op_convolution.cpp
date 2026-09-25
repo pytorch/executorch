@@ -90,6 +90,62 @@ void conv2d_impl(
 
   using COMPUTE_T =
       typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
+  if (transposed) {
+    for (const auto out_y : c10::irange(out_H)) {
+      out_coord[2] = out_y;
+      for (const auto out_x : c10::irange(out_W)) {
+        out_coord[3] = out_x;
+        COMPUTE_T accum = 0;
+        w_coord[1] = out_c - out_c_start;
+        // Invert the scatter coordinates once per tap, before reducing
+        // channels.
+        for (const auto w_y : c10::irange(w_H)) {
+          int64_t in_y = out_y + padding_y - dilation_y * w_y;
+          if (in_y % stride_y != 0) {
+            continue;
+          }
+          in_y /= stride_y;
+          if (in_y < 0 || in_y >= in_H) {
+            continue;
+          }
+          in_coord[2] = in_y;
+          w_coord[2] = w_y;
+          for (const auto w_x : c10::irange(w_W)) {
+            int64_t in_x = out_x + padding_x - dilation_x * w_x;
+            if (in_x % stride_x != 0) {
+              continue;
+            }
+            in_x /= stride_x;
+            if (in_x < 0 || in_x >= in_W) {
+              continue;
+            }
+            in_coord[3] = in_x;
+            w_coord[3] = w_x;
+            for (const auto in_c :
+                 c10::irange(in_c_start, in_c_start + in_C_per_group)) {
+              in_coord[1] = in_c;
+              w_coord[0] = in_c;
+              const size_t in_idx =
+                  calculate_linear_index(in_coord, in_strides.data(), 4);
+              const size_t w_idx =
+                  calculate_linear_index(w_coord, w_strides.data(), 4);
+              const COMPUTE_T in_val = in_ptr[in_idx];
+              const COMPUTE_T w_val = w_ptr[w_idx];
+              accum += in_val * w_val;
+            }
+          }
+        }
+        if (bias_ptr != nullptr) {
+          accum += load_bias(&bias_ptr[out_c * bias.value().element_size()]);
+        }
+        const size_t out_idx =
+            calculate_linear_index(out_coord, out_strides.data(), 4);
+        out_ptr[out_idx] = accum;
+      }
+    }
+    return;
+  }
+
   for (const auto out_y : c10::irange(out_H)) {
     out_coord[2] = out_y;
     for (const auto out_x : c10::irange(out_W)) {

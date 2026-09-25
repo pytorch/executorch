@@ -123,6 +123,59 @@ class OpConvOutTest : public OperatorTest {
     }
   }
 
+  template <ScalarType DTYPE>
+  void test_grouped_transposed_accumulation(int32_t channels_per_group) {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    std::vector<CTYPE> input_data;
+    std::vector<CTYPE> weight_data;
+    for (int32_t channel = 0; channel < 2 * channels_per_group; ++channel) {
+      for (int32_t i = 0; i < 4; ++i) {
+        input_data.push_back(channel < channels_per_group ? i + 1 : 1);
+        weight_data.push_back(
+            channel < channels_per_group ? i + 1 : (i == 0 || i == 3 ? 1 : -1));
+      }
+    }
+    auto input = tf.make({1, 2 * channels_per_group, 2, 2}, input_data);
+    auto weight = tf.make({2 * channels_per_group, 1, 2, 2}, weight_data);
+    auto bias = tf.make({2}, {0.5, -0.5});
+    const int64_t stride[] = {2, 2};
+    const int64_t padding[] = {1, 1};
+    const int64_t dilation[] = {2, 2};
+    const int64_t output_padding[] = {1, 1};
+    // PyTorch FP32 reference for one input channel per group, before bias.
+    // Repeating channels lengthens the reduction; gaps must retain the bias.
+    const float sums[] = {0, 0, 0, 0, 0, 20, 0, 16, 0, 0, 0, 0, 0, 24, 0, 16,
+                          0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0, 0, 0,  0, 1};
+    std::vector<CTYPE> expected_data;
+    for (int32_t i = 0; i < 32; ++i) {
+      expected_data.push_back(
+          sums[i] * channels_per_group + (i < 16 ? 0.5f : -0.5f));
+    }
+    auto expected = tf.make({1, 2, 4, 4}, expected_data);
+    for (const bool channels_last : {false, true}) {
+      SCOPED_TRACE(channels_last);
+      auto in = channels_last ? tf.channels_last_like(input) : input;
+      auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+      auto out = tf.zeros_like(exp);
+      if (channels_last) {
+        out = tf.channels_last_like(out);
+      }
+      op_convolution_out(
+          in,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          true,
+          output_padding,
+          2,
+          out);
+      EXPECT_TENSOR_EQ(out, exp);
+    }
+  }
+
   /* Correctness Test Template for test code generation via Python */
   /* %python
   correctness_test_template = f"""
@@ -926,40 +979,13 @@ TEST_F(OpConvCorrectnessTest, BFloat16FloatBiasAccumulation) {
 }
 
 TEST_F(OpConvCorrectnessTest, GroupedTransposedStrideDilationAndOutputPadding) {
-  TensorFactory<ScalarType::Float> tf;
-  auto input = tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 1, 1, 1, 1});
-  auto weight = tf.make({2, 1, 2, 2}, {1, 2, 3, 4, 1, -1, -1, 1});
-  auto bias = tf.make({2}, {0.5, -0.5});
-  const int64_t stride[] = {2, 2};
-  const int64_t padding[] = {1, 1};
-  const int64_t dilation[] = {2, 2};
-  const int64_t output_padding[] = {1, 1};
-  // torch.nn.functional.conv_transpose2d with stride=2, padding=1,
-  // output_padding=1, groups=2, dilation=2. Gaps must retain the bias.
-  auto expected =
-      tf.make({1, 2, 4, 4}, {0.5,  0.5,  0.5,  0.5,  0.5,  20.5, 0.5,  16.5,
-                             0.5,  0.5,  0.5,  0.5,  0.5,  24.5, 0.5,  16.5,
-                             -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5,
-                             -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5});
-  for (const bool channels_last : {false, true}) {
-    SCOPED_TRACE(channels_last);
-    auto in = channels_last ? tf.channels_last_like(input) : input;
-    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
-    auto out = tf.zeros_like(exp);
-    if (channels_last) {
-      out = tf.channels_last_like(out);
-    }
-    op_convolution_out(
-        in,
-        weight,
-        bias,
-        stride,
-        padding,
-        dilation,
-        true,
-        output_padding,
-        2,
-        out);
-    EXPECT_TENSOR_EQ(out, exp);
-  }
+  test_grouped_transposed_accumulation<ScalarType::Float>(1);
+}
+
+TEST_F(OpConvCorrectnessTest, HalfGroupedTransposedAccumulation) {
+  test_grouped_transposed_accumulation<ScalarType::Half>(1024);
+}
+
+TEST_F(OpConvCorrectnessTest, BFloat16GroupedTransposedAccumulation) {
+  test_grouped_transposed_accumulation<ScalarType::BFloat16>(1024);
 }
