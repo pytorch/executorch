@@ -12,6 +12,7 @@ from executorch.backends.samsung.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+from executorch.backends.transforms import get_shape
 
 
 @register_node_visitor
@@ -30,25 +31,48 @@ class SplitVisitor(NodeVisitor):
         # output
         all_output_tensors = []
 
+        copied_indices = []
         for output_idx in range(len(node.args[1])):
-            output_id = self.define_tensor(
-                node,
-                enn_graph,
-                vals_to_ids,
-                output_idx=output_idx,
-            )
-            all_output_tensors.append(output_id)
+            for user in node.users.keys():
+                if user.target.__name__ == "getitem" and len(user.args) > 1:
+                    copied_idx = user.args[1]
+                    copied_indices.append(copied_idx)
+                    if copied_idx == output_idx:
+                        output_id = self.define_tensor(user, enn_graph, vals_to_ids)
+                        all_output_tensors.append(output_id)
 
-        for user in node.users.keys():
-            if user.target.__name__ == "getitem" and len(user.args) > 1:
-                vals_to_ids[user] = all_output_tensors[user.args[1]]
-
+        in_shape = get_shape(input)
+        points = node.args[1]
         axis = node.args[2] if len(node.args) > 2 else 0
+        axis = axis % len(in_shape)
 
-        params = {}
-        params["axis"] = axis
-        params["point"] = node.args[1]
+        if len(all_output_tensors) < len(node.args[1]):
+            for idx, output_tensor_id in enumerate(all_output_tensors):
+                begin = [0] * len(in_shape)
+                end = in_shape
+                point_idx = copied_indices[idx]
+                begin[axis] = sum(points[:point_idx])
+                end[axis] = begin[axis] + points[point_idx]
+                strides = [1] * len(in_shape)
+                params = {
+                    "begin": begin,
+                    "end": end,
+                    "strides": strides,
+                    "shrink_axis_mask": pow(2, axis),
+                }
+                self._update_params_qdtype(node, params)
+                enn_graph.define_op(
+                    node.name, "STRIDEDSLICE", [input_id], [output_tensor_id], params
+                )
+        else:
+            params = {
+                "axis": axis,
+                "point": points,
+            }
+            self._update_params_qdtype(node, params)
 
-        enn_graph.define_op(node.name, "SPLIT", [input_id], all_output_tensors, params)
+            enn_graph.define_op(
+                node.name, "SPLIT", [input_id], all_output_tensors, params
+            )
 
         return True

@@ -35,6 +35,7 @@ SUPPORT_MODEL_NAMES = [
     "dl3",
     "vit",
     "w2l",
+    "yolo26",
 ]
 
 

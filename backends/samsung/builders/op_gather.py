@@ -1,10 +1,10 @@
-# Copyright (c) 2025 Samsung Electronics Co. LTD
+# Copyright (c) 2026 Samsung Electronics Co. LTD
 # All rights reserved
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict, List
+from typing import cast, Dict
 
 import torch
 from executorch.backends.samsung.builders.node_visitor import (
@@ -16,11 +16,8 @@ from executorch.backends.transforms import get_shape
 
 
 @register_node_visitor
-class UpsampleNearest2dVisitor(NodeVisitor):
-    target = "aten.upsample_nearest2d.vec"
-
-    def __init__(self, *args) -> None:
-        super().__init__(*args)
+class GatherVisitor(NodeVisitor):
+    target = "aten.gather.default"
 
     def define_node(
         self,
@@ -30,25 +27,20 @@ class UpsampleNearest2dVisitor(NodeVisitor):
     ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
+
         in_shape = get_shape(input)
-        out_shape = get_shape(node)
-        scale_factor = [
-            out_shape[0] * 1.0 / in_shape[-2],
-            out_shape[1] * 1.0 / in_shape[-1],
-        ]
+        axis = cast(int, node.args[1]) % len(in_shape)
+        target_indices_node = node.args[2]
 
-        if len(node.args) > 2 and node.args[2]:
-            scale_factor = cast(List[float], node.args[2])
-
-        params = {
-            "align_corners": False,
-            "upsampling_factor": scale_factor,
-            "half_pixel_centers": True,
-        }
+        indices_id = self.define_tensor(target_indices_node, enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
+
+        params = {"axis": axis}
+        self._update_params_qdtype(node, params)
+
         enn_graph.define_op(
-            node.name, "RESIZE_NEAREST_NEIGHBOR", [input_id], [output_id], params
+            node.name, "GATHER", [input_id, indices_id], [output_id], params
         )
 
         return True
