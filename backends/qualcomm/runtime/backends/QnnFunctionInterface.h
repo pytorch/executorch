@@ -7,6 +7,8 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
+
 #include "QnnInterface.h"
 #include "Saver/QnnSaver.h"
 

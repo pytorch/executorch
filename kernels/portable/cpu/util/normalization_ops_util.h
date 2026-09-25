@@ -8,7 +8,10 @@
 
 #pragma once
 
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <numeric>
 
@@ -17,8 +20,8 @@ namespace executor {
 
 /**
  * Scalar layer_norm computation over M rows of N elements each.
- * Computes mean/variance in float, normalizes with (x - mean) / std * gamma +
- * beta. Caller must handle M==0 and N==0 edge cases before calling.
+ * Uses corrected two-pass moments in float (double for Double inputs).
+ * Caller must handle M==0 and N==0 edge cases before calling.
  */
 template <typename CTYPE>
 inline void layer_norm_scalar(
@@ -30,30 +33,66 @@ inline void layer_norm_scalar(
     CTYPE* rstd_data,
     size_t M,
     size_t N,
-    float eps) {
+    double eps) {
+  using COMPUTE_T =
+      typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
+  const auto count = static_cast<COMPUTE_T>(N);
+  const auto epsilon = static_cast<COMPUTE_T>(eps);
+  // Independent accumulators allow vectorization without reassociating sums.
+  constexpr size_t kLanes = 8;
   for (size_t i = 0; i < M; ++i) {
     const CTYPE* x = input_data + i * N;
     CTYPE* y = out_data + i * N;
 
-    // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    float sum = std::accumulate(x, x + N, 0.0f);
-    float sq_sum = 0;
-    for (size_t j = 0; j < N; ++j) {
-      sq_sum += static_cast<float>(x[j]) * x[j];
+    std::array<COMPUTE_T, kLanes> sums{};
+    size_t j = 0;
+    for (; j + kLanes <= N; j += kLanes) {
+      for (size_t lane = 0; lane < kLanes; ++lane) {
+        sums[lane] += static_cast<COMPUTE_T>(x[j + lane]);
+      }
     }
-    float mean_value = sum / N;
-    float variance = sq_sum / N - mean_value * mean_value;
-    float std = std::sqrt(variance + eps);
+    COMPUTE_T sum = std::accumulate(sums.begin(), sums.end(), COMPUTE_T{0});
+    for (; j < N; ++j) {
+      sum += static_cast<COMPUTE_T>(x[j]);
+    }
+    COMPUTE_T mean_value = sum / count;
+
+    std::array<COMPUTE_T, kLanes> deviations{};
+    std::array<COMPUTE_T, kLanes> squares{};
+    j = 0;
+    for (; j + kLanes <= N; j += kLanes) {
+      for (size_t lane = 0; lane < kLanes; ++lane) {
+        const COMPUTE_T d = static_cast<COMPUTE_T>(x[j + lane]) - mean_value;
+        deviations[lane] += d;
+        squares[lane] += d * d;
+      }
+    }
+    COMPUTE_T d_sum =
+        std::accumulate(deviations.begin(), deviations.end(), COMPUTE_T{0});
+    COMPUTE_T sq_sum =
+        std::accumulate(squares.begin(), squares.end(), COMPUTE_T{0});
+    for (; j < N; ++j) {
+      const COMPUTE_T d = static_cast<COMPUTE_T>(x[j]) - mean_value;
+      d_sum += d;
+      sq_sum += d * d;
+    }
+    const COMPUTE_T correction = d_sum / count;
+    const COMPUTE_T variance =
+        std::max((sq_sum - d_sum * correction) / count, COMPUTE_T{0});
+    mean_value += correction;
+    const COMPUTE_T std = std::sqrt(variance + epsilon);
 
     // Calculate the elements of output
-    for (size_t j = 0; j < N; ++j) {
-      CTYPE w = weight_data ? weight_data[j] : static_cast<CTYPE>(1);
-      CTYPE b = bias_data ? bias_data[j] : static_cast<CTYPE>(0);
-      y[j] = (x[j] - mean_value) / std * w + b;
+    for (j = 0; j < N; ++j) {
+      const COMPUTE_T w =
+          weight_data ? static_cast<COMPUTE_T>(weight_data[j]) : COMPUTE_T{1};
+      const COMPUTE_T b =
+          bias_data ? static_cast<COMPUTE_T>(bias_data[j]) : COMPUTE_T{0};
+      y[j] = (static_cast<COMPUTE_T>(x[j]) - mean_value) / std * w + b;
     }
 
     mean_data[i] = mean_value;
-    rstd_data[i] = 1.0 / std;
+    rstd_data[i] = COMPUTE_T{1} / std;
   }
 }
 

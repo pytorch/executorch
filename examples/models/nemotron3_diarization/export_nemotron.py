@@ -157,12 +157,24 @@ def capture_model(model, feature_extractor):
     return programs, metadata
 
 
-def export_model(model_id, output_dir, revision=None, dtype=torch.bfloat16):
-    from executorch.backends.mlx.partitioner import MLXPartitioner
-    from executorch.backends.mlx.passes import get_default_passes
+def export_model(
+    model_id, output_dir, revision=None, dtype=torch.bfloat16, backend="mlx"
+):
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
         XnnpackPartitioner,
     )
+
+    passes = []
+    if backend == "mlx":
+        from executorch.backends.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.passes import get_default_passes
+
+        partitioners = [MLXPartitioner()]
+        passes = get_default_passes()
+    elif backend == "xnnpack":
+        partitioners = [XnnpackPartitioner(enable_bf16=dtype == torch.bfloat16)]
+    else:
+        raise ValueError(f"Unknown backend: {backend}")
 
     model = Nemotron3DiarizationForAudioFrameClassification.from_pretrained(
         model_id, revision=revision, dtype=dtype
@@ -175,13 +187,13 @@ def export_model(model_id, output_dir, revision=None, dtype=torch.bfloat16):
         programs,
         partitioner={
             "preprocessor": [XnnpackPartitioner()],
-            "pre_encode": [MLXPartitioner()],
-            "encode": [MLXPartitioner()],
+            "pre_encode": partitioners,
+            "encode": partitioners,
         },
         transform_passes={
             "preprocessor": [],
-            "pre_encode": get_default_passes(),
-            "encode": get_default_passes(),
+            "pre_encode": passes,
+            "encode": passes,
         },
         constant_methods=metadata,
         compile_config=EdgeCompileConfig(
@@ -211,6 +223,7 @@ def main():
         help="Hugging Face model ID or local Transformers checkpoint directory",
     )
     parser.add_argument("--revision", help="Hugging Face model revision")
+    parser.add_argument("--backend", choices=("mlx", "xnnpack"), default="mlx")
     parser.add_argument("--output-dir", type=Path, default=Path("nemotron_exports"))
     parser.add_argument(
         "--dtype",
@@ -220,7 +233,7 @@ def main():
     )
     args = parser.parse_args()
     dtype = {"bf16": torch.bfloat16, "fp32": torch.float32}[args.dtype]
-    export_model(args.hf_model, args.output_dir, args.revision, dtype)
+    export_model(args.hf_model, args.output_dir, args.revision, dtype, args.backend)
 
 
 if __name__ == "__main__":

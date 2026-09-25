@@ -1860,6 +1860,13 @@ exec_cumsum(const CumsumNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_cummax(const CummaxNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(
+      n.out, cummax(x, n.axis, /*reverse=*/false, /*inclusive=*/true, s));
+}
+
+inline void
 exec_stack(const StackNode& n, ExecutionState& st, StreamOrDevice s) {
   std::vector<array> tensors;
   for (auto tid : n.tensors) {
@@ -2576,6 +2583,9 @@ class Interpreter {
         break;
       case OpCode::CUMSUM:
         ops::exec_cumsum(std::get<CumsumNode>(instr.node), st, s);
+        break;
+      case OpCode::CUMMAX:
+        ops::exec_cummax(std::get<CummaxNode>(instr.node), st, s);
         break;
       case OpCode::STACK:
         ops::exec_stack(std::get<StackNode>(instr.node), st, s);
