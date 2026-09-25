@@ -117,6 +117,9 @@ void main() {
 #ifdef OUTPUT_IS_INDICES
     t_out[out_bufi] = int(local_accum.idx);
 #else
+$if DTYPE == "uint8":
+    t_out[out_bufi] = T(local_accum.val);
+$else:
     t_out[out_bufi] = convert_to_T(local_accum.val);
 #endif
   }

@@ -14,6 +14,30 @@ from executorch.exir.backend.utils import DelegateMappingBuilder
 from executorch.exir.passes import SpecPropPass
 
 
+class TestVkGraphBuilderScalarTensor(unittest.TestCase):
+    def test_aten_scalar_tensor_keeps_namespace(self):
+        class Mask(torch.nn.Module):
+            def forward(self, x):
+                return torch.where(x, 0.0, -torch.inf)
+
+        program = torch.export.export(Mask(), (torch.tensor([True, False]),))
+        edge = to_edge(program)
+        program = apply_passes(edge.exported_program(), [SpecPropPass()])
+        self.assertEqual(
+            sum(
+                node.target == torch.ops.aten.scalar_tensor.default
+                for node in program.graph.nodes
+            ),
+            2,
+        )
+        graph = VkGraphBuilder(
+            program, DelegateMappingBuilder(generated_identifiers=True)
+        ).build_graph()
+        names = [op.name for op in graph.chain]
+        self.assertEqual(names.count("aten.scalar_tensor.default"), 2)
+        self.assertNotIn("scalar_tensor.default", names)
+
+
 class TestVkGraphBuilderInputIds(unittest.TestCase):
     """The serialized input list has to match the delegate call's arguments.
 

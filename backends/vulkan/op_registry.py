@@ -318,13 +318,21 @@ def register_bool_binary_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
-def register_pow_tensor_scalar():
+@update_features(
+    [
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.mul.Scalar,
+    ]
+)
+def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: isinstance(
+            node.args[1], (int, float)
+        ),
     )
 
 
@@ -767,6 +775,20 @@ def register_reduce_cpp_ops():
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=is_reduce_node_supported,
+        pick_io_storage_fn=pick_storage_for_reduce,
+    )
+
+
+@update_features(exir_ops.edge.aten.any.dim)
+def register_any_dim():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: (
+            utils.ndim_of(node.args[0]) > 0 and is_reduce_node_supported(node)
+        ),
         pick_io_storage_fn=pick_storage_for_reduce,
     )
 
@@ -1312,7 +1334,7 @@ def register_expand_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
-        supports_resize=False,
+        supports_resize=True,
         supports_highdim=True,
     )
 
@@ -1558,6 +1580,7 @@ def register_full_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1566,12 +1589,21 @@ def register_full_cpp_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.scalar_tensor.default)
+@update_features(
+    [
+        exir_ops.edge.aten.scalar_tensor.default,
+        # EXIR deliberately keeps scalar_tensor in the ATen dialect.
+        torch.ops.aten.scalar_tensor.default,
+    ]
+)
 def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: isinstance(
+            node.args[0], (int, float)
+        ),
     )
 
 

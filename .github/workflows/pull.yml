@@ -1682,6 +1682,7 @@ jobs:
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
+        python -m unittest backends/vulkan/test/test_vulkan_transformer.py
 
   test-coreml-bc-macos:
     needs: [changed-files, run-decision]

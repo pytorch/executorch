@@ -480,10 +480,13 @@ class VkGraphBuilder:
             if not self.delegate_mapping_builder
             else self.delegate_mapping_builder.insert_delegate_mapping_entry(node)
         )
+        operator_name = node.target.__name__
+        if node.target == torch.ops.aten.scalar_tensor.default:
+            operator_name = "aten.scalar_tensor.default"
         self.chain.append(
             vk_graph_schema.OperatorCall(
                 node_id=operator_node_id,  # pyre-ignore[6]: this is going to be an int
-                name=node.target.__name__,
+                name=operator_name,
                 args=operator_call_args,
             ),
         )

@@ -30,6 +30,23 @@ def define_common_targets(is_fbcode = False):
         )
 
         python_unittest(
+            name = "test_vulkan_transformer",
+            srcs = ["test_vulkan_transformer.py"],
+            preload_deps = [
+                "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+                "//executorch/backends/vulkan:vulkan_backend_lib",
+                "//executorch/kernels/portable:custom_ops_generated_lib",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+                "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/exir:lib",
+                "//executorch/extension/pybindings:portable_lib",  # @manual
+            ],
+        )
+
+        python_unittest(
             name = "test_vulkan_passes",
             srcs = [
                 "test_vulkan_passes.py",
