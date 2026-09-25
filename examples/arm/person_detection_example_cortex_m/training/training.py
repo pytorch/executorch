@@ -262,7 +262,6 @@ def evaluate(
     num_boxes: int,
 ) -> float:
     """Evaluate the model's mAP at an IoU threshold of 0.5."""
-    model.eval()
     metric = MeanAveragePrecision(box_format="xyxy", iou_thresholds=[0.5])
     with torch.no_grad():
         for images, targets in loader:
@@ -568,7 +567,7 @@ def main() -> None:  # noqa: C901
     final_pruning_target = max(PRUNING_TARGETS.values())
     if args.input is not None:
         mean_average_precision = evaluate(
-            model, validation_loader, device, model.grid_size, model.num_boxes
+            model.eval(), validation_loader, device, model.grid_size, model.num_boxes
         )
         warm_start_target = pruning_target(model)
         if warm_start_target == 0:
@@ -610,7 +609,7 @@ def main() -> None:  # noqa: C901
                 parameter_group["lr"] = PRUNING_RECOVERY_LR
             scheduler = make_scheduler(optimizer)
         mean_average_precision = evaluate(
-            model, validation_loader, device, model.grid_size, model.num_boxes
+            model.eval(), validation_loader, device, model.grid_size, model.num_boxes
         )
         print()
         current_learning_rate = optimizer.param_groups[0]["lr"]

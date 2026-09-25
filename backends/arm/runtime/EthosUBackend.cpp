@@ -146,7 +146,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     const Error platform_status =
         platform_init(compile_specs, allocator, handle);
     if (platform_status != Error::Ok) {
-      delete handle;
+      handle->~ExecutionHandle();
       return platform_status;
     }
 

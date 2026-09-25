@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import unittest
 from unittest.mock import MagicMock
 
@@ -32,10 +33,13 @@ from executorch.exir.lowered_backend_module import (
 )
 
 
-def _make_node(op, target):
-    node = MagicMock()
+def _make_node(op, target, args=()):
+    # spec=Node so isinstance(node, Node) holds; the getitem support check
+    # resolves its producer through node.args and requires a real Node.
+    node = MagicMock(spec=torch.fx.Node)
     node.op = op
     node.target = target
+    node.args = args
     return node
 
 
@@ -87,6 +91,34 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
         op = torch.ops.aten.view_copy.default
         self.assertIn(torch.Tag.view_copy, op.tags)
         self.assertTrue(self.sup.is_node_supported({}, _make_node("call_function", op)))
+
+    def test_accepts_getitem_on_supported_producer(self):
+        # getitem unpacks a multi-output result; it must be claimed alongside a
+        # producer the backend claims, so the two stay in one partition.
+        producer = _make_node("call_function", torch.ops.aten.split_copy.Tensor)
+        self.assertTrue(self.sup.is_node_supported({}, producer))
+        getitem = _make_node("call_function", operator.getitem, args=(producer, 0))
+        self.assertTrue(self.sup.is_node_supported({}, getitem))
+
+    def test_rejects_getitem_on_unsupported_producer(self):
+        # partition() sets allows_single_node_partition=True, which disables the
+        # capability partitioner's getitem-only partition filter. Claiming a
+        # getitem whose producer is not claimed would strand it in a delegate
+        # containing no computation, fed by a tuple crossing the boundary.
+        producer = _make_node(
+            "call_function", torch.ops.aten.linalg_solve_triangular.default
+        )
+        self.assertFalse(self.sup.is_node_supported({}, producer))
+        getitem = _make_node("call_function", operator.getitem, args=(producer, 0))
+        self.assertFalse(self.sup.is_node_supported({}, getitem))
+
+    def test_rejects_getitem_without_node_producer(self):
+        # A getitem whose first arg is not a Node (or which has no args) has no
+        # producer to validate, so it is not claimed.
+        for args in ((), (None, 0), ("not_a_node", 0)):
+            with self.subTest(args=args):
+                node = _make_node("call_function", operator.getitem, args=args)
+                self.assertFalse(self.sup.is_node_supported({}, node))
 
     def test_rejects_non_core_unsupported_op(self):
         op = torch.ops.aten.linalg_solve_triangular.default

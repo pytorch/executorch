@@ -15,8 +15,11 @@ fbcode_target(
     name = "lib",
     srcs = [
         "__init__.py",
+        "custom_ops.py",
         "partitioner.py",
         "passes/__init__.py",
+        "passes/_utils.py",
+        "passes/fuse_rope.py",
         "passes/reinplace.py",
         "passes/replace_copy_with_alias.py",
         "preprocess.py",

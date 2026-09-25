@@ -16,10 +16,10 @@ Per session it stores, for each assistant turn it produced, the exact generated
 token ids and a fingerprint of the response. On the next request each prior
 assistant turn is replaced with a sentinel, the conversation is rendered once,
 and the rendered text is split on the sentinels with the stored ids spliced back
-in -- only for turns whose fingerprint matches the incoming message (an edited,
-branched, or reused history is never substituted with stale ids) and whose ids
-are present (a stop-trimmed turn is left as text). The worker's exact-token
-prefix check is the final backstop.
+in -- only for turns whose content/tool fingerprint and any supplied reasoning string
+match the recorded response, and whose ids are present (a stop-trimmed turn is
+left as text). An edit invalidates that turn and all later records. The worker's
+exact-token prefix check separately protects KV reuse.
 """
 
 import hashlib
@@ -111,9 +111,8 @@ class OpenAITranscriptState:
         # boundary verification.
         _header_fn = getattr(template, "assistant_header", None)
         self._assist_hdr = _header_fn() if _header_fn else _ASSIST_HDR
-        # session_id -> [{"fp": str, "ids": list[int] | None}, ...] (one per
-        # assistant turn we produced, in order). Cleared on reset/close.
-        self._turns: dict[str, list[dict]] = {}
+        # Keyed by assistant-turn index, including gaps after invalidation.
+        self._turns: dict[str, dict[int, dict]] = {}
 
     @staticmethod
     def _assistant_fingerprint(content, tool_calls) -> str:
@@ -135,19 +134,24 @@ class OpenAITranscriptState:
         blob = json.dumps([content or "", norm], sort_keys=True, ensure_ascii=False)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _reasoning_fingerprint(reasoning_content: Optional[str]) -> Optional[bytes]:
+        if reasoning_content is None:
+            return None
+        return hashlib.sha256(reasoning_content.encode("utf-8")).digest()
+
     def _normalize_scaffold(self, text_chunk: str, preamble: str) -> Optional[str]:
         """Force the scaffold region (between the last assistant header in
         `text_chunk` and its end) to equal `preamble`, so the worker re-tokenizes
         the exact resident scaffold. The region is empty (history stripped it ->
         insert) or a think scaffold (history preserved it -> replace). Returns the
         adjusted text, or None if it isn't a recognized scaffold (-> text fallback)."""
+        if not self._assist_hdr:
+            return None
         h = text_chunk.rfind(self._assist_hdr)
         if h == -1:
-            # No assistant header: with a scaffold to reproduce this is
-            # ambiguous (-> text fallback); without one there is nothing to
-            # normalize, so splicing still works for templates with a different
-            # assistant header.
-            return None if preamble else text_chunk
+            # Without a verified boundary, splicing can duplicate template framing.
+            return None
         base = h + len(self._assist_hdr)
         if not preamble:
             # No generation scaffold: the worker prefills nothing ahead of the
@@ -266,40 +270,37 @@ class OpenAITranscriptState:
         """Return a PromptInput: token-ID segments when this session has faithful
         stored ids for matching prior assistant turns, else the plain rendered
         text. Each incoming assistant turn is matched IN ORDER against the stored
-        records and only spliced when (a) its fingerprint matches what we returned
-        (else the history diverged -> stop, splice nothing further) and (b) we
-        kept faithful ids for it (a stop-trimmed turn's None -> rendered as text).
+        records and only spliced when its content/tool calls and any supplied
+        reasoning string match what we returned, and we kept faithful ids for it.
+        Omitted or null reasoning permits reuse; a string edit invalidates the tail.
         Falls back to text on a sentinel collision or a render that
         dropped/duplicated a sentinel."""
         stored = self._turns.get(session_id or "")
         if not stored:
             return PromptInput(text=rendered_prompt)
-        # Positional: stored[k] is the k-th assistant turn WE generated, matched
-        # against the k-th assistant message in the request. A client-injected
-        # turn (few-shot exemplar, pre-seeded turn, reused session) shifts that
-        # alignment -> fingerprint mismatch at k -> stop splicing. Always safe
-        # (text fallback + worker prefix backstop); just a lower hit rate.
+        # Missing records render as text without shifting later turn indices.
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
         splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
-        diverged_at = None
         for k, pos in enumerate(positions):
-            if k >= len(stored):
-                break
+            record = stored.get(k)
+            if record is None:
+                continue
             m = messages[pos]
-            if self._assistant_fingerprint(m.content, m.tool_calls) != stored[k]["fp"]:
-                diverged_at = k  # this stored turn and every later one are stale
-                break
-            if stored[k]["ids"] is not None:
-                splice[pos] = {
-                    "ids": stored[k]["ids"],
-                    "preamble": stored[k].get("preamble", ""),
+            if self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"] or (
+                m.reasoning_content is not None
+                and self._reasoning_fingerprint(m.reasoning_content)
+                != record["reasoning_fp"]
+            ):
+                # Discard the stale tail without shifting subsequent turn indices.
+                self._turns[session_id or ""] = {
+                    index: record for index, record in stored.items() if index < k
                 }
-        if diverged_at is not None:
-            # Drop the stale tail from the first mismatch so an edited/branched
-            # earlier turn can't shadow future requests; the matched prefix still
-            # splices, the rest stays text until reset/close. Safe either way:
-            # stale ids are never spliced and the worker's prefix check backstops.
-            del stored[diverged_at:]
+                break
+            if record["ids"] is not None:
+                splice[pos] = {
+                    "ids": record["ids"],
+                    "preamble": record.get("preamble", ""),
+                }
         if not splice:
             return PromptInput(text=rendered_prompt)
         tool_splice = {
@@ -351,25 +352,28 @@ class OpenAITranscriptState:
         generated_token_ids: list,
         prior_turns: int,
         preamble: str = "",
+        reasoning_content: Optional[str] = None,
     ) -> None:
         """Record this turn's {fingerprint, generated ids, generation preamble} at
         `prior_turns` (the assistant-turn count of the request it answers).
         Records at/after that index are dropped first, so a regenerated/branched
         turn replaces stale records rather than shadowing later hits. ids is None
         when the worker omitted them (stop-trimmed -> non-resumable), kept for
-        positional alignment. `preamble` is the generation scaffold (e.g. the
-        Qwen3 `<think>` block) reproduced ahead of the spliced ids next request."""
+        positional alignment. `reasoning_content` is the client-visible value,
+        including None when the client opted out. `preamble` is the generation
+        scaffold (e.g. the Qwen3 `<think>` block) reproduced ahead of the spliced
+        ids next request."""
         if not session_id:
             return
-        turns = self._turns.setdefault(session_id, [])
-        del turns[prior_turns:]
-        turns.append(
-            {
-                "fp": self._assistant_fingerprint(content, tool_calls),
-                "ids": list(generated_token_ids) if generated_token_ids else None,
-                "preamble": preamble,
-            }
-        )
+        turns = self._turns.setdefault(session_id, {})
+        for index in [index for index in turns if index >= prior_turns]:
+            del turns[index]
+        turns[prior_turns] = {
+            "fp": self._assistant_fingerprint(content, tool_calls),
+            "reasoning_fp": self._reasoning_fingerprint(reasoning_content),
+            "ids": list(generated_token_ids) if generated_token_ids else None,
+            "preamble": preamble,
+        }
 
     def reset(self, session_id: str) -> None:
         self._turns.pop(session_id, None)

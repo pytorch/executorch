@@ -6,6 +6,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
 import copy
 import logging
 from abc import ABC, abstractmethod
@@ -42,7 +44,7 @@ from torchao.utils import unwrap_tensor_subclass
 
 
 def _drop_empty(
-    passes_by_method: Dict[str, List[PassType]]
+    passes_by_method: Dict[str, List[PassType]],
 ) -> Dict[str, List[PassType]]:
     return {method: p for method, p in passes_by_method.items() if p}
 
@@ -79,6 +81,7 @@ class Stage(ABC):
         Initialize the stage.
         """
         self._artifact = None
+        self._artifact_released = False
 
     @property
     @abstractmethod
@@ -114,9 +117,26 @@ class Stage(ABC):
         pass
 
     def get_artifacts(self) -> "PipelineArtifact":
-        if self._artifact is None:
-            raise RuntimeError(f"Stage: {self.__class__.__name__} not executed")
-        return self._artifact
+        if self._artifact is not None:
+            self._artifact_released = False
+            return self._artifact
+        if self._artifact_released:
+            raise RuntimeError(
+                f"Stage: {self.__class__.__name__} artifact was released to free "
+                "memory. Disable release_intermediate_artifacts to retain it."
+            )
+        raise RuntimeError(f"Stage: {self.__class__.__name__} not executed")
+
+    def release_artifact(self) -> None:
+        """
+        Drop this stage's reference to its output.
+
+        The pipeline holds the only other reference, so releasing both lets a
+        stage's output be collected once the next stage has consumed it.
+        Subclasses that retain their own references must extend this.
+        """
+        self._artifact = None
+        self._artifact_released = True
 
 
 class TorchExportStage(Stage):
@@ -130,10 +150,12 @@ class TorchExportStage(Stage):
             List[Callable[[str, ExportedProgram], ExportedProgram]]
         ] = None,
         strict=True,
+        pre_trace_hooks: Optional[List[Callable[[str, nn.Module], None]]] = None,
     ) -> None:
         super().__init__()
         self._aten_transform_passes = aten_transform_passes
         self.strict = strict
+        self._pre_trace_hooks = pre_trace_hooks
 
     @property
     def stage_type(self) -> str:
@@ -151,6 +173,11 @@ class TorchExportStage(Stage):
         models = artifact.data
         example_inputs = artifact.get_context("example_inputs")
         dynamic_shapes = artifact.get_context("dynamic_shapes", {})
+        pre_trace_hooks = (
+            None
+            if artifact.get_context("pre_trace_hooks_applied", False)
+            else self._pre_trace_hooks
+        )
 
         exported_programs = {}
 
@@ -162,6 +189,9 @@ class TorchExportStage(Stage):
                     )
 
                 method_dynamic_shapes = dynamic_shapes.get(method_name)
+
+                for hook in pre_trace_hooks or []:
+                    hook(method_name, model)
 
                 # Export the model
                 exported_programs[method_name] = torch.export.export(
@@ -336,6 +366,7 @@ class ExecutorchStage(Stage):
     """
 
     def __init__(self, backend_config: Any) -> None:
+        super().__init__()
         self._backend_config = backend_config
 
     @property
@@ -373,17 +404,28 @@ class ExecutorchStage(Stage):
 
 class SourceTransformStage(Stage):
     """
-    Optional stage: Source transform stage: Apply source transformations to the model.
+    Apply source transformations and optional AO quantization to the model.
+
+    Each source transform must return the nn.Module to use.
     """
 
     def __init__(
         self,
         quantization_recipe: Optional[QuantizationRecipe],
         in_place: bool = False,
+        source_transform_passes: Optional[
+            List[Callable[[nn.Module], nn.Module]]
+        ] = None,
     ) -> None:
+        super().__init__()
         self._quantization_recipe = quantization_recipe
+        self._source_transform_passes = source_transform_passes
         self._in_place = in_place
         self._transformed_models: Dict[str, nn.Module] = {}
+
+    def release_artifact(self) -> None:
+        super().release_artifact()
+        self._transformed_models = {}
 
     @property
     def stage_type(self) -> str:
@@ -401,37 +443,53 @@ class SourceTransformStage(Stage):
         """
         Apply source transformations to the model.
         """
-        if (
-            not self._quantization_recipe
-            or not self._quantization_recipe.ao_quantization_configs
-        ):
+        ao_configs = (
+            self._quantization_recipe.ao_quantization_configs
+            if self._quantization_recipe
+            else None
+        )
+        if not ao_configs and not self._source_transform_passes:
             logging.info(
-                "Quantization recipe is invalid to run SourceTransform, returning original artifact"
+                "No source transform passes and no AO quantization configs for SourceTransformStage, returning original artifact"
             )
             self._artifact = artifact
             return
 
         assert isinstance(artifact.data, dict)
 
+        if ao_configs and len(ao_configs) > 1:
+            raise ValueError(
+                "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
+            )
+
         # A second copy of the model is not affordable for every caller, so
         # large models can opt out and have their own model mutated instead.
-        self._transformed_models = (
-            artifact.data if self._in_place else copy.deepcopy(artifact.data)
-        )
+        models = artifact.data if self._in_place else copy.deepcopy(artifact.data)
 
-        # Apply torchao quantize_ to each model
-        for _, model in self._transformed_models.items():
-            # pyre-ignore
-            if len(self._quantization_recipe.ao_quantization_configs) > 1:
-                raise ValueError(
-                    "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
-                )
+        # Several methods commonly share one model object. Transform each
+        # distinct object once, or a shared model is quantized once per method.
+        transformed_by_id: Dict[int, nn.Module] = {}
+        for method_name, model in list(models.items()):
+            original_id = id(model)
+            if original_id not in transformed_by_id:
+                for transform in self._source_transform_passes or []:
+                    if not callable(transform):
+                        raise TypeError("Source transform passes must be callable")
+                    model = transform(model)
+                    if not isinstance(model, nn.Module):
+                        raise TypeError(
+                            f"Source transform {transform!r} must return an nn.Module, "
+                            f"got {type(model).__name__}"
+                        )
+                if ao_configs:
+                    ao_config = ao_configs[0]
+                    quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
+                    unwrap_tensor_subclass(model)
+                transformed_by_id[original_id] = model
+            models[method_name] = transformed_by_id[original_id]
 
-            ao_config = self._quantization_recipe.ao_quantization_configs[0]
-            quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
-            unwrap_tensor_subclass(model)
-
-        self._artifact = artifact.copy_with_new_data(self._transformed_models)
+        self._transformed_models = models
+        self._artifact = artifact.copy_with_new_data(models)
 
 
 class QuantizeStage(Stage):
@@ -439,8 +497,14 @@ class QuantizeStage(Stage):
     Optional stage: Perform post-training quantization on the model.
     """
 
-    def __init__(self, quantization_recipe: Optional[QuantizationRecipe]) -> None:
+    def __init__(
+        self,
+        quantization_recipe: Optional[QuantizationRecipe],
+        pre_trace_hooks: Optional[List[Callable[[str, nn.Module], None]]] = None,
+    ) -> None:
+        super().__init__()
         self._quantization_recipe = quantization_recipe
+        self._pre_trace_hooks = pre_trace_hooks
 
     @property
     def stage_type(self) -> str:
@@ -539,6 +603,10 @@ class QuantizeStage(Stage):
             if recipe.is_qat:
                 model.train()
 
+            with torch.no_grad():
+                for hook in self._pre_trace_hooks or []:
+                    hook(method_name, model)
+
             captured_graph = torch.export.export(
                 model, inputs, dynamic_shapes=export_dynamic_shapes, strict=True
             ).module()
@@ -596,6 +664,9 @@ class QuantizeStage(Stage):
             quantized_models[method_name] = quantized_model
 
         self._artifact = artifact.copy_with_new_data(quantized_models)
+        self._artifact.add_context(
+            "pre_trace_hooks_applied", bool(self._pre_trace_hooks)
+        )
 
 
 class ToEdgeStage(Stage):

@@ -21,7 +21,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/backends/cortex_m/ops:ops",
-        "//executorch/backends/cortex_m/passes:passes_utils",
+        "//executorch/backends/cortex_m:utils",
     ],
 )
 
@@ -48,7 +48,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/cortex_m:cmsis_nn",
         "//executorch/backends/cortex_m:target_config",
         "//executorch/backends/cortex_m/ops:ops",
-        "//executorch/backends/cortex_m/passes:passes_utils",
+        "//executorch/backends/cortex_m:utils",
         "//executorch/backends/cortex_m/passes:replace_quant_nodes_pass",
         "//executorch/backends/transforms:aten_to_dialect_pass",
         "//executorch/backends/transforms:canonicalize_view_copy_permute_pass",
@@ -65,16 +65,5 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
         "//executorch/exir/program:lib",
-    ],
-)
-
-fbcode_target(_kind = runtime.python_library,
-    name="passes_utils",
-    srcs=[
-        "passes_utils.py",
-    ],
-    deps=[
-        "fbcode//caffe2:torch",
-        "//executorch/exir/dialects:lib",
     ],
 )

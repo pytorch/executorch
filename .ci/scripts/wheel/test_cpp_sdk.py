@@ -1098,7 +1098,8 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
             "#define ET_USE_THREADPOOL\n"
             "#include <executorch/runtime/kernel/thread_parallel_interface.h>\n"
             "using namespace executorch::extension;\n"
-            "int main() { return parallel_for(0, 1, 1, [](int64_t, int64_t) {}) ? 0 : 1; }\n"
+            "int main() { return get_thread_count() > 0 && "
+            "parallel_for(0, 1, 1, [](int64_t, int64_t) {}) ? 0 : 1; }\n"
         ),
     }
 

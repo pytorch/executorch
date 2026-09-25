@@ -839,6 +839,60 @@ TEST(OpScaledDotProductAttentionTest, BFloat16MatchesFloat) {
       2e-2, 2e-2);
 }
 
+TEST(OpScaledDotProductAttentionTest, BFloat16PrefillTrailingQueryBlocks) {
+  using executorch::aten::BFloat16;
+  TensorFactory<executorch::aten::ScalarType::BFloat16> tf_bfloat16;
+  TensorFactory<executorch::aten::ScalarType::Float> tf_float;
+  constexpr int32_t kHeadSize = 8;
+  constexpr int32_t kKeys = 513;
+
+  // These sequences use 64-query blocks and leave 1-4 queries in the tail.
+  // A second KV block also exercises accumulation into the first block's
+  // result.
+  for (const int32_t queries : {193, 194, 195, 196}) {
+    SCOPED_TRACE(::testing::Message() << "queries=" << queries);
+    auto query = tf_bfloat16.zeros({1, 1, queries, kHeadSize});
+    auto key = tf_bfloat16.zeros({1, 1, kKeys, kHeadSize});
+    auto value = tf_bfloat16.zeros({1, 1, kKeys, kHeadSize});
+    auto out = tf_bfloat16.zeros({1, 1, queries, kHeadSize});
+    auto query_float = tf_float.zeros({1, 1, queries, kHeadSize});
+    auto key_float = tf_float.zeros({1, 1, kKeys, kHeadSize});
+    auto value_float = tf_float.zeros({1, 1, kKeys, kHeadSize});
+    auto expected = tf_float.zeros({1, 1, queries, kHeadSize});
+    for (int32_t i = 0; i < queries * kHeadSize; ++i) {
+      const float v = static_cast<float>((i * 7) % 31 - 15) / 16.0f;
+      query.mutable_data_ptr<BFloat16>()[i] = BFloat16(v);
+      query_float.mutable_data_ptr<float>()[i] = v;
+    }
+    for (int32_t i = 0; i < kKeys * kHeadSize; ++i) {
+      const float k = static_cast<float>((i * 11) % 29 - 14) / 16.0f;
+      const float v = static_cast<float>((i * 13) % 37 - 18) / 16.0f;
+      key.mutable_data_ptr<BFloat16>()[i] = BFloat16(k);
+      key_float.mutable_data_ptr<float>()[i] = k;
+      value.mutable_data_ptr<BFloat16>()[i] = BFloat16(v);
+      value_float.mutable_data_ptr<float>()[i] = v;
+    }
+    op_scaled_dot_product_attention(
+        query, key, value, std::nullopt, 0.0, false, std::nullopt, out);
+    op_scaled_dot_product_attention(
+        query_float,
+        key_float,
+        value_float,
+        std::nullopt,
+        0.0,
+        false,
+        std::nullopt,
+        expected);
+    for (int32_t i = 0; i < queries * kHeadSize; ++i) {
+      EXPECT_NEAR(
+          static_cast<float>(out.const_data_ptr<BFloat16>()[i]),
+          expected.const_data_ptr<float>()[i],
+          2e-3f)
+          << "index=" << i;
+    }
+  }
+}
+
 TEST(OpScaledDotProductAttentionTest, HalfMatchesFloat) {
   test_reduced_precision_matches_float<executorch::aten::ScalarType::Half>(
       1e-2, 1e-2);

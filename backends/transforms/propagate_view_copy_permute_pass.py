@@ -1,6 +1,6 @@
-# Copyright 2026 Arm Limited and/or its affiliates.
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,9 +24,12 @@ from executorch.backends.transforms.fuse_duplicate_users_pass import (
 from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
     FuseIdenticalInputTransformsPass,
 )
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
+from torch.fx.node import map_arg
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,13 @@ class _ForkBranchSplit:
     next_node: torch.fx.Node
     source_shape: tuple[_Dim, ...]
     arg_update: tuple[Any, Any] | None
+
+
+@dataclass(frozen=True)
+class _PointwiseRegionMove:
+    nodes_and_shapes: tuple[tuple[torch.fx.Node, tuple[_Dim, ...]], ...]
+    exit_producer: torch.fx.Node
+    exit_user: torch.fx.Node
 
 
 class PropagateViewCopyPermutePass(ExportPass, ABC):
@@ -106,22 +116,10 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             graph_module = self._retrace(graph_module)
 
         while True:
-            iteration_modified = False
-            # A rewrite invalidates metadata along its path and downstream.
-            # Defer that region while still batching independent branches.
-            stale_nodes: set[torch.fx.Node] = set()
-            for node in list(graph_module.graph.nodes):
-                if node in stale_nodes:
-                    continue
-                if node.target in self._targets:
-                    if len(node.users) == 0:
-                        continue
-                    if self._propagate(node, stale_nodes):
-                        iteration_modified = True
+            iteration_modified = self._propagate_iteration(graph_module)
 
             if iteration_modified:
                 modified = True
-                graph_module = self._retrace(graph_module)
                 continue
 
             result = self.fuse_horizontal(graph_module)
@@ -140,36 +138,69 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         return PassResult(graph_module, modified)
 
-    @staticmethod
-    def _mark_downstream_nodes_stale(
-        node: torch.fx.Node, stale_nodes: set[torch.fx.Node]
-    ) -> None:
-        pending = [node]
-        while pending:
-            current = pending.pop()
-            if current in stale_nodes:
-                continue
-            stale_nodes.add(current)
-            pending.extend(current.users)
-
-    def _mark_stale_region(
+    def _propagate_iteration(
         self,
-        nodes: Iterable[torch.fx.Node],
-        stale_nodes: set[torch.fx.Node],
-    ) -> None:
-        for node in nodes:
-            self._mark_downstream_nodes_stale(node, stale_nodes)
+        graph_module: torch.fx.GraphModule,
+    ) -> bool:
+        modified = False
+        for node in self._propagation_order(graph_module):
+            if node.graph is None:
+                continue
+            if node.target not in self._targets or len(node.users) == 0:
+                continue
+            modified |= self._propagate(node)
+        return modified
+
+    def _propagation_order(
+        self, graph_module: torch.fx.GraphModule
+    ) -> Iterable[torch.fx.Node]:
+        return list(graph_module.graph.nodes)
 
     def _retrace(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         graph_module.graph.eliminate_dead_code()
         graph_module.graph.lint()
         return super().call(graph_module).graph_module
 
+    def _refresh_node_meta(self, node: torch.fx.Node) -> None:
+        if not node.all_input_nodes:
+            return
+        if node.target in {self._VIEW_TARGET, self._PERMUTE_TARGET}:
+            # Derive copy-op shapes from the input so existing SymInts retain
+            # their identity instead of being recreated by fake execution.
+            refresh_permute_view_meta(node)
+            return
+
+        args = map_arg(node.args, lambda input_node: input_node.meta["val"])
+        kwargs = map_arg(node.kwargs, lambda input_node: input_node.meta["val"])
+        fake_mode = next(
+            (
+                value.fake_mode
+                for input_node in node.all_input_nodes
+                if isinstance((value := input_node.meta.get("val")), FakeTensor)
+            ),
+            None,
+        )
+        if fake_mode is None:
+            fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
+            args = torch.utils._pytree.tree_map_only(
+                torch.Tensor, fake_mode.from_tensor, args
+            )
+            kwargs = torch.utils._pytree.tree_map_only(
+                torch.Tensor, fake_mode.from_tensor, kwargs
+            )
+        with fake_mode:
+            node.meta["val"] = node.target(*args, **kwargs)  # type: ignore[operator]
+
+    @abstractmethod
+    def _refresh_propagation_meta(
+        self, moving_node: torch.fx.Node, propagation_path: Sequence[torch.fx.Node]
+    ) -> None:
+        pass
+
     def _validated_next_nodes(
         self,
         node: torch.fx.Node,
         frontier: torch.fx.Node,
-        stale_nodes: set[torch.fx.Node],
     ) -> list[torch.fx.Node] | None:
         next_nodes = list(self._get_next_nodes(frontier))
         if not next_nodes:
@@ -177,9 +208,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 "placeholder",
                 "output",
             ), f"{self.__class__.__name__} reached an endpoint node which is not a placeholder or output: {frontier}"
-            return None
-
-        if any(next_node in stale_nodes for next_node in next_nodes):
             return None
 
         if not self._can_cross_next_nodes(frontier, next_nodes):
@@ -210,17 +238,15 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         next_node.args = swapped_args[1]
         return True
 
-    def _propagate(self, node: torch.fx.Node, stale_nodes: set[torch.fx.Node]) -> bool:
-        """Propagate one node without consulting metadata invalidated this
-        scan.
-        """
+    def _propagate(self, node: torch.fx.Node) -> bool:
+        """Propagate one node and refresh metadata changed by the rewrite."""
 
         frontier = node
         previous_frontier = None
         propagation_path = [node]
         moved = False
         while True:
-            next_nodes = self._validated_next_nodes(node, frontier, stale_nodes)
+            next_nodes = self._validated_next_nodes(node, frontier)
             if next_nodes is None:
                 break
 
@@ -229,7 +255,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                     node, frontier, previous_frontier, next_nodes
                 ):
                     break
-                self._mark_stale_region((*propagation_path, *next_nodes), stale_nodes)
+                self._refresh_propagation_meta(node, propagation_path)
                 return True
 
             next_node = next_nodes[0]
@@ -244,7 +270,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             # Perform the swap directly in this case and return.
             # Otherwise break and move the node before the concat
             if self._maybe_split_upwards_cat_fanout(node, next_node):
-                self._mark_stale_region((*propagation_path, next_node), stale_nodes)
+                self._refresh_propagation_meta(node, propagation_path)
                 return True
 
             # Unhandled case, stop propagation
@@ -255,7 +281,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         assert previous_frontier is not None
         self._move_node(node, frontier, previous_frontier)
-        self._mark_stale_region(propagation_path, stale_nodes)
+        self._refresh_propagation_meta(node, propagation_path)
         return True
 
     def duplicate_user_fusion_exclusions(self) -> frozenset:
@@ -506,6 +532,15 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         val = moving_node.meta.get("val")
         return getattr(val, "shape", None)
 
+    def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
+        # After moving up, dependencies run from the transform through the
+        # crossed nodes in reverse propagation order.
+        if moving_node.graph is not None:
+            self._refresh_node_meta(moving_node)
+        for node in reversed(propagation_path[1:]):
+            if node.graph is not None:
+                self._refresh_node_meta(node)
+
     def fuse_horizontal(self, graph_module):
         modified = False
         result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
@@ -695,7 +730,25 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
             producer = frontier
             frontier_user = previous_frontier
         else:
-            producer = frontier.all_input_nodes[0]
+            inputs = list(frontier.all_input_nodes)
+            if len(inputs) > 1 and not self.is_multi_input_elementwise(frontier):
+                # The earlier propagation check accepted exactly one layout-dependent
+                # input. Select it because a broadcast scalar may appear first.
+                rank = len(node.args[1])
+                layout_dependent_inputs = [
+                    input_node
+                    for input_node in inputs
+                    if not FuseIdenticalInputTransformsPass.is_layout_invariant(
+                        input_node, rank
+                    )
+                ]
+                assert len(layout_dependent_inputs) == 1, (
+                    f"Expected exactly one layout-dependent input for {frontier.target}, "
+                    f"got {len(layout_dependent_inputs)}"
+                )
+                producer = layout_dependent_inputs[0]
+            else:
+                producer = inputs[0]
             frontier_user = frontier
 
         node.replace_input_with(original_input, producer)
@@ -790,6 +843,20 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         val = cast(torch.fx.Node, moving_node.args[0]).meta.get("val")
         return getattr(val, "shape", None)
 
+    def _propagation_order(
+        self, graph_module: torch.fx.GraphModule
+    ) -> Iterable[torch.fx.Node]:
+        return reversed(list(graph_module.graph.nodes))
+
+    def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
+        # After moving down, dependencies run through the crossed nodes in
+        # propagation order and end at the transform.
+        for node in propagation_path[1:]:
+            if node.graph is not None:
+                self._refresh_node_meta(node)
+        if moving_node.graph is not None:
+            self._refresh_node_meta(moving_node)
+
     def fuse_horizontal(self, graph_module):
         modified = False
         result = FuseIdenticalInputTransformsPass(
@@ -852,13 +919,247 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         next_nodes: Sequence[torch.fx.Node],
     ) -> bool:
         if frontier is not node and previous_frontier is None:
+            # We cannot safely detach a path if its previous operation is
+            # unknown.
             return False
+
+        # First try to handle branches that do not use each other's results.
         plan = self._plan_fork_split(node, frontier, next_nodes)
-        if plan is None:
+        if plan is not None:
+            producer, branch_splits = plan
+            self._apply_fork_split(node, frontier, producer, branch_splits)
+            return True
+
+        # If the branches use each other's results, try moving the dimension
+        # reorder past the connected group of operations as one change.
+        region_move = self._plan_pointwise_region_move(node)
+        if region_move is not None:
+            self._apply_pointwise_region_move(node, region_move)
+            return True
+
+        # Neither rewrite is safe, so leave the graph unchanged.
+        return False
+
+    def _plan_pointwise_region_move(
+        self, node: torch.fx.Node
+    ) -> _PointwiseRegionMove | None:
+        """Check whether a dimension reorder can move past related operations.
+
+        This handles cases such as ``sub(x, floor(x))``, where one operation
+        uses the result of another. Here ``P`` means permute:
+
+            Before:  P(x) --+-----------------> sub -> user
+                            |                    ^
+                            +-> floor -----------+
+
+            After:      x --+-----------------> sub -> P -> user
+                            |                    ^
+                            +-> floor -----------+
+
+        These operations process each value independently, so the dimension
+        reorder can happen before or after them without changing the result.
+
+        First find all connected operations that can make this move. Only
+        accept the change when the group has one outgoing connection and any
+        input from outside the group is unaffected by dimension order. No graph
+        connections are changed until every check succeeds.
+
+        """
+        normalized_dims = self._pointwise_region_permute_dims(node)
+        if normalized_dims is None:
+            # This is not a supported, valid dimension reorder.
+            return None
+        rank = len(normalized_dims)
+
+        discovered_region = self._discover_pointwise_region(node, normalized_dims)
+        if discovered_region is None:
+            # A backend rejected one of the paths into a shared operation.
+            return None
+        region, exit_edges = discovered_region
+        if not region:
+            # No following operation can safely run before the reorder.
+            return None
+        if any(parent is node for parent, _ in exit_edges):
+            # A direct user still needs the reordered value, so moving the only
+            # reorder would break that path.
+            return None
+
+        # A connection first recorded as leaving the group may turn out to stay
+        # inside it when the same operation is reached through another branch.
+        exit_edges = {
+            (parent, user)
+            for parent, user in exit_edges
+            if parent in region and user not in region
+        }
+        if len(exit_edges) != 1:
+            # Moving one reorder is only safe when the group has exactly one
+            # outgoing connection.
+            return None
+
+        if not self._pointwise_region_inputs_are_safe(region, node, rank):
+            # An outside input depends on dimension order and would no longer
+            # match the reordered input.
+            return None
+
+        # Keep the operations in their original execution order and record the
+        # shape each one will have after the dimension reorder is moved.
+        graph_order = {
+            graph_node: index for index, graph_node in enumerate(node.graph.nodes)
+        }
+        nodes_and_shapes = []
+        for region_node in sorted(region, key=graph_order.__getitem__):
+            region_val = cast(torch.Tensor, region_node.meta["val"])
+            source_shape = self._source_shape(region_val, normalized_dims)
+            nodes_and_shapes.append((region_node, source_shape))
+
+        exit_producer, exit_user = next(iter(exit_edges))
+        return _PointwiseRegionMove(tuple(nodes_and_shapes), exit_producer, exit_user)
+
+    def _pointwise_region_permute_dims(
+        self, node: torch.fx.Node
+    ) -> tuple[int, ...] | None:
+        if node.target not in self._permute_targets or len(node.all_input_nodes) != 1:
+            # This rewrite only handles a known permute with one tensor input.
+            return None
+        producer = node.all_input_nodes[0]
+        if not isinstance(producer.meta.get("val"), torch.Tensor):
+            # The input shape is required to update shapes after the move.
+            return None
+        permute_dims = self._dim_arg(node.args[1])
+        if not isinstance(permute_dims, Sequence):
+            # A permute must provide an ordered list of dimensions.
+            return None
+        rank = len(permute_dims)
+        normalized_dims = tuple(dim if dim >= 0 else dim + rank for dim in permute_dims)
+        if sorted(normalized_dims) != list(range(rank)):
+            # Every input dimension must appear exactly once.
+            return None
+        return normalized_dims
+
+    def _discover_pointwise_region(
+        self, node: torch.fx.Node, normalized_dims: Sequence[int]
+    ) -> tuple[set[torch.fx.Node], set[tuple[torch.fx.Node, torch.fx.Node]]] | None:
+        region: set[torch.fx.Node] = set()
+        pending = [(node, user) for user in node.users]
+        exit_edges: set[tuple[torch.fx.Node, torch.fx.Node]] = set()
+        while pending:
+            parent, candidate = pending.pop()
+            if candidate in region:
+                if self.blocks_moving(node, parent, (candidate,)):
+                    # This operation was safe through another path, but this
+                    # backend does not allow moving through the current path.
+                    return None
+                # Another branch already reached and checked this operation.
+                continue
+            if not self._can_include_in_pointwise_region(
+                node, parent, candidate, normalized_dims
+            ):
+                # Stop following this path and record where the checked group
+                # connects to the rest of the graph.
+                exit_edges.add((parent, candidate))
+                continue
+            if any(exit_user is candidate for _, exit_user in exit_edges):
+                # Another path rejected this operation before this path allowed
+                # it. Only blocks_moving can differ between paths, so keep the
+                # dimension reorder before the whole connected group.
+                return None
+            region.add(candidate)
+            pending.extend((candidate, user) for user in candidate.users)
+        return region, exit_edges
+
+    def _can_include_in_pointwise_region(
+        self,
+        moving_node: torch.fx.Node,
+        parent: torch.fx.Node,
+        candidate: torch.fx.Node,
+        normalized_dims: Sequence[int],
+    ) -> bool:
+        candidate_val = candidate.meta.get("val")
+        if not self.is_elementwise(candidate):
+            # Other operations may produce different results when dimensions
+            # are reordered before them.
             return False
-        producer, branch_splits = plan
-        self._apply_fork_split(node, frontier, producer, branch_splits)
+        if not isinstance(candidate_val, torch.Tensor):
+            # The output shape is required to update the graph safely.
+            return False
+        if len(candidate_val.shape) != len(normalized_dims):
+            # The same reorder cannot be reused after the number of dimensions
+            # changes.
+            return False
+        if self.blocks_moving(moving_node, parent, (candidate,)):
+            # Give each backend a chance to reject a move it cannot support.
+            return False
+        source_shape = self._source_shape(candidate_val, normalized_dims)
+        if not self.tolerates_shape_after_move(candidate, source_shape):
+            # The operation cannot accept the shape it would see after moving
+            # the reorder.
+            return False
         return True
+
+    @staticmethod
+    def _source_shape(
+        value: torch.Tensor, normalized_dims: Sequence[int]
+    ) -> tuple[_Dim, ...]:
+        source_shape: list[_Dim] = [1] * len(normalized_dims)
+        for output_axis, source_axis in enumerate(normalized_dims):
+            source_shape[source_axis] = value.shape[output_axis]
+        return tuple(source_shape)
+
+    @staticmethod
+    def _pointwise_region_inputs_are_safe(
+        region: set[torch.fx.Node], moving_node: torch.fx.Node, rank: int
+    ) -> bool:
+        # Inputs created inside the group move together. Any input from outside
+        # must be unaffected by dimension order, or the operation could combine
+        # values from mismatched dimensions after the move.
+        return all(
+            input_node is moving_node
+            or input_node in region
+            or FuseIdenticalInputTransformsPass.is_layout_invariant(input_node, rank)
+            for region_node in region
+            for input_node in region_node.all_input_nodes
+        )
+
+    def _apply_pointwise_region_move(
+        self, node: torch.fx.Node, plan: _PointwiseRegionMove
+    ) -> None:
+        """Move the reorder to the group's only outgoing connection."""
+        # Save the input before the reorder and the information describing the
+        # group's original output.
+        producer = node.all_input_nodes[0]
+        old_exit_meta = copy.copy(plan.exit_producer.meta)
+
+        # Replace uses of the old reorder inside the group with its original
+        # input. Update every operation's recorded output shape to match.
+        for region_node, source_shape in plan.nodes_and_shapes:
+            region_node.replace_input_with(node, producer)
+            region_node.meta = copy.copy(region_node.meta)
+            region_val = cast(torch.Tensor, region_node.meta["val"])
+            region_node.meta["val"] = region_val.new_empty(source_shape)
+
+        # Recreate the reorder after the final operation in the group.
+        with plan.exit_producer.graph.inserting_after(plan.exit_producer):
+            moved_permute = plan.exit_producer.graph.call_function(
+                cast(Any, node.target),
+                args=(plan.exit_producer, *node.args[1:]),
+                kwargs=dict(node.kwargs),
+            )
+
+        # The new reorder produces the same value and retains the same backend
+        # assignment as the group's output did before the move.
+        moved_permute.meta = copy.copy(node.meta)
+        moved_permute.meta["val"] = old_exit_meta["val"]
+        if "delegation_tag" in old_exit_meta:
+            moved_permute.meta["delegation_tag"] = old_exit_meta["delegation_tag"]
+        else:
+            moved_permute.meta.pop("delegation_tag", None)
+
+        # Send the group's only outside user through the new reorder.
+        plan.exit_user.replace_input_with(plan.exit_producer, moved_permute)
+
+        # The reorder at its old location is now unused.
+        if not node.users:
+            node.graph.erase_node(node)
 
     def _plan_fork_split(
         self,

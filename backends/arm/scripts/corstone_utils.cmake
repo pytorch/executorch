@@ -27,9 +27,9 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  # Ethos-U 26.05.1.
-  set(ethos_u_base_rev "878cc6ddfc57bf0b1ea30ee02e8b3e5d5bedd867")
-  set(ethos_u_manifest_version "26.05")
+  # The umbrella repository has no 26.08 tag, so pin its release commit.
+  set(ethos_u_base_rev "5ae010a083c6fa9f3a4d1d71b90db5742c87cc08")
+  set(ethos_u_manifest_version "26.08")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
@@ -40,7 +40,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
     SOURCE_SUBDIR none
   )
   FetchContent_MakeAvailable(ethos_u)
-  # Patch manifest to remove unused projects.
+  # Remove projects not used by ExecuTorch from the manifest.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
@@ -69,8 +69,8 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
       )
     endif()
   endif()
-  # Patch core_software to remove unused projects. Core software 26.05.
-  set(core_software_base_rev "e8411ce990d6b17efbb216a2cfddc15ab588e501")
+  # Patch core_software to remove unused projects. Core software 26.08.
+  set(core_software_base_rev "b5ffdb34fd5ad8004231eeed647fbafe58760683")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -81,8 +81,8 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # HardFault handler so the Corstone-300 target source compiles for older
   # Cortex-M cores. Once the equivalent guards land upstream in
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
-  # commits, delete the 0002 and 0003 patches. Core platform 26.05.
-  set(core_platform_base_rev "02d02901842fb26c077adc1061c2650d89f9f0e5")
+  # commits, delete the 0002 and 0003 patches. Core platform 26.08.
+  set(core_platform_base_rev "cec1a0ae3f05b2cf9a1518c7087cda96aed322a0")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"

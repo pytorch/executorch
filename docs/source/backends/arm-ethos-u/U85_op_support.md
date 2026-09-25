@@ -6,7 +6,7 @@ This page lists Ethos-U85-supported PyTorch APIs and the dtype and quantization 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **119**.
+Total supported PyTorch APIs: **126**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -20,6 +20,8 @@ Total supported PyTorch APIs: **119**.
 | `torch.amin` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.any` | INT | `INT8` | 8x8 |
 | `torch.arange` | INT | `INT8` | 8x8 |
+| `torch.argmax` | INT | `INT8` | 8x8 |
+| `torch.as_strided_copy` | INT | `INT8` | 8x8 |
 | `torch.asin` | INT | `INT8` | 8x8 |
 | `torch.asinh` | INT | `INT8` | 8x8 |
 | `torch.atan` | INT | `INT8` | 8x8 |
@@ -62,8 +64,10 @@ Total supported PyTorch APIs: **119**.
 | `torch.index_put_` | INT | `INT8` | 8x8 |
 | `torch.index_select` | INT | `INT8` | 8x8 |
 | `torch.le` / `<=` | INT | `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.linspace` | INT | `INT8` | 8x8 |
 | `torch.log` | INT | `INT8` | 8x8 |
 | `torch.log10` | INT | `INT8` | 8x8 |
+| `torch.log1p` | INT | `INT8` | 8x8 |
 | `torch.log_softmax` | INT | `INT8` | 8x8 |
 | `torch.logical_and` | INT | `INT8` | 8x8 |
 | `torch.logical_not` | INT | `INT8` | 8x8 |
@@ -81,6 +85,8 @@ Total supported PyTorch APIs: **119**.
 | `torch.nn.AvgPool2d` / `torch.nn.functional.avg_pool2d` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.nn.Conv2d` / `torch.nn.functional.conv2d` | INT | `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
 | `torch.nn.ELU` / `torch.nn.functional.elu` | INT | `INT8` | 8x8 |
+| `torch.nn.Embedding` / `torch.nn.functional.embedding` | INT | `INT8` | 8x8 |
+| `torch.nn.functional.pad` | INT | `INT8` | 8x8 |
 | `torch.nn.GELU` / `torch.nn.functional.gelu` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.nn.Hardsigmoid` / `torch.nn.functional.hardsigmoid` | INT | `INT8` | 8x8 |
 | `torch.nn.Hardswish` / `torch.nn.functional.hardswish` | INT | `INT8` | 8x8 |
@@ -116,6 +122,7 @@ Total supported PyTorch APIs: **119**.
 | `torch.t` / `torch.Tensor.t` | INT | `INT8` | 8x8 |
 | `torch.tan` | INT | `INT8` | 8x8 |
 | `torch.tanh` / `torch.nn.Tanh` | INT | `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.Tensor.__getitem__` / `tensor indexing` | INT | `INT8` | 8x8 |
 | `torch.Tensor.__getitem__` / `tensor slicing` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.Tensor.__setitem__` / `tensor indexing assignment` | INT | `INT8` | 8x8 |
 | `torch.Tensor.copy_` | INT | `INT8` | 8x8 |

@@ -334,3 +334,151 @@ def test_aot_example__mlperf_tiny_kws__profiling():
     with _cleanup_generated_files(pte_file, etrecord_file):
         result = _run_compile(cmd)
         _assert_profiling(result, pte_file, etrecord_file)
+
+
+def test_aot_example__mlperf_tiny_ad():
+    """Test that the MLPerf Tiny Anomaly detection (DeepAutoEncoder) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and all ops are delegated."""
+
+    # Number of random samples to generate, must be divisible by number of classes
+    num_random_samples = 60
+
+    # Run the compilation script as a module (like run_aot_example.sh does).
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_anomaly_detection",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    # Output file will be created in executorch_root
+    pte_file = Path(
+        os.path.join(EXECUTORCH_ROOT, "mlperf_tiny_anomaly_detection_nxp_delegate.pte")
+    )
+
+    with _cleanup_generated_files(pte_file):
+        result = _run_compile(cmd)
+        _assert_delegation(result, pte_file)
+
+
+def test_aot_example__mlperf_tiny_ad__profiling():
+    """Test that the MLPerf Tiny Anomaly detection (DeepAutoEncoder) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and profiling works as intended."""
+
+    # Number of random samples to generate, must be divisible by number of classes
+    num_random_samples = 60
+
+    # Run the compilation script as a module (like run_aot_example.sh does)
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_anomaly_detection",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--remove-quant-io-ops",
+        "--use_profiling",  # Generate profilable model and create ETRecord
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    pte_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "mlperf_tiny_anomaly_detection_nxp_delegate_profile.pte"
+        )
+    )
+    etrecord_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "etrecord", "mlperf_tiny_anomaly_detection_etrecord.bin"
+        )
+    )
+
+    with _cleanup_generated_files(pte_file, etrecord_file):
+        result = _run_compile(cmd)
+        _assert_profiling(result, pte_file, etrecord_file)
+
+
+def test_aot_example__mlperf_tiny_vww():
+    """Test that the MLPerf Tiny Visual Wake Words model (MobileNetV1) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and all ops are delegated."""
+
+    # Number of random samples to generate, must be divisible by number of classes
+    num_random_samples = 60
+
+    # Run the compilation script as a module (like run_aot_example.sh does).
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_visual_wake_words",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    # Output file will be created in executorch_root
+    pte_file = Path(
+        os.path.join(EXECUTORCH_ROOT, "mlperf_tiny_visual_wake_words_nxp_delegate.pte")
+    )
+
+    with _cleanup_generated_files(pte_file):
+        result = _run_compile(cmd)
+        _assert_delegation(result, pte_file)
+
+
+def test_aot_example__mlperf_tiny_vww__profiling():
+    """Test that the MLPerf Tiny Visual Wake Words model (MobileNetV1) can be lowered to Neutron backend via
+    `aot_neutron_compile.py` and profiling works as intended."""
+
+    # Number of random samples to generate, must be divisible by number of classes
+    num_random_samples = 60
+
+    # Run the compilation script as a module (like run_aot_example.sh does)
+    cmd = [
+        sys.executable,
+        "-m",
+        "examples.nxp.aot_neutron_compile",
+        "--model_name",
+        "mlperf_tiny_visual_wake_words",
+        "--delegate",
+        "--quantize",
+        "--target",
+        "imxrt700",
+        "--remove-quant-io-ops",
+        "--use_profiling",  # Generate profilable model and create ETRecord
+        "--use_random_dataset",
+        "--num_random_samples",
+        str(num_random_samples),
+    ]
+
+    pte_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "mlperf_tiny_visual_wake_words_nxp_delegate_profile.pte"
+        )
+    )
+    etrecord_file = Path(
+        os.path.join(
+            EXECUTORCH_ROOT, "etrecord", "mlperf_tiny_visual_wake_words_etrecord.bin"
+        )
+    )
+
+    with _cleanup_generated_files(pte_file, etrecord_file):
+        result = _run_compile(cmd)
+        _assert_profiling(result, pte_file, etrecord_file)

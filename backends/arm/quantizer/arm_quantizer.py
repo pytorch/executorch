@@ -31,6 +31,7 @@ from executorch.backends.arm.quantizer.quantization_config import (
     VGFQuantizationConfig,
 )
 from executorch.backends.arm.quantizer.quantizer_support import (
+    PowTensorTensorPositiveBaseCheck,
     TOSA_QUANTIZER_SUPPORT_DICT,
 )
 from executorch.backends.arm.tosa import TosaSpecification
@@ -483,6 +484,8 @@ def get_symmetric_a16w8_quantization_config(
         is_per_channel=is_per_channel,
         is_qat=is_qat,
         is_dynamic=is_dynamic,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
     )
 
     if is_dynamic:
@@ -1253,7 +1256,19 @@ class _TOSAQuantizerV2(ComposableQuantizer):
                 f"got {type(compile_spec_or_tosa_spec)}"
             )
 
-        self.pattern_matcher = PatternMatcher(TOSA_QUANTIZER_SUPPORT_DICT)
+        # pow.Tensor_Tensor has no native INT TOSA POW representation.
+        # For pure INT targets it may enter transform-for-annotation only when
+        # the graph proves that the base is strictly positive. The guarded
+        # DecomposePowTensorTensorPass can then safely rewrite it into
+        # quantizable LOG -> MUL -> EXP operations.
+        support_dict = TOSA_QUANTIZER_SUPPORT_DICT
+        if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+            support_dict = dict(TOSA_QUANTIZER_SUPPORT_DICT)
+            support_dict[(torch.ops.aten.pow.Tensor_Tensor,)] = (
+                PowTensorTensorPositiveBaseCheck
+            )
+
+        self.pattern_matcher = PatternMatcher(support_dict)
         self.shared_qspec_quantizer = SharedQspecQuantizer()
         self.global_quantizer: Quantizer | None = None
         self.global_config: Optional[QuantizationConfig] = None

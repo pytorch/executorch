@@ -142,7 +142,10 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
 
         # Calculate padding used in the final TOSA operator
         kernel = cast(tuple[int, int], node.args[1])
-        stride = cast(tuple[int, int], node.args[2])
+        stride = cast(
+            tuple[int, int],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
+        )
         padding = cast(tuple[int, int], node.args[3]) if len(node.args) > 3 else (0, 0)
         ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
         count_include_pad = cast(bool, node.args[5]) if len(node.args) > 5 else True
@@ -237,7 +240,10 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
             return False
 
         kernel = cast(tuple[int, int], node.args[1])
-        stride = cast(tuple[int, int], node.args[2])
+        stride = cast(
+            tuple[int, int],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
+        )
         padding = cast(tuple[int, int], node.args[3]) if len(node.args) >= 4 else (0, 0)
         dilation = (
             cast(tuple[int, int], node.args[4]) if len(node.args) >= 5 else (1, 1)

@@ -31,6 +31,7 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:pass_manager",
+        "//executorch/exir/passes:fold_redundant_qdq_pass",
     ],
 )
 

@@ -752,6 +752,28 @@ jobs:
       id-token: write
       contents: read
 
+  llm-server:
+    needs: [changed-files, run-decision]
+    if: |
+      github.event_name == 'pull_request' && (
+        contains(needs.changed-files.outputs.changed-files, 'examples/llm_server') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/serving') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/tests') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/muse_glimmer') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_ci-run-decision.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/_llm_server.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
+    uses: ./.github/workflows/_llm_server.yml
+    permissions:
+      id-token: write
+      contents: read
+
   unittest:
     uses: ./.github/workflows/_unittest.yml
     permissions:
@@ -852,6 +874,46 @@ jobs:
         ARM_TEST=${{ matrix.test_arm_backend }}
 
         # Test test_arm_backend.sh with test
+        backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
+
+  test-arm-backend-vkml:
+    name: test-arm-backend-vkml
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_backend: test_pytest_ops_vkml
+          - test_arm_backend: test_ootb_tests_vgf
+      fail-fast: false
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh \
+          --disable-ethos-u-deps \
+          --enable-mlsdk-deps \
+          --install-mlsdk-deps-with-pip
+
+        sudo sysctl fs.inotify.max_user_watches=1048576
+
+        ARM_TEST=${{ matrix.test_arm_backend }}
+
+        if [[ -n "${RUNNER_TEST_RESULTS_DIR:-}" ]]; then
+          export PYTEST_ADDOPTS="--junit-xml=${RUNNER_TEST_RESULTS_DIR}/${ARM_TEST}.xml ${PYTEST_ADDOPTS:-}"
+        fi
+
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-public-api-backward-compatibility:
@@ -1255,7 +1317,7 @@ jobs:
   #   strategy:
   #     fail-fast: false
   #   with:
-  #     runner: linux.24xlarge
+  #     runner: mt-l-x86iavx512-94-192
   #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
   #     submodules: 'recursive'
   #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -1683,7 +1745,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         # Build
-        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
+        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_EXTERNAL_MEM=ON -Bcmake-out .
         cmake --build cmake-out --target executorch_delegate_neutron --config Release
 
         # Build check for the neutron backend library

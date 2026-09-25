@@ -9,6 +9,7 @@ import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -86,5 +87,21 @@ def test_log1p_vgf_quant(test_data: Tuple):
         aten_op,
         exir_op,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_log1p_u85_INT():
+    test_input = (
+        torch.tensor(
+            [1e-4, 5e-4, 2e-3, 1e-2, 5e-2],
+            dtype=torch.float32,
+        ),
+    )
+    pipeline = EthosU85PipelineINT[input_t1](
+        Log1p(),
+        test_input,
+        aten_op,
     )
     pipeline.run()

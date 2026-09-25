@@ -320,6 +320,54 @@ TEST_F(XNNWeightsCacheTest, ReusePackedWeights) {
   ASSERT_EQ(packed_data_names.size(), 0);
 }
 
+TEST_F(XNNWeightsCacheTest, TakenUnpackedDataSurvivesFinalize) {
+  // XNNPACK does not pack every constant it is given: PReLU slopes, for one,
+  // stay as the unpacked buffer the subgraph points at. Those buffers are taken
+  // out of the cache while the graph is built, and finalize_for_runtime must
+  // leave them alone while still freeing the ones it packed.
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+
+  Result<const uint8_t*> packed = cache.load_unpacked_data("weight");
+  ASSERT_EQ(packed.error(), Error::Ok);
+  // The index the caller would take immediately before defining the value it
+  // wants to keep, which is what XNNCompiler passes down.
+  size_t first_index = cache.get_num_unpacked_data();
+  Result<const uint8_t*> retained_load = cache.load_unpacked_data("bias");
+  ASSERT_EQ(retained_load.error(), Error::Ok);
+  ASSERT_EQ(cache.get_num_unpacked_data(), first_index + 1);
+
+  std::vector<executorch::runtime::FreeableBuffer> retained;
+  cache.take_unpacked_data_from(first_index, retained);
+  ASSERT_EQ(retained.size(), 1u);
+  ASSERT_EQ(retained[0].size(), static_cast<size_t>(kSegmentSizes[1]));
+
+  Result<std::vector<std::string>> names = cache.finalize_for_runtime();
+  ASSERT_EQ(names.error(), Error::Ok);
+
+  // Still readable, and still the "bias" segment, which SetUp fills with 2s.
+  ASSERT_NE(retained[0].data(), nullptr);
+  const uint8_t* data = static_cast<const uint8_t*>(retained[0].data());
+  for (size_t i = 0; i < retained[0].size(); i++) {
+    ASSERT_EQ(data[i], 2) << "byte " << i << " was freed or overwritten";
+  }
+}
+
+TEST_F(XNNWeightsCacheTest, InitializeForRuntimeClearsLeftoverUnpackedData) {
+  // A compile that bails out after loading a constant never reaches
+  // finalize_for_runtime. This instance outlives any one model, so the next
+  // initialize has to drop what the failed compile left behind.
+  XNNWeightsCache cache;
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  Result<const uint8_t*> loaded = cache.load_unpacked_data("weight");
+  ASSERT_EQ(loaded.error(), Error::Ok);
+  ASSERT_EQ(cache.get_num_unpacked_data(), 1u);
+
+  // No finalize_for_runtime(): this is the failed-compile path.
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  ASSERT_EQ(cache.get_num_unpacked_data(), 0u);
+}
+
 #ifndef _WIN32
 // Verify pack-and-run works when packed weight allocations go to a
 // MAP_SHARED file instead of heap. The cache path is unique per test so

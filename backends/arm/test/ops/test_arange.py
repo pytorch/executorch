@@ -342,3 +342,13 @@ def test_arange_vgf_no_quant():
 @pytest.mark.skip(reason=skip_str)
 def test_arange_vgf_quant():
     pass
+
+
+@common.XfailIfNoCorstone320
+def test_linspace_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
+        LinspaceAdd(0.0, 15.0, 20, torch.float32),
+        (torch.randn(20),),
+        LinspaceAdd.aten_op,
+    )
+    pipeline.run()

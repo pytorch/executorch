@@ -6,4 +6,3 @@
 # These dependencies need to match pyproject.toml
 
 ethos-u-vela == 5.1.0
-pte-adapter-model-explorer == 0.0.2

@@ -105,6 +105,13 @@ int main() {
 }
 ```
 
+Applications can choose generation settings offline, for example by comparing
+quality and latency on representative prompts, then populate the same
+`GenerationConfig` shown above. The selection tool does not need to be a runtime
+dependency. Validate the selected values with the exported `.pte`, matching
+tokenizer, and intended backend and device. Call `runner->reset()` between
+independent evaluations so earlier prompts do not carry over in the KV cache.
+
 ## The Runner API Architecture
 
 The ExecuTorch LLM runner library is designed with a modular architecture that separates concerns between different components of the text generation pipeline.
@@ -220,6 +227,14 @@ The `resolve_max_new_tokens` method handles the logic of determining how many to
 - The model's maximum context length
 - The number of token positions already occupied in the context window
 - The user-specified maximum sequence length and maximum new tokens
+
+`max_new_tokens` and `seq_len` limit generation within the exported model's
+context capacity. They do not change the model's exported shapes or resize its
+allocated KV cache. To change that capacity, configure it during model export.
+
+When setting `config.temperature`, leave the deprecated `temperature` argument
+to `create_text_llm_runner()` at its default of `-1.0f`. An explicit value for
+that argument overrides `config.temperature` during decoding.
 
 ### Implementation Components
 

@@ -15,7 +15,9 @@ The model backbone goes through a pretraining phase on Caltech256 [2] in `traini
 To test the capabilities of the trained model, `training/test_model.py` by default will output one random image from Open Images Person detection annotated by the model, or if you have access to a webcamera you may use `training/test_model.py --webcam` to test it on completely live data. Since the model is based on a work-in-progress paper under heavy constraints the accuracy is not expected to be top quality (~27mAP@0.5 reported on the COCO dataset in the original paper, ~20mAP@0.5 seen over Open Images V7), but simpler samples provided by e.g. a webcam with one-three people present are generally well detected from experience.
 
 ## Export
-TODO
+The export folder contains the Executorch AOT pt2 quantization and lowering using the Cortex-M backend. Addtionally the general QuantizeInputs/Outputs passes are applied to make the graph run directly on the int8 data provided by the camera, rather than the standard float inputs/outputs and quantization/ dequantization operators.
+
+A testing script similar the one used when training is also provided to easily compare the accuracy between the original and lowered model.
 
 ## Deployment
 TODO

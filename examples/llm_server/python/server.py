@@ -172,6 +172,12 @@ def main() -> None:
         "Off by default: the fallback can't reproduce model-specific controls.",
     )
     p.add_argument(
+        "--assistant-header",
+        default="<|im_start|>assistant\n",
+        help="Exact template text ending the assistant generation header, including "
+        "any trailing whitespace. Defaults to the ChatML header.",
+    )
+    p.add_argument(
         "--model-id", default="executorch", help="Model id reported on /v1/models"
     )
     p.add_argument(
@@ -218,7 +224,9 @@ def main() -> None:
         args.hf_tokenizer,
         default_template_kwargs=default_template_kwargs,
         allow_fallback=args.allow_chatml_fallback,
+        assistant_header=args.assistant_header,
     )
+    template.generation_preamble()
     worker = _spawn(args)  # one worker hosting many isolated sessions
     runtime = SessionRuntime(worker)
     serving = ServingChat(

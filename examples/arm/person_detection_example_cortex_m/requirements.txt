@@ -10,3 +10,4 @@ pycocotools
 torchmetrics
 fiftyone
 opencv-python
+torchao

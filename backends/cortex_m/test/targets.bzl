@@ -50,6 +50,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m/passes:cortex_passes",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/backends/test/harness:tester",
+                "//executorch/exir:lib",
             ],
         )
 
@@ -61,7 +62,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m/passes:cortex_passes",
-                "//executorch/backends/cortex_m/passes:passes_utils",
+                "//executorch/backends/cortex_m:utils",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/exir/dialects:lib",
             ],
@@ -98,6 +99,26 @@ def define_common_targets(is_fbcode = False):
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m/passes:replace_quant_nodes_pass",
                 "//executorch/backends/cortex_m/ops:ops",
+            ],
+        )
+
+        python_pytest(
+            name = "test_pass_manager",
+            srcs = ["test_pass_manager.py"],
+            compile = "with-source",
+            typing = False,
+            deps = [
+                "//caffe2:torch",
+                "//pytorch/ao:torchao",  # @manual
+                "//executorch/backends/cortex_m:edge_compile_config",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/exir:lib",
+                "//executorch/exir:pass_base",
+                "//executorch/exir/_serialize:lib",
+                "//executorch/exir/dialects:lib",
+                "fbsource//third-party/pypi/pytest:pytest",
             ],
         )
 

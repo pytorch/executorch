@@ -299,6 +299,7 @@ QUANTIZED_KERNELS_SRCS = [
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/blas/KleidiBlas.cpp",
 ]
 
 OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
@@ -386,6 +387,7 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 
