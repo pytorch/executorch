@@ -149,6 +149,8 @@ TEST_F(MetalStridedViewTest, CopyOfStridedViewIntoMetalMemoryDoesNotWait) {
 // A destination overlapping the view is copied through a packed buffer. One
 // gather straight into it would race: element i of the view (at 2i) is where
 // element 2i - kCount of the destination goes, which an earlier thread writes.
+// Earlier threadgroups run first, so at this size the race all but always
+// shows, though the GPU does not promise that order.
 TEST_F(MetalStridedViewTest, CopyOfStridedViewIntoItsOwnBufferIsCorrect) {
   constexpr int64_t kCount = 1 << 20;
   const int64_t base_size = 2 * kCount;
