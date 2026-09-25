@@ -22,6 +22,7 @@
 #include <executorch/runtime/platform/compiler.h>
 
 #include <cinttypes>
+#include <limits>
 
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
@@ -54,10 +55,13 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
         flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>* named_data,
     const flatbuffers::Vector<
         flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>* segments,
-    uint64_t segment_end_offset) {
+    uint64_t segment_data_size) {
   // Linear search by name.
   if (named_data == nullptr) {
     return Error::NotFound;
+  }
+  if (segments == nullptr) {
+    return Error::InvalidExternalData;
   }
   for (flatbuffers::uoffset_t i = 0; i < named_data->size(); ++i) {
     if (key.size() == named_data->Get(i)->key()->size() &&
@@ -67,12 +71,12 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
             named_data->Get(i)->key()->size()) == 0) {
       const auto* found = named_data->Get(i);
       // Validate the named_data.
-      size_t segment_index = found->segment_index();
+      const flatbuffers::uoffset_t segment_index = found->segment_index();
       ET_CHECK_OR_RETURN_ERROR(
-          segment_index >= 0 && segment_index < segments->size(),
+          segment_index < segments->size(),
           InvalidExternalData,
           "Segment index %zu for key %.*s is out of bounds for segment size %d. Malformed PTD file.",
-          segment_index,
+          static_cast<size_t>(segment_index),
           static_cast<int>(key.size()),
           key.data(),
           segments->size());
@@ -83,13 +87,13 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
               static_cast<uint64_t>(segments->Get(segment_index)->offset()),
               static_cast<uint64_t>(segments->Get(segment_index)->size()),
               &seg_end) &&
-              seg_end <= segment_end_offset,
+              seg_end <= segment_data_size,
           InvalidExternalData,
-          "Invalid segment offset %" PRIu64
-          " is larger than the segment_base_offset + segment_data_size %" PRIu64
-          "; malformed PTD file.",
+          "Segment offset %" PRIu64 " + size %" PRIu64
+          " exceeds segment_data_size %" PRIu64 "; malformed PTD file.",
           segments->Get(segment_index)->offset(),
-          segment_end_offset);
+          segments->Get(segment_index)->size(),
+          segment_data_size);
       return found;
     }
   }
@@ -109,6 +113,21 @@ Result<uint64_t> get_segment_end_offset(const FlatTensorHeader& header) {
       header.segment_base_offset,
       header.segment_data_size);
   return segment_end_offset;
+}
+
+Result<uint64_t> get_absolute_segment_offset(
+    const FlatTensorHeader& header,
+    uint64_t segment_offset) {
+  uint64_t absolute_offset = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(
+          header.segment_base_offset, segment_offset, &absolute_offset),
+      InvalidExternalData,
+      "segment_base_offset %" PRIu64 " + segment offset %" PRIu64
+      " overflows uint64_t; malformed PTD file.",
+      header.segment_base_offset,
+      segment_offset);
+  return absolute_offset;
 }
 
 Result<const TensorLayout> create_tensor_layout(
@@ -136,7 +155,7 @@ ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
       key,
       flat_tensor_->named_data(),
       flat_tensor_->segments(),
-      segment_end_offset.get());
+      header_.segment_data_size);
   if (!named_data.ok()) {
     return named_data.error();
   }
@@ -153,7 +172,7 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
       key,
       flat_tensor_->named_data(),
       flat_tensor_->segments(),
-      segment_end_offset.get());
+      header_.segment_data_size);
   if (!named_data.ok()) {
     return named_data.error();
   }
@@ -163,9 +182,21 @@ ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
       flat_tensor_->segments()->Get(segment_index)->offset();
   uint64_t segment_size = flat_tensor_->segments()->Get(segment_index)->size();
 
-  return loader_->load(
-      /*offset=*/header_.segment_base_offset + segment_offset,
+  Result<uint64_t> absolute_offset =
+      get_absolute_segment_offset(header_, segment_offset);
+  if (!absolute_offset.ok()) {
+    return absolute_offset.error();
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      segment_size <= std::numeric_limits<size_t>::max(),
+      NotSupported,
+      "Segment size %" PRIu64 " exceeds the maximum load size %zu",
       segment_size,
+      std::numeric_limits<size_t>::max());
+
+  return loader_->load_at_offset(
+      absolute_offset.get(),
+      static_cast<size_t>(segment_size),
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Constant));
 }
 
@@ -181,7 +212,7 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
       key,
       flat_tensor_->named_data(),
       flat_tensor_->segments(),
-      segment_end_offset.get());
+      header_.segment_data_size);
   if (!named_data.ok()) {
     return named_data.error();
   }
@@ -189,6 +220,13 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
   uint32_t segment_index = named_data.get()->segment_index();
   uint64_t segment_offset =
       flat_tensor_->segments()->Get(segment_index)->offset();
+  uint64_t segment_size = flat_tensor_->segments()->Get(segment_index)->size();
+
+  Result<uint64_t> absolute_offset =
+      get_absolute_segment_offset(header_, segment_offset);
+  if (!absolute_offset.ok()) {
+    return absolute_offset.error();
+  }
 
   Result<const TensorLayout> tensor_layout =
       create_tensor_layout(named_data.get()->tensor_layout());
@@ -200,18 +238,21 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
   ET_CHECK_OR_RETURN_ERROR(
       size <= tensor_layout.get().nbytes(),
       InvalidArgument,
-      "Buffer size %zu is smaller than tensor size %zu",
+      "Requested size %zu exceeds tensor size %zu",
       size,
       tensor_layout.get().nbytes());
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<uint64_t>(size) <= segment_size,
+      InvalidExternalData,
+      "Requested size %zu exceeds segment size %" PRIu64,
+      size,
+      segment_size);
 
   // Load mutable data.
   DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
       DataLoader::SegmentInfo::Type::Mutable, 0, nullptr);
-  return loader_->load_into(
-      header_.segment_base_offset + segment_offset,
-      tensor_layout.get().nbytes(),
-      info,
-      buffer);
+  return loader_->load_into_at_offset(
+      absolute_offset.get(), size, info, buffer);
 }
 
 ET_NODISCARD Result<uint32_t> FlatTensorDataMap::get_num_keys() const {
@@ -233,7 +274,7 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
     DataLoader* loader) {
   // Check header.
-  Result<FreeableBuffer> header = loader->load(
+  Result<FreeableBuffer> header = loader->load_at_offset(
       /*offset=*/0,
       FlatTensorHeader::kNumHeadBytes,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
@@ -250,19 +291,43 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       "Failed to parse FlatTensor header with error code %u. File may be corrupt.",
       static_cast<uint32_t>(fh.error()));
 
-  size_t expected_size = fh->segment_base_offset + fh->segment_data_size;
-  size_t actual_size = loader->size().get();
+  Result<uint64_t> expected_size = get_segment_end_offset(fh.get());
+  if (!expected_size.ok()) {
+    return expected_size.error();
+  }
+  Result<uint64_t> actual_size = loader->source_size();
+  if (!actual_size.ok()) {
+    return actual_size.error();
+  }
   ET_CHECK_OR_RETURN_ERROR(
-      expected_size <= actual_size,
+      expected_size.get() <= actual_size.get(),
       InvalidExternalData,
-      "File size is too small; file may be corrupted or truncated. Expected %zu from flat_tensor header, received %zu from data loader",
-      expected_size,
-      actual_size);
+      "File size is too small; file may be corrupted or truncated. Expected %" PRIu64
+      " from flat_tensor header, received %" PRIu64 " from data loader",
+      expected_size.get(),
+      actual_size.get());
+
+  uint64_t flat_tensor_data_size = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !c10::add_overflows(
+          fh->flatbuffer_offset,
+          fh->flatbuffer_size,
+          &flat_tensor_data_size),
+      InvalidExternalData,
+      "flatbuffer_offset %" PRIu64 " + flatbuffer_size %" PRIu64
+      " overflows uint64_t; malformed PTD file.",
+      fh->flatbuffer_offset,
+      fh->flatbuffer_size);
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor_data_size <= std::numeric_limits<size_t>::max(),
+      NotSupported,
+      "FlatTensor metadata size exceeds the addressable buffer size %zu",
+      std::numeric_limits<size_t>::max());
 
   // Load flatbuffer data as a segment.
-  Result<FreeableBuffer> flat_tensor_data = loader->load(
+  Result<FreeableBuffer> flat_tensor_data = loader->load_at_offset(
       /*offset=*/0,
-      fh->flatbuffer_offset + fh->flatbuffer_size,
+      static_cast<size_t>(flat_tensor_data_size),
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!flat_tensor_data.ok()) {
     ET_LOG(Error, "Failed to load flat_tensor data.");

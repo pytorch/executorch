@@ -8,8 +8,10 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #include <gtest/gtest.h>
 
@@ -216,3 +218,65 @@ TEST_F(BufferDataLoaderTest, InBoundsLoadIntoSucceeds) {
     EXPECT_EQ(data[0], 1);
   }
 }
+
+TEST_F(BufferDataLoaderTest, WideInterfaceForwardsToLegacyMethods) {
+  std::array<uint8_t, 3> data{1, 2, 3};
+  BufferDataLoader loader(data.data(), data.size());
+  const DataLoader::SegmentInfo segment_info(
+      DataLoader::SegmentInfo::Type::Program);
+
+  Result<FreeableBuffer> loaded =
+      loader.load_at_offset(1, 2, segment_info);
+  ASSERT_TRUE(loaded.ok());
+  const std::array<uint8_t, 2> expected{2, 3};
+  EXPECT_EQ(
+      std::memcmp(loaded->data(), expected.data(), expected.size()), 0);
+
+  std::array<uint8_t, 2> destination{};
+  EXPECT_EQ(
+      loader.load_into_at_offset(
+          1, destination.size(), segment_info, destination.data()),
+      Error::Ok);
+  EXPECT_EQ(destination, expected);
+
+  Result<uint64_t> source_size = loader.source_size();
+  ASSERT_TRUE(source_size.ok());
+  EXPECT_EQ(source_size.get(), sizeof(data));
+}
+
+TEST_F(BufferDataLoaderTest, WideInterfaceRejectsUnrepresentableRange) {
+  std::array<uint8_t, 1> data{};
+  BufferDataLoader loader(data.data(), data.size());
+  const DataLoader::SegmentInfo segment_info(
+      DataLoader::SegmentInfo::Type::Program);
+
+  EXPECT_EQ(
+      loader
+          .load_at_offset(
+              std::numeric_limits<uint64_t>::max(), 1, segment_info)
+          .error(),
+      Error::NotSupported);
+  EXPECT_EQ(
+      loader.load_into_at_offset(
+          std::numeric_limits<uint64_t>::max(), 1, segment_info, data.data()),
+      Error::NotSupported);
+}
+
+#if SIZE_MAX < UINT64_MAX
+TEST_F(BufferDataLoaderTest, WideInterfaceRejectsUnrepresentableOffsets) {
+  std::array<uint8_t, 1> data{};
+  BufferDataLoader loader(data.data(), data.size());
+  const DataLoader::SegmentInfo segment_info(
+      DataLoader::SegmentInfo::Type::Program);
+  constexpr uint64_t kUnrepresentableOffset =
+      static_cast<uint64_t>(SIZE_MAX) + 1;
+
+  EXPECT_EQ(
+      loader.load_at_offset(kUnrepresentableOffset, 0, segment_info).error(),
+      Error::NotSupported);
+  EXPECT_EQ(
+      loader.load_into_at_offset(
+          kUnrepresentableOffset, 0, segment_info, data.data()),
+      Error::NotSupported);
+}
+#endif
