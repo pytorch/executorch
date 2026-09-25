@@ -29,6 +29,7 @@ struct LinearConfig {
   bool has_bias = false;
   std::string test_case_name = "placeholder";
   std::string op_name = "linear_dq8ca_q4gsw";
+  bool singleton_batch = false;
 };
 
 // Helper function to unpack 4-bit values from uint8
@@ -74,7 +75,9 @@ TestCase create_test_case_from_config(
   test_case.set_operator_name(operator_name);
 
   // Derive sizes from M, K, N
-  std::vector<int64_t> input_size = {config.M, config.K};
+  std::vector<int64_t> input_size = config.singleton_batch
+      ? std::vector<int64_t>{1, config.M, config.K}
+      : std::vector<int64_t>{config.M, config.K};
   // Input tensor (float/half) - [M, K]
   ValueSpec input_tensor(
       input_size,
@@ -166,8 +169,11 @@ TestCase create_test_case_from_config(
   }
 
   // Output tensor (float/half) - [M, N]
+  std::vector<int64_t> output_size = config.singleton_batch
+      ? std::vector<int64_t>{1, config.M, config.N}
+      : std::vector<int64_t>{config.M, config.N};
   ValueSpec output(
-      {config.M, config.N},
+      output_size,
       input_dtype,
       storage_type,
       utils::kWidthPacked,
@@ -271,25 +277,18 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
       {32, 256, 128, 64},
       {256, 128, 128, 32}, // M=256 > K=128; all dims < kRefDimSizeLimit
 
-      // Coopmat-eligible correctness shapes (M%64==0, N%64==0, K%32==0,
-      // group_size%32==0). The Buffer+Half variant fires linear_q4gsw_coopmat /
-      // linear_dq8ca_q4gsw_coopmat and is validated against the CPU reference.
+      // Small correctness shapes.
       {64, 64, 64, 64},
       {64, 128, 64, 64},
       {64, 256, 128, 128},
+      // Coopmat-eligible singleton-batch shape matching LLM prefill.
+      {128, 64, 64, 64, false, "placeholder", "linear_dq8ca_q4gsw", true},
       // With bias
       {4, 64, 32, 16, true},
       {4, 128, 64, 32, true},
       {32, 128, 64, 32, true},
-      // NOTE: coopmat correctness coverage is NOT in this list. The
-      // coopmat dispatch gate requires M%64==0, N%64==0, K%32==0; the
-      // smallest qualifying shape (M=64, K=64, N=64) produces enough
-      // cancellation outputs that fp16 accumulation drift exceeds any
-      // reasonable tolerance against the fp32 reference. Validating the
-      // coopmat shader needs a different strategy (e.g. positive-only
-      // inputs, or simulating fp16 accumulation in the reference).
       // A couple of representative performance shapes (coopmat-eligible,
-      // M % 64 == 0). The full Llama 3.1 8B prefill sweep lived here during
+      // M % 128 == 0). The full Llama 3.1 8B prefill sweep lived here during
       // the study; trimmed to keep this a fast unit test.
       {128, 2048, 2048, 128},
       {1024, 4096, 4096, 128},
@@ -361,9 +360,9 @@ void linear_q4gsw_reference_impl(TestCase& test_case) {
   auto output_sizes =
       output_spec.get_tensor_sizes(); // [batch_size, out_features]
 
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t in_features = input_sizes.back();
+  int64_t out_features = output_sizes.back();
+  int64_t batch_size = input_spec.numel() / in_features;
   int64_t group_size = group_size_spec.get_int_value();
 
   // Skip for large tensors since computation time will be extremely slow
@@ -451,9 +450,9 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   auto output_sizes =
       output_spec.get_tensor_sizes(); // [batch_size, out_features]
 
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t in_features = input_sizes.back();
+  int64_t out_features = output_sizes.back();
+  int64_t batch_size = input_spec.numel() / in_features;
   int64_t group_size = group_size_spec.get_int_value();
 
   // Skip for large tensors since computation time will be extremely slow
@@ -556,9 +555,9 @@ int64_t quantized_linear_flop_calculator(const TestCase& test_case) {
   const auto& input_sizes = test_case.inputs()[0].get_tensor_sizes();
   const auto& output_sizes = test_case.outputs()[0].get_tensor_sizes();
 
-  int64_t batch_size = input_sizes[0];
-  int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t in_features = input_sizes.back();
+  int64_t out_features = output_sizes.back();
+  int64_t batch_size = test_case.inputs()[0].numel() / in_features;
 
   // Calculate FLOPs for quantized linear operation
   // Each output element requires:

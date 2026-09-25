@@ -11,10 +11,9 @@
 # INT weight storage can be texture2d or buffer (matches the tiled path).
 # DTYPE = half only; fp32 activations are not supported.
 # Geometry follows the double-buffered reference (coopmat_mm_ref): 128x64
-# tile, K-step 16, 2x2 subgroup grid x 32 threads (subgroup size 32 forced).
-# This geometry was tuned for AMD-RDNA GPUs. NOTE: the C++ dispatch in
-# QuantizedLinear.cpp must keep kQ4gswCoopmatDims.n and .wg_size in sync with
-# WG_TILE_N (64) and WG_SIZE (= SG_GRID_X*SG_GRID_Y*SUBGROUP = 128).
+# tile, K-step 32, and a 2x2 subgroup grid x 32 threads. The required subgroup
+# size preserves the wave32 mode used by the original AMD-tuned shader. NOTE:
+# the C++ dispatch dimensions must stay in sync with this geometry.
 
 linear_qw_coopmat:
   parameter_names_with_default_values:
@@ -27,7 +26,7 @@ linear_qw_coopmat:
     MMA_K: 16
     WG_TILE_M: 128
     WG_TILE_N: 64
-    WG_TILE_K: 16
+    WG_TILE_K: 32
     SG_GRID_X: 2
     SG_GRID_Y: 2
     SUBGROUP_SIZE: 32

@@ -70,10 +70,18 @@ PhysicalDevice::PhysicalDevice(
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES_KHR,
           nullptr},
 #endif
+#ifdef VK_KHR_vulkan_memory_model
+      vulkan_memory_model_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES_KHR,
+          nullptr},
+#endif /* VK_KHR_vulkan_memory_model */
 #ifdef VK_KHR_cooperative_matrix
       cooperative_matrix_features{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR},
-      supports_int8_coopmat{false},
+      cooperative_matrix_device_properties{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_KHR,
+          nullptr},
+      cooperative_matrix_properties{},
 #endif /* VK_KHR_cooperative_matrix */
 #ifdef VK_NV_cooperative_matrix2
       cooperative_matrix2_features{
@@ -282,6 +290,11 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   extension_list_top = &shader_int_dot_product_features;
 #endif /* VK_KHR_shader_integer_dot_product */
 
+#ifdef VK_KHR_vulkan_memory_model
+  vulkan_memory_model_features.pNext = extension_list_top;
+  extension_list_top = &vulkan_memory_model_features;
+#endif /* VK_KHR_vulkan_memory_model */
+
 #ifdef VK_KHR_cooperative_matrix
   cooperative_matrix_features.pNext = extension_list_top;
   extension_list_top = &cooperative_matrix_features;
@@ -335,19 +348,14 @@ void PhysicalDevice::query_extensions_vk_1_1() {
       vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
           handle, &count, nullptr);
       if (count > 0) {
-        std::vector<VkCooperativeMatrixPropertiesKHR> props(count);
-        for (auto& p : props) {
+        cooperative_matrix_properties.resize(count);
+        for (auto& p : cooperative_matrix_properties) {
           p.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
           p.pNext = nullptr;
         }
         vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
-            handle, &count, props.data());
-        for (const auto& p : props) {
-          if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR) {
-            supports_int8_coopmat = true;
-            break;
-          }
-        }
+            handle, &count, cooperative_matrix_properties.data());
+        cooperative_matrix_properties.resize(count);
       }
     }
   }
@@ -368,6 +376,11 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   shader_int_dot_product_properties.pNext = properties_list_top;
   properties_list_top = &shader_int_dot_product_properties;
 #endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_cooperative_matrix
+  cooperative_matrix_device_properties.pNext = properties_list_top;
+  properties_list_top = &cooperative_matrix_device_properties;
+#endif /* VK_KHR_cooperative_matrix */
 
 #ifdef VK_EXT_subgroup_size_control
   subgroup_size_control_properties.pNext = properties_list_top;
