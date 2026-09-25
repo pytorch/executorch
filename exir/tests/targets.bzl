@@ -239,6 +239,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/passes:remove_graph_asserts_pass",
             "//executorch/exir/passes:remove_mixed_type_operators",
             "//executorch/exir/passes:replace_edge_with_backend_pass",
+            "//executorch/exir/passes:replace_sym_sum_pass",
             "//executorch/exir/passes:replace_view_copy_with_view_pass",
             "//executorch/exir/passes:scalar_to_tensor_pass",
             "//executorch/exir/passes:spec_prop_pass",

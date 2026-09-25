@@ -342,6 +342,16 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "replace_sym_sum_pass",
+    srcs = [
+        "replace_sym_sum_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "replace_edge_with_backend_pass",
     srcs = [
         "replace_edge_with_backend_pass.py",
