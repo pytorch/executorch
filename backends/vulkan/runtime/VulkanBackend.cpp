@@ -665,6 +665,8 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
              ->supports_8bit_storage_buffers()) {
       for (const auto* value : *flatbuffer_graph->values()) {
         const auto* tensor = value->value_as_VkTensor();
+        // Constants become CPU TensorRefs; their prepack destinations are
+        // separate GPU tensors checked here.
         if (tensor == nullptr || tensor->constant_id() >= 0 ||
             tensor->datatype() != vkgraph::VkDataType::BOOL) {
           continue;

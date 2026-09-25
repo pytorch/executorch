@@ -57,6 +57,15 @@ class TransformerBlock(torch.nn.Module):
         return F.gelu(self.ff(y.transpose(1, 2).reshape(b, s, 64)))
 
 
+class ConstantMask(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("mask", torch.arange(21).reshape(3, 7) % 2 == 0)
+
+    def forward(self, x):
+        return torch.where(self.mask, x, -x)
+
+
 class TestVulkanTransformer(unittest.TestCase):
     def _lower(
         self,
@@ -309,6 +318,23 @@ class TestVulkanTransformer(unittest.TestCase):
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
 
+    def test_constant_bool_mask(self):
+        model = ConstantMask()
+        inputs = [(torch.linspace(-1, 1, 21).reshape(3, 7),)]
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                edge = self._lower(model, inputs[0], storage=storage)
+                self.assertTrue(
+                    any(
+                        isinstance(value.value, VkTensor)
+                        and value.value.constant_id >= 0
+                        and value.value.datatype == VkDataType.BOOL
+                        for graph in _vulkan_graphs(edge)
+                        for value in graph.values
+                    )
+                )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
     def test_scalar_types_before_conv_and_view(self):
         class ScalarTypes(torch.nn.Module):
             def __init__(self):
@@ -374,7 +400,7 @@ class TestVulkanTransformer(unittest.TestCase):
                     )
                     self._run(edge, model, inputs, atol=0, rtol=0)
 
-    def test_large_integer_scalars_fall_back(self):
+    def test_integer_scalar_range_fallback(self):
         class LargeScalar(torch.nn.Module):
             def __init__(self, kind, value):
                 super().__init__()
@@ -390,7 +416,14 @@ class TestVulkanTransformer(unittest.TestCase):
 
         inputs = [(torch.zeros(2, 3),)]
         for kind in ("scalar_tensor", "full", "full_like"):
-            for value in (2**31, 2**40, 2**63 - 1, -(2**63)):
+            for value in (
+                2**31 - 0.5,
+                -(2**31) - 0.5,
+                2**31,
+                2**40,
+                2**63 - 1,
+                -(2**63),
+            ):
                 with self.subTest(kind=kind, value=value):
                     model = LargeScalar(kind, value)
                     edge = self._lower(model, inputs[0], fully_delegated=False)
@@ -473,12 +506,16 @@ class TestVulkanTransformer(unittest.TestCase):
             def forward(self, x):
                 return torch.logical_not(x)
 
-        inputs = (torch.zeros(3, 7, dtype=torch.bool),)
-        edge = self._lower(LogicalNot(), inputs, storage=VkStorageType.BUFFER)
-        program_buffer = edge.to_executorch().buffer
-        module = _load_for_executorch_from_buffer(program_buffer)
-        with self.assertRaisesRegex(RuntimeError, r"0x:?10\b"):
-            module.run_method("forward", inputs)
+        for model, inputs in (
+            (LogicalNot(), (torch.zeros(3, 7, dtype=torch.bool),)),
+            (ConstantMask(), (torch.zeros(3, 7),)),
+        ):
+            with self.subTest(model=type(model).__name__):
+                edge = self._lower(model, inputs, storage=VkStorageType.BUFFER)
+                program_buffer = edge.to_executorch().buffer
+                module = _load_for_executorch_from_buffer(program_buffer)
+                with self.assertRaisesRegex(RuntimeError, r"0x:?10\b"):
+                    module.run_method("forward", inputs)
 
 
 if __name__ == "__main__":

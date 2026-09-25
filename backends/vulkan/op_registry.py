@@ -325,7 +325,7 @@ def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
     if isinstance(value, float) and math.isnan(value):
         return False
     if dtype in utils.INT_T:
-        return -(2**31) <= value < 2**31
+        return -(2**31) <= value <= 2**31 - 1
     return True
 
 
