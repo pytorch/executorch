@@ -280,6 +280,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_sub.cpp",
     "kernels/optimized/cpu/op_sum.cpp",
     "kernels/optimized/cpu/op_to_copy.cpp",
+    "kernels/optimized/cpu/op_upsample_nearest2d.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -324,6 +325,7 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
     "kernels/optimized/cpu/op_to_copy.cpp",
+    "kernels/optimized/cpu/op_upsample_nearest2d.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 

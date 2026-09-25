@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -8,18 +9,87 @@
 
 #include <executorch/kernels/portable/cpu/util/upsample_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
+
+#include <cstring>
 
 namespace torch {
 namespace executor {
 namespace native {
 
 namespace {
+
+template <typename CTYPE>
+bool upsample_nearest2d_2x_nchw_fast_path(
+    const Tensor& in,
+    const float scale_h,
+    const float scale_w,
+    Tensor& out) {
+  if (scale_h != 0.5f || scale_w != 0.5f || out.size(2) != in.size(2) * 2 ||
+      out.size(3) != in.size(3) * 2) {
+    return false;
+  }
+
+  const int64_t in_h = in.size(2);
+  const int64_t in_w = in.size(3);
+  const int64_t out_h = out.size(2);
+  const int64_t out_w = out.size(3);
+
+  const bool in_contiguous_nchw = in.strides()[3] == 1 &&
+      in.strides()[2] == in_w && in.strides()[1] == in_h * in_w &&
+      in.strides()[0] == in.size(1) * in_h * in_w;
+  const bool out_contiguous_nchw = out.strides()[3] == 1 &&
+      out.strides()[2] == out_w && out.strides()[1] == out_h * out_w &&
+      out.strides()[0] == out.size(1) * out_h * out_w;
+  if (!in_contiguous_nchw || !out_contiguous_nchw) {
+    return false;
+  }
+
+  const auto in_data = in.const_data_ptr<CTYPE>();
+  auto out_data = out.mutable_data_ptr<CTYPE>();
+  const int64_t planes = in.size(0) * in.size(1);
+  const int64_t in_plane_size = in_h * in_w;
+  const int64_t out_plane_size = out_h * out_w;
+  int64_t grain_size =
+      ::executorch::extension::internal::GRAIN_SIZE / out_plane_size;
+  if (grain_size < 1) {
+    grain_size = 1;
+  }
+
+  const bool success = ::executorch::extension::parallel_for(
+      0, planes, grain_size, [&](const auto begin, const auto end) {
+        for (const auto plane : c10::irange(begin, end)) {
+          const CTYPE* in_plane = in_data + plane * in_plane_size;
+          CTYPE* out_plane = out_data + plane * out_plane_size;
+
+          for (int64_t h = 0; h < in_h; ++h) {
+            const CTYPE* in_row = in_plane + h * in_w;
+            CTYPE* out_row0 = out_plane + (2 * h) * out_w;
+            CTYPE* out_row1 = out_row0 + out_w;
+
+            for (int64_t w = 0; w < in_w; ++w) {
+              const CTYPE value = in_row[w];
+              out_row0[2 * w] = value;
+              out_row0[2 * w + 1] = value;
+            }
+            std::memcpy(out_row1, out_row0, out_w * sizeof(CTYPE));
+          }
+        }
+      });
+
+  return success;
+}
+
 template <typename CTYPE>
 void upsample_nearest2d_kernel_impl_nchw(
     const Tensor& in,
     const float scale_h,
     const float scale_w,
     Tensor& out) {
+  if (upsample_nearest2d_2x_nchw_fast_path<CTYPE>(in, scale_h, scale_w, out)) {
+    return;
+  }
+
   const auto in_data = in.const_data_ptr<CTYPE>();
   auto out_data = out.mutable_data_ptr<CTYPE>();
 
