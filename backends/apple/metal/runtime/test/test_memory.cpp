@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
+#include <executorch/backends/apple/metal/runtime/shims/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
 
@@ -90,4 +91,51 @@ TEST_F(MetalMemoryTest, CleanupLeavesNoTrackedMemory) {
 
   EXPECT_TRUE(tensors.empty());
   EXPECT_TRUE(memory_to_n_tensor.empty());
+}
+
+class MetalStrideTest : public MetalMemoryTest {
+ protected:
+  AOTITensorHandle make(
+      std::vector<int64_t> sizes,
+      std::vector<int64_t> strides,
+      int32_t device_type = kDeviceMps) {
+    AOTITensorHandle tensor = nullptr;
+    EXPECT_EQ(
+        aoti_torch_empty_strided(
+            static_cast<int64_t>(sizes.size()),
+            sizes.data(),
+            strides.data(),
+            kFloat32,
+            device_type,
+            0,
+            &tensor),
+        Error::Ok);
+    return tensor;
+  }
+};
+
+// The stride of a size-1 dimension is not looked at, as in PyTorch.
+TEST_F(MetalStrideTest, RowMajorDenseIgnoresSizeOneDims) {
+  EXPECT_TRUE(is_row_major_dense(*make({2, 1, 4}, {4, 4, 1})));
+  EXPECT_TRUE(is_row_major_dense(*make({2, 1, 4}, {4, 1, 1})));
+  EXPECT_TRUE(is_row_major_dense(*make({1, 8}, {1, 1})));
+  EXPECT_FALSE(is_row_major_dense(*make({4, 2}, {1, 4})));
+  EXPECT_FALSE(is_row_major_dense(*make({2, 1, 4}, {1, 1, 2})));
+}
+
+// Copying between tensors that differ only in the stride of a size-1
+// dimension is a plain copy.
+TEST_F(MetalStrideTest, CopyIgnoresStrideOfSizeOneDim) {
+  AOTITensorHandle src = make({2, 1, 4}, {4, 1, 1});
+  AOTITensorHandle dst = make({2, 1, 4}, {4, 4, 1}, /*device_type=*/0);
+  float* src_data = static_cast<float*>(src->mutable_data_ptr());
+  for (int i = 0; i < 8; i++) {
+    src_data[i] = static_cast<float>(i);
+  }
+
+  ASSERT_EQ(aoti_torch_copy_(dst, src, 0), Error::Ok);
+  const float* got = static_cast<const float*>(dst->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<float>(got, got + 8),
+      (std::vector<float>{0, 1, 2, 3, 4, 5, 6, 7}));
 }
