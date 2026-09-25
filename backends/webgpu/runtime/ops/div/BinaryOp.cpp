@@ -51,14 +51,17 @@ void div_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   fill_tensor_meta_broadcast(in1_tensor, out_ndim, &in1_meta);
   fill_tensor_meta_broadcast(in2_tensor, out_ndim, &in2_meta);
 
-  // fp32-only: nbytes must equal numel * 4 for every operand.
-  if (out_tensor.nbytes !=
-          static_cast<size_t>(out_meta.numel) * sizeof(float) ||
-      in1_tensor.nbytes !=
-          static_cast<size_t>(in1_meta.numel) * sizeof(float) ||
-      in2_tensor.nbytes !=
-          static_cast<size_t>(in2_meta.numel) * sizeof(float)) {
-    throw std::runtime_error("div: non-fp32 operand (nbytes != numel * 4)");
+  // Integer operands would be reinterpreted by the f32 shader; reject them.
+  if (binary_operands_are_int(
+          in1_tensor,
+          in2_tensor,
+          out_tensor,
+          in1_meta,
+          in2_meta,
+          out_meta,
+          "div")) {
+    throw std::runtime_error(
+        std::string("div") + ": integer operands are unsupported");
   }
 
   uint32_t wg_size =

@@ -5,6 +5,8 @@ binary_op:
     INLINE: 0
     SAME_EXPR: input1[idx] + input2[idx]
     BROADCAST_EXPR: input1[l1] + input2[l2]
+    DTYPE: f32
+    ALPHA_INIT: 1.0
   shader_variants:
     - NAME: binary_div
       OP_EXPR: a / b
@@ -30,5 +32,19 @@ binary_op:
     - NAME: binary_mul
       USE_ALPHA: 0
       INLINE: 1
+      SAME_EXPR: input1[idx] * input2[idx]
+      BROADCAST_EXPR: input1[l1] * input2[l2]
+    # i32 variants. Integer operands cannot go through the f32 shaders: the bit
+    # pattern of a small integer reads back as a denormal, so the result is
+    # silently ~0 instead of wrong-but-obvious.
+    - NAME: binary_sub_int
+      OP_EXPR: a - alpha * b
+      USE_ALPHA: 1
+      DTYPE: i32
+      ALPHA_INIT: 1
+    - NAME: binary_mul_int
+      USE_ALPHA: 0
+      INLINE: 1
+      DTYPE: i32
       SAME_EXPR: input1[idx] * input2[idx]
       BROADCAST_EXPR: input1[l1] * input2[l2]
