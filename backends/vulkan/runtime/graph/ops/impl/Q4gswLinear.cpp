@@ -431,13 +431,21 @@ void add_q4gsw_linear_nc_coop_gemv_node(
     const ValueRef packed_scales,
     const ValueRef packed_bias,
     const uint32_t apply_bias,
-    const uint32_t K_val,
     const uint32_t group_size_val,
     const ValueRef output) {
   const vkapi::ScalarType in_dtype = graph.dtype_of(fp_input);
+  // Weight packing may pad K beyond the logical input width.
+  const uint32_t K_val =
+      utils::safe_downcast<uint32_t>(graph.size_at<int64_t>(-1, fp_input));
 
   TmpTensor dummy_transposed_input(
       &graph, {}, in_dtype, utils::kBuffer, utils::kWidthPacked);
+
+  vkapi::SpecVarList spec_vars = {apply_bias, K_val, group_size_val};
+  if (in_dtype == vkapi::kHalf) {
+    spec_vars.append(utils::safe_downcast<uint32_t>(
+        graph.size_at<int64_t>(-2, weight_data)));
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -453,7 +461,7 @@ void add_q4gsw_linear_nc_coop_gemv_node(
         vkapi::kRead}},
       {graph.sizes_ubo(output), graph.sizes_ubo(fp_input)},
       {},
-      {apply_bias, K_val, group_size_val},
+      spec_vars,
       {weight_data, fp_input},
       resize_q4gsw_linear_node));
 }
@@ -533,7 +541,6 @@ void add_q4gsw_linear_w_4x8_node(
       packed_scales,
       packed_bias,
       apply_bias,
-      K_val,
       static_cast<uint32_t>(group_size_val),
       output);
 }
@@ -628,7 +635,6 @@ void add_q4gsw_linear_tin_w_4x8_node(
       packed_scales,
       packed_bias,
       apply_bias,
-      K_val,
       static_cast<uint32_t>(group_size_val),
       output);
 }
