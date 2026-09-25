@@ -989,3 +989,99 @@ TEST_F(OpConvCorrectnessTest, HalfGroupedTransposedAccumulation) {
 TEST_F(OpConvCorrectnessTest, BFloat16GroupedTransposedAccumulation) {
   test_grouped_transposed_accumulation<ScalarType::BFloat16>(1024);
 }
+
+TEST_F(OpConvCorrectnessTest, TransposedCoprimeStrideDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  const int64_t stride[] = {2, 3};
+  const int64_t padding[] = {2, 2};
+  const int64_t dilation[] = {3, 2};
+  const int64_t output_padding[] = {1, 2};
+  auto input = tf.make({1, 1, 2, 2}, {1, 2, 3, 4});
+  auto weight = tf.make({1, 1, 3, 3}, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+  auto bias = tf.make({1}, {0.5});
+  // PyTorch reference, including cropped taps and bias-only output positions.
+  auto expected = tf.make(
+      {1, 1, 6, 6},
+      {6.5, 4.5,  9.5, 8.5,  0.5, 12.5, 5.5,  8.5,  6.5,  10.5, 0.5, 12.5,
+       0.5, 0.5,  0.5, 0.5,  0.5, 0.5,  15.5, 16.5, 18.5, 20.5, 0.5, 24.5,
+       8.5, 14.5, 9.5, 16.5, 0.5, 18.5, 0.5,  0.5,  0.5,  0.5,  0.5, 0.5});
+  auto out = tf.zeros_like(expected);
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      true,
+      output_padding,
+      1,
+      out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedNonCoprimeStrideDilation) {
+  TensorFactory<ScalarType::Float> tf;
+  auto input = tf.make({1, 1, 3}, {1, 2, 3});
+  auto weight = tf.make({1, 1, 5}, {1, 2, 3, 4, 5});
+  auto bias = tf.make({1}, {0.5});
+  auto expected =
+      tf.make({1, 1, 26}, {0.5, 2.5, 0.5, 3.5,  0.5, 4.5,  0.5, 3.5, 0.5,
+                           6.5, 0.5, 6.5, 0.5,  4.5, 0.5,  9.5, 0.5, 8.5,
+                           0.5, 5.5, 0.5, 12.5, 0.5, 10.5, 0.5, 0.5});
+  auto out = tf.full({1, 1, 26}, -1);
+  op_convolution_out(input, weight, bias, {4}, {5}, {6}, true, {3}, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedStrideLargerThanTile) {
+  TensorFactory<ScalarType::Float> tf;
+  auto input = tf.make({1, 1, 2}, {1, 2});
+  auto weight = tf.make({1, 1, 2}, {3, 4});
+  auto bias = tf.make({1}, {0.5});
+  std::vector<float> expected_data(164, 0.5);
+  expected_data[0] = 3.5;
+  expected_data[34] = 4.5;
+  expected_data[65] = 6.5;
+  expected_data[99] = 8.5;
+  auto expected = tf.make({1, 1, 164}, expected_data);
+  auto out = tf.full({1, 1, 164}, -1);
+  op_convolution_out(input, weight, bias, {65}, {0}, {34}, true, {64}, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedOutputTiles) {
+  TensorFactory<ScalarType::Float> tf;
+  const int64_t stride[] = {1, 2};
+  const int64_t padding[] = {0, 1};
+  const int64_t dilation[] = {1, 1};
+  const int64_t output_padding[] = {0, 1};
+  auto input = tf.ones({1, 2, 9, 33});
+  auto weight = tf.make({2, 2, 1, 3}, {1, 2, 3, 2, 4, 6, 1, 2, 3, 2, 4, 6});
+  auto bias = tf.make({2}, {-0.5, 0.5});
+  // PyTorch reference spans full and partial tiles along both spatial axes.
+  std::vector<float> expected_data;
+  for (const int channel : {0, 1}) {
+    for (int row = 0; row < 9; ++row) {
+      for (int x = 0; x < 66; ++x) {
+        const float sum = x == 65 ? 6 : (x % 2 == 0 ? 4 : 8);
+        expected_data.push_back(
+            sum * (channel + 1) + (channel == 0 ? -0.5 : 0.5));
+      }
+    }
+  }
+  auto expected = tf.make({1, 2, 9, 66}, expected_data);
+  for (const bool channels_last : {false, true}) {
+    SCOPED_TRACE(channels_last);
+    auto in = channels_last ? tf.channels_last_like(input) : input;
+    auto w = channels_last ? tf.channels_last_like(weight) : weight;
+    auto exp = channels_last ? tf.channels_last_like(expected) : expected;
+    auto out = tf.zeros_like(exp);
+    if (channels_last) {
+      out = tf.channels_last_like(out);
+    }
+    op_convolution_out(
+        in, w, bias, stride, padding, dilation, true, output_padding, 1, out);
+    EXPECT_TENSOR_EQ(out, exp);
+  }
+}
