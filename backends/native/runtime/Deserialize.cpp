@@ -19,13 +19,17 @@
 
 #include <executorch/backends/native/runtime/Program.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <flatbuffers/flatbuffers.h>
@@ -45,7 +49,139 @@ bool nonempty(const flatbuffers::String* s) {
 
 ScalarType map_scalar_type(fbs::ScalarType t) {
   // ptn::ScalarType ids are pinned to the schema's, so the byte maps straight.
-  return static_cast<ScalarType>(static_cast<int8_t>(t));
+  const auto result = static_cast<ScalarType>(static_cast<int8_t>(t));
+  element_size(result);
+  return result;
+}
+
+QuantRoundingMode map_quant_rounding_mode(fbs::QuantRoundingMode mode) {
+  switch (mode) {
+    case fbs::QuantRoundingMode::TO_NEAREST_EVEN:
+      return QuantRoundingMode::ToNearestEven;
+    case fbs::QuantRoundingMode::AWAY_FROM_ZERO:
+      return QuantRoundingMode::AwayFromZero;
+    case fbs::QuantRoundingMode::TOWARD_ZERO:
+      return QuantRoundingMode::TowardZero;
+    case fbs::QuantRoundingMode::FLOOR:
+      return QuantRoundingMode::Floor;
+    case fbs::QuantRoundingMode::CEIL:
+      return QuantRoundingMode::Ceil;
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported QuantRoundingMode value " +
+          std::to_string(static_cast<int>(mode)));
+  }
+}
+
+QuantBitOrder map_quant_bit_order(fbs::QuantBitOrder order) {
+  switch (order) {
+    case fbs::QuantBitOrder::LSB_FIRST:
+      return QuantBitOrder::LsbFirst;
+    case fbs::QuantBitOrder::MSB_FIRST:
+      return QuantBitOrder::MsbFirst;
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported QuantBitOrder value " +
+          std::to_string(static_cast<int>(order)));
+  }
+}
+
+QuantSignedEncoding map_quant_signed_encoding(
+    fbs::QuantSignedEncoding encoding) {
+  switch (encoding) {
+    case fbs::QuantSignedEncoding::UNSIGNED:
+      return QuantSignedEncoding::Unsigned;
+    case fbs::QuantSignedEncoding::TWOS_COMPLEMENT:
+      return QuantSignedEncoding::TwosComplement;
+    case fbs::QuantSignedEncoding::OFFSET:
+      return QuantSignedEncoding::Offset;
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported QuantSignedEncoding value " +
+          std::to_string(static_cast<int>(encoding)));
+  }
+}
+
+bool is_float_type(ScalarType dtype) {
+  return dtype == ScalarType::Half || dtype == ScalarType::Float ||
+      dtype == ScalarType::Double || dtype == ScalarType::BFloat16;
+}
+
+bool is_integer_type(ScalarType dtype) {
+  return dtype == ScalarType::Byte || dtype == ScalarType::Char ||
+      dtype == ScalarType::Short || dtype == ScalarType::Int ||
+      dtype == ScalarType::Long || dtype == ScalarType::UInt16 ||
+      dtype == ScalarType::UInt32 || dtype == ScalarType::UInt64;
+}
+
+QuantParam build_quant_param(const fbs::QuantParam* param) {
+  if (param == nullptr || param->value() == nullptr) {
+    throw std::runtime_error("build_tensor_meta: missing quant parameter");
+  }
+  switch (param->value_type()) {
+    case fbs::QuantParamValue::InlineFloatQuantParam: {
+      const auto* value = param->value_as_InlineFloatQuantParam();
+      InlineFloatQuantParam out;
+      out.value = value->value();
+      out.dtype = map_scalar_type(value->dtype());
+      if (!is_float_type(out.dtype) || !std::isfinite(out.value)) {
+        throw std::runtime_error(
+            "build_tensor_meta: invalid inline floating quant parameter");
+      }
+      return out;
+    }
+    case fbs::QuantParamValue::InlineIntQuantParam: {
+      const auto* value = param->value_as_InlineIntQuantParam();
+      InlineIntQuantParam out;
+      out.value = value->value();
+      out.dtype = map_scalar_type(value->dtype());
+      if (!is_integer_type(out.dtype)) {
+        throw std::runtime_error(
+            "build_tensor_meta: invalid inline integer quant parameter");
+      }
+      return out;
+    }
+    case fbs::QuantParamValue::ExternalQuantParam: {
+      const auto* value = param->value_as_ExternalQuantParam();
+      ExternalQuantParam out;
+      out.data_key = str_of(value->data_key());
+      out.dtype = map_scalar_type(value->dtype());
+      if (out.data_key.empty()) {
+        throw std::runtime_error(
+            "build_tensor_meta: external quant parameter has an empty data key");
+      }
+      return out;
+    }
+    case fbs::QuantParamValue::NONE:
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported QuantParamValue value " +
+          std::to_string(static_cast<int>(param->value_type())));
+  }
+}
+
+QuantizedStorage build_quantized_storage(const fbs::QuantizedStorage* storage) {
+  if (storage == nullptr || storage->value() == nullptr) {
+    throw std::runtime_error("build_tensor_meta: missing quantized storage");
+  }
+  switch (storage->value_type()) {
+    case fbs::QuantizedStorageValue::DenseQuantizedStorage:
+      return DenseQuantizedStorage{};
+    case fbs::QuantizedStorageValue::PackedBitsQuantizedStorage: {
+      const auto* value = storage->value_as_PackedBitsQuantizedStorage();
+      PackedBitsQuantizedStorage out;
+      out.bit_width = value->bit_width();
+      out.bit_order = map_quant_bit_order(value->bit_order());
+      out.signed_encoding = map_quant_signed_encoding(value->signed_encoding());
+      out.storage_offset = value->storage_offset();
+      return out;
+    }
+    case fbs::QuantizedStorageValue::NONE:
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported QuantizedStorageValue value " +
+          std::to_string(static_cast<int>(storage->value_type())));
+  }
 }
 
 OpKind map_op_kind(fbs::OpKind k) {
@@ -132,6 +268,205 @@ int64_t static_extent(
       "); this runtime requires static shapes");
 }
 
+bool range_fits_dense_dtype(int64_t lower, int64_t upper, ScalarType dtype) {
+  switch (dtype) {
+    case ScalarType::Byte:
+      return lower >= 0 && upper <= UINT8_MAX;
+    case ScalarType::Char:
+      return lower >= INT8_MIN && upper <= INT8_MAX;
+    case ScalarType::Short:
+      return lower >= INT16_MIN && upper <= INT16_MAX;
+    case ScalarType::Int:
+      return lower >= INT32_MIN && upper <= INT32_MAX;
+    case ScalarType::Long:
+      return true;
+    case ScalarType::UInt16:
+      return lower >= 0 && upper <= UINT16_MAX;
+    case ScalarType::UInt32:
+      return lower >= 0 && upper <= UINT32_MAX;
+    case ScalarType::UInt64:
+      return lower >= 0;
+    case ScalarType::Half:
+    case ScalarType::Float:
+    case ScalarType::Double:
+    case ScalarType::Bool:
+    case ScalarType::BFloat16:
+      return false;
+  }
+  return false;
+}
+
+// Largest finite value and smallest positive (subnormal) value of a float
+// dtype.
+std::pair<double, double> float_limits(ScalarType dtype) {
+  if (dtype == ScalarType::Half) {
+    return {65504.0, 0x1p-24};
+  }
+  if (dtype == ScalarType::BFloat16) {
+    return {0x1.fep127, 0x1p-133};
+  }
+  if (dtype == ScalarType::Float) {
+    return {
+        std::numeric_limits<float>::max(),
+        std::numeric_limits<float>::denorm_min()};
+  }
+  return {
+      std::numeric_limits<double>::max(),
+      std::numeric_limits<double>::denorm_min()};
+}
+
+void validate_quant_param(const QuantParam& param, bool scale) {
+  const ScalarType dtype =
+      std::visit([](const auto& value) { return value.dtype; }, param);
+  if (!is_float_type(dtype) && (scale || !is_integer_type(dtype))) {
+    throw std::runtime_error(
+        std::string("build_tensor_meta: invalid ") +
+        (scale ? "scale" : "zero-point") + " dtype");
+  }
+  if (const auto* float_param = std::get_if<InlineFloatQuantParam>(&param)) {
+    const auto [max_value, min_positive] = float_limits(float_param->dtype);
+    if (std::abs(float_param->value) > max_value ||
+        (scale && float_param->value < min_positive)) {
+      throw std::runtime_error(
+          std::string("build_tensor_meta: inline ") +
+          (scale ? "scale is not finite and positive"
+                 : "zero point is not finite") +
+          " in its dtype");
+    }
+  } else if (const auto* int_param = std::get_if<InlineIntQuantParam>(&param);
+             int_param != nullptr &&
+             !range_fits_dense_dtype(
+                 int_param->value, int_param->value, int_param->dtype)) {
+    throw std::runtime_error(
+        "build_tensor_meta: inline zero point does not fit its dtype");
+  }
+}
+
+void validate_affine_quantization(
+    const AffineQuantization& quant,
+    const TensorMeta& meta) {
+  if (!is_float_type(quant.expressed_dtype)) {
+    throw std::runtime_error(
+        "build_tensor_meta: affine expressed dtype must be floating point");
+  }
+  if (quant.quant_min >= quant.quant_max) {
+    throw std::runtime_error(
+        "build_tensor_meta: affine quant_min must be less than quant_max");
+  }
+  if (quant.block_shape.size() != meta.sizes.size()) {
+    throw std::runtime_error(
+        "build_tensor_meta: affine block_shape rank does not match tensor rank");
+  }
+  if (std::any_of(
+          quant.block_shape.begin(),
+          quant.block_shape.end(),
+          [](const int64_t block) { return block < 0; })) {
+    throw std::runtime_error(
+        "build_tensor_meta: affine block_shape entries must be non-negative");
+  }
+  validate_quant_param(quant.scale, true);
+  if (quant.zero_point.has_value()) {
+    validate_quant_param(*quant.zero_point, false);
+    if (const auto* value =
+            std::get_if<InlineIntQuantParam>(&*quant.zero_point);
+        value != nullptr &&
+        (value->value < quant.quant_min || value->value > quant.quant_max)) {
+      throw std::runtime_error(
+          "build_tensor_meta: inline zero point is outside affine range");
+    }
+  }
+
+  if (std::holds_alternative<DenseQuantizedStorage>(quant.storage)) {
+    if (!range_fits_dense_dtype(quant.quant_min, quant.quant_max, meta.dtype)) {
+      throw std::runtime_error(
+          "build_tensor_meta: affine range does not fit dense storage dtype");
+    }
+    return;
+  }
+
+  const auto& storage = std::get<PackedBitsQuantizedStorage>(quant.storage);
+  if (meta.dtype != ScalarType::Byte || storage.bit_width < 1 ||
+      storage.bit_width >= 8) {
+    throw std::runtime_error(
+        "build_tensor_meta: invalid packed-bit affine storage");
+  }
+  const int64_t code_count = int64_t{1} << storage.bit_width;
+  switch (storage.signed_encoding) {
+    case QuantSignedEncoding::Unsigned:
+      if (storage.storage_offset != 0 || quant.quant_min < 0 ||
+          quant.quant_max >= code_count) {
+        throw std::runtime_error(
+            "build_tensor_meta: invalid unsigned packed affine range");
+      }
+      break;
+    case QuantSignedEncoding::TwosComplement: {
+      const int64_t lower = -(int64_t{1} << (storage.bit_width - 1));
+      const int64_t upper = (int64_t{1} << (storage.bit_width - 1)) - 1;
+      if (storage.storage_offset != 0 || quant.quant_min < lower ||
+          quant.quant_max > upper) {
+        throw std::runtime_error(
+            "build_tensor_meta: invalid two's-complement packed affine range");
+      }
+      break;
+    }
+    case QuantSignedEncoding::Offset:
+      if (quant.quant_min < storage.storage_offset ||
+          static_cast<uint64_t>(quant.quant_max) -
+                  static_cast<uint64_t>(storage.storage_offset) >=
+              static_cast<uint64_t>(code_count)) {
+        throw std::runtime_error(
+            "build_tensor_meta: invalid offset packed affine range");
+      }
+      break;
+  }
+}
+
+Quantization build_quantization(
+    const fbs::QuantSpec* spec,
+    const TensorMeta& meta) {
+  if (spec == nullptr || spec->scheme() == nullptr) {
+    throw std::runtime_error("build_tensor_meta: missing quantization spec");
+  }
+  switch (spec->scheme_type()) {
+    case fbs::QuantScheme::AffineQuantization: {
+      const auto* value = spec->scheme_as_AffineQuantization();
+      AffineQuantization out;
+      out.expressed_dtype = map_scalar_type(value->expressed_dtype());
+      out.quant_min = value->quant_min();
+      out.quant_max = value->quant_max();
+      for (const int64_t block : *value->block_shape()) {
+        out.block_shape.push_back(block);
+      }
+      out.scale = build_quant_param(value->scale());
+      if (value->zero_point() != nullptr) {
+        out.zero_point = build_quant_param(value->zero_point());
+      }
+      out.rounding = map_quant_rounding_mode(value->rounding());
+      out.storage = build_quantized_storage(value->storage());
+      validate_affine_quantization(out, meta);
+      return out;
+    }
+    case fbs::QuantScheme::OpaqueQuantization: {
+      OpaqueQuantization out;
+      out.codec = str_of(spec->scheme_as_OpaqueQuantization()->codec());
+      if (out.codec.empty()) {
+        throw std::runtime_error(
+            "build_tensor_meta: OpaqueQuantization codec must not be empty");
+      }
+      if (meta.dtype != ScalarType::Byte) {
+        throw std::runtime_error(
+            "build_tensor_meta: OpaqueQuantization requires BYTE dtype");
+      }
+      return out;
+    }
+    case fbs::QuantScheme::NONE:
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported QuantScheme value " +
+          std::to_string(static_cast<int>(spec->scheme_type())));
+  }
+}
+
 TensorMeta build_tensor_meta(
     const fbs::TensorMeta* m,
     const std::string& name) {
@@ -151,6 +486,9 @@ TensorMeta build_tensor_meta(
     for (flatbuffers::uoffset_t i = 0; i < dord->size(); ++i) {
       out.dim_order_hint.push_back(static_cast<int32_t>(dord->Get(i)));
     }
+  }
+  if (m->quant() != nullptr) {
+    out.quantization = build_quantization(m->quant(), out);
   }
   return out;
 }

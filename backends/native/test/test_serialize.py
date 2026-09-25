@@ -4,9 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 import unittest
 from collections import namedtuple
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
 import torch
@@ -30,18 +31,23 @@ from executorch.backends.native.serialization.graph_serialize import (
     _output_alias_of,
     _to_arg_value,
     collect_data_keys,
+    SCHEMA_VERSION,
     serialize_operator,
 )
 from executorch.backends.native.serialization.schema import (
-    AffineGroup,
+    AffineQuantization,
     Argument,
     BoolArg,
     BoolListArg,
+    DenseQuantizedStorage,
     Dim,
+    ExternalQuantParam,
     FloatArg,
     FloatListArg,
     Graph,
     GraphArg,
+    InlineFloatQuantParam,
+    InlineIntQuantParam,
     InputKind,
     IntArg,
     IntListArg,
@@ -50,13 +56,18 @@ from executorch.backends.native.serialization.schema import (
     NamedArgument,
     Node,
     NoneArg,
+    OpaqueQuantization,
     OpKind,
     OptionalTensorListArg,
     Output,
     OutputKind,
     OutputValueKind,
-    PackedQuant,
+    PackedBitsQuantizedStorage,
     Program,
+    QuantizedStorage,
+    QuantParam,
+    QuantRoundingMode,
+    QuantSignedEncoding,
     QuantSpec,
     ScalarType,
     ScalarTypeArg,
@@ -111,9 +122,11 @@ _T = object()
 _Round = namedtuple("_Round", ["edge_ep", "method", "graph", "data", "constants"])
 
 
-def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
+def _roundtrip(model, example_inputs, dynamic_shapes=None, annotate=None) -> _Round:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
     edge_ep = to_edge(ep).exported_program()
+    if annotate is not None:
+        annotate(edge_ep)
     data, constants = serialize_graph(
         edge_ep.graph_module,
         edge_ep.graph_signature,
@@ -670,12 +683,22 @@ class SubgraphHOPTest(unittest.TestCase):
 
     def test_collect_data_keys_finds_graph_arg_in_any_node_field(self):
         quant = QuantSpec(
-            scheme=AffineGroup(
-                scale_data_key="nested.scale",
-                scale_dtype=ScalarType.HALF,
+            scheme=AffineQuantization(
+                expressed_dtype=ScalarType.HALF,
                 quant_min=-8,
                 quant_max=7,
-                zero_point_data_key="nested.zero_point",
+                block_shape=[],
+                scale=QuantParam(
+                    value=ExternalQuantParam(
+                        data_key="nested.scale", dtype=ScalarType.HALF
+                    )
+                ),
+                zero_point=QuantParam(
+                    value=ExternalQuantParam(
+                        data_key="nested.zero_point", dtype=ScalarType.INT
+                    )
+                ),
+                storage=QuantizedStorage(value=DenseQuantizedStorage()),
             )
         )
         nested = Graph(
@@ -811,48 +834,344 @@ class MutableBufferTest(unittest.TestCase):
 
 
 class QuantSpecRoundTripTest(unittest.TestCase):
-    """The quant spec rides on TensorMeta. No producer sets it yet (the QDQ-fold
-    pass is future work), so these build the dataclasses directly and round-trip
-    them through flatc to lock the schema + optional-union wrapper."""
+    """The quant spec rides on TensorMeta. These build the dataclasses directly and
+    round-trip them through flatc to lock the schema + optional-union wrapper."""
 
-    def _roundtrip_meta(self, quant) -> TensorMeta:
+    def _roundtrip_meta(
+        self,
+        quant,
+        *,
+        dtype: ScalarType = ScalarType.CHAR,
+        shape: tuple[int, ...] = (4,),
+    ) -> TensorMeta:
         meta = TensorMeta(
-            dtype=ScalarType.CHAR,
-            sizes=[Dim(min=4, max=4)],
-            dim_order=[0],
+            dtype=dtype,
+            sizes=[Dim(min=size, max=size) for size in shape],
+            dim_order=list(range(len(shape))),
             quant=quant,
         )
         graph = Graph(
             nodes=[Node(name="w", op_kind=OpKind.PLACEHOLDER)],
             tensor_values=[TensorValue(name="w", meta=meta)],
         )
-        program = Program(version="1", methods=[Method(name="forward", graph=graph)])
+        program = Program(
+            version=SCHEMA_VERSION, methods=[Method(name="forward", graph=graph)]
+        )
         out = deserialize_program(_compile_to_bytes(program))
         return out.methods[0].graph.tensor_values[0].meta
 
     def test_absent_quant_is_none(self):
         self.assertIsNone(self._roundtrip_meta(None).quant)
 
-    def test_affine_group_quant_roundtrips(self):
-        expected = AffineGroup(
-            scale_data_key="w.scale",
-            scale_dtype=ScalarType.HALF,
-            quant_min=-8,
-            quant_max=7,
-            group_size=32,
-            zero_point_data_key="w.zp",
-            zero_point_dtype=ScalarType.INT,
-        )
-        scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
-        self.assertEqual(scheme, expected)
-
-    def test_packed_quant_roundtrips(self):
+    def test_opaque_quantization_roundtrips(self):
         # Weight-only formats (GGUF, MXFP4, NVFP4) carry only an opaque codec name.
         scheme = self._roundtrip_meta(
-            QuantSpec(scheme=PackedQuant(codec="gguf:q4k"))
+            QuantSpec(scheme=OpaqueQuantization(codec="gguf:q4k")),
+            dtype=ScalarType.BYTE,
         ).quant.scheme
-        self.assertIsInstance(scheme, PackedQuant)
+        self.assertIsInstance(scheme, OpaqueQuantization)
         self.assertEqual(scheme.codec, "gguf:q4k")
+
+    def test_dense_a8_per_tensor_roundtrips(self):
+        expected = AffineQuantization(
+            expressed_dtype=ScalarType.FLOAT,
+            quant_min=-128,
+            quant_max=127,
+            block_shape=[0, 0, 0, 0],
+            scale=QuantParam(
+                value=InlineFloatQuantParam(value=0.125, dtype=ScalarType.FLOAT)
+            ),
+            zero_point=QuantParam(
+                value=InlineIntQuantParam(value=-3, dtype=ScalarType.INT)
+            ),
+            storage=QuantizedStorage(value=DenseQuantizedStorage()),
+        )
+        meta = self._roundtrip_meta(
+            QuantSpec(scheme=expected),
+            shape=(1, 3, 8, 8),
+        )
+        validate_graph(
+            Graph(
+                nodes=[],
+                inputs=["activation"],
+                tensor_values=[TensorValue(name="activation", meta=meta)],
+            )
+        )
+        self.assertEqual(meta.quant.scheme, expected)
+
+    def test_dense_a16_per_tensor_roundtrips(self):
+        expected = AffineQuantization(
+            expressed_dtype=ScalarType.FLOAT,
+            quant_min=-(2**15),
+            quant_max=2**15 - 1,
+            block_shape=[0, 0],
+            scale=QuantParam(
+                value=InlineFloatQuantParam(value=0.01, dtype=ScalarType.FLOAT)
+            ),
+            storage=QuantizedStorage(value=DenseQuantizedStorage()),
+            rounding=QuantRoundingMode.AWAY_FROM_ZERO,
+        )
+        meta = self._roundtrip_meta(
+            QuantSpec(scheme=expected), dtype=ScalarType.SHORT, shape=(2, 8)
+        )
+        validate_graph(
+            Graph(
+                nodes=[],
+                inputs=["activation"],
+                tensor_values=[TensorValue(name="activation", meta=meta)],
+            )
+        )
+        self.assertEqual(meta.quant.scheme, expected)
+
+    def test_dense_w8_per_axis_external_params_roundtrip_and_validate_keys(self):
+        expected = AffineQuantization(
+            expressed_dtype=ScalarType.FLOAT,
+            quant_min=-127,
+            quant_max=127,
+            block_shape=[1, 0, 0, 0],
+            scale=QuantParam(
+                value=ExternalQuantParam(data_key="weight.scale", dtype=ScalarType.HALF)
+            ),
+            storage=QuantizedStorage(value=DenseQuantizedStorage()),
+        )
+        meta = self._roundtrip_meta(QuantSpec(scheme=expected), shape=(8, 4, 3, 3))
+        method = Method(
+            name="forward",
+            graph=Graph(
+                nodes=[],
+                inputs=["weight"],
+                tensor_values=[TensorValue(name="weight", meta=meta)],
+            ),
+        )
+        program = Program(methods=[method])
+
+        self.assertEqual(collect_data_keys(program), {"weight.scale"})
+        with self.assertRaisesRegex(ValueError, "weight.scale"):
+            validate_method(method, set())
+        self.assertIsNone(validate_method(method, {"weight.scale"}))
+
+    def test_packed_w4_blockwise_roundtrips(self):
+        expected = AffineQuantization(
+            expressed_dtype=ScalarType.HALF,
+            quant_min=-8,
+            quant_max=7,
+            block_shape=[1, 32],
+            scale=QuantParam(
+                value=ExternalQuantParam(data_key="weight.scale", dtype=ScalarType.HALF)
+            ),
+            storage=QuantizedStorage(
+                value=PackedBitsQuantizedStorage(
+                    bit_width=4,
+                    signed_encoding=QuantSignedEncoding.OFFSET,
+                    storage_offset=-8,
+                )
+            ),
+        )
+        meta = self._roundtrip_meta(
+            QuantSpec(scheme=expected), dtype=ScalarType.BYTE, shape=(8, 64)
+        )
+        validate_graph(
+            Graph(
+                nodes=[],
+                inputs=["weight"],
+                tensor_values=[TensorValue(name="weight", meta=meta)],
+            )
+        )
+        self.assertEqual(meta.quant.scheme, expected)
+
+    def test_float_zero_points_roundtrip(self):
+        external = AffineQuantization(
+            expressed_dtype=ScalarType.BFLOAT16,
+            quant_min=0,
+            quant_max=15,
+            block_shape=[1, 32],
+            scale=QuantParam(
+                value=ExternalQuantParam(
+                    data_key="weight.scale", dtype=ScalarType.BFLOAT16
+                )
+            ),
+            zero_point=QuantParam(
+                value=ExternalQuantParam(
+                    data_key="weight.zero_point", dtype=ScalarType.BFLOAT16
+                )
+            ),
+            storage=QuantizedStorage(value=PackedBitsQuantizedStorage(bit_width=4)),
+        )
+        inline = replace(
+            external,
+            zero_point=QuantParam(
+                value=InlineFloatQuantParam(value=7.25, dtype=ScalarType.FLOAT)
+            ),
+        )
+        for name, expected in (("external", external), ("inline", inline)):
+            with self.subTest(name=name):
+                meta = self._roundtrip_meta(
+                    QuantSpec(scheme=expected), dtype=ScalarType.BYTE, shape=(8, 64)
+                )
+                validate_graph(
+                    Graph(
+                        nodes=[],
+                        inputs=["weight"],
+                        tensor_values=[TensorValue(name="weight", meta=meta)],
+                    )
+                )
+                self.assertEqual(meta.quant.scheme, expected)
+
+    def test_invalid_quant_specs_are_rejected(self):
+        def inline_float(
+            value: float, dtype: ScalarType = ScalarType.FLOAT
+        ) -> QuantParam:
+            return QuantParam(value=InlineFloatQuantParam(value=value, dtype=dtype))
+
+        def inline_int(value: int, dtype: ScalarType) -> QuantParam:
+            return QuantParam(value=InlineIntQuantParam(value=value, dtype=dtype))
+
+        valid = AffineQuantization(
+            expressed_dtype=ScalarType.FLOAT,
+            quant_min=-128,
+            quant_max=127,
+            block_shape=[0],
+            scale=inline_float(0.5),
+            storage=QuantizedStorage(value=DenseQuantizedStorage()),
+        )
+        int64_min = -(2**63)
+        invalid = [
+            ("must be less than", ScalarType.CHAR, replace(valid, quant_min=127)),
+            ("rank", ScalarType.CHAR, replace(valid, block_shape=[0, 0])),
+            ("non-negative", ScalarType.CHAR, replace(valid, block_shape=[-1])),
+            (
+                "scale 0.0 is not positive",
+                ScalarType.CHAR,
+                replace(valid, scale=inline_float(0.0)),
+            ),
+            (
+                "scale 1e-09 is not positive in HALF",
+                ScalarType.CHAR,
+                replace(valid, scale=inline_float(1e-9, ScalarType.HALF)),
+            ),
+            (
+                "scale 100000.0 is not finite in HALF",
+                ScalarType.CHAR,
+                replace(valid, scale=inline_float(1e5, ScalarType.HALF)),
+            ),
+            (
+                "scale has incompatible dtype",
+                ScalarType.CHAR,
+                replace(valid, scale=inline_int(1, ScalarType.INT)),
+            ),
+            (
+                "zero point inf is not finite",
+                ScalarType.CHAR,
+                replace(valid, zero_point=inline_float(math.inf)),
+            ),
+            (
+                "zero point must be floating point",
+                ScalarType.CHAR,
+                replace(valid, zero_point=inline_int(1, ScalarType.FLOAT)),
+            ),
+            (
+                "zero point 9223372036854775808 does not fit UINT64",
+                ScalarType.CHAR,
+                replace(valid, zero_point=inline_int(2**63, ScalarType.UINT64)),
+            ),
+            (
+                "affine range .* does not fit int64",
+                ScalarType.UINT64,
+                replace(valid, quant_min=0, quant_max=2**64 - 1),
+            ),
+            (
+                "storage_offset does not fit int64",
+                ScalarType.BYTE,
+                replace(
+                    valid,
+                    quant_min=int64_min,
+                    quant_max=int64_min + 14,
+                    storage=QuantizedStorage(
+                        value=PackedBitsQuantizedStorage(
+                            bit_width=4,
+                            signed_encoding=QuantSignedEncoding.OFFSET,
+                            storage_offset=int64_min - 1,
+                        )
+                    ),
+                ),
+            ),
+            (
+                "packed-bit storage requires BYTE",
+                ScalarType.CHAR,
+                replace(
+                    valid,
+                    storage=QuantizedStorage(
+                        value=PackedBitsQuantizedStorage(bit_width=4)
+                    ),
+                ),
+            ),
+            (
+                "OpaqueQuantization requires BYTE",
+                ScalarType.CHAR,
+                OpaqueQuantization(codec="gguf:q4k"),
+            ),
+        ]
+        for message, dtype, scheme in invalid:
+            with self.subTest(message=message), self.assertRaisesRegex(
+                ValueError, message
+            ):
+                validate_graph(
+                    Graph(
+                        nodes=[],
+                        inputs=["value"],
+                        tensor_values=[
+                            TensorValue(
+                                name="value",
+                                meta=TensorMeta(
+                                    dtype=dtype,
+                                    sizes=[Dim(min=4, max=4)],
+                                    quant=QuantSpec(scheme=scheme),
+                                ),
+                            )
+                        ],
+                    )
+                )
+
+
+class NativeQuantAnnotationTest(unittest.TestCase):
+    """Producers such as a QDQ-fold pass annotate edge FX nodes before
+    serialize_graph; the annotations must land on the emitted TensorMeta."""
+
+    _SCHEME = AffineQuantization(
+        expressed_dtype=ScalarType.FLOAT,
+        quant_min=-128,
+        quant_max=127,
+        block_shape=[0, 0],
+        scale=QuantParam(
+            value=InlineFloatQuantParam(value=0.5, dtype=ScalarType.FLOAT)
+        ),
+        zero_point=QuantParam(value=InlineIntQuantParam(value=0, dtype=ScalarType.INT)),
+        storage=QuantizedStorage(value=DenseQuantizedStorage()),
+    )
+
+    def test_native_quant_attaches_to_inputs_constants_and_node_outputs(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.ones(2, 3, dtype=torch.int8))
+
+            def forward(self, x):
+                return x * self.weight
+
+        def annotate(edge_ep):
+            for node in edge_ep.graph_module.graph.nodes:
+                if node.op != "output":
+                    node.meta["native_quant"] = QuantSpec(scheme=self._SCHEME)
+
+        r = _roundtrip(
+            Model(), (torch.ones(2, 3, dtype=torch.int8),), annotate=annotate
+        )
+        values = {tv.name: tv.meta for tv in r.graph.tensor_values}
+        (mul,) = [n for n in r.graph.nodes if n.op_kind == OpKind.CALL_FUNCTION]
+        (constant,) = r.method.constants
+        self.assertEqual(values[r.graph.inputs[0]].quant.scheme, self._SCHEME)
+        self.assertEqual(values[mul.outputs[0].name].quant.scheme, self._SCHEME)
+        self.assertEqual(constant.meta.quant.scheme, self._SCHEME)
 
 
 class NonTensorInputTest(unittest.TestCase):

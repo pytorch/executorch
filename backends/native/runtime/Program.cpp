@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -23,6 +24,8 @@ namespace {
 // Minimum bytes for a FlatBuffer carrying a file identifier: a 4-byte root
 // offset plus the 4-byte identifier.
 constexpr size_t kMinBufferSize = 8;
+// Must match SCHEMA_VERSION in serialization/graph_serialize.py.
+constexpr std::string_view kSchemaVersion = "2";
 } // namespace
 
 Program Program::load(const void* data, size_t size) {
@@ -44,6 +47,14 @@ Program Program::load(const void* data, size_t size) {
   }
 
   const fbs::Program* program_fb = fbs::GetProgram(bytes.data());
+  const std::string version =
+      program_fb->version() != nullptr ? program_fb->version()->str() : "";
+  if (version != kSchemaVersion) {
+    throw std::runtime_error(
+        "native program: schema version '" + version +
+        "' does not match runtime version '" + std::string(kSchemaVersion) +
+        "'");
+  }
   // Both accessors below are schema-required, so successful verification
   // guarantees that they are non-null.
   std::unordered_set<std::string> method_names;

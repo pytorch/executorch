@@ -63,6 +63,18 @@ std::string to_string(const TensorMeta& meta) {
     s += std::to_string(meta.sizes[i]);
   }
   s += "]";
+  if (meta.quantization.has_value()) {
+    if (const auto* affine =
+            std::get_if<AffineQuantization>(&*meta.quantization)) {
+      const auto* packed =
+          std::get_if<PackedBitsQuantizedStorage>(&affine->storage);
+      s += affine_quant_label(
+          affine->block_shape, packed != nullptr ? packed->bit_width : 0);
+    } else {
+      s +=
+          " q:opaque:" + std::get<OpaqueQuantization>(*meta.quantization).codec;
+    }
+  }
   return s;
 }
 

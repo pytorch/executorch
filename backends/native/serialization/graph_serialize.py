@@ -24,6 +24,7 @@ import importlib.resources
 import json
 import operator
 import os
+import sys
 import tempfile
 from dataclasses import fields, is_dataclass
 from enum import IntEnum
@@ -41,16 +42,20 @@ from typing import (
 import torch
 
 from executorch.backends.native.serialization.schema import (
-    AffineGroup,
+    AffineQuantization,
     Argument,
     ArgumentValue,
     BoolArg,
     BoolListArg,
+    DenseQuantizedStorage,
     Dim,
+    ExternalQuantParam,
     FloatArg,
     FloatListArg,
     Graph,
     GraphArg,
+    InlineFloatQuantParam,
+    InlineIntQuantParam,
     InputKind as SchemaInputKind,
     IntArg,
     IntListArg,
@@ -60,14 +65,17 @@ from executorch.backends.native.serialization.schema import (
     NamedTensorRef,
     Node,
     NoneArg,
+    OpaqueQuantization,
     OpKind,
     OptionalTensorListArg,
     Output,
     OutputKind,
     OutputSpec,
     OutputValueKind,
-    PackedQuant,
+    PackedBitsQuantizedStorage,
     Program,
+    QuantParam,
+    QuantSignedEncoding,
     QuantSpec,
     ScalarType,
     ScalarTypeArg,
@@ -85,7 +93,7 @@ from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 _SCHEMA_RESOURCE = "native_graph.fbs"
 _FILE_STEM = "native_graph"
 
@@ -223,22 +231,23 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     return dim_order
 
 
-def _tensor_meta(t: torch.Tensor) -> TensorMeta:
+def _tensor_meta(t: torch.Tensor, quant: QuantSpec | None = None) -> TensorMeta:
     return TensorMeta(
         dtype=_scalar_type(t.dtype),
         sizes=[_dim(s) for s in t.shape],
         dim_order=_dim_order(t),
+        quant=quant,
     )
 
 
-def _packed_tensor_meta(codec: str, sizes: tuple[int, ...]) -> TensorMeta:
+def _opaque_tensor_meta(codec: str, sizes: tuple[int, ...]) -> TensorMeta:
     """TensorMeta for a codec-packed weight: logical shape with BYTE dtype, the
-    packing described by a PackedQuant scheme. The raw block bytes ship as data.
+    physical layout described by OpaqueQuantization. Raw codec bytes ship as data.
     """
     return TensorMeta(
         dtype=ScalarType.BYTE,
         sizes=[_dim(int(s)) for s in sizes],
-        quant=QuantSpec(scheme=PackedQuant(codec=codec)),
+        quant=QuantSpec(scheme=OpaqueQuantization(codec=codec)),
     )
 
 
@@ -581,6 +590,7 @@ def _is_non_persistent_buffer(ispec: object) -> bool:
 def _tensor_values_from(
     val_by_name: dict[str, torch.Tensor],
     names: list[str],
+    quant_by_name: dict[str, QuantSpec],
     exclude: set[str] | None = None,
 ) -> list[TensorValue]:
     seen: set[str] = set()
@@ -594,7 +604,9 @@ def _tensor_values_from(
         if tensor is None:
             continue
         seen.add(name)
-        out.append(TensorValue(name=name, meta=_tensor_meta(tensor)))
+        out.append(
+            TensorValue(name=name, meta=_tensor_meta(tensor, quant_by_name.get(name)))
+        )
     return out
 
 
@@ -776,8 +788,8 @@ def _collect_fx_nodes(
             ):
                 continue
 
-        # Folded GGUF dequantize nodes are not emitted; the consuming op references
-        # the packed weight directly (see _fold_gguf_dequant).
+        # Folded dequantize nodes (GGUF, QDQ) are not emitted; consumers reference
+        # the node named by native_serialize_as instead (see _node_to_arg_value).
         if fx_node.meta.get("native_skip_serialize"):
             continue
 
@@ -862,12 +874,13 @@ def _extract_constants_and_mutable_buffers(
     state_dict: dict[str, object],
     constants: dict[str, object] | None,
     mutated_fqns: set[str],
-    packed_quant: dict[str, dict[str, object]] | None = None,
+    quant_by_name: dict[str, QuantSpec],
+    opaque_quant: dict[str, dict[str, object]] | None = None,
 ) -> tuple[list[NamedTensorRef], dict[str, torch.Tensor], list[MutableBufferSpec]]:
     constant_refs: list[NamedTensorRef] = []
     constant_data: dict[str, torch.Tensor] = {}
     mutable_buffers: list[MutableBufferSpec] = []
-    packed_quant = packed_quant or {}
+    opaque_quant = opaque_quant or {}
 
     for ispec in getattr(graph_signature, "input_specs", []) or []:
         if ispec.kind not in _INPUT_KIND_MAP:
@@ -887,11 +900,11 @@ def _extract_constants_and_mutable_buffers(
         if not isinstance(tensor, torch.Tensor):
             continue
         tensor = tensor.contiguous()
-        pq = packed_quant.get(name)
+        opaque = opaque_quant.get(name)
         meta = (
-            _packed_tensor_meta(pq["codec"], pq["sizes"])
-            if pq is not None
-            else _tensor_meta(tensor)
+            _opaque_tensor_meta(opaque["codec"], opaque["sizes"])
+            if opaque is not None
+            else _tensor_meta(tensor, quant_by_name.get(name))
         )
         constant_refs.append(
             NamedTensorRef(
@@ -912,6 +925,7 @@ def _build_subgraph(
     nodes: list[Node],
     val_by_name: dict[str, torch.Tensor],
     output_names: list[str],
+    quant_by_name: dict[str, QuantSpec],
 ) -> tuple[
     Graph,
     list[NamedTensorRef],
@@ -920,7 +934,9 @@ def _build_subgraph(
     dict[str, torch.Tensor],
 ]:
     user_inputs = [n.name for n in graph_module.graph.nodes if n.op == "placeholder"]
-    tensor_values = _tensor_values_from(val_by_name, list(val_by_name.keys()))
+    tensor_values = _tensor_values_from(
+        val_by_name, list(val_by_name.keys()), quant_by_name=quant_by_name
+    )
     graph = Graph(
         nodes=nodes,
         inputs=user_inputs or None,
@@ -938,6 +954,7 @@ def _build_method_graph(
     graph_signature: object,
     state_dict: dict[str, object],
     constants: dict[str, object] | None,
+    quant_by_name: dict[str, QuantSpec],
 ) -> tuple[
     Graph,
     list[NamedTensorRef],
@@ -947,20 +964,26 @@ def _build_method_graph(
 ]:
     _validate_tensor_user_inputs(graph_signature)
     output_specs, mutated_fqns = _build_output_specs(output_names, graph_signature)
-    packed_quant = {
-        n.name: n.meta["native_packed_quant"]
+    opaque_quant = {
+        n.name: n.meta["native_opaque_quant"]
         for n in graph_module.graph.nodes
-        if n.op == "placeholder" and "native_packed_quant" in n.meta
+        if n.op == "placeholder" and "native_opaque_quant" in n.meta
     }
     constant_refs, constant_data, mutable_buffers = (
         _extract_constants_and_mutable_buffers(
-            graph_signature, state_dict, constants, mutated_fqns, packed_quant
+            graph_signature,
+            state_dict,
+            constants,
+            mutated_fqns,
+            quant_by_name,
+            opaque_quant,
         )
     )
     constant_names = {c.name for c in constant_refs}
     tensor_values = _tensor_values_from(
         val_by_name,
         [n for n in val_by_name if n not in constant_names],
+        quant_by_name=quant_by_name,
     )
     user_inputs = list(getattr(graph_signature, "user_inputs", []) or [])
     graph = Graph(
@@ -977,7 +1000,7 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
     packed weight, the way XNNPACK folds a weight dequantize at write time.
 
     The graph is left unchanged: each dequantize_gguf node is marked to skip, its
-    packed weight arg is tagged with a PackedQuant scheme (logical shape, codec),
+    packed weight arg is tagged with OpaqueQuantization (logical shape, codec),
     and references to the dequantize output are redirected to the packed weight.
     """
     for node in graph_module.graph.nodes:
@@ -988,7 +1011,7 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         val = node.meta.get("val")
         if not isinstance(weight, torch.fx.Node) or not isinstance(val, torch.Tensor):
             continue
-        weight.meta["native_packed_quant"] = {
+        weight.meta["native_opaque_quant"] = {
             "codec": f"gguf:{node.args[1]}",
             "sizes": tuple(int(s) for s in val.shape),
         }
@@ -1009,11 +1032,18 @@ def _build_graph_body(
     dict[str, torch.Tensor],
 ]:
     _fold_gguf_dequant(graph_module)
+    quant_by_name = {
+        node.name: node.meta["native_quant"]
+        for node in graph_module.graph.nodes
+        if "native_quant" in node.meta
+    }
     subgraph_map = _subgraph_map(graph_module)
     nodes, val_by_name, output_names = _collect_fx_nodes(graph_module, subgraph_map)
 
     if graph_signature is None:
-        return _build_subgraph(graph_module, nodes, val_by_name, output_names)
+        return _build_subgraph(
+            graph_module, nodes, val_by_name, output_names, quant_by_name
+        )
 
     return _build_method_graph(
         graph_module,
@@ -1023,6 +1053,7 @@ def _build_graph_body(
         graph_signature,
         state_dict,
         constants,
+        quant_by_name,
     )
 
 
@@ -1279,11 +1310,11 @@ def _iter_graph_args(value: object) -> Iterator[GraphArg]:
 def collect_data_keys(program: Program) -> set[str]:
     """Return every out-of-line data key the program references.
 
-    Covers constant references (NamedTensorRef.data_key) plus the quant keys
-    (AffineGroup scale and zero-point) carried on any TensorMeta.quant, whether
+    Covers constant references (NamedTensorRef.data_key) plus quant parameter keys
+    carried on any TensorMeta.quant, whether
     it is attached to a constant or to a graph value (intermediates and I/O),
     recursing into HOP subgraphs wherever a schema field carries a ``GraphArg``.
-    PackedQuant carries no external keys.
+    OpaqueQuantization carries no external keys.
     """
     keys: set[str] = set()
 
@@ -1291,10 +1322,10 @@ def collect_data_keys(program: Program) -> set[str]:
         if meta is None or meta.quant is None:
             return
         scheme = meta.quant.scheme
-        if isinstance(scheme, AffineGroup):
-            keys.add(scheme.scale_data_key)
-            if scheme.zero_point_data_key:
-                keys.add(scheme.zero_point_data_key)
+        if isinstance(scheme, AffineQuantization):
+            for param in (scheme.scale, scheme.zero_point):
+                if param is not None and isinstance(param.value, ExternalQuantParam):
+                    keys.add(param.value.data_key)
 
     def visit_graph(graph: Graph) -> None:
         for value in graph.tensor_values or []:
@@ -1310,6 +1341,184 @@ def collect_data_keys(program: Program) -> set[str]:
         visit_graph(method.graph)
 
     return keys
+
+
+# (largest finite value, smallest positive subnormal value)
+_FLOAT_SCALAR_LIMITS = {
+    ScalarType.HALF: (65504.0, 2.0**-24),
+    ScalarType.FLOAT: (float.fromhex("0x1.fffffep127"), 2.0**-149),
+    ScalarType.DOUBLE: (sys.float_info.max, 2.0**-1074),
+    ScalarType.BFLOAT16: (float.fromhex("0x1.fep127"), 2.0**-133),
+}
+# UINT64 is capped at the int64 maximum because the wire fields are int64.
+_INTEGER_SCALAR_RANGES = {
+    ScalarType.BYTE: (0, 2**8 - 1),
+    ScalarType.CHAR: (-(2**7), 2**7 - 1),
+    ScalarType.SHORT: (-(2**15), 2**15 - 1),
+    ScalarType.INT: (-(2**31), 2**31 - 1),
+    ScalarType.LONG: (-(2**63), 2**63 - 1),
+    ScalarType.UINT16: (0, 2**16 - 1),
+    ScalarType.UINT32: (0, 2**32 - 1),
+    ScalarType.UINT64: (0, 2**63 - 1),
+}
+_INT64_MIN, _INT64_MAX = _INTEGER_SCALAR_RANGES[ScalarType.LONG]
+
+
+def _validate_quant_param(param: QuantParam, *, scale: bool, ctx: str) -> None:
+    value = param.value
+    kind = "scale" if scale else "zero point"
+    float_limits = _FLOAT_SCALAR_LIMITS.get(value.dtype)
+    if float_limits is None and (scale or value.dtype not in _INTEGER_SCALAR_RANGES):
+        raise ValueError(f"{ctx}: {kind} has incompatible dtype {value.dtype.name}")
+    if isinstance(value, ExternalQuantParam):
+        if not value.data_key:
+            raise ValueError(f"{ctx}: external quant parameter has an empty data key")
+        return
+    if float_limits is not None:
+        if not isinstance(value, InlineFloatQuantParam):
+            raise ValueError(f"{ctx}: inline {kind} must be floating point")
+        max_value, min_positive = float_limits
+        if not abs(value.value) <= max_value:
+            raise ValueError(
+                f"{ctx}: inline {kind} {value.value} is not finite in "
+                f"{value.dtype.name}"
+            )
+        if scale and value.value < min_positive:
+            raise ValueError(
+                f"{ctx}: inline scale {value.value} is not positive in "
+                f"{value.dtype.name}"
+            )
+        return
+    if not isinstance(value, InlineIntQuantParam):
+        raise ValueError(f"{ctx}: inline zero point must be an integer")
+    lower, upper = _INTEGER_SCALAR_RANGES[value.dtype]
+    if not lower <= value.value <= upper:
+        raise ValueError(
+            f"{ctx}: inline zero point {value.value} does not fit {value.dtype.name}"
+        )
+
+
+def _validate_affine_quantization_parameters(
+    meta: TensorMeta, quant: AffineQuantization, ctx: str
+) -> None:
+    if quant.expressed_dtype not in _FLOAT_SCALAR_LIMITS:
+        raise ValueError(
+            f"{ctx}: affine expressed dtype must be floating point, got "
+            f"{quant.expressed_dtype.name}"
+        )
+    if quant.quant_min >= quant.quant_max:
+        raise ValueError(
+            f"{ctx}: affine quant_min {quant.quant_min} must be less than "
+            f"quant_max {quant.quant_max}"
+        )
+    if quant.quant_min < _INT64_MIN or quant.quant_max > _INT64_MAX:
+        raise ValueError(
+            f"{ctx}: affine range [{quant.quant_min}, {quant.quant_max}] does not "
+            f"fit int64"
+        )
+    if len(quant.block_shape) != len(meta.sizes):
+        raise ValueError(
+            f"{ctx}: block_shape rank {len(quant.block_shape)} does not match "
+            f"tensor rank {len(meta.sizes)}"
+        )
+    if any(block < 0 for block in quant.block_shape):
+        raise ValueError(f"{ctx}: block_shape entries must be non-negative")
+
+    _validate_quant_param(quant.scale, scale=True, ctx=ctx)
+    if quant.zero_point is not None:
+        _validate_quant_param(quant.zero_point, scale=False, ctx=ctx)
+        zero_point = quant.zero_point.value
+        if isinstance(zero_point, InlineIntQuantParam) and not (
+            quant.quant_min <= zero_point.value <= quant.quant_max
+        ):
+            raise ValueError(
+                f"{ctx}: inline zero point {zero_point.value} is outside the "
+                f"affine range [{quant.quant_min}, {quant.quant_max}]"
+            )
+
+
+def _validate_dense_affine_storage(
+    meta: TensorMeta, quant: AffineQuantization, ctx: str
+) -> None:
+    bounds = _INTEGER_SCALAR_RANGES.get(meta.dtype)
+    if bounds is None:
+        raise ValueError(
+            f"{ctx}: dense affine storage requires an integer TensorMeta dtype"
+        )
+    if quant.quant_min < bounds[0] or quant.quant_max > bounds[1]:
+        raise ValueError(
+            f"{ctx}: affine range [{quant.quant_min}, {quant.quant_max}] does "
+            f"not fit dense {meta.dtype.name} storage"
+        )
+
+
+def _validate_packed_affine_storage(
+    meta: TensorMeta,
+    quant: AffineQuantization,
+    storage: PackedBitsQuantizedStorage,
+    ctx: str,
+) -> None:
+    if meta.dtype != ScalarType.BYTE:
+        raise ValueError(f"{ctx}: packed-bit storage requires BYTE TensorMeta dtype")
+    if not 1 <= storage.bit_width < 8:
+        raise ValueError(f"{ctx}: packed bit_width must be between 1 and 7")
+    if not _INT64_MIN <= storage.storage_offset <= _INT64_MAX:
+        raise ValueError(f"{ctx}: packed storage_offset does not fit int64")
+
+    code_count = 2**storage.bit_width
+    if storage.signed_encoding == QuantSignedEncoding.UNSIGNED:
+        if storage.storage_offset != 0 or quant.quant_min < 0:
+            raise ValueError(
+                f"{ctx}: unsigned packed storage requires a non-negative range "
+                f"and zero storage_offset"
+            )
+        if quant.quant_max >= code_count:
+            raise ValueError(f"{ctx}: affine range exceeds unsigned packed storage")
+    elif storage.signed_encoding == QuantSignedEncoding.TWOS_COMPLEMENT:
+        lower = -(2 ** (storage.bit_width - 1))
+        upper = 2 ** (storage.bit_width - 1) - 1
+        if (
+            storage.storage_offset != 0
+            or quant.quant_min < lower
+            or quant.quant_max > upper
+        ):
+            raise ValueError(
+                f"{ctx}: affine range does not fit two's-complement packed storage"
+            )
+    elif (
+        quant.quant_min < storage.storage_offset
+        or quant.quant_max >= storage.storage_offset + code_count
+    ):
+        raise ValueError(f"{ctx}: affine range does not fit offset packed storage")
+
+
+def _validate_affine_quantization(
+    meta: TensorMeta, quant: AffineQuantization, ctx: str
+) -> None:
+    _validate_affine_quantization_parameters(meta, quant, ctx)
+
+    storage = quant.storage.value
+    if isinstance(storage, DenseQuantizedStorage):
+        _validate_dense_affine_storage(meta, quant, ctx)
+    elif isinstance(storage, PackedBitsQuantizedStorage):
+        _validate_packed_affine_storage(meta, quant, storage, ctx)
+    else:
+        raise ValueError(f"{ctx}: affine quantization has no storage encoding")
+
+
+def _validate_tensor_meta(meta: TensorMeta, ctx: str) -> None:
+    if meta.quant is None:
+        return
+    scheme = meta.quant.scheme
+    if isinstance(scheme, AffineQuantization):
+        _validate_affine_quantization(meta, scheme, ctx)
+    elif isinstance(scheme, OpaqueQuantization):
+        if not scheme.codec:
+            raise ValueError(f"{ctx}: OpaqueQuantization codec must not be empty")
+        if meta.dtype != ScalarType.BYTE:
+            raise ValueError(
+                f"{ctx}: OpaqueQuantization requires BYTE TensorMeta dtype"
+            )
 
 
 def _check_optional_tensor_list_refs(
@@ -1410,6 +1619,8 @@ def validate_graph(graph: Graph, defined_extra: set[str] | None = None) -> None:
     operands are its own placeholders. Method-level bindings (constant data
     availability, mutable-buffer metadata) are checked in validate_method.
     """
+    for value in graph.tensor_values or []:
+        _validate_tensor_meta(value.meta, f"tensor value {value.name!r}")
     meta_names = {tv.name for tv in (graph.tensor_values or [])}
     defined: set[str] = set()
     seen_nodes: set[str] = set()
@@ -1453,12 +1664,14 @@ def validate_method(
     are available_data_keys) carry everything needed to run.
     Names bound by constants / mutable buffers are supplied to the body's reference
     check; every mutable buffer must have tensor metadata; and, when
-    ``available_data_keys`` is given, every ``NamedTensorRef.data_key`` must be
+    ``available_data_keys`` is given, every key from ``collect_data_keys`` must be
     present. Mutable buffers are not data-backed, so they are exempt from the
     data-keys check.
     """
     defined_extra: set[str] = {c.name for c in (method.constants or [])}
     defined_extra.update(mb.name for mb in (method.mutable_buffers or []))
+    for constant in method.constants or []:
+        _validate_tensor_meta(constant.meta, f"constant {constant.name!r}")
     validate_graph(method.graph, defined_extra=defined_extra)
 
     meta_names = {tv.name for tv in (method.graph.tensor_values or [])}
@@ -1469,12 +1682,13 @@ def validate_method(
             )
 
     if available_data_keys is not None:
-        for c in method.constants or []:
-            if c.data_key not in available_data_keys:
-                raise ValueError(
-                    f"constant {c.name!r} (data_key {c.data_key!r}) has no data in the "
-                    f"provided external constant keys"
-                )
+        referenced_keys = collect_data_keys(Program(methods=[method]))
+        missing_keys = referenced_keys - available_data_keys
+        if missing_keys:
+            raise ValueError(
+                f"method {method.name!r} references missing external data keys: "
+                f"{sorted(missing_keys)}"
+            )
 
 
 def validate_program(
