@@ -4,15 +4,15 @@
 # From the repository root:
 python -m pip install git+https://github.com/huggingface/transformers "librosa>=0.10"
 
-# Choose mlx (Apple Silicon) or xnnpack (CPU).
+# Choose mlx (Apple Silicon), xnnpack (CPU), or vulkan (GPU).
 BACKEND=mlx
-# Export: BF16 for MLX/XNNPACK. Add --dtype fp32 to use FP32.
+# Export: BF16 for MLX/XNNPACK, FP32 for Vulkan. Add --dtype fp32 to use FP32.
 python -m executorch.examples.models.nemotron3_diarization.export_nemotron \
   --hf-model nvidia/Nemotron-3-Diarization \
   --backend "$BACKEND" \
   --output-dir "nemotron_exports/$BACKEND"
 
-# Build the matching runner.
+# Build the matching runner (Vulkan requires the Vulkan SDK and glslc).
 make "nemotron3-diarization-${BACKEND/xnnpack/cpu}"
 
 # Convert to mono 16 kHz PCM16 and run

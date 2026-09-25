@@ -9,7 +9,8 @@
         "EXECUTORCH_BUILD_MLX": "OFF",
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
-        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out",
+        "EXECUTORCH_BUILD_VULKAN": "OFF"
       }
     },
     {
@@ -34,6 +35,16 @@
       "inherits": [
         "nemotron3-diarization-base"
       ]
+    },
+    {
+      "name": "nemotron3-diarization-vulkan",
+      "displayName": "Nemotron 3 Diarization runner (Vulkan)",
+      "inherits": [
+        "nemotron3-diarization-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_VULKAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -45,6 +56,11 @@
     {
       "name": "nemotron3-diarization-cpu",
       "configurePreset": "nemotron3-diarization-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "nemotron3-diarization-vulkan",
+      "configurePreset": "nemotron3-diarization-vulkan",
       "configuration": "Release"
     }
   ],
@@ -72,6 +88,19 @@
         {
           "type": "build",
           "name": "nemotron3-diarization-cpu"
+        }
+      ]
+    },
+    {
+      "name": "nemotron3-diarization-vulkan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "nemotron3-diarization-vulkan"
+        },
+        {
+          "type": "build",
+          "name": "nemotron3-diarization-vulkan"
         }
       ]
     }
