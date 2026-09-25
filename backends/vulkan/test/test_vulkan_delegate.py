@@ -1275,6 +1275,42 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_slice_scatter(self):
+        class SliceScatter(torch.nn.Module):
+            def __init__(self, dim, start, step):
+                super().__init__()
+                self.dim = dim
+                self.start = start
+                self.step = step
+
+            def forward(self, x, src):
+                return torch.slice_scatter(
+                    x, src, dim=self.dim, start=self.start, step=self.step
+                )
+
+        # dim=1 with step=3 is the interleaving a YOLO pose head emits, and it
+        # is the interesting case for channels-packed storage: one output texel
+        # spans four positions along the scattered dim, so its components come
+        # from src and self alternately.
+        cases = [
+            # (self_shape, src_shape, dim, start, step)
+            ((1, 12, 7), (1, 4, 7), 1, 0, 3),
+            ((1, 12, 7), (1, 4, 7), 1, 1, 3),
+            ((1, 12, 7), (1, 4, 7), 1, 2, 3),
+            ((2, 6, 5), (2, 6, 2), 2, 1, 2),
+            ((3, 8, 4), (2, 8, 4), 0, 1, 1),
+        ]
+        for self_shape, src_shape, dim, start, step in cases:
+            with self.subTest(shape=self_shape, dim=dim, start=start, step=step):
+                sample_inputs = (
+                    torch.rand(size=self_shape, dtype=torch.float32),
+                    torch.rand(size=src_shape, dtype=torch.float32),
+                )
+                self.lower_module_and_test_output(
+                    SliceScatter(dim, start, step),
+                    sample_inputs,
+                )
+
     def test_vulkan_backend_minimum(self):
         class MinimumModule(torch.nn.Module):
             def __init__(self):

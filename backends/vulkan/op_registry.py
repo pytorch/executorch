@@ -1362,6 +1362,31 @@ def register_slice_copy():
 
 
 # =============================================================================
+# SliceScatter.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.slice_scatter.default)
+def register_slice_scatter():
+    def check_slice_scatter_node(node: torch.fx.Node) -> bool:
+        # Schema: slice_scatter(self, src, dim, start, end, step)
+        # A non-positive step has no meaning here and aten rejects it; the
+        # shader divides by step, so refuse rather than fault.
+        if len(node.args) >= 6:
+            step = node.args[5]
+            if isinstance(step, int) and step <= 0:
+                return False
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_slice_scatter_node,
+    )
+
+
+# =============================================================================
 # Split.cpp
 # =============================================================================
 
