@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -140,9 +141,11 @@ else()
 ExternalProject_Add(
   flatcc_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
-  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc
+  SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc-host
   BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
+  BUILD_ALWAYS TRUE
   CMAKE_ARGS
+    -DEXECUTORCH_FLATCC_SOURCE_DIR:PATH=${PROJECT_SOURCE_DIR}/third-party/flatcc
     -DFLATCC_RTONLY=OFF
     -DFLATCC_TEST=OFF
     -DFLATCC_REFLECTION=OFF
@@ -159,7 +162,6 @@ ExternalProject_Add(
                    ${_executorch_external_project_additional_args}
                    ${_flatbuffers_ep_additional_args}
 )
-file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_ep)
@@ -199,6 +201,13 @@ set(FLATCC_INSTALL
     CACHE BOOL ""
 )
 add_subdirectory(flatcc)
+set_target_properties(
+  flatccrt
+  PROPERTIES
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/lib"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/lib"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/flatcc/bin"
+)
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
    AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 15
 )
@@ -206,12 +215,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU"
     flatccrt PRIVATE -Wno-error=unterminated-string-initialization
   )
 endif()
-# Unfortunately flatcc writes libs directly in to the source tree [1]. So to
-# ensure the target lib is created last, force flatcc_cli to build first.
-#
-# [1]
-# https://github.com/dvidelabs/flatcc/blob/896db54787e8b730a6be482c69324751f3f5f117/CMakeLists.txt#L168
-add_dependencies(flatccrt flatcc_cli)
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
 # a shared object; recompile with -fPIC" when building on some x86 linux
 # systems.
