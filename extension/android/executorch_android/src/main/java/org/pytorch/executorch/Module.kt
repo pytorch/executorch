@@ -10,8 +10,6 @@ package org.pytorch.executorch
 
 import com.facebook.jni.HybridData
 import com.facebook.jni.annotations.DoNotStrip
-import com.facebook.soloader.nativeloader.NativeLoader
-import com.facebook.soloader.nativeloader.SystemDelegate
 import java.io.Closeable
 import java.util.concurrent.locks.ReentrantLock
 import org.pytorch.executorch.annotations.Experimental
@@ -239,10 +237,9 @@ private constructor(
 
   companion object {
     init {
-      if (!NativeLoader.isInitialized()) {
-        NativeLoader.init(SystemDelegate())
-      }
-      NativeLoader.loadLibrary("executorch")
+      // Goes through the runtime so that a backend built as its own shared
+      // library is loaded too, and after libexecutorch.so.
+      ExecuTorchRuntime.getRuntime()
     }
 
     /** Load mode for the module. Load the whole file as a buffer. */
