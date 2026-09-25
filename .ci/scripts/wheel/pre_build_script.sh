@@ -116,6 +116,17 @@ else
     export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=ON"
     echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
     echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' is a CUDA row, requiring the CUDA build"
+    # The Linux rows take the row's GPU list from envvar_cuda_linux.sh. Windows has no env-var
+    # script slot, so the same list is resolved here; without it the build compiles device
+    # code only for whatever GPU the builder has.
+    UNAME_S_CUDA=$(uname -s)
+    if [[ $UNAME_S_CUDA == *"MINGW"* || $UNAME_S_CUDA == *"MSYS"* ]]; then
+        source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
+        TORCH_CUDA_ARCH_LIST="$(EXECUTORCH_BUILD_CUDA=1 executorch_cuda_arch_list)"
+        export TORCH_CUDA_ARCH_LIST
+        echo "TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}" >> "${GITHUB_ENV}"
+        echo "building device code for: ${TORCH_CUDA_ARCH_LIST}"
+    fi
 fi
 
 # On Windows, enable symlinks and re-checkout the current revision to create
@@ -125,14 +136,6 @@ if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     git config core.symlinks true
     git checkout -f HEAD
 
-    # Windows wheels are CPU-only (build-wheels-windows.yml sets
-    # with-cuda: disabled), but the Windows CI image ships a CUDA toolkit on
-    # PATH, which makes setup.py auto-enable EXECUTORCH_BUILD_CUDA. That bakes a
-    # CUDA _C into the CPU wheel, which then fails its DLL load in the
-    # smoke test ("DLL load failed while importing _C"). Force a
-    # CPU-only build.
-    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
-    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi
 
 # Manually install build requirements because `python setup.py bdist_wheel` does

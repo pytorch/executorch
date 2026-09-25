@@ -38,6 +38,10 @@
 # that installs its own binary elsewhere adds this to its INSTALL_RPATH, because
 # CMake removes the entry it recorded while building.
 #
+# EXECUTORCH_RUNTIME_DLLS_EXTRA -- Windows only: DLLs a consumer on the
+# variables route copies beside its program in addition to those in
+# EXECUTORCH_RUNTIME_LIBRARY_DIR. Set when the CUDA delegate ships.
+#
 # EXECUTORCH_LIBRARIES    -- Libraries to link against: the prebuilt runtime and
 # the components the wheel shipped, except the ones documented below as opt in.
 # Not the Python extension, which carries unresolved interpreter symbols that
@@ -77,9 +81,10 @@
 #                                MLX_METALLIB_PATH, see below.
 # executorch::kernels_torchao    The TorchAO kernels. Linux and macOS on
 #                                aarch64 only.
-# executorch::backend_cuda       The CUDA delegate. Linux only.
-# executorch::extension_cuda     The CUDA stream and device helpers. Linux
-#                                only.
+# executorch::backend_cuda       The CUDA delegate. Linux and Windows; Windows
+#                                runs only, since lowering needs Linux.
+# executorch::extension_cuda     The CUDA stream and device helpers. Linux and
+#                                Windows.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
 #                                OpenVINO runtime by name, which a C++ program
 #                                installs and points OPENVINO_LIB_PATH at.
@@ -313,6 +318,16 @@ _executorch_find_library(_executorch_runtime_library libexecutorch)
 if(_executorch_runtime_library)
   get_filename_component(
     EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
+  )
+endif()
+# The CUDA delegate's AOTI shim layer ships in backends/cuda rather than lib/.
+# Linux reaches it through a relative search path; a Windows consumer on the
+# variables route copies it beside its program along with the rest.
+if(WIN32 AND EXISTS
+             "${_executorch_package_root}/backends/cuda/aoti_cuda_shims.dll"
+)
+  set(EXECUTORCH_RUNTIME_DLLS_EXTRA
+      "${_executorch_package_root}/backends/cuda/aoti_cuda_shims.dll"
   )
 endif()
 
@@ -769,6 +784,43 @@ _executorch_define_component(backend_openvino executorch_backend_openvino)
 # while configuring.
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
+# On Windows the delegate loads two more DLLs at run time: the stream helper,
+# and the AOTI shim layer, which the compiled model it loads imports by name. A
+# DLL is found only beside the program, so both join the delegate's runtime DLL
+# set, which is what $<TARGET_RUNTIME_DLLS> copies. The shim layer is internal
+# and not a component; its import library is the lowering stub the wheel already
+# ships.
+if(WIN32 AND TARGET executorch::backend_cuda)
+  set(_executorch_cuda_shims
+      "${_executorch_package_root}/backends/cuda/aoti_cuda_shims.dll"
+  )
+  if(EXISTS "${_executorch_cuda_shims}" AND NOT TARGET
+                                            executorch::_aoti_cuda_shims
+  )
+    add_library(executorch::_aoti_cuda_shims SHARED IMPORTED)
+    set_target_properties(
+      executorch::_aoti_cuda_shims
+      PROPERTIES IMPORTED_LOCATION "${_executorch_cuda_shims}"
+                 IMPORTED_IMPLIB
+                 "${_executorch_package_root}/data/lib/aoti_cuda_shims.lib"
+    )
+  endif()
+  if(TARGET executorch::_aoti_cuda_shims)
+    set_property(
+      TARGET executorch::backend_cuda
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::_aoti_cuda_shims
+    )
+  endif()
+  if(TARGET executorch::extension_cuda)
+    set_property(
+      TARGET executorch::backend_cuda
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::extension_cuda
+    )
+  endif()
+  unset(_executorch_cuda_shims)
+endif()
 # The Qualcomm delegate, present only in a wheel whose build found the QNN SDK,
 # which today means Linux x86_64. Like the OpenVINO delegate it carries no
 # undefined vendor symbols, so it links without the SDK present and resolves the

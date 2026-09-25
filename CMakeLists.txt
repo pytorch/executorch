@@ -927,6 +927,11 @@ endif()
 # vendored torch-tensorrt delegate). Built before backends/aoti and
 # backends/cuda, which link it.
 if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
+  if(EXECUTORCH_BUILD_CUDA)
+    # extension/cuda links CUDA::cudart before backends/cuda finds the toolkit,
+    # and a CPU torch does not define it.
+    find_package(CUDAToolkit REQUIRED)
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
   install(
     DIRECTORY extension/cuda/
@@ -1087,6 +1092,13 @@ if(EXECUTORCH_BUILD_SHARED)
     # Bundled as objects like the rest; linking it would bring its interface
     # /WHOLEARCHIVE, which lld-link processes ahead of the bundled objects.
     set(_executorch_shared_whole_archive executorch executorch_core)
+    # A DLL resolves its own references at link time, so a weak PAL cannot be
+    # overridden through it, and the generated .def skips weak symbols. The CUDA
+    # shims import these from the runtime DLL.
+    set_source_files_properties(
+      ${EXECUTORCH_PAL_DEFAULT_FILE_PATH} PROPERTIES COMPILE_DEFINITIONS
+                                                     ET_PAL_STRONG_SYMBOLS
+    )
   else()
     target_link_libraries(executorch_shared PRIVATE executorch)
     set(_executorch_shared_whole_archive executorch_core)
@@ -1321,8 +1333,12 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
-    # CUDA uses SlimTensor-based shims
-    list(APPEND _dep_libs aoti_cuda_backend)
+    # CUDA uses SlimTensor-based shims. Not on Windows: a CUDA program cannot be
+    # lowered there, only run, so the delegate ships for C++ applications and
+    # the Python extension stays free of any CUDA dependency.
+    if(NOT WIN32)
+      list(APPEND _dep_libs aoti_cuda_backend)
+    endif()
   elseif(EXECUTORCH_BUILD_METAL)
     # Metal still uses ETensor-based shims (for now)
     list(APPEND _dep_libs aoti_common)

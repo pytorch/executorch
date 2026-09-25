@@ -886,6 +886,34 @@ def _cuda_train() -> str:
     return detected
 
 
+def _windows_cuda_toolkit(cmake_configuration_args: List[str]) -> str:
+    """The CUDA toolkit root a Windows CUDA build compiles with, or "" when CUDA is off.
+
+    Decided with the same conditions the CUDA gate below uses, because the answer picks the
+    toolset for the whole configure: a toolkit here with CUDA turned off would still build the
+    CPU wheel with the MSVC toolset instead of ClangCL. The compiler is the one install_utils
+    reports, so the toolkit that compiles is the train packaging declares.
+    """
+    arguments = cmake_configuration_args + [item for item in _cmake_args() if item]
+    if (
+        _is_minimal_build()
+        or _row_is_cpu_only()
+        or not install_utils.is_cmake_option_on(
+            arguments, "EXECUTORCH_BUILD_CUDA", default=True
+        )
+    ):
+        return ""
+    explicit = install_utils.is_cmake_option_on(
+        arguments, "EXECUTORCH_BUILD_CUDA", default=False
+    )
+    if not explicit and not install_utils.is_cuda_available():
+        return ""
+    nvcc = shutil.which(install_utils._selected_nvcc()[0])
+    if not nvcc:
+        return ""
+    return Path(nvcc).resolve().parent.parent.as_posix()
+
+
 def _cuda_libraries_built(cmake_cache_dir: Optional[str]) -> bool:
     """Whether this build produced the CUDA libraries, read from the CMake cache.
 
@@ -1368,6 +1396,18 @@ def _windows_import_libraries() -> List["BuiltFile"]:
             "executorch_backend_xnnpack",
             None,
             ["EXECUTORCH_BUILD_XNNPACK"],
+        ),
+        (
+            "backends/cuda/",
+            "executorch_backend_cuda",
+            None,
+            ["EXECUTORCH_BUILD_CUDA"],
+        ),
+        (
+            "extension/cuda/",
+            "executorch_extension_cuda",
+            None,
+            ["EXECUTORCH_BUILD_CUDA"],
         ),
     ]
     return [
@@ -2624,9 +2664,28 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
-        # Use ClangCL on Windows.
+        # Use ClangCL on Windows. A CUDA build uses Ninja with clang-cl instead: the
+        # CUDA toolkit's Visual Studio integration fails compiler identification
+        # under ClangCL (MSB4023 in its targets file), and switching the toolset to
+        # cl.exe instead fails on sources cl.exe cannot compile. The multi-config
+        # generator keeps the per-configuration output directories packaging reads.
+        # nvcc still compiles device code with cl.exe as its host compiler, which is
+        # the combination the CUDA Windows CI job builds with.
         if _is_windows():
-            cmake_configuration_args += ["-T ClangCL"]
+            windows_cuda_home = _windows_cuda_toolkit(cmake_configuration_args)
+            if windows_cuda_home:
+                cmake_configuration_args += [
+                    "-GNinja Multi-Config",
+                    "-DCMAKE_C_COMPILER=clang-cl",
+                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    f"-DCMAKE_CUDA_COMPILER={windows_cuda_home}/bin/nvcc.exe",
+                    f"-DCUDAToolkit_ROOT={windows_cuda_home}",
+                    # Ninja does not generate the Arm Cortex-M Python module's two
+                    # identically named sources as distinct rules.
+                    "-DEXECUTORCH_BUILD_CMSIS_NN_PYBINDS=OFF",
+                ]
+            else:
+                cmake_configuration_args += ["-T ClangCL"]
 
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip

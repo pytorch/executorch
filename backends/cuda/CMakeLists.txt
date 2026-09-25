@@ -327,7 +327,29 @@ endif()
 # appends to any INSTALL_RPATH the caller set rather than replacing it, so a
 # source install keeps its own paths.
 if(EXECUTORCH_BUILD_SHARED)
+  if(_cuda_is_windows_msvc)
+    # In the shared layout the delegate is its own DLL and imports the stream
+    # guard functions (get/set/peek/clearCurrentCUDAStream) from this one. They
+    # carry no AOTI_SHIM_EXPORT, so the annotations alone would not export them;
+    # export everything, as every other shipped DLL does.
+    set_target_properties(
+      aoti_cuda_shims PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+  endif()
   executorch_target_shipped_runtime_path(aoti_cuda_shims)
+  if(_cuda_is_msvc_toolchain)
+    # extension_cuda is linked PRIVATE on MSVC and so brings no runtime; resolve
+    # it from the shared library rather than the static core cuda_platform uses.
+    executorch_target_link_shared_runtime(aoti_cuda_shims)
+  endif()
+  if(WIN32)
+    # The vendored c10 headers reach std::countl_zero on the MSVC branch. A
+    # static build gets C++20 from executorch_core; linking the shared runtime
+    # instead does not carry it.
+    set_target_properties(
+      aoti_cuda_shims PROPERTIES CXX_STANDARD 20 CUDA_STANDARD 20
+    )
+  endif()
 endif()
 
 install(
@@ -366,6 +388,12 @@ add_library(
   aoti_cuda_backend ${_aoti_cuda_backend_library_type}
                     ${_aoti_cuda_backend_sources}
 )
+if(WIN32 AND EXECUTORCH_BUILD_SHARED)
+  # Same reason as aoti_cuda_shims above.
+  set_target_properties(
+    aoti_cuda_backend PROPERTIES CXX_STANDARD 20 CUDA_STANDARD 20
+  )
+endif()
 
 target_include_directories(
   aoti_cuda_backend

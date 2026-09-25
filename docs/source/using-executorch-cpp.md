@@ -193,8 +193,8 @@ These are the components the package provides:
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS, Windows |
 | `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
-| `backend_cuda` | The CUDA delegate | Linux |
-| `extension_cuda` | The CUDA stream extension | Linux |
+| `backend_cuda` | The CUDA delegate | Linux, Windows (runs programs exported on Linux) |
+| `extension_cuda` | The CUDA stream extension | Linux, Windows |
 | `backend_openvino` | The OpenVINO delegate | Linux |
 | `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
@@ -355,8 +355,9 @@ Build with `cmake --build build --config Release`. The DLLs are built against th
 library, and a Debug program uses the debug one, whose types are laid out differently, so mixing the
 two would corrupt memory. The runtime headers therefore refuse a Debug build at compile time, with an
 error asking for Release. On CMake older than 3.28, copy the DLLs from
-`${EXECUTORCH_RUNTIME_LIBRARY_DIR}` instead, and apply `${EXECUTORCH_COMPILE_DEFINITIONS}`, which
-carries that check.
+`${EXECUTORCH_RUNTIME_LIBRARY_DIR}` instead, together with any listed in
+`${EXECUTORCH_RUNTIME_DLLS_EXTRA}`, and apply `${EXECUTORCH_COMPILE_DEFINITIONS}`, which carries
+that check.
 
 The `etdump` component is not offered on Windows, because the Windows wheel is built without the
 event tracer.
@@ -450,6 +451,32 @@ reach fewer cards in that range than the x86_64 ones, so a card at or above `(8,
 outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right check either:
 PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
 list and still not be supported.
+
+#### CUDA on Windows
+
+The Windows CUDA package runs CUDA programs; it cannot lower them. Lowering compiles the model with
+a toolchain only the Linux side has, so export on Linux or in WSL, adding one compile spec that
+names the Windows target, then copy `model.pte` and `aoti_cuda_blob.ptd` to the Windows machine:
+
+```python
+from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+compile_specs = [
+    CudaBackend.generate_method_name_compile_spec("forward"),
+    CompileSpec("platform", b"windows"),
+]
+partitioner = [CudaPartitioner(compile_specs)]
+```
+
+That export also needs the MinGW cross compiler and the Windows CUDA runtime on the Linux side;
+`.ci/docker/common/install_cuda_windows_cross_compile.sh` installs both.
+
+On Windows, link the same components as on Linux and copy the DLLs beside your program as described
+in the Windows section above. `$<TARGET_RUNTIME_DLLS>` also brings the delegate's stream helper and
+its AOTI shim layer. The CUDA runtime itself, `cudart64_13.dll` for the CUDA 13 packages, comes from
+the CUDA Toolkit, whose installer puts it on `PATH`. The Python module in this package carries no
+CUDA; it is the C++ SDK that runs the program.
 
 ### Building from source
 

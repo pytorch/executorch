@@ -209,6 +209,9 @@ _WINDOWS_IMPORT_WITNESSES = {
         "executorch.dll",
         "executorch::runtime::register_backend",
     ),
+    # The delegate's entry points come from cuda_platform, an archive, so its export list does not
+    # name them either.
+    "CUDA delegate": ("executorch.dll", "executorch::runtime::register_backend"),
 }
 
 _PE_REPORTS: dict = {}
@@ -1787,9 +1790,13 @@ import sys
 if sys.argv[3] == "torch":
     import torch  # noqa: F401
 
-# executorch/lib, which a C++ program copies beside itself and the package's entry points
-# register. Whether they do is test_package_entry_points_load_their_libraries.
-os.add_dll_directory(sys.argv[2])
+# The directories the package ships DLLs in, the ones the Linux libraries record relative
+# search paths for: executorch/lib, which a C++ program copies beside itself and the
+# package's entry points register (test_package_entry_points_load_their_libraries checks
+# that they do), and backends/cuda, where the CUDA delegate's shim layer ships.
+for directory in [sys.argv[2], *sys.argv[4:]]:
+    if os.path.isdir(directory):
+        os.add_dll_directory(directory)
 ctypes.WinDLL(sys.argv[1])
 """
 
@@ -1823,6 +1830,7 @@ def _assert_shipped_libraries_load_on_windows(root: Path, package_dir: Path) -> 
                 str(target),
                 str(lib_dir),
                 torch_needed,
+                str(root / "backends" / "cuda"),
             ],
             capture_output=True,
             text=True,
@@ -2723,6 +2731,9 @@ def test_extension_contains_no_component() -> None:
             marker in name
             for marker in ("kernels_quantized", "kernels_torchao", "extension_cuda")
         )
+        # Not on Windows, where a CUDA program cannot be lowered, so the delegate ships for
+        # C++ applications and the extension deliberately does not link it.
+        and not (_WINDOWS and "backend_cuda" in name)
     }
     unused = sorted(expected - needed)
     assert not unused, (
