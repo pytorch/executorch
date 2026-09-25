@@ -12,25 +12,18 @@
 #include <string>
 #include <vector>
 
-#include <executorch/backends/native/runtime/Method.h>
-#include <executorch/backends/native/runtime/deserialize/Package.h>
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 
 namespace ptn {
 
-// One dependency-closed region of a Method, lowered onto a backend and ready to
-// run: whatever the backend needed to compile it, plus the staging it reads
-// inputs from and writes outputs to.
-//
-// Under full delegation -- the only mode today -- that region is the whole
-// Method, and the executable's inputs and outputs are the Method's. Under
-// runtime partitioning one Method yields several executables interleaved with
-// other backends, and the inputs and outputs are region boundaries instead.
-//
-// Obtained from EngineContext::compile, never constructed directly. Not
-// thread-safe and not re-entrant: one executable runs one call at a time.
-// Concurrent inference means several executables (or, once the working-set
-// split lands, several working sets over one compiled program).
+struct Method;
+class Package;
+class Program;
+
+// A backend-compiled region of a Method. Full delegation produces one per
+// Method; partitioning may produce several. Not thread-safe or re-entrant.
+// Executables from the same context may alias mutable state and must be
+// serialized; executables from different contexts may run concurrently.
 class EngineExecutable {
  protected:
   EngineExecutable() = default;
@@ -42,8 +35,8 @@ class EngineExecutable {
   EngineExecutable& operator=(EngineExecutable&&) = delete;
   virtual ~EngineExecutable();
 
-  // Counts and shapes of the compiled Method's user inputs / outputs, in graph
-  // order. Sizes are static upper bounds, so a dynamic dim reports its maximum.
+  // Counts, dtypes, and static shapes of user inputs and outputs in graph
+  // order.
   virtual size_t num_inputs() const = 0;
   virtual size_t num_outputs() const = 0;
   virtual std::vector<int64_t> input_sizes(size_t i) const = 0;
@@ -53,7 +46,7 @@ class EngineExecutable {
 
   // Copy `numel` elements from host `data` into input i, converting from
   // `src_dtype` to the input's dtype when they differ. `numel` must equal the
-  // input's element count.
+  // input's element count; `data` may be null only when `numel` is zero.
   virtual void
   set_input(size_t i, const void* data, size_t numel, ScalarType src_dtype) = 0;
 
@@ -62,20 +55,30 @@ class EngineExecutable {
   virtual void execute() = 0;
 
   // Copy output i back into host `data`, converting to `dst_dtype` from the
-  // output's dtype when they differ. Only meaningful after an execute().
+  // output's dtype when they differ. `data` may be null only when `numel` is
+  // zero. Only meaningful after an execute().
   virtual void
   get_output(size_t i, void* data, size_t numel, ScalarType dst_dtype) = 0;
 };
 
-// A compute backend, at process scope: the device context and kernel registry
-// that every Method run on that device shares. One per device, constructed
-// through the backend's own factory (e.g. make_vulkan_engine()) since selecting
-// a backend is the caller's decision, not this interface's.
+// Engine-owned state for one loaded Program. Matching non-empty DataBinding
+// keys share storage within a context; contexts never share mutable buffers.
 //
-// Must outlive every executable it compiled.
+// Owns its Program and Package and must outlive its executables. Compilation
+// and execution through one context are not thread-safe.
 class EngineContext {
  protected:
-  EngineContext() = default;
+  EngineContext(
+      std::shared_ptr<const Program> program,
+      std::shared_ptr<const Package> package);
+
+  const Program& program() const;
+  const Package& package() const;
+
+  // Implement the backend-specific lowering for `method`. Return a non-null
+  // executable or throw; returning null violates the interface contract.
+  virtual std::unique_ptr<EngineExecutable> compile_method(
+      const Method& method) = 0;
 
  public:
   EngineContext(const EngineContext&) = delete;
@@ -84,28 +87,39 @@ class EngineContext {
   EngineContext& operator=(EngineContext&&) = delete;
   virtual ~EngineContext();
 
-  // Backend identity ("vulkan"), and the device it selected ("SwiftShader
-  // Device"). Diagnostics only; nothing dispatches on either.
+  // Compile the named Method and prepack its constants. Returns non-null or
+  // throws std::runtime_error for an absent, invalid, or unsupported method.
+  std::unique_ptr<EngineExecutable> compile(const std::string& method_name);
+
+ private:
+  std::shared_ptr<const Program> program_;
+  std::shared_ptr<const Package> package_;
+};
+
+// Process-wide backend and device resources shared by its contexts. Must
+// outlive every context and executable it creates.
+// Callers serialize create_context(); distinct contexts may execute
+// concurrently, so process-wide resources must support that concurrency.
+class EngineHost {
+ protected:
+  EngineHost() = default;
+
+ public:
+  EngineHost(const EngineHost&) = delete;
+  EngineHost& operator=(const EngineHost&) = delete;
+  EngineHost(EngineHost&&) = delete;
+  EngineHost& operator=(EngineHost&&) = delete;
+  virtual ~EngineHost();
+
+  // Diagnostic backend and device names; neither controls dispatch.
   virtual const std::string& name() const = 0;
   virtual const std::string& device_name() const = 0;
 
-  // Lower `method` onto this backend and prepack the constants it binds,
-  // fetched from `package` by data_key. `method` must outlive the returned
-  // executable; `package` is needed only for this call.
-  //
-  // Compiles the method whole, which is full delegation -- the only mode today.
-  // Runtime partitioning narrows the unit to a region of a method and yields
-  // several executables per method; that arrives as an added entry point, not a
-  // change to this one.
-  //
-  // Throws std::runtime_error when the backend cannot run the method: an
-  // unsupported op or dtype, a binding whose constant the package does not
-  // hold, a constant whose byte count contradicts its TensorMeta, an unbounded
-  // dynamic dim, or a higher-order-op subgraph. A backend is free to reject
-  // anything else it cannot lower; there is no partial success.
-  virtual std::unique_ptr<EngineExecutable> compile(
-      const Method& method,
-      const Package& package) = 0;
+  // Create an isolated state domain, sharing ownership of `program` and
+  // `package`. Returns non-null or throws on invalid or unsupported resources.
+  virtual std::unique_ptr<EngineContext> create_context(
+      std::shared_ptr<const Program> program,
+      std::shared_ptr<const Package> package) = 0;
 };
 
 } // namespace ptn

@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdio>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
@@ -90,6 +91,7 @@ struct ZipReader::Impl {
   explicit Impl(ZipHandle handle) : archive(std::move(handle)) {}
 
   ZipHandle archive;
+  mutable std::mutex mutex;
 };
 
 ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
@@ -186,6 +188,7 @@ void ZipReader::read_entry_into(
     return;
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry.index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {
@@ -218,6 +221,7 @@ void ZipReader::verify(std::string_view name) const {
     throw std::runtime_error("zip: no member named " + std::string(name));
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry->index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {

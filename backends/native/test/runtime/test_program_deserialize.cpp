@@ -6,8 +6,12 @@
 
 #include <executorch/backends/native/runtime/Program.h>
 
+#include <array>
+#include <atomic>
 #include <cstdint>
+#include <exception>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <flatbuffers/flatbuffers.h>
@@ -98,6 +102,60 @@ TEST(ProgramTest, LoadRejectsDuplicateMethodNames) {
   const auto bytes = finish_program(builder, {first, second});
 
   EXPECT_THROW(load_program(bytes), std::runtime_error);
+}
+
+TEST(ProgramTest, GetMethodSupportsConcurrentFirstUse) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto graph = create_graph(builder);
+  const auto first = create_method(builder, "first", graph);
+  const auto second = create_method(builder, "second", graph);
+  const auto bytes = finish_program(builder, {first, second});
+  const Program program = load_program(bytes);
+
+  constexpr size_t kThreadCount = 16;
+  std::atomic<bool> start = false;
+  std::array<const Method*, kThreadCount> methods{};
+  std::array<std::exception_ptr, kThreadCount> errors{};
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadCount);
+  for (size_t i = 0; i < kThreadCount; ++i) {
+    threads.emplace_back([&, i]() {
+      while (!start.load(std::memory_order_acquire)) {
+      }
+      try {
+        methods[i] = &program.get_method(i % 2 == 0 ? "first" : "second");
+      } catch (...) {
+        errors[i] = std::current_exception();
+      }
+    });
+  }
+  start.store(true, std::memory_order_release);
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+
+  for (size_t i = 0; i < kThreadCount; ++i) {
+    EXPECT_EQ(errors[i], nullptr);
+    EXPECT_EQ(methods[i], methods[i % 2]);
+  }
+}
+
+TEST(ProgramTest, MoveConstructionLeavesSourceEmpty) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto graph = create_graph(builder);
+  const auto bytes =
+      finish_program(builder, {create_method(builder, "forward", graph)});
+  Program source = load_program(bytes);
+
+  const Program destination = std::move(source);
+
+  // NOLINTBEGIN(bugprone-use-after-move)
+  EXPECT_EQ(source.flatbuffer(), nullptr);
+  EXPECT_EQ(source.num_methods(), 0);
+  EXPECT_TRUE(source.method_names().empty());
+  // NOLINTEND(bugprone-use-after-move)
+  EXPECT_EQ(destination.num_methods(), 1);
+  EXPECT_EQ(destination.method_names(), std::vector<std::string>{"forward"});
 }
 
 TEST(ProgramTest, GetMethodRejectsMismatchedOutputSpecs) {
