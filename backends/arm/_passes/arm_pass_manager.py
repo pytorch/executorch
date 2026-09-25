@@ -82,6 +82,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeLstmPass,
     DecomposeMaskedFillPass,
     DecomposeMatmulPass,
+    DecomposeMaxPool1dPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -681,6 +682,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
+                DecomposeMaxPool1dPass(),
                 NormalizeMaxPool2dInputRankPass(),
                 DecomposeMaxPool2dPass(),
                 DecomposeLargeStrideMaxPool2dForU55Pass(),
@@ -856,6 +858,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposePowTensorTensorPass(self.tosa_spec, tfa_pass=True),
                     DecomposeLinalgVectorNormPass(tfa_pass=True),
                     DecomposeSqrtPass(tfa_pass=True),
+                    DecomposeMaxPool1dPass(tfa_pass=True),
                     DecomposeSoftmaxPass(
                         tfa_pass=True,
                     ),
