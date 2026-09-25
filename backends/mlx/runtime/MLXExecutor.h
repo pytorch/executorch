@@ -235,7 +235,25 @@ struct ExecutionState {
     const size_t num_chains = prog.instruction_chains.size();
     temp_last_use.assign(num_chains, {});
 
-    std::vector<bool> shared(tensors.size(), false);
+    // The one chain naming each temp slot, or kNoOwner / kShared.
+    constexpr uint32_t kNoOwner = 0xFFFFFFFFu;
+    constexpr uint32_t kShared = 0xFFFFFFFEu;
+    std::vector<uint32_t> owner(tensors.size(), kNoOwner);
+    for (size_t c = 0; c < num_chains; ++c) {
+      for (const auto& instr : prog.instruction_chains[c]) {
+        for_each_tid(instr, [&](Tid id) {
+          if (id.idx >= mutable_buffer_end) {
+            uint32_t& o = owner[tensor_index(id)];
+            if (o == kNoOwner) {
+              o = static_cast<uint32_t>(c);
+            } else if (o != c) {
+              o = kShared;
+            }
+          }
+        });
+      }
+    }
+
     for (size_t c = 0; c < num_chains; ++c) {
       const auto& chain = prog.instruction_chains[c];
       bool nested = false;
@@ -249,27 +267,13 @@ struct ExecutionState {
         continue;
       }
 
-      std::fill(shared.begin(), shared.end(), false);
-      for (size_t other = 0; other < num_chains; ++other) {
-        if (other == c) {
-          continue;
-        }
-        for (const auto& instr : prog.instruction_chains[other]) {
-          for_each_tid(instr, [&](Tid id) {
-            if (id.idx >= mutable_buffer_end) {
-              shared[tensor_index(id)] = true;
-            }
-          });
-        }
-      }
-
       std::vector<uint32_t> last_use(tensors.size(), kNoTempLastUse);
       uint32_t idx = 0;
       for (const auto& instr : chain) {
         for_each_tid(instr, [&](Tid id) {
           if (id.idx >= mutable_buffer_end) {
             const uint32_t slot = tensor_index(id);
-            if (!shared[slot]) {
+            if (owner[slot] == c) {
               last_use[slot] = idx;
             }
           }

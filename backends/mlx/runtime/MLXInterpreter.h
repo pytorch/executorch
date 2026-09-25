@@ -2038,23 +2038,25 @@ class Interpreter {
       }
       st.end_op();
 
+      // Account before releasing: a shrinking op's widest tensor is often an
+      // input it was the last to read. SCAN and IF already accumulated their
+      // own child instructions through the shared counter; charging the parent
+      // for them again would double count.
+      if (threshold != 0 && instr.op != OpCode::SCAN &&
+          instr.op != OpCode::IF) {
+        accumulate_instruction_bytes(instr, st, pending_bytes);
+      }
+
+      // Release before evaluating, so the barrier skips dead temps.
       if (last_use != nullptr) {
         release_temp_slots(instr, st, *last_use, static_cast<uint32_t>(idx));
       }
 
       ++idx;
 
-      if (threshold != 0) {
-        // SCAN and IF already accumulated their own child instructions through
-        // the shared counter; charging the parent for them again would double
-        // count.
-        if (instr.op != OpCode::SCAN && instr.op != OpCode::IF) {
-          accumulate_instruction_bytes(instr, st, pending_bytes);
-        }
-        if (!accumulate_only && pending_bytes >= threshold) {
-          evaluate_state_tensors(st);
-          pending_bytes = 0;
-        }
+      if (threshold != 0 && !accumulate_only && pending_bytes >= threshold) {
+        evaluate_state_tensors(st);
+        pending_bytes = 0;
       }
     }
   }

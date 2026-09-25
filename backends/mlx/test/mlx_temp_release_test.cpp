@@ -45,6 +45,28 @@ Instruction make_add(uint32_t a, uint32_t b, uint32_t out) {
   return instr;
 }
 
+Instruction make_full(int floats, float value, uint32_t out) {
+  Instruction instr;
+  instr.op = OpCode::FULL;
+  FullNode node;
+  node.out = Tid{out};
+  node.shape = {static_cast<int64_t>(floats)};
+  node.v = static_cast<double>(value);
+  node.scalar_type = 6; // ET ScalarType::Float
+  instr.node = node;
+  return instr;
+}
+
+Instruction make_sum_all(uint32_t x, uint32_t out) {
+  Instruction instr;
+  instr.op = OpCode::SUM;
+  SumNode node;
+  node.x = Tid{x};
+  node.out = Tid{out};
+  instr.node = node;
+  return instr;
+}
+
 void bind_state(
     ExecutionState& st,
     const MLXProgram& program,
@@ -90,6 +112,37 @@ TEST(MLXTempRelease, SingleChainTempIsDroppedAfterLastUse) {
   const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
   ::mlx::core::eval(out);
   EXPECT_EQ(out.data<float>()[0], 8.0f);
+}
+
+// A shrinking op is charged for the input it was the last to read. FULL makes a
+// 16 KB temp and SUM reduces it to a scalar: 16 KB + 16 KB crosses a 24 KB
+// threshold only if SUM is accounted before the temp is released.
+TEST(MLXTempRelease, ShrinkingOpIsAccountedBeforeRelease) {
+  const int kFloats = 4096;
+
+  MLXProgram program;
+  program.num_input_tensors = 1;
+  program.num_output_tensors = 1;
+  program.num_temp_tensors = 1;
+  program.instruction_chains.push_back({
+      make_full(kFloats, 1.0f, kTemp0), // temp0 = ones(4096), 16 KB
+      make_sum_all(kTemp0, kOut), // out = 4096, last use of temp0
+  });
+  program.main_chain_idx = 0;
+
+  ConstantData constants;
+  MutableBufferData bufs;
+  ExecutionState st;
+  bind_state(st, program, constants, bufs, 1);
+
+  Interpreter interp;
+  interp.set_eval_threshold_bytes(24576);
+  interp.run(program, st);
+
+  EXPECT_FALSE(slot_is_live(st, kTemp0));
+  const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
+  EXPECT_TRUE(out.is_available()) << "SUM did not trigger the barrier";
+  EXPECT_EQ(out.item<float>(), static_cast<float>(kFloats));
 }
 
 // A temp another chain names is never dropped, whichever chain is running.
