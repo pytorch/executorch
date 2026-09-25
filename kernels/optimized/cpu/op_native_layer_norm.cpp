@@ -30,7 +30,7 @@ void layer_norm(
     IntArrayRef normalized_shape,
     const optional<Tensor>& weight,
     const optional<Tensor>& bias,
-    CTYPE eps,
+    double eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
@@ -97,7 +97,8 @@ void layer_norm(
     acc_t<CTYPE> mean_val;
     acc_t<CTYPE> rstd_val;
     std::tie(mean_val, rstd_val) = RowwiseMoments(src_ptr, N);
-    rstd_val = CTYPE(1) / std::sqrt(rstd_val + eps);
+    rstd_val =
+        acc_t<CTYPE>(1) / std::sqrt(rstd_val + static_cast<acc_t<CTYPE>>(eps));
 
     const acc_t<CTYPE> scale = rstd_val;
     const acc_t<CTYPE> offset = -rstd_val * mean_val;
