@@ -9,6 +9,7 @@
 #include <executorch/extension/cuda/device_guard.h>
 
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 
 #if defined(EXECUTORCH_USE_HIP)
 #include <executorch/extension/cuda/runtime_api.h>
@@ -22,6 +23,11 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 Result<CUDAGuard> CUDAGuard::create(int device_index) {
+  // Where a build makes no shared runtime, this library carries its own copy of
+  // the platform layer, and the log below would be the first thing to touch it.
+  // Safe to call more than once, which is why the kernel registry does the same
+  // at its own entry point.
+  ::et_pal_init();
   CUDAGuard guard;
   ET_CHECK_OK_OR_RETURN_ERROR(guard.set_index(device_index));
   return guard;

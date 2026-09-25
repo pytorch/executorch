@@ -4,7 +4,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-"""Validate one Arm public API manifest against the current API."""
+"""Validate Arm public API manifests against the current API."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import ast
 import importlib.util
 import inspect
 from pathlib import Path
+from typing import Sequence
 
 try:
     import tomllib
@@ -357,19 +358,48 @@ def validate_manifest(manifest_path: Path) -> list[Issue]:
     return issues
 
 
+def validate_manifests(manifest_paths: Sequence[Path]) -> int:
+    failures = 0
+    for manifest_path in manifest_paths:
+        print()
+        print(f"=== {manifest_path.name} ===")
+        issues = validate_manifest(manifest_path)
+        print(format_validation_report(manifest_path, issues))
+        if issues:
+            failures += 1
+    return failures
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
+    manifest_group = parser.add_mutually_exclusive_group()
+    manifest_group.add_argument(
         "--manifest",
         type=Path,
         default=MANIFEST_PATH,
         help="Path to the public API manifest TOML file.",
+    )
+    manifest_group.add_argument(
+        "--all-manifests",
+        action="store_true",
+        help="Validate every public API manifest in one process.",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.all_manifests:
+        print("Validating Arm public API manifests")
+        manifest_paths = sorted(MANIFEST_PATH.parent.glob("api_manifest_*.toml"))
+        failures = validate_manifests(manifest_paths)
+        print()
+        if failures:
+            print(f"{failures} manifest(s) failed validation")
+            raise SystemExit(1)
+        print("Arm public API manifests OK")
+        return
+
     issues = validate_manifest(args.manifest)
     print(format_validation_report(args.manifest, issues))
     if issues:

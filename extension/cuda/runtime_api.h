@@ -122,6 +122,11 @@ inline cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
   return hipMemGetInfo(free, total);
 }
 
+inline cudaError_t
+cudaMemsetAsync(void* ptr, int value, size_t size, cudaStream_t stream) {
+  return hipMemsetAsync(ptr, value, size, stream);
+}
+
 inline cudaError_t cudaPointerGetAttributes(
     cudaPointerAttributes* attributes,
     const void* ptr) {
