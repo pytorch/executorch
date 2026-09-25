@@ -397,9 +397,9 @@ def _resolve_nsys_paths():
     from executorch.backends.nxp.tests.config_importer import test_config
 
     return (
-        str(test_config.NSYS_PATH),
-        str(test_config.NSYS_CONFIG_PATH),
-        str(test_config.NSYS_FIRMWARE_PATH),
+        str(test_config.nsys_path()),
+        str(test_config.nsys_config_path()),
+        str(test_config.nsys_firmware_path()),
     )
 
 
@@ -413,7 +413,7 @@ def _resolve_runner_path() -> Optional[str]:
     """
     from executorch.backends.nxp.tests.config_importer import test_config
 
-    runner = str(test_config.NEUTRON_TEST_PATH)
+    runner = str(test_config.neutron_test_path())
     if os.path.isfile(runner):
         return runner
     return None
