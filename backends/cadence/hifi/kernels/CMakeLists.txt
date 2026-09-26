@@ -23,14 +23,22 @@ set(_common_include_directories
     ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
 )
 
+if(EXECUTORCH_HIFI_CORE STREQUAL "hifi5")
+  set(NNLIB_DIR_NAME "nnlib-hifi5")
+  set(NNLIB_ARCH_DIR "hifi5")
+else()
+  set(NNLIB_DIR_NAME "nnlib-hifi4")
+  set(NNLIB_ARCH_DIR "hifi4")
+endif()
+
 target_include_directories(
   cadence_kernels
   PUBLIC
     .
-    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/common/include/
-    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include/nnlib
-    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include
-    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/ndsp/hifi4/include/
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/${NNLIB_DIR_NAME}/xa_nnlib/algo/common/include/
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/${NNLIB_DIR_NAME}/xa_nnlib/include/nnlib
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/${NNLIB_DIR_NAME}/xa_nnlib/include
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/${NNLIB_DIR_NAME}/xa_nnlib/algo/ndsp/${NNLIB_ARCH_DIR}/include/
     ${_common_include_directories}
 )
 
