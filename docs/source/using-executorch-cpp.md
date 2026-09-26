@@ -261,6 +261,49 @@ find_package(executorch REQUIRED COMPONENTS backend_mlx)
 message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
 ```
 
+#### Using pkg-config
+
+Build systems such as Meson and Autotools read pkg-config files. The wheel ships one for the
+runtime. It covers the engine and the thread pool. Name the kernel libraries yourself, the same
+way you add CMake components. Point pkg-config at the file with an absolute path, because the
+library search path it gives the linker is built from that path:
+
+```
+export PKG_CONFIG_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "lib" / "pkgconfig")')${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+```
+
+The kernels register themselves when they load, and nothing in your code names them, so the
+linker must be told to keep them. On Linux:
+
+```
+c++ -std=c++17 main.cpp $(pkg-config --cflags --libs executorch) \
+  -Wl,--push-state,--no-as-needed -lexecutorch_kernels_optimized -Wl,--pop-state -o app
+```
+
+On macOS:
+
+```
+c++ -std=c++17 main.cpp $(pkg-config --cflags --libs executorch) -lexecutorch_kernels_optimized -o app
+```
+
+In Meson, take the library directory from the dependency. On macOS, replace the three Linux flags
+with `'-Wl,-needed-lexecutorch_kernels_optimized'`:
+
+```
+executorch = dependency('executorch')
+libdir = executorch.get_variable(pkgconfig : 'libdir')
+executable('app', 'main.cpp',
+  dependencies : executorch,
+  link_args : ['-L' + libdir,
+               '-Wl,--push-state,--no-as-needed',
+               '-lexecutorch_kernels_optimized',
+               '-Wl,--pop-state'],
+  install : true)
+```
+
+Add `-lexecutorch_kernels_quantized` or a backend such as `-lexecutorch_backend_xnnpack` the same
+way, because they sit next to the runtime library.
+
 #### When something does not work
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or

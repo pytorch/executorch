@@ -2944,6 +2944,13 @@ setup(
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
                     ],
                 ),
+                # For build systems that read pkg-config rather than CMake packages.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name="executorch-wheel.pc",
+                    dst="executorch/lib/pkgconfig/executorch.pc",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
                 # The CUDA delegate and the process-wide CUDA stream helper, for a
                 # wheel built from a CUDA index. Only present when the build asks for
                 # CUDA, so packaging requires that rather than looking for files a
