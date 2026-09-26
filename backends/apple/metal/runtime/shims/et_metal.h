@@ -239,7 +239,9 @@ class ETMetalKernelFunction {
   // function's back; the other callers (metal_packed_copy_of_strided_view,
   // metal_copy_strided_view) must not be called between a kernel function's
   // startEncoding() and its dispatch.
-  // Returns nil if `tensor` is not a strided view.
+  // Returns nil if `tensor` is not a strided view, has 2^32 elements or more,
+  // has an element size the gather has no kernel for, or is not in a Metal
+  // buffer, or if a buffer or the kernel cannot be made.
   static MTLBuffer_t encodePackedCopyOfStridedView(
       MTLComputeCommandEncoder_t encoder,
       const executorch::runtime::etensor::Tensor& tensor,
@@ -250,8 +252,8 @@ class ETMetalKernelFunction {
   // What this function has bound since startEncoding(). Work encoded on the
   // same encoder in between, such as the packed copy setArg makes of a strided
   // view, changes the pipeline state and slots 28-30; restoreBindings() puts
-  // this function's back. Only those slots are recorded, so that setting up a
-  // kernel costs nothing more than binding its arguments.
+  // this function's back. Only those slots are recorded, so binding the
+  // other slots costs nothing more.
   struct Binding {
     MTLBuffer_t buffer = nullptr; // retained while recorded
     size_t offset = 0;
@@ -548,8 +550,9 @@ MTLCommandQueue_t get_metal_command_queue();
 }
 
 // Whether the packed copy of a view with these sizes and strides can be
-// gathered: no empty dim, no negative stride, and at most 16 dims. Views of
-// 2^32 elements or more are recorded too; only packing one fails.
+// gathered: as many strides as sizes, at most 16 dims, no empty dim, no
+// negative stride, and a span that fits 64 bits. Views of 2^32 elements or
+// more pass too; only packing one fails, when an op needs it.
 bool metal_can_pack_strided_view(
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& strides);
@@ -572,18 +575,18 @@ bool metal_record_strided_view(
 void metal_share_strided_view(const void* from, const void* to);
 void metal_forget_strided_view(const void* tensor);
 bool metal_is_strided_view(const void* tensor);
-// Writes the elements of a strided view, packed in row-major order, to `dst`,
-// which must have room for tensor.nbytes() bytes. Into memory that resolves
-// to a Metal buffer (metal_resolve_buffer) and is not CPU memory, the copy is
-// queued on the stream; otherwise it waits for the GPU. Returns false if
-// `tensor` is not a strided view, cannot be packed, or does not fit `dst`'s
-// buffer.
 // Whether the `nbytes` at `dst` overlap the memory the strided view `tensor`
 // spans; false if it is not a strided view.
 bool metal_strided_view_overlaps(
     const executorch::runtime::etensor::Tensor& tensor,
     const void* dst,
     size_t nbytes);
+// Writes the elements of a strided view, packed in row-major order, to `dst`,
+// which must have room for tensor.nbytes() bytes. Into memory that resolves
+// to a Metal buffer (metal_resolve_buffer) and is not CPU memory, the copy is
+// queued on the stream; otherwise it waits for the GPU. Returns false if
+// `tensor` is not a strided view, cannot be packed, or does not fit `dst`'s
+// buffer.
 bool metal_copy_strided_view(
     const executorch::runtime::etensor::Tensor& tensor,
     void* dst);

@@ -1061,6 +1061,8 @@ ETMetalKernelFunction::~ETMetalKernelFunction() {
 
 namespace {
 // The slots the packed copy of a strided view binds (encodePackedCopyOfStridedView).
+// Any slots would do: a kernel function whose arguments the gather overwrites
+// binds them again afterwards (restoreBindings).
 constexpr unsigned kGatherSrcIndex = 28;
 constexpr unsigned kGatherDstIndex = 29;
 constexpr unsigned kGatherParamsIndex = 30;
@@ -1122,10 +1124,14 @@ void ETMetalKernelFunction::restoreBindings() {
 }
 
 void ETMetalKernelFunction::clearBindings() {
+    // The records stay, so that binding the next kernel allocates nothing.
     for (Binding& binding : bindings_) {
         [binding.buffer release];
+        binding.buffer = nil;
+        binding.offset = 0;
+        binding.bytes.clear();
+        binding.set = false;
     }
-    bindings_.clear();
 }
 
 void ETMetalKernelFunction::startEncoding() {
@@ -1148,9 +1154,7 @@ void ETMetalKernelFunction::startEncoding() {
 
 namespace {
 
-// Copies the elements of a strided view, in row-major order, into a packed
-// buffer. Any slots would do: a kernel function whose arguments the gather
-// overwrites binds them again afterwards (restoreBindings).
+// The most dims the gather takes (GatherParams).
 constexpr uint32_t kGatherMaxDims = 16;
 } // namespace
 
@@ -1344,8 +1348,9 @@ void ETMetalKernelFunction::setArg(
                                                                    length:totalSize
                                                                   options:MTLResourceStorageModeShared];
                     if (tempBuffer) {
-                        // The binding keeps it until dispatch, and the command
-                        // buffer after that.
+                        // The stream's command buffers retain what their
+                        // encoders bind (retainedReferences), so binding it
+                        // keeps it until that work completes.
                         bindBuffer(idx, tempBuffer, 0);
                         [tempBuffer release];
                         ET_LOG(Debug, "ETMetalKernelFunction::setArg: Set large CPU tensor via temporary buffer at index %u (size: %zu)", idx, totalSize);
