@@ -628,6 +628,68 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
         ]
         self._test_quantizer(m, example_inputs, quantizer, node_occurrence, node_list)
 
+    def test_transpose_cat_shared_qparams(self):
+        """transpose feeding cat must share quantization parameters.
+
+        When a transpose output feeds into cat alongside a branch with a larger
+        activation range, XNNPACK's cat annotator ties the transpose output to
+        the combined-range scale while the transpose input keeps the upstream
+        (narrow) scale.  Without SharedQuantizationSpec on transpose the two
+        scales diverge and XNNPACK rejects the model with
+        xnn_status_invalid_parameter at load_method time.
+        """
+
+        class TransposeCat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.l1 = torch.nn.Linear(16, 16)
+                self.l2 = torch.nn.Linear(8, 8)
+
+            def forward(self, x, y):
+                a = self.l1(x).transpose(1, 2)  # (1, 16, 8) — narrow range
+                b = self.l2(y)  # (1, 16, 8) — large range
+                return torch.cat([a, b], dim=1)
+
+        torch.manual_seed(0)
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config())
+        example_inputs = (torch.randn(1, 8, 16), torch.randn(1, 16, 8) * 8.0)
+        m = TransposeCat().eval()
+        m = export(m, example_inputs, strict=True).module()
+        m = prepare_pt2e(m, quantizer)
+
+        torch.manual_seed(0)
+        for _ in range(30):
+            m(torch.randn(1, 8, 16), torch.randn(1, 16, 8) * 8.0)
+
+        m = convert_pt2e(m)
+
+        # After convert_pt2e, the Q/DQ flanking the transpose must carry
+        # identical scale/zero_point; XNNStaticTranspose hard-requires this.
+        for n in m.graph.nodes:
+            if n.op != "call_function" or n.target != torch.ops.aten.transpose.int:
+                continue
+            dq_in = n.args[0]
+            q_out = next(
+                (
+                    u
+                    for u in n.users
+                    if u.op == "call_function" and "quantize" in str(u.target)
+                ),
+                None,
+            )
+            self.assertIsNotNone(q_out, "expected a quantize node after transpose")
+            self.assertEqual(
+                dq_in.args[1],
+                q_out.args[1],
+                "transpose input/output scale must match for XNNPACK",
+            )
+            self.assertEqual(
+                dq_in.args[2],
+                q_out.args[2],
+                "transpose input/output zero_point must match for XNNPACK",
+            )
+
     def test_propagate_annotation(self):
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config(is_per_channel=True)
