@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 set -eux
+
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
 
 SUITE=$1
 FLOW=$2
@@ -35,6 +38,7 @@ export PYTHON_EXECUTABLE=python
 
 # CMake options to use, in addition to the defaults.
 EXTRA_BUILD_ARGS=""
+PYTEST_RETRY_ARGS=()
 
 if [[ "$FLOW" == *qnn* ]]; then
     # Setup QNN sdk and deps - note that this is a bit hacky due to the nature of the
@@ -46,17 +50,34 @@ if [[ "$FLOW" == *qnn* ]]; then
     export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
     # TODO Get SDK root from install scripts
-    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=$QNN_SDK_ROOT -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
-    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate.
-    source .ci/scripts/setup-vulkan-linux-deps.sh
+    # Setup the Vulkan SDK and select an ICD: use the real system GPU ICD when one
+    # is present (real-GPU runner), otherwise fall back to SwiftShader (CPU
+    # runner). The Vulkan loader searches both standard ICD directories.
+    if ls /etc/vulkan/icd.d/*.json /usr/share/vulkan/icd.d/*.json \
+        >/dev/null 2>&1; then
+        source .ci/scripts/setup-vulkan-linux-deps.sh "real-gpu"
+    else
+        source .ci/scripts/setup-vulkan-linux-deps.sh "swiftshader"
+    fi
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *webgpu* ]]; then
+    # Dawn (Tint) + SwiftShader, the spec-faithful headless WebGPU backend.
+    source .ci/scripts/setup-webgpu-linux-deps.sh
+
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_WEBGPU=ON -DDawn_DIR=$Dawn_DIR"
+fi
+
 if [[ "$FLOW" == *arm* ]]; then
+    if [[ "$SUITE" == "operators" ]]; then
+        PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
+    fi
 
     # Setup ARM deps.
     if [[ "$FLOW" == *vgf* ]]; then
@@ -68,7 +89,6 @@ if [[ "$FLOW" == *arm* ]]; then
 
     if [[ "$FLOW" == *ethos_u* ]]; then
         # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
-        backends/arm/scripts/build_executorch.sh
         backends/arm/test/setup_testing.sh
     fi
 
@@ -78,6 +98,38 @@ if [[ "$FLOW" == *arm* ]]; then
     fi
 fi
 
+if [[ "$FLOW" == *cortex_m* ]]; then
+    # Cortex-M runs on the Corstone-300 FVP, using the same Arm toolchain as the
+    # Ethos-U flows but its own semihosting runner.
+    .ci/scripts/setup-arm-baremetal-tools.sh
+    source examples/arm/arm-scratch/setup_path.sh
+
+    backends/cortex_m/test/build_test_runner.sh
+fi
+
+if [[ "$FLOW" == *nxp* ]]; then
+    # Install the eIQ Toolkit Python packages (NSYS simulator and Neutron converter).
+    pip install -r backends/nxp/requirements-eiq.txt
+
+    # Enable the Neutron delegate, portable kernels, pybindings and extensions
+    # required by the operator test suite.
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_NXP_NEUTRON=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_NXP_NEUTRON_RUNNER=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_KERNELS_PORTABLE=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_PYBIND=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON"
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON"
+fi
+
+if [[ "$FLOW" == *openvino* ]]; then
+    # Setup OpenVINO environment
+    source .ci/scripts/setup-openvino.sh --nightly
+    EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_OPENVINO=ON"
+fi
+
 if [[ $IS_MACOS -eq 1 ]]; then
     SETUP_SCRIPT=.ci/scripts/setup-macos.sh
 else
@@ -85,7 +137,34 @@ else
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
+if [[ "$FLOW" == *nxp* ]]; then
+    # Install test-time Python requirements (neutron-test helpers, etc.).
+    pip install -r backends/nxp/requirements-tests-pypi.txt
+    PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
+
+    # Build nxp_executor_runner as a standalone binary. The cmake-out subproject
+    # build may produce a differently-linked binary; the standalone build is known
+    # to work correctly with the NSYS simulator firmware.
+    mkdir -p examples/nxp/executor_runner/build
+    pushd examples/nxp/executor_runner/build
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    make -j"$(nproc)" nxp_executor_runner
+    popd
+
+    export NXP_RUNNER_PATH="$(pwd)/examples/nxp/executor_runner/build/nxp_executor_runner"
+fi
+
 EXIT_CODE=0
-${CONDA_RUN_CMD} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
+# An Ethos-U failure captures a few hundred thousand lines of Vela operator
+# listings, and the runner agent throws System.OutOfMemoryException processing
+# a step that size, taking the whole job down before pytest can report. The
+# reason for each failure is in its exception message and traceback, which are
+# unaffected.
+PYTEST_ARGS=(-c /dev/null -n auto --show-capture=no)
+if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
+    PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
+fi
+PYTEST_ARGS+=("backends/test/suite/$SUITE/" -m "flow_$FLOW" --json-report --json-report-file="$REPORT_FILE")
+${CONDA_RUN_CMD} pytest "${PYTEST_ARGS[@]}" || EXIT_CODE=$?
 # Generate markdown summary.
 ${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE

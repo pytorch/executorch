@@ -680,10 +680,24 @@ vkapi::VulkanBuffer allocate_buffer(
       return vkapi::VulkanBuffer();
   }
 
+  // Round the underlying allocation up to a whole number of 16-byte texels.
+  // Shaders may read a buffer-backed tensor as vec4/ivec4 (e.g. the
+  // per-output-channel weight scales/sums/bias in the tiled quantized kernels);
+  // when a dimension is not a multiple of 4, the final vec4 load would
+  // otherwise read past the end of the buffer, which silently zeroes the value
+  // on NVIDIA GPUs. This only grows the allocation; the tensor's
+  // physical_numel() is unchanged.
+  const size_t alloc_nbytes = utils::align_up(
+      element_size(dtype) * static_cast<size_t>(numel),
+      static_cast<size_t>(16));
+
+  // TODO: this check is incorrect. max_buffer_numel() returns
+  // maxStorageBufferRange, which is a size in bytes, so the comparison should
+  // use the buffer's byte size (alloc_nbytes), not the element count.
   VK_CHECK_COND(numel <= context_ptr->adapter_ptr()->max_buffer_numel());
 
   return adapter_ptr->vma().create_storage_buffer(
-      element_size(dtype) * numel, allocate_memory);
+      alloc_nbytes, allocate_memory);
 }
 
 vTensorStorage::vTensorStorage(
@@ -718,6 +732,23 @@ vTensorStorage::vTensorStorage(
           allocate_memory)),
       last_access_{} {}
 
+namespace {
+
+std::shared_ptr<vTensorStorage> acquire_external_storage(
+    Context* const context,
+    const vkapi::VulkanImage* image,
+    const vkapi::VulkanBuffer* buffer,
+    const vkapi::ScalarType dtype) {
+  VK_CHECK_COND(
+      image == nullptr || buffer == nullptr,
+      "a tensor can wrap an image or a buffer, not both");
+  return image != nullptr
+      ? std::make_shared<vTensorStorage>(context, *image)
+      : std::make_shared<vTensorStorage>(context, *buffer, dtype);
+}
+
+} // namespace
+
 vTensorStorage::vTensorStorage(
     Context* const context,
     const vkapi::VulkanImage& image)
@@ -731,6 +762,20 @@ vTensorStorage::vTensorStorage(
       buffer_offset_{0},
       image_(image),
       buffer_(vkapi::VulkanBuffer()),
+      last_access_{} {}
+
+vTensorStorage::vTensorStorage(
+    Context* const context,
+    const vkapi::VulkanBuffer& buffer,
+    const vkapi::ScalarType dtype)
+    : context_(context),
+      storage_type_{utils::kBuffer},
+      image_extents_({0, 0, 0}),
+      buffer_length_{
+          static_cast<int64_t>(buffer.mem_size() / vkapi::element_size(dtype))},
+      buffer_offset_{0},
+      image_(vkapi::VulkanImage()),
+      buffer_(buffer),
       last_access_{} {}
 
 vTensorStorage::~vTensorStorage() {
@@ -796,10 +841,21 @@ void vTensorStorage::transition(
       dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     }
 
+    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
+
+    // WAR hazard: the read-only source access mask yields an execution-only
+    // dependency that some drivers may drop, so widen it to a full memory
+    // barrier to keep the write from racing the prior read.
+    const bool prev_read = (prev_access & vkapi::MemoryAccessType::READ) != 0;
+    if (prev_read && !prev_written && cur_written) {
+      src_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      dst_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      src_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+      dst_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    }
+
     pipeline_barrier.stage.src |= src_stage;
     pipeline_barrier.stage.dst |= dst_stage;
-
-    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
 
     if (image_) {
       pipeline_barrier.images.emplace_back(
@@ -826,7 +882,9 @@ vTensor::vTensor(
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory,
-    const utils::AxisMapLayout axis_map_layout)
+    const utils::AxisMapLayout axis_map_layout,
+    const vkapi::VulkanImage* external_image,
+    const vkapi::VulkanBuffer* external_buffer)
     : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
@@ -854,15 +912,35 @@ vTensor::vTensor(
       uniforms_(),
       buffer_meta_(),
       // Construct Tensor storage
-      storage_(std::make_shared<vTensorStorage>(
-          context,
-          storage_type,
-          axis_map_,
-          packed_dim_info_,
-          padded_sizes_,
-          dtype_,
-          physical_numel_,
-          allocate_memory)) {
+      storage_(
+          (external_image != nullptr || external_buffer != nullptr)
+              ? acquire_external_storage(
+                    context,
+                    external_image,
+                    external_buffer,
+                    dtype_)
+              : std::make_shared<vTensorStorage>(
+                    context,
+                    storage_type,
+                    axis_map_,
+                    packed_dim_info_,
+                    padded_sizes_,
+                    dtype_,
+                    physical_numel_,
+                    allocate_memory)) {
+  // External storage was sized by its creator, so nothing guarantees it fits
+  // the metadata derived from `sizes`. An image must match exactly, since its
+  // extents feed the shader-visible logical limits below; a buffer need only
+  // be large enough.
+  if (external_image != nullptr) {
+    VK_CHECK_COND(
+        storage_->image_extents_ ==
+            calculate_image_extents(
+                dtype_, packed_dim_info_, padded_sizes_, axis_map_),
+        "external image extents do not match the requested tensor sizes");
+  } else if (external_buffer != nullptr) {
+    check_sizes(sizes_);
+  }
   // uniform_data_ only valid for low dim tensors
   if (sizes.size() <= 4) {
     uniform_data_ = std::make_shared<UniformData>(UniformData{

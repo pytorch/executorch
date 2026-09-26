@@ -244,6 +244,12 @@ TEST_F(MmapDataLoaderTest, InBoundsLoadsSucceedUseMlockIgnoreErrors) {
       MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
 }
 
+TEST_F(MmapDataLoaderTest, InBoundsLoadsSucceedUseMadvise) {
+  // There's no portable way to verify madvise() is called, but exercise the
+  // path to make sure the code still behaves correctly.
+  test_in_bounds_loads_succeed(MmapDataLoader::MlockConfig::UseMadvise);
+}
+
 TEST_F(MmapDataLoaderTest, FinalPageOfUnevenFileSucceeds) {
   // Create a file whose length is not an even multiple of a page.
   // Each 4-byte word in the file has a different value.

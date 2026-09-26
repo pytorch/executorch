@@ -33,11 +33,14 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_exp.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mean.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_layer_norm.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_neg.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_rsqrt.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sigmoid.cpp"
@@ -79,21 +82,9 @@ target_include_directories(
 )
 
 # Custom ops that are needed to run the test model.
-add_library(
-  custom_ops
-  "quantized_add_out.cpp"
-  "quantized_linear_out.cpp"
-  "quantized_conv2d_nchw_out.cpp"
-  "quantized_conv2d_nhwc_out.cpp"
-  "quantized_relu_out.cpp"
-  "quantized_layer_norm.cpp"
-  "quantize_per_tensor.cpp"
-  "quantized_fully_connected_out.cpp"
-  "dequantize_per_tensor.cpp"
-  "quantized_matmul_out.cpp"
-  "op_requantize_out.cpp"
-  "im2row_out.cpp"
-)
+file(GLOB custom_ops_srcs "*.cpp")
+add_library(custom_ops ${custom_ops_srcs})
+
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
                     ${_common_include_directories}

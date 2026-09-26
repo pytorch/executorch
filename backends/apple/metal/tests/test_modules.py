@@ -27,6 +27,7 @@ import torch
 from executorch.backends.apple.metal.metal_backend import MetalBackend
 from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch import nn
 from torch.export import export
 from torch.nn.attention import SDPBackend
@@ -188,6 +189,71 @@ MODULE_REGISTRY["mm_weight_param"] = {
 
 
 # -------------------------------------------------------------------------
+class Addmm(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bias = nn.Parameter(torch.randn(5))
+        self.weight = nn.Parameter(torch.randn(4, 5))
+
+    def forward(self, x: torch.Tensor):
+        return torch.addmm(self.bias, x, self.weight)
+
+
+MODULE_REGISTRY["addmm"] = {
+    "model_class": Addmm,
+    "input_shapes": [(1, 4)],
+    "description": (
+        "Raw addmm with batch=1, which AOTInductor lowers to the "
+        "aoti_torch_mps_addmm_out fallback kernel"
+    ),
+}
+
+
+# -------------------------------------------------------------------------
+class BmmSingletonDim(nn.Module):
+    """The constant is {2, 1, 4} with strides {4, 1, 1}: dense and row-major,
+    but its size-1 dimension does not have the row-major stride."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "weight",
+            torch.arange(8, dtype=torch.get_default_dtype())
+            .reshape(2, 4, 1)
+            .transpose(1, 2),
+        )
+
+    def forward(self, x: torch.Tensor):
+        return torch.bmm(self.weight, x)
+
+
+MODULE_REGISTRY["bmm_singleton_dim"] = {
+    "model_class": BmmSingletonDim,
+    "input_shapes": [(2, 4, 3)],
+    "description": "bmm whose constant has a size-1 dim with a non-row-major stride",
+}
+
+
+# -------------------------------------------------------------------------
+# View / copy Modules
+# -------------------------------------------------------------------------
+
+
+class SplitCat(nn.Module):
+    def forward(self, x: torch.Tensor):
+        # torch.split lowers to aten.split_copy.Tensor in the edge dialect.
+        a, b, c = torch.split(x, 2, dim=1)
+        return torch.cat([a * 2.0, b + 1.0, c], dim=1)
+
+
+MODULE_REGISTRY["split_cat"] = {
+    "model_class": SplitCat,
+    "input_shapes": [(1, 6, 4)],
+    "description": "Channel split + concat, exercising split_copy -> split",
+}
+
+
+# -------------------------------------------------------------------------
 # Linear Modules
 # -------------------------------------------------------------------------
 
@@ -205,6 +271,35 @@ MODULE_REGISTRY["linear_nobias"] = {
     "model_class": LinearNoBias,
     "input_shapes": [(127, 7)],
     "description": "Simple linear layer model with no bias",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearWithBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(7, 101, bias=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.linear(x)
+
+
+MODULE_REGISTRY["linear_bias"] = {
+    "model_class": LinearWithBias,
+    "input_shapes": [(127, 7)],
+    "description": "Simple linear layer model with bias",
+}
+
+
+# -------------------------------------------------------------------------
+MODULE_REGISTRY["linear_bias_batch1"] = {
+    "model_class": LinearWithBias,
+    "input_shapes": [(1, 7)],
+    "description": (
+        "Linear with bias and batch=1. AOTInductor re-fuses mm+bias into "
+        "addmm here (the MobileNet classifier case), exercising "
+        "aoti_torch_mps_addmm_out"
+    ),
 }
 
 
@@ -416,6 +511,185 @@ MODULE_REGISTRY["conv1d_voxtral"] = {
 
 
 # -------------------------------------------------------------------------
+# Conv2d modules. Unlike conv1d, a 4D convolution makes inductor apply its
+# layout optimization, so the kernel receives channels-last input and weight
+# and must return a channels-last output. 1x1 convolutions are lowered to mm
+# and never reach the convolution kernel, hence the 3x3 kernels below.
+# -------------------------------------------------------------------------
+class Conv2dNoBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=3,
+            out_channels=8,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_nobias"] = {
+    "model_class": Conv2dNoBias,
+    "input_shapes": [(1, 3, 16, 16)],
+    "description": "Conv2d layer with 3 input channels, 8 output channels, 3x3 kernel",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dBias(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=3,
+            out_channels=8,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_bias"] = {
+    "model_class": Conv2dBias,
+    "input_shapes": [(2, 3, 16, 16)],
+    "description": "Conv2d layer with bias and batch size 2",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dStride2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=3,
+            out_channels=8,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_stride2"] = {
+    "model_class": Conv2dStride2,
+    "input_shapes": [(1, 3, 16, 12)],
+    "description": "Strided Conv2d layer on a non-square input",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dDepthwise(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels=8,
+            out_channels=8,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=8,
+            bias=False,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+MODULE_REGISTRY["conv2d_depthwise"] = {
+    "model_class": Conv2dDepthwise,
+    "input_shapes": [(1, 8, 16, 16)],
+    "description": "Depthwise Conv2d layer (groups == channels)",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dStack(nn.Module):
+    """Two convolutions back to back: the first one's output feeds the second
+    without leaving the channels-last layout."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 8, kernel_size=3, stride=2, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(8, 4, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        return self.conv2(torch.relu(self.conv1(x)))
+
+
+MODULE_REGISTRY["conv2d_stack"] = {
+    "model_class": Conv2dStack,
+    "input_shapes": [(1, 3, 16, 16)],
+    "description": "Two stacked Conv2d layers with a ReLU in between",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dSingleChannel(nn.Module):
+    """With one channel, contiguous and channels-last strides describe the same
+    memory, so the layout cannot be read off the tensor. The first conv takes a
+    single-channel input, the second produces a single-channel output that the
+    third consumes."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(8, 1, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv3 = nn.Conv2d(1, 6, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        return self.conv3(x)
+
+
+MODULE_REGISTRY["conv2d_single_channel"] = {
+    "model_class": Conv2dSingleChannel,
+    "input_shapes": [(2, 1, 16, 12)],
+    "description": "Conv2d layers with single-channel inputs and outputs",
+}
+
+
+# -------------------------------------------------------------------------
+class Conv2dPointwiseToSingleChannel(nn.Module):
+    """The 1x1 conv lowers to a matmul whose single-channel result reaches the
+    second conv with channels-last strides. Those strides describe the same
+    memory as contiguous ones, but the wrapper still expects the second conv's
+    output in channels-last."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 1, kernel_size=1)
+        self.conv2 = nn.Conv2d(1, 4, kernel_size=3, padding=1)
+
+    def forward(self, x):
+        return self.conv2(self.conv1(x))
+
+
+MODULE_REGISTRY["conv2d_pointwise_to_single_channel"] = {
+    "model_class": Conv2dPointwiseToSingleChannel,
+    "input_shapes": [(2, 3, 7, 9)],
+    "description": "1x1 Conv2d producing one channel, followed by a 3x3 Conv2d",
+}
+
+
+# -------------------------------------------------------------------------
 # Attention (SDPA) Modules
 # -------------------------------------------------------------------------
 
@@ -622,6 +896,178 @@ MODULE_REGISTRY["sdpa_strided_causal"] = {
 }
 
 
+# -------------------------------------------------------------------------
+# SDPA with head_dim=256 (Qwen 3.5 MoE)
+# -------------------------------------------------------------------------
+
+
+class SDPAHeadDim256(nn.Module):
+    """SDPA with head_dim=256, required by Qwen 3.5 MoE full attention layers."""
+
+    def forward(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        return torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, dropout_p=0.0, is_causal=False
+        )
+
+
+MODULE_REGISTRY["sdpa_head_dim_256"] = {
+    "model_class": SDPAHeadDim256,
+    "input_shapes": [(1, 4, 8, 256), (1, 4, 8, 256), (1, 4, 8, 256)],
+    "description": "SDPA with head_dim=256 (Qwen 3.5 MoE)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
+# -------------------------------------------------------------------------
+# Narrow (non-packed reinterpret_tensor materialization)
+# -------------------------------------------------------------------------
+
+
+class NarrowLastDim(nn.Module):
+    """Splits the last dimension into two halves via narrow, producing
+    non-packed strided views that the Metal backend must materialize
+    into contiguous buffers."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        half = x.shape[-1] // 2
+        a = x.narrow(-1, 0, half)
+        b = x.narrow(-1, half, half)
+        return a * 2.0 + b
+
+
+MODULE_REGISTRY["narrow_last_dim"] = {
+    "model_class": NarrowLastDim,
+    "input_shapes": [(2, 4, 16)],
+    "description": "Non-packed reinterpret_tensor views from last-dim split",
+}
+
+
+# -------------------------------------------------------------------------
+# Top-k (MoE expert routing)
+# -------------------------------------------------------------------------
+
+
+class TopK(nn.Module):
+    """Top-k routing used by MoE expert selection."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(64, 8, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        scores = self.linear(x)
+        values, indices = torch.topk(scores, 2, dim=-1)
+        return values
+
+
+MODULE_REGISTRY["topk"] = {
+    "model_class": TopK,
+    "input_shapes": [(4, 64)],
+    "description": "Top-k routing for MoE expert selection",
+}
+
+
+# -------------------------------------------------------------------------
+# Gather QMV (MoE expert-indexed quantized matmul)
+# -------------------------------------------------------------------------
+
+
+class GatherQMV(nn.Module):
+    """Wrapper around metal::gather_qmv for testing the expert-indexed
+    quantized matmul kernel. Expert weights are embedded as buffers;
+    expert indices are generated deterministically inside the model so
+    the test harness only needs to provide a float activation tensor."""
+
+    def __init__(self):
+        super().__init__()
+        from executorch.backends.apple.metal.ops.gather_qmv import _quantize_int4_affine
+
+        E, N, K, gs = 4, 64, 128, 32
+        torch.manual_seed(0)
+        w_float = torch.randn(E, N, K)
+        packed, scales, biases = _quantize_int4_affine(w_float, gs)
+        self.register_buffer("w", packed)
+        self.register_buffer("scales", scales)
+        self.register_buffer("biases", biases)
+        self.group_size = gs
+        self.num_experts = E
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.apple.metal.ops.gather_qmv  # noqa: F401
+
+        P = x.shape[0]
+        indices = torch.arange(P, dtype=torch.int32, device=x.device) % self.num_experts
+        return torch.ops.metal.gather_qmv(
+            x,
+            self.w,
+            self.scales.to(x.dtype),
+            self.biases.to(x.dtype),
+            indices,
+            self.group_size,
+        )
+
+
+MODULE_REGISTRY["gather_qmv"] = {
+    "model_class": GatherQMV,
+    "input_shapes": [(4, 128)],
+    "description": "Expert-indexed quantized matmul for MoE (metal::gather_qmv)",
+    "atol_float32": 5e-2,
+    "rtol_float32": 5e-2,
+    "atol_bfloat16": 1e-1,
+    "rtol_bfloat16": 1e-1,
+}
+
+
+# -------------------------------------------------------------------------
+# Gated Delta Rule (linear attention recurrence)
+# -------------------------------------------------------------------------
+
+
+class GatedDeltaRule(nn.Module):
+    """Wrapper around metal::gated_delta_rule for testing the linear
+    attention recurrence kernel.
+
+    Resets state to zero on each forward call so that the output is
+    deterministic regardless of prior calls (e.g., during export tracing).
+    """
+
+    def __init__(self):
+        super().__init__()
+        B, Hv, Dv, Dk = 1, 4, 64, 64
+        self.register_buffer("state", torch.zeros(B, Hv, Dv, Dk))
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+    ) -> torch.Tensor:
+        import executorch.backends.apple.metal.ops.gated_delta_rule  # noqa: F401
+
+        self.state.zero_()
+        return torch.ops.metal.gated_delta_rule(q, k, v, g, beta, self.state)
+
+
+MODULE_REGISTRY["gated_delta_rule"] = {
+    "model_class": GatedDeltaRule,
+    "input_shapes": [
+        (1, 2, 4, 64),  # q: [B, T, Hk, Dk]
+        (1, 2, 4, 64),  # k
+        (1, 2, 4, 64),  # v: [B, T, Hv, Dv]
+        (1, 2, 4),  # g: [B, T, Hv]
+        (1, 2, 4),  # beta: [B, T, Hv]
+    ],
+    "description": "Gated delta rule recurrence for linear attention (metal::gated_delta_rule)",
+    "atol_float32": 1e-4,
+    "atol_bfloat16": 5e-2,
+}
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -770,21 +1216,25 @@ def quantize_model(model: nn.Module, qlinear: str, qlinear_group_size: int = 32)
 
 
 def export_model_to_metal(
-    model: nn.Module, example_inputs: Tuple[torch.Tensor, ...]
+    model: nn.Module,
+    example_inputs: Tuple[torch.Tensor, ...],
+    codesign_identity: Optional[str] = None,
 ) -> Any:
     """Export model through the Metal backend pipeline."""
     method_name = "forward"
+
+    compile_specs = [MetalBackend.generate_method_name_compile_spec(method_name)]
+    if codesign_identity:
+        compile_specs.append(
+            CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+        )
 
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         aten_dialect = export(model, example_inputs, strict=False)
 
         edge_program = to_edge_transform_and_lower(
             aten_dialect,
-            partitioner=[
-                MetalPartitioner(
-                    [MetalBackend.generate_method_name_compile_spec(method_name)]
-                )
-            ],
+            partitioner=[MetalPartitioner(compile_specs)],
         )
 
     executorch_program = edge_program.to_executorch()
@@ -1136,6 +1586,23 @@ class TestMetalBackendModules(unittest.TestCase):
             # Locally, use a temporary directory that gets cleaned up
             with tempfile.TemporaryDirectory() as tmpdir:
                 run_test_in_directory(Path(tmpdir))
+
+    @unittest.skipIf(SKIP_EXPORT_TESTS, SKIP_REASON)
+    @unittest.skipIf(not IS_MACOS, "codesign requires macOS")
+    def test_codesign_export(self):
+        """Test that export with codesign_identity='-' signs the .so and succeeds."""
+        model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
+        # codesign -f -s - runs during export; check=True means CalledProcessError
+        # is raised (and the test fails) if signing fails.
+        program = export_model_to_metal(model, example_inputs, codesign_identity="-")
+        self.assertGreater(len(program.buffer), 0)
+
+    @unittest.skipIf(SKIP_EXPORT_TESTS, SKIP_REASON)
+    def test_export_without_codesign(self):
+        """Test that export without codesign_identity skips signing."""
+        model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
+        program = export_model_to_metal(model, example_inputs)
+        self.assertGreater(len(program.buffer), 0)
 
 
 # =============================================================================

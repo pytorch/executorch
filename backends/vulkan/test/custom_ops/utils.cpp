@@ -17,6 +17,70 @@ namespace executorch {
 namespace vulkan {
 namespace prototyping {
 
+namespace {
+
+// Upper bound on the auto-sized chained_dispatches factor. Caps the factor
+// when an op is fast enough that target_us / probe_us would otherwise
+// exceed this; past this point, stacking more dispatches doesn't materially
+// improve measurement precision.
+constexpr int kMaxChainedDispatches = 200;
+
+// Floor for probe_us to avoid division-by-zero / a runaway chained_dispatches
+// factor when an op finishes faster than the wall clock can resolve.
+constexpr float kMinProbeTimeUs = 1.0f;
+
+} // namespace
+
+// Benchmark graphs are immutable after input upload, so the operator nodes can
+// be recorded repeatedly. Staging uploads/downloads are encoded once:
+// repeating them would redo host-visible copies on every repetition and bias
+// per-invocation timings.
+RepeatedGraphExecutor::RepeatedGraphExecutor(
+    ComputeGraph& graph,
+    int repetitions,
+    OpNodeRange op_nodes)
+    : graph_(graph) {
+  VK_CHECK_COND(repetitions > 0);
+  VK_CHECK_COND(op_nodes.begin <= op_nodes.end);
+  VK_CHECK_COND(op_nodes.end <= graph_.execute_nodes().size());
+
+  api::Context* const context = graph_.context();
+  context->flush();
+  context->set_cmd(/*reusable=*/true);
+  context->cmd_reset_querypool();
+
+  for (size_t i = 0; i < op_nodes.begin; ++i) {
+    graph_.execute_nodes()[i]->encode(&graph_);
+  }
+  for (int i = 0; i < repetitions; ++i) {
+    for (size_t j = op_nodes.begin; j < op_nodes.end; ++j) {
+      graph_.execute_nodes()[j]->encode(&graph_);
+    }
+  }
+  for (size_t i = op_nodes.end; i < graph_.execute_nodes().size(); ++i) {
+    graph_.execute_nodes()[i]->encode(&graph_);
+  }
+
+  command_ =
+      std::make_unique<vkapi::CommandBuffer>(std::move(context->extract_cmd()));
+}
+
+void RepeatedGraphExecutor::execute() {
+  api::Context* const context = graph_.context();
+  command_->end();
+
+  // Intentionally bypasses Context::submit_cmd_to_gpu(): its submit-count
+  // bookkeeping and threshold-split path only serve submit_compute_job
+  // recording, which benchmarks don't use.
+  vkapi::VulkanFence fence = context->fences().get_fence();
+  context->adapter_ptr()->submit_cmd(
+      context->queue(),
+      command_->get_submit_handle(/*final_use=*/false),
+      fence.get_submit_handle());
+  fence.wait();
+  context->fences().return_fence(fence);
+}
+
 int get_seed() {
   static int seed = 42;
   return seed++;
@@ -74,6 +138,49 @@ void generate_random_int4_data(
 void generate_ones_data(std::vector<float>& data);
 void generate_zeros_data(std::vector<float>& data);
 
+// Convert a float32 value to IEEE 754 half-precision (uint16_t)
+uint16_t float_to_half(float value) {
+  uint32_t float_bits;
+  std::memcpy(&float_bits, &value, sizeof(float));
+  uint32_t sign = (float_bits >> 31) & 0x1;
+  int32_t exponent = static_cast<int32_t>((float_bits >> 23) & 0xFF) - 127;
+  uint32_t mantissa = float_bits & 0x7FFFFF;
+
+  uint16_t half_val;
+  if (exponent > 15) {
+    half_val = static_cast<uint16_t>((sign << 15) | 0x7C00); // Inf
+  } else if (exponent < -14) {
+    half_val = static_cast<uint16_t>(sign << 15); // Zero / subnormal
+  } else {
+    half_val = static_cast<uint16_t>(
+        (sign << 15) | (static_cast<uint32_t>(exponent + 15) << 10) |
+        (mantissa >> 13));
+  }
+  return half_val;
+}
+
+// Convert a IEEE 754 half-precision (uint16_t) value to float32
+float half_to_float(uint16_t half_val) {
+  uint32_t sign = (half_val >> 15) & 0x1;
+  uint32_t exponent = (half_val >> 10) & 0x1F;
+  uint32_t mantissa = half_val & 0x3FF;
+
+  float result;
+  if (exponent == 0) {
+    result = std::ldexp(static_cast<float>(mantissa), -24);
+  } else if (exponent == 31) {
+    result = mantissa ? std::numeric_limits<float>::quiet_NaN()
+                      : std::numeric_limits<float>::infinity();
+  } else {
+    result = std::ldexp(
+        1.0f + static_cast<float>(mantissa) / 1024.0f, exponent - 15);
+  }
+  if (sign) {
+    result = -result;
+  }
+  return result;
+}
+
 // Output and latency printing utilities
 namespace {
 static int print_output_enabled = 0;
@@ -115,10 +222,29 @@ void set_debugging(bool enable_debugging) {
 }
 
 // ValueSpec implementation
-void ValueSpec::generate_tensor_data(int seed) {
+void ValueSpec::ensure_unique_data() const {
+  if (data_.use_count() != 1) {
+    data_ = std::make_shared<TensorData>(*data_);
+  }
+}
+
+void ValueSpec::ensure_unique_reference_data() const {
+  if (reference_data_.use_count() != 1) {
+    reference_data_ = std::make_shared<TensorData>(*reference_data_);
+  }
+}
+
+void ValueSpec::generate_tensor_data(int seed) const {
   if (spec_type != SpecType::Tensor) {
     return;
   }
+
+  ensure_unique_data();
+  auto& float_data = data_->float_data;
+  auto& int32_data = data_->int32_data;
+  auto& half_data = data_->half_data;
+  auto& int8_data = data_->int8_data;
+  auto& uint8_data = data_->uint8_data;
 
   int64_t num_elements = numel();
 
@@ -147,12 +273,18 @@ void ValueSpec::generate_tensor_data(int seed) {
     case vkapi::kHalf: {
       half_data.resize(num_elements);
       if (data_gen_type == DataGenType::RANDOM) {
-        // Generate random float data first, then convert to half
+        // Generate random float data first, then convert to IEEE 754 half.
         std::vector<float> temp_data(num_elements);
         generate_random_float_data(temp_data, -1.0f, 1.0f, seed);
         for (size_t i = 0; i < temp_data.size(); ++i) {
-          // Simple conversion to uint16_t representation of half
-          half_data[i] = static_cast<uint16_t>(temp_data[i] * 32767.0f);
+          half_data[i] = float_to_half(temp_data[i]);
+        }
+      } else if (data_gen_type == DataGenType::RANDOM_SCALES) {
+        // Generate random scales in float, then convert to proper fp16
+        std::vector<float> temp_data(num_elements);
+        generate_random_float_data(temp_data, 0.005f, 0.015f, seed);
+        for (size_t i = 0; i < temp_data.size(); ++i) {
+          half_data[i] = float_to_half(temp_data[i]);
         }
       } else if (data_gen_type == DataGenType::RANDINT) {
         generate_randint_half_data(half_data, -10, 10, seed);
@@ -161,10 +293,7 @@ void ValueSpec::generate_tensor_data(int seed) {
       } else if (data_gen_type == DataGenType::RANDINT4) {
         generate_randint_half_data(half_data, -8, 7, seed);
       } else if (data_gen_type == DataGenType::ONES) {
-        std::fill(
-            half_data.begin(),
-            half_data.end(),
-            static_cast<uint16_t>(32767)); // 1.0 in half
+        std::fill(half_data.begin(), half_data.end(), float_to_half(1.0f));
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(
             half_data.begin(),
@@ -438,81 +567,95 @@ std::string ValueSpec::to_string() const {
 
 // Additional ValueSpec methods
 void ValueSpec::resize_data(size_t new_size) {
+  // Generate first so a deferred tensor keeps its data-gen pattern (resized,
+  // not pinned to zeros by the data_generated_ flag set below).
+  ensure_data_generated();
+  ensure_unique_data();
   switch (dtype) {
     case vkapi::kFloat:
-      float_data.resize(new_size);
+      data_->float_data.resize(new_size);
       break;
     case vkapi::kHalf:
-      half_data.resize(new_size);
+      data_->half_data.resize(new_size);
       break;
     case vkapi::kInt:
-      int32_data.resize(new_size);
+      data_->int32_data.resize(new_size);
       break;
     case vkapi::kChar:
-      int8_data.resize(new_size);
+      data_->int8_data.resize(new_size);
       break;
     case vkapi::kByte:
-      uint8_data.resize(new_size);
+      data_->uint8_data.resize(new_size);
       break;
     default:
-      float_data.resize(new_size);
+      data_->float_data.resize(new_size);
       break;
   }
+  data_generated_ = true;
 }
 
 void* ValueSpec::get_mutable_data_ptr() {
+  ensure_data_generated();
+  ensure_unique_data();
   switch (dtype) {
     case vkapi::kFloat:
-      return float_data.data();
+      return data_->float_data.data();
     case vkapi::kHalf:
-      return half_data.data();
+      return data_->half_data.data();
     case vkapi::kInt:
-      return int32_data.data();
+      return data_->int32_data.data();
     case vkapi::kChar:
-      return int8_data.data();
+      return data_->int8_data.data();
     case vkapi::kByte:
-      return uint8_data.data();
+      return data_->uint8_data.data();
     default:
-      return float_data.data();
+      return data_->float_data.data();
   }
 }
 
 float ValueSpec::get_element(size_t index) const {
+  ensure_data_generated();
   if (index >= static_cast<size_t>(numel())) {
     return 0.0f;
   }
 
   switch (dtype) {
     case vkapi::kFloat:
-      return index < float_data.size() ? float_data[index] : 0.0f;
+      return index < data_->float_data.size() ? data_->float_data[index] : 0.0f;
     case vkapi::kHalf:
-      return index < half_data.size() ? (half_data[index] / 32767.0f) : 0.0f;
+      return index < data_->half_data.size()
+          ? half_to_float(data_->half_data[index])
+          : 0.0f;
     case vkapi::kInt:
-      return index < int32_data.size() ? static_cast<float>(int32_data[index])
-                                       : 0.0f;
+      return index < data_->int32_data.size()
+          ? static_cast<float>(data_->int32_data[index])
+          : 0.0f;
     case vkapi::kChar:
-      return index < int8_data.size() ? static_cast<float>(int8_data[index])
-                                      : 0.0f;
+      return index < data_->int8_data.size()
+          ? static_cast<float>(data_->int8_data[index])
+          : 0.0f;
     case vkapi::kByte:
-      return index < uint8_data.size() ? static_cast<float>(uint8_data[index])
-                                       : 0.0f;
+      return index < data_->uint8_data.size()
+          ? static_cast<float>(data_->uint8_data[index])
+          : 0.0f;
     default:
       return 0.0f;
   }
 }
 
 const void* ValueSpec::get_data_ptr() const {
+  ensure_data_generated();
   switch (dtype) {
     case vkapi::kFloat:
-      return float_data.data();
+      return data_->float_data.data();
     case vkapi::kHalf:
-      return half_data.data();
+      return data_->half_data.data();
     case vkapi::kInt:
-      return int32_data.data();
+      return data_->int32_data.data();
     case vkapi::kChar:
-      return int8_data.data();
+      return data_->int8_data.data();
     case vkapi::kByte:
-      return uint8_data.data();
+      return data_->uint8_data.data();
     default:
       throw std::runtime_error("Unsupported data type for get_data_ptr");
   }
@@ -562,7 +705,7 @@ void generate_randint_half_data(
   std::mt19937 gen(get_seed_or_explicit(explicit_seed));
   std::uniform_int_distribution<int32_t> dis(min_val, max_val);
   for (auto& val : data) {
-    val = static_cast<uint16_t>(std::abs(dis(gen)) % 65536);
+    val = float_to_half(static_cast<float>(dis(gen)));
   }
 }
 
@@ -640,12 +783,26 @@ void generate_zeros_data(std::vector<float>& data) {
 bool ValueSpec::validate_against_reference(
     float abs_tolerance,
     float rel_tolerance) const {
-  // Only validate float tensors as specified in requirements
-  if (dtype != vkapi::kFloat || !is_tensor()) {
-    return true; // Skip validation for non-float or non-tensor types
+  // Only validate float and half tensors. For half tensors, convert the
+  // computed half data to float for comparison against the fp32 reference.
+  if (!is_tensor() || (dtype != vkapi::kFloat && dtype != vkapi::kHalf)) {
+    return true; // Skip validation for non-float/half or non-tensor types
   }
 
-  const auto& computed_data = get_float_data();
+  // For kHalf, materialize the GPU output as float so the same tolerance
+  // machinery can compare against the (always-float) reference data.
+  std::vector<float> half_as_float;
+  if (dtype == vkapi::kHalf) {
+    const auto& half_bits = get_half_data();
+    half_as_float.resize(half_bits.size());
+    for (size_t i = 0; i < half_bits.size(); ++i) {
+      half_as_float[i] = half_to_float(half_bits[i]);
+    }
+  }
+  // Materialize computed data as float32 for comparison. The dtype is
+  // guaranteed to be float or half by the early-out above.
+  const std::vector<float>& computed_data =
+      (dtype == vkapi::kHalf) ? half_as_float : get_float_data();
   const auto& reference_data = get_ref_float_data();
 
   // Skip validation if no reference data is available
@@ -663,6 +820,8 @@ bool ValueSpec::validate_against_reference(
   }
 
   // Element-wise comparison with both absolute and relative tolerance
+  size_t num_mismatched = 0;
+  size_t first_mismatch = 0;
   for (size_t i = 0; i < computed_data.size(); ++i) {
     float diff = std::abs(computed_data[i] - reference_data[i]);
     float abs_ref = std::abs(reference_data[i]);
@@ -672,14 +831,50 @@ bool ValueSpec::validate_against_reference(
     bool rel_tolerance_ok = diff <= rel_tolerance * abs_ref;
 
     if (!abs_tolerance_ok && !rel_tolerance_ok) {
-      std::cout << "Mismatch at element " << i
-                << ": computed=" << computed_data[i]
-                << ", reference=" << reference_data[i] << ", diff=" << diff
-                << ", abs_tolerance=" << abs_tolerance
-                << ", rel_tolerance=" << rel_tolerance
-                << ", rel_threshold=" << (rel_tolerance * abs_ref) << std::endl;
-      return false;
+      if (num_mismatched == 0) {
+        first_mismatch = i;
+        std::cout << "Mismatch at element " << i
+                  << ": computed=" << computed_data[i]
+                  << ", reference=" << reference_data[i] << ", diff=" << diff
+                  << ", abs_tolerance=" << abs_tolerance
+                  << ", rel_tolerance=" << rel_tolerance
+                  << ", rel_threshold=" << (rel_tolerance * abs_ref)
+                  << std::endl;
+      }
+      num_mismatched++;
     }
+  }
+  if (num_mismatched > 0) {
+    std::cout << "  total mismatched: " << num_mismatched << " / "
+              << computed_data.size() << " (first at " << first_mismatch << ")"
+              << std::endl;
+    // For 2D outputs, print a per-16x16-tile mismatch-count map to expose
+    // the spatial structure of the failure (e.g. zeroed MMA subtiles).
+    if (sizes.size() == 2) {
+      const int64_t Mr = sizes[0];
+      const int64_t Nc = sizes[1];
+      std::cout << "  16x16-tile mismatch counts (rows=M/16, cols=N/16):"
+                << std::endl;
+      for (int64_t ti = 0; ti < (Mr + 15) / 16; ++ti) {
+        std::cout << "    ";
+        for (int64_t tj = 0; tj < (Nc + 15) / 16; ++tj) {
+          int count = 0;
+          for (int64_t r = ti * 16; r < std::min(Mr, (ti + 1) * 16); ++r) {
+            for (int64_t c = tj * 16; c < std::min(Nc, (tj + 1) * 16); ++c) {
+              float diff = std::abs(
+                  computed_data[r * Nc + c] - reference_data[r * Nc + c]);
+              float abs_ref = std::abs(reference_data[r * Nc + c]);
+              if (diff > abs_tolerance && diff > rel_tolerance * abs_ref) {
+                count++;
+              }
+            }
+          }
+          std::cout << std::setw(4) << count;
+        }
+        std::cout << std::endl;
+      }
+    }
+    return false;
   }
 
   if (debugging()) {
@@ -689,7 +884,7 @@ bool ValueSpec::validate_against_reference(
 }
 
 // Ensure data is generated for this ValueSpec
-void ValueSpec::ensure_data_generated(int seed) {
+void ValueSpec::ensure_data_generated(int seed) const {
   if (data_generated_) {
     return;
   }
@@ -697,18 +892,22 @@ void ValueSpec::ensure_data_generated(int seed) {
   data_generated_ = true;
 }
 
-// Copy input data from another ValueSpec
-void ValueSpec::copy_data_from(const ValueSpec& other) {
+void ValueSpec::share_data_from(const ValueSpec& other) {
   if (!is_tensor() || !other.is_tensor()) {
     return;
   }
-  // Copy raw data based on dtype
-  float_data = other.float_data;
-  int32_data = other.int32_data;
-  half_data = other.half_data;
-  int8_data = other.int8_data;
-  uint8_data = other.uint8_data;
-  data_generated_ = other.data_generated_;
+  // Materialize the source first: sharing an ungenerated payload would let a
+  // later access materialize each spec independently under different seeds.
+  other.ensure_data_generated();
+  data_ = other.data_;
+  data_generated_ = true;
+}
+
+void ValueSpec::share_reference_from(const ValueSpec& other) {
+  if (!is_tensor() || !other.is_tensor()) {
+    return;
+  }
+  reference_data_ = other.reference_data_;
 }
 
 // ReferenceKey implementation
@@ -842,8 +1041,8 @@ void BenchmarkResult::add_iter_timing(float time_us) {
 void BenchmarkResult::add_shader_timing(
     const std::string& shader_name,
     float time_us,
-    const uint32_t global_wg[3],
-    const uint32_t local_wg[3]) {
+    const uint32_t gwg[3],
+    const uint32_t lwg[3]) {
   // Find existing shader timing or create new one
   for (auto& st : shader_timings_) {
     if (st.shader_name == shader_name) {
@@ -856,12 +1055,12 @@ void BenchmarkResult::add_shader_timing(
   ShaderTiming new_timing;
   new_timing.shader_name = shader_name;
   new_timing.iter_timings_us.push_back(time_us);
-  new_timing.global_wg_size[0] = global_wg[0];
-  new_timing.global_wg_size[1] = global_wg[1];
-  new_timing.global_wg_size[2] = global_wg[2];
-  new_timing.local_wg_size[0] = local_wg[0];
-  new_timing.local_wg_size[1] = local_wg[1];
-  new_timing.local_wg_size[2] = local_wg[2];
+  new_timing.gwg[0] = gwg[0];
+  new_timing.gwg[1] = gwg[1];
+  new_timing.gwg[2] = gwg[2];
+  new_timing.lwg[0] = lwg[0];
+  new_timing.lwg[1] = lwg[1];
+  new_timing.lwg[2] = lwg[2];
   shader_timings_.push_back(std::move(new_timing));
 }
 
@@ -956,12 +1155,11 @@ void BenchmarkResult::print_summary(
       const auto& st = shader_timings_[0];
       std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
                 << truncate_shader_name(st.shader_name) << " " << std::left
-                << std::setw(GLOBAL_WG_WIDTH)
-                << format_wg_size(st.global_wg_size) << std::left
-                << std::setw(LOCAL_WG_WIDTH) << format_wg_size(st.local_wg_size)
-                << std::left << std::setw(KERNEL_NAME_WIDTH)
-                << get_kernel_name() << std::right << " "
-                << std::setw(SIZE_INFO_WIDTH) << size_info
+                << std::setw(GLOBAL_WG_WIDTH) << format_wg_size(st.gwg)
+                << std::left << std::setw(LOCAL_WG_WIDTH)
+                << format_wg_size(st.lwg) << std::left
+                << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name()
+                << std::right << " " << std::setw(SIZE_INFO_WIDTH) << size_info
                 << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
                 << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
                 << std::fixed << std::setprecision(3) << total_gflops
@@ -976,10 +1174,9 @@ void BenchmarkResult::print_summary(
         // Shader lines don't show test case info
         std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
                   << truncate_shader_name(st.shader_name) << " " << std::left
-                  << std::setw(GLOBAL_WG_WIDTH)
-                  << format_wg_size(st.global_wg_size) << std::left
-                  << std::setw(LOCAL_WG_WIDTH)
-                  << format_wg_size(st.local_wg_size) << std::left
+                  << std::setw(GLOBAL_WG_WIDTH) << format_wg_size(st.gwg)
+                  << std::left << std::setw(LOCAL_WG_WIDTH)
+                  << format_wg_size(st.lwg) << std::left
                   << std::setw(KERNEL_NAME_WIDTH) << "" << std::right << " "
                   << std::setw(SIZE_INFO_WIDTH) << "" << std::setw(TIMING_WIDTH)
                   << std::fixed << std::setprecision(3) << shader_avg_time
@@ -1286,10 +1483,23 @@ int64_t default_flop_calculator(const TestCase& test_case) {
   return total_elements;
 }
 
-ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
+BenchmarkGraph setup_compute_graph(
+    TestCase& test_case,
+    std::string op_name,
+    int op_invocations_per_execute) {
   GraphConfig config;
   config.enable_querypool = true;
-  ComputeGraph graph(config);
+  // Pool sizing takes max(execute, prepack) * factor, so scaling the factor
+  // also over-reserves the prepack side (encoded once). Accepted: precise
+  // execute-only sizing would need runtime changes.
+  config.descriptor_pool_safety_factor *=
+      std::max(1, op_invocations_per_execute);
+  // Default-on (opt-out via TestCase::set_force_resize(false)): force every
+  // DynamicDispatchNode to run its resize function when execute_test_case
+  // runs propagate_resize() after prepack, exercising the op's resize formula
+  // even when input shapes are unchanged.
+  config.force_resize = test_case.get_force_resize();
+  auto graph = std::make_unique<ComputeGraph>(config);
 
   std::vector<ValueRef> input_values;
 
@@ -1298,17 +1508,17 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
     const ValueSpec& input_spec = test_case.inputs()[i];
 
     if (input_spec.is_none()) {
-      input_values.push_back(graph.add_none());
+      input_values.push_back(graph->add_none());
     } else if (input_spec.is_float()) {
       ValueRef input_value =
-          graph.add_scalar(static_cast<double>(input_spec.get_float_value()));
+          graph->add_scalar(static_cast<double>(input_spec.get_float_value()));
       input_values.push_back(input_value);
     } else if (input_spec.is_int()) {
       ValueRef input_value =
-          graph.add_scalar(static_cast<int64_t>(input_spec.get_int_value()));
+          graph->add_scalar(static_cast<int64_t>(input_spec.get_int_value()));
       input_values.push_back(input_value);
     } else if (input_spec.is_bool()) {
-      ValueRef input_value = graph.add_scalar(input_spec.get_bool_value());
+      ValueRef input_value = graph->add_scalar(input_spec.get_bool_value());
       input_values.push_back(input_value);
     } else if (input_spec.is_int_list()) {
       // Convert int32_t list to int64_t list for ComputeGraph
@@ -1318,20 +1528,20 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
       for (int32_t val : int32_list) {
         int64_list.push_back(static_cast<int64_t>(val));
       }
-      ValueRef input_value = graph.add_scalar_list(std::move(int64_list));
+      ValueRef input_value = graph->add_scalar_list(std::move(int64_list));
       input_values.push_back(input_value);
     } else if (input_spec.is_string()) {
       std::string str_copy = input_spec.get_string_value();
-      ValueRef input_value = graph.add_string(std::move(str_copy));
+      ValueRef input_value = graph->add_string(std::move(str_copy));
       input_values.push_back(input_value);
     } else if (input_spec.is_constant()) {
-      ValueRef input_value = graph.add_tensorref(
+      ValueRef input_value = graph->add_tensorref(
           input_spec.get_tensor_sizes(),
           input_spec.dtype,
           input_spec.get_data_ptr());
       input_values.push_back(input_value);
     } else {
-      IOValueRef input_io = graph.add_input_tensor(
+      IOValueRef input_io = graph->add_input_tensor(
           input_spec.get_tensor_sizes(),
           input_spec.dtype,
           input_spec.storage_type,
@@ -1351,7 +1561,7 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
     }
 
     // Create output tensor
-    ValueRef output_value = graph.add_tensor(
+    ValueRef output_value = graph->add_tensor(
         output_spec.get_tensor_sizes(),
         output_spec.dtype,
         output_spec.storage_type,
@@ -1367,17 +1577,25 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
   std::vector<ValueRef> op_args = input_values;
   op_args.insert(op_args.end(), output_values.begin(), output_values.end());
 
-  opFn(graph, op_args);
+  // Nodes added before the op are staging uploads; nodes added after are
+  // staging downloads. Only the op's own nodes are repeated by benchmarks.
+  const size_t op_begin = graph->execute_nodes().size();
+  opFn(*graph, op_args);
+  const size_t op_end = graph->execute_nodes().size();
 
   for (size_t i = 0; i < output_values.size(); ++i) {
-    graph.set_output_value(output_values[i]);
+    graph->set_output_value(output_values[i]);
   }
-  return graph;
+  return {std::move(graph), {op_begin, op_end}};
 }
 
 // Test execution utilities
-BenchmarkResult
-execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
+BenchmarkResult execute_test_case(
+    TestCase& test_case,
+    int warmup_runs,
+    int benchmark_runs,
+    int chained_dispatches,
+    bool write_outputs) {
   BenchmarkResult result(
       test_case.name().empty() ? "unnamed_test_case" : test_case.name());
 
@@ -1386,24 +1604,34 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
     api::context()->initialize_querypool();
   }
 
-  // Create the compute graph for this test case using setup_compute_graph
-  ComputeGraph graph =
-      setup_compute_graph(test_case, test_case.operator_name());
+  // Build the operator once. Benchmark repetition is encoded separately so
+  // persistent graph allocations are not duplicated.
+  BenchmarkGraph benchmark = setup_compute_graph(
+      test_case, test_case.operator_name(), chained_dispatches);
+  ComputeGraph& graph = *benchmark.graph;
 
   // Prepare the graph
   graph.prepare();
   graph.prepack();
 
+  // Run resize functions once so force_resize exercises resize formulas even
+  // though the record/replay path below never calls propagate_resize().
+  graph.propagate_resize();
+
   // Copy input data into the graph's staging buffers
+  size_t graph_input_idx = 0;
   for (size_t i = 0; i < test_case.num_inputs(); ++i) {
     const ValueSpec& input_spec = test_case.inputs()[i];
-    if (input_spec.is_tensor() && i < graph.inputs().size()) {
-      // Skip copying data for constant tensors
-      if (input_spec.is_constant()) {
-        continue;
-      }
 
-      const auto& input_ref = graph.inputs()[i];
+    // Only non-constant tensor inputs correspond to graph.inputs() entries
+    bool is_graph_input = input_spec.is_tensor() && !input_spec.is_constant() &&
+        !input_spec.is_none();
+    if (!is_graph_input) {
+      continue;
+    }
+
+    if (graph_input_idx < graph.inputs().size()) {
+      const auto& input_ref = graph.inputs()[graph_input_idx];
 
       // Get the appropriate data based on dtype
       const void* data_ptr = nullptr;
@@ -1433,26 +1661,35 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
       graph.maybe_cast_and_copy_into_staging(
           input_ref.staging, data_ptr, data_numel, input_spec.dtype);
     }
+    ++graph_input_idx;
   }
+
+  RepeatedGraphExecutor graph_executor(
+      graph, chained_dispatches, benchmark.op_nodes);
 
   // Warmup runs
   for (int run = 0; run < warmup_runs; ++run) {
-    graph.execute();
+    graph_executor.execute();
   }
 
   // Benchmark runs - collect individual iteration timings
   float total_cpu_time_us = 0.0f;
   float total_gpu_time_us = 0.0f;
 
+  const float chained_dispatches_f = static_cast<float>(chained_dispatches);
+
   for (int run = 0; run < benchmark_runs; ++run) {
     // Measure CPU time for each execute() call
     auto cpu_start = std::chrono::high_resolution_clock::now();
-    graph.execute();
+    graph_executor.execute();
     auto cpu_end = std::chrono::high_resolution_clock::now();
 
     auto cpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(
         cpu_end - cpu_start);
-    float cpu_time_us = static_cast<float>(cpu_duration.count());
+    // Each execute() ran chained_dispatches op invocations; report
+    // per-invocation time.
+    float cpu_time_us =
+        static_cast<float>(cpu_duration.count()) / chained_dispatches_f;
     total_cpu_time_us += cpu_time_us;
 
     // Collect per-shader GPU timing - get raw shader results to preserve
@@ -1479,14 +1716,20 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
             shader_result.end_time_ns - shader_result.start_time_ns;
         float duration_us = static_cast<float>(duration_ns) / 1000.0f;
         gpu_time_us += duration_us;
-        // Store per-shader timing with work group sizes
+        // Per-shader sample is already one querypool entry per dispatch (at
+        // chained_dispatches>1 we get that many entries per shader), so do NOT
+        // divide here — the aggregator (get_avg_time_us) averages across them
+        // naturally.
         result.add_shader_timing(
             shader_result.kernel_name,
             duration_us,
-            shader_result.metadata.global_workgroup_size,
-            shader_result.metadata.local_workgroup_size);
+            shader_result.metadata.gwg,
+            shader_result.metadata.lwg);
       }
     }
+    // gpu_time_us aggregates chained_dispatches worth of shader runs; divide
+    // it down to per-invocation time.
+    gpu_time_us /= chained_dispatches_f;
     total_gpu_time_us += gpu_time_us;
 
     // Add the appropriate timing based on the flag
@@ -1511,30 +1754,34 @@ execute_test_case(TestCase& test_case, int warmup_runs, int benchmark_runs) {
               << " timing for result" << std::endl;
   }
 
-  // Copy output data from the graph's staging buffers
-  for (size_t i = 0; i < test_case.num_outputs(); ++i) {
-    ValueSpec& output_spec = test_case.outputs()[i];
+  // Copy output data from the graph's staging buffers. The benchmarking path
+  // skips this work since it doesn't need correctness data — the probe pass
+  // has already populated test_case.outputs() at chained_dispatches=1.
+  if (write_outputs) {
+    for (size_t i = 0; i < test_case.num_outputs(); ++i) {
+      ValueSpec& output_spec = test_case.outputs()[i];
 
-    if (output_spec.is_tensor() && i < graph.outputs().size()) {
-      const auto& output_ref = graph.outputs()[i];
+      if (output_spec.is_tensor() && i < graph.outputs().size()) {
+        const auto& output_ref = graph.outputs()[i];
 
-      // Ensure output data vector is properly sized
-      size_t data_numel = output_spec.numel();
-      output_spec.resize_data(data_numel);
+        // Ensure output data vector is properly sized
+        size_t data_numel = output_spec.numel();
+        output_spec.resize_data(data_numel);
 
-      // Get mutable data pointer for the output
-      void* data_ptr = output_spec.get_mutable_data_ptr();
+        // Get mutable data pointer for the output
+        void* data_ptr = output_spec.get_mutable_data_ptr();
 
-      if (data_ptr != nullptr) {
-        // Copy data from staging buffer to output spec
-        graph.maybe_cast_and_copy_from_staging(
-            output_ref.staging, data_ptr, data_numel, output_spec.dtype);
-      }
+        if (data_ptr != nullptr) {
+          // Copy data from staging buffer to output spec
+          graph.maybe_cast_and_copy_from_staging(
+              output_ref.staging, data_ptr, data_numel, output_spec.dtype);
+        }
 
-      // Print output tensor data if output printing is enabled
-      if (print_output()) {
-        std::string output_name = "Output[" + std::to_string(i) + "]";
-        print_valuespec_data(output_spec, output_name);
+        // Print output tensor data if output printing is enabled
+        if (print_output()) {
+          std::string output_name = "Output[" + std::to_string(i) + "]";
+          print_valuespec_data(output_spec, output_name);
+        }
       }
     }
   }
@@ -1595,17 +1842,11 @@ TestResult execute_test_cases(
 
     // Compute reference once for prototype
     bool ref_computed = false;
-    std::vector<std::vector<float>> ref_data;
     if (reference_compute_func) {
       try {
         reference_compute_func(prototype);
         ref_computed = true;
-
-        // Cache the reference output for this group
-        for (const auto& output : prototype.outputs()) {
-          ref_data.push_back(output.get_ref_float_data());
-        }
-      } catch (const std::invalid_argument& _) {
+      } catch (const std::invalid_argument&) {
         // Reference computation skipped for this group
       }
     }
@@ -1623,15 +1864,21 @@ TestResult execute_test_cases(
         const auto& src = prototype.inputs()[j];
         if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
             dest.dtype == src.dtype) {
-          dest.copy_data_from(src);
+          dest.share_data_from(src);
         }
       }
 
       // Copy reference output data if available
       if (ref_computed) {
-        for (size_t j = 0; j < tc.outputs().size() && j < ref_data.size();
+        for (size_t j = 0;
+             j < tc.outputs().size() && j < prototype.outputs().size();
              ++j) {
-          tc.outputs()[j].get_ref_float_data() = ref_data[j];
+          const auto& src = prototype.outputs()[j];
+          auto& dest = tc.outputs()[j];
+          if (dest.is_tensor() && src.is_tensor() && dest.sizes == src.sizes &&
+              dest.dtype == src.dtype) {
+            dest.share_reference_from(src);
+          }
         }
       }
     }
@@ -1645,7 +1892,57 @@ TestResult execute_test_cases(
       BenchmarkResult result;
       bool shader_not_supported = false;
       try {
-        result = execute_test_case(test_case, warmup_runs, benchmark_runs);
+        // Always run a probe pass at chained_dispatches=1 with
+        // write_outputs=true. This populates test_case.outputs() for the
+        // downstream correctness check with a clean single-dispatch result,
+        // and also gives us probe_us for adaptive sizing of the measurement
+        // run's chained_dispatches.
+        //
+        // probe_then_scale (Google Benchmark style): size chained_dispatches
+        // so each measurement execute() takes ~target_us. Tiny ops get a
+        // large factor (driving GPU governor escalation); heavy ops get a
+        // small factor (bounded wall time). Caveat: on Adreno 740 the probe
+        // runs at the DCVS-pinned clock (~220 MHz), so probe_us is inflated
+        // and the computed factor comes out under-sized for boost clock — but
+        // the default target is generous enough that an under-sized factor
+        // still drives sustained activity.
+        BenchmarkResult probe_result = execute_test_case(
+            test_case,
+            /*warmup_runs=*/1,
+            /*benchmark_runs=*/1,
+            /*chained_dispatches=*/1,
+            /*write_outputs=*/true);
+        float probe_us = probe_result.get_avg_time_us();
+        if (probe_us < kMinProbeTimeUs) {
+          probe_us = kMinProbeTimeUs;
+        }
+
+        int chained_dispatches;
+        const int manual_n = test_case.get_op_invocations_per_execute();
+        if (manual_n > 0) {
+          chained_dispatches = manual_n;
+        } else {
+          const int target_us = test_case.get_target_execute_time_us();
+          chained_dispatches =
+              std::max(1, static_cast<int>(target_us / probe_us));
+          chained_dispatches =
+              std::min(chained_dispatches, kMaxChainedDispatches);
+        }
+        if (debugging()) {
+          std::cout << "[probe] " << test_case.name()
+                    << ": probe_us=" << probe_us
+                    << ", chained_dispatches=" << chained_dispatches
+                    << std::endl;
+        }
+
+        // Measurement pass: chained_dispatches stacking, skip output copy
+        // since the probe already wrote the correctness data.
+        result = execute_test_case(
+            test_case,
+            warmup_runs,
+            benchmark_runs,
+            chained_dispatches,
+            /*write_outputs=*/false);
         result.set_operator_name(test_case.operator_name());
       } catch (const vkcompute::vkapi::ShaderNotSupportedError&) {
         result = BenchmarkResult(
@@ -1680,8 +1977,6 @@ TestResult execute_test_cases(
                       << result.get_kernel_name() << std::endl;
             print_valuespec_data(output_spec, "vulkan output");
             print_valuespec_data(output_spec, "ref output", true);
-
-            throw std::runtime_error("Correctness validation failed");
           }
         }
 
@@ -1728,6 +2023,8 @@ TestResult execute_test_cases(
 
       // Add result to collection
       results.add_result(std::move(result));
+
+      test_case.clear();
     }
   }
 
@@ -1737,6 +2034,14 @@ TestResult execute_test_cases(
 
   print_separator();
   std::cout << "Completed " << results.size() << " test cases" << std::endl;
+
+  // Hard-fail if any correctness check failed. The per-case loop above keeps
+  // running after a mismatch (so the full pass/fail matrix and per-16x16-tile
+  // mismatch maps are printed for debugging) rather than aborting on the first
+  // failure; throwing here preserves the original abort-on-mismatch behavior.
+  if (any_correctness_failed) {
+    throw std::runtime_error("Correctness validation failed");
+  }
 
   return results;
 }
@@ -1819,10 +2124,19 @@ void print_valuespec_data(
       break;
     }
     case vkapi::kHalf: {
+      if (print_ref_data) {
+        const auto& ref = spec.get_ref_float_data();
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << ref[i];
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
+        break;
+      }
       const auto& data = spec.get_half_data();
       for (size_t i = 0; i < print_count; ++i) {
-        // Convert uint16_t back to float for display
-        float value = data[i] / 32767.0f;
+        // Convert IEEE 754 half-precision bit pattern back to float.
+        float value = half_to_float(data[i]);
         std::cout << value;
         if (i < print_count - 1)
           std::cout << ", ";
@@ -1945,11 +2259,9 @@ ValueRef quantized_weights_canvas(
     const ValueRef weight_ref) {
   const auto original_sizes = graph.sizes_of(weight_ref);
 
-  // Get the 2 highest values of original_sizes
   std::vector<int64_t> sorted_sizes = original_sizes;
   std::sort(sorted_sizes.begin(), sorted_sizes.end(), std::greater<int64_t>());
   int64_t largest1 = sorted_sizes.size() > 0 ? sorted_sizes[0] : 0;
-  int64_t largest2 = sorted_sizes.size() > 1 ? sorted_sizes[1] : 0;
 
   std::vector<int64_t> final_sizes = {1, largest1, largest1};
 
@@ -1975,19 +2287,14 @@ ValueRef quantized_weights_canvas(
   ValueRef packed_weight = graph.add_tensor(
       final_sizes, vkapi::kInt, utils::kTexture3D, utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size{
-      utils::div_up(utils::safe_downcast<uint32_t>(largest1), uint32_t(4)),
-      utils::safe_downcast<uint32_t>(largest2),
-      utils::safe_downcast<uint32_t>(std::min(largest1, int64_t(2048)))};
-
   std::string kernel_name = "packed_int32_canvas";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(packed_weight),
-      graph.create_local_wg_size(packed_weight),
+      graph.create_gwg(packed_weight),
+      graph.create_lwg(packed_weight),
       weight_ref,
       packed_weight,
       // UBOs
@@ -2003,11 +2310,9 @@ ValueRef quantized_weights_canvas(
 ValueRef float_tensor_canvas(ComputeGraph& graph, const ValueRef weight_ref) {
   const auto original_sizes = graph.sizes_of(weight_ref);
 
-  // Get the 2 highest values of original_sizes
   std::vector<int64_t> sorted_sizes = original_sizes;
   std::sort(sorted_sizes.begin(), sorted_sizes.end(), std::greater<int64_t>());
   int64_t largest1 = sorted_sizes.size() > 0 ? sorted_sizes[0] : 0;
-  int64_t largest2 = sorted_sizes.size() > 1 ? sorted_sizes[1] : 0;
 
   std::vector<int64_t> final_sizes = {1, largest1, largest1};
 
@@ -2033,16 +2338,11 @@ ValueRef float_tensor_canvas(ComputeGraph& graph, const ValueRef weight_ref) {
   ValueRef packed_weight = graph.add_tensor(
       final_sizes, vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size{
-      utils::div_up(utils::safe_downcast<uint32_t>(largest1), uint32_t(4)),
-      utils::safe_downcast<uint32_t>(largest2),
-      utils::safe_downcast<uint32_t>(std::min(largest1, int64_t(2048)))};
-
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR("float_canvas"),
-      graph.create_global_wg_size(packed_weight),
-      graph.create_local_wg_size(packed_weight),
+      graph.create_gwg(packed_weight),
+      graph.create_lwg(packed_weight),
       weight_ref,
       packed_weight,
       // UBOs

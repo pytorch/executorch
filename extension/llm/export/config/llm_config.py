@@ -19,10 +19,11 @@ for more information.
 """
 
 import argparse
+import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, Dict, List, Optional
+from typing import ClassVar, List, Optional
 
 
 ################################################################################
@@ -44,11 +45,16 @@ class ModelType(str, Enum):
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
+    qwen3_5_0_8b = "qwen3_5_0_8b"
+    qwen3_5_2b = "qwen3_5_2b"
+    qwen3_5_4b = "qwen3_5_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
+    smollm2_360m = "smollm2_360m"
     lfm2_350m = "lfm2_350m"
     lfm2_700m = "lfm2_700m"
     lfm2_1_2b = "lfm2_1_2b"
+    lfm2_5_350m = "lfm2_5_350m"
     lfm2_5_1_2b = "lfm2_5_1_2b"
 
 
@@ -92,6 +98,9 @@ class LoraConfig:
     lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
+    # Per-adapter quantization/precision: "int8" | "fp16" | "fp32" | None.
+    # Overrides the global --lora_precision flag for this adapter only.
+    adapter_quant: Optional[str] = None
 
 
 @dataclass
@@ -175,12 +184,13 @@ class ModelConfig:
             dim to take vectorized path in optimized kernels.
         use_attention_sink: Whether to use attention sink to support multi-round
             conversation. Structured as:
-            '<sink_size>,<window_size>,<batch_eviction_size>',
-            e.g., '4,2044,1024'.
+            '<sink_size>,<window_size>',
+            e.g., '4,2044'.
         output_prune_map: Path to the output pruning token mapping file (token_map.json).
         input_prune_map: Path to the output pruning token mapping file (token_map.json).
         use_kv_cache: Whether to use KV cache.
         quantize_kv_cache: Whether to perform int8 per token quantization on the KV cache.
+        static_quantize_kv_cache: Whether to use static-qparams int8 KV cache storage.
         local_global_attention: List of integers specifying local and global attention pattern.
             e.g., [0, 16, 0, 16] to specify that every other layer is sliding window of 16.
             [0, 16, 32] pattern specifies 2nd and 3rd layers have sliding windows of 16 and 32.
@@ -197,7 +207,12 @@ class ModelConfig:
     input_prune_map: Optional[str] = None
     use_kv_cache: bool = False
     quantize_kv_cache: bool = False
+    static_quantize_kv_cache: bool = False
+    static_quantize_kv_cache_scale: float = 1.0 / 127.0
     local_global_attention: Optional[List[int]] = None
+    # Replace eager MOEFeedForward modules with the
+    # `llama::quantized_moe_ffn` portable-runtime custom op.
+    use_moe_quantized_op: bool = False
 
     def __post_init__(self):
         self._validate_attention_sink()
@@ -205,6 +220,39 @@ class ModelConfig:
         if self.quantize_kv_cache and not self.use_kv_cache:
             raise ValueError(
                 "Cannot quantize the KV cache (quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.static_quantize_kv_cache and not self.use_kv_cache:
+            raise ValueError(
+                "Cannot statically quantize the KV cache (static_quantize_kv_cache) without enabling the KV cache (use_kv_cache)"
+            )
+
+        if self.quantize_kv_cache and self.static_quantize_kv_cache:
+            raise ValueError(
+                "Cannot enable both dynamic quantized KV cache (quantize_kv_cache) and static quantized KV cache (static_quantize_kv_cache)"
+            )
+
+        if self.static_quantize_kv_cache and self.enable_dynamic_shape:
+            raise ValueError(
+                "static_quantize_kv_cache requires static export shapes (enable_dynamic_shape=False)"
+            )
+
+        if self.static_quantize_kv_cache and self.local_global_attention:
+            raise ValueError(
+                "static_quantize_kv_cache does not support local_global_attention"
+            )
+
+        if self.static_quantize_kv_cache and self.use_attention_sink:
+            raise ValueError(
+                "static_quantize_kv_cache does not support use_attention_sink"
+            )
+
+        if (
+            not math.isfinite(self.static_quantize_kv_cache_scale)
+            or self.static_quantize_kv_cache_scale <= 0
+        ):
+            raise ValueError(
+                "static_quantize_kv_cache_scale must be finite and positive"
             )
 
         if self.local_global_attention and not self.use_kv_cache:
@@ -215,9 +263,9 @@ class ModelConfig:
     def _validate_attention_sink(self):
         if self.use_attention_sink:
             attention_sink_params = self.use_attention_sink.split(",")
-            if len(attention_sink_params) != 3:
+            if len(attention_sink_params) != 2:
                 raise ValueError(
-                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>,<batch_eviction_size>'"
+                    "The value of use_attention_sink must be structured like '<sink_size>,<window_size>'"
                 )
 
 
@@ -290,33 +338,57 @@ class DebugConfig:
 
 
 ################################################################################
-############################## MultimethodLoraConfig ###########################
+############################## MultimethodConfig ###########################
 ################################################################################
 
 
 @dataclass
-class MultimethodLoraConfig:
-    """Configuration for exporting multiple methods to a single .pte file.
-
-    Maps method names to optional LoRA configurations. A None value means
-    the method uses base model weights.
+class MethodConfig:
+    """Configuration for exporting a single method to a .pte file.
+    By default, all other fields fall back to the default configs in
+    the yaml file.
 
     Attributes:
-        methods: Dict mapping method names to optional LoRA configs.
-            Empty dict disables multimethod_lora export.
-
-    Example:
-        MultimethodLoraConfig(methods={
-            "forward": None,  # base model
-            "lora_forward": lora_config,  # LoRA variant
-        })
+        method_name: Name of the method to export.
+        lora_config: Optional LoRA configuration.
+        export_seq_len: Sequence length of example inputs used during
+            torch.export tracing. Controls which graph path is captured, e.g.
+            prefill vs decode, or for YOCO, where all layers run for decode
+            but not prefill. When unset, uses the model's default input length.
     """
 
-    methods: Dict[str, Optional[LoraConfig]] = field(default_factory=dict)
+    method_name: str
+    lora_config: Optional[LoraConfig] = None
+    export_seq_len: Optional[int] = None
+
+
+@dataclass
+class MultimethodConfig:
+    """Configuration for exporting multiple methods to a single .pte file.
+
+    Holds a list of method configs, as well as global options that apply
+    across all methods.
+
+    Attributes:
+        methods: List of MethodConfig objects with method name and config
+            for each method.
+        share_mutable_buffers: Whether to share mutable buffers across methods.
+            If True, sets all mutable buffers to mem_id=2. Mutable buffers with
+            the same FQN (fully qualified name) will have the same offset.
+
+    Example:
+        MultimethodConfig(methods=[
+            MethodConfig("forward", lora_config=None),  # base model
+            MethodConfig("lora_forward", lora_config=lora_config),  # LoRA variant
+        ])
+    """
+
+    methods: List[MethodConfig] = field(default_factory=list)
+    share_mutable_buffers: bool = False
 
     @property
     def enabled(self) -> bool:
-        """Returns True if multimethod_lora export is configured."""
+        """Returns True if multimethod export is configured."""
         return len(self.methods) > 0
 
 
@@ -348,11 +420,20 @@ class Pt2eQuantize(str, Enum):
     coreml_baseline_8a_c4w = "coreml_baseline_8a_c4w"
     vulkan_8w = "vulkan_8w"
     tosa_8a8w = "tosa_8a8w"
+    ethosu_8a8w = "ethosu_8a8w"
+    ethosu_16a8w = "ethosu_16a8w"
+    vgf_8a8w = "vgf_8a8w"
+    vgf_16a8w = "vgf_16a8w"
 
 
 class SpinQuant(str, Enum):
     cuda = "cuda"
     native = "native"
+
+
+class QuantizeScope(str, Enum):
+    full = "full"
+    linear = "linear"
 
 
 @dataclass
@@ -372,6 +453,9 @@ class QuantizationConfig:
         use_spin_quant: Which spin quant mode to use. If unspecified, don't use
             spin quant.
         use_qat: Whether the checkpoint is quantization-awarely trained.
+        quantize_scope: Scope for Arm PT2E quantization. "full" quantizes the
+            full supported graph, while "linear" limits quantization to
+            torch.nn.Linear modules.
         calibration_tasks: Tasks for GPTQ calibration from lm_eval.
         calibration_limit: Number of samples used for calibration from lm_eval.
         calibration_seq_length: Sequence length for GPTQ calibration from lm_eval.
@@ -396,10 +480,12 @@ class QuantizationConfig:
     group_size: Optional[int] = None
     use_spin_quant: Optional[SpinQuant] = None
     use_qat: bool = False
+    quantize_scope: QuantizeScope = QuantizeScope.full
     calibration_tasks: Optional[List[str]] = None
     calibration_limit: Optional[int] = None
     calibration_seq_length: Optional[int] = None
     calibration_data: str = "Once upon a time"
+    use_hqq: bool = True
 
     def __post_init__(self):
         if self.qmode:
@@ -443,10 +529,13 @@ class XNNPackConfig:
     Attributes:
         enabled: :)
         extended_ops: Whether to match more types of ops to delegates to XNNPack.
+        enable_bf16: Whether to delegate BF16 ops to XNNPack. The target runtime
+            must have hardware support for XNNPACK's BF16 kernels.
     """
 
     enabled: bool = False
     extended_ops: bool = False
+    enable_bf16: bool = False
 
 
 class CoreMLQuantize(str, Enum):
@@ -504,15 +593,6 @@ class QNNConfig:
 
 
 @dataclass
-class MPSConfig:
-    """
-    Configures the MPS backend.
-    """
-
-    enabled: bool = False
-
-
-@dataclass
 class OpenvinoConfig:
     """
     Configures the QNN backend.
@@ -520,8 +600,9 @@ class OpenvinoConfig:
 
     enabled: bool = False
     device: str = "CPU"
-    nncf_compression: bool = False
     nncf_compression_group_size: int = 32
+    openvino_awq: bool = False
+    openvino_scale_estimation: bool = False
 
 
 @dataclass
@@ -545,6 +626,45 @@ class TosaConfig:
 
 
 @dataclass
+class EthosUConfig:
+    """
+    Configures the Ethos-U backend.
+    """
+
+    enabled: bool = False
+    target: str = "ethos-u85-128"  # Default target, can be overridden.
+    memory_mode: str = "default"
+    system_config: str = "default"
+    extra_flags: List[str] = field(default_factory=list)
+
+
+class VgfQuantizeScope(str, Enum):
+    full = "full"
+    linear = "linear"
+
+
+@dataclass
+class VgfConfig:
+    """
+    Configures the VGF backend.
+    """
+
+    enabled: bool = False
+    compile_spec: Optional[str] = "TOSA-1.0+INT"
+    compiler_flags: List[str] = field(default_factory=list)
+    quantize_scope: VgfQuantizeScope = VgfQuantizeScope.full
+
+
+@dataclass
+class MLXConfig:
+    """
+    Configures the MLX backend for Apple Silicon.
+    """
+
+    enabled: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -555,10 +675,12 @@ class BackendConfig:
     coreml: CoreMLConfig = field(default_factory=CoreMLConfig)
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
-    mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
     tosa: TosaConfig = field(default_factory=TosaConfig)
+    ethosu: EthosUConfig = field(default_factory=EthosUConfig)
+    vgf: VgfConfig = field(default_factory=VgfConfig)
+    mlx: MLXConfig = field(default_factory=MLXConfig)
 
 
 ################################################################################
@@ -576,9 +698,7 @@ class LlmConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
     debug: DebugConfig = field(default_factory=DebugConfig)
-    multimethod_lora: MultimethodLoraConfig = field(
-        default_factory=MultimethodLoraConfig
-    )
+    multimethod: MultimethodConfig = field(default_factory=MultimethodConfig)
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     backend: BackendConfig = field(default_factory=BackendConfig)
 
@@ -640,8 +760,16 @@ class LlmConfig:
             llm_config.model.use_kv_cache = args.use_kv_cache
         if hasattr(args, "quantize_kv_cache"):
             llm_config.model.quantize_kv_cache = args.quantize_kv_cache
+        if hasattr(args, "static_quantize_kv_cache"):
+            llm_config.model.static_quantize_kv_cache = args.static_quantize_kv_cache
+        if hasattr(args, "static_quantize_kv_cache_scale"):
+            llm_config.model.static_quantize_kv_cache_scale = (
+                args.static_quantize_kv_cache_scale
+            )
         if hasattr(args, "local_global_attention"):
             llm_config.model.local_global_attention = args.local_global_attention
+        if hasattr(args, "use_moe_quantized_op"):
+            llm_config.model.use_moe_quantized_op = args.use_moe_quantized_op
 
         # ExportConfig
         if hasattr(args, "max_seq_length"):
@@ -688,6 +816,8 @@ class LlmConfig:
             llm_config.backend.xnnpack.enabled = args.xnnpack
         if hasattr(args, "xnnpack_extended_ops"):
             llm_config.backend.xnnpack.extended_ops = args.xnnpack_extended_ops
+        if hasattr(args, "xnnpack_enable_bf16"):
+            llm_config.backend.xnnpack.enable_bf16 = args.xnnpack_enable_bf16
 
         # CoreML
         if hasattr(args, "coreml"):
@@ -727,20 +857,38 @@ class LlmConfig:
         if hasattr(args, "num_sharding"):
             llm_config.backend.qnn.num_sharding = args.num_sharding
 
-        # MPS
-        if hasattr(args, "mps"):
-            llm_config.backend.mps.enabled = args.mps
+        # MLX - auto-enable use_kv_cache when MLX is enabled
+        if hasattr(args, "mlx"):
+            llm_config.backend.mlx.enabled = args.mlx
+            if args.mlx:
+                llm_config.model.use_kv_cache = True
 
         # Openvino
         if hasattr(args, "openvino"):
             llm_config.backend.openvino.enabled = args.openvino
         if hasattr(args, "openvino_device"):
             llm_config.backend.openvino.device = args.openvino_device
-        if hasattr(args, "nncf_compression"):
-            llm_config.backend.openvino.nncf_compression = args.nncf_compression
+        if hasattr(args, "openvino_awq"):
+            llm_config.backend.openvino.openvino_awq = args.openvino_awq
+        if hasattr(args, "openvino_scale_estimation"):
+            llm_config.backend.openvino.openvino_scale_estimation = (
+                args.openvino_scale_estimation
+            )
         if hasattr(args, "group_size") and args.group_size:
             llm_config.backend.openvino.nncf_compression_group_size = args.group_size
 
+        # VGF
+        if hasattr(args, "vgf"):
+            llm_config.backend.vgf.enabled = args.vgf
+        if hasattr(args, "vgf_compile_spec"):
+            llm_config.backend.vgf.compile_spec = args.vgf_compile_spec
+        if hasattr(args, "vgf_quantize_scope") and args.vgf_quantize_scope:
+            llm_config.backend.vgf.quantize_scope = VgfQuantizeScope(
+                args.vgf_quantize_scope
+            )
+            llm_config.quantization.quantize_scope = QuantizeScope(
+                args.vgf_quantize_scope
+            )
         # TorchAoKernels
         if any(
             hasattr(args, a)

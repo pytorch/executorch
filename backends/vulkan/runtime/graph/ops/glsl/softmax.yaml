@@ -15,7 +15,7 @@ softmax:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: softmax
-    - NAME: log_softmax
+    - NAME: softmax_texture3d
+    - NAME: log_softmax_texture3d
       OPERATOR1: X
       OPERATOR2: X - log(Y)

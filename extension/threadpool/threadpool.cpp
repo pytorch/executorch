@@ -36,7 +36,7 @@
 
 namespace executorch::extension::threadpool {
 
-#if !(defined(WIN32))
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
 namespace {
 // After fork, the child process inherits the data-structures of the parent
 // process' thread-pool, but since those threads don't exist, the thread-pool
@@ -52,13 +52,14 @@ void child_atfork() {
 #endif
 
 ThreadPool::ThreadPool(size_t thread_count)
-    : threadpool_(pthreadpool_create(thread_count), pthreadpool_destroy) {}
+    : threadpool_(pthreadpool_create(thread_count), pthreadpool_destroy),
+      thread_count_(
+          threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0) {}
 
 size_t ThreadPool::get_thread_count() const {
   std::lock_guard<std::mutex> lock{mutex_};
 
-  ET_CHECK_MSG(threadpool_.get(), "Invalid threadpool!");
-  return pthreadpool_get_threads_count(threadpool_.get());
+  return thread_count_;
 }
 
 bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
@@ -72,6 +73,8 @@ bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
   std::lock_guard<std::mutex> lock{mutex_};
 
   threadpool_.reset(pthreadpool_create(new_thread_count));
+  thread_count_ =
+      threadpool_ ? pthreadpool_get_threads_count(threadpool_.get()) : 0;
   return true;
 }
 
@@ -79,6 +82,7 @@ void ThreadPool::_unsafe_destroy_threadpool() {
   std::lock_guard<std::mutex> lock{mutex_};
   ET_LOG(Info, "Destroying threadpool.");
   threadpool_.reset();
+  thread_count_ = 0;
 }
 
 void ThreadPool::run(
@@ -145,7 +149,7 @@ ThreadPool* get_threadpool() {
      * tricky to detect if we are running under tsan, for now capping the
      * default threadcount to the tsan limit unconditionally.
      */
-    constexpr unsigned int tsan_thread_limit = 63;
+    constexpr decltype(result) tsan_thread_limit = 63;
     return std::min(result, tsan_thread_limit);
   })();
 
@@ -153,7 +157,7 @@ ThreadPool* get_threadpool() {
 
 // Inheriting from old threadpool to get around segfault issue
 // commented above at child_atfork
-#if !(defined(WIN32))
+#if !defined(WIN32) && !defined(__EMSCRIPTEN__)
   // @lint-ignore CLANGTIDY facebook-hte-std::once_flag
   static std::once_flag flag;
   // @lint-ignore CLANGTIDY facebook-hte-std::call_once

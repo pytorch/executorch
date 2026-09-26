@@ -7,8 +7,9 @@
 import re
 from typing import List
 
-import torch
+import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
 
+import torch
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
@@ -17,27 +18,6 @@ from executorch.backends.qualcomm.utils.constants import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.exported_program import ExportedProgram
-from torch.library import impl, Library
-
-
-fallback_op_lib = Library("llama", "DEF")
-# registering an operator.
-fallback_op_lib.define("fallback(Tensor input) -> Tensor")
-
-
-@impl(fallback_op_lib, "fallback")
-def fallback_impl(a: torch.Tensor) -> torch.Tensor:
-    return a
-
-
-# registering the out variant.
-fallback_op_lib.define("fallback.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)")
-
-
-@impl(fallback_op_lib, "fallback.out")
-def fallback_out_impl(a: torch.Tensor, *, out: torch.Tensor) -> torch.Tensor:
-    out.copy_(a)
-    return out
 
 
 class SplitGraph(ExportPass):
@@ -47,9 +27,28 @@ class SplitGraph(ExportPass):
     not load all llama model in one pte.
     """
 
-    def __init__(self, shard_layers: List[int]):
+    def __init__(
+        self,
+        shard_layers: List[int],
+        pattern=r"layers\.(\d+)",
+        layer_prefix_offsets: dict = None,
+    ):
         super().__init__()
         self.shard_layers = shard_layers
+        self.pattern = pattern
+        # Maps nn_module_stack prefix -> offset to convert local layer index to
+        # global layer index. Required when a model has multiple sub-decoders
+        # whose layers are independently numbered (e.g. Gemma4 self_decoder
+        # layers 0-14 and cross_decoder layers 0-19 that map to global 15-34).
+        self.layer_prefix_offsets = layer_prefix_offsets or {}
+
+    def _get_global_layer(self, full_qualified_name: str):
+        for prefix, offset in self.layer_prefix_offsets.items():
+            m = re.match(rf"^{re.escape(prefix)}\.(\d+)", full_qualified_name)
+            if m:
+                return int(m.group(1)) + offset
+        m = re.search(self.pattern, full_qualified_name)
+        return int(m.group(1)) if m else None
 
     def _insert_fallback_op(
         self, graph_module: torch.fx.GraphModule
@@ -62,7 +61,6 @@ class SplitGraph(ExportPass):
             The second partition will contain layers [4, 8).
             The third partition will contain layers [8, 12) and output.
         """
-        pattern = r"layers.(\d+)"
         prev_node = None
         prev_layer = None
         for node in graph_module.graph.nodes:
@@ -72,11 +70,10 @@ class SplitGraph(ExportPass):
             module_values_list = list(node.meta["nn_module_stack"].values())
             full_qualified_name = module_values_list[-1][0]
             # Search which layer this node belongs to
-            match = re.search(pattern, full_qualified_name)
-            if match is None:
+            cur_layer = self._get_global_layer(full_qualified_name)
+            if cur_layer is None:
                 continue
 
-            cur_layer = int(match.group(1))
             # Check the current node which is the last node of the layer
             if cur_layer in self.shard_layers and prev_layer == cur_layer - 1:
                 with graph_module.graph.inserting_after(prev_node):
@@ -103,15 +100,31 @@ class SplitGraph(ExportPass):
         return PassResult(graph_module, True)
 
 
-def split_graph(edge_program: ExportedProgram, num_layers: int, shares: int):
+def split_graph(
+    edge_program: ExportedProgram,
+    num_layers: int,
+    shares: int,
+    pattern=r"layers\.(\d+)",
+    layer_prefix_offsets: dict = None,
+):
     graph_module = edge_program.graph_module
     shard_layers = list(range(0, num_layers, int(num_layers / shares)))
-    return SplitGraph(shard_layers)(graph_module)
+    return SplitGraph(
+        shard_layers, pattern=pattern, layer_prefix_offsets=layer_prefix_offsets
+    )(graph_module)
 
 
-def get_split_graph_pass(num_layers: int, shares: int):
+def get_split_graph_pass(
+    num_layers: int,
+    shares: int,
+    pattern=r"layers\.(\d+)",
+    layer_prefix_offsets: dict = None,
+):
     shard_layers = list(range(0, num_layers, int(num_layers / shares)))
+    kwargs = {"shard_layers": shard_layers, "pattern": pattern}
+    if layer_prefix_offsets:
+        kwargs["layer_prefix_offsets"] = layer_prefix_offsets
     return SplitGraph, {
         QCOM_PASS_ACTIVATE_KEY: True,
-        QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"shard_layers": shard_layers},
+        QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: kwargs,
     }

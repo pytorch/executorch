@@ -12,7 +12,7 @@ This support check matches the subset accepted by CanonicalizeGatherPass:
 - x must be rank-2 or rank-3
 - index must be rank-2 or rank-3.
 - for rank-3 x.shape[-1] must match index.shape[-1]
-- index dtype must be int32
+- index dtype must be int32, or use a safe int32-to-int64 boundary
 - batch dim must match: x.shape[0] == index.shape[0]
 
 Dtype gating is capability-based:
@@ -35,6 +35,9 @@ from typing import cast
 import torch
 import torch.fx as fx
 
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
@@ -49,7 +52,7 @@ class GatherSupported(SupportedTOSAOperatorCheck):
 
     targets = [exir_ops.edge.aten.gather.default]
 
-    def is_node_tosa_supported(
+    def is_node_tosa_supported(  # noqa: C901
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
         if len(node.args) != 3:
@@ -70,11 +73,14 @@ class GatherSupported(SupportedTOSAOperatorCheck):
         dim = dim % len(x_shape)
 
         # ---- index dtype ----
-        if index_val.dtype != torch.int32:
+        if index_val.dtype != torch.int32 and not (
+            isinstance(index_arg, torch.fx.Node)
+            and is_safe_int32_to_int64_gather_boundary(index_arg)
+        ):
             self.reporter.report_reject(
                 node,
                 f"{node.target}: index dtype {index_val.dtype} not supported; "
-                "expected int32.",
+                "expected int32 or a safe int32-to-int64 boundary.",
             )
             return False
 
@@ -115,14 +121,36 @@ class GatherSupported(SupportedTOSAOperatorCheck):
                     f"{node.target}: dtype {values_dtype} requires INT profile.",
                 )
                 return False
-        # fp16/fp32/bf16: either FP profile, or INT profile (via quantization)
-        elif values_dtype in (torch.float16, torch.float32, torch.bfloat16):
+        # fp16/fp32/bf16/fp8: either FP profile, or INT profile (via quantization)
+        elif values_dtype in (
+            torch.float16,
+            torch.float32,
+            torch.bfloat16,
+            torch.float8_e4m3fn,
+            torch.float8_e5m2,
+        ):
             if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
                 "bf16"
             ):
                 self.reporter.report_reject(
                     node,
                     f"{node.target}: dtype {values_dtype} requires bf16 extension.",
+                )
+                return False
+            if values_dtype == torch.float8_e4m3fn and not tosa_spec.support_extension(
+                "fp8e4m3"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires fp8e4m3 extension.",
+                )
+                return False
+            if values_dtype == torch.float8_e5m2 and not tosa_spec.support_extension(
+                "fp8e5m2"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires fp8e5m2 extension.",
                 )
                 return False
             if not (tosa_spec.support_float() or tosa_spec.support_integer()):
@@ -136,7 +164,8 @@ class GatherSupported(SupportedTOSAOperatorCheck):
             self.reporter.report_reject(
                 node,
                 f"{node.target}: unsupported values dtype {values_dtype}; "
-                "expected bool/int8/int16/int32/float16/bfloat16/float32.",
+                "expected bool/int8/int16/int32/float16/bfloat16/float32/"
+                "float8_e4m3fn/float8_e5m2.",
             )
             return False
 

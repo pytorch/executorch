@@ -65,7 +65,6 @@ def test_acos_tosa_INT(test_data: Tuple):
         (test_data(),),
         aten_op=aten_op,
         exir_op=exir_op,
-        frobenius_threshold=0.5,  # MLETORCH-1709
     )
     pipeline.run()
 

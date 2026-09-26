@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
-
 import torch
 
 from executorch.examples.qualcomm.utils import replace_module_with_custom_class
@@ -177,11 +175,6 @@ class Idefics3VisionEncoder(Idefics3PreTrainedModel):
             extra_custom_kwargs={"config": config.vision_config},
         )
 
-    def preprocess(self, pixel_values: Tuple[torch.FloatTensor]) -> Tuple[torch.Tensor]:
-        # HTP Prepare failed when pixel_values has 5D dimension, so we squeeze the batch dimension here.
-        pixel_values = pixel_values[0]
-        return (pixel_values.squeeze(0),)
-
     def get_example_inputs(self):
         # pixel values - use config dimensions instead of hardcoded values
         return (
@@ -189,6 +182,11 @@ class Idefics3VisionEncoder(Idefics3PreTrainedModel):
                 (1, 3, self.img_resized_h, self.img_resized_w), dtype=torch.float32
             ),
         )
+
+    def get_metadata(self):
+        return {
+            "get_n_layers": self.config.vision_config.num_hidden_layers,
+        }
 
     def forward(
         self,
@@ -257,9 +255,6 @@ class InternVL3VisionEncoder(torch.nn.Module):
         self.img_resized_h = img_resized_h
         self.img_resized_w = img_resized_w
 
-    def preprocess(self, pixel_values: Tuple[torch.FloatTensor]) -> Tuple[torch.Tensor]:
-        return pixel_values
-
     def get_example_inputs(self):
         # pixel values - use config dimensions instead of hardcoded values
         return (
@@ -267,6 +262,11 @@ class InternVL3VisionEncoder(torch.nn.Module):
                 (1, 3, self.img_resized_h, self.img_resized_w), dtype=torch.float32
             ),
         )
+
+    def get_metadata(self):
+        return {
+            "get_n_layers": self.config.vision_config.num_hidden_layers,
+        }
 
     def pixel_shuffle(self, vision_features: torch.Tensor, scale_factor: float = 0.5):
         """Perform pixel shuffle downsampling on vision features.

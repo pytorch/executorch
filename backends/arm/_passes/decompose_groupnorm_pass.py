@@ -9,7 +9,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import create_node, insert_scalar
 from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
 from executorch.backends.arm._passes.decompose_var_pass import DecomposeVarPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
@@ -24,7 +24,6 @@ def get_group_norm_decomposition(op) -> tuple:
             exir_ops.edge.aten.mean.dim,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.full.default,
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.rsqrt.default,
             exir_ops.edge.aten.mul.Tensor,
@@ -35,7 +34,6 @@ def get_group_norm_decomposition(op) -> tuple:
             torch.ops.aten.mean.dim,
             torch.ops.aten.sub.Tensor,
             torch.ops.aten.var.correction,
-            torch.ops.aten.full.default,
             torch.ops.aten.add.Tensor,
             torch.ops.aten.rsqrt.default,
             torch.ops.aten.mul.Tensor,
@@ -91,12 +89,8 @@ class DecomposeGroupNormPass(ArmPass):
             meta = node.meta
             if isinstance(meta["val"], tuple):
                 shape = meta["val"][0].size()
-                dtype = meta["val"][0].dtype
-                device = meta["val"][0].device
             else:
                 shape = meta["val"].size()
-                dtype = meta["val"].dtype
-                device = meta["val"].device
             match len(args):
                 # MI profile always provides all the args: x, weight, bias, N, C, HxW, group, eps
                 case 8:
@@ -126,13 +120,11 @@ class DecomposeGroupNormPass(ArmPass):
             channels_per_group = C // group
             grouped_shape = torch.Size([N, group, channels_per_group, HxW])
             dims = [2, 3]
-            epsilon_reshaped_shape = torch.Size([1] * len(grouped_shape))
             weights_reshaped_shape = torch.Size([1, group, channels_per_group, 1])
             (
                 mean_op,
                 sub_op,
                 var_op,
-                full_op,
                 add_op,
                 rsqrt_op,
                 mul_op,
@@ -157,15 +149,16 @@ class DecomposeGroupNormPass(ArmPass):
                     kwargs={"correction": 0, "keepdim": keepdim},
                     from_node=node,
                 )
-                full = create_node(
-                    graph_module.graph,
-                    full_op,
-                    args=(epsilon_reshaped_shape, eps),
-                    kwargs={"dtype": dtype, "device": device},
-                    from_node=node,
-                )
                 add0 = create_node(
-                    graph_module.graph, add_op, args=(var, full), from_node=node
+                    graph_module.graph,
+                    add_op,
+                    args=(
+                        var,
+                        insert_scalar(
+                            graph_module.graph, eps, meta, node, self.is_tfa_pass
+                        ),
+                    ),
+                    from_node=node,
                 )
                 rsqrt = create_node(
                     graph_module.graph, rsqrt_op, args=(add0,), from_node=node

@@ -2,6 +2,8 @@
 #
 # This yaml file contains operators that are defined by the ATen library.
 
+- op: _adaptive_avg_pool2d.out
+
 - op: _cdist_forward.out
 
 - op: _conj_physical.out
@@ -430,6 +432,8 @@
 - op: upsample_nearest2d.vec_out
 
 - op: var.correction_out
+
+- op: var_mean.correction_out
 
 - op: var.out
 

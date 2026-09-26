@@ -12,15 +12,17 @@ if [ -n "$BUILD_DOCS" ]; then
   # Ignore error if gpg-agent doesn't exist (for Ubuntu 16.04)
   apt-get install -y gpg-agent || :
 
-  curl --retry 3 -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
+  curl --retry 3 --retry-all-errors -sL https://deb.nodesource.com/setup_16.x | sudo -E bash -
   sudo apt-get install -y nodejs
 
-  curl --retry 3 -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
-  echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
+  curl --retry 3 --retry-all-errors -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/yarn-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/yarn-archive-keyring.gpg] https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
 
   apt-get update
   apt-get install -y --no-install-recommends yarn
-  yarn global add katex --prefix /usr/local
+  # katex 0.18.5 requires commander@15 / node >= 22.12; pin to the last
+  # release compatible with the node 16 installed above
+  yarn global add katex@0.18.4 --prefix /usr/local
 
   sudo apt-get -y install doxygen
 

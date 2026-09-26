@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 
@@ -94,19 +94,58 @@ TEST_F(CUDAGuardTest, NegativeDeviceIndex) {
   EXPECT_FALSE(guard_result.ok());
 }
 
-TEST_F(CUDAGuardTest, CopyConstructorDeleted) {
+// Compile-time type-trait checks. These do not need a CUDA device, so they
+// live outside the CUDAGuardTest fixture (whose SetUp() calls GTEST_SKIP
+// when no CUDA device is available).
+TEST_F(CUDAGuardTest, MovingLeavesOneRestorer) {
+  int entry_device = -1;
+  ASSERT_EQ(cudaGetDevice(&entry_device), cudaSuccess);
+  int other_device = entry_device == 0 ? 1 : 0;
+  int device_count = 0;
+  ASSERT_EQ(cudaGetDeviceCount(&device_count), cudaSuccess);
+  if (other_device >= device_count) {
+    GTEST_SKIP() << "needs a second device to tell one restore from two";
+  }
+
+  {
+    auto created = CUDAGuard::create(other_device);
+    ASSERT_TRUE(created.ok());
+    {
+      CUDAGuard moved(std::move(created.get()));
+      int inside = -1;
+      ASSERT_EQ(cudaGetDevice(&inside), cudaSuccess);
+      EXPECT_EQ(inside, other_device);
+    }
+    // The guard that took over the borrow has gone, so the entry device is
+    // back.
+    int after_move_target = -1;
+    ASSERT_EQ(cudaGetDevice(&after_move_target), cudaSuccess);
+    EXPECT_EQ(after_move_target, entry_device);
+    // Move somewhere else, so a second restore would be visible rather than
+    // landing on the value that is already current.
+    ASSERT_EQ(cudaSetDevice(other_device), cudaSuccess);
+  }
+  // The moved-from guard has now gone too. It must not have restored again.
+  int after_moved_from = -1;
+  ASSERT_EQ(cudaGetDevice(&after_moved_from), cudaSuccess);
+  EXPECT_EQ(after_moved_from, other_device)
+      << "the moved-from guard restored as well, so the device was put back twice";
+  ASSERT_EQ(cudaSetDevice(entry_device), cudaSuccess);
+}
+
+TEST(CUDAGuardCompileTimeTest, CopyConstructorDeleted) {
   static_assert(
       !std::is_copy_constructible_v<CUDAGuard>,
       "CUDAGuard should not be copy constructible");
 }
 
-TEST_F(CUDAGuardTest, CopyAssignmentDeleted) {
+TEST(CUDAGuardCompileTimeTest, CopyAssignmentDeleted) {
   static_assert(
       !std::is_copy_assignable_v<CUDAGuard>,
       "CUDAGuard should not be copy assignable");
 }
 
-TEST_F(CUDAGuardTest, MoveAssignmentDeleted) {
+TEST(CUDAGuardCompileTimeTest, MoveAssignmentDeleted) {
   static_assert(
       !std::is_move_assignable_v<CUDAGuard>,
       "CUDAGuard should not be move assignable");

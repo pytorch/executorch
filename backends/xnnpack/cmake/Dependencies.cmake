@@ -66,6 +66,10 @@ if(WIN32)
   set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
   set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
   set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
+  # clang-cl (reported by CMake as Clang, not MSVC, so XNNPACK's own MSVC gate
+  # does not catch it) crashes with an internal codegen error compiling some of
+  # the AVX512-FP16 micro-kernels, so disable them on Windows.
+  set_overridable_option(XNNPACK_ENABLE_AVX512FP16 OFF)
 endif()
 
 set(XNNPACK_BUILD_ALL_MICROKERNELS

@@ -18,7 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 
-aten_op = "torch.aten.ops.masked_fill.Scalar"
+aten_op = "torch.ops.aten.masked_fill.Scalar"
 exir_op = "executorch_exir_dialects_edge__ops_aten_masked_fill_scalar"
 
 input_t = Tuple[torch.Tensor, torch.Tensor, float]
@@ -106,13 +106,7 @@ def test_masked_fill_scalar_tosa_FP(test_module):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_module",
-    test_modules,
-    xfails={
-        "masked_fill_8_extreme_scalar_inf": "MLETORCH-1812 - Quantization inaccurate on inf-values in masked fill"
-    },
-)
+@common.parametrize("test_module", test_modules)
 def test_masked_fill_scalar_tosa_INT(test_module):
     module, inputs = test_module()
     pipeline = TosaPipelineINT[input_t](

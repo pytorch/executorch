@@ -1,0 +1,612 @@
+#!/bin/bash
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+set -e
+
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+vulkan_validation_runner="${script_dir}/run_with_vulkan_validation.sh"
+
+# Executorch root
+et_root_dir=$(cd ${script_dir}/../../.. && pwd)
+cd "${et_root_dir}"
+pwd
+
+# Cap pytest-xdist's `auto` workers to the container's CPU quota.
+source .ci/scripts/pytest-parallelism.sh
+scratch_dir=${et_root_dir}/examples/arm/arm-scratch
+setup_path_script=${scratch_dir}/setup_path.sh
+_setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
+
+
+# Configure Khronos Vulkan validation for VGF/VKML runtime tests.
+#
+# This must be called after setup_path.sh is sourced because setup_path.sh
+# configures the ML Graph/Tensor emulation layers and their VK_LAYER_PATH.
+enable_vgf_vulkan_validation() {
+    export EXECUTORCH_VGF_VULKAN_VALIDATION="${EXECUTORCH_VGF_VULKAN_VALIDATION:-1}"
+
+    # Allow developers to explicitly disable validation when debugging.
+    case "${EXECUTORCH_VGF_VULKAN_VALIDATION}" in
+        ""|0|false|False|FALSE|off|Off|OFF|no|No|NO)
+            return 0
+            ;;
+    esac
+
+    # ML SDK setup normally sets VK_LAYER_PATH to the emulation-layer
+    # manifests. VK_LAYER_PATH overrides the loader's standard search paths,
+    # so make sure the Khronos validation manifest from the Vulkan SDK is
+    # included as well.
+    if [[ -n "${VULKAN_SDK:-}" ]]; then
+        # VULKAN_SDK should normally be a single path. Take the first entry
+        # defensively in case the environment contains duplicate path entries.
+        local vulkan_sdk_root="${VULKAN_SDK%%:*}"
+        local validation_layer_dir="${vulkan_sdk_root}/share/vulkan/explicit_layer.d"
+
+        if [[ -f "${validation_layer_dir}/VkLayer_khronos_validation.json" ]]; then
+            if [[ -n "${VK_LAYER_PATH:-}" ]]; then
+                if [[ ":${VK_LAYER_PATH}:" != *":${validation_layer_dir}:"* ]]; then
+                    export VK_LAYER_PATH="${validation_layer_dir}:${VK_LAYER_PATH}"
+                fi
+            else
+                # VK_ADD_LAYER_PATH is appropriate only when VK_LAYER_PATH is
+                # not already overriding the loader search path.
+                unset VK_LAYER_PATH
+                if [[ ":${VK_ADD_LAYER_PATH:-}:" != *":${validation_layer_dir}:"* ]]; then
+                    export VK_ADD_LAYER_PATH="${validation_layer_dir}${VK_ADD_LAYER_PATH:+:${VK_ADD_LAYER_PATH}}"
+                fi
+            fi
+        fi
+    fi
+
+    # Put validation closest to the application, ahead of the ML emulation
+    # layers already installed by setup_path.sh.
+    if [[ ":${VK_INSTANCE_LAYERS:-}:" != *":VK_LAYER_KHRONOS_validation:"* ]]; then
+        export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation${VK_INSTANCE_LAYERS:+:${VK_INSTANCE_LAYERS}}"
+    fi
+
+    # Log validation diagnostics, but also make invalid Vulkan commands fail.
+    # Restrict this to errors so warnings do not turn otherwise-valid tests
+    # into failures.
+    export VK_KHRONOS_VALIDATION_REPORT_FLAGS="error"
+    export VK_KHRONOS_VALIDATION_LOG_FILENAME="stdout"
+    export VK_KHRONOS_VALIDATION_DEBUG_ACTION="VK_DBG_LAYER_ACTION_LOG_MSG"
+
+    # Temporary workarounds for known VKML / Model Converter validation
+    # defects. Keep validation enabled, but mute only these tracked VUIDs.
+    #
+    # BF16 capability advertisement: MLETORCH-2584
+    # Tensor-view usage validation: MLETORCH-2582
+    # Duplicated custom-shader descriptor layout: MLETORCH-2585
+    #
+    # Keep this list in sync with KNOWN_VKML_VALIDATION_VUIDS in
+    # backends/arm/test/runner_utils.py.
+    # Layer-setting environment variables serialize string lists using the
+    # platform list separator: ':' on Unix-like systems and ';' on Windows.
+    local message_id_filter_separator=":"
+    case "${OSTYPE:-}" in
+        msys*|cygwin*|win32*)
+            message_id_filter_separator=";"
+            ;;
+    esac
+
+    local known_vuid
+    for known_vuid in \
+        "VUID-VkShaderModuleCreateInfo-pCode-08740" \
+        "VUID-VkShaderModuleCreateInfo-pCode-08742" \
+        "VUID-VkTensorViewCreateInfoARM-usage-09748" \
+        "VUID-VkComputePipelineCreateInfo-layout-07988" \
+        "VUID-vkCmdDispatch-None-08114"; do
+        if [[ "${message_id_filter_separator}${VK_LAYER_MESSAGE_ID_FILTER:-}${message_id_filter_separator}" != *"${message_id_filter_separator}${known_vuid}${message_id_filter_separator}"* ]]; then
+            if [[ -n "${VK_LAYER_MESSAGE_ID_FILTER:-}" ]]; then
+                export VK_LAYER_MESSAGE_ID_FILTER="${VK_LAYER_MESSAGE_ID_FILTER}${message_id_filter_separator}${known_vuid}"
+            else
+                export VK_LAYER_MESSAGE_ID_FILTER="${known_vuid}"
+            fi
+        fi
+    done
+
+    echo "Vulkan validation enabled for ${TEST_SUITE}"
+    echo "VK_INSTANCE_LAYERS=${VK_INSTANCE_LAYERS}"
+}
+
+TEST_SUITE=$1
+
+# Enable Vulkan validation for VGF/VKML runtime tests.
+
+# Source the tools
+# This should be prepared by the setup.sh
+[[ -f ${setup_path_script} ]] \
+    || { echo "Missing ${setup_path_script}. ${_setup_msg}"; exit 1; }
+source ${setup_path_script}
+
+# Enable Vulkan validation for every VGF/VKML test path, including tests that
+# launch scripts/executables directly instead of going through runner_utils.py.
+if [[ "${TEST_SUITE}" == *vkml* || "${TEST_SUITE}" == *vgf* ]]; then
+    enable_vgf_vulkan_validation
+fi
+
+help() {
+    echo "Usage:"
+    echo " $0 <TESTNAME>"
+    echo " where <TESTNAME> can be any of:"
+    # This will list all lines in this file that is starting with test_ remove () { and print it as a list.
+    # e,g, "test_pytest() { # Test ops and other things" -> test_pytest # Test ops and other things
+    echo "all # run all tests"
+    grep "^test_" $0 | sed 's/([^)]*)[[:space:]]*{*//g'
+    exit
+}
+
+if [[ -z "${TEST_SUITE:-}" ]]; then
+    echo "Missing test suite name, exiting..."
+    help
+else
+    echo "Run Arm backend test suite ${TEST_SUITE}"
+fi
+
+TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
+
+EXCLUDE_TARGET_EXPR="(not u55) and (not u65) and (not u85) and (not tosa) and (not _vgf_)"
+PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
+
+all() { # Run all tests
+    # This will list all lines in this file that is starting with test_ remove () { and add this script name in
+    # front of it and execute it in a sub shell
+    # e.g. from this file:
+    #
+    # test_pytest() { # Test ops and other things
+    #  bla bla bla
+    # }
+    # test_pytest_ethosu_fvp() { # Same as test_pytest but ...
+    #  bla bla bla
+    # }
+    #...
+    # become a small script:
+    # ----
+    # backends/arm/test/test_arm_backend.sh test_pytest # Test ops and other things
+    # backends/arm/test/test_arm_backend.sh test_pytest_ethosu_fvp # Same as test_pytest but ...
+    # ...
+    # ----
+    # That is executed
+    echo "${TEST_SUITE_NAME}: Run all tests"
+    grep "^test_" backends/arm/test/test_arm_backend.sh | sed 's/([^)]*)[[:space:]]*{*//g' | sed "s|^|$0 |" | sh -e
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# -------------------------------------------
+# -------- Non target-specific tests --------
+# -------------------------------------------
+test_pytest_ops_no_target() {
+    echo "${TEST_SUITE_NAME}: Run pytest ops for target-less tests"
+
+    # Run arm baremetal pytest tests without target
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_no_target() {
+    echo "${TEST_SUITE_NAME}: Run pytest models for target-less tests"
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    # Run arm baremetal pytest tests without FVP
+    # Exit code 5 means no tests were collected; preserve all other failures.
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}" -m "not xlarge" || [[ $? -eq 5 ]]
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# -------------------------------------
+# -------- TOSA specific tests --------
+# -------------------------------------
+test_pytest_ops_tosa() {
+    echo "${TEST_SUITE_NAME}: Run pytest ops for TOSA"
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10 backends/arm/test/ --ignore=backends/arm/test/models -k tosa
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_tosa() {
+    echo "${TEST_SUITE_NAME}: Run pytest models for TOSA"
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_tosa_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest models for TOSA"
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k tosa -m xlarge
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_run_tosa() {
+    echo "${TEST_SUITE_NAME}: Test TOSA delegate examples with run.sh"
+
+    echo "${TEST_SUITE_NAME}: Test target TOSA"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=mul
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# ----------------------------------------------
+# -------- Arm Ethos-U55 specific tests --------
+# ----------------------------------------------
+test_pytest_ops_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U55"
+
+    backends/arm/test/setup_testing.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U55"
+
+    backends/arm/test/setup_testing.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55 -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_run_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u55 delegate examples with run.sh"
+
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U55"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-64 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-256 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-256 --model_name=add --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul --bundleio --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
+
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U65"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u65-256 --model_name=examples/arm/example_modules/add.py --bundleio
+
+    # Cortex-M op tests
+    echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U55)"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/prim_ops.py --bundleio --no_delegate --no_quantize --select_ops_list="aten::add.out,aten::select_copy.int_out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_minimal_classic_ml_ethos_u55() {
+    echo "${TEST_SUITE_NAME}: Test minimal classic ML runner on Ethos-U55"
+
+    local build_dir="${et_root_dir}/arm_test/minimal_classic_ml"
+    local pte_path="${build_dir}/mv2.pte"
+    local fvp_log="${build_dir}/run_fvp.log"
+    mkdir -p "${build_dir}"
+
+    python3 -m backends.arm.scripts.aot_arm_compiler \
+        --model_name=mv2 \
+        --target=ethos-u55-128 \
+        --delegate \
+        --quantize \
+        --intermediates="${build_dir}" \
+        --output="${pte_path}" \
+        --system_config=Ethos_U55_High_End_Embedded \
+        --memory_mode=Shared_Sram
+
+    cmake \
+        -S examples/arm/minimal_classic_ml \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded \
+        -DMEMORY_MODE=Shared_Sram
+    cmake --build "${build_dir}" --target arm_classic_ml_runner -j"$(nproc)"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${build_dir}/arm_classic_ml_runner" \
+        --target=ethos-u55-128 | tee "${fvp_log}"
+    local fvp_status="${PIPESTATUS[0]}"
+    [[ "${fvp_status}" -eq 0 ]]
+    grep -Fq "Inference complete: 1 output(s)" "${fvp_log}"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# ----------------------------------------------
+# -------- Arm Ethos-U85 specific tests --------
+# ----------------------------------------------
+test_pytest_ops_ethos_u85() {
+    echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U85"
+
+    backends/arm/test/setup_testing.sh
+
+    # Run arm baremetal pytest tests with FVP
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u85
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_ethos_u85() {
+    echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U85"
+
+    backends/arm/test/setup_testing.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85 -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_run_ethos_u85() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u85 delegate examples with run.sh"
+
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-256 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-512 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-1024 --model_name=add --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-2048 --model_name=mul --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul --bundleio --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-256 --model_name=mul --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-1024 --model_name=examples/arm/example_modules/add.py --bundleio
+
+    # Cortex-M op tests
+    echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U85)"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=qops --bundleio
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# ----------------------------------------------------------
+# -------- Vulkan Graph Format (VGF) specific tests --------
+# ----------------------------------------------------------
+
+echo "EXECUTORCH_VGF_VULKAN_VALIDATION=${EXECUTORCH_VGF_VULKAN_VALIDATION:-UNSET}"
+echo "VK_INSTANCE_LAYERS=${VK_INSTANCE_LAYERS:-UNSET}"
+echo "VK_LAYER_PATH=${VK_LAYER_PATH:-UNSET}"
+echo "VK_ADD_LAYER_PATH=${VK_ADD_LAYER_PATH:-UNSET}"
+echo "VULKAN_SDK=${VULKAN_SDK:-UNSET}"
+
+test_pytest_ops_vkml() {
+    echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
+            --ignore=backends/arm/test/models -k _vgf_
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_vkml() {
+    echo "${TEST_SUITE_NAME}: Run pytest model tests with VKML runtime"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_ -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_vkml_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest model tests with VKML runtime"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k _vgf_ -m xlarge
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_run_vkml() {
+    echo "${TEST_SUITE_NAME}: Test VKML delegate examples with run.sh"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    echo "${TEST_SUITE_NAME}: Test VKML"
+    out_folder="arm_test/test_run"
+    vkml_build_dir="${build_root_test_dir}"
+
+    "${vulkan_validation_runner}" examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
+    "${vulkan_validation_runner}" examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
+
+    "${vulkan_validation_runner}" examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
+    "${vulkan_validation_runner}" examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_vgf_smoke() {
+    echo "${TEST_SUITE_NAME}: Run VGF AOT smoke test"
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        backends/arm/test/misc/test_vgf_smoke.py
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# --------------------------------------
+# -------- Out-of-the-box tests --------
+# --------------------------------------
+test_ootb_tests_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Run out-of-the-box tests for Arm Ethos-U"
+    backends/arm/test/test_arm_ootb.sh run_ootb_tests_ethos_u
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_ootb_tests_tosa() {
+    echo "${TEST_SUITE_NAME}: Run out-of-the-box tests for TOSA"
+    backends/arm/test/test_arm_ootb.sh run_ootb_tests_tosa
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_ootb_tests_vgf() {
+    echo "${TEST_SUITE_NAME}: Run out-of-the-box tests for VGF"
+    "${vulkan_validation_runner}" backends/arm/test/test_arm_ootb.sh run_ootb_tests_vgf
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_deit_e2e_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Run DEiT end-to-end test for Arm Ethos-U"
+    backends/arm/test/test_arm_ootb.sh run_deit_e2e_ethos_u
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+# ------------------------------------
+# -------- Miscellaneous tests -------
+# ------------------------------------
+test_model_smollm2_135M_ethos_u85() {
+    echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
+
+    # Build pte for smollm2
+    python3 -m extension.llm.export.export_llm \
+        base.model_class=smollm2 \
+        base.params=examples/models/smollm2/135M_config.json \
+        debug.verbose=True model.enable_dynamic_shape=False quantization.pt2e_quantize="ethosu_8a8w" \
+        backend.ethosu.enabled=True backend.ethosu.target="ethos-u85-256" backend.ethosu.memory_mode=Dedicated_Sram_384KB export.max_seq_length=32
+
+    # Build the arm_executor_runner application, pre-loading the pte in the DDR for faster linking
+    local pte_addr="0x76000000"
+    backends/arm/scripts/build_executor_runner.sh \
+      --et_build_root="${et_root_dir}/arm_test" \
+      --pte="${pte_addr}" \
+      --build_type=Release \
+      --target=ethos-u85-256 \
+      --system_config=Ethos_U85_SYS_DRAM_Mid \
+      --memory_mode=Dedicated_Sram_384KB \
+      --ethosu_tools_dir="${scratch_dir}" \
+      --toolchain=arm-none-eabi-gcc \
+      --extra_build_flags="-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0x100000" \
+      --select_ops_list="dim_order_ops::_to_dim_order_copy.out"
+
+
+    # Deploy the application on the FVP in fast mode
+    FVP_Corstone_SSE-320 -C mps4_board.subsystem.ethosu.num_macs=256 \
+        -C mps4_board.visualisation.disable-visualisation=1 \
+        -C vis_hdlcd.disable_visualisation=1 \
+        -C mps4_board.telnetterminal0.start_telnet=0 \
+        -C mps4_board.uart0.out_file='-' \
+        -C mps4_board.uart0.shutdown_on_eot=1 \
+        -a "${et_root_dir}"/arm_test/ethos-u85-256_${pte_addr}/cmake-out/arm_executor_runner \
+        -C mps4_board.subsystem.ethosu.extra_args="--fast" \
+        --data smollm2.pte@"${pte_addr}"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+_test_smaller_stories_llama() {
+    local backend=$1
+
+    echo "${TEST_SUITE_NAME}: Test smaller_stories_llama for ${backend}"
+
+    # This model might consume a lot of memory so --numprocesses=auto is not used to avoid parallel testing
+
+    mkdir -p stories110M
+    pushd stories110M
+    wget -N https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt
+    echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+    popd
+
+    # Get path to source directory
+    pytest \
+    -c /dev/null \
+    --rootdir="${et_root_dir}" \
+    "${PYTEST_RETRY_ARGS[@]}" \
+    --verbose \
+    --color=yes \
+    --durations=0 \
+    backends/arm/test/models/test_llama.py \
+    -k "test_llama_${backend}" \
+    --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_smaller_stories_llama_tosa() {
+    _test_smaller_stories_llama tosa
+}
+
+test_smaller_stories_llama_vkml() {
+    source backends/arm/test/setup_testing_vkml.sh
+
+    _test_smaller_stories_llama vgf
+}
+
+test_runtime_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation"
+
+    local ctest_build_dir="${et_root_dir}/arm_test/ethosu_runtime_tests"
+    cmake \
+        -S "${et_root_dir}/backends/arm/runtime/tests/ethos-u" \
+        -B "${ctest_build_dir}" \
+        -DEXECUTORCH_ROOT="${et_root_dir}"
+
+    ctest --test-dir "${ctest_build_dir}" \
+        --output-on-failure \
+        --no-tests=error \
+        -L memory_allocation
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_undefinedbehavior_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with UBSAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=UndefinedSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_address_sanitizer() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u executor_runner with ASAN"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py --build_type=AddressSanitizer
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+
+if [[ -z "${TEST_SUITE}" ]]; then
+    echo "Missing test suite name."
+    exit 1
+elif [[ ! "${TEST_SUITE}" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "Invalid test suite name: ${TEST_SUITE}"
+    exit 1
+elif ! declare -F -- "${TEST_SUITE}" > /dev/null; then
+    echo "Unknown test suite: ${TEST_SUITE}"
+    exit 1
+fi
+
+"${TEST_SUITE}"

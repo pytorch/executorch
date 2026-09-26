@@ -1,6 +1,10 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
+    if not is_fbcode():
+        return
+
     runtime.python_library(
         name = "aoti_partitioner",
         srcs = [
@@ -69,6 +73,9 @@ def define_common_targets():
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
         visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:evalue",
+        ],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",

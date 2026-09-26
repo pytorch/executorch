@@ -6,9 +6,10 @@
 
 # pyre-strict
 
+import importlib
 import unittest
-from typing import List
-from unittest.mock import Mock
+from typing import Any, Dict, List
+from unittest.mock import call, Mock, patch
 
 import torch
 from executorch.export import ExportRecipe, ExportSession
@@ -17,8 +18,11 @@ from executorch.export.recipe import (
     LoweringRecipe,
     QuantizationRecipe,
 )
-from executorch.export.stages import PipelineArtifact
+from executorch.export.stages import PipelineArtifact, Stage
 from executorch.export.types import StageType
+
+
+export_module = importlib.import_module("executorch.export.export")
 
 
 class SimpleTestModel(torch.nn.Module):
@@ -107,6 +111,91 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(len(session._stage_to_artifacts), 5)
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
 
+    def _run_five_stage_pipeline(self, recipe: ExportRecipe) -> ExportSession:
+        stage_types = [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_EXECUTORCH,
+        ]
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        for stage_type in stage_types:
+            session.register_stage(stage_type, self._create_mock_stage(stage_type))
+        session.export()
+        return session
+
+    def test_intermediate_artifacts_retained_by_default(self) -> None:
+        session = self._run_five_stage_pipeline(ExportRecipe(name="test"))
+        self.assertEqual(len(session._stage_to_artifacts), 5)
+        self.assertEqual(session._released_stages, set())
+
+    def test_release_intermediate_artifacts_keeps_only_the_last(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+
+        self.assertEqual(
+            set(session._stage_to_artifacts.keys()), {StageType.TO_EXECUTORCH}
+        )
+        # Every stage but the last had both of its references dropped.
+        for stage_type in [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ]:
+            self.assertIn(stage_type, session._released_stages)
+            session.get_registered_stage(
+                stage_type
+            ).release_artifact.assert_called_once()
+
+    def test_released_accessors_explain_why(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+
+        for accessor in (
+            session.get_exported_program,
+            session.get_edge_program_manager,
+            session.print_delegation_info,
+        ):
+            with self.assertRaises(RuntimeError) as cm:
+                accessor()
+            self.assertIn("released to free memory", str(cm.exception))
+
+    def test_reexport_clears_released_stage_state(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+        self.assertIn(StageType.TORCH_EXPORT, session._released_stages)
+
+        exported_program = Mock()
+        torch_export_stage = session.get_registered_stage(StageType.TORCH_EXPORT)
+        assert torch_export_stage is not None
+        torch_export_stage.get_artifacts.return_value.data = {
+            "forward": exported_program
+        }
+        session._pipeline_stages = [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+        ]
+
+        session.export()
+
+        self.assertIs(session.get_exported_program(), exported_program)
+
+    def test_release_does_not_touch_the_final_artifact(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+        self.assertIsNotNone(session.get_executorch_program_manager())
+
     def test_overriden_pipeline_execution_order(self) -> None:
         # Test when pipeline stages that are passed through recipe
         stage_types = [
@@ -194,6 +283,39 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(set(session._run_context.keys()), expected_context_keys)
         self.assertEqual(session._run_context["session_name"], "test_session")
         self.assertIsNotNone(session._run_context["constant_methods"])
+
+    def test_generate_etrecord_from_recipe(self) -> None:
+        # When the recipe has generate_etrecord=True and the param is False,
+        # the effective value in the run context must be True.
+        recipe = ExportRecipe(name="test", generate_etrecord=True)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_from_param_overrides_recipe(self) -> None:
+        # The explicit parameter must win when the recipe has generate_etrecord=False.
+        recipe = ExportRecipe(name="test", generate_etrecord=False)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+            generate_etrecord=True,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_false_when_neither_set(self) -> None:
+        # Both the recipe and the explicit parameter default to False, so the
+        # effective value must also be False.
+        recipe = ExportRecipe(name="test")
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertFalse(session._run_context["generate_etrecord"])
 
     def test_stage_registry_unknown_stage_type(self) -> None:
         # Test error handling for unknown stage types in pipeline
@@ -638,6 +760,36 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
         pipeline = session._get_default_pipeline()
         self.assertNotIn(StageType.TORCH_EXPORT, pipeline)
 
+    def test_edge_manager_transform_passes_get_their_stage(self) -> None:
+        # Nothing else in the default pipeline runs them, so without this the
+        # recipe's passes are accepted and then silently never applied.
+        session = ExportSession(
+            model=self.model,
+            example_inputs=[self.example_inputs],
+            export_recipe=ExportRecipe(
+                name="t",
+                lowering_recipe=LoweringRecipe(
+                    edge_manager_transform_passes=[lambda epm: []]
+                ),
+            ),
+        )
+        pipeline = session._get_default_pipeline()
+        self.assertIn(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, pipeline)
+        self.assertGreater(
+            pipeline.index(StageType.EDGE_PROGRAM_MANAGER_TRANSFORM),
+            pipeline.index(StageType.TO_EDGE_TRANSFORM_AND_LOWER),
+        )
+
+    def test_no_transform_passes_means_no_stage(self) -> None:
+        session = ExportSession(
+            model=self.model,
+            example_inputs=[self.example_inputs],
+            export_recipe=self.recipe,
+        )
+        self.assertNotIn(
+            StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._get_default_pipeline()
+        )
+
     def test_example_inputs_required_for_nn_module(self) -> None:
         """Test that example_inputs are required for nn.Module."""
         with self.assertRaises(ValueError) as cm:
@@ -819,6 +971,77 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
         session._validate_pipeline_sequence(recipe.pipeline_stages)
 
 
+class TestDelegationInfoReporting(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = ExportSession(
+            model=SimpleTestModel(),
+            example_inputs=[(torch.randn(2, 10),)],
+            export_recipe=ExportRecipe(),
+        )
+
+    def _set_delegation_context(self, context: Dict[str, Any]) -> None:
+        self.session._stage_to_artifacts[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
+            PipelineArtifact(data=None, context=context)
+        )
+
+    @patch.object(export_module, "tabulate")
+    @patch("builtins.print")
+    def test_print_delegation_info_for_every_method(
+        self, mock_print: Mock, mock_tabulate: Mock
+    ) -> None:
+        decode_info = Mock()
+        decode_info.get_summary.return_value = "decode-summary"
+        decode_info.get_operator_delegation_dataframe.return_value = "decode-data"
+        prefill_info = Mock()
+        prefill_info.get_summary.return_value = "prefill-summary"
+        prefill_info.get_operator_delegation_dataframe.return_value = "prefill-data"
+        mock_tabulate.side_effect = ["decode-table", "prefill-table"]
+        self._set_delegation_context(
+            {
+                "delegation_info_by_method": {
+                    "prefill": prefill_info,
+                    "decode": decode_info,
+                },
+                "delegation_info": decode_info,
+            }
+        )
+
+        self.session.print_delegation_info()
+
+        self.assertEqual(
+            mock_print.call_args_list,
+            [
+                call("Delegation info for method 'decode':"),
+                call("decode-summary"),
+                call("decode-table"),
+                call("Delegation info for method 'prefill':"),
+                call("prefill-summary"),
+                call("prefill-table"),
+            ],
+        )
+        self.assertEqual(mock_tabulate.call_count, 2)
+
+    @patch.object(export_module, "tabulate", return_value="legacy-table")
+    @patch("builtins.print")
+    def test_print_delegation_info_legacy_fallback(
+        self, mock_print: Mock, mock_tabulate: Mock
+    ) -> None:
+        delegation_info = Mock()
+        delegation_info.get_summary.return_value = "legacy-summary"
+        delegation_info.get_operator_delegation_dataframe.return_value = "legacy-data"
+        self._set_delegation_context({"delegation_info": delegation_info})
+
+        self.session.print_delegation_info()
+
+        self.assertEqual(
+            mock_print.call_args_list,
+            [call("legacy-summary"), call("legacy-table")],
+        )
+        mock_tabulate.assert_called_once_with(
+            "legacy-data", headers="keys", tablefmt="fancy_grid"
+        )
+
+
 class TestIntermediateStateGetters(unittest.TestCase):
     """Test convenience getters for intermediate pipeline states."""
 
@@ -971,3 +1194,49 @@ class TestIntermediateStateGetters(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             session.get_edge_program_manager()
         self.assertIn("Edge program manager is not available", str(cm.exception))
+
+
+class TestStageArtifactsAreScopedToOneRun(unittest.TestCase):
+    def test_rerunning_export_discards_the_previous_run(self) -> None:
+        # A stage that raises must not leave the previous run's artifact behind
+        # for the accessors to hand back as if it were current.
+        model = SimpleTestModel()
+        inputs = [(torch.randn(1, 10),)]
+        session = ExportSession(
+            model=model, example_inputs=inputs, export_recipe=ExportRecipe(name="t")
+        )
+        session.export()
+        first = session.get_stage_artifacts()[StageType.TO_EXECUTORCH]
+
+        artifacts = session.get_stage_artifacts()
+
+        failing = Mock(spec=Stage)
+        failing.run.side_effect = RuntimeError("boom")
+        failing.stage_type = StageType.TO_EXECUTORCH
+        failing.valid_predecessor_stages = [StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+        failing.can_start_pipeline = False
+        session.register_stage(StageType.TO_EXECUTORCH, failing)
+
+        with self.assertRaises(RuntimeError):
+            session.export()
+        self.assertNotIn(StageType.TO_EXECUTORCH, session.get_stage_artifacts())
+        # Cleared in place, so a dict the caller captured before the re-run
+        # reflects the clear too.
+        self.assertNotIn(StageType.TO_EXECUTORCH, artifacts)
+        self.assertIsNotNone(first)
+
+    def test_a_rejected_pipeline_leaves_the_previous_run_intact(self) -> None:
+        # Validation runs before anything is cleared: a pipeline that never
+        # executes must not destroy results the caller still has.
+        session = ExportSession(
+            model=SimpleTestModel(),
+            example_inputs=[(torch.randn(1, 10),)],
+            export_recipe=ExportRecipe(name="t"),
+        )
+        session.export()
+        before = session.get_executorch_program_manager()
+
+        session._pipeline_stages = [StageType.TO_EXECUTORCH]
+        with self.assertRaises(ValueError):
+            session.export()
+        self.assertIs(session.get_executorch_program_manager(), before)

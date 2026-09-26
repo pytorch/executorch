@@ -9,18 +9,18 @@ This tutorial demonstrates the use of the eIQ Neutron backend with the Neutron b
 ### Software
 First you need to have Python 3.10 - 3.12 installed. 
 
-You need to install the ExecuTorch. Please follow the tutorial to install the ExecuTorch [Setting Up ExecuTorch](../../../getting-started-setup.rst)
+You need to install the ExecuTorch. Please follow the tutorial to install the ExecuTorch [Getting Started with ExecuTorch](https://docs.pytorch.org/executorch/main/getting-started.html)
 
 
 In addition to this, you will need to install the eIQ Neutron Simulator, called NSYS,
-and the Neutron Converter for generating the byte-code for the eIQ Neutron NPU, 
+and the Neutron Compiler for generating the byte-code for the eIQ Neutron NPU, 
 during the model conversion in ExecuTorch AoT flow. 
 To install the eIQ Neutron dependencies, run:
 ```bash
 examples/nxp/setup.sh
 ```
 This will install: 
-* Neutron Converter, for converting the Neutron IR to Neutron byte-code 
+* Neutron Compiler, for compiling the Neutron IR to Neutron byte-code 
 * eIQ Neutron SDK, containing the eIQ Neutron runtimes (driver and firmware) for various NXP SoC and simulator 
 * eIQ NSYS, the Neutron behavioral simulator
 
@@ -31,7 +31,7 @@ format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutr
 
 ### Step 1: Environment Setup
 
-This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see [Getting Started with ExecuTorch](/getting-started).
+This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see [Getting Started with ExecuTorch](https://docs.pytorch.org/executorch/main/getting-started.html).
 
 Create a Conda environment and install the ExecuTorch Python package.
 ```bash
@@ -59,7 +59,7 @@ See the example `aot_neutron_compile.py` and its [README](https://github.com/pyt
 For the purpose of this tutorial we will use a simple image classification model CifarNet10.
 ```bash
 python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_12 -m "cifar10"
+    --delegate -m "cifar10"
 ```
 
 Also, we will dump few of the images from the Cifar 10 dataset to a folder: 

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -41,8 +41,14 @@ NCHW_ORDER: Final = (0, 1, 2, 3)
 NNCHW_ORDER: Final = (0, 1, 2, 3, 4)
 NNNCHW_ORDER: Final = (0, 1, 2, 3, 4, 5)
 
+OHWI_ORDER: Final = (1, 2, 3, 0)
+ODHWI_ORDER: Final = (0, 2, 3, 4, 1)
+ODHWI_INVERSE_ORDER: Final = (0, 4, 1, 2, 3)
+
 HWCM_ORDER: Final = (2, 3, 0, 1)
 
 MAX_RANK: Final = 6
+MAX_U55_INDEX_TENSOR_ELEMENTS: Final = 64
 
 DISALLOW_TFA_META_KEY: Final = "_arm_disallow_tfa"
+ARM_DYNAMIC_W8A8_LINEAR_META_KEY: Final = "_arm_dynamic_w8a8_linear"

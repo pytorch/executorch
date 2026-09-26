@@ -12,22 +12,20 @@
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <cinttypes>
 #include <limits>
 #include <optional>
 
-extern "C" {
 #include "arm_nn_types.h"
-}
+#include "arm_nnfunctions.h"
 
 using Tensor = torch::executor::Tensor;
 using ScalarType = executorch::aten::ScalarType;
-using Scalar = torch::executor::Scalar;
 using Error = executorch::runtime::Error;
 using Int64ArrayRef = executorch::aten::ArrayRef<int64_t>;
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
@@ -35,6 +33,14 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 // From arm_nn_math_types.h
 #define ARM_NN_Q31_MAX ((int32_t)(0x7FFFFFFFL))
 #define ARM_NN_Q31_MIN ((int32_t)(0x80000000L))
+
+// 16-byte alignment for MVE vector operations.
+constexpr size_t kCortexMMveAlignment = 16;
+
+enum class ActivationLayout {
+  NCHWLogical,
+  NHWCLogical,
+};
 
 // Basic tensor type / layout validation and dimension order checking
 inline void validate_cmsis_nn_tensor_requirements(
@@ -47,19 +53,19 @@ inline void validate_cmsis_nn_tensor_requirements(
   // Basic dtype validation
   ET_CHECK_MSG(
       input1.scalar_type() == expected_dtype,
-      "Input1 dtype must be %hhd, got %hhd",
-      expected_dtype,
-      input1.scalar_type());
+      "Input1 dtype must be %d, got %d",
+      static_cast<int>(expected_dtype),
+      static_cast<int>(input1.scalar_type()));
   ET_CHECK_MSG(
       input2.scalar_type() == expected_dtype,
-      "Input2 dtype must be %hhd, got %hhd",
-      expected_dtype,
-      input2.scalar_type());
+      "Input2 dtype must be %d, got %d",
+      static_cast<int>(expected_dtype),
+      static_cast<int>(input2.scalar_type()));
   ET_CHECK_MSG(
       output.scalar_type() == expected_dtype,
-      "Output dtype must be %hhd, got %hhd",
-      expected_dtype,
-      output.scalar_type());
+      "Output dtype must be %d, got %d",
+      static_cast<int>(expected_dtype),
+      static_cast<int>(output.scalar_type()));
   if (require_same_sizes) {
     ET_CHECK_MSG(
         input1.sizes() == input2.sizes(),
@@ -78,16 +84,17 @@ inline void validate_single_quant_params(
     const int64_t multiplier,
     const int64_t shift,
     const char* param_name) {
+  (void)zero_point;
   ET_CHECK_MSG(
       multiplier >= std::numeric_limits<int32_t>::min() &&
           multiplier <= std::numeric_limits<int32_t>::max(),
-      "%s multiplier must be in int32 range [Value: %d]",
+      "%s multiplier must be in int32 range [Value: %" PRIi64 "]",
       param_name,
       multiplier);
 
   ET_CHECK_MSG(
       shift >= -31 && shift <= 31,
-      "%s shift must be in range [-31, 31] [Value: %d]",
+      "%s shift must be in range [-31, 31] [Value: %" PRIi64 "]",
       param_name,
       shift);
 }
@@ -112,8 +119,7 @@ inline void validate_quantization_params(
     const int64_t shift2,
     const int64_t output_zero_point,
     const int64_t output_multiplier,
-    const int64_t output_shift,
-    Tensor& output) {
+    const int64_t output_shift) {
   validate_single_quant_params(
       zero_point1, multiplier1, shift1, "Single quant Input1");
   validate_single_quant_params(
@@ -172,7 +178,7 @@ inline bool check_int32_within_range(
       value > std::numeric_limits<int32_t>::max()) {
     ET_LOG(
         Error,
-        "%s: %s value (%ld) exceeds int32_t range",
+        "%s: %s value (%" PRIi64 ") exceeds int32_t range",
         op_name,
         value_name,
         value);
@@ -203,7 +209,7 @@ inline bool prepare_cmsis_pool2d_config(
     int64_t activation_min,
     int64_t activation_max,
     CmsisPool2DConfig& config,
-    bool require_channels_last = true,
+    ActivationLayout layout,
     bool allow_ceil_mode = false) {
   if (input.dim() != 4 || output.dim() != 4) {
     ET_LOG(Error, "%s: tensors must be 4-D", op_name);
@@ -218,7 +224,9 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
-  if (input.size(0) != output.size(0) || input.size(1) != output.size(1)) {
+  const int64_t channel_dim = layout == ActivationLayout::NHWCLogical ? 3 : 1;
+  if (input.size(0) != output.size(0) ||
+      input.size(channel_dim) != output.size(channel_dim)) {
     ET_LOG(
         Error,
         "%s: batch and channel dimensions must match between input and output",
@@ -227,13 +235,21 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
-  if (require_channels_last) {
-    if (!is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
-      ET_LOG(
-          Error, "%s: tensors must use channels_last dimension order", op_name);
+  if (layout == ActivationLayout::NHWCLogical) {
+    if (!executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            output.dim_order().data(), output.dim_order().size())) {
+      ET_LOG(Error, "%s: tensors must use contiguous dimension order", op_name);
       context.fail(Error::InvalidArgument);
       return false;
     }
+  } else if (
+      !is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
+    ET_LOG(
+        Error, "%s: tensors must use channels_last dimension order", op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
   }
 
   auto check_tuple_len = [&](const Int64ArrayRef& arr,
@@ -312,19 +328,29 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
+  const int64_t height_dim = layout == ActivationLayout::NHWCLogical ? 1 : 2;
+  const int64_t width_dim = layout == ActivationLayout::NHWCLogical ? 2 : 3;
   int32_t batch, channels, input_h, input_w, output_h, output_w;
   if (!check_int32_within_range(
           context, op_name, input.size(0), "input batch", batch) ||
       !check_int32_within_range(
-          context, op_name, input.size(1), "input channels", channels) ||
+          context,
+          op_name,
+          input.size(channel_dim),
+          "input channels",
+          channels) ||
       !check_int32_within_range(
-          context, op_name, input.size(2), "input height", input_h) ||
+          context, op_name, input.size(height_dim), "input height", input_h) ||
       !check_int32_within_range(
-          context, op_name, input.size(3), "input width", input_w) ||
+          context, op_name, input.size(width_dim), "input width", input_w) ||
       !check_int32_within_range(
-          context, op_name, output.size(2), "output height", output_h) ||
+          context,
+          op_name,
+          output.size(height_dim),
+          "output height",
+          output_h) ||
       !check_int32_within_range(
-          context, op_name, output.size(3), "output width", output_w)) {
+          context, op_name, output.size(width_dim), "output width", output_w)) {
     return false;
   }
 
@@ -345,6 +371,7 @@ inline bool prepare_cmsis_pool2d_config(
 // https://github.com/ARM-software/CMSIS-NN/blob/main/Include/arm_nnsupportfunctions.h#L1625
 // multiplier: Range {ARM_NN_Q31_MIN + 1, Q32_MAX}
 // shift     : Range {-31, 30}
+// cppcheck-suppress unusedFunction
 inline bool validate_per_channel_quant_params(
     const Int64ArrayRef multipliers,
     const Int64ArrayRef shifts,
@@ -354,14 +381,14 @@ inline bool validate_per_channel_quant_params(
     if (multipliers[i] <= ARM_NN_Q31_MIN || multipliers[i] > ARM_NN_Q31_MAX) {
       ET_LOG(
           Error,
-          "weight_multiplier[%d] out of CMSIS-NN range: %d",
+          "weight_multiplier[%d] out of CMSIS-NN range: %" PRIi64,
           i,
           multipliers[i]);
       return false;
     }
     // Shift: {-31, 30} for arm_nn_requantize
     if (shifts[i] < -31 || shifts[i] > 30) {
-      ET_LOG(Error, "weight_shift[%d] out of range: %d", i, shifts[i]);
+      ET_LOG(Error, "weight_shift[%d] out of range: %" PRIi64, i, shifts[i]);
       return false;
     }
   }
@@ -387,20 +414,4 @@ inline Error resize_to_broadcast_target_size(
 
   return executorch::runtime::resize_tensor(
       output, {expected_output_size, expected_output_dim});
-}
-
-/**
- * Convert Scalar to CMSIS-NN int32 format
- * For multipliers, zero_points, etc. from quantize_multiplier_aot
- */
-inline int32_t extractScalarToInt32(const Scalar& scalar_value) {
-  return static_cast<int32_t>(scalar_value.to<int64_t>());
-}
-
-/**
- * Convert Scalar to CMSIS-NN int format
- * For shift values from quantize_multiplier_aot
- */
-inline int extractScalarToInt(const Scalar& scalar_value) {
-  return static_cast<int>(scalar_value.to<int64_t>());
 }

@@ -5,11 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
-from executorch.exir.delegate import executorch_call_delegate
 
-from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.tensor import TensorSpec
-from torch.utils import _pytree as pytree
 
 
 class BuildQuantIo(ExportPass):
@@ -28,22 +27,27 @@ class BuildQuantIo(ExportPass):
         else:
             return None
 
-    def placeholder(self, name: str, arg, meta):
-        if quantized_dtype := meta.data.get(QCOM_QUANTIZED_IO, None):
-            arg = arg.to(dtype=quantized_dtype)
-            meta["spec"] = self._make_spec(arg)
-        return super().placeholder(name, arg, meta)
+    def _build(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        # Forcedly update delegate node's meta['spec'] to get correct output
+        # tensor size in runtime
+        call_delegates = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function" and node.target == executorch_call_delegate
+        ]
+        for n in graph_module.graph.nodes:
+            if QCOM_QUANTIZED_IO in n.meta:
+                n.meta["val"] = n.meta["val"].to(dtype=n.meta[QCOM_QUANTIZED_IO])
+                n.meta["spec"] = self._make_spec(n.meta["val"])
 
-    def call_getitem(self, value, key: int, meta):
-        meta["spec"] = value.node.meta["spec"][key]
-        return super().call_getitem(value, key, meta)
+        for call_delegate in call_delegates:
+            spec = []
+            for user in list(call_delegate.users):
+                spec.append(self._make_spec(user.meta["val"]))
+            call_delegate.meta["spec"] = tuple(spec)
 
-    def call_delegate(self, lowered_module, args, kwargs, meta):
-        args_data, _ = pytree.tree_map_only(
-            ProxyValue, lambda x: x.data, (args, kwargs)
-        )
-        meta["spec"] = pytree.tree_map(
-            self._make_spec,
-            executorch_call_delegate(lowered_module, *args_data),
-        )
-        return super().call_delegate(lowered_module, args, kwargs, meta)
+    def call(self, graph_module: torch.fx.GraphModule):
+        self._build(graph_module)
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+        return PassResult(graph_module, True)

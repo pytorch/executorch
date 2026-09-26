@@ -19,13 +19,18 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
     MemoryPlanningAlgo,
     MemoryPlanningState,
 )
+from executorch.backends.cadence.aot.pass_utils import CompileMode
 from executorch.backends.cadence.aot.utils import (
     MemoryConfig,
     MemoryPlanningAlgoFailure,
 )
 
 from executorch.exir import ExecutorchProgramManager
-from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
+from executorch.exir.memory_planning import (
+    collect_specs_from_nodes,
+    update_all_tensors_lifetime,
+    Verifier,
+)
 from executorch.exir.pass_base import PassBase
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass
@@ -287,14 +292,14 @@ def find_peak_memory_usage(
 def print_memory_planning_info(
     executorch_prog: ExecutorchProgramManager,
     memory_config: MemoryConfig,
-    opt_level: int,
+    mode: CompileMode,
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     log_level=logging.INFO,
 ) -> None:
     # Get the peak memory usages per memory space
     mem_constraints = MemConstraints(
-        opt_level=opt_level,
+        mode=mode,
         alloc_graph_input=alloc_graph_input,
         alloc_graph_output=alloc_graph_output,
     )
@@ -387,6 +392,89 @@ class SimplifyIdmaOpsPass(PassBase):
         return PassResult(graph_module, modified)
 
 
+class RemoveNopOpsPass(PassBase):
+    """Erase the cat/slice/select nop nodes once memory planning is done.
+
+    These ops never touch data. A cat is only rewritten to its nop form once
+    memory planning can place every input at a contiguous offset inside the
+    output, and a slice likewise once its output can be colocated inside its
+    input, so by the time planning has run both hold by construction and the
+    instructions are pure dispatch overhead.
+
+    This has to happen here rather than as its own pass. Before planning the
+    nodes cannot go, because they are what carries the placement constraint;
+    after it nothing may run at all (see the warning in
+    exir/program/_program.py). Running inside the memory planning pass, in the
+    slot SimplifyIdmaOpsPass already occupies, is the one point where the
+    placement is decided but the program is not yet emitted.
+    """
+
+    def __init__(self, graph_signature: Optional[ExportGraphSignature] = None) -> None:
+        self.graph_signature = graph_signature
+
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+        # Every nop target memory_constraints.py can produce. Keep in sync
+        # with compute_cat_contiguity_constraints and
+        # compute_slice_and_select_loc_constraints. Looked up here rather than
+        # at class scope because the schemas come from ops_registrations, which
+        # this module does not import.
+        targets = (
+            torch.ops.aten._cat_nop.out,
+            torch.ops.aten._slice_copy_nop.Tensor_out,
+            torch.ops.aten._select_copy_nop.int_out,
+        )
+        modified = False
+        for target in targets:
+            for node in graph_module.graph.find_nodes(
+                op="call_function", target=target
+            ):
+                out = node.kwargs.get("out")
+                if out is None:
+                    # These ops exist only to carry a placement constraint
+                    # between constraint generation and here. One that cannot
+                    # be erased would reach the runtime, where there is no
+                    # kernel to service it, so fail the build instead.
+                    raise RuntimeError(
+                        f"cannot erase {node.name} ({node.target}): no out "
+                        "kwarg to redirect its consumers to. A nop op must "
+                        "never reach the emitter."
+                    )
+                # Consumers read the output buffer, which the producers have
+                # already written in place. Point them straight at it.
+                node.replace_all_uses_with(out)
+                graph_module.graph.erase_node(node)
+                modified = True
+
+        if not modified:
+            return PassResult(graph_module, False)
+
+        graph_module.recompile()
+        self._refresh_lifetimes(graph_module)
+        return PassResult(graph_module, True)
+
+    def _refresh_lifetimes(self, graph_module: torch.fx.GraphModule) -> None:
+        """Recompute spec lifetimes against the graph we actually emit.
+
+        Lifetimes are node indices, so erasing nodes leaves them pointing past
+        the end of the graph, which trips the peak-memory reporter and the
+        activation profiler.
+
+        update_tensor_lifetime only ever widens a lifetime, so a single
+        recompute leaves the stale upper bounds in place. The first call
+        identifies exactly which specs the recompute reaches (it returns
+        them); those are cleared and the second call then rebuilds them from
+        scratch. Clearing a wider set than that would leave specs the
+        recompute never revisits stuck at None, which reads as "no lifetime"
+        and silently drops them from the memory reports.
+
+        Placement is already decided at this point - only lifetimes change.
+        """
+        specs = update_all_tensors_lifetime(graph_module, self.graph_signature)
+        for spec in specs:
+            spec.lifetime = [None, None]
+        update_all_tensors_lifetime(graph_module, self.graph_signature)
+
+
 ConstraintGenPassType: TypeAlias = Callable[
     [MemConstraints],
     Callable[[torch.fx.GraphModule], Optional[PassResult]],
@@ -397,20 +485,19 @@ class CadenceMemoryPlanning:
     def __init__(
         self,
         memory_config: MemoryConfig,
-        opt_level: int,
+        mode: CompileMode,
         mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> None:
         self.memory_config = memory_config
-        self.opt_level = opt_level
+        self.mode = mode
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
-
         self.algo: MemoryPlanningAlgo = self.get_mem_algos(
             memory_config,
-            opt_level,
+            mode,
             alloc_graph_input,
             alloc_graph_output,
             additional_constraint_gen_passes,
@@ -419,7 +506,7 @@ class CadenceMemoryPlanning:
     @staticmethod
     def get_mem_algos(
         memory_config: MemoryConfig,
-        opt_level: int,
+        mode: CompileMode,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
         additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]],
@@ -427,14 +514,14 @@ class CadenceMemoryPlanning:
         return [
             PositionBasedGreedyWithHierarchy(
                 memory_config=memory_config,
-                opt_level=opt_level,
+                mode=mode,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 additional_constraint_gen_passes=additional_constraint_gen_passes,
             ),
             GreedyWithHeuristic(
                 memory_config=memory_config,
-                opt_level=opt_level,
+                mode=mode,
                 alloc_graph_input=alloc_graph_input,
                 alloc_graph_output=alloc_graph_output,
                 additional_constraint_gen_passes=additional_constraint_gen_passes,
@@ -465,8 +552,11 @@ class CadenceMemoryPlanning:
         )
         mem_planning.run(graph_module, graph_signature)
 
-        graph_module = PassManager(passes=[SimplifyIdmaOpsPass()])(
-            graph_module
-        ).graph_module
+        graph_module = PassManager(
+            passes=[
+                SimplifyIdmaOpsPass(),
+                RemoveNopOpsPass(graph_signature),
+            ]
+        )(graph_module).graph_module
 
         return PassResult(graph_module, True)

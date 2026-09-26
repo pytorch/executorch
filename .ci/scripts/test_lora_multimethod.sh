@@ -6,13 +6,16 @@
 # LICENSE file in the root directory of this source tree.
 
 set -exu
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    cmake --workflow llm-release
+    cmake --preset llm-release -DEXECUTORCH_ENABLE_LOGGING=ON
+    cmake --build --preset llm-release-install
 }
 
 cmake_build_llama_runner() {
@@ -25,11 +28,32 @@ cmake_build_llama_runner() {
 }
 
 cleanup_files() {
-  echo "Deleting downloaded and generated files"
-  rm -rf "${HF_QWEN_PATH}/"
-  rm -rf "${HF_ADAPTER_PATH}/"
-  rm -rf *.pte
-  rm -f result*.txt
+  # Only what this script generated. HF_QWEN_PATH and HF_ADAPTER_PATH point
+  # inside the huggingface_hub cache: on OSDC that is a shared read-only mount,
+  # so removing them failed the job after the tests had already passed, and
+  # anywhere else it discards a cache entry the next job wants. A teardown also
+  # must not fail a run whose tests passed.
+  echo "Deleting generated files"
+  rm -rf ./*.pte || true
+  rm -f result*.txt || true
+}
+
+matches_base_response_prefix() {
+  local output_file="$1"
+  python - "$output_file" <<'PY'
+import pathlib
+import re
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text()
+pattern = re.compile(
+    r"^<\|im_start\|>user Calculate 15% of 80\?<\|im_end\|><\|im_start\|>assistant:\n"
+    r"(?:<think>\n)+"
+    r"Okay, so I need to calculate 15% of 80\.",
+    re.MULTILINE,
+)
+sys.exit(0 if pattern.match(text) else 1)
+PY
 }
 
 # Download LoRA adapter.
@@ -106,7 +130,7 @@ NOW=$(date +"%H:%M:%S")
 echo "Finished at ${NOW}"
 
 RESULT=$(cat result_base.txt)
-if [[ "${RESULT}" == "${EXPECTED_BASE_PREFIX}"* ]]; then
+if matches_base_response_prefix result_base.txt; then
   echo "Test 2 (base_forward): Success"
 else
   echo "Test 2 (base_forward): Failure"

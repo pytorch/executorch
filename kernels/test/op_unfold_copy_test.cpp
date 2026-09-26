@@ -13,6 +13,8 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 
 #include <gtest/gtest.h>
 
@@ -126,4 +128,34 @@ TEST_F(OpUnfoldTest, InvalidDimAndSizeTooLargeDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_unfold_copy_out(input, /*dim=*/1, /*size=*/10, /*step=*/1, output));
+}
+
+TEST_F(OpUnfoldTest, NonDefaultDimOrderSelfDies) {
+  TensorFactory<ScalarType::Float> tf;
+  const auto input =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}));
+  auto output = tf.zeros({1, 2, 2, 2, 1});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_unfold_copy_out(input, /*dim=*/3, /*size=*/1, /*step=*/1, output));
+}
+
+TEST_F(OpUnfoldTest, NonDefaultDimOrderOutDies) {
+  TensorFactory<ScalarType::Float> tf;
+  const auto input = tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+  auto output = tf.make_with_dimorder(
+      {1, 2, 2, 2, 1}, std::vector<float>(8), {0, 2, 3, 4, 1});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_unfold_copy_out(input, /*dim=*/3, /*size=*/1, /*step=*/1, output));
 }

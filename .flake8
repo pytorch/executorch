@@ -74,6 +74,8 @@ exclude =
     ./build,
     ./configurations,
     ./docs,
+    ./exir/_serialize/generated/executorch_flatbuffer,
+    ./devtools/bundled_program/serialize/generated,
     ./third_party,
     *.pyi
 

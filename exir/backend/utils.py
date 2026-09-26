@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,7 +11,7 @@ import logging
 import operator
 from collections import defaultdict, OrderedDict
 from functools import lru_cache
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir.backend.backend_details import ExportedProgram
@@ -21,10 +21,8 @@ from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from tabulate import tabulate
-from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.experimental.symbolic_shapes import has_free_symbols
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -351,26 +349,33 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     subgraph. Throw error when const/param/buffers is used across different partitions. That is the
     underlying data will be owned by multiple delegates.
     """
+    # Cache signature lookups to avoid rebuilding dicts on every access.
+    sig = edge_program.graph_signature
+    params_map = sig.inputs_to_parameters
+    buffers_map = sig.inputs_to_buffers
+    constants_map = sig.inputs_to_lifted_tensor_constants
+    buffers_to_mutate = sig.buffers_to_mutate
+    mutated_buffer_targets = set(buffers_to_mutate.values())
+
     mutated_buffer = set()
     for node in edge_program.graph.nodes:
         if node.op == "placeholder" and (
-            is_param(edge_program, node)
-            or is_buffer(edge_program, node)
-            or is_lifted_tensor_constant(edge_program, node)
+            node.name in params_map
+            or node.name in buffers_map
+            or node.name in constants_map
         ):
-            for node_user in node.users:
-                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
-                    logging.info(
-                        "The buffer node is a mutated buffer node, which is not constant."
-                    )
-                    mutated_buffer.add(node)
+            if buffers_map.get(node.name) in mutated_buffer_targets:
+                logging.debug(
+                    "The buffer node is a mutated buffer node, which is not constant."
+                )
+                mutated_buffer.add(node)
 
     for node in edge_program.graph.nodes:
         # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
         if node.op == "placeholder" and (
-            is_param(edge_program, node)
-            or is_buffer(edge_program, node)
-            or is_lifted_tensor_constant(edge_program, node)
+            node.name in params_map
+            or node.name in buffers_map
+            or node.name in constants_map
         ):
             if node not in mutated_buffer:
                 user_tags = set()
@@ -384,9 +389,10 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
                         "If the data is too large and it's not preferred to copy, please tag the "
                         "constant node like node.['no_copy'] = True and they won't be copied."
                     )
-                # tag the data node with the same tag as the last user
+                # Pick a deterministic consumer tag so a constant shared across
+                # partitions is assigned reproducibly across runs.
                 if len(user_tags) > 0:
-                    node.meta["delegation_tag"] = user_tags.pop()
+                    node.meta["delegation_tag"] = min(user_tags)
 
 
 def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
@@ -397,16 +403,16 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
     subgraph. Throw error when buffers is used across different partitions. That is the
     underlying data will be owned by multiple delegates.
     """
+    # Cache signature lookups to avoid rebuilding dicts on every access.
+    sig = edge_program.graph_signature
+    buffers_map = sig.inputs_to_buffers
+    mutated_buffer_targets = set(sig.buffers_to_mutate.values())
+
     for node in edge_program.graph.nodes:
-        # Determine whether this node is a mutated buffer
-        is_mutated_buffer_node = False
-        if node.op == "placeholder" and is_buffer(edge_program, node):
-            for node_user in node.users:
-                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
-                    is_mutated_buffer_node = True
-                    break
-        # This node is mutated buffer, tag it
-        if is_mutated_buffer_node:
+        if (
+            node.op == "placeholder"
+            and buffers_map.get(node.name) in mutated_buffer_targets
+        ):
             user_tags = set()
             for user in node.users:
                 user_tag = user.meta.get("delegation_tag", None)
@@ -418,9 +424,10 @@ def tag_mutated_buffer(edge_program: ExportedProgram) -> None:
                     "If the data is too large and it's not preferred to copy, please tag the "
                     "constant node like node.['no_copy'] = True and they won't be copied."
                 )
-            # tag the data node with the same tag as the last user
+            # Pick a deterministic consumer tag so a buffer shared across
+            # partitions is assigned reproducibly across runs.
             if len(user_tags) > 0:
-                node.meta["delegation_tag"] = user_tags.pop()
+                node.meta["delegation_tag"] = min(user_tags)
 
 
 def is_shape_dynamic(node: torch.fx.Node) -> bool:
@@ -659,3 +666,53 @@ class ReportRejected(OperatorSupportBase):
         if not is_supported:
             self.reporter.report_reject(node, self.message)
         return is_supported
+
+
+def get_delegated_payload(
+    graph_module: torch.fx.GraphModule,
+) -> Dict[str, Tuple[str, List[Any], bytes]]:
+    """
+    Extracts the payload for delegates from a graph module that has been lowered
+    to one or more backends.
+
+    This function iterates through all lowered modules (delegates) in the graph
+    and returns a dictionary mapping each delegate's name to a tuple containing:
+    - backend_id: The name/identifier of the backend
+    - compile_specs: A list of backend-specific compilation specifications
+    - processed_bytes: The delegate blob created by the backend's preprocess method
+
+    Args:
+        graph_module: A torch.fx.GraphModule that may contain lowered backend modules.
+            This is typically obtained from an EdgeProgramManager or ExecutorchProgram
+            via `.exported_program().graph_module`.
+
+    Returns:
+        Dict[str, Tuple[str, List[Any], bytes]]: A dictionary where:
+            - Keys are the delegate names (e.g., "lowered_module_0", "lowered_module_1")
+            - Values are tuples of (backend_id, compile_specs, processed_bytes)
+
+    Example:
+        >>> edge = to_edge(export(model, inputs))
+        >>> edge = edge.to_backend(MyPartitioner())
+        >>> payloads = get_delegated_payload(edge.exported_program().graph_module)
+        >>> for name, (backend_id, specs, data) in payloads.items():
+        ...     print(f"{name}: backend={backend_id}, data_size={len(data)}")
+    """
+    from executorch.exir.lowered_backend_module import LoweredBackendModule
+
+    delegate_payloads: Dict[str, Tuple[str, List[Any], bytes]] = {}
+
+    # Find all lowered modules in the graph
+    for node in graph_module.graph.nodes:
+        if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+            lowered_module = getattr(graph_module, node.name, None)
+            if lowered_module is not None and isinstance(
+                lowered_module, LoweredBackendModule
+            ):
+                delegate_payloads[node.name] = (
+                    lowered_module.backend_id,
+                    lowered_module.compile_specs,
+                    lowered_module.processed_bytes,
+                )
+
+    return delegate_payloads

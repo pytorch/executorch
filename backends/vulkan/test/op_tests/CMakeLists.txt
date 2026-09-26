@@ -73,6 +73,8 @@ function(vulkan_op_test test_name test_src)
 
   add_executable(${test_name} ${test_src})
   target_include_directories(${test_name} PRIVATE ${COMMON_INCLUDES})
+  # ATen headers require C++20.
+  set_target_properties(${test_name} PROPERTIES CXX_STANDARD 20)
   target_link_libraries(
     ${test_name}
     PRIVATE GTest::gtest_main
@@ -90,6 +92,8 @@ endfunction()
 if(TARGET vulkan_backend AND LIB_TORCH)
   add_library(test_utils ${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp)
   target_include_directories(test_utils PRIVATE ${COMMON_INCLUDES})
+  # ATen headers require C++20.
+  set_target_properties(test_utils PROPERTIES CXX_STANDARD 20)
   target_link_libraries(
     test_utils PRIVATE vulkan_backend ${LIB_TORCH} ${LIB_TORCH_CPU}
   )
@@ -114,6 +118,23 @@ if(TARGET vulkan_backend AND LIB_TORCH)
   )
   vulkan_op_test(
     quantized_linear_test ${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_test.cpp
+    test_utils
+  )
+  vulkan_op_test(
+    adamw_step_test ${CMAKE_CURRENT_SOURCE_DIR}/adamw_step_test.cpp test_utils
+  )
+  vulkan_op_test(
+    linear_dW_test ${CMAKE_CURRENT_SOURCE_DIR}/linear_dW_test.cpp test_utils
+  )
+  vulkan_op_test(
+    fused_ce_test ${CMAKE_CURRENT_SOURCE_DIR}/fused_ce_test.cpp test_utils
+  )
+  vulkan_op_test(
+    quantized_linear_backward_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/quantized_linear_backward_test.cpp test_utils
+  )
+  vulkan_op_test(
+    q4gsw_requant_test ${CMAKE_CURRENT_SOURCE_DIR}/q4gsw_requant_test.cpp
     test_utils
   )
 

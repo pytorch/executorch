@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from dataclasses import dataclass, fields, is_dataclass
 from typing import ClassVar, Literal, Optional
 
@@ -300,6 +301,29 @@ def pretty_print_xnngraph(xnnpack_graph_json: str, filename: Optional[str] = Non
 _delegate_instance_id = 0
 
 
+_cached_schema_bytes: Optional[bytes] = None
+# Lock protecting _cached_schema_bytes initialization. The race itself would
+# be benign (read_bytes() is idempotent), but a lock keeps this consistent
+# with the pattern used for caching the flatc binary in _flatbuffer.py.
+_schema_bytes_lock: threading.Lock = threading.Lock()
+
+
+def _get_schema_bytes() -> bytes:
+    """Returns the schema.fbs bytes, caching the result across calls."""
+    global _cached_schema_bytes
+    # Double-checked locking: fast path avoids the lock once cached.
+    if _cached_schema_bytes is not None:
+        return _cached_schema_bytes
+    with _schema_bytes_lock:
+        if _cached_schema_bytes is None:
+            _cached_schema_bytes = (
+                _resources.files(serialization_package)
+                .joinpath("schema.fbs")
+                .read_bytes()
+            )
+        return _cached_schema_bytes
+
+
 def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
     global _delegate_instance_id
     sanity_check_xnngraph_dataclass(xnnpack_graph)
@@ -316,11 +340,7 @@ def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(
-                _resources.files(serialization_package)
-                .joinpath("schema.fbs")
-                .read_bytes()
-            )
+            schema_file.write(_get_schema_bytes())
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "wb") as json_file:
             json_file.write(xnnpack_graph_json.encode("ascii"))

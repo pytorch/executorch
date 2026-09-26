@@ -4,21 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
-import os
-import re
 import warnings
 from collections import defaultdict, OrderedDict
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
-
 import executorch.exir as exir
 import torch
-
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
-
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders.node_visitor import (
     QNN_QUANT_TYPE_MAP,
     QNN_TENSOR_TYPE_MAP,
@@ -32,15 +29,21 @@ from executorch.backends.qualcomm.partition.qnn_partitioner import (
 from executorch.backends.qualcomm.serialization.qc_schema import (
     _soc_info_table,
     HtpArch,
+    LpaiHardwareVersion,
     QcomChipset,
     QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
     QnnExecuTorchGpuBackendOptions,
+    QnnExecuTorchGpuPerformanceMode,
     QnnExecuTorchGpuPrecision,
     QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
+    QnnExecuTorchLpaiBackendOptions,
+    QnnExecuTorchLpaiClientPerf,
+    QnnExecuTorchLpaiCoreAffinity,
+    QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchOpPackageOptions,
     QnnExecuTorchOptions,
     QnnExecuTorchProfileLevel,
@@ -49,13 +52,21 @@ from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
     option_to_flatbuffer,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    describe_sdk_build_id,
+    get_qnn_lib_name,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_QNN_COMPILE_SPEC,
     QCOM_QUANTIZED_IO,
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
-
-from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
+)
+from executorch.exir import ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import (
@@ -134,10 +145,6 @@ class _AnnotationSkipper(OperatorSupportBase):
         return True
 
 
-def qnn_capture_config():
-    return exir.CaptureConfig(enable_aot=True)
-
-
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(
         _check_ir_validity=False,
@@ -162,11 +169,20 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
-            x = torch.transpose(x, 1, 2)
+            if rank == 3:
+                bsz, dim0, dim1 = x.size()
+                x = torch.reshape(x, (bsz, dim0, 1, dim1))
+            else:
+                dim0, dim1 = x.size()
+                x = torch.reshape(x, (1, dim0, 1, dim1))
+            x = torch.transpose(x, 1, 3)
             res = self.conv(x)
-            res = torch.transpose(res, 1, 2)
-            res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+            res = res.permute(0, 3, 1, 2)
+            res = (
+                res.squeeze(-1)
+                if rank == 3
+                else res.reshape(dim0, self.conv.weight.shape[0])
+            )
             return res
 
     def replace_linear(module: torch.nn.Module):
@@ -186,10 +202,10 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
     return replace_linear(module)
 
 
-def dump_context_from_pte(pte_path) -> List[str]:
+def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
     """
-    Dump compiled binaries under the same directory of pte_path.
-    For partitioned graph, there will be multiple files with names f"{method_name}_{index}".
+    Dump compiled binaries under output_dir, or the same directory as pte_path
+    when output_dir is not set.
     'method_name' refers to the name of a method in the nn.Module that was traced to
     generate this program, while 'index' indicates the order of execution.
 
@@ -205,7 +221,8 @@ def dump_context_from_pte(pte_path) -> List[str]:
 
     program = deserialize_pte_binary(program_data).program
 
-    ctx_path = os.path.dirname(pte_path)
+    ctx_path = output_dir or os.path.dirname(pte_path)
+    os.makedirs(ctx_path, exist_ok=True)
     dumpfiles = []
     for execution_plan in program.execution_plan:
         for i, delegate in enumerate(execution_plan.delegates):
@@ -228,6 +245,10 @@ def dump_context_from_pte(pte_path) -> List[str]:
 def update_spill_fill_size(
     exported_program: ExportedProgram | List[LoweredBackendModule],
 ):
+    # Reads a context binary through a QnnManager, so the SDK has to be usable first.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     # check if user specifies to use multi_contexts
     # this is a generic approach in case there exists multiple backends
     def get_program_info(program):
@@ -315,7 +336,7 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
             if skip_decomp_op
-            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
+            not in AnnotateStack._SOURCE_OPS + AnnotateUnbind._SOURCE_OPS
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
@@ -373,6 +394,17 @@ def to_edge_transform_and_lower_to_qnn(
         EdgeProgramManager:
             The manager for the edge program after transformation and lowering.
     """
+    # Both applied at the entry point rather than deeper in the lowering.
+    #
+    # The SDK setup can download one, and on an old glibc the installer re-executes the
+    # interpreter to pick up a staged loader. Doing that partway through would throw away a model
+    # that has already been traced, so it happens before any of that work.
+    #
+    # The AMD guard needs to precede any eager run of the model. The crash it prevents needs a
+    # real convolution to execute, which a trace does not do (it works on fake tensors) but
+    # calibration and a plain forward pass do.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
 
     def ensure_graph_specific_dict(value, graph_names):
         """
@@ -398,6 +430,21 @@ def to_edge_transform_and_lower_to_qnn(
         if isinstance(value, dict) and graph_names == value.keys():
             return value
         return {graph_name: value for graph_name in graph_names}
+
+    # Ensure if user is using intermediate debugger, user only lower 1 method.
+    # This restriction is caused by conflict handle_id among graphs.
+    # This could be resolved with generating random debug_id(e.g., uuid).
+    for compiler_spec in (
+        compiler_specs.values()
+        if isinstance(compiler_specs, Dict)
+        else [compiler_specs]
+    ):
+        option = generate_qnn_executorch_option(compiler_spec)
+        obj_options = flatbuffer_to_option(option)
+        if obj_options.dump_intermediate_outputs and isinstance(module, Dict):
+            assert (
+                len(module) == 1
+            ), "Intermediate Tensor Dump does not support multi-methods."
 
     if not isinstance(module, dict):
         module = {"forward": module}
@@ -432,6 +479,10 @@ def to_edge_transform_and_lower_to_qnn(
             dynamic_shapes=dynamic_shapes[graph_name],
             strict=True,
         )
+        option = generate_qnn_executorch_option(compiler_specs[graph_name])
+        python_options = flatbuffer_to_option(option)
+        backend_type = python_options.backend_options.backend_type
+        pass_manager = get_qnn_pass_manager_cls(backend_type)()
         # This transformation is primarily intended for the LiftConstantScalarOperands pass
         # to avoid creating temporary tensors in the operation builder.
         # However, this pass will create a get_attr node, which should be converted
@@ -439,11 +490,15 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(
-            ep, convert_linear_to_conv2d=convert_linear_to_conv2d
-        )
-        transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
-            ep, passes_job=passes_job[graph_name], dep_table=dep_table[graph_name]
+        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(ep)
+        transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
+            ep,
+            passes_job=passes_job[graph_name],
+            dep_table=dep_table[graph_name],
+            compiler_specs=compiler_specs[graph_name],
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
@@ -483,15 +538,20 @@ def capture_program(
         DeprecationWarning,
         stacklevel=1,
     )
+    # See to_edge_transform_and_lower_to_qnn for why both happen at the entry point.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     ep = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True)
-    ep = QnnPassManager().transform_for_export_pipeline(ep)
+    pass_manager = get_qnn_pass_manager_cls(QnnExecuTorchBackendType.kHtpBackend)()
+    ep = pass_manager.transform_for_export_pipeline(ep)
     # TODO: Handle stack op. If we want to run annotate_decomposed pass for stack op,
     # we need to make stack op decompose, which means we need to find a method to
     # remove it from skip_decomp table
     decomposed_ep = ep.run_decompositions(get_decomp_table(passes_job))
     core_ep = ExirExportedProgram(decomposed_ep, False)
     edge_ep = core_ep.to_edge(qnn_edge_config())
-    transform_passes = QnnPassManager().get_to_edge_transform_passes(
+    transform_passes = pass_manager.get_to_edge_transform_passes(
         edge_ep.exported_program,
         passes_job=passes_job,
         dep_table=dep_table,
@@ -691,6 +751,12 @@ def skip_annotation(
     from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
     from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
+    # Both before the tracing and calibration below. Calibration runs the model eagerly, which is
+    # what the AMD guard is for, and the installer can re-execute the interpreter, which must not
+    # happen after a model has been traced.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     def prepare_subgm(subgm, subgm_name):
         # prepare current submodule for quantization annotation
         subgm_prepared = prepare_pt2e(subgm, quantizer)
@@ -775,6 +841,10 @@ def from_context_binary(  # noqa: C901
     soc_model: QcomChipset = QcomChipset.SM8650,
     custom_info: Dict = None,
 ):
+    # Reads a context binary through a QnnManager, so the SDK has to be usable first.
+    setup_qnn_sdk()
+    disable_mkldnn_on_amd()
+
     from pathlib import Path
 
     def implement_op(custom_op, op_name, outputs):
@@ -915,8 +985,6 @@ def from_context_binary(  # noqa: C901
     # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
         {graph_name: bundle_prog["exported_program"]},
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
 
     # update meta with context binary
@@ -952,6 +1020,7 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule, format=DrawForma
 
 
 def generate_gpu_compiler_spec(
+    performance_mode: QnnExecuTorchGpuPerformanceMode = QnnExecuTorchGpuPerformanceMode.kGpuPerfHintHigh,
     precision: QnnExecuTorchGpuPrecision = QnnExecuTorchGpuPrecision.kGpuPrecisionUserProvided,
     use_memory_optimizations: bool = True,
     use_node_optimizations: bool = True,
@@ -962,6 +1031,8 @@ def generate_gpu_compiler_spec(
     Helper function generating backend options for QNN HTP
 
     Args:
+        performance_mode:
+            kGpuPerfHintHigh / kGpuPerfHintNormal / kGpuPerfHintLow
         precision:
             kGpuPrecisionFp32 - Sets the precision mode to floating point 32-bit (FP32).
             kGpuPrecisionFp16 - Sets the precision mode to floating point 16-bit (FP16).
@@ -980,6 +1051,7 @@ def generate_gpu_compiler_spec(
     """
     # TODO: enable performance hint mechanism in runtime and make this as an option
     gpu_options = QnnExecuTorchGpuBackendOptions()
+    gpu_options.performance_mode = performance_mode
     gpu_options.precision = precision
     gpu_options.use_memory_optimizations = use_memory_optimizations
     gpu_options.use_node_optimizations = use_node_optimizations
@@ -998,6 +1070,7 @@ def generate_htp_compiler_spec(
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
     use_slc_allocator: bool = False,
+    htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ) -> QnnExecuTorchBackendOptions:
     """
     Helper function generating backend options for QNN HTP
@@ -1029,7 +1102,7 @@ def generate_htp_compiler_spec(
     # This actually is not an option which can affect the compiled blob.
     # But we don't have other place to pass this option at execution stage.
     # TODO: enable voting mechanism in runtime and make this as an option
-    htp_options.performance_mode = QnnExecuTorchHtpPerformanceMode.kHtpBurst
+    htp_options.performance_mode = htp_performance_mode
     htp_options.use_multi_contexts = use_multi_contexts
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
@@ -1040,15 +1113,82 @@ def generate_htp_compiler_spec(
     )
 
 
-def generate_qnn_executorch_compiler_spec(
+def generate_lpai_compiler_spec(
+    fps: int = 1,
+    ftrt_ratio: int = 10,
+    client_perf_type: QnnExecuTorchLpaiClientPerf = QnnExecuTorchLpaiClientPerf.kRealTime,
+    affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft,
+    core_selection: int = 0,
+    target_env: QnnExecuTorchLpaiTargetEnv = QnnExecuTorchLpaiTargetEnv.kArm,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN LPAI
+
+    Args:
+        fps:
+            Specifies how frequently inference must be completed.
+            This sets the overall time budget for each frame, including pre-processing,
+            inference, and post-processing.
+        ftrt_ratio:
+            Determines the hardware configuration to meet the latency requirement for inference.
+            Setting ftrt_ratio = 50 applies a multiplication factor of 5.0 to the base clock frequency,
+            helping the eNPU meet the tighter latency constraint.
+        client_perf_type:
+            kRealtime - Indicates that the model is intended for real-time use cases,
+                where a specific performance threshold must be met.
+                If the required performance cannot be achieved, the finalize function will return an error.
+            kNonRealTime - Refers to models without strict performance requirements.
+                In these cases, LPAI will make a best-effort attempt to accommodate the workload,
+                and finalize will not fail due to performance limitations.
+        affinity:
+            kSoft - Default affinity. Scheduler will assign jobs to requested cores when feasible
+            kHard - Scheduler will honour affinity requested by the client
+        core_selection:
+            A bit mask for core selection. Each bit corresponds to a core, set the bit to use the core
+            Note that all zeros and all ones mean any core can be used for the eAI instance
+        target_env:
+            Specifies the target environment for the LPAI execution
+            kArm - Targeting ARM architecture
+            kX86 - Targeting x86 architecture
+            kAdsp - (WIP) Direcltly execute on the DSP instead of FastRPC communication
+
+        Example for 2 cores:
+        +--------+--------+---------------+-------------------------------------------------------------------------+
+        | bit 1  | bit 0  | affinity      |                 scheduler behavior                                      |
+        +--------+--------+---------------+-------------------------------------------------------------------------+
+        | 0      |      0 |      any      | Default affinity, scheduler will pick any core based on load            |
+        | 1      |      1 |      any      | Same as default affinity                                                |
+        | 0      |      1 |      hard     | All jobs will only be sent to core 0                                    |
+        | 1      |      0 |      hard     | All jobs will only be sent to core 1                                    |
+        | 0      |      1 |      soft     | Scheduler will attempt to send jobs to core 0                           |
+        | 1      |      0 |      soft     | Scheduler will attempt to send jobs to core 1                           |
+        +--------+--------+---------------+-------+-----------------------------------------------------------------+
+
+    Returns:
+        QnnExecuTorchBackendOptions: backend options for QNN LPAI.
+    """
+    lpai_options = QnnExecuTorchLpaiBackendOptions()
+    lpai_options.fps = fps
+    lpai_options.ftrt_ratio = ftrt_ratio
+    lpai_options.client_perf_type = client_perf_type
+    lpai_options.affinity = affinity
+    lpai_options.core_selection = core_selection
+    lpai_options.target_env = target_env
+
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kLpaiBackend,
+        lpai_options=lpai_options,
+    )
+
+
+def generate_qnn_executorch_compiler_spec(  # noqa: C901
     soc_model: QcomChipset,
     backend_options: QnnExecuTorchBackendOptions,
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
     dump_intermediate_outputs: bool = False,
-    profile: bool = False,
-    optrace: bool = False,
+    profile_level: int = 0,
     shared_buffer: bool = False,
     is_from_context_binary: bool = False,
     op_package_options: QnnExecuTorchOpPackageOptions = None,
@@ -1060,9 +1200,11 @@ def generate_qnn_executorch_compiler_spec(
     Args:
         soc_model: The SoC you plan to run the compiled model. Please check
             QcomChipset for supported SoC.
+            SM7675(Snapdragon 7+ Gen 3)
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8635(Snapdragon 8s Gen 3)
             SM8650(Snapdragon 8 Gen 3)
             SM8750(Snapdragon 8 Elite)
             SM8850(Snapdragon 8 Elite Gen 5)
@@ -1075,9 +1217,8 @@ def generate_qnn_executorch_compiler_spec(
             for debugging purpose.
         dump_intermediate_outputs: If tensor dump is enabled, all intermediate tensors output will be dumped.
             This option exists for debugging accuracy issues
-        profile: Enable profile the performance of per operator.
-            Note that for now only support kProfileDetailed to
-            profile the performance of each operator with cycle unit.
+        profile_level: Enable profiling the performance of per operator.
+            Note that for now only support kProfileDetailed and kProfileOptrace.
         shared_buffer: Enables usage of shared buffer between application
             and backend for graph I/O.
         is_from_context_binary: True if current graph comes from pre-built context binary.
@@ -1096,7 +1237,7 @@ def generate_qnn_executorch_compiler_spec(
     if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
 
-    if profile and dump_intermediate_outputs:
+    if profile_level and dump_intermediate_outputs:
         warnings.warn(
             "It is not recommended to turn on both profiling and dump_intermediate_outputs the same time"
             ", because dump_intermediate_outputs will cause performance drop.",
@@ -1115,17 +1256,23 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
 
     if saver:
-        qnn_executorch_options.library_path = "libQnnSaver.so"
+        qnn_executorch_options.library_path = get_qnn_lib_name("QnnSaver")
         qnn_executorch_options.saver = True
         qnn_executorch_options.saver_output_dir = "saver_output"
 
-    if optrace:
+    if profile_level == 3:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOptrace
-    elif profile:
+    elif profile_level == 2:
         qnn_executorch_options.profile_level = (
             QnnExecuTorchProfileLevel.kProfileDetailed
         )
     else:
+        if profile_level == 1:
+            warnings.warn(
+                "Profile Level 1, kProfileBasic, is not supported, turning off profiling.",
+                DeprecationWarning,
+                stacklevel=1,
+            )
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
 
     if (
@@ -1137,6 +1284,32 @@ def generate_qnn_executorch_compiler_spec(
             "'use_multi_context' could not function in online prepare mode, "
             "please set 'online_prepare' to False"
         )
+
+    if (
+        online_prepare
+        and backend_options.backend_type == QnnExecuTorchBackendType.kLpaiBackend
+    ):
+        raise ValueError("LPAI does not support online prepare.")
+
+    if backend_options.backend_type == QnnExecuTorchBackendType.kLpaiBackend:
+        if soc_model.name not in get_soc_to_lpai_hw_ver_map():
+            raise ValueError(
+                f"Target soc_model({soc_model.name}) doesn't support LPAI backend. \n"
+                "Please choose the following SOC: "
+                f"{list(get_soc_to_lpai_hw_ver_map().keys())}"
+            )
+        # Before the version check below, so a host with no SDK yet gets one installed and the
+        # check has something real to read. It cannot lift an older SDK past this gate: the
+        # installer fetches a fixed version, so a caller who needs a newer one has to supply it
+        # through QNN_SDK_ROOT.
+        setup_qnn_sdk()
+        if get_soc_to_lpai_hw_ver_map()[
+            soc_model.name
+        ] == LpaiHardwareVersion.V6 and is_qnn_sdk_version_less_than("2.39"):
+            raise ValueError(
+                f"Target soc_model({soc_model.name}) with LPAI backend v6 requires QNN SDK version >= 2.39. \n"
+                f"Current QNN SDK version: {describe_sdk_build_id()}"
+            )
 
     qnn_executorch_options.shared_buffer = shared_buffer
     qnn_executorch_options.online_prepare = online_prepare
@@ -1152,15 +1325,19 @@ def generate_qnn_executorch_compiler_spec(
     ]
 
 
-def get_soc_to_arch_map():
+# If changing function interface, please ensure it doesn't break backends/qualcomm/scripts/build_utils.sh
+def get_soc_to_htp_arch_map():
     return {
         "SA8295": HtpArch.V68,
         "SA8797": HtpArch.V81,
+        "SC8380XP": HtpArch.V73,
         "SM8350": HtpArch.V68,
         "SM8450": HtpArch.V69,
         "SM8475": HtpArch.V69,
         "SM8550": HtpArch.V73,
+        "SM7675": HtpArch.V73,
         "SA8255": HtpArch.V73,
+        "SM8635": HtpArch.V73,
         "SM8650": HtpArch.V75,
         "SM8750": HtpArch.V79,
         "SM8850": HtpArch.V81,
@@ -1177,15 +1354,26 @@ def get_soc_to_arch_map():
     }
 
 
+# If changing function interface, please ensure it doesn't break backends/qualcomm/scripts/build_utils.sh
+def get_soc_to_lpai_hw_ver_map():
+    return {
+        "SM8850": LpaiHardwareVersion.V6,
+        "SAR2230P": LpaiHardwareVersion.V6,
+    }
+
+
 def get_soc_to_chipset_map():
     return {
         "SA8295": QcomChipset.SA8295,
         "SA8797": QcomChipset.SA8797,
+        "SC8380XP": QcomChipset.SC8380XP,
+        "SM7675": QcomChipset.SM7675,
         "SM8350": QcomChipset.SM8350,
         "SM8450": QcomChipset.SM8450,
         "SM8475": QcomChipset.SM8475,
         "SM8550": QcomChipset.SM8550,
         "SA8255": QcomChipset.SA8255,
+        "SM8635": QcomChipset.SM8635,
         "SM8650": QcomChipset.SM8650,
         "SM8750": QcomChipset.SM8750,
         "SM8850": QcomChipset.SM8850,
@@ -1199,6 +1387,7 @@ def get_soc_to_chipset_map():
         "SW6100": QcomChipset.SW6100,
         "QCM6490": QcomChipset.QCM6490,
         "SM8845": QcomChipset.SM8845,
+        "SA8540": QcomChipset.SA8540,
     }
 
 
@@ -1290,26 +1479,5 @@ def rewrite_prepared_observer(
             setattr(graph_module, target_name, new_observer)
 
 
-def get_sdk_build_id():
-    htp_library_path = (
-        os.environ.get("QNN_SDK_ROOT", None) + "/lib/x86_64-linux-clang/libQnnHtp.so"
-    )
-    # The GetQnnSdkBuildId API can be used without needing to create a backend first, so it works regardless of which backend is used.
-    sdk_build_id = PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
-    return sdk_build_id
-
-
-def is_qnn_sdk_version_less_than(target_version):
-    current_version = get_sdk_build_id()
-
-    match = re.search(r"v(\d+)\.(\d+)", current_version)
-    if match:
-        current_major, current_minor = map(int, match.groups()[:2])
-    else:
-        raise ValueError(
-            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
-        )
-
-    target_major, target_minor = map(int, target_version.split(".")[:2])
-
-    return current_major == target_major and current_minor < target_minor
+def get_qnn_context_binary_alignment() -> int:
+    return PyQnnManagerAdaptor.GetQNNCtxBinAlignment()

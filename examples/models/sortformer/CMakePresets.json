@@ -15,6 +15,19 @@
             "name": "sortformer-cpu",
             "displayName": "Sortformer runner (CPU)",
             "inherits": ["sortformer-base"]
+        },
+        {
+            "name": "sortformer-cuda",
+            "displayName": "Sortformer runner (CUDA)",
+            "inherits": ["sortformer-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
         }
     ],
     "buildPresets": [
@@ -22,6 +35,12 @@
             "name": "sortformer-cpu",
             "displayName": "Build Sortformer runner (CPU)",
             "configurePreset": "sortformer-cpu",
+            "targets": ["sortformer_runner"]
+        },
+        {
+            "name": "sortformer-cuda",
+            "displayName": "Build Sortformer runner (CUDA)",
+            "configurePreset": "sortformer-cuda",
             "targets": ["sortformer_runner"]
         }
     ],
@@ -37,6 +56,20 @@
                 {
                     "type": "build",
                     "name": "sortformer-cpu"
+                }
+            ]
+        },
+        {
+            "name": "sortformer-cuda",
+            "displayName": "Configure and build Sortformer runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "sortformer-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "sortformer-cuda"
                 }
             ]
         }

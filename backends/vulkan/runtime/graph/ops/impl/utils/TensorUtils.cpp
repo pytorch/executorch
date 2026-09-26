@@ -18,10 +18,15 @@ std::vector<int64_t> calculate_broadcasted_output_size(
     const std::vector<int64_t>& sizes1,
     const std::vector<int64_t>& sizes2) {
   std::vector<int64_t> out_sizes(std::max(sizes1.size(), sizes2.size()));
+  // ndim must be signed. `-out_sizes.size()` is size_t arithmetic, so when both
+  // inputs are 0-dimensional it evaluates to 0 while `i` promotes to a huge
+  // unsigned value, the guard stays true, and `out_sizes.at(size() - 1)` throws
+  // std::out_of_range instead of the loop being skipped.
+  const int64_t ndim = static_cast<int64_t>(out_sizes.size());
 
   // Match the sizes in reverse because sizes are in NCHW order
-  for (int i = -1; i >= -out_sizes.size(); --i) {
-    out_sizes.at(out_sizes.size() + i) =
+  for (int64_t i = -1; i >= -ndim; --i) {
+    out_sizes.at(static_cast<size_t>(ndim + i)) =
         std::max(utils::val_at(i, sizes1), utils::val_at(i, sizes2));
   }
 
@@ -77,20 +82,20 @@ utils::ivec2 create_broadcast_params(
 // Work group size calculation functions
 //
 
-utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group) {
-  utils::uvec3 local_group_size = {4, 4, 4};
-  if (global_work_group[2u] == 1) {
-    if (global_work_group[1u] < 8) {
-      local_group_size[0u] = 16;
-      local_group_size[1u] = 4;
-      local_group_size[2u] = 1;
+LocalWorkGroup adaptive_lwg(const GlobalWorkGrid& gwg) {
+  utils::uvec3 extents = {4u, 4u, 4u};
+  if (gwg[2u] == 1) {
+    if (gwg[1u] < 8) {
+      extents[0u] = 16u;
+      extents[1u] = 4u;
+      extents[2u] = 1u;
     } else {
-      local_group_size[0u] = 8;
-      local_group_size[1u] = 8;
-      local_group_size[2u] = 1;
+      extents[0u] = 8u;
+      extents[1u] = 8u;
+      extents[2u] = 1u;
     }
   }
-  return local_group_size;
+  return LocalWorkGroup(extents);
 }
 
 } // namespace vkcompute

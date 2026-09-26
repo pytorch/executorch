@@ -9,7 +9,7 @@ Quantization is especially important for deploying models on edge devices such a
 ExecuTorch uses [torchao](https://github.com/pytorch/ao/tree/main/torchao) as its quantization library. This integration allows ExecuTorch to leverage PyTorch-native tools for preparing, calibrating, and converting quantized models.
 
 
-Quantization in ExecuTorch is backend-specific. Each backend defines how models should be quantized based on its hardware capabilities. Most ExecuTorch backends use the torchao [PT2E quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) flow, which works on models exported with torch.export and enables quantization that is tailored for each backend.
+Quantization in ExecuTorch is backend-specific. Each backend defines how models should be quantized based on its hardware capabilities. Most ExecuTorch backends use the torchao [PT2E quantization](https://docs.pytorch.org/ao/stable/pt2e_quantization/pt2e_quant_ptq.html) flow, which works on models exported with torch.export and enables quantization that is tailored for each backend.
 
 The PT2E quantization workflow has three main steps:
 
@@ -25,12 +25,14 @@ These quantizers usually support configs that allow users to specify quantizatio
 * Precision (e.g., 8-bit or 4-bit)
 * Quantization type (e.g., dynamic, static, or weight-only quantization)
 * Granularity (e.g., per-tensor, per-channel)
+* Post-Training Quantization vs. Quantization Aware Training 
 
 Not all quantization options are supported by all backends. Consult backend-specific guides for supported quantization modes and configuration, and how to initialize the backend-specific PT2E quantizer:
 
 * [XNNPACK quantization](backends/xnnpack/xnnpack-quantization.md)
 * [CoreML quantization](backends/coreml/coreml-quantization.md)
 * [QNN quantization](backends-qualcomm.md#step-2-optional-quantize-your-model)
+* [NXP quantization](backends/nxp/nxp-quantization.md)
 
 
 

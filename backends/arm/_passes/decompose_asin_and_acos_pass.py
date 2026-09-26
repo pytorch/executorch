@@ -10,7 +10,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -27,6 +27,7 @@ from executorch.exir.pass_base import ExportPass
 # For MI case
 edge_asin_op = (exir_ops.edge.aten.asin.default,)
 edge_acos_op = (exir_ops.edge.aten.acos.default,)
+logger = logging.getLogger(__name__)
 
 
 def get_decomposition(op) -> tuple:
@@ -42,14 +43,13 @@ def get_decomposition(op) -> tuple:
             exir_ops.edge.aten.gt.Scalar,
             exir_ops.edge.aten.lt.Scalar,
             exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.full_like.default,
             exir_ops.edge.aten.neg.default,
         )
 
     raise RuntimeError(f"Can't get decomposition for op {op}")
 
 
-class DecomposeAsinAndAcosPass(ArmPass):
+class DecomposeAsinAndAcosPass(ArmOpTargetedPass):
     """This pass decomposes asin and acos into a rational approximation for
     small values and a transformed rational approximation for large values.
 
@@ -72,6 +72,18 @@ class DecomposeAsinAndAcosPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = edge_asin_op + edge_acos_op
+
+    def call(self, graph_module):
+        self._approximated = 0
+        result = super().call(graph_module)
+        if self._approximated:
+            logger.info(
+                "DecomposeAsinAndAcosPass: approximated %d asin/acos operator(s); "
+                "small numerical errors may be introduced.",
+                self._approximated,
+            )
+        return result
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]
@@ -79,15 +91,12 @@ class DecomposeAsinAndAcosPass(ArmPass):
         """Helper function to build polynomial from coefficients and
         variable.
         """
-        full_like_op, add_op, mul_op_scalar, mul_op = (
-            exir_ops.edge.aten.full_like.default,
+        add_op, mul_op_scalar, mul_op = (
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Scalar,
             exir_ops.edge.aten.mul.Tensor,
         )
-        result = super().call_operator(
-            full_like_op, (variable, coefficients[0]), {}, meta, True
-        )
+        result = super().call_scalar(coefficients[0], meta)
         for coeff in coefficients[1:]:
             result = super().call_operator(
                 add_op,
@@ -120,16 +129,14 @@ class DecomposeAsinAndAcosPass(ArmPass):
         )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_asin_op + edge_acos_op):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
-        logging.info(
-            f"Approximating {op}. This may introduce small numerical errors. For details, see {__file__}."
-        )
+        self._approximated += 1
         x = args[0]
         half = 0.5
         one = 1.0
@@ -150,7 +157,6 @@ class DecomposeAsinAndAcosPass(ArmPass):
             gt_op,
             lt_op,
             sub_op,
-            full_like_op,
             neg_op,
         ) = get_decomposition(op)
 
@@ -179,7 +185,7 @@ class DecomposeAsinAndAcosPass(ArmPass):
 
         # Step 2: Compute the transformed approximation for large values
         # Calculate z = -0.5 * (|x| - 1)
-        tmp_ones = super().call_operator(full_like_op, (x_abs, one), {}, meta, True)
+        tmp_ones = super().call_scalar(one, meta)
         tmp = super().call_operator(sub_op, (x_abs, tmp_ones), {}, meta, True)
         z = super().call_operator(mul_op_scalar, (tmp, neg_half), {}, meta, True)
 
@@ -201,9 +207,7 @@ class DecomposeAsinAndAcosPass(ArmPass):
         t2 = super().call_operator(mul_op_scalar, (t1, two), {}, meta, True)
 
         diff = super().call_operator(sub_op_scalar, (t2, pi_over_2), {}, meta, True)
-        tmp_neg_ones = super().call_operator(
-            full_like_op, (diff, neg_one), {}, meta, True
-        )
+        tmp_neg_ones = super().call_scalar(neg_one, meta)
         asin_large = super().call_operator(mul_op, (diff, tmp_neg_ones), {}, meta, True)
 
         asin_unsigned = self._combine_branches(
@@ -218,9 +222,7 @@ class DecomposeAsinAndAcosPass(ArmPass):
 
         if op in edge_acos_op:
             # If x <= 0.5: acos(x) = pi/2 - asin(x)
-            const_tensor = super().call_operator(
-                full_like_op, (x, pi_over_2), {}, meta, True
-            )
+            const_tensor = super().call_scalar(pi_over_2, meta)
             acos_small = super().call_operator(
                 sub_op, (const_tensor, asin), {}, meta, True
             )

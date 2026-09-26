@@ -10,6 +10,8 @@
 
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/core/portable_type/device.h>
+#include <executorch/runtime/core/span.h>
 
 namespace executorch {
 namespace runtime {
@@ -42,7 +44,8 @@ class MemoryManager final {
    *     must agree with the corresponding
    *     `MethodMeta::num_memory_planned_buffers()` and
    *     `MethodMeta::memory_planned_buffer_size(N)` values, which are embedded
-   *     in the Program.
+   *     in the Program. For device-aware programs, the per-buffer device
+   *     metadata is owned by the HierarchicalAllocator as well.
    * @param[in] temp_allocator The allocator to use when allocating temporary
    *     data during kernel or delegate execution. Must outlive the Method that
    *     uses it. May be `nullptr` if the Method does not use kernels or
@@ -103,6 +106,29 @@ class MemoryManager final {
    */
   MemoryAllocator* temp_allocator() const {
     return temp_allocator_;
+  }
+
+  /**
+   * Returns per-buffer device metadata. One entry per planned memory buffer,
+   * same count as planned_memory buffers. Empty if no device metadata was
+   * provided (CPU-only program) or if `planned_memory` is null.
+   *
+   * This is a thin wrapper around
+   * `HierarchicalAllocator::planned_buffer_devices()`.
+   */
+  Span<const etensor::Device> planned_buffer_devices() const {
+    if (planned_memory_ == nullptr) {
+      return {};
+    }
+    return planned_memory_->planned_buffer_devices();
+  }
+
+  /**
+   * Returns true if any planned buffer has device metadata attached.
+   * When false, the memory setup is CPU-only.
+   */
+  bool has_device_memory() const {
+    return planned_buffer_devices().size() > 0;
   }
 
  private:

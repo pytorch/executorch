@@ -8,13 +8,18 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
+#include <optional>
+
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
+#include <executorch/extension/cuda/device_guard.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 
 namespace executorch::backends::cuda {
+
+using ::executorch::extension::cuda::CUDAGuard;
 
 using executorch::runtime::Error;
 using executorch::runtime::Result;
@@ -44,73 +49,25 @@ Error setCurrentCUDAStream(cudaStream_t stream, DeviceIndex device_index = -1);
 Result<cudaStream_t> getCurrentCUDAStream(DeviceIndex device_index = -1);
 
 /**
- * RAII guard that sets the current CUDA device and restores it on destruction.
- * This ensures that the device is properly restored even if an exception
- * occurs.
+ * The CUDA stream registered for the specified device, or std::nullopt if none
+ * is set. Unlike getCurrentCUDAStream, it never creates one, so it can snapshot
+ * the current selection without side effects. Also returns std::nullopt if the
+ * current device cannot be queried (device_index -1), so nullopt does not
+ * distinguish "no stream set" from "device query failed".
  *
+ * @param device_index The device index (-1 to use current device)
  */
-class CUDAGuard {
- private:
-  /**
-   * Private constructor - use create() factory method instead.
-   */
-  explicit CUDAGuard()
-      : original_device_index_(-1), current_device_index_(-1) {}
+std::optional<cudaStream_t> peekCurrentCUDAStream(
+    DeviceIndex device_index = -1);
 
- public:
-  /**
-   * Factory method to create a CUDAGuard.
-   *
-   * @param device_index The device index to set as current
-   * @return Result containing the guard on success, or an error code on failure
-   */
-  static Result<CUDAGuard> create(DeviceIndex device_index);
-
-  // Copy is not allowed
-  CUDAGuard(const CUDAGuard&) = delete;
-  CUDAGuard& operator=(const CUDAGuard&) = delete;
-
-  // Move constructor and assignment
-  CUDAGuard(CUDAGuard&& other) noexcept;
-  CUDAGuard& operator=(CUDAGuard&& other) = delete;
-
-  /**
-   * Destructor that restores the original device if necessary.
-   */
-  ~CUDAGuard();
-
-  /**
-   * Sets the CUDA device to the given device index.
-   *
-   * @param device_index The device index to set as current
-   * @return Error code indicating success or failure
-   */
-  Error set_index(DeviceIndex device_index);
-
-  /**
-   * Get the original device index before the guard was created.
-   *
-   * @return The original device index
-   */
-  DeviceIndex original_device() const {
-    return original_device_index_;
-  }
-
-  /**
-   * Get the current device index.
-   *
-   * @return The current device index
-   */
-  DeviceIndex current_device() const {
-    return current_device_index_;
-  }
-
- private:
-  /// The original device before this guard was created
-  DeviceIndex original_device_index_;
-  /// The current device managed by this guard
-  DeviceIndex current_device_index_;
-};
+/**
+ * Clears any CUDA stream registered for the specified device, restoring the
+ * "no stream selected" state. Best-effort: if device_index is -1 and the
+ * current device cannot be queried, it silently does nothing.
+ *
+ * @param device_index The device index (-1 to use current device)
+ */
+void clearCurrentCUDAStream(DeviceIndex device_index = -1);
 
 /**
  * RAII guard that sets the current CUDA device and stream, restoring both on

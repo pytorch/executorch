@@ -11,11 +11,6 @@
 #include <limits>
 #include <vector>
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -27,6 +22,7 @@ constexpr size_t kMaxSupportedDims = 4;
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& transpose_out(
     KernelRuntimeContext& context,
     const Tensor& input,

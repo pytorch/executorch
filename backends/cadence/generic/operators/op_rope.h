@@ -20,7 +20,15 @@ namespace native {
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& sin_tensor,
     const ::executorch::aten::Tensor& cos_tensor,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>& pos,
+    const std::optional<::executorch::aten::Tensor>& pos,
+    ::executorch::aten::Tensor& out);
+
+::executorch::aten::Tensor& rope_rotate_stacked_halves_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    const ::executorch::aten::Tensor& sin_tensor,
+    const ::executorch::aten::Tensor& cos_tensor,
+    const std::optional<::executorch::aten::Tensor>& pos,
     ::executorch::aten::Tensor& out);
 
 } // namespace native

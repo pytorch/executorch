@@ -34,12 +34,19 @@ TestCase create_test_case_from_config(
   TestCase test_case;
 
   // Create a descriptive name for the test case
-  std::string shape_str = shape_string(config.shape);
-  std::string test_name = config.test_case_name + "  I=" + shape_str + "  " +
-      repr_str(utils::kBuffer, quant_layout);
-  if (const_b) {
-    test_name += "  const_b";
-  }
+  // q8ta binary: i8->i8, two inputs added together (same shape)
+  std::string prefix = config.test_case_name; // "ACCU" or "PERF"
+  std::string shape_bracket_str = shape_bracket(config.shape);
+  std::string shape_str = shape_bracket_str + "+" + shape_bracket_str;
+  std::string storage_str = repr_str(utils::kBuffer, quant_layout);
+  std::string suffix = const_b ? "[const_b]" : "";
+  std::string test_name = make_test_label(
+      prefix,
+      dtype_short(input_dtype),
+      dtype_short(input_dtype),
+      shape_str,
+      storage_str,
+      suffix);
   test_case.set_name(test_name);
 
   // Set the operator name for the test case
@@ -133,10 +140,10 @@ TestCase create_test_case_from_config(
 std::vector<TestCase> generate_q8ta_add_easy_cases() {
   std::vector<TestCase> test_cases;
 
-  // Single simple configuration for debugging
-  Q8taBinaryConfig config = {
-      {1, 16, 16, 16}, // shape: [N, C, H, W]
-      "ACCU", // test_case_name
+  std::vector<std::vector<int64_t>> shapes = {
+      {1, 16, 16, 16}, // 4D: [N, C, H, W]
+      {1, 144}, // 2D: exercises block config with ndim < 4
+      {1, 90}, // 2D: matches skin_seg model's keypoint/bbox tensor sizes
   };
 
   // Quantized memory layouts to test
@@ -148,20 +155,23 @@ std::vector<TestCase> generate_q8ta_add_easy_cases() {
       utils::kPackedInt8_4C1W,
   };
 
-  for (const auto& quant_layout : quant_layouts) {
-    test_cases.push_back(create_test_case_from_config(
-        config,
-        /*storage_type=*/utils::kBuffer,
-        /*input_dtype=*/vkapi::kFloat,
-        /*fp_memory_layout=*/utils::kWidthPacked,
-        quant_layout));
-    test_cases.push_back(create_test_case_from_config(
-        config,
-        /*fp_storage_type=*/utils::kBuffer,
-        /*input_dtype=*/vkapi::kFloat,
-        /*fp_layout=*/utils::kWidthPacked,
-        quant_layout,
-        /*const_b=*/true));
+  for (const auto& shape : shapes) {
+    Q8taBinaryConfig config = {shape, "ACCU"};
+    for (const auto& quant_layout : quant_layouts) {
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          /*storage_type=*/utils::kBuffer,
+          /*input_dtype=*/vkapi::kFloat,
+          /*fp_memory_layout=*/utils::kWidthPacked,
+          quant_layout));
+      test_cases.push_back(create_test_case_from_config(
+          config,
+          /*fp_storage_type=*/utils::kBuffer,
+          /*input_dtype=*/vkapi::kFloat,
+          /*fp_layout=*/utils::kWidthPacked,
+          quant_layout,
+          /*const_b=*/true));
+    }
   }
 
   return test_cases;
@@ -173,6 +183,20 @@ std::vector<TestCase> generate_q8ta_add_test_cases() {
 
   // Shapes to test
   std::vector<std::vector<int64_t>> shapes = {
+      // 1D tensors
+      {144},
+      {90},
+
+      // 3D tensors
+      {1, 16, 32},
+      {1, 3, 64},
+
+      // 2D tensors (exercises block config with ndim < 4)
+      {1, 144},
+      {1, 90},
+      {1, 4},
+      {3, 32},
+
       // Small test cases for correctness
       {1, 3, 16, 16},
       {1, 8, 32, 32},
@@ -365,13 +389,8 @@ int main(int argc, char* argv[]) {
       generate_q8ta_add_test_cases,
 #endif
       "Q8taBinaryAdd",
-#ifdef DEBUG_MODE
-      0,
-      1,
-#else
-      3,
-      10,
-#endif
+      /*warmup_runs = */ 1,
+      /*benchmark_runs = */ 1,
       ref_fn);
 
   return 0;

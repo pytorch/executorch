@@ -30,7 +30,7 @@ class EValueTest {
     val shape = longArrayOf(1, 3)
     val evalue = EValue.from(Tensor.fromBlob(data, shape))
     assertTrue(evalue.isTensor)
-    assertTrue(evalue.toTensor().shape.contentEquals(shape))
+    assertTrue(evalue.toTensor().shape().contentEquals(shape))
     assertTrue(evalue.toTensor().dataAsLongArray.contentEquals(data))
   }
 
@@ -165,6 +165,46 @@ class EValueTest {
     val deser = EValue.fromByteArray(bytes)
     assertEquals(deser.isDouble, true)
     assertEquals(1.345e-2, deser.toDouble(), 1e-6)
+  }
+
+  @Test
+  fun testStringSerde() {
+    val evalue = EValue.from("hello")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("hello", deser.toStr())
+  }
+
+  @Test
+  fun testEmptyStringSerde() {
+    val evalue = EValue.from("")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("", deser.toStr())
+  }
+
+  @Test
+  fun testChineseStringSerde() {
+    val evalue = EValue.from("你好世界")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("你好世界", deser.toStr())
+  }
+
+  @Test
+  fun testEmojiStringSerde() {
+    val evalue = EValue.from("👋🌍")
+    val bytes = evalue.toByteArray()
+
+    val deser = EValue.fromByteArray(bytes)
+    assertTrue(deser.isString)
+    assertEquals("👋🌍", deser.toStr())
   }
 
   @Test

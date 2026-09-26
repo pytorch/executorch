@@ -1,1 +1,3 @@
 diffusers>=0.29.0
+tqdm
+datasets==3.6.0

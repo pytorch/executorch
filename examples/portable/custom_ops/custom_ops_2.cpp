@@ -13,7 +13,6 @@ namespace custom {
 namespace native {
 
 using at::Tensor;
-using c10::ScalarType;
 
 // mul4(Tensor input) -> Tensor
 Tensor mul4_impl(const Tensor& in) {

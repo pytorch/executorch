@@ -6,7 +6,11 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.decompose_index_tensor_to_gather_pass import (
+    DecomposeIndexTensorToGatherPass,
+)
+from executorch.backends.arm._passes.rewrite_index_put_pass import RewriteIndexPutPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -28,15 +32,20 @@ def get_ops(op):
     raise RuntimeError(f"Can't get index_put decomposition for op {op}")
 
 
-class AccumulateIndexPutPass(ArmPass):
+class AccumulateIndexPutPass(ArmOpTargetedPass):
     """This pass adjusts the values arg when the accumulate arg is set to true
     for the index_put op.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeIndexTensorToGatherPass,
+        RewriteIndexPutPass,
+    }
+    target_ops = aten_ops + edge_ops
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (aten_ops + edge_ops) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         source, indices, values = args[:3]

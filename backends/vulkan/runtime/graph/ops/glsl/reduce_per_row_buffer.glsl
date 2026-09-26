@@ -115,7 +115,7 @@ void main() {
 #endif
 
 #ifdef OUTPUT_IS_INDICES
-    t_out[out_bufi] = int(0); // int(local_accum.idx);
+    t_out[out_bufi] = int(local_accum.idx);
 #else
     t_out[out_bufi] = convert_to_T(local_accum.val);
 #endif

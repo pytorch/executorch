@@ -1,14 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "op_test")
 
-def _common_op_test(name, kernels):
+def _common_op_test(name, kernels, deps = []):
     """
     Defines test targets in format of <kernel>_op_<op-name>_test
     For ATen kernel testing, let's use portable functions.yaml for tested ops.
     """
     for kernel in kernels:
-        deps = [":function_header_wrapper_{}".format(kernel)]
-        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
+        op_deps = [":function_header_wrapper_{}".format(kernel)] + deps
+        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = op_deps)
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -115,7 +115,16 @@ def define_common_targets():
     runtime.cxx_library(
         name = "supported_features_header",
         srcs = [],
-        exported_headers = {"supported_features.h": ":supported_feature_header_gen[supported_features.h]"},
+        exported_headers = {
+            "supported_features.h": ":supported_feature_header_gen[supported_features.h]",
+            "supported_features_skip.h": "supported_features_skip.h",
+        },
+        # Set EXECUTORCH_INTERNAL=1 for fbcode-internal builds so the
+        # ET_SKIP_IF helper in supported_features_skip.h compiles to an
+        # early `return;` instead of GTEST_SKIP. This avoids TestX's
+        # "ConsistentlySkipping" / broken-test signal. OSS builds keep
+        # the canonical GTEST_SKIP behavior. See header for context.
+        exported_preprocessor_flags = [] if runtime.is_oss else ["-DEXECUTORCH_INTERNAL=1"],
         visibility = [
             "//executorch/kernels/...",
         ],
@@ -167,6 +176,32 @@ def define_common_targets():
     _common_op_test("op__empty_dim_order_test", ["aten", "portable"])
     _common_op_test("op__clone_dim_order_test", ["aten", "portable"])
     _common_op_test("op__conj_physical_test", ["aten", "portable"])
+    _common_op_test("op__adaptive_avg_pool2d_test", ["aten", "portable"])
+    _common_op_test(
+        "op__device_copy_test",
+        ["portable"],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
+    # ATen-mode kernels for et_copy use at::Tensor construction, which the
+    # portable TensorImpl-based op__device_copy_test above cannot express, so
+    # the ATen path has its own dedicated test.
+    runtime.cxx_test(
+        name = "op__device_copy_aten_test",
+        srcs = ["op__device_copy_aten_test.cpp"],
+        preprocessor_flags = ["-DUSE_ATEN_LIB"],
+        deps = [
+            "//executorch/kernels/portable/cpu:op__device_copy_aten",
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/exec_aten:lib_aten",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])
@@ -193,6 +228,7 @@ def define_common_targets():
     _common_op_test("op_bitwise_right_shift_test", ["portable"])
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
+    _common_op_test("op_bucketize_test", ["portable"])
     _common_op_test("op_cat_test", ["aten", "portable"])
     _common_op_test("op_cdist_forward_test", ["aten", "portable"])
     _common_op_test("op_ceil_test", ["aten", "portable"])
@@ -217,7 +253,7 @@ def define_common_targets():
     _common_op_test("op_expand_copy_test", ["aten", "portable"])
     _common_op_test("op_expm1_test", ["aten", "portable"])
     _common_op_test("op_fft_c2r_test", ["aten", "optimized"])
-    _common_op_test("op_fft_r2c_test", ["aten", "optimized"])
+    _common_op_test("op_fft_r2c_test", ["aten", "portable", "optimized"])
     _common_op_test("op_fill_test", ["aten", "portable"])
     _common_op_test("op_flip_test", ["aten", "portable"])
     _common_op_test("op_floor_divide_test", ["aten", "portable"])
@@ -317,7 +353,7 @@ def define_common_targets():
     _common_op_test("op_t_copy_test", ["aten", "portable"])
     _common_op_test("op_tan_test", ["aten", "portable"])
     _common_op_test("op_tanh_test", ["aten", "portable"])
-    _common_op_test("op_to_copy_test", ["aten", "portable"])
+    _common_op_test("op_to_copy_test", ["aten", "portable", "optimized"])
     _common_op_test("op_topk_test", ["aten", "portable"])
     _common_op_test("op_transpose_copy_test", ["aten", "portable"])
     _common_op_test("op_tril_test", ["aten", "portable"])
@@ -329,6 +365,7 @@ def define_common_targets():
     _common_op_test("op_upsample_bilinear2d_aa_test", ["portable"])
     _common_op_test("op_upsample_nearest2d_test", ["aten", "portable"])
     _common_op_test("op_var_test", ["aten", "portable"])
+    _common_op_test("op_var_mean_test", ["aten", "portable"])
     _common_op_test("op_view_as_real_copy_test", ["aten", "portable"])
     _common_op_test("op_view_copy_test", ["aten", "portable"])
     _common_op_test("op_where_test", ["aten", "portable"])

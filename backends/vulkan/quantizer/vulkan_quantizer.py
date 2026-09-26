@@ -47,7 +47,9 @@ def get_symmetric_quantization_config(
     Return a QuantizationConfig for Vulkan quantizer.
 
     Args:
-        is_dynamic: If False, weight-only quantization. If True, dynamic quantization (activation + weight)
+        is_dynamic: If False, weight-only quantization. If True, dynamic
+            quantization (activation + weight), with the activation scale
+            computed per tensor at runtime
         weight_bits: Number of bits for weight quantization (4 or 8)
         act_bits: Number of bits for activation quantization (8)
         act_qmin: Minimum quantization value for activations (auto-calculated if None)
@@ -87,7 +89,20 @@ def get_symmetric_quantization_config(
         act_quantization_spec = None
         output_activation_spec = None
     else:
-        # Dynamic quantization: per-token input quantization, no output quantization
+        # Dynamic quantization: a choose_qparams op computes one scale and
+        # zero point for the whole activation tensor at runtime, and the
+        # quantize/dequantize pair around the linear carries them. Per tensor,
+        # not per token, whatever the granularity of the surrounding graph.
+        #
+        # (The fused et_vk.linear_q8ta_q8csw kernel is a different path: it is
+        # matched when the input scale is a static scalar, not one chosen at
+        # runtime.)
+        #
+        # One scale for the whole tensor is a poor fit for transformer
+        # encoders, where a few outlier channels set it for everything else; on
+        # sentence-transformer models this costs an order of magnitude more
+        # accuracy than a per-token scheme. Prefer is_dynamic=False (weight
+        # only) when output fidelity matters.
         # Auto-calculate activation ranges if not provided
         if act_qmin is None or act_qmax is None:
             act_range = bits_to_range(act_bits)

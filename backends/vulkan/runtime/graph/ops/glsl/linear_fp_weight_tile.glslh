@@ -10,6 +10,9 @@
  * Macro Settings:
  * - TILE_K
  * - TILE_N4
+ *
+ * Optional:
+ * - LINEAR_FP_WEIGHT_TILE_VEC4_T — weight tile vec4 type (default: VEC4_T).
  */
 
 #ifndef LINEAR_FP_WEIGHT_TILE_GLSLH
@@ -19,8 +22,13 @@
 
 #include "common.glslh"
 
+#ifndef LINEAR_FP_WEIGHT_TILE_VEC4_T
+#define LINEAR_FP_WEIGHT_TILE_VEC4_T VEC4_T
+#define LINEAR_FP_WEIGHT_TILE_VEC4_T_IS_DEFAULT
+#endif
+
 struct FPWeightTile {
-  VEC4_T data[TILE_K][TILE_N4];
+  LINEAR_FP_WEIGHT_TILE_VEC4_T data[TILE_K][TILE_N4];
 };
 
 #ifdef DEBUG_MODE

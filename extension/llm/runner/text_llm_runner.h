@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -52,6 +53,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * @param stats Statistics tracking object for performance monitoring
    * @param temperature Temperature parameter for controlling randomness in
    * generation (deprecated). Please use GenerationConfig.temperature instead.
+   * @param decode_text_decoder_runner Decoder runner for the decode stage of a
+   * two-method PTE. When null, text_decoder_runner drives both stages.
    */
   explicit TextLLMRunner(
       std::unordered_map<std::string, int64_t> metadata,
@@ -62,7 +65,8 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::unique_ptr<IOManager> io_manager,
       std::unique_ptr<TextTokenGenerator> text_token_generator,
       std::unique_ptr<Stats> stats,
-      float temperature = -1.0f);
+      float temperature = -1.0f,
+      std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner = nullptr);
 
   /**
    * @brief Checks if the model is loaded and ready for inference
@@ -102,13 +106,30 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::function<void(const Stats&)> stats_callback = {}) override;
 
   /**
-   * Prefill text inputs, for example to reload chat history.
-   * @param prompt Text prompt to prefill.
-   * @param config Configuration parameters for text generation (e.g.,
-   * max_new_tokens, temperature)
-   * @return The error code. KV cache position is tracked internally in pos_.
+   * Prefill multimodal inputs into the KV cache without generating.
+   * Only text inputs are processed; non-text inputs are skipped.
+   * @param inputs A vector of MultimodalInput objects.
+   * @param num_bos Number of BOS tokens to prepend during text encoding.
+   * @param num_eos Number of EOS tokens to append during text encoding.
+   * @return The next token predicted after prefill, or an error.
+   *         KV cache position is tracked internally in pos_.
    */
-  ::executorch::runtime::Error prefill(
+  ::executorch::runtime::Result<uint64_t> prefill(
+      const std::vector<MultimodalInput>& inputs,
+      int32_t num_bos = 0,
+      int32_t num_eos = 0) override;
+
+  /**
+   * Convenience overload: prefill a single text prompt.
+   */
+  ::executorch::runtime::Result<uint64_t>
+  prefill(const std::string& prompt, int32_t num_bos = 0, int32_t num_eos = 0);
+
+  /**
+   * Prefill a text prompt using GenerationConfig.
+   * Deprecated: prefer prefill(prompt, num_bos, num_eos).
+   */
+  ::executorch::runtime::Result<uint64_t> prefill(
       const std::string& prompt,
       const GenerationConfig& config);
 
@@ -143,8 +164,6 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   void stop() override;
 
  private:
-  bool shouldStop_{false};
-
   // Components
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer_;
   std::unordered_map<std::string, int64_t> metadata_;
@@ -155,6 +174,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       text_decoder_runner_; // Manage text_decoder_runner_'s lifecycle, make
                             // sure it outlives text_prefiller_ &
                             // text_token_generator_.
+  std::unique_ptr<TextDecoderRunner>
+      decode_text_decoder_runner_; // Null unless the PTE exports a separate
+                                   // decode method, in which case
+                                   // text_decoder_runner_ drives prefill only.
   std::unique_ptr<TextPrefiller> text_prefiller_;
   std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
@@ -165,6 +188,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
+
+  // Token predicted by the last prefill() call, consumed by generate("").
+  std::optional<uint64_t> prefill_next_token_;
 
   // The position in KV cache of the input, starting from 0.
   int64_t pos_ = 0;

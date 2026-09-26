@@ -1,0 +1,3 @@
+torchvision
+transformers
+ultralytics==8.4.137

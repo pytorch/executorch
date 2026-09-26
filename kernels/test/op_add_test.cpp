@@ -10,6 +10,7 @@
 #include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -603,6 +604,29 @@ TEST_F(OpAddOutKernelTest, BroadcastBToA) {
   EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastLastDimRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({3, 4}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor b = tf.make({1, 3, 1}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 3, 4});
+
+  Tensor expected = tf.make(
+      {1, 3, 4}, /*data=*/{11, 12, 13, 14, 25, 26, 27, 28, 39, 40, 41, 42});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+  EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+}
+
+TEST_F(OpAddOutKernelTest, Broadcast2dBy1dRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({2, 3}, /*data=*/{1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 1, 3}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 2, 3});
+
+  Tensor expected = tf.make({1, 2, 3}, /*data=*/{11, 22, 33, 14, 25, 36});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+  EXPECT_TENSOR_CLOSE(op_add_out(b, a, 1.0, out), expected);
+}
+
 //
 // Death Tests
 //
@@ -686,10 +710,9 @@ TEST_F(OpAddOutKernelTest, MismatchedNonBroadcastableInputShapesDies) {
 }
 
 TEST_F(OpAddOutKernelTest, MismatchedOutputShapesDies) {
-  if (SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP()
-        << "The current kernel supports implicitly resizing output tensor";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->output_resize,
+      "The current kernel supports implicitly resizing output tensor");
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -816,8 +839,8 @@ TEST_F(OpAddOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpAddOutKernelTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpAddOutKernelTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

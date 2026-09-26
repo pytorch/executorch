@@ -19,6 +19,7 @@ class GpuContext : public QnnContext {
  public:
   GpuContext(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* backend,
       QnnDevice* device,
       QnnBackendCache* cache,

@@ -12,6 +12,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
@@ -56,14 +57,7 @@ class GatherVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [values, output],
-            [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-            ],
+            supported_data_layout_dtypes(self.tosa_spec, include_bool=False),
             self.tosa_spec,
         )
 

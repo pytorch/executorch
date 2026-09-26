@@ -11,7 +11,6 @@
 #include <gtest/gtest.h>
 
 using executorch::runtime::etensor::Device;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::etensor::kNumDeviceTypes;
 
@@ -34,7 +33,7 @@ TEST(DeviceTest, CpuDefaultIndex) {
   Device d(DeviceType::CPU);
   EXPECT_TRUE(d.is_cpu());
   EXPECT_EQ(d.type(), DeviceType::CPU);
-  EXPECT_EQ(d.index(), -1);
+  EXPECT_EQ(d.index(), 0);
 }
 
 TEST(DeviceTest, CpuExplicitIndex) {
@@ -49,7 +48,7 @@ TEST(DeviceTest, CudaDefaultIndex) {
   Device d(DeviceType::CUDA);
   EXPECT_FALSE(d.is_cpu());
   EXPECT_EQ(d.type(), DeviceType::CUDA);
-  EXPECT_EQ(d.index(), -1);
+  EXPECT_EQ(d.index(), 0);
 }
 
 TEST(DeviceTest, CudaExplicitIndex) {
@@ -83,7 +82,7 @@ TEST(DeviceTest, EqualityDefaultIndices) {
 TEST(DeviceTest, ImplicitConstructionFromDeviceType) {
   // Device constructor is implicit, allowing DeviceType → Device conversion.
   Device d = DeviceType::CUDA;
-  EXPECT_EQ(d.index(), -1);
+  EXPECT_EQ(d.index(), 0);
 }
 
 // --- Deprecated namespace aliases ---

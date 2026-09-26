@@ -198,6 +198,19 @@ vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {{
   }}
 }}
 
+ValueRef add_scalar_to_graph(ComputeGraph& graph, const at::Scalar& scalar) {{
+  if (scalar.isBoolean()) {{
+    return graph.add_scalar<bool>(scalar.toBool());
+  }}
+  if (scalar.isIntegral(/*includeBool=*/false)) {{
+    return graph.add_scalar<int64_t>(scalar.toLong());
+  }}
+  if (scalar.isFloatingPoint()) {{
+    return graph.add_scalar<double>(scalar.toDouble());
+  }}
+  VK_THROW("Unsupported at::Scalar!");
+}}
+
 at::Tensor make_casted_randint_tensor(
     std::vector<int64_t> sizes,
     at::ScalarType dtype = at::kFloat,

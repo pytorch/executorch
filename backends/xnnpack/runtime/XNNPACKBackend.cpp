@@ -10,7 +10,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
 #include <executorch/backends/xnnpack/runtime/XNNWorkspace.h>
-#include <executorch/backends/xnnpack/runtime/XNNWorkspaceManager.h>
+#include <executorch/backends/xnnpack/runtime/XnnpackBackendOptions.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -24,7 +24,6 @@
 namespace executorch {
 namespace backends {
 
-using executorch::backends::xnnpack::WorkspaceSharingMode;
 using executorch::backends::xnnpack::XNNWorkspace;
 using executorch::backends::xnnpack::delegate::XNNWeightsCache;
 using executorch::ET_RUNTIME_NAMESPACE::Backend;
@@ -45,7 +44,7 @@ using executorch::runtime::Span;
 class XnnpackBackend final
     : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
  public:
-  ~XnnpackBackend() = default;
+  ~XnnpackBackend() override = default;
 
   XnnpackBackend() {
     // Initialize XNNPACK
@@ -57,9 +56,6 @@ class XnnpackBackend final
           (unsigned int)status);
       return;
     }
-
-    // Workspace manager is initialized with the appropriate default mode in its
-    // constructor
   }
 
   bool is_available() const override {
@@ -82,17 +78,44 @@ class XnnpackBackend final
 
     auto program_id =
         reinterpret_cast<uintptr_t>(context.get_runtime_allocator());
-    auto workspace_result = get_or_create_workspace(program_id);
+    auto sharing_mode_result = options_.resolve_sharing_mode(context);
+    if (!sharing_mode_result.ok()) {
+      return sharing_mode_result.error();
+    }
+    auto workspace_result =
+        options_.workspace_manager().get_or_create_workspace(
+            program_id, sharing_mode_result.get());
     if (!workspace_result.ok()) {
       return workspace_result.error();
     }
     auto workspace = workspace_result.get();
 
-#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
-    const std::lock_guard<std::mutex> lock_weight_cache(weights_cache_mutex_);
-    weights_cache_->initialize_for_runtime(
-        context.get_runtime_allocator(), named_data_map);
-#endif
+    bool use_weight_cache = options_.resolve_weight_cache(context);
+    // Per-path weights cache: same-path PTEs share an instance and
+    // serialize on its mutex; different paths run in parallel.
+    std::shared_ptr<xnnpack::delegate::XNNWeightsCache> weights_cache;
+    std::unique_lock<std::mutex> lock_weights_cache;
+    if (use_weight_cache) {
+      // Only honor a path coming through runtime_spec (per-PTE opt-in).
+      // Reading the backend-singleton global would let a non-opt-in PTE
+      // inherit another model's cache file.
+      std::string cache_path;
+      auto path_spec = context.get_runtime_spec<const char*>(
+          xnnpack::packed_cache_path_option_key);
+      if (path_spec.ok()) {
+        cache_path = path_spec.get();
+      }
+      auto wc_result = options_.get_or_create_weights_cache(cache_path);
+      if (!wc_result.ok()) {
+        return wc_result.error();
+      }
+      weights_cache = wc_result.get();
+      lock_weights_cache = std::unique_lock<std::mutex>(weights_cache->mutex());
+
+      weights_cache->initialize_for_runtime(
+          context.get_runtime_allocator(), named_data_map);
+      workspace->set_uses_weight_cache();
+    }
 
     auto [workspace_lock, workspace_ptr] = workspace->acquire();
 
@@ -105,9 +128,10 @@ class XnnpackBackend final
         processed->data(),
         processed->size(),
         executor,
-        weights_cache_.get(),
+        weights_cache.get(),
         workspace_ptr,
-        named_data_map);
+        named_data_map,
+        use_weight_cache);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -120,6 +144,13 @@ class XnnpackBackend final
           Error, "XNNCompiler::compileModel failed: 0x%x", (unsigned int)err);
       return err;
     }
+
+    // Hand the cache to the executor (held by shared_ptr so it
+    // outlives any sibling executors that share it).
+    if (use_weight_cache) {
+      executor->set_weights_cache(std::move(weights_cache));
+    }
+
     return executor;
   }
 
@@ -129,11 +160,17 @@ class XnnpackBackend final
       Span<EValue*> args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
-#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
-    const std::lock_guard<std::mutex> lock_weights_cache(weights_cache_mutex_);
-#endif
+    auto workspace = executor->get_workspace();
 
-    auto [raii_lock, _] = executor->get_workspace()->acquire();
+    // Lock the cache shared with sibling executors at the same path.
+    // Empty cache → PTE didn't opt into file-backed mode.
+    auto cache = executor->get_weights_cache();
+    std::unique_lock<std::mutex> lock_weights_cache;
+    if (cache) {
+      lock_weights_cache = std::unique_lock<std::mutex>(cache->mutex());
+    }
+
+    auto [raii_lock, _] = workspace->acquire();
 
     // Prepare Inputs/Outputs and Propagate Input Shapes
     Error err = executor->prepare_args(args);
@@ -147,8 +184,8 @@ class XnnpackBackend final
       return err;
     }
 
-    // Resize outputs and recast pointers if necessary
-    err = executor->resize_outputs(args);
+    // Convert output data types if necessary (e.g., int32 -> int64 for Long)
+    err = executor->convert_outputs(args);
 
     return err;
   }
@@ -156,23 +193,29 @@ class XnnpackBackend final
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+      auto workspace = executor->get_workspace();
+      auto cache = executor->get_weights_cache();
+
+      // Local shared_ptr keeps the instance alive through
+      // delete_packed_data even if the executor was the last holder.
+      std::unique_lock<std::mutex> lock_weights_cache;
+      if (cache) {
+        lock_weights_cache = std::unique_lock<std::mutex>(cache->mutex());
+      }
 
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
 #endif
 
-#ifdef ENABLE_XNNPACK_WEIGHTS_CACHE
-      const std::lock_guard<std::mutex> lock_weights_cache(
-          weights_cache_mutex_);
-      weights_cache_->delete_packed_data(executor->get_packed_data_names());
-#endif
+      if (cache && executor->uses_weight_cache()) {
+        cache->delete_packed_data(executor->get_packed_data_names());
+      }
 
       // This is needed to serialize access to xnn_delete_runtime which is not
       // thread safe. This can heppen when multiple threads call destroy() on
       // the same backend instance. Make sure to hold onto the workspace
       // shared_ptr, as the pointer in the executor is freed, which includes
       // the mutex referenced by raii_lock.
-      auto workspace = executor->get_workspace();
       auto [raii_lock, _] = workspace->acquire();
 
       // XNNExecutor is not trivially destructible. Since this was constructed
@@ -181,89 +224,52 @@ class XnnpackBackend final
     }
   }
 
-  Error get_option_internal(
-      BackendOptionContext& context,
-      executorch::runtime::Span<executorch::runtime::BackendOption>&
-          backend_options) const {
-    // Intentionally not locking here as it is not required.
-
-    // Verify that the expected option key is present and modify the value
-    for (size_t i = 0; i < backend_options.size(); ++i) {
-      if (strcmp(
-              backend_options[i].key,
-              xnnpack::workspace_sharing_mode_option_key) == 0) {
-        // Set the value to what was stored by set_option
-        backend_options[i].value =
-            static_cast<int>(workspace_manager_.get_sharing_mode());
-      }
-    }
-
-    return Error::Ok;
-  }
-
   Error get_option(
       BackendOptionContext& context,
-      executorch::runtime::Span<executorch::runtime::BackendOption>&
-          backend_options) override {
-    return get_option_internal(context, backend_options);
+      Span<BackendOption>& backend_options) override {
+    for (size_t i = 0; i < backend_options.size(); ++i) {
+      Error err = options_.get_option(backend_options[i]);
+      if (err != Error::Ok) {
+        return err;
+      }
+    }
+    return Error::Ok;
   }
 
   Error set_option(
       BackendOptionContext& context,
-      const executorch::runtime::Span<executorch::runtime::BackendOption>&
-          backend_options) override {
-    if (backend_options.size() > 0) {
-      for (const auto& option : backend_options) {
-        if (strcmp(option.key, xnnpack::workspace_sharing_mode_option_key) ==
-            0) {
-          if (auto* val = std::get_if<int>(&option.value)) {
-            if (*val < 0 ||
-                *val > static_cast<int>(WorkspaceSharingMode::Count)) {
-              ET_LOG(
-                  Error,
-                  "XNNPACK workspace sharing mode must be between 0 and %d, inclusive, but was %d.",
-                  static_cast<int>(WorkspaceSharingMode::Count),
-                  *val);
-              return Error::InvalidArgument;
-            }
-
-            ET_LOG(
-                Debug, "Setting XNNPACK workspace sharing mode to %d.", *val);
-            auto status = workspace_manager_.set_sharing_mode(
-                static_cast<WorkspaceSharingMode>(*val));
-            if (status != Error::Ok) {
-              return status;
-            }
-          } else {
-            ET_LOG(Error, "XNNPACK workspace sharing mode must be an integer.");
-            return Error::InvalidArgument;
-          }
-        }
+      const Span<BackendOption>& backend_options) override {
+    // Process every option even if one fails — applying a `packed_cache_path`
+    // and triggering `save_weight_cache_on_disk` in the same array must not
+    // depend on declaration order. Capture the first error and report it
+    // after the loop. All option-key dispatch — including the disk-save
+    // side effect — lives inside XnnpackBackendOptions::set_option, which
+    // owns the weights-cache instance and its mutex.
+    Error first_err = Error::Ok;
+    for (const auto& option : backend_options) {
+      Error err = options_.set_option(option);
+      if (err != Error::Ok && first_err == Error::Ok) {
+        first_err = err;
       }
     }
-    return Error::Ok;
+    return first_err;
+  }
+
+ public:
+  /** See xnnpack::get_packed_cache_report(). */
+  xnnpack::PackedCacheReport packed_cache_report() const {
+    return options_.weights_cache_manager().report();
   }
 
  private:
-  // Workspace manager for handling workspace sharing modes
-  mutable xnnpack::XNNWorkspaceManager workspace_manager_;
+  mutable xnnpack::XnnpackBackendOptions options_;
 
-  // Weights cache is global to all delegate instances.
-  mutable std::mutex weights_cache_mutex_;
-  std::unique_ptr<XNNWeightsCache> weights_cache_ =
-      std::make_unique<XNNWeightsCache>();
-
-  // Lock Hiearchy for Mutexes:
-  // weights_cache_mutex_
-  // workspace_meta_mutex_
-  // workspace_mutex_ (owned by executor)
-
-  // Retrieve a workspace for the given method ID, depending on the sharing
-  // mode.
-  Result<std::shared_ptr<XNNWorkspace>> get_or_create_workspace(
-      uintptr_t program_id) const {
-    return workspace_manager_.get_or_create_workspace(program_id);
-  }
+  // Lock hierarchy for mutexes:
+  //   weights_cache_manager_.meta_mutex_  (leaf — held only during
+  //                                        get_or_create map ops)
+  //   XNNWeightsCache::instance_mutex_    (one per cache instance)
+  //   workspace_meta_mutex_
+  //   workspace_mutex_ (owned by executor)
 };
 
 namespace {
@@ -271,6 +277,12 @@ auto backend_instance = XnnpackBackend();
 Backend backend{xnnpack::xnnpack_backend_key, &backend_instance};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
+
+namespace xnnpack {
+PackedCacheReport get_packed_cache_report() {
+  return backend_instance.packed_cache_report();
+}
+} // namespace xnnpack
 
 } // namespace backends
 } // namespace executorch

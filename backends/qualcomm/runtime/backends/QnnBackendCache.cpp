@@ -8,6 +8,8 @@
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -18,15 +20,14 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
     void* buffer,
     uint32_t nbytes) {
   const QnnSystemInterface& qnn_sys_interface =
-      qnn_sys_impl_.GetQnnSystemInterface();
+      qnn_sys_impl_->GetQnnSystemInterface();
   std::uint32_t num_graphs;
   QnnSystemContext_GraphInfo_t* graphs = nullptr;
   const QnnSystemContext_BinaryInfo_t* binaryinfo{nullptr};
-  Qnn_ContextBinarySize_t binaryinfo_size = 0;
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   error = qnn_sys_interface.qnn_system_context_get_binary_info(
-      sys_context_handle_, buffer, nbytes, &binaryinfo, &binaryinfo_size);
+      sys_context_handle_, buffer, nbytes, &binaryinfo);
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_WARN(
@@ -50,7 +51,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     num_graphs = binaryinfo->contextBinaryInfoV2.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV2.graphs;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
     num_graphs = binaryinfo->contextBinaryInfoV3.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV3.graphs;
@@ -66,7 +67,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV1_t>(graphs[i].graphInfoV1);
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_2) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV2_t>(graphs[i].graphInfoV2);
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_3) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV3_t>(graphs[i].graphInfoV3);
 #endif
@@ -88,18 +89,11 @@ Error QnnBackendCache::Configure(const std::vector<std::string>& graph_names) {
     return Error::Ok;
   }
 
-  if (qnn_sys_impl_.Load() != Error::Ok) {
-    QNN_EXECUTORCH_LOG_ERROR(
-        "Failed to Load QnnSystem "
-        "APIs. Caching mechanism is being disabled.");
-    return Error::Internal;
-  }
-
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   // create QNN SystemContext
   const QnnSystemInterface& qnn_sys_interface =
-      qnn_sys_impl_.GetQnnSystemInterface();
+      qnn_sys_impl_->GetQnnSystemInterface();
   error = qnn_sys_interface.qnn_system_context_create(&sys_context_handle_);
 
   if (error != QNN_SUCCESS) {
@@ -137,14 +131,13 @@ QnnBackendCache::~QnnBackendCache() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (sys_context_handle_ != nullptr) {
     const QnnSystemInterface& qnn_sys_interface =
-        qnn_sys_impl_.GetQnnSystemInterface();
+        qnn_sys_impl_->GetQnnSystemInterface();
     error = qnn_sys_interface.qnn_system_context_free(sys_context_handle_);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG_WARN("Failed to free QNN system context.");
     }
     sys_context_handle_ = nullptr;
   }
-  qnn_sys_impl_.Unload();
 }
 
 std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphInputs(

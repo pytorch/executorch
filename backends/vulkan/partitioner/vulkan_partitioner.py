@@ -46,7 +46,6 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 # pyre-ignore
 ops_not_to_decompose = [
-    torch.ops.aten.upsample_nearest2d.vec,
     # Activation ops with native Vulkan shaders that PyTorch's default
     # decomposition table would otherwise decompose into primitive ops.
     # The decomposed paths produce NaN/Inf on some GPUs (e.g. PowerVR)
@@ -54,6 +53,8 @@ ops_not_to_decompose = [
     torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
     torch.ops.aten.hardshrink.default,
+    torch.ops.aten.upsample_nearest2d.vec,
+    torch.ops.aten.pixel_shuffle.default,
 ]
 
 logger: logging.Logger = logging.getLogger("")
@@ -292,6 +293,21 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
     compile_specs = []
 
     for key, value in compile_options.items():
+        if key == "external_constants_max_data_bytes":
+            # Validate at the user-facing option boundary. Preprocess and the
+            # data store repeat validation because they can be called directly.
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+                or value >= 1 << 64
+            ):
+                raise ValueError(
+                    "external_constants_max_data_bytes must be a positive uint64"
+                )
+            compile_specs.append(CompileSpec(key, value.to_bytes(8, "little")))
+            continue
+
         if isinstance(value, (VkStorageType, VkMemoryLayout)):
             value_bytes = int(value).to_bytes(4, byteorder="little")
             compile_specs.append(CompileSpec(key, value_bytes))
@@ -383,9 +399,15 @@ class VulkanPartitioner(Partitioner):
             exported_program.graph_module
         )
 
-        texture_limits: utils.ImageExtents = self.options.get(
-            "texture_limits", utils.DEFAULT_TEXTURE_LIMITS
-        )
+        # small_texture_limits opts into the conservative 3D texture limit that is
+        # compatible with most desktop/laptop GPUs (the Vulkan spec only guarantees
+        # 2048). An explicit texture_limits always takes precedence.
+        if "texture_limits" in self.options:
+            texture_limits: utils.ImageExtents = self.options["texture_limits"]
+        elif self.options.get("small_texture_limits", False):
+            texture_limits = utils.SMALL_TEXTURE_LIMITS
+        else:
+            texture_limits = utils.DEFAULT_TEXTURE_LIMITS
         buffer_limit: int = self.options.get("buffer_limit", utils.DEFAULT_BUFFER_LIMIT)
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

@@ -33,17 +33,23 @@ layout(constant_id = 6) const int group_dim = 2;
 // A more verbose name would be NWORKERS_PER_GROUP. This describes the number of
 // threads that will co-operate to compute one reduction output. There may be
 // multiple groups computing distinct reduction outputs within one work group.
-#define NWORKERS 4
+// Supplied by the dispatch so it can scale with the length of the reduction.
+// A global average pool reduces a whole HxW plane into one value, and four
+// workers left the GPU essentially idle for it.
+layout(constant_id = 7) const int NWORKERS = 4;
 
 // Sets an upper limit on the total size of a work group based on how many
 // elements are allocated in the shared memory array below. Each thread in the
 // work group will write into its assigned element in the shared array.
-#define MAX_NTHREADS 16
+// Upper bound on NWORKERS * NGROUPS, and the size of the shared array below.
+// 256 vec4 is 4 KiB of shared memory, well inside the guaranteed 16 KiB.
+#define MAX_NTHREADS 256
 
 
 shared vec4 shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
+#include "indexing.glslh"
 
 int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
@@ -58,23 +64,34 @@ int tid_to_smi(const ivec2 tid) {
 // with the accumulator.
 #define POSTPROCESS(accum) ${POSTPROCESS}
 
-void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
+void reduce_2d_non_packed_dim(
+    const ivec2 tid,
+    ivec3 scan_pos,
+    const bool in_bounds) {
   // shared memory index of this thread
   const int smi = tid_to_smi(tid);
 
-  scan_pos[reduce_dim1] = 0;
-  scan_pos[reduce_dim2] = 0;
-  vec4 accum = INIT_ACCUM(load_texel(tin, scan_pos));
-  
-  // First dimension reduction
-  scan_pos[reduce_dim1] = tid.x;
-  for (int i = tid.x; i < tin_sizes[reduce_dim1]; 
-       i += NWORKERS, scan_pos[reduce_dim1] += NWORKERS) {
-    
-    // Second dimension reduction
+  // Out of bounds invocations cannot return early: barrier() below has to be
+  // reached by every invocation in the work group, and skipping it is undefined
+  // behaviour that hangs some GPUs. They still take a shared memory slot, but
+  // it is one that no in-bounds group aggregates over, so what they leave in it
+  // is never read.
+  vec4 accum = vec4(0);
+  if (in_bounds) {
+    scan_pos[reduce_dim1] = 0;
     scan_pos[reduce_dim2] = 0;
-    for (int j = 0; j < tin_sizes[reduce_dim2]; j++, scan_pos[reduce_dim2]++) {
-      accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+    accum = INIT_ACCUM(load_texel(tin, scan_pos));
+
+    // First dimension reduction
+    scan_pos[reduce_dim1] = tid.x;
+    for (int i = tid.x; i < safe_idx(tin_sizes, reduce_dim1);
+         i += NWORKERS, scan_pos[reduce_dim1] += NWORKERS) {
+      // Second dimension reduction
+      scan_pos[reduce_dim2] = 0;
+      for (int j = 0; j < safe_idx(tin_sizes, reduce_dim2);
+           j++, scan_pos[reduce_dim2]++) {
+        accum = UPDATE_ACCUM(accum, load_texel(tin, scan_pos));
+      }
     }
   }
   
@@ -83,7 +100,7 @@ void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   barrier();
   
   // Main thread aggregates results
-  if (tid.x == 0) {
+  if (in_bounds && tid.x == 0) {
     // Iterate over the partial outputs to obtain the overall output
     int group_i = tid.y * NWORKERS;
     accum = shared_vecs[group_i++];
@@ -93,11 +110,11 @@ void reduce_2d_non_packed_dim(const ivec2 tid, ivec3 scan_pos) {
     
     // Determine if there are any padding elements in the final texel of the
     // packed dimension
-    const int nspill = mod4(tin_sizes[packed_dim]);
+    const int nspill = mod4(safe_idx(tin_sizes, packed_dim));
     // Detect if this thread is working on the final texels of the packed
     // dimension, which may have padding elements
-    const bool is_last_texel = 
-        scan_pos[packed_dim] == (tin_limits[packed_dim] - 1);
+    const bool is_last_texel =
+        scan_pos[packed_dim] == (safe_idx(tin_limits, packed_dim) - 1);
     
     // Explicitly set padding elements to 0
     if (is_last_texel && nspill > 0) {
@@ -120,9 +137,7 @@ void main() {
       gl_LocalInvocationID[reduce_dim1],
       gl_LocalInvocationID[group_dim]);
 
-  if (any(greaterThanEqual(scan_pos, tin_limits))) {
-    return;
-  }
+  const bool in_bounds = all(lessThan(scan_pos, tin_limits));
 
-  reduce_2d_non_packed_dim(tid, scan_pos);
+  reduce_2d_non_packed_dim(tid, scan_pos, in_bounds);
 }

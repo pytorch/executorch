@@ -1,11 +1,11 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
@@ -127,7 +127,7 @@ test_cases = {
 }
 
 
-xfail_cases_dialect = {
+xfail_cases_dialect: dict[str, xfail_type] = {
     # Cortex-M quantizer will not quantize multiplicaitons that require broadcasting
     # leading to the mul op not being replaced by a cortex-m specific implementation
     "broadcast_1": "Broadcasting is not supported in Cortex-M backend",
@@ -138,8 +138,10 @@ xfail_cases_dialect = {
 
 
 @parametrize("test_case", test_cases, xfails=xfail_cases_dialect)
-def test_dialect_mul(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_mul(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -151,6 +153,8 @@ def test_dialect_mul(test_case):
     "test_case",
     test_cases,
 )
-def test_implementation_mul(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_mul(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

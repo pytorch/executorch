@@ -51,7 +51,7 @@ Tensor& opt_add_out(
       out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "add.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "add.out");
 
   if (b.numel() == 1) {
     if (executorch::runtime::isComplexType(a_type) ||
@@ -129,7 +129,7 @@ Tensor& opt_add_scalar_out(
       ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "add.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "add.Scalar_out");
 
   if (a_type == common_type && a_type == out_type &&
       a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {

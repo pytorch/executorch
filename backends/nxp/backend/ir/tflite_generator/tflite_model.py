@@ -514,6 +514,9 @@ class Operator(meta.TFLiteObject):
     # If `True`, this is an extra operator added during conversion. It was not present in the original input model.
     tmp_added_extra: bool
 
+    # Edge program debug handle for mapping edge nodes to TFLite operators
+    tmp_edge_debug_handle: Optional[int]
+
     def __init__(
         self,
         inputs: OperatorInputs = None,
@@ -540,6 +543,8 @@ class Operator(meta.TFLiteObject):
         self.tmp_outputs = []
         self.tmp_version = 1
         self.tmp_added_extra = False
+
+        self.tmp_edge_debug_handle = None
 
     def uses_per_channel_quantization(self) -> bool:
         """Determine if this operator uses per-channel quantization."""

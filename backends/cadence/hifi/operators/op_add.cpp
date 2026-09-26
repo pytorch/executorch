@@ -22,7 +22,6 @@ using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::can_cast;
-using executorch::runtime::CppTypeToScalarType;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::Error;
 

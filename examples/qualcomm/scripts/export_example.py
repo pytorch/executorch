@@ -3,6 +3,10 @@ import argparse
 
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
+
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -75,7 +79,10 @@ def main() -> None:
     if args.quantization:
         print("Quantizing model...")
         # It is the model quantization path
-        quantizer = QnnQuantizer()
+        quantizer = QnnQuantizer(
+            backend=QnnExecuTorchBackendType.kHtpBackend,
+            soc_model=get_soc_to_chipset_map()[args.soc],
+        )
         # Typical pytorch 2.0 quantization flow
         m = torch.export.export(model.eval(), example_inputs, strict=True).module()
         if args.quantization == "qat":

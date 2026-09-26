@@ -4,12 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 """Provide TOSA support checks for ``aten.index.Tensor``.
 
-Reject unsupported patterns such as high-rank index tensors, front-positioned
-slice/ellipsis/None markers, and cases that exceed ``int32`` element limits.
+Reject unsupported indexing layouts, symbolic shapes, zero-sized tensors,
+and cases that exceed ``int32`` element limits.
 
 """
 
 import math
+from typing import cast, Sequence
 
 import torch
 import torch.fx as fx
@@ -23,6 +24,15 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
+def _has_leading_full_slices_only(indices) -> bool:
+    found_tensor_index = False
+    for index in indices:
+        if index is None and found_tensor_index:
+            return False
+        found_tensor_index |= index is not None
+    return found_tensor_index
+
+
 @register_tosa_support_check
 class IndexTensorSupported(SupportedTOSAOperatorCheck):
     """Prevent partitioning of unsupported ``index.Tensor`` usages.
@@ -30,42 +40,36 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
     This support check is intended to prevent the partitioning of
     currently unsupported usages of the index.Tensor operator.
 
-    1. Usages where indexing tensors are of rank 4 or higher.
-        This is due to the AnnotateChannelsLastDimOrder pass and
-        the rarity of such operation.
-        Support is possible but would require further changes to the above
-        pass which can be added at such a time as is necessary.
+    1. Usages where a slice, ellipsis, or None separates indexing tensors:
+        t[indexTensor, {start}:{end}, indexTensor] - slicing
+        t[indexTensor, None, indexTensor] - unsqueeze
+        t[indexTensor, ..., indexTensor] - ellipsis
 
-    2. Usages where slice, ellipsis or None are present before an indexing tensor:
-        t[{start}:{end}, indexTensor] - slicing
-        t[None, indexTensor] - unsqueeze
-        t[..., indexTensor] - ellipsis
-
-    3. Usages where the value tensor contains more than int32.max elements
+    2. Usages where the value tensor contains more than int32.max elements
         This is due to int32 TOSA limitation and the fact that we flatten out
         and accumulate all index tensors.
         As such to avoid overflow we reject lowering of this operator if it is
         possible for indices to go over the int32 limit.
 
-    Extra information regarding #2:
+    3. Usages where the value or an index tensor is zero-sized, because TOSA
+        requires every tensor dimension to be at least one.
+
+    4. Usages with symbolic value or index shapes. These are rejected even
+        when the TOSA shape extension is enabled, because the current gather
+        decomposition still assumes static shapes.
+
+    Extra information regarding #1:
         Pytorch decomposes slice and None usages before they reach aten.
         In the case of Slicing and Unsqueeze, Pytorch will add the relevant
         operation just before the index.Tensor op.
         In the case of Ellipsis no extra operation is added.
 
-        In all three cases Pytorch will insert "None"(s) in the index list
-        only if the above operations are done on a dimension BEFORE one being indexed.
-
-        When slicing, unsqueeze and ellipsis are done on dimensions after
-        the ones being indexed, then they do not affect the final output
-        values, only the shape. Thus None is not passed to the index.Tensor op.
-
         The purpose of None is to signify to index.Tensor that a dimension
         should not be indexed.
-        In such cases the logic behaves similar to batching along that dimension.
-        For the sake of simplicity we have not implemented this behavior yet
-        and thus have put this support check in place to prevent the partitioning
-        of index.Tensor ops which include None.
+        A leading run of None entries behaves like batching along those
+        dimensions and is supported. None entries after the first tensor index
+        remain unsupported because they interleave preserved and indexed
+        dimensions.
 
     Examples:
         #1 - Slice -----------------------------------------------------
@@ -93,12 +97,6 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
         out = ...edge__ops_aten_index_Tensor(unsqueeze_res, [torch.arange(3)])
 
     NB.
-        With the current implementation of flattening tensors and indices out,
-        supporting None (Unsqueeze) is simply a matter of ignoring the
-        None dimension.
-        This is not the case for Slice and Ellipsis operators, where
-        the size of the new dimension can be > 1.
-
         Note that slice ops interleaved between indexes such as:
             t[1:3, torch.arange(5), 2:3, torch.arange(3).reshape(3,1)]
         are also possible and can result in some unintuitive behaviors
@@ -108,47 +106,129 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
 
     targets = [exir_ops.edge.aten.index.Tensor]
 
+    def _are_shapes_supported(
+        self,
+        node: fx.Node,
+        input_val: torch.Tensor,
+        index_vals: Sequence[torch.Tensor],
+    ) -> bool:
+        if any(
+            isinstance(dim, torch.SymInt)
+            for value in [input_val, *index_vals]
+            for dim in value.shape
+        ):
+            self.reporter.report_reject(
+                node, "Symbolic value or index shapes are not supported."
+            )
+            return False
+
+        total_vals = math.prod(input_val.shape)
+        has_zero_sized_index = any(math.prod(index.shape) == 0 for index in index_vals)
+        if total_vals == 0 or has_zero_sized_index:
+            self.reporter.report_reject(
+                node,
+                "Zero-sized value or index tensors are not supported by TOSA.",
+            )
+            return False
+
+        if total_vals > torch.iinfo(torch.int32).max:
+            self.reporter.report_reject(
+                node,
+                "Value size exceeds int32 range; would overflow flattened indexing.",
+            )
+            return False
+
+        return True
+
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:  # type: ignore[override, misc]
         """Return True if ``aten.index.Tensor`` usage fits supported patterns.
 
         Enforces the following constraints:
-        - No ``None`` (unsqueeze), slice, or ellipsis before an indexing tensor.
-        - Indexing tensors have rank <= 3.
+        - ``None`` entries may only form a leading run before all tensor indices.
+        - At least one tensor index is present.
+        - Value and index tensors must not be zero-sized.
+        - Value and index shapes must not contain symbolic dimensions.
+        - Boolean and byte mask indices are not supported.
         - The value tensor element count fits in ``int32``.
 
         """
-        indices = node.args[1]
-        for index in indices:  # type: ignore[union-attr]
-            # Usage 2 guard
-            if index is None:
-                self.reporter.report_reject(
-                    node,
-                    (
-                        "None (from slice/unsqueeze/ellipsis) before an indexing tensor"
-                        " is not supported."
-                    ),
-                )
-                return False
-
-            # Usage 1 guard
-            index = ensure_type(torch.fx.Node, index)
-            fake_tensor = get_first_fake_tensor(index)
-            if len(fake_tensor.size()) > 3:
-                self.reporter.report_reject(
-                    node,
-                    ("Indexing tensors of rank >= 4 is not supported."),
-                )
-                return False
-
-        # Usage 3 guard
-        input_node = ensure_type(torch.fx.Node, node.args[0])
-        total_vals = math.prod(get_first_fake_tensor(input_node).shape)
-        if total_vals > torch.iinfo(torch.int32).max:
+        indices = cast(Sequence[fx.Node | None], node.args[1])
+        if not _has_leading_full_slices_only(indices):
             self.reporter.report_reject(
                 node,
-                ("Value size exceeds int32 range; would overflow flattened indexing."),
+                "Only leading None entries followed by tensor indices are supported.",
+            )
+            return False
+
+        index_vals = [
+            get_first_fake_tensor(ensure_type(fx.Node, index))
+            for index in indices
+            if index is not None
+        ]
+        if any(index.dtype in (torch.bool, torch.uint8) for index in index_vals):
+            self.reporter.report_reject(
+                node, "Boolean and byte mask indices are not supported."
+            )
+            return False
+
+        input_node = ensure_type(torch.fx.Node, node.args[0])
+        input_val = get_first_fake_tensor(input_node)
+        if not self._are_shapes_supported(node, input_val, index_vals):
+            return False
+
+        values_dtype = input_val.dtype
+        if values_dtype in (torch.bool, torch.int8, torch.int16, torch.int32):
+            if not tosa_spec.support_integer():
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires INT profile.",
+                )
+                return False
+        elif values_dtype in (
+            torch.float16,
+            torch.float32,
+            torch.bfloat16,
+            torch.float8_e4m3fn,
+            torch.float8_e5m2,
+        ):
+            if values_dtype == torch.bfloat16 and not tosa_spec.support_extension(
+                "bf16"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires bf16 extension.",
+                )
+                return False
+            if values_dtype == torch.float8_e4m3fn and not tosa_spec.support_extension(
+                "fp8e4m3"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires fp8e4m3 extension.",
+                )
+                return False
+            if values_dtype == torch.float8_e5m2 and not tosa_spec.support_extension(
+                "fp8e5m2"
+            ):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires fp8e5m2 extension.",
+                )
+                return False
+            if not (tosa_spec.support_float() or tosa_spec.support_integer()):
+                self.reporter.report_reject(
+                    node,
+                    f"{node.target}: dtype {values_dtype} requires FP profile or "
+                    "INT profile (with quantization).",
+                )
+                return False
+        else:
+            self.reporter.report_reject(
+                node,
+                f"{node.target}: unsupported values dtype {values_dtype}; "
+                "expected bool/int8/int16/int32/float16/bfloat16/float32/float8_e4m3fn/float8_e5m2.",
             )
             return False
 

@@ -97,20 +97,24 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
 
     def _can_merge_partitions(self, p1, p2, partitions_by_id):
         """Check if merging two partitions would create a cycle."""
+        from torch.fx.passes.utils.fuser_utils import validate_partition
+
         p1_nodes = set(partitions_by_id[p1].nodes.keys())
         p2_nodes = set(partitions_by_id[p2].nodes.keys())
         combined_nodes = p1_nodes.union(p2_nodes)
 
+        # Check external users from BOTH partitions.  The original code only
+        # checked p2 under the assumption that p2 is always topologically
+        # before p1.  However, when partition groups contain nodes that span
+        # wide topological ranges (e.g. due to shared dynamic-quantization
+        # choose_qparams nodes), the two partitions can *interleave* in
+        # topological order, making the single-direction check insufficient.
+        #
+        # We still only need to collect the *direct* external users (not
+        # transitive ones), because dependency_viewer.downstreams_of already
+        # returns the full transitive closure.
         user_nodes = []
-        # topologically, p2_nodes comes before p1_nodes, so we only
-        # need to check the downstream nodes of p2.
-        # Additionally, we don't need to check all the downstream nodes
-        # of p2, we only need to check the nodes directly outside of p2.
-        # example:
-        # partition[a -->  b --> c] --> d --> e --> f
-        # we don't need to check [d, e, f] we only need to check [d] because
-        # the downstream users of [d] will include [e, f]
-        for node in p2_nodes:
+        for node in combined_nodes:
             for user in node.users:
                 if user not in combined_nodes:
                     user_nodes.append(user)
@@ -120,6 +124,13 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
             downstream_nodes = self.dependency_viewer.downstreams_of(external_node)
             if any(n in combined_nodes for n in downstream_nodes):
                 return False
+
+        # Final safety net: validate_partition performs a direct BFS on the
+        # live graph edges, catching any cycle the pre-computed
+        # dependency_viewer might miss (e.g. when the graph was transformed
+        # after the viewer was built).
+        if not validate_partition(list(combined_nodes)):
+            return False
 
         return True
 

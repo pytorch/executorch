@@ -6,7 +6,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -22,6 +21,7 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 aten_op = "torch.ops.aten.round.default"
 exir_op = "executorch_exir_dialects_edge__ops_aten_round_default"
 
+
 test_data_suite = {
     # (test_name, test_data)
     "zeros": lambda: torch.zeros(1, 10, 10, 10),
@@ -30,6 +30,14 @@ test_data_suite = {
     "randn_pos": lambda: torch.randn(10) + 10,
     "randn_neg": lambda: torch.randn(10) - 10,
     "ramp": lambda: torch.arange(-16, 16, 0.2),
+    "halfway_ties": lambda: torch.arange(-8, 8, 0.5),
+}
+
+# One ulp either side of a tie.
+test_data_suite_fp = {
+    "halfway_neighbors": lambda: torch.nextafter(
+        torch.tensor([0.5, 0.5]), torch.tensor([-float("inf"), float("inf")])
+    ),
 }
 
 test_data_suite_bf16 = {
@@ -42,7 +50,9 @@ class Round(torch.nn.Module):
         return x.round()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_bf16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp | test_data_suite_bf16
+)
 def test_round_tosa_FP(test_data: torch.Tensor):
     pipeline = TosaPipelineFP[input_t1](
         Round(),
@@ -67,7 +77,6 @@ def test_round_tosa_INT(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(reason="where.self not supported on U55")
 def test_round_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
         Round(),
@@ -90,7 +99,9 @@ def test_round_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_fp | test_data_suite_bf16
+)
 @common.SkipIfNoModelConverter
 def test_round_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](

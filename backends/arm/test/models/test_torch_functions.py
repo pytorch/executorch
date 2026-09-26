@@ -2,10 +2,9 @@
 
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Tests 10 popular torch ops, not tested in other ways, training related or
+requiring randomness.
 
-
-"""
-Tests 10 popular torch ops, not tested in other ways, training related or requring randomness.
 - t
 - zeros
 - ones
@@ -16,6 +15,7 @@ Tests 10 popular torch ops, not tested in other ways, training related or requri
 - eye
 - topk
 - sort
+
 """
 
 from typing import Callable
@@ -45,6 +45,7 @@ def module_factory(function: Callable) -> torch.nn.Module:
 
 
 example_input = torch.rand(1, 6, 16, 16)
+nonzero_module = module_factory(torch.nonzero)
 
 module_tests = [
     (
@@ -82,7 +83,7 @@ module_tests = [
     ),
     ("arange", module_add_factory(torch.arange), (torch.rand(1), 0, 10, 2)),
     ("norm", module_factory(torch.norm), (torch.randn(5, 5),)),
-    ("nonzero", module_factory(torch.nonzero), (example_input,)),
+    ("nonzero", nonzero_module, (example_input,)),
     ("eye", module_add_factory(torch.eye), (torch.rand(4, 4), 4)),
     ("topk", module_factory(torch.topk), (torch.rand(10), 5)),
     ("sort", module_factory(torch.sort), (torch.rand(5),)),
@@ -93,16 +94,7 @@ input_t = tuple[torch.Tensor]
 test_parameters = {test[0]: test[1:] for test in module_tests}
 
 
-@parametrize(
-    "test_data",
-    test_parameters,
-    xfails={
-        "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
-        "Requires dynamic output shape.",
-        "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
-        "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-    },
-)
+@parametrize("test_data", test_parameters)
 def test_torch_functions_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
@@ -120,17 +112,7 @@ def test_torch_functions_tosa_FP(test_data):
             raise e
 
 
-@parametrize(
-    "test_data",
-    test_parameters,
-    xfails={
-        "nonzero": "torch.fx.experimental.symbolic_shapes.GuardOnDataDependentSymNode: Could not guard on data-dependent expression Eq(u4, 0). "
-        "Requires dynamic output shape.",
-        "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
-        "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-    },
-    strict=True,
-)
+@parametrize("test_data", test_parameters)
 def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](
@@ -145,6 +127,8 @@ def test_torch_functions_tosa_INT(test_data):
     pipeline.pop_stage("check_count.exir")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.pop_stage("check_not.quant_nodes")
+    if module is nonzero_module:
+        pipeline.quantizer.set_io(None)
 
     try:
         pipeline.run()

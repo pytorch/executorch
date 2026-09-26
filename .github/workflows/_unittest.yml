@@ -24,19 +24,28 @@ on:
         required: false
         type: string
         default: '3.10'
+      linux-timeout:
+        required: false
+        type: number
+        default: 90
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ${{ inputs.docker-image }}
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: ${{ inputs.linux-timeout }}
       script: |
         set -eux
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
@@ -44,10 +53,12 @@ jobs:
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
       script: |
         set -eux
         # This is needed to get the prebuilt PyTorch wheel from S3
@@ -58,10 +69,11 @@ jobs:
     if: ${{ inputs.build-tool == 'cmake' }}
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
-      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       script: |
+        git config --global http.sslBackend openssl
+        git submodule update --init --recursive 
         conda init powershell
 
         powershell -Command "& {
@@ -69,7 +81,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}"
+          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}" -cpuOnly true
           if (\$LASTEXITCODE -ne 0) {
               Write-Host "Setup failed. Exit code: \$LASTEXITCODE."
               exit \$LASTEXITCODE

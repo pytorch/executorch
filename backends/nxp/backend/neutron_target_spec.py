@@ -1,4 +1,4 @@
-# Copyright 2025 NXP
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,12 +8,10 @@
 from enum import Enum
 
 import torch
-
-from executorch.backends.nxp.backend.neutron_converter_manager import (
-    NeutronConverterManager,
+from executorch.backends.nxp.backend.neutron_compiler_manager import (
+    NeutronCompilerManager,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-
 from torch.fx import Node
 
 
@@ -98,12 +96,12 @@ class NeutronTargetSpec:
     The functionality for probing the properties of Neutron Target.
     """
 
-    def __init__(self, target: str, neutron_converter_flavor: str):
+    def __init__(self, target: str):
 
-        converter_manager = NeutronConverterManager(neutron_converter_flavor)
-        converter_manager.verify_target(target)
-        neutron_converter = converter_manager.get_converter()
-        self.neutron_target = neutron_converter.getNeutronTarget(target)
+        compiler_manager = NeutronCompilerManager()
+        compiler_manager.verify_target(target)
+        neutron_compiler = compiler_manager.get_compiler()
+        self.neutron_target = neutron_compiler.getNeutronTarget(target)
 
         if self.is_subsystem():
             raise ValueError(
@@ -124,20 +122,40 @@ class NeutronTargetSpec:
 
     # Whether the target has subsystem (Neutron-S) or not (Neutron-C).
     def is_subsystem(self) -> bool:
-        return self.neutron_target.subsystem
+        return (
+            self.neutron_target.npu.subsystem
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.subsystem
+        )
 
     # Number of compute units.
     def get_num_units(self) -> int:
-        return self.neutron_target.numUnits
+        return (
+            self.neutron_target.npu.numUnits
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.numUnits
+        )
 
     # Number of compute pipelines.
     def get_num_pipes(self) -> int:
-        return self.neutron_target.numPipes
+        return (
+            self.neutron_target.npu.numPipes
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.numPipes
+        )
 
     # Number of compute MACs.
     def get_num_macs(self) -> int:
-        return self.neutron_target.numMacs
+        return (
+            self.neutron_target.npu.numMacs
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.numMacs
+        )
 
     # Neutron compute block hardware version.
     def get_hw_version(self) -> NeutronHWVersion:
-        return NeutronHWVersion(self.neutron_target.hwVersion)
+        return NeutronHWVersion(
+            self.neutron_target.npu.hwVersion
+            if hasattr(self.neutron_target, "npu")
+            else self.neutron_target.hwVersion
+        )

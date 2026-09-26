@@ -6,6 +6,10 @@ on:
       - 'v*.*.*-rc*'
       - 'v*.*.*'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   prepare:
     runs-on: ubuntu-latest

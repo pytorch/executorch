@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Optional, Sequence
 
-from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._cord import Cord, CordBuffer
 from executorch.exir.tensor_layout import TensorLayout
 
 
@@ -36,7 +36,7 @@ class DataPayload:
         key_to_data: a map from unique keys to serializable data.
     """
 
-    buffers: Sequence[bytes]
+    buffers: Sequence[CordBuffer]
     named_data: Dict[str, DataEntry]
 
 

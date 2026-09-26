@@ -7,12 +7,14 @@
  */
 
 #include <c10/util/irange.h>
-#include <cstring>
+
+#include <algorithm>
 
 #include <executorch/kernels/portable/cpu/util/dtype_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace torch {
 namespace executor {
@@ -29,13 +31,150 @@ using StridesArrayRef =
 
 namespace {
 
-/**
- * Computes 2D convolution out results for a given group and channel. The
- * computation can be thought of as a stencil computation: we iterate over an
- * in of size in_C_per_group x in_H x in_W, with a stencil of size
- * in_C_per_group x in_H x in_W, to compute an out channel of size 1 x out_H x
- * out_W.
- */
+struct IndexRange {
+  int64_t begin;
+  int64_t end;
+};
+
+IndexRange transposed_kernel_range(
+    int64_t begin,
+    int64_t end,
+    int64_t input_size,
+    int64_t kernel_size,
+    int64_t stride,
+    int64_t padding,
+    int64_t dilation) {
+  return {
+      std::max(
+          int64_t{0},
+          (begin + padding - (input_size - 1) * stride + dilation - 1) /
+              dilation),
+      std::min(kernel_size, (end - 1 + padding) / dilation + 1)};
+}
+
+IndexRange transposed_input_range(
+    int64_t begin,
+    int64_t end,
+    int64_t input_size,
+    int64_t offset,
+    int64_t stride) {
+  return {
+      std::max(int64_t{0}, (begin - offset + stride - 1) / stride),
+      std::min(input_size, (end - 1 - offset) / stride + 1)};
+}
+
+// Keep the tile buffer out of the regular convolution's stack frame.
+template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
+ET_NOINLINE void transposed_conv2d_impl(
+    const CTYPE* const in_ptr,
+    SizesArrayRef in_sizes,
+    StridesArrayRef in_strides,
+    const CTYPE* const w_ptr,
+    SizesArrayRef w_sizes,
+    StridesArrayRef w_strides,
+    const std::optional<Tensor>& bias,
+    const char* const bias_ptr,
+    LoadFn load_bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    const int64_t groups,
+    CTYPE* const out_ptr,
+    SizesArrayRef out_sizes,
+    StridesArrayRef out_strides,
+    const size_t batch,
+    const size_t group,
+    const size_t out_c) {
+  size_t in_C = in_sizes[1];
+  size_t out_C = out_sizes[1];
+
+  int64_t out_H = out_sizes[2];
+  int64_t in_H = in_sizes[2];
+  int64_t w_H = w_sizes[2];
+
+  int64_t out_W = out_sizes[3];
+  int64_t in_W = in_sizes[3];
+  int64_t w_W = w_sizes[3];
+
+  size_t in_C_per_group = in_C / groups;
+  size_t in_c_start = group * in_C_per_group;
+
+  size_t out_C_per_group = out_C / groups;
+  size_t out_c_start = group * out_C_per_group;
+
+  const int64_t stride_y = val_at(stride, 0);
+  const int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
+  const int64_t dilation_y = val_at(dilation, 0);
+  const int64_t stride_x = val_at(stride, 1);
+  const int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
+  const int64_t dilation_x = val_at(dilation, 1);
+
+  using COMPUTE_T =
+      typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
+  // Reuse weights across a bounded tile, narrowing only after reduction.
+  constexpr int64_t kTileHeight = 8;
+  constexpr int64_t kTileWidth = 32;
+  for (int64_t tile_y = 0; tile_y < out_H; tile_y += kTileHeight) {
+    const int64_t tile_y_end = std::min(out_H, tile_y + kTileHeight);
+    const auto kernel_y = transposed_kernel_range(
+        tile_y, tile_y_end, in_H, w_H, stride_y, padding_y, dilation_y);
+    for (int64_t tile_x = 0; tile_x < out_W; tile_x += kTileWidth) {
+      const int64_t tile_x_end = std::min(out_W, tile_x + kTileWidth);
+      const auto kernel_x = transposed_kernel_range(
+          tile_x, tile_x_end, in_W, w_W, stride_x, padding_x, dilation_x);
+      COMPUTE_T accum[kTileHeight * kTileWidth] = {};
+      for (int64_t w_y = kernel_y.begin; w_y < kernel_y.end; ++w_y) {
+        const int64_t offset_y = w_y * dilation_y - padding_y;
+        const auto input_y = transposed_input_range(
+            tile_y, tile_y_end, in_H, offset_y, stride_y);
+        if (input_y.begin >= input_y.end) {
+          continue;
+        }
+        for (int64_t w_x = kernel_x.begin; w_x < kernel_x.end; ++w_x) {
+          const int64_t offset_x = w_x * dilation_x - padding_x;
+          const auto input_x = transposed_input_range(
+              tile_x, tile_x_end, in_W, offset_x, stride_x);
+          if (input_x.begin >= input_x.end) {
+            continue;
+          }
+          for (const auto in_c :
+               c10::irange(in_c_start, in_c_start + in_C_per_group)) {
+            const size_t w_idx = in_c * w_strides[0] +
+                (out_c - out_c_start) * w_strides[1] + w_y * w_strides[2] +
+                w_x * w_strides[3];
+            const COMPUTE_T w_val = w_ptr[w_idx];
+            int64_t out_y = input_y.begin * stride_y + offset_y - tile_y;
+            for (int64_t in_y = input_y.begin; in_y < input_y.end; ++in_y) {
+              size_t in_idx = batch * in_strides[0] + in_c * in_strides[1] +
+                  in_y * in_strides[2] + input_x.begin * in_strides[3];
+              int64_t out_x = input_x.begin * stride_x + offset_x - tile_x;
+              for (int64_t in_x = input_x.begin; in_x < input_x.end; ++in_x) {
+                const COMPUTE_T in_val = in_ptr[in_idx];
+                accum[out_y * kTileWidth + out_x] += in_val * w_val;
+                in_idx += in_strides[3];
+                out_x += stride_x;
+              }
+              out_y += stride_y;
+            }
+          }
+        }
+      }
+      const COMPUTE_T bias_val = bias_ptr == nullptr
+          ? COMPUTE_T{0}
+          : load_bias(&bias_ptr[out_c * bias.value().element_size()]);
+      for (int64_t out_y = tile_y; out_y < tile_y_end; ++out_y) {
+        size_t out_idx = batch * out_strides[0] + out_c * out_strides[1] +
+            out_y * out_strides[2] + tile_x * out_strides[3];
+        for (int64_t out_x = tile_x; out_x < tile_x_end; ++out_x) {
+          out_ptr[out_idx] =
+              accum[(out_y - tile_y) * kTileWidth + out_x - tile_x] + bias_val;
+          out_idx += out_strides[3];
+        }
+      }
+    }
+  }
+}
+
 template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
 void conv2d_impl(
     const CTYPE* const in_ptr,
@@ -58,22 +197,41 @@ void conv2d_impl(
     const size_t group,
     const size_t out_c,
     bool transposed) {
+  if (transposed) {
+    transposed_conv2d_impl(
+        in_ptr,
+        in_sizes,
+        in_strides,
+        w_ptr,
+        w_sizes,
+        w_strides,
+        bias,
+        bias_ptr,
+        load_bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        out_ptr,
+        out_sizes,
+        out_strides,
+        batch,
+        group,
+        out_c);
+    return;
+  }
   size_t in_C = in_sizes[1];
-  size_t out_C = out_sizes[1];
 
-  size_t out_H = out_sizes[2];
-  size_t in_H = in_sizes[2];
-  size_t w_H = w_sizes[2];
+  int64_t out_H = out_sizes[2];
+  int64_t in_H = in_sizes[2];
+  int64_t w_H = w_sizes[2];
 
-  size_t out_W = out_sizes[3];
-  size_t in_W = in_sizes[3];
-  size_t w_W = w_sizes[3];
+  int64_t out_W = out_sizes[3];
+  int64_t in_W = in_sizes[3];
+  int64_t w_W = w_sizes[3];
 
   size_t in_C_per_group = in_C / groups;
   size_t in_c_start = group * in_C_per_group;
-
-  size_t out_C_per_group = out_C / groups;
-  size_t out_c_start = group * out_C_per_group;
 
   executorch::aten::SizesType in_coord[kTensorDimensionLimit];
   in_coord[0] = batch;
@@ -89,110 +247,56 @@ void conv2d_impl(
   const int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
   const int64_t dilation_x = val_at(dilation, 1);
 
-  if (!transposed) {
-    w_coord[0] = out_c;
-    // Compute 2D output region
-    for (const auto out_y : c10::irange(out_H)) {
-      out_coord[2] = out_y;
-      for (const auto out_x : c10::irange(out_W)) {
-        out_coord[3] = out_x;
+  using COMPUTE_T =
+      typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
 
-        CTYPE accum = 0.0f;
-        for (const auto in_c :
-             c10::irange(in_c_start, in_c_start + in_C_per_group)) {
-          in_coord[1] = in_c;
-          w_coord[1] = in_c - in_c_start;
-
-          for (const auto w_y : c10::irange(w_H)) {
-            w_coord[2] = w_y;
-
-            size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
-            in_coord[2] = in_y;
-            // Only proceed if input y coordinate is within bounds
-            if (in_y >= 0 && in_y < in_H) {
-              for (const auto w_x : c10::irange(w_W)) {
-                w_coord[3] = w_x;
-
-                size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
-                in_coord[3] = in_x;
-
-                // Only proceed if input x coordinate is within bounds
-                if (in_x >= 0 && in_x < in_W) {
-                  size_t in_idx =
-                      calculate_linear_index(in_coord, in_strides.data(), 4);
-                  CTYPE in_val = in_ptr[in_idx];
-
-                  size_t w_idx =
-                      calculate_linear_index(w_coord, w_strides.data(), 4);
-                  CTYPE w_val = w_ptr[w_idx];
-
-                  accum += in_val * w_val;
-                }
-              }
-            }
+  for (const auto out_y : c10::irange(out_H)) {
+    out_coord[2] = out_y;
+    for (const auto out_x : c10::irange(out_W)) {
+      out_coord[3] = out_x;
+      COMPUTE_T accum = 0;
+      for (const auto in_c :
+           c10::irange(in_c_start, in_c_start + in_C_per_group)) {
+        in_coord[1] = in_c;
+        w_coord[0] = out_c;
+        w_coord[1] = in_c - in_c_start;
+        for (const auto w_y : c10::irange(w_H)) {
+          w_coord[2] = w_y;
+          int64_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
+          if (in_y < 0 || in_y >= in_H) {
+            continue;
           }
-        }
-
-        if (bias_ptr != nullptr) {
-          accum += load_bias(&bias_ptr[out_c * bias.value().element_size()]);
-        }
-        size_t out_idx =
-            calculate_linear_index(out_coord, out_strides.data(), 4);
-        out_ptr[out_idx] = accum;
-      }
-    }
-  } else { // transposed convolution
-    w_coord[1] = out_c - out_c_start;
-
-    for (const auto in_y : c10::irange(in_H)) {
-      in_coord[2] = in_y;
-
-      for (const auto in_x : c10::irange(in_W)) {
-        in_coord[3] = in_x;
-
-        for (const auto in_c :
-             c10::irange(in_c_start, in_c_start + in_C_per_group)) {
-          in_coord[1] = in_c;
-
-          size_t in_idx =
-              calculate_linear_index(in_coord, in_strides.data(), 4);
-          CTYPE in_val = in_ptr[in_idx];
-
-          w_coord[0] = in_c;
-          for (const auto w_y : c10::irange(w_H)) {
-            w_coord[2] = w_y;
-            size_t out_y = stride_y * in_y + dilation_y * w_y - padding_y;
-            out_coord[2] = out_y;
-
-            // Only proceed if output y coordinate is within bounds
-            if (out_y >= 0 && out_y < out_H) {
-              for (const auto w_x : c10::irange(w_W)) {
-                w_coord[3] = w_x;
-                size_t out_x = stride_x * in_x + dilation_x * w_x - padding_x;
-                out_coord[3] = out_x;
-
-                // Only proceed if output x coordinate is within bounds
-                if (out_x >= 0 && out_x < out_W) {
-                  size_t w_idx =
-                      calculate_linear_index(w_coord, w_strides.data(), 4);
-                  CTYPE w_val = w_ptr[w_idx];
-
-                  size_t out_idx =
-                      calculate_linear_index(out_coord, out_strides.data(), 4);
-
-                  out_ptr[out_idx] += in_val * w_val;
-                }
-              }
+          in_coord[2] = in_y;
+          for (const auto w_x : c10::irange(w_W)) {
+            w_coord[3] = w_x;
+            int64_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
+            if (in_x < 0 || in_x >= in_W) {
+              continue;
             }
+            in_coord[3] = in_x;
+            const size_t in_idx =
+                calculate_linear_index(in_coord, in_strides.data(), 4);
+            const size_t w_idx =
+                calculate_linear_index(w_coord, w_strides.data(), 4);
+            const COMPUTE_T in_val = in_ptr[in_idx];
+            const COMPUTE_T w_val = w_ptr[w_idx];
+            accum += in_val * w_val;
           }
         }
       }
+      if (bias_ptr != nullptr) {
+        accum += load_bias(&bias_ptr[out_c * bias.value().element_size()]);
+      }
+      const size_t out_idx =
+          calculate_linear_index(out_coord, out_strides.data(), 4);
+      out_ptr[out_idx] = accum;
     }
   }
 }
 
+// Keep dtype-specific loops separate from the scalar-type dispatch.
 template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
-void convolution_wrapper(
+ET_NOINLINE void convolution_wrapper(
     const Tensor& in,
     const Tensor& weight,
     const std::optional<Tensor>& bias,
@@ -295,22 +399,6 @@ void convolution_wrapper(
   size_t out_C = out.size(1);
   size_t out_C_per_group = out_C / groups;
 
-  if (transposed) {
-    // For transposed convolution, we need to initialized the output before we
-    // can accumulate into it.
-    if (bias_ptr == nullptr) {
-      // If bias is not present, we need to initialize the output to 0
-      memset(out_ptr, 0, out.nbytes());
-    } else {
-      // If bias is present, we initialize the output to the bias value
-      for (const auto out_ix : c10::irange(out.numel())) {
-        out_ptr[out_ix] = load_bias(&bias_ptr
-                                        [((out_ix / out_strides[1]) % out_C) *
-                                         bias.value().element_size()]);
-      }
-    }
-  }
-
   for (const auto batch : c10::irange(out_N)) {
     for (const auto group : c10::irange(groups)) {
       // Align channel offset based on the group
@@ -410,11 +498,13 @@ Tensor& convolution_out(
   }
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char name[] = "convolution.out";
+  ET_DEFINE_OPERATOR_NAME(name, "convolution.out");
 
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+    using COMPUTE_T =
+        typename executorch::runtime::promote_types<CTYPE, CTYPE, true>::type;
     const auto load_bias = bias.has_value()
-        ? utils::internal::get_load_to_compute_fn<CTYPE, name>(
+        ? utils::internal::get_load_to_compute_fn<COMPUTE_T, name>(
               ctx, bias.value(), utils::SupportedTensorDtypes::REALHBF16)
         : nullptr;
     convolution_wrapper<CTYPE>(

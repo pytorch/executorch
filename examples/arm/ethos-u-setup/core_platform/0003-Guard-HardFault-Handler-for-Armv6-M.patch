@@ -1,0 +1,49 @@
+From 380045853a133f298cee1bcf0c959b93ea94f9a2 Mon Sep 17 00:00:00 2001
+From: RJ Ascani <rja@meta.com>
+Date: Wed, 13 May 2026 15:42:13 -0700
+Subject: [PATCH] Guard HardFault_Handler for Armv6-M / Armv8-M Baseline
+
+The Corstone-300 HardFault_Handler is written for Armv7-M / Armv8-M
+Mainline: it uses an `ite eq` IT-block in inline asm, and dereferences
+the SCB CFSR/BFAR/MMFAR fault-status registers. Neither is available
+on Armv6-M (Cortex-M0/M0+) or Armv8-M Baseline (Cortex-M23), so the
+file fails to compile when the Corstone-300 target source is built
+with `-mcpu=cortex-m0plus` to exercise the scalar CMSIS-NN code paths
+on the Corstone-300 M55 simulator (an ISA superset).
+
+Wrap the Mainline-only implementation in
+`__ARM_ARCH_7M__ / 7EM / 8M_MAIN / 8_1M_MAIN` and fall back to a
+minimal `printf("Hard fault"); exit(1)` stub on Baseline cores.
+---
+ targets/corstone-300/target.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/targets/corstone-300/target.cpp b/targets/corstone-300/target.cpp
+index bda2248..4aa3eea 100644
+--- a/targets/corstone-300/target.cpp
++++ b/targets/corstone-300/target.cpp
+@@ -246,6 +246,11 @@ struct ExcContext {
+ };
+ 
+ void HardFault_Handler() {
++    // Armv6-M (M0/M0+) and Armv8-M Baseline (M23) lack the IT instruction and
++    // the SCB CFSR/BFAR/MMFAR fault-status registers, so the rich handler
++    // can't compile or run there. Fall back to a minimal stub on those cores.
++#if defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_8M_MAIN__) || \
++    defined(__ARM_ARCH_8_1M_MAIN__)
+     int irq;
+     struct ExcContext *e;
+     uint32_t sp;
+@@ -267,6 +272,9 @@ void HardFault_Handler() {
+            sp);
+     printf(
+         "%11s cfsr=0x%08" PRIx32 " bfar=0x%08" PRIx32 " mmfar=0x%08" PRIx32 "\n", "", SCB->CFSR, SCB->BFAR, SCB->MMFAR);
++#else
++    printf("Hard fault\n");
++#endif
+     exit(1);
+ }
+ }
+-- 
+2.53.0
+

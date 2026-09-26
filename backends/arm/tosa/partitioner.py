@@ -14,22 +14,43 @@ be delegated to the TOSA backend. Use this module to:
 """
 
 import logging
+import operator
+from collections import deque
 from itertools import count
-from typing import Callable, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Callable, cast, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+
+from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
-
+from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
+    can_decompose_large_stride_maxpool2d,
+)
+from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_roll
+from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
+    is_exact_tosa_boundary_bilinear_downscale,
+)
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
+)
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    CheckResolvedTensorShapes,
+    is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -38,12 +59,154 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
+from torch._export.utils import _get_shape_env_from_gm
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
+    """Accept U55 max-pool nodes that backend preprocessing can legalize.
+
+    Non-U55 profiles, including U85, use the standard max-pool support path.
+    This positive check is only for the U55 stride > 3 workaround.
+
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can legalize the max pool."""
+        del submodules
+        # The with_indices form is accepted because RemoveGetItemPass runs
+        # before backend preprocessing and canonicalizes value-only users to
+        # max_pool2d.default. If indices are used, RemoveGetItemPass rejects
+        # the node, matching the existing MaxPool2dSupported contract.
+        if not self.tosa_spec.is_U55_subset or node.target not in {
+            exir_ops.edge.aten.max_pool2d.default,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        }:
+            return False
+
+        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        return can_decompose_large_stride_maxpool2d(
+            node.args[1],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
+            node.args[3] if len(node.args) >= 4 else (0, 0),
+            node.args[4] if len(node.args) >= 5 else (1, 1),
+            node.args[5] if len(node.args) >= 6 else False,
+            input_shape,
+        )
+
+
+class DecomposableResizeSupported(OperatorSupportBase):
+    """Accept exact boundary bilinear downscales.
+
+    These are decomposed later.
+
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when the resize matches the decomposable boundary case.
+
+        This keeps the node delegatable so a later pass can rewrite it.
+
+        """
+        del submodules
+        return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
+
+
+def _is_decomposable_roll_node(
+    node: torch.fx.Node, tosa_spec: TosaSpecification
+) -> bool:
+    """Return whether backend preprocessing can decompose a roll node."""
+    if node.target not in {
+        torch.ops.aten.roll.default,
+        exir_ops.edge.aten.roll.default,
+    }:
+        return False
+    if (
+        tosa_spec.support_integer()
+        and not tosa_spec.support_float()
+        and not is_quantized(node)
+    ):
+        return False
+    input_node = ensure_type(torch.fx.Node, node.args[0])
+    input_tensor = get_first_fake_tensor(input_node)
+    if not 0 < len(input_tensor.shape) <= MAX_RANK:
+        return False
+    if input_tensor.dtype not in {torch.float16, torch.float32} and not (
+        input_tensor.dtype == torch.bfloat16 and tosa_spec.support_extension("bf16")
+    ):
+        return False
+
+    dims = node.args[2] if len(node.args) > 2 else ()
+    return can_decompose_roll(input_tensor.shape, node.args[1], dims)
+
+
+class DecomposableRollSupported(OperatorSupportBase):
+    """Accept static rolls that backend preprocessing can decompose."""
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can decompose the roll."""
+        del submodules
+        return _is_decomposable_roll_node(node, self.tosa_spec)
+
+
+def _is_custom_partition_op(
+    custom_ops: set[torch._ops.OpOverload], target: object
+) -> bool:
+    if target in custom_ops:
+        return True
+    if hasattr(target, "_op"):
+        try:
+            return target._op in custom_ops
+        except Exception:
+            return False
+    return False
+
+
+class CustomOpSupported(OperatorSupportBase):
+    """Accept custom operators registered with the TOSA partitioner."""
+
+    def __init__(self, custom_ops: set[torch._ops.OpOverload]) -> None:
+        self.custom_ops = set(custom_ops)
+
+    def is_node_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+    ) -> bool:
+        """Return supported for registered custom ops and otherwise defer."""
+        del submodules
+        if node.op == "call_function" and _is_custom_partition_op(
+            self.custom_ops, node.target
+        ):
+            return True
+        return False
 
 
 def _is_noop_clone(node: torch.fx.node.Node) -> bool:
@@ -56,6 +219,32 @@ def _is_noop_alias_copy(node: torch.fx.Node) -> bool:
 
 def _is_noop_detach_copy(node: torch.fx.Node) -> bool:
     return node.target == exir_ops.edge.aten.detach_copy.default
+
+
+def _is_noop_as_strided_copy(node: torch.fx.Node) -> bool:
+    if node.target != exir_ops.edge.aten.as_strided_copy.default:
+        return False
+    else:
+        input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
+        output_tensor = get_first_fake_tensor(node)
+        return bool(
+            len(input_tensor.shape) == len(output_tensor.shape)
+            and all(
+                statically_known_true(input_dim == output_dim)
+                for input_dim, output_dim in zip(
+                    input_tensor.shape, output_tensor.shape
+                )
+            )
+            and all(
+                statically_known_true(input_stride == output_stride)
+                for input_stride, output_stride in zip(
+                    input_tensor.stride(), output_tensor.stride()
+                )
+            )
+            and statically_known_true(
+                input_tensor.storage_offset() == output_tensor.storage_offset()
+            )
+        )
 
 
 def _is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
@@ -72,6 +261,58 @@ def _is_noop_expand(node: torch.fx.node.Node) -> bool:
     else:
         multiples, changes_rank = calculate_multiples(node.args)
     return all(m == 1 for m in multiples) and not changes_rank
+
+
+def _is_noop_squeeze(node: torch.fx.Node) -> bool:
+    if node.target != exir_ops.edge.aten.squeeze_copy.dims:
+        return False
+    else:
+        input_tensor = get_first_fake_tensor(ensure_type(torch.fx.Node, node.args[0]))
+        output_tensor = get_first_fake_tensor(node)
+        return bool(input_tensor.shape == output_tensor.shape)
+
+
+def _is_noop_flip(node: torch.fx.node.Node) -> bool:
+    # flip over no dims is the identity; DecomposeFlipPass drops it entirely.
+    if node.target != exir_ops.edge.aten.flip.default:
+        return False
+    dims = node.args[1]
+    return isinstance(dims, (list, tuple)) and len(dims) == 0
+
+
+def _is_noop_permute(node: torch.fx.Node) -> bool:
+    """Return whether a permute preserves the order of every dimension.
+
+    Quantized identity-permute models can produce a partition containing only
+    boundary Q/DQ nodes and the identity permute::
+
+        DQ -> PERMUTE([0, 1, ..., rank - 1]) -> Q
+
+    TOSA lowering removes the boundary Q/DQ nodes and canonicalization removes
+    the identity permute. Delegating that partition would therefore create an
+    empty TOSA graph whose declared output has no writer.
+
+    Args:
+        node (torch.fx.Node): FX node to classify.
+
+    Returns:
+        bool: True when the node is an identity ``permute_copy``.
+
+    """
+    if node.target != exir_ops.edge.aten.permute_copy.default:
+        return False
+
+    dims = node.args[1]
+    if not isinstance(dims, (list, tuple)) or not all(
+        isinstance(dim, int) for dim in dims
+    ):
+        return False
+
+    rank = len(dims)
+    normalized_dims = tuple(
+        dim if dim >= 0 else dim + rank for dim in cast(Sequence[int], dims)
+    )
+    return normalized_dims == tuple(range(rank))
 
 
 def _is_view_copy(node: torch.fx.node.Node) -> bool:
@@ -116,6 +357,178 @@ def reject_partition(
             )
 
 
+def _validate_partition(nodes: set[torch.fx.Node]) -> bool:
+    """Check whether a set of nodes can be extracted.
+
+    Perform a BFS from the external users of partition nodes. If any node
+    reached by BFS is itself inside the partition, then extracting the
+    partition would create a dependency cycle in the remaining graph.
+
+    Args:
+        nodes: The set of FX nodes that form the partition.
+
+    Returns:
+        True if the partition is valid (no cycles), False otherwise.
+
+    """
+    outputs: list[torch.fx.Node] = []
+    for node in nodes:
+        for user in node.users:
+            if user not in nodes:
+                outputs.append(user)
+
+    visited: set[torch.fx.Node] = set()
+    queue = deque(outputs)
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+        if current in nodes:
+            return False
+        for user in current.users:
+            if user not in visited:
+                queue.append(user)
+    return True
+
+
+def _find_connected_components(nodes: set[torch.fx.Node]) -> list[set[torch.fx.Node]]:
+    """Find connected components in a set of nodes treating edges as undirected.
+
+    Two nodes are connected if one is an input or user of the other and both
+    are in ``nodes``.
+
+    Args:
+        nodes: The node set to partition into components.
+
+    Returns:
+        A list of disjoint node sets, one per connected component.
+
+    """
+    remaining = set(nodes)
+    components: list[set[torch.fx.Node]] = []
+    while remaining:
+        seed = next(iter(remaining))
+        component: set[torch.fx.Node] = set()
+        queue = deque([seed])
+        while queue:
+            node = queue.popleft()
+            if node in component or node not in remaining:
+                continue
+            component.add(node)
+            for inp in node.all_input_nodes:
+                if inp in remaining and inp not in component:
+                    queue.append(inp)
+            for user in node.users:
+                if user in remaining and user not in component:
+                    queue.append(user)
+        remaining -= component
+        components.append(component)
+    return components
+
+
+def _detag_mixed_delegate_gather_boundaries(
+    nodes: Iterable[torch.fx.Node],
+) -> set[str]:
+    """Keep shared gather compatibility boundaries entirely portable.
+
+    Returns the delegation tags whose regions were changed.
+
+    """
+    affected_tags: set[str] = set()
+    for node in nodes:
+        node_tag = node.meta.get("delegation_tag")
+        if is_safe_int32_to_int64_gather_boundary(node) and any(
+            user.meta.get("delegation_tag") != node_tag for user in node.users
+        ):
+            if node_tag is not None:
+                affected_tags.add(node_tag)
+            node.meta.pop("delegation_tag", None)
+            for user in node.users:
+                user_tag = user.meta.get("delegation_tag")
+                if user_tag is not None:
+                    affected_tags.add(user_tag)
+                user.meta.pop("delegation_tag", None)
+    return affected_tags
+
+
+def _is_computation_free_partition(nodes: Iterable[torch.fx.Node]) -> bool:
+    """Return whether all nodes disappear during TOSA lowering."""
+    return all(
+        _is_noop_clone(node)
+        or _is_noop_alias_copy(node)
+        or _is_noop_expand(node)
+        or _is_noop_detach_copy(node)
+        or _is_noop_to_dim_order_copy(node)
+        or _is_noop_squeeze(node)
+        or _is_noop_flip(node)
+        or _is_noop_permute(node)
+        or _is_view_copy(node)
+        or _is_noop_as_strided_copy(node)
+        or node.target in Q_OPS
+        or node.target in DQ_OPS
+        for node in nodes
+    )
+
+
+def _retag_affected_partitions(
+    nodes: Iterable[torch.fx.Node],
+    affected_tags: set[str],
+    tags: set[str],
+    tag_iterator: count,
+    reporter: WhyNoPartitionReporter,
+) -> None:
+    """Replace affected tags with tags for valid surviving components.
+
+    Detagging a mixed gather boundary can disconnect a partition or make its
+    remaining nodes invalid to extract. Split each affected partition into
+    connected components and assign fresh tags to components that are valid
+    and contain computation. Rejected components remain portable.
+
+    Args:
+        nodes (Iterable[torch.fx.Node]): Nodes in the graph.
+        affected_tags (set[str]): Tags affected by boundary detagging.
+        tags (set[str]): Active delegation tags, updated in place.
+        tag_iterator (count): Counter used to generate fresh tags.
+        reporter (WhyNoPartitionReporter): Records rejection reasons.
+
+    """
+    affected_tag_nodes = [
+        {node for node in nodes if node.meta.get("delegation_tag") == tag}
+        for tag in affected_tags
+    ]
+    affected_nodes = set().union(*affected_tag_nodes)
+    tags.difference_update(affected_tags)
+    for node in affected_nodes:
+        node.meta.pop("delegation_tag", None)
+
+    components = [
+        component
+        for tag_nodes in affected_tag_nodes
+        for component in _find_connected_components(tag_nodes)
+    ]
+    for component in components:
+        if not _validate_partition(component):
+            for node in component:
+                reporter.report_reject(
+                    node,
+                    "Partition became invalid after detagging a mixed gather boundary.",
+                )
+            continue
+        if _is_computation_free_partition(component):
+            for node in component:
+                reporter.report_reject(
+                    node,
+                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                )
+            continue
+
+        new_tag = f"tag{next(tag_iterator)}"
+        tags.add(new_tag)
+        for node in component:
+            node.meta["delegation_tag"] = new_tag
+
+
 class TOSAPartitioner(Partitioner):
     """Partition an exported program into TOSA-delegable subgraphs.
 
@@ -124,6 +537,8 @@ class TOSAPartitioner(Partitioner):
     rules to tag nodes with a delegation tag per subgraph.
 
     """
+
+    compile_spec: ArmCompileSpec
 
     def __init__(
         self,
@@ -143,60 +558,184 @@ class TOSAPartitioner(Partitioner):
 
         """
         self.delegation_spec = DelegationSpec(
-            TOSABackend.__name__, compile_spec.to_list()
+            TOSABackend.__name__, compile_spec._to_list()
         )
+        self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._requires_resolved_tensor_shapes = False
+        self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
+        self._custom_partition_ops: set[torch._ops.OpOverload] = set()
+        self.intermediate_path = compile_spec._get_intermediate_path()
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Apply required Arm passes before default ATen decompositions.
+
+        EXIR invokes this backend extension hook automatically through
+        ``to_edge_transform_and_lower``. Model export users should not call it
+        directly.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program to
+                transform.
+
+        Returns:
+            ExportedProgram: The transformed ATen-dialect program.
+
+        """
+        return ArmPassManager(
+            self.compile_spec
+        ).transform_for_pre_decomposition_pipeline(exported_program)
+
+    def register_custom_partition_op(self, op: torch._ops.OpOverload) -> None:
+        """Register a custom op to be considered supported."""
+        self._custom_partition_ops.add(op)
 
     def _detag_boundary_nodes(
-        self, module: GraphModule, tag: str, reporter: WhyNoPartitionReporter
+        self,
+        module: GraphModule,
+        tag: str,
+        reporter: WhyNoPartitionReporter,
+        detag_first_fp_node: bool = True,
     ) -> None:
         """De-tag nodes at the partition boundary.
 
         Remove delegation tags from quantize nodes with inputs outside the
         partition and from dequantize nodes with outputs outside the partition.
+        This applies to all variants in ``Q_OPS`` and ``DQ_OPS``, independent
+        of their integer dtype.
 
-        For non Q/DQ nodes, remove the tag from the first node in the partition
-        if any input has floating-point dtype.
+        For INT-only partitions, also remove floating-point nodes at input and
+        output boundaries. Repeat until removing one node no longer exposes
+        another invalid boundary node.
 
         Args:
             tag: The delegation tag assigned to the partition.
             reporter: A reporter to log rejected nodes.
             module: The GraphModule containing the partition.
+            detag_first_fp_node: Whether to de-tag floating-point nodes at the
+                input and output boundaries of a partition.
 
         """
+        # Q_OPS and DQ_OPS cover the supported conversion variants. Their
+        # parameters determine the integer dtype, so this handles INT8 and
+        # INT16 graphs.
+        #
+        # Keep conversions and floating-point operations outside INT-only
+        # delegates:
+        #
+        #     integer delegate -> portable [DQ -> floating-point operations]
+        #
+        # Removing one boundary node can expose another Q/DQ or floating-point
+        # node, so repeat until the partition has a valid boundary.
+        modified = True
+        while modified:
+            modified = False
+            for node in module.graph.nodes:
+                if not is_partitioned(node, tag):
+                    continue
 
-        # De-tag outermost q-nodes upwards and dq-nodes downwards.
-        # De-tag if at least one input/output is not part of the partition.
-        for node in module.graph.nodes:
+                is_q_node = node.target in Q_OPS
+                is_dq_node = node.target in DQ_OPS
+                is_boundary_q_node = is_q_node and not is_partitioned(
+                    node.all_input_nodes[0], tag
+                )
+                has_external_user = any(
+                    not is_partitioned(user, tag) for user in node.users
+                )
+                is_boundary_dq_node = is_dq_node and has_external_user
+                is_boundary_fp_output = (
+                    detag_first_fp_node
+                    and not is_q_node
+                    and not is_dq_node
+                    and has_external_user
+                    and get_first_fake_tensor(node).dtype.is_floating_point
+                )
+
+                if is_boundary_q_node or is_boundary_dq_node or is_boundary_fp_output:
+                    del node.meta["delegation_tag"]
+                    modified = True
+                    continue
+
+                if detag_first_fp_node and not is_q_node and not is_dq_node:
+                    # Remove the first floating-point node at an input boundary.
+                    for input in node.all_input_nodes:
+                        if is_partitioned(input, tag) or isinstance(
+                            input.meta["val"], torch.SymInt
+                        ):
+                            continue
+                        if get_first_fake_tensor(input).dtype.is_floating_point:
+                            reporter.report_reject(
+                                node,
+                                f"Was first node in partition and input {input.name} had fp dtype.",
+                            )
+                            del node.meta["delegation_tag"]
+                            modified = True
+                            break
+
+    def _preserve_io_quantization_enabled(self) -> bool:
+        """Return True if compile specs preserve IO quantization."""
+        for spec in self.delegation_spec.compile_specs:
+            if spec.key != "preserve_io_quantization":
+                continue
+            raw = (
+                spec.value.decode()
+                if isinstance(spec.value, (bytes, bytearray))
+                else str(spec.value)
+            )
+            return raw.lower() in ("1", "true", "yes")
+        return False
+
+    def _partition_has_invalid_uint8(self, partition: Partition, tag: str) -> bool:
+        """Return True if any uint8 appears outside allowed IO nodes.
+
+        TOSA does not have a true uint8 tensor type. Unsigned semantics are only
+        allowed at IO boundaries and are carried via RESCALE flags. If a
+        partition contains uint8 in any other node, it will fail later in
+        lowering, so reject the partition here.
+
+        """
+        for node in partition.nodes:
             if not is_partitioned(node, tag):
+                # Ignore nodes that were de-tagged after boundary processing.
+                continue
+            dtype: Optional[torch.dtype] = None
+            meta_val = node.meta.get("val")
+            if isinstance(meta_val, torch.Tensor):
+                dtype = meta_val.dtype
+            else:
+                dtype = cast(Optional[torch.dtype], node.meta.get("dtype"))
+                if dtype is None:
+                    try:
+                        dtype = get_first_fake_tensor(node).dtype
+                    except (
+                        AttributeError,
+                        KeyError,
+                        RuntimeError,
+                        ValueError,
+                        TypeError,
+                    ):
+                        dtype = None
+            if dtype is None:
+                continue
+            if dtype != torch.uint8:
                 continue
 
-            is_q_node = node.target in Q_OPS
-            is_dq_node = node.target in DQ_OPS
-            is_boundary_q_node = is_q_node and not is_partitioned(
-                node.all_input_nodes[0], tag
+            is_allowed = node.op in ("placeholder", "output")
+            is_output_only_getitem = (
+                node.op == "call_function"
+                and node.target == operator.getitem
+                and len(node.users) > 0
+                and all(user.op == "output" for user in node.users)
             )
-            is_boundary_dq_node = is_dq_node and any(
-                not is_partitioned(user, tag) for user in node.users
-            )
-
-            if is_boundary_q_node or is_boundary_dq_node:
-                # Remove tag from quantize node with input outside partition,
-                # or dequantize node with any output outside partition
-                del node.meta["delegation_tag"]
-            elif not is_q_node and not is_dq_node:
-                # For non Q/DQ nodes, remove tag from first node in partition if any input has fp dtype
-                for input in node.all_input_nodes:
-                    if is_partitioned(input, tag):
-                        continue
-                    if get_first_fake_tensor(input).dtype.is_floating_point:
-                        reporter.report_reject(
-                            node,
-                            f"Was first node in partition and input {input.name} had fp dtype.",
-                        )
-                        del node.meta["delegation_tag"]
-                        break
+            # Allow uint8 on Q/DQ nodes that mediate IO quantization.
+            is_allowed = is_allowed or is_output_only_getitem
+            is_allowed = is_allowed or node.target in Q_OPS or node.target in DQ_OPS
+            if not is_allowed:
+                return True
+        return False
 
     def _tag_module(  # noqa
         self,
@@ -228,9 +767,7 @@ class TOSAPartitioner(Partitioner):
                     "Got overlapping tags in two different modules, this shouldn't happen."
                 )
             tags = tags | submodule_tags
-        operator_support = tosa_support_factory(
-            self.tosa_spec, containing_program, reporter, self.additional_checks
-        )
+        operator_support = self._create_operator_support(containing_program, reporter)
         capability_partitioner = CapabilityBasedPartitioner(
             module,
             operator_support,
@@ -238,13 +775,15 @@ class TOSAPartitioner(Partitioner):
         )
         partition_list = capability_partitioner.propose_partitions()
 
+        tagged_partitions: list[tuple[Partition, str]] = []
         for partition in partition_list:
             tag = f"tag{next(tag_iterator)}"
             tags.add(tag)
-
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
+            tagged_partitions.append((partition, tag))
 
+        for partition, tag in tagged_partitions:
             if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
                 # Detag boundary Q/DQ since we cannot handle them without float support
                 self._detag_boundary_nodes(
@@ -253,25 +792,108 @@ class TOSAPartitioner(Partitioner):
                     reporter,
                 )
 
-            # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation."
-            is_nocompute_partition = all(
-                _is_noop_clone(node)
-                or _is_noop_alias_copy(node)
-                or _is_noop_expand(node)
-                or _is_noop_to_dim_order_copy(node)
-                or _is_view_copy(node)
-                or node.target in Q_OPS
-                or node.target in DQ_OPS
-                for node in partition.nodes
-            )
-            if is_nocompute_partition:
-                reject_partition(
-                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
-                    partition,
+            if self._preserve_io_quantization_enabled():
+                # Detag boundary Q/DQ to keep IO quantization outside delegate.
+                self._detag_boundary_nodes(
+                    module,
+                    tag,
                     reporter,
+                    detag_first_fp_node=False,
                 )
-                tags.remove(tag)
+
+            if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
+                # After de-tagging, the remaining tagged nodes may form
+                # dependency cycles.  This happens when models contain complex
+                # attention blocks (e.g. MobileViT) where Q/DQ nodes act as
+                # bridges between partition segments.  Detect such cycles and
+                # split the partition into valid connected components.
+                surviving = {n for n in partition.nodes if is_partitioned(n, tag)}
+                if surviving and not _validate_partition(surviving):
+                    components = _find_connected_components(surviving)
+                    logger.info(
+                        f"Partition {tag} has dependency cycle after Q/DQ "
+                        f"de-tagging. Splitting into {len(components)} "
+                        f"sub-partition(s)."
+                    )
+                    # Remove the original tag from all nodes
+                    for node in surviving:
+                        del node.meta["delegation_tag"]
+                    tags.remove(tag)
+                    # Re-tag each connected component as a new partition
+                    for component in components:
+                        new_tag = f"tag{next(tag_iterator)}"
+                        tags.add(new_tag)
+                        for node in component:
+                            node.meta["delegation_tag"] = new_tag
+
+            # After potential cycle-splitting the original tag may have been
+            # replaced by one or more sub-tags.  Collect every active tag that
+            # still has nodes in this partition so checks below apply to each
+            # resulting sub-partition.
+            active_tag_nodes: dict[str, list[torch.fx.Node]] = {}
+            for node in partition.nodes:
+                node_tag = node.meta.get("delegation_tag")
+                if node_tag is not None and node_tag in tags:
+                    active_tag_nodes.setdefault(node_tag, []).append(node)
+
+            for active_tag, nodes in active_tag_nodes.items():
+                if self._partition_has_invalid_uint8(partition, active_tag):
+                    reject_partition(
+                        "Partition contained internal uint8 tensors. Uint8 is only supported at IO boundaries for TOSA backends.",
+                        Partition(nodes=nodes),
+                        reporter,
+                    )
+                    if active_tag in tags:
+                        tags.remove(active_tag)
+                    continue
+
+                # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation.
+                if _is_computation_free_partition(nodes):
+                    reject_partition(
+                        "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                        Partition(nodes=nodes),
+                        reporter,
+                    )
+                    if active_tag in tags:
+                        tags.remove(active_tag)
+        affected_tags = _detag_mixed_delegate_gather_boundaries(module.graph.nodes)
+        if affected_tags:
+            _retag_affected_partitions(
+                module.graph.nodes,
+                affected_tags,
+                tags,
+                tag_iterator,
+                reporter,
+            )
         return tags
+
+    def _create_operator_support(
+        self,
+        containing_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+    ) -> OperatorSupportBase:
+        # Override default checks for custom ops
+        positive_overrides = (
+            [CustomOpSupported(self._custom_partition_ops)]
+            if self._custom_partition_ops
+            else None
+        )
+        additional_checks = list(self.additional_checks or ())
+        if self._requires_resolved_tensor_shapes:
+            additional_checks.append(CheckResolvedTensorShapes(reporter))
+
+        return tosa_support_factory(
+            self.tosa_spec,
+            containing_program,
+            reporter,
+            additional_checks=additional_checks,
+            additional_positive_checks=[
+                self._decomposable_resize_support,
+                DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
+                DecomposableRollSupported(self.tosa_spec),
+            ],
+            additional_positive_overrides=positive_overrides,
+        )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """Partition the program and tag TOSA-compatible subgraphs.
@@ -296,12 +918,25 @@ class TOSAPartitioner(Partitioner):
         )
 
         reporter = WhyNoPartitionReporter()
-        tags = self._tag_module(
-            exported_program.graph_module, exported_program, reporter
-        )
+        with TosaLoweringContext(
+            self.tosa_spec, _get_shape_env_from_gm(exported_program.graph_module)
+        ):
+            tags = self._tag_module(
+                exported_program.graph_module, exported_program, reporter
+            )
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
+        if (
+            self.intermediate_path is not None
+            and logger.getEffectiveLevel() <= logging.INFO
+        ):
+            intermediate_path = Path(self.intermediate_path)
+            intermediate_path.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(
+                intermediate_path / "partition_report.txt"
+            )
+            logger.addHandler(file_handler)
         logger.info(f"The following nodes were rejected for {self.tosa_spec}:")
         logger.info("\n" + reporter.get_table_report())
         logger.info("(Placeholders and outputs are not included in this list)")
@@ -335,28 +970,51 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
-            torch.ops.aten.silu_.default,
+            torch.ops.aten.pad.default,
         }
         ops_to_not_decompose_if_fp = {
+            torch.ops.aten.celu.default,
             torch.ops.aten.eye.default,
             torch.ops.aten.logit.default,
             torch.ops.aten.linear.default,
             torch.ops.aten.linspace.default,
+            torch.ops.aten.pad.default,
+            torch.ops.aten.selu.default,
         }
         ops_to_not_decompose_always = {
             torch.ops.aten.logit.default,
+        }
+        ops_to_not_decompose_conditionally = {
+            torch.ops.aten.roll.default,
         }
         ops_to_not_decompose_if_integer = {
             torch.ops.aten.eye.default,
             torch.ops.aten.linspace.default,
             torch.ops.aten.silu.default,
-            torch.ops.aten.silu_.default,
         }
+        ops_to_not_decompose = (
+            ops_to_not_decompose_always
+            | ops_to_not_decompose_if_quant_op
+            | ops_to_not_decompose_if_fp
+            | ops_to_not_decompose_if_integer
+            | ops_to_not_decompose_conditionally
+        )
+
+        if not self.tosa_spec.is_U55_subset:
+            # Tosa operator "RESIZE" is not supported on U55. Since
+            # upsample_bilinear2d and upsample_nearest2d decompose into that it
+            # will not be possible to delegate those operators on U55. If we
+            # have said here to not decompose them there will be an error saying
+            # the operator was not decomposed. It will not be possible for it
+            # to end up on either CPU or NPU.
+            ops_to_not_decompose.add(torch.ops.aten.upsample_nearest2d.vec)
+            ops_to_not_decompose.add(torch.ops.aten.upsample_bilinear2d.vec)
 
         def filter_fn(node: torch.fx.Node) -> bool:
-            """Filter function applied to ops in 'ops_to_not_decompose'. Returns
-            True if the op should not be decomposed. If this function returns
-            True, the partitioner *must* accept the node, or the lowering fails.
+            """Return True if an op should not be decomposed.
+
+            If this function returns True, the partitioner *must* accept the
+            node, or the lowering fails.
 
             Args:
                 node (torch.fx.Node): FX node to evaluate.
@@ -365,6 +1023,15 @@ class TOSAPartitioner(Partitioner):
                 bool: True to keep the op intact; otherwise, False.
 
             """
+            if _is_custom_partition_op(self._custom_partition_ops, node.target):
+                return True
+            if (
+                node.target in ops_to_not_decompose
+                and get_first_fake_tensor(node).dtype == torch.float64
+            ):
+                return False
+            if node.target in ops_to_not_decompose_conditionally:
+                return _is_decomposable_roll_node(node, self.tosa_spec)
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp
@@ -435,20 +1102,5 @@ class TOSAPartitioner(Partitioner):
                 return True
             return False
 
-        ops_to_not_decompose = list(
-            ops_to_not_decompose_always
-            | ops_to_not_decompose_if_quant_op
-            | ops_to_not_decompose_if_fp
-            | ops_to_not_decompose_if_integer
-        )
-
-        if not self.tosa_spec.is_U55_subset:
-            # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
-            # and upsample_nearest2d decompose into that it will not be possible to
-            # delegate those operators on U55. If we have said here to not decompose
-            # them there will be an error saying the operator was not decomposed. It
-            # will not be possible for it to end up on either CPU or NPU.
-            ops_to_not_decompose.append(torch.ops.aten.upsample_nearest2d.vec)
-            ops_to_not_decompose.append(torch.ops.aten.upsample_bilinear2d.vec)
-
-        return (ops_to_not_decompose, filter_fn)
+        ops_to_not_decompose.update(self._custom_partition_ops)
+        return (list(ops_to_not_decompose), filter_fn)

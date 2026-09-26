@@ -40,7 +40,7 @@ Tensor& opt_where_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "where.self_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "where.self_out");
 
   if (a.scalar_type() == b.scalar_type() &&
       a.scalar_type() == out.scalar_type() && a.scalar_type() == compute_type &&

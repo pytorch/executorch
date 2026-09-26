@@ -11,12 +11,10 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.h>
 
-using executorch::aten::Tensor;
 using executorch::extension::Module;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Result;
-using executorch::runtime::Span;
 namespace example {
 
 AttentionSinkRopeRunner::AttentionSinkRopeRunner(Module* module)
@@ -40,9 +38,9 @@ Error AttentionSinkRopeRunner::load(
   for (const std::string& method_name : method_names) {
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(method_name));
   }
-  eviction_batch_size_ = ET_UNWRAP(module_->get("get_eviction_batch_size"))
-                             .toScalar()
-                             .to<int64_t>();
+  ET_ASSIGN_OR_RETURN(
+      eviction_batch_size_evalue__, module_->get("get_eviction_batch_size"));
+  eviction_batch_size_ = eviction_batch_size_evalue__.toScalar().to<int64_t>();
   return Error::Ok;
 }
 

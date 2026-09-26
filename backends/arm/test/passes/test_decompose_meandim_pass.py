@@ -56,12 +56,12 @@ class MeanDimTensor(torch.nn.Module):
     ops_after_pass = {
         "torch.ops.aten.sum.dim_IntList": 2,
         "torch.ops.aten.mul.Tensor": 1,
-        "torch.ops.aten.avg_pool2d.default": 1,
         "torch.ops.aten.reshape.default": 1,
     }
 
     ops_not_after_pass = [
         "torch.ops.aten.mean.dim",
+        "torch.ops.aten.avg_pool2d.default",
     ]
 
     u55_ops_after_pass = {

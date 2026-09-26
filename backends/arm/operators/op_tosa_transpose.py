@@ -1,4 +1,4 @@
-# Copyright 2024-2026 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,6 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
@@ -23,14 +24,7 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
-class TransposeVisitor(NodeVisitor):
-    """Lower the TOSA TRANSPOSE op when switching dim orders.
-
-    Targets the tosa::TRANSPOSE op in the TOSA backend dialect and inserts a
-    TOSA TRANSPOSE.
-
-    """
-
+class PermuteVisitor(NodeVisitor):
     target = "tosa.TRANSPOSE.default"
 
     def define_node(
@@ -40,27 +34,21 @@ class TransposeVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
+        supported_dtypes = supported_data_layout_dtypes(self.tosa_spec)
+
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [
-                ts.DType.BOOL,
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-            ],
+            supported_dtypes,
             self.tosa_spec,
         )
 
-        output_rank = len(output.shape)
-        perms = [dim % output_rank for dim in inputs[1].special]
+        permutation_vector = inputs[1].special
+
         attr = ts.TosaSerializerAttribute()
-        attr.TransposeAttribute(perms)
+        attr.TransposeAttribute(permutation_vector)
         self._serialize_operator(
             node,
             tosa_graph,

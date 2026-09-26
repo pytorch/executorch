@@ -9,14 +9,33 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
-#define VEC4_T ${texel_load_type(DTYPE, IO_STORAGE)}
-#define T ${texel_load_component_type(DTYPE, IO_STORAGE)}
+
+#define IN_DTYPE ${IN_DTYPE}
+#define OUT_DTYPE ${OUT_DTYPE}
+
+#define VEC4_T ${texel_load_type(IN_DTYPE, IO_STORAGE)}
+#define T ${texel_load_component_type(IN_DTYPE, IO_STORAGE)}
+
+#define LINEAR_FP_OUTPUT_TILE_VEC4_T ${texel_load_type(OUT_DTYPE, IO_STORAGE)}
 
 $if IO_STORAGE == "buffer":
   #define OUTPUT_BUFFER
   #define INPUT_BUFFER
 $if K_CACHE_STORAGE == "buffer":
   #define K_CACHE_BUFFER
+
+$if MODE == "llm":
+  #define HAS_INPUT_POS
+  #define HAS_GQA
+  #define Q_LAYOUT DHSB
+  #define K_LAYOUT DHSB
+$else:
+  #define SDPA_PAD_D
+  #define Q_LAYOUT DSHB
+  #define K_LAYOUT DSHB
+
+$if HAS_BIAS:
+  #define HAS_BIAS
 
 #define TILE_M4 ${TILE_M4}
 #define TILE_K4 ${TILE_K4}
@@ -26,19 +45,24 @@ $if K_CACHE_STORAGE == "buffer":
 #define TILE_K ${TILE_K4 * 4}
 #define TILE_N ${TILE_N4 * 4}
 
-${define_required_extensions(IO_STORAGE, DTYPE)}
+${define_required_extensions(IO_STORAGE, [IN_DTYPE, OUT_DTYPE])}
 
 layout(std430) buffer;
 
 #include "common.glslh"
 
-${layout_declare_tensor(B, "w", "t_attn_weights", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_q_projected", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_k_cache", DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "w", "t_attn_weights", OUT_DTYPE, IO_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_q", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_k", IN_DTYPE, K_CACHE_STORAGE, is_scalar_array=False)}
+$if HAS_BIAS:
+  ${layout_declare_tensor(B, "r", "t_bias", IN_DTYPE, IO_STORAGE, is_scalar_array=False)}
 
-${layout_declare_ubo(B, "ivec4", "q_projected_sizes")}
-${layout_declare_ubo(B, "ivec4", "k_cache_sizes")}
-${layout_declare_ubo(B, "int", "input_pos")}
+${layout_declare_ubo(B, "ivec4", "q_sizes")}
+${layout_declare_ubo(B, "ivec4", "k_sizes")}
+$if MODE == "llm":
+  ${layout_declare_ubo(B, "int", "input_pos")}
+$if HAS_BIAS:
+  ${layout_declare_ubo(B, "ivec4", "bias_sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -50,33 +74,28 @@ ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
 #include "sdpa_fp_attn_weight_tile_store.glslh"
 
 /*
- * Compute attention weights given the q_projected and k_cache tensors.
- * q_projected has shape (batches, seq_len, num_q_heads, head_dim)
- * k_cache has shape (batches, max_context_len, num_kv_heads, head_dim)
- * output has shape (batches, num_q_heads, seq_len, context_len)
+ * Compute attention weights (Q @ K^T) given the Q and K tensors.
  *
- * This shader also applies scales and masking to the computed attention
- * weights.
+ * LLM SDPA (HAS_INPUT_POS, HAS_GQA):
+ *   q:            [B, S, H_q, D]        (DHSB layout)
+ *   k (k_cache):  [B, C_max, H_kv, D]   (DHSB layout)
+ *   attn_weights: [B, H_q, S, context_len] in input dtype
+ *   current context_len = input_pos + S
+ *   Applies combined scale + causal mask.
  *
- * The scale applied is 1.0 / sqrt(head_dim_length).
+ * Fused SDPA:
+ *   q:            [B, H, S, D]          (DSHB layout)
+ *   k:            [B, H, L, D]          (DSHB layout)
+ *   attn_weights: [B, H, S, L] in fp32 to prevent fp16 overflow in Q@K^T
+ *   Applies scalar scale, optionally adds bias.
  *
- * The mask applied is a bit more complicated. Imagine you create a square
- * matrix of size (input_pos + seq_len, input_pos + seq_len), and then set the
- * lower triangular section of the matrix to -inf. Then, slice the matrix along
- * the row dimension starting from input_pos to input_pos + seq_len. You end up
- * with a partial mask with size (seq_len, input_pos + seq_len). This is the
- * mask that is applied to the attention weight.
- *
- * In the shader, instead of generating the mask, the index of the elment is
- * inspected to determine if it would have been masked. Given an element at
- * tensor index (n, c, h, w), it would be masked if w < h + input_pos.
- *
+ * Dispatch: (context_tiles, S_tiles, H * B) — for LLM (batch=1), H * B == H_q.
  */
 
 void main() {
   const int tile_idx_x = int(gl_GlobalInvocationID.x);
   const int tile_idx_y = int(gl_GlobalInvocationID.y);
-  // idx along output num_q_heads dim
+  // For LLM: q_head index. For fused: combined batch*H + head index.
   const int q_h = int(gl_GlobalInvocationID.z);
 
   // idx along the output context_len dim
@@ -85,32 +104,48 @@ void main() {
 
   // idx along the output seq_len dim
   const int s = tile_idx_y * TILE_M;
-  const int s4 = div_4(s);
 
-  // texel size of head_dim, over which the dot product is accumulated
-  const int D4 = div_up_4(q_projected_sizes.x);
-  // number of Q heads
-  const int Q_H = q_projected_sizes.y;
-  // sequence length
-  const int S = q_projected_sizes.z;
+#ifdef HAS_INPUT_POS
+  // LLM: q_sizes is WHCN {D, H_q, S, B}
+  const int D = q_sizes.x;
+  const int Q_H = q_sizes.y;
+  const int S = q_sizes.z;
+  // k_sizes is WHCN {D, H_kv, C_max, B}
+  const int KV_H = k_sizes.y;
+  const int C = k_sizes.z;
+#else
+  // Fused: q_sizes is WHCN {D, S, H, B}
+  const int D = q_sizes.x;
+  const int S = q_sizes.y;
+  const int Q_H = q_sizes.z;
+  // k_sizes is WHCN {D, L, H, B}
+  const int KV_H = k_sizes.z;
+  const int C = k_sizes.y;
+#endif
+  const int D4 = div_up_4(D);
   const int S_aligned = align_up_4(S);
 
-  // number of K/V heads
-  const int KV_H = k_cache_sizes.y;
-  // Max context length
-  const int C = k_cache_sizes.z;
-  const int C4 = div_up_4(C);
+#ifdef HAS_INPUT_POS
+  // current context length for LLM decode/prefill
+  const int context_len = input_pos + S;
+#else
+  // fused: full key sequence length from k_sizes
+  const int context_len = k_sizes.y;
+#endif
+  const int context_texel_len = div_up_4(context_len);
 
+#ifdef HAS_GQA
   int kv_h = q_h;
   if (KV_H < Q_H) {
     kv_h = q_h / (Q_H / KV_H);
   }
+#else
+  const int kv_h = q_h;
+#endif
 
-  const int context_len = input_pos + S;
-  const int context_texel_len = div_up_4(context_len);
-
-  // bounds check
-  if (c >= context_len || s >= S || q_h >= Q_H) {
+  // bounds check — q_h bound is Q_H * batch_size; for LLM (batch=1) this
+  // equals Q_H, for fused this equals H * B.
+  if (c >= context_len || s >= S || q_h >= Q_H * q_sizes.w) {
     return;
   }
 
@@ -120,6 +155,16 @@ void main() {
   FPInputTile q_tile;
   FPWeightTile w_tile;
 
+  // The LLM attn_weights tensor is padded to S_aligned in its S dim, while
+  // fused attn_weights is not padded. The store/bias helpers bound-check
+  // against this.
+#ifdef HAS_INPUT_POS
+  const int attn_S = S_aligned;
+#else
+  const int attn_S = S;
+#endif
+
+#ifdef HAS_INPUT_POS
   // If the tile is completely inside the mask region, then there is no need to
   // compute the output tile. All the elements in the output tile can be set to
   // negative infinity.
@@ -127,9 +172,9 @@ void main() {
   if (tile_in_mask_region) {
     const VEC4_T negative_infinity_vec = VEC4_T(negative_infinity_val);
     set_out_tile_to_vec(out_tile, negative_infinity_vec);
-  }
-  // Otherwise, need to actually compute output tile
-  else {
+  } else
+#endif
+  {
     for (int d4 = 0; d4 < D4; d4++) {
       load_q_projected_tile_with_checks(
         q_tile,
@@ -137,8 +182,9 @@ void main() {
         s,
         q_h,
         D4,
-        Q_H,
-        S);
+        D,
+        S,
+        Q_H);
 
       load_k_cache_tile_with_checks(
         w_tile,
@@ -146,15 +192,16 @@ void main() {
         c,
         kv_h,
         D4,
+        D,
         context_len,
         C,
         KV_H);
 
-
       fp_accumulate_with_fp_weight(out_tile, q_tile, w_tile);
     }
 
-    // Apply scale and mask
+#ifdef HAS_INPUT_POS
+    // LLM: combined scale + causal mask
     VEC4_T inv_scale_vec = VEC4_T(inv_scale);
     apply_scale_and_mask(
       out_tile,
@@ -162,6 +209,13 @@ void main() {
       input_pos,
       c,
       s);
+#else
+    // Fused: scalar scale, optional bias
+    apply_scale(out_tile, inv_scale);
+  #ifdef HAS_BIAS
+    apply_bias(out_tile, c4, s, q_h, Q_H, context_texel_len, attn_S);
+  #endif
+#endif
   }
 
   store_attn_weight_tile_with_checks(
@@ -170,6 +224,6 @@ void main() {
     s,
     q_h,
     context_texel_len,
-    S_aligned,
+    attn_S,
     Q_H);
 }

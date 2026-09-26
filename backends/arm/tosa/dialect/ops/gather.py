@@ -7,14 +7,14 @@
 import torch
 
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "GATHER(Tensor values, Tensor indices) -> Tensor",
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -42,6 +42,8 @@ def GATHER(values: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
         torch.float16,
         torch.float32,
         torch.bfloat16,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
     )
     if values.dtype not in allowed_values_dtypes:
         raise TosaValueError(
@@ -57,6 +59,16 @@ def GATHER(values: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
                 op="GATHER",
             )
     else:
+        required_extension = {
+            torch.bfloat16: "bf16",
+            torch.float8_e4m3fn: "fp8e4m3",
+            torch.float8_e5m2: "fp8e5m2",
+        }.get(values.dtype)
+        if required_extension and not tosa_spec.support_extension(required_extension):
+            raise TosaValueError(
+                f"dtype {values.dtype} requires {required_extension} extension.",
+                op="GATHER",
+            )
         # Support in FP profile, or INT profile via quantization
         if not (tosa_spec.support_float() or tosa_spec.support_integer()):
             raise TosaValueError(

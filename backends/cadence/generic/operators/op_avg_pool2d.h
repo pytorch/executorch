@@ -23,9 +23,8 @@ namespace native {
     ::executorch::aten::IntArrayRef padding,
     bool ceil_mode,
     bool count_include_pad,
-    ::executorch::aten::optional<int64_t> divisor_override,
-    const ::executorch::aten::optional<::executorch::aten::Tensor>&
-        in_zero_point_t,
+    std::optional<int64_t> divisor_override,
+    const std::optional<::executorch::aten::Tensor>& in_zero_point_t,
     bool channel_last,
     ::executorch::aten::Tensor& out);
 

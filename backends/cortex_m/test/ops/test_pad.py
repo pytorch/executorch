@@ -69,12 +69,22 @@ test_cases = {
         CortexMPad((0, 0, 0, 0)),
         (ramp_tensor(-0.5, 0.5, (2, 3, 4, 5)),),
     ),
+    "pad_rank4_all_dims_channels_last": McuTestCase(
+        CortexMPad((1, 1, 2, 2, 1, 0, 0, 1)),
+        (ramp_tensor(-0.5, 0.5, (1, 2, 3, 4)).to(memory_format=torch.channels_last),),
+    ),
+    "pad_rank4_last_two_dims_channels_last": McuTestCase(
+        CortexMPad((1, 2, 3, 4)),
+        (ramp_tensor(-1.0, 1.0, (1, 3, 4, 5)).to(memory_format=torch.channels_last),),
+    ),
 }
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_pad(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_pad(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -83,6 +93,8 @@ def test_dialect_pad(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_pad(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_pad(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=0)

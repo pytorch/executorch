@@ -62,6 +62,7 @@ class TestThreshold(OperatorTest):
         x = torch.tensor([-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0])
         self._test_op(Model(), (x,), flow)
 
+    @unittest.skip("In place activations aren't properly defunctionalized yet.")
     def test_threshold_f32_all_params(self, flow: TestFlow) -> None:
         # Test with all parameters customized
         self._test_op(

@@ -1,0 +1,99 @@
+# Reusable: cross-compile cadence_executor_runner for one Cadence Xtensa core.
+#
+# A native job rather than linux_job_v3, because the build has to assume the
+# Cadence artifacts role rather than the role/arc that linux_job_v3 assumes for
+# itself, and only a native job can run configure-aws-credentials. Binding the
+# environment also gives the OIDC token the environment claim. The licensed
+# toolchain + core configs are fetched at runtime from an auth-gated store;
+# role/region/store come from CI variables and are not committed.
+name: xtensa-build
+
+on:
+  workflow_call:
+    inputs:
+      backend:
+        description: "Cadence backend to build (hifi4 | vision | fusion_g3)"
+        required: true
+        type: string
+      ref:
+        description: "Git ref to check out"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  # The runner pod pulls the container before any step runs, so the image has to
+  # be a fully qualified reference resolved by a job this one depends on.
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
+  build:
+    name: ${{ inputs.backend }}
+    needs: docker-image
+    # Intel, not the x86iavx512 (r7a/AMD) default: the Cadence licence key that
+    # xt-clang computes for a core differs by CPU vendor, and only the Intel one
+    # (XT_XCC_TIE_ED4D1230) is in the bundled licence. On an AMD runner the
+    # vision core resolves to XT_XCC_TIE_ED4DB539 and the checkout fails with
+    # "No such feature exists". hifi4's older RI-2022.10 toolchain does not care.
+    runs-on: mt-l-x86iamx-8-64
+    container:
+      image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
+    environment: cadence
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Fix workspace permissions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # An OSDC pod is ephemeral, so the workspace starts empty and there is
+          # nothing to clean. What it does need is to be writable: the GH hook
+          # creates it as uid 1001
+          # (https://github.com/actions/runner-images/issues/10936), which the
+          # image's uid 1000 ci-user cannot write to. chmod rather than
+          # recreating the directory keeps the hook able to clean up afterwards.
+          # An image running as root can already write and often ships no sudo,
+          # so a failure here is not fatal.
+          sudo chmod -R 777 "${GITHUB_WORKSPACE}" 2>/dev/null || true
+
+      - name: Checkout executorch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.ref }}
+
+      - name: Assume Cadence artifacts role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.CADENCE_CI_AWS_ROLE }}
+          aws-region: ${{ vars.CADENCE_CI_AWS_REGION }}
+
+      - name: Cross-compile cadence_executor_runner
+        env:
+          BACKEND: ${{ inputs.backend }}
+          XTENSA_S3_BUCKET: ${{ vars.CADENCE_CI_S3_BUCKET }}
+        shell: bash
+        run: |
+          set -exo pipefail
+          eval "$(/opt/conda/bin/conda shell.bash hook)"
+          conda activate "$(conda env list --json | jq -r ".envs | .[-1]")"
+          ./install_requirements.sh > /dev/null
+          pip install --quiet awscli
+          # hifi4/fusion_g3 optimized kernels need the foss-xtensa nnlib
+          # sources, which are not vendored in executorch; the cadence
+          # installer clones them. vision has no nnlib dependency.
+          if [ "${BACKEND}" != "vision" ]; then
+            backends/cadence/install_requirements.sh
+          fi
+          source .ci/scripts/setup-xtensa-tools.sh "${BACKEND}"
+          .ci/scripts/build-cadence-xtensa.sh --no-run
+          chmod -R a+rX cmake-out
+
+      - name: Upload runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadence-xtensa-build-${{ inputs.backend }}
+          path: cmake-out/backends/cadence/cadence_executor_runner
+          if-no-files-found: error

@@ -11,10 +11,14 @@ quantize_and_pack_4h4w_with_group_sums:
     INPUT_STORAGE: texture3d
     NUM_GROUPS_PER_WG: 2
     NUM_WORKERS_PER_GROUP: 32
+    ZP_DTYPE_MODE: zpint8
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
+    ZP_DTYPE_MODE:
+      - VALUE: zpint8
+      - VALUE: zpinherit
   shader_variants:
     - NAME: quantize_and_pack_4h4w_with_group_sums_o2w32_buffer_texture3d
     - NAME: quantize_and_pack_4h4w_with_group_sums_o2w32_buffer_buffer

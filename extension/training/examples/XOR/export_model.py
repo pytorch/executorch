@@ -13,7 +13,10 @@ import os
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
 
-from executorch.extension.training.examples.XOR.model import Net, TrainingNet
+if __package__:
+    from .model import Net, TrainingNet
+else:
+    from model import Net, TrainingNet
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
 

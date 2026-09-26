@@ -22,7 +22,10 @@ Arguments:
                  - mistralai/Voxtral-Mini-4B-Realtime-2602
                  - openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo})
                  - google/gemma-3-4b-it
+                 - nvidia/diar_streaming_sortformer_4spk-v2
                  - nvidia/parakeet-tdt
+                 - facebook/dinov2-small-imagenet1k-1-layer
+                 - meta-models/Muse-Glimmer-30B-GGUF
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
@@ -31,13 +34,17 @@ Arguments:
                  - quantized-int4-weight-only (CUDA only)
                  - quantized-int4-metal (Metal only)
                  - quantized-8da4w (XNNPACK only)
+                 - kquant-17gb (Muse Glimmer only)
+                 - kquant-dynamic (Muse Glimmer only)
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
-  mode         Export mode (optional, default: auto-detect based on model and device)
+  mode         Export mode (optional, default: vr-streaming)
                Supported modes:
                  - vr-streaming: Voxtral Realtime streaming mode
                  - vr-offline: Voxtral Realtime offline mode
+                 - solo-text: Muse Glimmer solo text mode
+                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
@@ -45,11 +52,13 @@ Examples:
   export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-int4-metal"
   export_model_artifact.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
   export_model_artifact.sh cuda "mistralai/Voxtral-Mini-3B-2507" "quantized-int4-tile-packed"
+  export_model_artifact.sh cuda-windows "nvidia/diar_streaming_sortformer_4spk-v2" "non-quantized" "./output"
   export_model_artifact.sh cuda "google/gemma-3-4b-it" "non-quantized" "./output"
   export_model_artifact.sh cuda "nvidia/parakeet-tdt" "non-quantized" "./output"
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
   export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./output"
   export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "./output" "vr-offline"
+  export_model_artifact.sh cuda "meta-models/Muse-Glimmer-30B-GGUF" "kquant-17gb" "./output" "solo-text"
 EOF
 }
 
@@ -63,6 +72,9 @@ if [ -z "${1:-}" ]; then
   echo "Run with -h or --help for usage information"
   exit 1
 fi
+
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
 
 set -eux
 
@@ -83,9 +95,16 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
+    solo-text|dflash-image)
+      if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
+        echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image"
       exit 1
       ;;
   esac
@@ -141,8 +160,32 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  Qwen/Qwen3-0.6B)
+    MODEL_NAME="qwen3"
+    TASK="text-generation"
+    MAX_SEQ_LEN="64"
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   nvidia/parakeet-tdt)
     MODEL_NAME="parakeet"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
+  nvidia/diar_streaming_sortformer_4spk-v2)
+    MODEL_NAME="sortformer"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
+  facebook/dinov2-small-imagenet1k-1-layer)
+    MODEL_NAME="dinov2"
     TASK=""
     MAX_SEQ_LEN=""
     EXTRA_PIP=""
@@ -157,9 +200,33 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4)
+    MODEL_NAME="qwen3_5_moe"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
+  unsloth/gemma-4-31B-it-GGUF)
+    MODEL_NAME="gemma4_31b"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
+  meta-models/Muse-Glimmer-30B-GGUF)
+    MODEL_NAME="muse_glimmer"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, nvidia/parakeet-tdt"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF, meta-models/Muse-Glimmer-30B-GGUF"
     exit 1
     ;;
 esac
@@ -197,12 +264,55 @@ case "$QUANT_NAME" in
     fi
     EXTRA_ARGS="--qlinear 8da4w --qlinear_group_size 32 --qlinear_encoder 8da4w --qlinear_encoder_group_size 32"
     ;;
+  kquant-17gb|kquant-dynamic)
+    if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
+      echo "Error: Quantization '$QUANT_NAME' can only be used with Muse Glimmer model"
+      echo "Provided model: $HF_MODEL"
+      exit 1
+    fi
+    EXTRA_ARGS=""
+    ;;
   *)
     echo "Error: Unsupported quantization '$QUANT_NAME'"
-    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal, quantized-8da4w"
+    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal, quantized-8da4w, kquant-17gb, kquant-dynamic"
     exit 1
     ;;
 esac
+
+if [ "$MODEL_NAME" = "muse_glimmer" ]; then
+  if [ "$DEVICE" != "cuda" ]; then
+    echo "Error: Muse Glimmer is only supported with the cuda device"
+    exit 1
+  fi
+  if [ "$QUANT_NAME" != "kquant-17gb" ] && [ "$QUANT_NAME" != "kquant-dynamic" ]; then
+    echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
+    exit 1
+  fi
+  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "dflash-image" ]; then
+    echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+    exit 1
+  fi
+fi
+
+# Downloads and compiler caches go in scratch dirs outside OUTPUT_DIR because the CI job
+# templates upload OUTPUT_DIR even when the job fails. A failed export also empties
+# OUTPUT_DIR, but only if it started out empty, so a local run with output_dir=. cannot
+# delete the checkout. Scratch goes under RUNNER_TEMP, which the runner wipes between
+# jobs, with a fallback for containers where RUNNER_TEMP is not writable.
+LOCAL_MODEL_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/model_XXXXXX" 2>/dev/null || mktemp -d)
+SCRATCH_DIRS=("$LOCAL_MODEL_DIR")
+OUTPUT_DIR_WAS_EMPTY=0
+[ -n "$(ls -A -- "$OUTPUT_DIR" 2>/dev/null)" ] || OUTPUT_DIR_WAS_EMPTY=1
+cleanup() {
+  local rc=$?
+  set +e
+  rm -rf "${SCRATCH_DIRS[@]}"
+  if [ "$rc" -ne 0 ] && [ "$OUTPUT_DIR_WAS_EMPTY" = 1 ] && [ -d "$OUTPUT_DIR" ]; then
+    echo "Export failed with exit code $rc; removing partial output from ${OUTPUT_DIR}"
+    (cd -- "$OUTPUT_DIR" && find . -mindepth 1 -delete)
+  fi
+}
+trap cleanup EXIT
 
 echo "::group::Export $MODEL_NAME"
 
@@ -239,40 +349,90 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
   exit 0
 fi
 
+# Sortformer uses a custom export script
+if [ "$MODEL_NAME" = "sortformer" ]; then
+  if [ "$QUANT_NAME" != "non-quantized" ]; then
+    echo "Error: Sortformer currently supports only non-quantized export"
+    exit 1
+  fi
+
+  pip install -r examples/models/sortformer/install_requirements.txt
+
+  SORTFORMER_BACKEND="$DEVICE"
+  if [ "$DEVICE" = "cuda-windows" ]; then
+    SORTFORMER_BACKEND="cuda-windows"
+  elif [ "$DEVICE" = "cuda" ]; then
+    SORTFORMER_BACKEND="cuda"
+  elif [ "$DEVICE" = "xnnpack" ]; then
+    SORTFORMER_BACKEND="xnnpack"
+  else
+    SORTFORMER_BACKEND="portable"
+  fi
+
+  python -m executorch.examples.models.sortformer.export_sortformer \
+      --hf-model "${HF_MODEL}" \
+      --backend "${SORTFORMER_BACKEND}" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/sortformer.pte"
+  mv "${OUTPUT_DIR}/sortformer.pte" "${OUTPUT_DIR}/model.pte"
+  # CUDA saves named data to separate .ptd file, XNNPACK/portable do not.
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
+# DINOv2 uses a custom export script
+if [ "$MODEL_NAME" = "dinov2" ]; then
+  pip install -r examples/models/dinov2/install_requirements.txt
+
+  python -m executorch.examples.models.dinov2.export_dinov2 \
+      --backend "$DEVICE" \
+      --output-dir "${OUTPUT_DIR}"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
+  ls -al "${OUTPUT_DIR}"
+  echo "::endgroup::"
+  exit 0
+fi
+
 # Voxtral Realtime uses a custom export script
 if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
   pip install safetensors huggingface_hub
 
-  # Download model weights from HuggingFace (requires HF_TOKEN for gated model)
-  LOCAL_MODEL_DIR="${OUTPUT_DIR}/model_weights"
+  # Download model weights outside OUTPUT_DIR to avoid uploading on failure (requires HF_TOKEN for gated model)
   python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
 
   # Per-component quantization flags
   VR_QUANT_ARGS=""
+  VR_DTYPE_ARGS=""
   if [ "$QUANT_NAME" = "quantized-8da4w" ]; then
     VR_QUANT_ARGS="--qlinear-encoder 8da4w --qlinear 8da4w --qlinear-group-size 32 --qembedding 8w"
   elif [ "$QUANT_NAME" = "quantized-int4-metal" ]; then
     VR_QUANT_ARGS="--qlinear-encoder fpa4w --qlinear fpa4w"
+    VR_DTYPE_ARGS="--dtype bf16"
+  elif [ "$QUANT_NAME" = "quantized-int4-tile-packed" ]; then
+    VR_QUANT_ARGS="--qlinear-encoder 4w --qlinear-encoder-packing-format tile_packed_to_4d --qlinear 4w --qlinear-packing-format tile_packed_to_4d --qembedding 8w"
+    VR_DTYPE_ARGS="--dtype bf16"
   fi
 
   # Determine streaming mode based on MODE parameter
-  USE_STREAMING="false"
-  if [ "$MODE" = "vr-streaming" ]; then
-    USE_STREAMING="true"
-  elif [ "$MODE" = "vr-offline" ]; then
+  USE_STREAMING="true"
+  if [ "$MODE" = "vr-offline" ]; then
     USE_STREAMING="false"
-  elif [ -z "$MODE" ]; then
-    # Auto-detect: XNNPACK uses streaming, others use offline
-    if [ "$DEVICE" = "xnnpack" ]; then
-      USE_STREAMING="true"
-    fi
   fi
 
   # Configure export and preprocessor based on streaming mode
   STREAMING_ARG=""
   PREPROCESSOR_ARGS="--feature_size 128 --output_file ${OUTPUT_DIR}/preprocessor.pte"
   if [ "$USE_STREAMING" = "true" ]; then
-    STREAMING_ARG="--streaming"
+    STREAMING_ARG="--streaming --sliding-window 2048"
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --streaming"
   else
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"
@@ -283,17 +443,211 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
       --backend "$DEVICE" \
       ${STREAMING_ARG} \
       --output-dir "${OUTPUT_DIR}" \
-      ${VR_QUANT_ARGS}
+      ${VR_QUANT_ARGS} \
+      ${VR_DTYPE_ARGS}
 
   # Export preprocessor
   python -m executorch.extension.audio.mel_spectrogram ${PREPROCESSOR_ARGS}
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/preprocessor.pte"
+  if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
+    test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  fi
   # Copy tokenizer from downloaded model weights
   cp "$LOCAL_MODEL_DIR/tekken.json" "${OUTPUT_DIR}/tekken.json"
   ls -al "${OUTPUT_DIR}"
   echo "::endgroup::"
+  exit 0
+fi
+
+# Qwen 3.5 MoE uses a prequantized checkpoint and custom export script
+if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
+  pip install safetensors huggingface_hub
+  pip install -r examples/models/qwen3_5_moe/requirements.txt
+
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
+
+  # Download prequantized model outside OUTPUT_DIR to avoid uploading on failure
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('${HF_MODEL}', local_dir='${LOCAL_MODEL_DIR}')"
+
+  # Sanity check: run inference on the prequantized model
+  echo "::group::Inference sanity check"
+  python -m executorch.examples.models.qwen3_5_moe.inference \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile
+  echo "::endgroup::"
+
+  # Copy tokenizer files for the runner and model-specific serving launcher.
+  cp "$LOCAL_MODEL_DIR/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+  cp "$LOCAL_MODEL_DIR/tokenizer_config.json" "${OUTPUT_DIR}/tokenizer_config.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  EXPORT_LOG=$(mktemp)
+  TMPDIR="$INDUCTOR_TMPDIR" \
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.qwen3_5_moe.export \
+      --prequantized "$LOCAL_MODEL_DIR" \
+      --output-dir "${OUTPUT_DIR}" \
+      --dense-prefill dequant \
+      --moe-activation-dtype int8 2>&1 | tee "$EXPORT_LOG"
+  EXPORT_RC=${PIPESTATUS[0]}
+  echo "::endgroup::"
+
+  if [ "$EXPORT_RC" -ne 0 ]; then
+    echo "ERROR: Qwen3.5 MoE export failed (exit $EXPORT_RC)"
+    rm -f "$EXPORT_LOG"
+    exit "$EXPORT_RC"
+  fi
+
+  # Gate peak GPU memory so we keep the export viable on consumer GPUs
+  # (e.g. RTX 4090 with 24 GB). The export script prints a machine-
+  # parseable marker line "EXPORT_GPU_PEAK_MEMORY_MB: <float>".
+  # Max autotune makes the peak vary by about 160 MB between runs of the same
+  # commit, so the budget needs headroom above the highest value we see or the
+  # gate rejects an export that did not actually grow.
+  EXPORT_GPU_PEAK_MB_LIMIT="${EXPORT_GPU_PEAK_MB_LIMIT:-21504}"
+  PEAK_LINE=$(grep -E '^EXPORT_GPU_PEAK_MEMORY_MB:' "$EXPORT_LOG" | tail -1)
+  rm -f "$EXPORT_LOG"
+  if [ -z "$PEAK_LINE" ]; then
+    echo "ERROR: export did not emit EXPORT_GPU_PEAK_MEMORY_MB marker; cannot enforce GPU memory budget"
+    exit 1
+  fi
+  PEAK_MB=$(echo "$PEAK_LINE" | awk '{print $2}')
+  echo "Export GPU peak memory: ${PEAK_MB} MB (limit ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+  if awk -v p="$PEAK_MB" -v l="$EXPORT_GPU_PEAK_MB_LIMIT" 'BEGIN{exit !(p>l)}'; then
+    echo "ERROR: export exceeded GPU memory budget (${PEAK_MB} MB > ${EXPORT_GPU_PEAK_MB_LIMIT} MB)"
+    echo "       — this would prevent the model from being exported on a 24 GB consumer GPU."
+    exit 1
+  fi
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
+# Muse Glimmer: download the selected GGUFs and export the requested CUDA configuration.
+if [ "$MODEL_NAME" = "muse_glimmer" ]; then
+  pip install safetensors huggingface_hub gguf
+
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
+
+  case "$QUANT_NAME" in
+    kquant-17gb)
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf"
+      ;;
+    kquant-dynamic)
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
+      ;;
+  esac
+
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${TARGET_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+  TARGET_GGUF_PATH="${LOCAL_MODEL_DIR}/${TARGET_GGUF_FILE}"
+
+  echo "::group::Export"
+  case "$MODE" in
+    solo-text)
+      EXPORT_START_SECONDS=$SECONDS
+      TMPDIR="$INDUCTOR_TMPDIR" \
+      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+      python -m executorch.examples.models.muse_glimmer.export.export_solo \
+          --gguf "$TARGET_GGUF_PATH" \
+          --backend cuda \
+          --output-dir "${OUTPUT_DIR}"
+      ;;
+    dflash-image)
+      DRAFT_GGUF_FILE="dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
+      MMPROJ_GGUF_FILE="mmproj-Muse-Glimmer-30B-Q4_K_M.gguf"
+      python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${DRAFT_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+      python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${MMPROJ_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+      EXPORT_START_SECONDS=$SECONDS
+      TMPDIR="$INDUCTOR_TMPDIR" \
+      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+      python -m executorch.examples.models.muse_glimmer.export.export_dflash \
+          --target-gguf "$TARGET_GGUF_PATH" \
+          --draft-gguf "${LOCAL_MODEL_DIR}/${DRAFT_GGUF_FILE}" \
+          --mmproj "${LOCAL_MODEL_DIR}/${MMPROJ_GGUF_FILE}" \
+          --backend cuda \
+          --output-dir "${OUTPUT_DIR}"
+      ;;
+    *)
+      echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+      exit 1
+      ;;
+  esac
+  EXPORT_DURATION_SECONDS=$((SECONDS - EXPORT_START_SECONDS))
+  EXPORT_DURATION_MINUTES=$(awk -v seconds="$EXPORT_DURATION_SECONDS" 'BEGIN {printf "%.2f", seconds / 60}')
+  echo "Muse Glimmer took ${EXPORT_DURATION_MINUTES} minutes to export."
+  echo "::endgroup::"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  if [ "$MODE" = "dflash-image" ]; then
+    test -f "${OUTPUT_DIR}/pos_embed.bin"
+  fi
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
+# Gemma 4 31B: download the Q4_K_M GGUF and export via the GGUF loader
+if [ "$MODEL_NAME" = "gemma4_31b" ]; then
+  pip install safetensors huggingface_hub gguf
+
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  SCRATCH_DIRS+=("$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR")
+
+  # Download GGUF + tokenizer outside OUTPUT_DIR to avoid uploading on failure.
+  # The unsloth GGUF repo ships the .gguf but no tokenizer.json, so the tokenizer
+  # is fetched from the (non-GGUF) unsloth/gemma-4-31B-it repo.
+  GGUF_FILE="gemma-4-31B-it-Q4_K_M.gguf"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it-GGUF', '${GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/gemma-4-31B-it', 'tokenizer.json', local_dir='${LOCAL_MODEL_DIR}')"
+  GGUF_PATH="${LOCAL_MODEL_DIR}/${GGUF_FILE}"
+
+  # Sanity check: run inference on the GGUF model
+  echo "::group::Inference sanity check"
+  INFERENCE_OUTPUT=$(python -m executorch.examples.models.gemma4_31b.inference \
+      --gguf "$GGUF_PATH" \
+      --tokenizer-path "${LOCAL_MODEL_DIR}/tokenizer.json" \
+      --prompt "What is the capital of France?" \
+      --max-new-tokens 32 \
+      --temperature 0 \
+      --no-compile 2>&1)
+  echo "$INFERENCE_OUTPUT"
+  if ! echo "$INFERENCE_OUTPUT" | grep -q "Paris"; then
+    echo "ERROR: Inference sanity check failed — expected 'Paris' in output"
+    exit 1
+  fi
+  echo "::endgroup::"
+
+  # Copy tokenizer for the runner
+  cp "${LOCAL_MODEL_DIR}/tokenizer.json" "${OUTPUT_DIR}/tokenizer.json"
+
+  # Export to .pte/.ptd (short cache dir avoids objcopy symbol length issues)
+  echo "::group::Export"
+  TMPDIR="$INDUCTOR_TMPDIR" \
+  TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+  python -m executorch.examples.models.gemma4_31b.export \
+      --gguf "$GGUF_PATH" \
+      --output-dir "${OUTPUT_DIR}"
+  echo "::endgroup::"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
   exit 0
 fi
 
@@ -304,7 +658,7 @@ fi
 
 DEVICE_ARG=""
 if [ "$DEVICE" = "cuda" ] || [ "$DEVICE" = "cuda-windows" ]; then
-  DEVICE_ARG="--device cuda"
+  DEVICE_ARG="--device cuda:0"
 elif [ "$DEVICE" = "metal" ]; then
   DEVICE_ARG="--device mps"
 fi

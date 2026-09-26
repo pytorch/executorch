@@ -15,7 +15,6 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
-    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -25,6 +24,7 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    OPT_TENSOR_LIST,
     STRING,
 )
 from executorch.backends.vulkan.test.op_tests.utils.test_suite import TestSuite
@@ -155,7 +155,7 @@ class CorrectnessTestGen:
 
     def create_input_data(self, arg: Argument, data: Any) -> str:  # noqa: C901
         ctype = cpp.argumenttype_type(arg.type, mutable=arg.is_write, binds=arg.name)
-        cpp_type = ctype.cpp_type(strip_ref=True)
+        cpp_type = ctype.cpp_type(strip_ref=True).replace("c10::string_view", STRING)
 
         # Short cut exit for TENSORLIST, because it needs multiple lines of
         # construction, deviates from the rest.
@@ -164,6 +164,12 @@ class CorrectnessTestGen:
             for elem in data:
                 ret_str += f"tensor_vec.emplace_back({self.call_data_gen_fn(arg, elem, False)});\n"
             ret_str += f"{cpp_type} {arg.name} = tensor_vec;\n"
+            return ret_str + "\n"
+
+        if cpp_type == OPT_TENSOR_LIST:
+            ret_str = f"{OPT_TENSOR_LIST} {arg.name};\n"
+            for elem in data:
+                ret_str += f"{arg.name}.push_back({self.call_data_gen_fn(arg, elem, False)});\n"
             return ret_str + "\n"
 
         if cpp_type == AT_INT_ARRAY_REF:
@@ -211,7 +217,7 @@ class CorrectnessTestGen:
                 ret_str += "std::nullopt;"
             else:
                 ret_str += f"{str(data)};"
-        elif cpp_type == STRING or cpp_type == OLD_STRING:
+        elif cpp_type == STRING:
             ret_str += f'std::string_view("{data}");'
         elif (
             cpp_type == OPT_SCALAR_TYPE

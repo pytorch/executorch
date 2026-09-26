@@ -24,8 +24,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     ComputeGraph& graph,
     const ValueRef dst,
     const vkapi::ScalarType staging_dtype,
-    bool int8_buffer_enabled,
-    bool push_constant_variant) {
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -35,9 +34,6 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   if (is_bitw8(dst_dtype) && dst_storage_type != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_storage_type_suffix(kernel_name, dst_storage_type);
     add_dtype_suffix(kernel_name, dst_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -51,9 +47,6 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   }
 
   kernel_name = "nchw_to_image";
-  if (!push_constant_variant) {
-    kernel_name += "_no_pc";
-  }
   add_storage_type_suffix(kernel_name, dst_storage_type);
   add_dtype_suffix(kernel_name, dst_dtype);
   add_dtype_suffix(kernel_name, staging_dtype);
@@ -65,8 +58,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     ComputeGraph& graph,
     const ValueRef src,
     const vkapi::ScalarType staging_dtype,
-    bool int8_buffer_enabled,
-    bool push_constant_variant) {
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -76,9 +68,6 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   if (is_bitw8(src_dtype) && src_storage_type != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
     add_storage_type_suffix(kernel_name, src_storage_type);
     add_dtype_suffix(kernel_name, src_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
@@ -91,10 +80,19 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
-  kernel_name = "image_to_nchw";
-  if (!push_constant_variant) {
-    kernel_name += "_no_pc";
-  }
+  // On a discrete GPU the staging buffer is read back over PCIe, so the
+  // output-centric (coalesced-write) variant is a large win. On integrated GPUs
+  // the staging buffer is not PCIe-backed, and the coalesced variant's
+  // redundant texture fetches make it a net loss -- so default to the
+  // texel-centric variant there.
+  //
+  // Gate on device type, not has_unified_memory(): a discrete GPU with
+  // Resizable BAR exposes a DEVICE_LOCAL | HOST_VISIBLE memory type, so
+  // has_unified_memory() returns true for it and would wrongly route it to the
+  // texel-centric path (measured ~10x end-to-end regression on an RTX 4080).
+  const bool coalesced_writes =
+      !graph.context()->adapter_ptr()->is_integrated_gpu();
+  kernel_name = coalesced_writes ? "image_to_nchw_coalesced" : "image_to_nchw";
   add_storage_type_suffix(kernel_name, src_storage_type);
   add_dtype_suffix(kernel_name, src_dtype);
   add_dtype_suffix(kernel_name, staging_dtype);

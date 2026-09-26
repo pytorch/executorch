@@ -48,7 +48,7 @@ Tensor& add_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "add.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "add.out");
 
   if (executorch::runtime::isComplexType(a.scalar_type()) ||
       executorch::runtime::isComplexType(b.scalar_type()) ||
@@ -124,7 +124,7 @@ Tensor& add_scalar_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "add.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "add.Scalar_out");
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);

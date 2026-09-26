@@ -1,21 +1,31 @@
+# Copyright 2025-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.backend.ops_aliases import (
+    AdaptiveAvgPool2D,
+    ExecutorchDelegateCall,
+    ViewCopy,
+)
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.models import (
-    AdaptiveAvgPool2dConvMeanDimModule,
-    AdaptiveAvgPool2dConvModule,
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
+    AdaptiveAvgPool1dModule,
+    AdaptiveAvgPool2dModule,
 )
-from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -25,124 +35,119 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize(
-    "input_shape, output_size",
-    [
-        pytest.param(
-            (1, 4, 16, 16), (4, 4), id="Pooling with equal height and width kernel."
-        ),
-        pytest.param(
-            (1, 4, 16, 16), (8, 8), id="Pooling with equal height and width kernel."
-        ),
-        pytest.param((1, 4, 16, 16), (4, 8), id="Pooling with height > width kernel."),
-        pytest.param((1, 4, 16, 22), (4, 11), id="Pooling with height > width kernel."),
-        pytest.param((1, 4, 32, 32), (16, 4), id="Pooling with height < width kernel."),
-        pytest.param((1, 4, 32, 16), (16, 4), id="Pooling with height < width kernel."),
-    ],
-)
-def test_adaptive_avg_pool_2d_delegated_quant_conversion(
-    mocker, input_shape, output_size, use_qat
-):
-    model = AdaptiveAvgPool2dConvModule(output_size)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    ).exported_program()
-    nodes = [str(node) for node in edge_program.graph.nodes]
-
-    # Input size is a multiple of output size, can be converted to AveragePool, node is delegated
-    assert "aten__adaptive_avg_pool2d_default" not in nodes
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        input_data=input_data,
-        atol=1,
+class TestAdaptiveAvgPool2D:
+    @pytest.mark.parametrize(
+        "input_shape, output_size",
+        [
+            pytest.param((1, 3, 16, 16), (8, 8), id="H == W."),
+            pytest.param((1, 3, 16, 8), (8, 2), id="H != W."),
+            pytest.param(
+                (2, 3, 4, 6),
+                (2, 3),
+                id="H != W, non multiples of num_macs, batch != 1.",
+            ),
+            pytest.param(
+                (2, 3, 10, 15),
+                (5, 5),
+                id="H != W, non multiples of num_macs, batch != 1, fixed fail.",
+            ),
+        ],
     )
+    def test__basic_nsys_inference(
+        self, mocker, request, use_qat, input_shape, output_size
+    ):
+        model = AdaptiveAvgPool2dModule(output_size)
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={AdaptiveAvgPool2D: 1},
+            expected_non_delegated_ops={},
+        )
+
+        remove_quant_io_ops = True  # Use quantized dataset.
+        output_comparator = AllCloseOutputComparator(atol=1)  # Allow single bit error.
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            RandomDatasetCreator(low=-1, high=1),
+            output_comparator=output_comparator,
+            use_qat=use_qat,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
+
+    def test__kernel_size_and_stride_limit(self, mocker, request):
+        input_shape = (1, 3, 4, 4096)  # input_size = (1, 4096)
+        output_size = (
+            2,
+            1,
+        )  # If we reduced both dims to 1, ExecuTorch would replace the op with mean.
+        # stride = input_size // output_size = 4096 / 1 = 4096
+        # kernel_size = input_size - (output_size - 1) * stride = 4096 - 0 * 4096 = 4096
+
+        model = AdaptiveAvgPool2dModule(output_size)
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={AdaptiveAvgPool2D: 1},
+            expected_non_delegated_ops={},
+        )
+
+        remove_quant_io_ops = True  # Use quantized dataset.
+        output_comparator = AllCloseOutputComparator(atol=1)  # Allow single bit error.
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            RandomDatasetCreator(low=-1, high=1),
+            output_comparator=output_comparator,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
+
+    def test__kernel_size_and_stride_limit_exceeded(self):
+        input_shape = (1, 3, 4, 4097)  # input_size = (1, 4097)
+        output_size = (
+            2,
+            1,
+        )  # If we reduced both dims to 1, ExecuTorch would replace the op with mean.
+        # stride = input_size // output_size = 4097 / 1 = 4097
+        # kernel_size = input_size - (output_size - 1) * stride = 4097 - 0 * 4097 = 4097
+
+        model = AdaptiveAvgPool2dModule(output_size)
+        delegated_ep = to_quantized_edge_program(model, input_shape).exported_program()
+
+        # Make sure the `adaptive_avg_pool2d` was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [AdaptiveAvgPool2D])
 
 
-@pytest.mark.parametrize(
-    "input_shape, output_size",
-    [
-        pytest.param(
-            (1, 4, 16, 16), (6, 6), id="Pooling with equal height and width kernel."
-        ),
-        pytest.param((1, 4, 16, 16), (4, 7), id="Pooling with height > width kernel."),
-        pytest.param((1, 4, 16, 22), (4, 10), id="Pooling with height > width kernel."),
-        pytest.param((1, 4, 32, 32), (14, 7), id="Pooling with height < width kernel."),
-        pytest.param((1, 4, 32, 16), (15, 5), id="Pooling with height < width kernel."),
-    ],
-)
-def test_adaptive_avg_pool_2d_non_delegated_quant_conversion(
-    mocker, input_shape, output_size, use_qat
-):
-    model = AdaptiveAvgPool2dConvModule(output_size)
+class TestAdaptiveAvgPool1DTo2D:
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
+    def test__basic_nsys_inference(self, mocker, request, use_qat):
+        input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
+        output_size = (3,)
+        model = AdaptiveAvgPool1dModule(output_size)
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={AdaptiveAvgPool2D: 1, ViewCopy: 2},
+            expected_non_delegated_ops={},
+        )
 
-    # Run conversion
-    edge_program = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    ).exported_program()
-    nodes = list(edge_program.graph.nodes)
+        remove_quant_io_ops = True  # Use quantized dataset.
+        output_comparator = AllCloseOutputComparator(atol=1)  # Allow single bit error.
 
-    # Input size is not a multiple of output size, cannot be converted to AveragePool, node is not delegated
-    assert str(nodes[6]) == "aten__adaptive_avg_pool2d_default"
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        input_data=input_data,
-        atol=1,
-    )
-
-
-def test_adaptive_avg_pool_2d_mean_dim_quant_conversion(mocker, use_qat):
-    input_shape = (1, 4, 16, 16)
-    model = AdaptiveAvgPool2dConvMeanDimModule()
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(
-        model, input_shape, use_qat=use_qat, use_neutron_for_format_conversion=False
-    )
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        exported_program,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        input_data=input_data,
-    )
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            RandomDatasetCreator(low=-1, high=1),
+            output_comparator=output_comparator,
+            use_qat=use_qat,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )

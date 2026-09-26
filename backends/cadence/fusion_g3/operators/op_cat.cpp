@@ -100,22 +100,23 @@ Tensor& cat_out(
     out_shapes[i] = out_size[i];
   }
 
-  bool optimized = true;
-
+  bool all_same_dtype = true;
   for (int i = 0; i < tensors.size(); i++) {
     if (out.scalar_type() != tensors[i].scalar_type()) {
-      optimized = false;
+      all_same_dtype = false;
       break;
     }
   }
 
-  if ((optimized) && (out.scalar_type() == ScalarType::Int) ||
-      (out.scalar_type() == ScalarType::Short) ||
-      (out.scalar_type() == ScalarType::Char) ||
-      (out.scalar_type() == ScalarType::UInt32) ||
-      (out.scalar_type() == ScalarType::UInt16) ||
-      (out.scalar_type() == ScalarType::Byte) ||
-      (out.scalar_type() == ScalarType::Float)) {
+  bool supported_dtype = out.scalar_type() == ScalarType::Int ||
+      out.scalar_type() == ScalarType::Short ||
+      out.scalar_type() == ScalarType::Char ||
+      out.scalar_type() == ScalarType::UInt32 ||
+      out.scalar_type() == ScalarType::UInt16 ||
+      out.scalar_type() == ScalarType::Byte ||
+      out.scalar_type() == ScalarType::Float;
+
+  if (all_same_dtype && supported_dtype) {
     XT_KERNEL_CHECK(
         ctx,
         out,

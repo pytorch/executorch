@@ -9,13 +9,22 @@
 import logging
 from typing import Any, Optional, Sequence
 
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.recipes.qnn_recipe_types import (
     QNN_BACKEND,
     QNNRecipeType,
 )
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+)
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -47,6 +56,12 @@ class QNNRecipeProvider(BackendRecipeProvider):
             return None
 
         self._validate_recipe_kwargs(recipe_type, kwargs)
+
+        # Done while the recipe is built, which is before the export pipeline traces anything. The
+        # installer can re-execute the interpreter on an old glibc, and doing that partway through
+        # would discard a model that has already been traced.
+        setup_qnn_sdk()
+        disable_mkldnn_on_amd()
 
         if recipe_type == QNNRecipeType.FP16:
             return self._build_fp16_recipe(recipe_type, kwargs)
@@ -140,7 +155,9 @@ class QNNRecipeProvider(BackendRecipeProvider):
         return ExportRecipe(
             name=recipe_type.value,
             aten_transform_passes=[
-                lambda method_, ep: QnnPassManager().transform_for_export_pipeline(ep)
+                lambda method_, ep: get_qnn_pass_manager_cls(
+                    QnnExecuTorchBackendType.kHtpBackend
+                )().transform_for_export_pipeline(ep)
             ],
             lowering_recipe=lowering_recipe,
         )
@@ -173,7 +190,9 @@ class QNNRecipeProvider(BackendRecipeProvider):
         return LoweringRecipe(
             partitioners=[partitioner],
             edge_transform_passes=[
-                lambda method_, ep: QnnPassManager().get_to_edge_transform_passes(ep)
+                lambda method_, ep: get_qnn_pass_manager_cls(
+                    QnnExecuTorchBackendType.kHtpBackend
+                )().get_to_edge_transform_passes(ep)
             ],
             edge_compile_config=edge_compile_config,
         )

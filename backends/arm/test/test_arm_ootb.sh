@@ -7,6 +7,12 @@
 
 set -eo pipefail
 
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+et_root_dir=$(cd "${script_dir}/../../.." && pwd)
+ootb_requirements="${et_root_dir}/backends/arm/requirements-arm-ootb-test.txt"
+
+cd "${et_root_dir}"
+
 help() {
     echo "Usage:"
     echo " $0 [TESTNAME]"
@@ -22,14 +28,31 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_deit_e2e_ethos_u)
+    TEST_SUITES=(
+        run_ootb_tests_ethos_u
+        run_ootb_tests_tosa
+        run_ootb_tests_vgf
+        run_deit_e2e_ethos_u
+        run_mobilesam_e2e_ethos_u
+        run_swin2sr_e2e_vgf
+        run_silero_vad_e2e_ethos_u
+    )
 else
     TEST_SUITES=("$1")
 fi
 
 
+install_ootb_test_requirements() {
+    python3 - <<'PY' || pip install -r "${ootb_requirements}"
+import notebook  # noqa: F401
+import nbconvert  # noqa: F401
+PY
+}
+
+
 run_ootb_tests_ethos_u() {
     echo "$FUNCNAME: Running out-of-the-box tests for Arm Ethos-U"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute examples/arm/ethos_u_minimal_example.ipynb
@@ -38,19 +61,26 @@ run_ootb_tests_ethos_u() {
 
 run_ootb_tests_tosa() {
     echo "$FUNCNAME: Running out-of-the-box tests for TOSA"
+    install_ootb_test_requirements
     jupyter nbconvert \
         --to notebook \
         --execute backends/arm/scripts/TOSA_minimal_example.ipynb
     echo "${FUNCNAME}: PASS"
 }
 
+run_ootb_tests_vgf() {
+    echo "$FUNCNAME: Running out-of-the-box tests for VGF"
+    install_ootb_test_requirements
+    jupyter nbconvert \
+        --to notebook \
+        --execute examples/arm/vgf_minimal_example.ipynb
+    echo "${FUNCNAME}: PASS"
+}
+
 run_deit_e2e_ethos_u() {
     echo "$FUNCNAME: Fine-tune, export, build, and run the DEiT e2e test"
 
-    local script_dir
-    script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
-    et_root_dir=$(cd "${script_dir}/../../.." && pwd)
-    local example_dir="${et_root_dir}/examples/arm/image_classification_example"
+    local example_dir="${et_root_dir}/examples/arm/image_classification_example_ethos_u"
     local work_root="${et_root_dir}/arm_test/deit_tiny_ootb_smoke"
     local model_dir="${work_root}/deit_tiny_finetuned"
     local export_dir="${work_root}/export"
@@ -58,7 +88,7 @@ run_deit_e2e_ethos_u() {
     local image_path="${work_root}/dog.bmp"
     local pte_path="${export_dir}/deit_tiny_smoke.pte"
     local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
-    echo "${FUNCNAME}: Work root is ${work_root}; existing artifacts will be reused if present"
+    echo "${FUNCNAME}: Work directory: ${work_root}; existing artifacts will be reused if present"
 
     mkdir -p "${model_dir}" "${export_dir}" "${build_dir}"
 
@@ -74,7 +104,7 @@ run_deit_e2e_ethos_u() {
     cmake --build "${et_root_dir}/cmake-out-arm" --target install -j"$n_proc"
 
     # Install requirements
-    pip install -r examples/arm/image_classification_example/requirements.txt
+    pip install -r examples/arm/image_classification_example_ethos_u/requirements.txt
 
     # Get and finetune model
     echo "${FUNCNAME}: Running DeiT fine-tuning script"
@@ -99,7 +129,14 @@ run_deit_e2e_ethos_u() {
     local image_url="https://gitlab.arm.com/artificial-intelligence/ethos-u/ml-embedded-evaluation-kit/-/raw/main/resources/img_class/samples/dog.bmp?ref_type=heads"
     if [[ ! -f "${image_path}" ]]; then
         echo "${FUNCNAME}: Downloading sample image from ${image_url}"
-        wget -O "${image_path}" "${image_url}"
+        if command -v wget >/dev/null 2>&1; then
+            wget -O "${image_path}" "${image_url}"
+        elif command -v curl >/dev/null 2>&1; then
+            curl -L "${image_url}" -o "${image_path}"
+        else
+            echo "${FUNCNAME}: Missing wget or curl; unable to download sample image"
+            return 1
+        fi
     else
         echo "${FUNCNAME}: Reusing sample image at ${image_path}"
     fi
@@ -131,6 +168,307 @@ run_deit_e2e_ethos_u() {
         -C mps4_board.uart0.shutdown_on_eot=1 \
         -a "${elf}" \
         -C mps4_board.subsystem.ethosu.extra_args="--fast"
+
+    echo "${FUNCNAME}: PASS"
+}
+
+run_mobilesam_e2e_ethos_u() {
+    "${et_root_dir}/examples/arm/mobilesam_prompt_segmentation_example_ethos_u/run.sh"
+}
+
+run_swin2sr_e2e_vgf() {
+    echo "$FUNCNAME: Prepare demo assets, export FP/INT8, build, and run the Swin2SR VGF e2e test"
+
+    local script_dir
+    script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+    et_root_dir=$(cd "${script_dir}/../../.." && pwd)
+    local example_dir="${et_root_dir}/examples/arm/super_resolution_example_vgf"
+    local work_root="${et_root_dir}/arm_test/swin2sr_vgf_ootb_smoke"
+    local demo_dir="${work_root}/demo_assets"
+    local runtime_dir="${demo_dir}/runtime"
+    local runner_path="${work_root}/executor_runner"
+    local input_image="${runtime_dir}/demo_lr_64.png"
+    local fp_pte_path="${demo_dir}/swin2sr_x2_vgf_fp.pte"
+    local int8_pte_path="${demo_dir}/swin2sr_x2_vgf_int8.pte"
+    local fp_output_image="${runtime_dir}/demo_fp_128.png"
+    local int8_output_image="${runtime_dir}/demo_int8_128.png"
+    local checkpoint_id="caidas/swin2SR-classical-sr-x2-64"
+    local checkpoint_revision="cee1c923c6a37361c6e5650b65dcf4be821e5d52"
+    echo "${FUNCNAME}: Work directory: ${work_root}; existing artifacts will be reused if present"
+
+    mkdir -p "${demo_dir}" "${runtime_dir}"
+
+    setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
+    source ${setup_path_script}
+
+    echo "${FUNCNAME}: Installing example requirements"
+    pip install -r "${example_dir}/requirements.txt"
+
+    echo "${FUNCNAME}: Preparing deterministic demo assets"
+    python3 "${example_dir}/model_export/prepare_demo_assets.py" \
+        --output-dir "${demo_dir}"
+
+    echo "${FUNCNAME}: Building VKML executor_runner"
+    "${et_root_dir}/backends/arm/scripts/build_executor_runner_vkml.sh" \
+        --output="${work_root}"
+
+    if [[ ! -f "${runner_path}" ]]; then
+        runner_path=$(find "${work_root}" -name executor_runner -type f | head -n 1)
+    fi
+    [[ -f "${runner_path}" ]] || {
+        echo "${FUNCNAME}: Missing executor_runner under ${work_root}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Exporting FP Swin2SR model"
+    python3 "${example_dir}/model_export/export_super_resolution.py" \
+        --model-name swin2sr \
+        --checkpoint "${checkpoint_id}" \
+        --checkpoint-revision "${checkpoint_revision}" \
+        --input-height 64 \
+        --input-width 64 \
+        --quantization-mode none \
+        --eval-lr-dir "${demo_dir}/eval/lr" \
+        --eval-hr-dir "${demo_dir}/eval/hr" \
+        --num-eval-samples 2 \
+        --output-path "${fp_pte_path}"
+
+    for artifact in \
+        "${fp_pte_path}" \
+        "${demo_dir}/swin2sr_x2_vgf_fp.json" \
+        "${demo_dir}/swin2sr_x2_vgf_fp_delegation.txt" \
+        "${demo_dir}/swin2sr_x2_vgf_fp_metrics.json"; do
+        [[ -f "${artifact}" ]] || {
+            echo "${FUNCNAME}: Missing FP export artifact ${artifact}"
+            return 1
+        }
+    done
+
+    echo "${FUNCNAME}: Exporting INT8 Swin2SR model"
+    python3 "${example_dir}/model_export/export_super_resolution.py" \
+        --model-name swin2sr \
+        --checkpoint "${checkpoint_id}" \
+        --checkpoint-revision "${checkpoint_revision}" \
+        --input-height 64 \
+        --input-width 64 \
+        --quantization-mode int8 \
+        --calibration-lr-dir "${demo_dir}/calibration/lr" \
+        --eval-lr-dir "${demo_dir}/eval/lr" \
+        --eval-hr-dir "${demo_dir}/eval/hr" \
+        --num-calibration-samples 4 \
+        --num-eval-samples 2 \
+        --output-path "${int8_pte_path}"
+
+    for artifact in \
+        "${int8_pte_path}" \
+        "${demo_dir}/swin2sr_x2_vgf_int8.json" \
+        "${demo_dir}/swin2sr_x2_vgf_int8_delegation.txt" \
+        "${demo_dir}/swin2sr_x2_vgf_int8_metrics.json"; do
+        [[ -f "${artifact}" ]] || {
+            echo "${FUNCNAME}: Missing INT8 export artifact ${artifact}"
+            return 1
+        }
+    done
+
+    echo "${FUNCNAME}: Running FP runtime smoke"
+    python3 "${example_dir}/runtime/run_super_resolution.py" \
+        --model-path "${fp_pte_path}" \
+        --runner "${runner_path}" \
+        --input-image "${input_image}" \
+        --output-image "${fp_output_image}" \
+        --working-dir "${runtime_dir}/fp_work"
+
+    [[ -f "${fp_output_image}" ]] || {
+        echo "${FUNCNAME}: Missing FP runtime output ${fp_output_image}"
+        return 1
+    }
+
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        echo "${FUNCNAME}: Running INT8 runtime smoke"
+        python3 "${example_dir}/runtime/run_super_resolution.py" \
+            --model-path "${int8_pte_path}" \
+            --runner "${runner_path}" \
+            --input-image "${input_image}" \
+            --output-image "${int8_output_image}" \
+            --working-dir "${runtime_dir}/int8_work"
+
+        [[ -f "${int8_output_image}" ]] || {
+            echo "${FUNCNAME}: Missing INT8 runtime output ${int8_output_image}"
+            return 1
+        }
+    else
+        # TODO: MLETORCH-2105 remove this once the next ML SDK release supports
+        # quantized VKML runtime validation on Darwin.
+        echo "${FUNCNAME}: Skipping INT8 runtime on $(uname -s); quantized VKML runtime validation is Linux-only"
+    fi
+
+    echo "${FUNCNAME}: PASS"
+}
+
+run_silero_vad_e2e_ethos_u() {
+    echo "$FUNCNAME: Export, build, run, and validate the Silero VAD e2e test"
+
+    local example_dir="${et_root_dir}/examples/arm/silero_vad_example_ethos_u"
+    local work_root="${et_root_dir}/arm_test/silero_vad_ootb_smoke"
+    local model_dir="${work_root}/silero-vad"
+    local model_revision="dbacf536adadf42210f37ae50fbaf75f6235b3cf"
+    local jit_path="${model_dir}/src/silero_vad/data/silero_vad.jit"
+    local calibration_audio_path="${work_root}/silero_vad_calibration.wav"
+    local validation_audio_path="${work_root}/silero_vad_validation.wav"
+    local source_audio_path="${model_dir}/tests/data/test.wav"
+    local export_dir="${work_root}/export"
+    local build_dir="${work_root}/silero_vad_app"
+    local fvp_out_dir="${work_root}/fvp"
+    local et_build_dir="${et_root_dir}/cmake-out-arm"
+    local quantized_aot_build_dir="${work_root}/quantized_ops_aot"
+    local python_package_dir="${work_root}/python_package"
+    local pte_path="${export_dir}/silero_vad_ethos_u.pte"
+    local expected_path="${export_dir}/expected_probs.bin"
+    local fvp_log_path="${fvp_out_dir}/fvp.log"
+    local validation_threshold="0.55"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    local export_pythonpath="${et_root_dir}/third-party/ao:${python_package_dir}:${PYTHONPATH:-}"
+    local codegen_pythonpath="${et_root_dir}:${PYTHONPATH:-}"
+    local platform_cmake_args=()
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        # FVPs-on-Mac exposes the application console at the MPS3 UART address.
+        platform_cmake_args+=("-DUART0_BASE=0x49303000")
+    fi
+    mkdir -p "${export_dir}" "${build_dir}" "${fvp_out_dir}"
+
+    setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
+    source ${setup_path_script}
+
+    source ${et_root_dir}/backends/arm/scripts/utils.sh
+    local n_proc="$(get_parallel_jobs)"
+
+    echo "${FUNCNAME}: Building ExecuTorch (if needed)"
+    cmake --preset arm-baremetal -B "${et_build_dir}"
+    cmake --build "${et_build_dir}" --target install -j"$n_proc"
+
+    echo "${FUNCNAME}: Building host quantized AOT library"
+    local python_executable
+    python_executable="$(python3 -c 'import sys; print(sys.executable)')"
+    cmake \
+        -S "${et_root_dir}" \
+        -B "${quantized_aot_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CPUINFO=OFF \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=OFF \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=OFF \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
+        -DEXECUTORCH_BUILD_PTHREADPOOL=OFF \
+        -DEXECUTORCH_BUILD_XNNPACK=OFF \
+        -DPYTHON_EXECUTABLE="${python_executable}"
+    cmake --build "${quantized_aot_build_dir}" --target quantized_ops_aot_lib -j"$n_proc"
+
+    local quantized_ops_library
+    quantized_ops_library="$(
+        find "${quantized_aot_build_dir}/kernels/quantized" \
+            -name 'libquantized_ops_aot_lib.*' \
+            -type f \
+            -print \
+            -quit
+    )"
+    [[ -n "${quantized_ops_library}" ]] || {
+        echo "${FUNCNAME}: Missing quantized AOT library under ${quantized_aot_build_dir}"
+        return 1
+    }
+
+    if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" rev-parse HEAD 2>/dev/null)" != "${model_revision}" ]]; then
+        echo "${FUNCNAME}: Cloning Silero VAD repository"
+        rm -rf "${model_dir}"
+        git init "${model_dir}"
+        git -C "${model_dir}" remote add origin https://github.com/snakers4/silero-vad.git
+        git -C "${model_dir}" fetch --depth 1 origin "${model_revision}"
+        git -C "${model_dir}" checkout --detach FETCH_HEAD
+    else
+        echo "${FUNCNAME}: Reusing JIT model at ${jit_path}"
+    fi
+
+    echo "${FUNCNAME}: Preparing separate calibration and validation WAVs"
+    python3 "${example_dir}/model_export/generate_smoke_audio.py" \
+        --source-wav "${source_audio_path}" \
+        --start-seconds 0.0 \
+        --duration-seconds 2.5 \
+        --output "${calibration_audio_path}"
+    python3 "${example_dir}/model_export/generate_smoke_audio.py" \
+        --source-wav "${source_audio_path}" \
+        --start-seconds 2.5 \
+        --duration-seconds 2.5 \
+        --output "${validation_audio_path}"
+
+    echo "${FUNCNAME}: Preparing ExecuTorch Python package"
+    rm -rf "${python_package_dir}"
+    (
+        cd "${et_root_dir}"
+        EXECUTORCH_BUILD_PYBIND=OFF python3 setup.py build_py \
+            --build-lib="${python_package_dir}"
+    )
+
+    echo "${FUNCNAME}: Exporting quantized Silero VAD PTE"
+    env EXECUTORCH_QUANTIZED_OPS_AOT_LIBRARY="${quantized_ops_library}" \
+        PYTHONPATH="${export_pythonpath}" \
+        python3 "${example_dir}/model_export/export_silero_vad_ethos_u.py" \
+        --jit-model "${jit_path}" \
+        --calibration-audio "${calibration_audio_path}" \
+        --validation-audio "${validation_audio_path}" \
+        --output-path "${pte_path}" \
+        --expected-output-path "${expected_path}" \
+        --num-calibration-frames 32 \
+        --num-validation-frames 0
+
+    [[ -f "${pte_path}" ]] || {
+        echo "${FUNCNAME}: Missing PTE at ${pte_path}"
+        return 1
+    }
+    [[ -f "${expected_path}" ]] || {
+        echo "${FUNCNAME}: Missing expected probability dump at ${expected_path}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Configuring the Silero VAD application"
+    cmake \
+        -S "${example_dir}/runtime" \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+        -DTARGET_CPU=cortex-m85 \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DAUDIO_PATH="${validation_audio_path}" \
+        -DET_BUILD_DIR_PATH="${et_build_dir}" \
+        -DMAX_AUDIO_SAMPLES=40000 \
+        -DVAD_THRESHOLD="${validation_threshold}" \
+        -DPYTHON_EXECUTABLE="$(command -v python3)" \
+        "${platform_cmake_args[@]}"
+
+    echo "${FUNCNAME}: Building silero_vad_ethos_u"
+    PYTHONPATH="${codegen_pythonpath}" cmake --build "${build_dir}" -j"$n_proc" --target silero_vad_ethos_u
+
+    rm -f "${fvp_log_path}"
+    local elf="${build_dir}/silero_vad_ethos_u"
+
+    echo "${FUNCNAME}: Running on FVP_Corstone_SSE-320"
+    bash "${et_root_dir}/backends/arm/scripts/run_fvp.sh" \
+        --elf="${elf}" \
+        --target=ethos-u85-256 \
+        --timeout=300 2>&1 | tee "${fvp_log_path}"
+
+    [[ -s "${fvp_log_path}" ]] || {
+        echo "${FUNCNAME}: Missing FVP serial log at ${fvp_log_path}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Comparing FVP probabilities with export-time reference"
+    python3 "${example_dir}/runtime/compare_vad_probs.py" \
+        --expected "${expected_path}" \
+        --actual-log "${fvp_log_path}" \
+        --threshold "${validation_threshold}" \
+        --atol 0.25 \
+        --mean-atol 0.02
 
     echo "${FUNCNAME}: PASS"
 }

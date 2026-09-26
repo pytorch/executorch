@@ -1,15 +1,15 @@
 /*
  * Copyright 2025-2026 Arm Limited and/or its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "cortex_m_ops_common.h"
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
-extern "C" {
-#include "arm_nnfunctions.h"
-}
+#include "cortex_m_ops_common.h"
 
 namespace cortex_m {
 namespace native {
@@ -23,13 +23,14 @@ bool validate_conv2d_arguments(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
-    const torch::executor::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     const Tensor& output,
     const Int64ArrayRef& stride,
     const Int64ArrayRef& padding,
     const Int64ArrayRef& dilation,
     const Tensor& requantize_multipliers,
-    const Tensor& requantize_shifts) {
+    const Tensor& requantize_shifts,
+    ActivationLayout layout) {
   if (input.dim() != kConvDim || weight.dim() != kConvDim ||
       output.dim() != kConvDim) {
     ET_LOG(Error, "quantized_conv2d_out: tensors must be 4-D");
@@ -37,25 +38,22 @@ bool validate_conv2d_arguments(
     return false;
   }
 
-  // Check for channels_last dim_order (NHWC: 0, 2, 3, 1)
-  // Skip check if channels == 1, as dim_order is ambiguous in that case
-  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
-      0, 2, 3, 1};
-  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
-      channels_last_order(kChannelsLastDimOrder, 4);
-
-  if (input.size(1) > 1 && !is_channels_last_tensor(input)) {
+  if (layout == ActivationLayout::NHWCLogical) {
+    if (!executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            output.dim_order().data(), output.dim_order().size())) {
+      ET_LOG(
+          Error,
+          "quantized_conv2d_nhwc_out: input and output must have contiguous dim_order");
+      context.fail(Error::InvalidArgument);
+      return false;
+    }
+  } else if (
+      !is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: input must have channels_last dim_order (NHWC)");
-    context.fail(Error::InvalidArgument);
-    return false;
-  }
-
-  if (output.size(1) > 1 && !is_channels_last_tensor(input)) {
-    ET_LOG(
-        Error,
-        "quantized_conv2d_out: output must have channels_last dim_order (NHWC)");
+        "quantized_conv2d_out: input and output must have channels_last dim_order");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -79,15 +77,17 @@ bool validate_conv2d_arguments(
     return false;
   }
 
-  if (stride.size() != 2 || padding.size() != 2 || dilation.size() != 2) {
+  if (stride.size() != 2 || (padding.size() != 2 && padding.size() != 4) ||
+      dilation.size() != 2) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: stride, padding, and dilation must have length 2");
+        "quantized_conv2d_out: stride/dilation must have length 2; padding must have length 2 or 4");
     context.fail(Error::InvalidArgument);
     return false;
   }
 
-  const int64_t out_channels = output.size(1);
+  const int64_t out_channels =
+      output.size(layout == ActivationLayout::NHWCLogical ? 3 : 1);
   if (requantize_multipliers.size(0) != out_channels ||
       requantize_shifts.size(0) != out_channels) {
     ET_LOG(
@@ -102,11 +102,12 @@ bool validate_conv2d_arguments(
 }
 } // namespace
 
-Tensor& quantized_conv2d_out(
+// cppcheck-suppress unusedFunction
+static Tensor& quantized_conv2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
-    const torch::executor::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     const Int64ArrayRef stride,
     const Int64ArrayRef padding,
     const Int64ArrayRef dilation,
@@ -116,6 +117,8 @@ Tensor& quantized_conv2d_out(
     const Tensor& requantize_shifts,
     const int64_t activation_min,
     const int64_t activation_max,
+    const Tensor& scratch,
+    ActivationLayout layout,
     Tensor& out) {
   if (!validate_conv2d_arguments(
           context,
@@ -127,23 +130,30 @@ Tensor& quantized_conv2d_out(
           padding,
           dilation,
           requantize_multipliers,
-          requantize_shifts)) {
+          requantize_shifts,
+          layout)) {
     return out;
   }
 
   const int32_t batch = static_cast<int32_t>(input.size(0));
-  const int32_t input_channels = static_cast<int32_t>(input.size(1));
-  const int32_t input_height = static_cast<int32_t>(input.size(2));
-  const int32_t input_width = static_cast<int32_t>(input.size(3));
+  const int32_t input_channels = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
+  const int32_t input_height = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
+  const int32_t input_width = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
 
   const int32_t kernel_output_channels = static_cast<int32_t>(weight.size(0));
   const int32_t kernel_height = static_cast<int32_t>(weight.size(1));
   const int32_t kernel_width = static_cast<int32_t>(weight.size(2));
   const int32_t kernel_input_channels = static_cast<int32_t>(weight.size(3));
 
-  const int32_t output_channels = static_cast<int32_t>(out.size(1));
-  const int32_t output_height = static_cast<int32_t>(out.size(2));
-  const int32_t output_width = static_cast<int32_t>(out.size(3));
+  const int32_t output_channels = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
+  const int32_t output_height = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
+  const int32_t output_width = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
 
   const int32_t input_offset_val = static_cast<int32_t>(input_offset);
   const int32_t output_offset_val = static_cast<int32_t>(output_offset);
@@ -167,6 +177,7 @@ Tensor& quantized_conv2d_out(
   conv_params.output_offset = output_offset_val;
   conv_params.stride.h = static_cast<const int32_t>(stride[0]);
   conv_params.stride.w = static_cast<const int32_t>(stride[1]);
+  // Trailing padding is encoded in the planned output dimensions.
   conv_params.padding.h = static_cast<const int32_t>(padding[0]);
   conv_params.padding.w = static_cast<const int32_t>(padding[1]);
   conv_params.dilation.h = static_cast<const int32_t>(dilation[0]);
@@ -186,27 +197,30 @@ Tensor& quantized_conv2d_out(
 
   cmsis_nn_context cmsis_context;
   cmsis_context.buf = nullptr;
-  cmsis_context.size = 0;
-
-  const size_t buffer_bytes = static_cast<size_t>(
-      arm_convolve_s8_get_buffer_size(&input_dims, &filter_dims));
-  if (buffer_bytes > 0) {
-    auto buffer_or_error =
-        context.allocate_temp(buffer_bytes, alignof(int16_t));
-    if (!buffer_or_error.ok()) {
-      if (buffer_or_error.error() != Error::NotFound) {
-        ET_LOG(
-            Error,
-            "quantized_conv2d_out: failed to allocate scratch buffer (%d)",
-            static_cast<int>(buffer_or_error.error()));
-        context.fail(buffer_or_error.error());
-        return out;
-      }
-    } else {
-      cmsis_context.buf = buffer_or_error.get();
-      cmsis_context.size = buffer_bytes;
-    }
+  cmsis_context.size = scratch.nbytes();
+  if (cmsis_context.size > 0) {
+    cmsis_context.buf = scratch.mutable_data_ptr<int8_t>();
   }
+
+#ifdef CORTEX_M_ENABLE_RUNTIME_CHECKS
+  const int32_t runtime_buffer_bytes = arm_convolve_wrapper_s8_get_buffer_size(
+      &conv_params, &input_dims, &filter_dims, &output_dims);
+  if (runtime_buffer_bytes < 0) {
+    ET_LOG(
+        Error, "quantized_conv2d_out: CMSIS-NN buffer size calculation failed");
+    context.fail(Error::Internal);
+    return out;
+  }
+  if (scratch.nbytes() != static_cast<size_t>(runtime_buffer_bytes)) {
+    ET_LOG(
+        Error,
+        "quantized_conv2d_out: scratch buffer size incorrect - actual: (%d) needed: (%d)",
+        static_cast<int>(scratch.nbytes()),
+        static_cast<int>(runtime_buffer_bytes));
+    context.fail(Error::Internal);
+    return out;
+  }
+#endif
 
   const arm_cmsis_nn_status status = arm_convolve_wrapper_s8(
       &cmsis_context,
@@ -224,12 +238,84 @@ Tensor& quantized_conv2d_out(
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
         Error,
-        "quantized_conv2d_out: arm_convolve_s8 failed with status %d",
+        "quantized_conv2d_out: arm_convolve_wrapper_s8 failed with status %d",
         status);
     context.fail(Error::Internal);
   }
 
   return out;
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_conv2d_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_conv2d_out_impl(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_conv2d_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_conv2d_out_impl(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      ActivationLayout::NHWCLogical,
+      out);
 }
 
 } // namespace native

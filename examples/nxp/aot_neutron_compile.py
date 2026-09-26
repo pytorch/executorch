@@ -8,11 +8,11 @@
 import argparse
 import io
 import logging
+import os
 from collections import defaultdict
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
-
 import torch
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
@@ -25,7 +25,11 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.nxp_backend import (
+    core_aten_ops_exception_list,
+    default_preserve_ops,
+    generate_neutron_compile_spec,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.devtools.visualization.visualization_utils import (
@@ -33,6 +37,25 @@ from executorch.devtools.visualization.visualization_utils import (
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
+
+from executorch.examples.nxp.experimental.cifar_net.cifar_net import (
+    CifarNet,
+    train_cifarnet_model,
+    verify_cifarnet_model,
+)
+from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_anomaly_detection import (
+    MLPerfTinyAnomalyDetection,
+)
+from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
+    MLPerfTinyImageClassification,
+)
+from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_keyword_spotting import (
+    MLPerfTinyKeywordSpotting,
+)
+from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_visual_wake_words import (
+    MLPerfTinyVisualWakeWords,
+)
+from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -46,18 +69,21 @@ from torchao.quantization.pt2e import (
 )
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
-from .experimental.cifar_net.cifar_net import (
-    CifarNet,
-    train_cifarnet_model,
-    verify_cifarnet_model,
-)
-from .models.mobilenet_v2 import MobilenetV2
+
+MODELS = {
+    "cifar10": CifarNet,
+    "mobilenetv2": MobilenetV2,
+    "mlperf_tiny_anomaly_detection": MLPerfTinyAnomalyDetection,
+    "mlperf_tiny_image_classification": MLPerfTinyImageClassification,
+    "mlperf_tiny_keyword_spotting": MLPerfTinyKeywordSpotting,
+    "mlperf_tiny_visual_wake_words": MLPerfTinyVisualWakeWords,
+}
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-def print_ops_in_edge_program(edge_program):
+def _print_ops_in_edge_program(edge_program):
     """Find all ops used in the `edge_program` and print them out along with their occurrence counts."""
 
     ops_and_counts = defaultdict(
@@ -85,27 +111,49 @@ def print_ops_in_edge_program(edge_program):
         print(f"{op: <50} {count}x")
 
 
-def get_model_and_inputs_from_name(model_name: str, use_random_dataset: bool):
-    """Given the name of an example pytorch model, return it, example inputs and calibration inputs (can be None)
+def _get_model_info_from_name(
+    model_name: str,
+    dataset_path: str | None,
+    use_random_dataset: bool,
+    num_samples: int | None,
+):
+    """Given the name of an example pytorch model and args, return the model, its class instance (can be None), example inputs and calibration inputs (can be None).
 
     Raises RuntimeError if there is no example model corresponding to the given name.
     """
 
     calibration_inputs = None
     # Case 1: Model is defined in this file
-    if model_name in models.keys():
-        if use_random_dataset:
-            if model_name != "mobilenetv2":
+    if model_name in MODELS.keys():
+        model_cls = MODELS[model_name]
+        # TODO: establish a common interface or a factory for all models
+        if model_cls is CifarNet:
+            if use_random_dataset:
                 raise NotImplementedError(
                     f"Random dataset for model {model_name} is not implemented."
                 )
-            m = models[model_name](use_random_dataset=use_random_dataset)
-        else:
-            m = models[model_name]()
+            model_cls_inst = model_cls()
 
-        model = m.get_eager_model()
-        example_inputs = m.get_example_inputs()
-        calibration_inputs = m.get_calibration_inputs(64)
+        elif model_cls in (
+            MLPerfTinyImageClassification,
+            MLPerfTinyKeywordSpotting,
+            MLPerfTinyVisualWakeWords,
+            MLPerfTinyAnomalyDetection,
+        ):
+            model_cls_inst = model_cls(
+                dataset_path=dataset_path,
+                use_random_dataset=use_random_dataset,
+                num_samples=num_samples,
+            )
+
+        else:
+            model_cls_inst = model_cls(use_random_dataset=use_random_dataset)
+
+        model = model_cls_inst.get_eager_model()
+        example_inputs = model_cls_inst.get_example_inputs()
+        calibration_inputs = model_cls_inst.get_calibration_inputs(64)
+
+        return model, example_inputs, calibration_inputs, model_cls_inst
     # Case 2: Model is defined in executorch/examples/models/
     elif model_name in MODEL_NAME_TO_MODEL.keys():
         logging.warning(
@@ -114,27 +162,21 @@ def get_model_and_inputs_from_name(model_name: str, use_random_dataset: bool):
         model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
+
+        return model, example_inputs, calibration_inputs, None
     else:
         raise RuntimeError(
             f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
         )
 
-    return model, example_inputs, calibration_inputs
 
-
-models = {
-    "cifar10": CifarNet,
-    "mobilenetv2": MobilenetV2,
-}
-
-
-if __name__ == "__main__":  # noqa C901
+def _get_arg_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {set(models.keys())}",
+        help=f"Provide model name. Valid ones: {set(MODELS.keys())}",
     )
     parser.add_argument(
         "-d",
@@ -149,14 +191,6 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default="imxrt700",
         help="Platform for running the delegated model",
-    )
-    parser.add_argument(
-        "-c",
-        "--neutron_converter_flavor",
-        required=False,
-        default="SDK_25_12",
-        help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_25_12' has flavor 'SDK_25_12'.",
     )
     parser.add_argument(
         "-q",
@@ -174,11 +208,18 @@ if __name__ == "__main__":  # noqa C901
         help="Use QAT mode for quantization (performs two QAT training epochs)",
     )
     parser.add_argument(
+        "--use_profiling",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Enable profiling for eIQ Neutron NPU delegated model",
+    )
+    parser.add_argument(
         "-s",
         "--so_library",
         required=False,
         default=None,
-        help="Path to custome kernel library",
+        help="Path to custom kernel library",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
@@ -219,8 +260,17 @@ if __name__ == "__main__":  # noqa C901
         required=False,
         default=False,
         action="store_true",
-        help="The model (including the Neutron backend) will use the channels last dim order, which can result in faster "
-        "inference. The inputs must also be provided in the channels last dim order.",
+        help="The model (including the Neutron backend) will use the channels last dim order, which can result in "
+        "faster inference. The inputs must also be provided in the channels last dim order.",
+    )
+    parser.add_argument(
+        "--dump_kernel_selection_code",
+        required=False,
+        default=False,
+        action="store_true",
+        help="During compilation to Neutron microcode by Neutron Compiler, a kernel selection file will be dumped in "
+        "the working directory. This file can be used for reduction of Neutron Firmware size in the built app."
+        "See `docs/source/backends/nxp/nxp-kernel-selection.md` for details.",
     )
     parser.add_argument(
         "--use_random_dataset",
@@ -230,6 +280,20 @@ if __name__ == "__main__":  # noqa C901
         help="The calibration and testing datasets will be generated randomly instead of being downloaded.",
     )
     parser.add_argument(
+        "--num_random_samples",
+        required=False,
+        default=None,
+        type=int,
+        help="Number of random samples to generate, required when `--use_random_dataset` flag is set.",
+    )
+    parser.add_argument(
+        "-dst",
+        "--dataset_path",
+        required=False,
+        default=None,
+        help="Path to custom dataset archive (.pt, .xz) to use for calibration.",
+    )
+    parser.add_argument(
         "--fetch_constants_to_sram",
         required=False,
         default=False,
@@ -237,18 +301,25 @@ if __name__ == "__main__":  # noqa C901
         help="This feature allows running models which do not fit into SRAM by offloading them to an external memory.",
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":  # noqa C901
+    args = _get_arg_parser().parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
-    neutron_target_spec = NeutronTargetSpec(
-        target=args.target, neutron_converter_flavor=args.neutron_converter_flavor
-    )
+    neutron_target_spec = NeutronTargetSpec(target=args.target)
 
     # 1. pick model from one of the supported lists
-    model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
-        args.model_name, args.use_random_dataset
+    model, example_inputs, calibration_inputs, model_cls_inst = (
+        _get_model_info_from_name(
+            args.model_name,
+            args.dataset_path,
+            args.use_random_dataset,
+            args.num_random_samples,
+        )
     )
     model = model.eval()
 
@@ -277,18 +348,42 @@ if __name__ == "__main__":  # noqa C901
     if args.quantize:
         quantizer = NeutronQuantizer(neutron_target_spec, is_qat=args.use_qat)
         if args.use_qat:
-            match args.model_name:
-                case "cifar10":
-                    print("Starting two epochs of QAT training with CifarNet model...")
-                    module = prepare_qat_pt2e(module, quantizer)
-                    module = move_exported_model_to_train(module)
-                    module = train_cifarnet_model(module, num_epochs=2)
-                    module = move_exported_model_to_eval(module)
-                    module = convert_pt2e(module)
-                case _:
-                    raise ValueError(
-                        f"QAT training is not supported for model '{args.model_name}'"
-                    )
+            if not isinstance(
+                model_cls_inst,
+                (
+                    CifarNet,
+                    MLPerfTinyImageClassification,
+                    MLPerfTinyKeywordSpotting,
+                    MLPerfTinyVisualWakeWords,
+                    MLPerfTinyAnomalyDetection,
+                ),
+            ):
+                raise ValueError(
+                    f"QAT training is not supported for model '{args.model_name}'"
+                )
+
+            if isinstance(model_cls_inst, CifarNet):
+                print("Starting two epochs of QAT training with CifarNet model...")
+                module = prepare_qat_pt2e(module, quantizer)
+                module = move_exported_model_to_train(module)
+                module = train_cifarnet_model(module, num_epochs=2)
+                module = move_exported_model_to_eval(module)
+                module = convert_pt2e(module)
+
+            else:
+                print(
+                    f"Starting two epochs of QAT training with {args.model_name} model..."
+                )
+                module = prepare_qat_pt2e(module, quantizer)
+                module = move_exported_model_to_train(module)
+                module = model_cls_inst.train_model_fn(
+                    module,
+                    num_epochs=2,
+                    channels_last=args.use_channels_last_dim_order,
+                )
+                module = move_exported_model_to_eval(module)
+                module = convert_pt2e(module)
+
         else:
             if calibration_inputs is None:
                 logging.warning(
@@ -319,8 +414,9 @@ if __name__ == "__main__":  # noqa C901
     compile_spec = generate_neutron_compile_spec(
         args.target,
         operators_not_to_delegate=args.operators_not_to_delegate,
-        neutron_converter_flavor=args.neutron_converter_flavor,
         fetch_constants_to_sram=args.fetch_constants_to_sram,
+        dump_kernel_selection_code=args.dump_kernel_selection_code,
+        use_profiling=args.use_profiling,
     )
     partitioners = (
         [
@@ -328,6 +424,7 @@ if __name__ == "__main__":  # noqa C901
                 compile_spec,
                 neutron_target_spec,
                 post_quantization_state_dict=module.state_dict(),
+                preserve_ops=default_preserve_ops,
             )
         ]
         if args.delegate
@@ -337,8 +434,11 @@ if __name__ == "__main__":  # noqa C901
     edge_program_manager = to_edge_transform_and_lower(
         export(module, example_inputs, strict=True),
         transform_passes=NeutronEdgePassManager(),
+        generate_etrecord=args.use_profiling,
         partitioner=partitioners,
-        compile_config=EdgeCompileConfig(),
+        compile_config=EdgeCompileConfig(
+            _core_aten_ops_exception_list=core_aten_ops_exception_list,
+        ),
     )
 
     if args.remove_quant_io_ops:
@@ -357,6 +457,21 @@ if __name__ == "__main__":  # noqa C901
         exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
+
+        # Generate ETRecord if profiling flag is set
+        if args.use_profiling:
+            etrecord_path = os.path.join("etrecord", f"{args.model_name}_etrecord.bin")
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(etrecord_path), exist_ok=True)
+            # Save ETRecord
+            exec_prog.get_etrecord().save(etrecord_path)
+            # Notify the user about profiling enablement and ETRecord generation.
+            logging.info(
+                "The model was converted with profiling enabled. The time spent generating the profiling dump is traced as the "
+                "final delegate operation and can be ignored, as no dump is produced for non‑profilable models."
+            )
+            logging.info(f"The ETRecord for the model was saved to {etrecord_path}.")
+
     except RuntimeError as e:
         if "Missing out variants" in str(e.args[0]):
             raise RuntimeError(
@@ -375,8 +490,10 @@ if __name__ == "__main__":  # noqa C901
     logging.debug(f"Executorch program:\n{executorch_program_to_str(exec_prog)}")
 
     # 6. Serialize to *.pte
-    model_name = f"{args.model_name}" + (
-        "_nxp_delegate" if args.delegate is True else ""
+    model_name = (
+        f"{args.model_name}"
+        + ("_nxp_delegate" if args.delegate is True else "")
+        + ("_profile" if args.use_profiling is True else "")
     )
     save_pte_program(exec_prog, model_name)
 

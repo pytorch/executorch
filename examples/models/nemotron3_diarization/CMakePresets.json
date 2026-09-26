@@ -1,0 +1,79 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "nemotron3-diarization-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/nemotron3_diarization",
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "OFF",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+      }
+    },
+    {
+      "name": "nemotron3-diarization-mlx",
+      "displayName": "Nemotron 3 Diarization runner (MLX)",
+      "inherits": [
+        "nemotron3-diarization-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_MLX": "ON",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "nemotron3-diarization-cpu",
+      "displayName": "Nemotron 3 Diarization runner (XNNPACK)",
+      "inherits": [
+        "nemotron3-diarization-base"
+      ]
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "nemotron3-diarization-mlx",
+      "configurePreset": "nemotron3-diarization-mlx",
+      "configuration": "Release"
+    },
+    {
+      "name": "nemotron3-diarization-cpu",
+      "configurePreset": "nemotron3-diarization-cpu",
+      "configuration": "Release"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "nemotron3-diarization-mlx",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "nemotron3-diarization-mlx"
+        },
+        {
+          "type": "build",
+          "name": "nemotron3-diarization-mlx"
+        }
+      ]
+    },
+    {
+      "name": "nemotron3-diarization-cpu",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "nemotron3-diarization-cpu"
+        },
+        {
+          "type": "build",
+          "name": "nemotron3-diarization-cpu"
+        }
+      ]
+    }
+  ]
+}

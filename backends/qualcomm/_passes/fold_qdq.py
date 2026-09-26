@@ -17,7 +17,11 @@ class FoldQDQ(ExportPass):
     Erase QDQ pattern.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram, force_fold=False):
+    def __init__(
+        self,
+        edge_program: torch.export.ExportedProgram,
+        force_fold=False,
+    ):
         super(FoldQDQ, self).__init__()
         self.edge_program = edge_program
         self.force_fold = force_fold
@@ -35,8 +39,10 @@ class FoldQDQ(ExportPass):
             if n.target not in dq_ops:
                 continue
 
-            # skip parameters & buffers
-            if not self.force_fold and is_parameter(n.args[0], self.edge_program):
+            # skip parameters & buffers & get_attr
+            if not self.force_fold and (
+                is_parameter(n.args[0], self.edge_program) or n.args[0].op == "get_attr"
+            ):
                 self._annotate_bypass(n)
             else:
                 for user_n in user_list:
@@ -75,6 +81,5 @@ class FoldQDQ(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         self._fold_dq(graph_module)
         self._fold_q(graph_module)
-        graph_module.recompile()
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

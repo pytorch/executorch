@@ -188,6 +188,43 @@ class TestMaxPool2d(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    def test_fp32_maxpool2d_default_stride(self):
+        """
+        stride defaults to kernel_size when omitted, and is absent from node.args.
+        """
+
+        class MaxPool2dDefaultStride(torch.nn.Module):
+            def forward(self, x):
+                return torch.nn.functional.max_pool2d(x, 2)
+
+        inputs = (torch.randn(4, 3, 24, 24),)
+        (
+            Tester(MaxPool2dDefaultStride(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_maxpool2d_single_element_kernel_size(self):
+        """
+        int[2] arguments accept a 1-element list, which broadcasts to both dims.
+        """
+        inputs = (torch.randn(4, 3, 24, 24),)
+        (
+            Tester(self.MaxPool2d(kernel_size=[3], stride=[2]), inputs)
+            .export()
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
     def test_qs8_maxpool2d(self):
         class MaxPool(torch.nn.Module):
             def __init__(self, maxpool_params):

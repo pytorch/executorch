@@ -9,7 +9,7 @@ from executorch.backends.arm.test.common import parametrize
 
 from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
 from executorch.backends.test.harness.stages import StageType
-from torchvision import models
+from torchvision import models  # type: ignore[import-untyped]
 
 
 ops_before_transforms: dict[str, int] = {
@@ -39,10 +39,7 @@ ops_after_transforms: dict[str, int] = {
 }
 
 # Use bigger sample set for calibration.
-calibration_samples = [
-    (torch.randn(1, 3, 232, 232).to(memory_format=torch.channels_last),)
-    for i in (range(100))
-]
+calibration_samples = [(torch.randn(1, 3, 232, 232),) for _ in range(100)]
 
 test_cases = {
     "mobilenet_v3_small": McuTestCase(
@@ -65,7 +62,7 @@ test_cases = {
     strict=False,
 )
 def test_dialect_mv3(test_case):
-    inputs = test_case.example_inputs()
+    inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_dialect(
         ops_before_transforms,
@@ -89,7 +86,7 @@ def test_dialect_mv3(test_case):
     strict=False,
 )
 def test_implementation_mv3(test_case):
-    inputs = test_case.example_inputs()
+    inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
     tester.test_implementation(
         qtol=20,

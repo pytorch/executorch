@@ -7,12 +7,14 @@
  */
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2dRoute.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
@@ -56,7 +58,7 @@ bool q8ta_conv2d_check_4w4c_packed_dim_info(const api::PackedDimInfo& info) {
  *
  * Each thread processes a 4Wx4C tile of output elements.
  */
-utils::uvec3 pick_q8ta_conv2d_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -64,18 +66,22 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
 
   const uint32_t W = graph->size_at<uint32_t>(-1, output);
   const uint32_t H = graph->size_at<uint32_t>(-2, output);
   const uint32_t C = graph->size_at<uint32_t>(-3, output);
+  const uint32_t N = graph->size_at<uint32_t>(-4, output);
 
   // Each thread processes 4 adjacent width positions and 4 channels (4Wx4C
   // tile)
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid(
+      {W4, utils::safe_downcast<uint32_t>(static_cast<uint64_t>(H) * N), C4},
+      kTiledWorkGrid);
 }
 
 /**
@@ -83,52 +89,60 @@ utils::uvec3 pick_q8ta_conv2d_global_wg_size(
  * tensor dimensions. Uses experimentation results:
  *   - {4, 2, 8} for medium tensors: +57% improvement on 81x81
  *   - {8, 1, 8} for very large tensors: best baseline performance
+ *   - {2, 1, 32} or {4, 1, 16} for narrow output widths
  *   - {64, 1, 1} for narrow channel dimensions: minimize inactive invocations
  */
-utils::uvec3 pick_q8ta_conv2d_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
   (void)resize_args;
 
+  VK_CHECK_COND(graph != nullptr);
   const ValueRef output = args.at(0).refs.at(0);
-
-  // Get actual tensor dimensions for adaptive sizing
-  const uint32_t H = graph->size_at<uint32_t>(-2, output);
+  const uint32_t output_height = graph->size_at<uint32_t>(-2, output);
 
   // For very large tensors (H >= 100 and large x/z), use {8, 1, 8}
   // This configuration performed best for 128x128 tensors in experiments
-  if (H >= 100 && global_workgroup_size[0u] >= 24 &&
-      global_workgroup_size[2u] >= 24) {
-    return {8u, 1u, 8u};
+  if (output_height >= 100 && gwg[0u] >= 24 && gwg[2u] >= 24) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
 
   // For medium-sized tensors, use {4, 2, 8} for better height parallelism
   // This configuration showed +57% improvement on 81x81 tensors
-  if (global_workgroup_size[0u] >= 4 && global_workgroup_size[1u] >= 2 &&
-      global_workgroup_size[2u] >= 8) {
-    return {4u, 2u, 8u};
+  if (gwg[0u] >= 4 && gwg[1u] >= 2 && gwg[2u] >= 8) {
+    return LocalWorkGroup(4u, 2u, 8u);
+  }
+
+  if (gwg[0u] == 2u && gwg[2u] >= 32u) {
+    return LocalWorkGroup(2u, 1u, 32u);
+  }
+
+  // LWG x oversubscribes the 3 global groups here; safe only because the
+  // shader early-returns out-of-bounds invocations.
+  if (gwg[0u] == 3u && gwg[2u] >= 16u) {
+    return LocalWorkGroup(4u, 1u, 16u);
   }
 
   // For tensors with sufficient x and z dimensions, use square configuration
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
+  if (gwg[0u] >= 6 && gwg[2u] >= 6) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
 
   // If x dimension is very small, bias towards z dimension
-  if (global_workgroup_size[0u] < 2u) {
-    return {1u, 1u, 64u};
+  if (gwg[0u] < 2u) {
+    return LocalWorkGroup(1u, 1u, 64u);
   }
 
   // If z dimension is very small, bias towards x dimension
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
+  if (gwg[2u] < 2u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
 
-  return {16u, 1u, 4u};
+  return LocalWorkGroup(16u, 1u, 4u);
 }
 
 //
@@ -191,10 +205,11 @@ ValueRef prepack_quantized_conv2d_weight(
       storage_type,
       utils::kWidthPacked);
 
-  utils::uvec3 global_wg_size = {
-      utils::safe_downcast<uint32_t>(num_blocks_x),
-      utils::safe_downcast<uint32_t>(num_blocks_y),
-      1u};
+  const GlobalWorkGrid gwg(
+      {utils::safe_downcast<uint32_t>(num_blocks_x),
+       utils::safe_downcast<uint32_t>(num_blocks_y),
+       1u},
+      kTiledWorkGrid);
 
   std::string kernel_name = "pack_q8_conv2d_weights";
   add_storage_type_suffix(kernel_name, storage_type);
@@ -202,8 +217,8 @@ ValueRef prepack_quantized_conv2d_weight(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      gwg,
+      graph.create_lwg(gwg),
       // Inputs and Outputs
       weight_data,
       packed_weight,
@@ -216,6 +231,51 @@ ValueRef prepack_quantized_conv2d_weight(
        PushConstantDataInfo(&orig_sizes, sizeof(utils::ivec4))}));
 
   return packed_weight;
+}
+
+//
+// Resize
+//
+
+// resize_args = { input, kernel_size, stride, padding, dilation }
+//
+// The q8ta_conv2d output is statically allocated at the build-time upper-bound
+// shape. Without this resize function the DynamicDispatchNode would never
+// virtual_resize the output on trigger_resize(), so a dynamic-shape graph would
+// freeze the conv output at its upper bound — feeding e.g. a 238-row input into
+// a 241-row buffer leaves garbage rows that GroupNorm's global statistics then
+// smear across the whole tensor. Recompute H/W from the current input (N and C
+// are shape-independent and stay as currently allocated).
+void resize_q8ta_conv2d_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+  const ValueRef kernel_size = resize_args.at(1);
+  const ValueRef stride = resize_args.at(2);
+  const ValueRef padding = resize_args.at(3);
+  const ValueRef dilation = resize_args.at(4);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+
+  // H/W from the current input via the shared conv-output helper. kernel dims
+  // come from the kernel_size IntList (kernel_size_only=true); the args[3] slot
+  // is consulted only as an optional ceil_mode and dilation (non-bool) resolves
+  // it to false. transposed=false.
+  const std::vector<int64_t> out_hw = calc_out_sizes_hw(
+      *graph,
+      in_sizes,
+      kernel_size,
+      /*kernel_size_only=*/true,
+      {stride, padding, dilation, dilation},
+      /*transposed=*/false);
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(out);
+  const size_t ndim = new_sizes.size();
+  new_sizes.at(ndim - 2) = out_hw.at(0);
+  new_sizes.at(ndim - 1) = out_hw.at(1);
+  graph->virtual_resize(out, new_sizes);
 }
 
 //
@@ -288,8 +348,9 @@ void add_q8ta_conv2d_node(
       PushConstantDataInfo(&output_zp_val, sizeof(output_zp_val)),
   };
 
-  // Select shader based on layout
-  std::string kernel_name = "q8ta_conv2d";
+  const bool use_hw_dot =
+      graph.context()->adapter_ptr()->supports_int8_dot_product();
+  std::string kernel_name = use_hw_dot ? "q8ta_conv2d" : "q8ta_conv2d_fallback";
   add_dtype_suffix(kernel_name, graph.dtype_of(packed_weight_scales));
 
   // Pass metadata for both output and input tensors
@@ -310,8 +371,8 @@ void add_q8ta_conv2d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_global_wg_size,
-      pick_q8ta_conv2d_local_wg_size,
+      pick_q8ta_conv2d_gwg,
+      pick_q8ta_conv2d_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -326,8 +387,10 @@ void add_q8ta_conv2d_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args
-      {}));
+      // Resize args: { input, kernel_size, stride, padding, dilation }
+      {packed_int8_input, kernel_size, stride, padding, dilation},
+      // Resize function: propagate dynamic H/W to the output.
+      resize_q8ta_conv2d_node));
 }
 
 //
@@ -418,23 +481,43 @@ void q8ta_conv2d_general(
 
 void q8ta_conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const ValueRef input = args.at(0);
+  const ValueRef kernel_size_ref = args.at(9);
   const ValueRef groups_ref = args.at(13);
   const ValueRef output = args.at(15);
 
   const int64_t groups = graph.extract_scalar<int64_t>(groups_ref);
+  // Valid models always carry groups >= 1; fail fast on corrupt input
+  // instead of dividing channel counts by zero downstream (both this
+  // dispatcher and q8ta_conv2d_general divide by groups).
+  VK_CHECK_COND(groups > 0, "q8ta_conv2d requires groups >= 1");
   const int64_t in_channels = graph.size_at<int64_t>(-3, input);
   const int64_t in_channels_per_group = in_channels / groups;
+  const int64_t batch = graph.size_at<int64_t>(-4, input);
 
   const int64_t H_out = graph.size_at<int64_t>(-2, output);
   const int64_t W_out = graph.size_at<int64_t>(-1, output);
-  const int64_t spatial_out = H_out * W_out;
+  const int64_t out_channels = graph.size_at<int64_t>(-3, output);
+  int64_t kernel_height;
+  int64_t kernel_width;
+  {
+    const auto kernel_size = graph.get_int_list(kernel_size_ref);
+    kernel_height = kernel_size->at(0);
+    kernel_width = kernel_size->at(1);
+  }
 
-  // Use im2col when the channel depth is sufficient for tiled GEMM to win, or
-  // when the output spatial area is small enough that the im2col buffer stays
-  // manageable. For large spatial outputs with few channels, the im2col buffer
-  // becomes too large and the general shader is more efficient.
-  const bool use_im2col = groups == 1 && in_channels_per_group % 4 == 0 &&
-      (in_channels_per_group >= 64 || spatial_out <= 4096);
+  const bool use_im2col = should_use_q8ta_conv2d_im2col({
+      graph.device_is_mali(),
+      graph.can_use_int8_dot_product(),
+      static_cast<uint64_t>(graph.max_buffer_numel()),
+      batch,
+      groups,
+      in_channels_per_group,
+      out_channels,
+      kernel_height,
+      kernel_width,
+      H_out,
+      W_out,
+  });
 
   if (use_im2col) {
     q8ta_conv2d_im2col(graph, args);

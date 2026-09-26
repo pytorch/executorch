@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,6 +7,7 @@ import copy
 
 import pytest
 import torch
+from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
 from executorch.backends.arm.quantizer import VgfQuantizer
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
@@ -18,6 +19,7 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.quantize_io_pass import extract_io_quant_params
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -45,9 +47,7 @@ def test_roundtrip_extracts_io_params_tosa_INT(
     quantizer_cls,
     partitioner_cls,
 ):
-    """
-    Validates that IO quantization parameters round-trip for both flows.
-    """
+    """Validates that IO quantization parameters round-trip for both flows."""
     example_inputs = (
         torch.ones(1, 5),
         torch.full((1, 5), 2.0),
@@ -90,3 +90,26 @@ def test_roundtrip_extracts_io_params_tosa_INT(
     assert isinstance(out_name, str)
     assert isinstance(out_params["scale"], float)
     assert isinstance(out_params["zero_point"], int)
+
+
+def test_only_vgf_partitioner_registers_grid_sampler_no_target_custom_partition_op():
+    tosa_partitioner = TOSAPartitioner(TosaCompileSpec("TOSA-1.0+FP"))
+    vgf_partitioner = VgfPartitioner(VgfCompileSpec("TOSA-1.0+FP"))
+    ethosu_partitioner = EthosUPartitioner(EthosUCompileSpec("ethos-u55-128"))
+
+    assert hasattr(tosa_partitioner, "_custom_partition_ops")
+    assert hasattr(vgf_partitioner, "_custom_partition_ops")
+    assert hasattr(ethosu_partitioner, "_custom_partition_ops")
+
+    assert (
+        exir_ops.edge.aten.grid_sampler_2d.default
+        not in tosa_partitioner._custom_partition_ops
+    )
+    assert (
+        exir_ops.edge.aten.grid_sampler_2d.default
+        in vgf_partitioner._custom_partition_ops
+    )
+    assert (
+        exir_ops.edge.aten.grid_sampler_2d.default
+        not in ethosu_partitioner._custom_partition_ops
+    )

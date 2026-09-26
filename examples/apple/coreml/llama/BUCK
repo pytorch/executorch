@@ -4,6 +4,8 @@ load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "no
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 fbcode_target(_kind = runtime.python_library,
     name = "llama_transformer",
     srcs = [
@@ -28,6 +30,24 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "run_static_llm",
+    srcs = [
+        "run_static_llm.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.apple.coreml.llama",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:transformer_modules",
+        "//executorch/examples/models/llama/runner:eager_runner_library",
+        "//executorch/examples/models/llama:static_attention",
+        "//executorch/runtime:runtime",
+        "//pytorch/tokenizers/pytorch_tokenizers:tokenizers",
     ],
 )
 

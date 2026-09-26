@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import torch
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
@@ -47,17 +52,22 @@ def convert_constant_dim_order_pass(
     exported_program: ExportedProgram,
 ) -> ExportedProgram:
     """
-    Normalize the dim order of constant tensors, ensuring that all constant tensors
-    have either default or channels_last dim order. Tensors with other dim orders or
-    striding are converted to contiguous tensors. This pass acts in-place on the
-    unlifted exported program.
+    Normalize lifted tensors to default or channels-last dim order.
+
+    Tensor constants and buffers with other dim orders or striding are converted
+    to contiguous tensors. This pass acts in-place on the unlifted exported
+    program.
 
     Args:
         exported_program: The ExportedProgram to transform.
 
     Returns:
-        The modified ExportedProgram with normalized constant dim order.
+        The modified ExportedProgram with normalized lifted tensor dim order.
     """
+
+    non_persistent_buffer_names = set(
+        exported_program.graph_signature.non_persistent_buffers
+    )
 
     for key, const in exported_program.constants.items():
         if isinstance(const, torch.Tensor) and _should_transform(const):
@@ -66,12 +76,15 @@ def convert_constant_dim_order_pass(
             # Also update the corresponding placeholder node meta value. This doesn't
             # get automatically updated during retracing as ExportPass uses the placeholder
             # meta as the source of truth. TODO(?)
-            _update_placeholder_meta(exported_program, key, InputKind.CONSTANT_TENSOR)
+            # Non-persistent buffers are stored as constants but remain buffer inputs.
+            kind = (
+                InputKind.BUFFER
+                if key in non_persistent_buffer_names
+                else InputKind.CONSTANT_TENSOR
+            )
+            _update_placeholder_meta(exported_program, key, kind)
 
     # Convert buffers.
-    non_persistent_buffer_names = set(
-        exported_program.graph_signature.non_persistent_buffers
-    )
     for key, buffer in exported_program.named_buffers():
         if (
             key not in non_persistent_buffer_names

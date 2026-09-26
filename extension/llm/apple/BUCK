@@ -1,6 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "non_fbcode_target")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "IOS")
-load("@fbsource//tools/build_defs/apple:autoglob.bzl", "EXPORT_UNLESS_INTERNAL")
 load("@fbsource//tools/build_defs/apple:fb_apple_library.bzl", "fb_apple_library")
 load("@fbsource//xplat/executorch/build/fb:clients.bzl", "EXECUTORCH_CLIENTS")
 load("@fbsource//tools/build_defs/apple:fb_apple_resource.bzl", "fb_apple_resource")
@@ -10,14 +9,24 @@ oncall("executorch")
 
 non_fbcode_target(_kind = fb_apple_library,
     name = "ExecuTorchLLM",
-    autoglob_mode = EXPORT_UNLESS_INTERNAL,
+    autoglob_mode = "EXPORT_UNLESS_INTERNAL",
     extension_api_only = True,
     frameworks = [
         "Foundation",
     ],
     sdks = IOS,
     visibility = EXECUTORCH_CLIENTS,
-    test_labels = ["long_running"],
+    # `glacial` raises the per-XCTestCase timeout from 1800s -> 5400s (90 min)
+    # via fbobjc/Tools/xctest_runner: TEST_CASE_TIMEOUT(60s) * 30 * 3.
+    # Required because LLM inference (LLaMA, Phi4, Gemma, LLaVA, Voxtral)
+    # on iOS-sim CPU regularly exceeds 30 minutes for a full forward pass.
+    test_labels = ["glacial"],
+    # Rule-level wall-clock for the whole auto-generated test bundle:
+    # ExecuTorchLLMTests currently contains 13 XCTestCase methods, and
+    # individual methods can exceed 30 minutes on iOS-sim CPU. This 4h
+    # budget is intended as the total bundle/shard wall-clock, including
+    # xctest setup/teardown overhead; it is not based on "5 testcases".
+    test_test_rule_timeout_ms = 14400000,
     test_deps = [
         ":ExecuTorchLLMTestResource",
         "//xplat/executorch/backends/xnnpack:xnnpack_backendApple",

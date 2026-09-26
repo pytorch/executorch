@@ -8,6 +8,7 @@ from executorch.backends.qualcomm._passes.utils import find_patterns
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 
 def _is_node(node):
@@ -150,6 +151,5 @@ class RecomposeRmsNorm(ExportPass):
                     # copy metadata
                     rms_node.meta = last_mul_node.meta
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

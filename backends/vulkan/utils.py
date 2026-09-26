@@ -91,6 +91,8 @@ class DtypeSetList:
         # Broadcasting: single set applies to all positions
         if idx > 0 and len(self.vals) == 1:
             return self.vals[0]
+        if idx >= len(self.vals):
+            return set()
         return self.vals[idx]
 
     def is_empty(self) -> bool:
@@ -544,6 +546,80 @@ def get_tensor_name(exp_prog: ExportedProgram, node: torch.fx.Node) -> str:
     return ""
 
 
+def register_param_mutation(ep: ExportedProgram, node: torch.fx.Node, tag: str) -> bool:
+    """Register an in-place mutation of a param/buffer's state-dict storage,
+    keyed on the stable identity of that storage, and report whether the caller
+    should perform the mutation.
+
+    A graph pass that repacks (or otherwise mutates in place) the constant tensor
+    backing a placeholder must run the mutation exactly once per backing storage;
+    repeating it on the already-mutated tensor corrupts it. Keying the guard on
+    node identity is unsafe, because two distinct placeholder nodes can resolve to
+    the same state-dict entry (e.g. aliased weights), and each would miss a
+    per-node flag and re-run the mutation. This guard instead keys on the
+    state-dict FQN that backs `node` -- the same identity the in-place mutation
+    targets (see `update_program_state_dict`, which overwrites
+    `state_dict[input_spec.target]`). The FQN is resolved via `get_tensor_name`
+    (`graph_signature.inputs_to_{parameters,buffers,lifted_tensor_constants}`) and
+    is stable across the mutation, unlike `data_ptr()` which changes once the
+    state-dict tensor object is replaced.
+
+    `tag` identifies the mutation/packing FORMAT, not the op. Two callers that
+    produce the same packed bytes for a weight should pass the same `tag` and
+    share this guard; observing two different tags on one weight means it would be
+    mutated two incompatible ways, which is corruption, so that case raises.
+
+    A per-ExportedProgram registry mapping `param_key -> tag` is lazily
+    initialized on `ep` (`ep._et_vk_param_modification_tags`) without
+    module-scope mutable state. Because it is stored on `ep`, it persists for the
+    lifetime of that ExportedProgram -- across all pass runs on it, not just one
+    -- and there is no reset hook, so a pass that legitimately needs to re-mutate
+    an already-tagged param must clear `ep._et_vk_param_modification_tags`
+    itself.
+
+    Returns True on the first call for a given param (and records the tag),
+    signalling the caller to proceed with the mutation. Returns False on a
+    subsequent call with the SAME tag, signalling the caller to skip (already
+    mutated this way). Raises RuntimeError on a call whose tag differs from the
+    recorded one.
+    """
+    registry: Dict[str, str] = getattr(ep, "_et_vk_param_modification_tags", None)
+    if registry is None:
+        registry = {}
+        ep._et_vk_param_modification_tags = registry
+
+    # The guard keys on the state-dict FQN that get_tensor_name resolves, which
+    # only exists for parameter / buffer / lifted-constant placeholders (via
+    # inputs_to_{parameters,buffers,lifted_tensor_constants}). For any other node
+    # kind get_tensor_name falls through to node.target, which is not a stable
+    # storage key, so the guard would silently key on the wrong identity. Reject
+    # such nodes up front.
+    if not (
+        is_param(ep, node) or is_buffer(ep, node) or is_lifted_tensor_constant(ep, node)
+    ):
+        raise RuntimeError(
+            "register_param_mutation expects a parameter / buffer / "
+            f"lifted-constant placeholder, but got node {node.name!r} "
+            f"(op={node.op!r}, target={node.target!r})."
+        )
+
+    param_key = get_tensor_name(ep, node)
+
+    recorded_tag = registry.get(param_key)
+    if recorded_tag is None:
+        registry[param_key] = tag
+        return True
+
+    if recorded_tag != tag:
+        raise RuntimeError(
+            f"Param tensor {param_key!r} was already modified with tag "
+            f"{recorded_tag!r}, but a conflicting modification with tag {tag!r} "
+            "was attempted; a weight modified two different ways is corrupt."
+        )
+
+    return False
+
+
 def find_dequant_user(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     """
     Search the direct users of the given node and return the first one that is a
@@ -586,6 +662,10 @@ def node_has_target(node: Any, target: str):
 ImageExtents = Tuple[int, int, int]
 
 DEFAULT_TEXTURE_LIMITS = (16384, 16384, 2048)
+# Conservative 3D texture limit compatible with most desktop/laptop GPUs. The
+# Vulkan spec only guarantees maxImageDimension3D >= 2048, whereas mobile GPUs
+# commonly support 16384. Used when the small_texture_limits option is set.
+SMALL_TEXTURE_LIMITS = (2048, 2048, 2048)
 DEFAULT_BUFFER_LIMIT = 128 * (1024 * 1024)
 
 all_storage_types: Set[VkStorageType] = {
@@ -606,6 +686,7 @@ all_quantized_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.PACKED_INT8_4H4W,
     VkMemoryLayout.PACKED_INT8_4W,
     VkMemoryLayout.PACKED_INT8_4C1W,
+    VkMemoryLayout.PACKED_INT8_CONV2D,
 }
 
 universal_memory_layout_set: Set[VkMemoryLayout] = (
@@ -622,6 +703,7 @@ _LAYOUT_TO_PACKED_DIM: Dict[VkMemoryLayout, int] = {
     VkMemoryLayout.PACKED_INT8_4W4C: 2,
     VkMemoryLayout.PACKED_INT8_4H4W: 0,
     VkMemoryLayout.PACKED_INT8_4C1W: 2,
+    VkMemoryLayout.PACKED_INT8_CONV2D: 2,
 }
 
 
@@ -686,6 +768,11 @@ class PackedDimInfo:
                 packed_dim=2,
                 packed_dim_block_size=4 if is_buffer else 16,
             )
+        elif memory_layout == VkMemoryLayout.PACKED_INT8_CONV2D:
+            return cls(
+                packed_dim=2,
+                packed_dim_block_size=4,
+            )
         else:
             raise ValueError(f"Unknown memory layout: {memory_layout}")
 
@@ -742,6 +829,10 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
     elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
         height = (height + 3) // 4
         width = (width + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_CONV2D:
+        # Use conservative extents (same as 4W4C) since this is buffer-only
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -1090,6 +1181,33 @@ def make_tensor_repset(tensor_repr: TensorRepr) -> TensorRepSet:
         raise RuntimeError(f"Unsupported storage type {tensor_repr.storage_type}")
 
 
+def upper_bound_size(dim: Union[int, torch.SymInt]) -> Optional[int]:
+    """Largest value a (possibly symbolic) tensor dimension can take.
+
+    Returns None if no finite bound is known.
+
+    A symbolic dim compares against a limit using its *hint* -- the size of the
+    example input the model happened to be traced with -- not the maximum the
+    exported range allows. Sizing decisions must use the bound instead, or a
+    model traced with a small example will make a choice that is invalid once it
+    runs at a larger size.
+    """
+    if not isinstance(dim, torch.SymInt):
+        return int(dim)
+    if not dim.node.expr.free_symbols:
+        return int(dim.node.expr)
+    shape_env = dim.node.shape_env
+    if shape_env is None:
+        return None
+    try:
+        upper = shape_env.bound_sympy(dim.node.expr).upper
+    except Exception:
+        return None
+    if upper is None or not upper.is_finite:
+        return None
+    return int(upper)
+
+
 def filter_invalid_reprs(
     tensor_val: FakeTensor,
     tensor_repset: TensorRepSet,
@@ -1107,11 +1225,17 @@ def filter_invalid_reprs(
     can be used to produce a valid image texture for the given tensor (i.e. fits within
     texture limits).
     """
+    # Size the texture by what the dimension CAN be, not by the example the
+    # model was traced with. An unbounded dim cannot be shown to fit, so it
+    # falls back to buffer storage.
+    bounds = [upper_bound_size(d) for d in tensor_val.shape]
     valid_texture_layouts = set()
-    for memory_layout in tensor_repset.valid_texture_layouts:
-        extents = required_image_extents(tensor_val.shape, memory_layout)
-        if extents_are_valid(extents, texture_limits):
-            valid_texture_layouts.add(memory_layout)
+    if all(b is not None for b in bounds):
+        max_shape = torch.Size(bounds)
+        for memory_layout in tensor_repset.valid_texture_layouts:
+            extents = required_image_extents(max_shape, memory_layout)
+            if extents_are_valid(extents, texture_limits):
+                valid_texture_layouts.add(memory_layout)
 
     # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
@@ -1175,16 +1299,30 @@ PACKED_INT8_4H4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4H4W}, set())
 PACKED_INT8_4W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W}, set())
 PACKED_INT8_4C1W_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4C1W}, set())
 
+PACKED_INT8_CONV2D_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_CONV2D}, set())
+
 PACKED_INT8_CHANNELS_PACKED_BUFFER = TensorRepSet(
-    {VkMemoryLayout.PACKED_INT8_4W4C, VkMemoryLayout.PACKED_INT8_4C1W}, set()
+    {
+        VkMemoryLayout.PACKED_INT8_4W4C,
+        VkMemoryLayout.PACKED_INT8_4C1W,
+        VkMemoryLayout.PACKED_INT8_CONV2D,
+    },
+    set(),
 )
 
 
 # Special use RepSets
 
 NO_STORAGE = TensorRepSet(set(), set())
-ALL_STORAGES_REPSET = TensorRepSet(
-    universal_memory_layout_set, universal_memory_layout_set
+# Buffer side admits both float and quantized (PACKED_INT8_*) layouts; texture side
+# is float-only because the Vulkan backend has no quantized texture support
+# (required_image_extents and the texture indexing helpers only know about the
+# float layouts). Used as an intersection identity (e.g. common_arg_repset
+# accumulator) and as a placeholder for non-tensor / not-yet-prepacked args, so
+# narrowing the texture side is non-breaking for those uses while letting it act
+# as a true universal set when intersected against quant-aware repsets.
+ANY_STORAGE_INCL_PACKED_INT8 = TensorRepSet(
+    universal_memory_layout_set, all_memory_layouts
 )
 
 
@@ -1209,8 +1347,9 @@ class TensorRepSetList:
     def __getitem__(self, idx: int) -> TensorRepSet:
         if idx > 0 and len(self) == 1:
             return self.vals[0]
-        else:
-            return self.vals[idx]
+        if idx >= len(self.vals):
+            return set()
+        return self.vals[idx]
 
     def __setitem__(self, idx: int, val: TensorRepSet) -> None:
         if idx > 0 and len(self.vals) == 1:
@@ -1309,19 +1448,19 @@ class OpRepSets:
         # Now, go through the arguments of the operator and create a filtered repset
         # for each based on the actual tensor value.
         args_repset_list = TensorRepSetList([])
-        common_arg_repset = ALL_STORAGES_REPSET
+        common_arg_repset = ANY_STORAGE_INCL_PACKED_INT8
         for i, arg_node in enumerate(op_node.args):
             arg_repset = inputs_repsets[i]
 
-            # Use ALL_STORAGES_REPSET for non-tensor nodes so they don't cause the op
+            # Use ANY_STORAGE_INCL_PACKED_INT8 for non-tensor nodes so they don't cause the op
             # repsets to appear empty
             if not is_tensor_arg_node(arg_node):
-                args_repset_list.append(ALL_STORAGES_REPSET)
+                args_repset_list.append(ANY_STORAGE_INCL_PACKED_INT8)
             # NO_STORAGE is used to denote that an input is either a non tensor arg or
             # a weight tensor that is not prepacked. Similar to the above, use
-            # ALL_STORAGES_REPSET in this case.
+            # ANY_STORAGE_INCL_PACKED_INT8 in this case.
             elif arg_repset.is_empty():
-                args_repset_list.append(ALL_STORAGES_REPSET)
+                args_repset_list.append(ANY_STORAGE_INCL_PACKED_INT8)
             else:
                 assert not arg_repset.is_empty()
 
@@ -1334,10 +1473,17 @@ class OpRepSets:
 
         # Repeat for output tensors.
         outs_repset_list = TensorRepSetList([])
-        common_out_repset = ALL_STORAGES_REPSET
+        common_out_repset = ANY_STORAGE_INCL_PACKED_INT8
         if num_tensors_in_node(op_node) == 1:
+            out_val = op_node.meta["val"]
+            # num_tensors_in_node counts tensors, not nesting: an op declared
+            # to return Tensor[] still lands here when it happens to produce
+            # exactly one, and meta["val"] is then a one-element list rather
+            # than a bare FakeTensor.
+            if isinstance(out_val, (list, tuple)):
+                out_val = out_val[0]
             common_out_repset = filter_invalid_reprs(
-                op_node.meta["val"], outputs_repsets[0], texture_limits
+                out_val, outputs_repsets[0], texture_limits
             )
             outs_repset_list.append(common_out_repset)
         # Multiple output tensors
@@ -1490,14 +1636,19 @@ class OpRepSets:
         if not arg_current_repset.any_in_common(source_repset):
             return False
 
+        # Compute the narrowed repset (intersection of current arg and source).
+        narrowed = arg_current_repset.make_intersect(source_repset)
+
         if self.sync_primary_io_repr:
-            if not self.get_out_repset(0).has_compatible_packed_dim_info_set(
-                source_repset
-            ):
+            # Check that the narrowed result is compatible with the output.
+            # Using the intersection rather than the raw source_repset avoids
+            # rejecting valid constraints where the source has extra layouts
+            # (e.g. ANY_TEXTURE includes HP/CP) that don't exist in the output
+            # but also don't appear in the intersection.
+            if not self.get_out_repset(0).has_compatible_packed_dim_info_set(narrowed):
                 return False
 
         # If this point is reached, then it is possible to constrain
-        narrowed = arg_current_repset.make_intersect(source_repset)
         self.args_repset_list[arg_i] = narrowed
 
         # Propagate to other synced args via packed-dim compatibility

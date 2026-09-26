@@ -48,6 +48,18 @@ def define_common_targets():
         srcs = ["binary_ops.cpp"],
         exported_headers = ["binary_ops.h"],
         visibility = ["PUBLIC"],
+        # ATen vec headers trip -Werror warnings on the Windows clang host;
+        # MSVC cl.exe rejects the gcc-style flag.
+        compiler_flags = select({
+            "DEFAULT": [],
+            # OSS buck2 has no compiler constraint (ovr_config//compiler:msvc
+            # resolves to the nonexistent prelude//compiler:msvc), so it cannot
+            # appear as a select key there; guard the MSVC branch to non-OSS.
+            "ovr_config//os:windows": select({
+                "DEFAULT": ["-Wno-error"],
+                "ovr_config//compiler:msvc": [],
+            }) if not runtime.is_oss else ["-Wno-error"],
+        }),
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/kernel:kernel_includes",
@@ -73,6 +85,27 @@ def define_common_targets():
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/optimized:libutils",
+        ],
+    )
+
+    # Hardware fp16 variant of grid_sampler_2d. Needs ARMv8.2-a+fp16 so it
+    # must be a separate translation unit — op_grid_sampler_2d.cpp (the
+    # runtime dispatcher) remains on plain ARMv8 and only calls into this
+    # after cpuinfo_has_arm_neon_fp16() reports true. Scoped compile flag
+    # stays local to this library. Named without the "op_" prefix so the
+    # op_registration_util dependency check (which forbids op_target ->
+    # op_target edges) still lets op_grid_sampler_2d depend on it.
+    runtime.cxx_library(
+        name = "grid_sampler_2d_fp16_hw_impl",
+        srcs = ["op_grid_sampler_2d_fp16_hw.cpp"],
+        exported_headers = ["op_grid_sampler_2d_fp16_hw.h"],
+        visibility = ["PUBLIC"],
+        compiler_flags = select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": ["-march=armv8.2-a+fp16"],
+        }),
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
         ],
     )
 

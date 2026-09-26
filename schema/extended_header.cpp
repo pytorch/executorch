@@ -70,6 +70,11 @@ uint64_t GetUInt64LE(const uint8_t* data) {
     const void* data,
     size_t size) {
   if (size < ExtendedHeader::kNumHeadBytes) {
+    ET_LOG(
+        Error,
+        "Extended header data size %zu < minimum %zu",
+        size,
+        ExtendedHeader::kNumHeadBytes);
     return Error::InvalidArgument;
   }
   const uint8_t* header =

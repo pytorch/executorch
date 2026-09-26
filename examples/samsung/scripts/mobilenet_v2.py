@@ -13,6 +13,7 @@ from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer import Precision
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
+    PerformanceMode,
 )
 from executorch.backends.samsung.utils.export_utils import (
     quantize_module,
@@ -128,7 +129,7 @@ if __name__ == "__main__":
 
     # build pte
     pte_filename = "mobilenetV2_enn"
-    instance = MV2Model(False)
+    instance = MV2Model()
     model = MV2Model().get_eager_model().eval()
     assert args.calibration_number
     if args.dataset:
@@ -144,7 +145,9 @@ if __name__ == "__main__":
     test_in = inputs[0]
     float_out = model(*test_in)
 
-    compile_specs = [gen_samsung_backend_compile_spec(args.chipset)]
+    compile_specs = [
+        gen_samsung_backend_compile_spec(args.chipset, PerformanceMode.HIGH_PERFORMANCE)
+    ]
 
     if args.precision:
         model = quantize_module(

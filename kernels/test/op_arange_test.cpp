@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -20,12 +21,17 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 
 using torch::executor::testing::TensorFactory;
+
+// `arange` steps its vectorized body with a fused multiply-add on some ISAs
+// (NEON float does), so an element can come out one ulp from the independently
+// rounded literals the cases below compare against. One ulp is the tightest
+// bound that holds; the largest deviation measured across them is 0.909 ulp.
+constexpr double kArangeUlpRtol = std::numeric_limits<float>::epsilon();
 
 class OpArangeOutTest : public OperatorTest {
  protected:
@@ -113,10 +119,19 @@ TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+TEST_F(OpArangeOutTest, BooleanEndSupported) {
+  TensorFactory<ScalarType::Long> tf;
+
+  Tensor out = tf.zeros({1});
+  Tensor expected = tf.make({1}, {0});
+
+  EXPECT_TENSOR_EQ(op_arange_out(Scalar(true), out), expected);
+}
+
 TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched out dim");
   TensorFactory<ScalarType::Float> tf;
 
   Scalar end = Scalar(5);
@@ -150,9 +165,9 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Dynamic Unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Dynamic Unbound not supported");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -195,10 +210,21 @@ TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+TEST_F(OpArangeStartOutTest, BooleanStartAndStepSupported) {
+  TensorFactory<ScalarType::Long> tf;
+
+  Tensor out = tf.zeros({3});
+  Tensor expected = tf.make({3}, {0, 1, 2});
+
+  EXPECT_TENSOR_EQ(
+      op_arange_start_out(Scalar(false), Scalar(3), Scalar(true), out),
+      expected);
+}
+
 TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched out dim");
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(0);
@@ -235,9 +261,9 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Dynamic Unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Dynamic Unbound not supported");
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -265,7 +291,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
   // Expected tensor, equal
   Tensor expected = tf.make({4}, {1.1, 2.2, 3.3, 4.4});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, kArangeUlpRtol, 0);
 
   end = Scalar(5.51);
   out = tf.zeros({5});
@@ -278,7 +304,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
   // Expected tensor, equal
   expected = tf.make({5}, {1.1, 2.2, 3.3, 4.4, 5.5});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, kArangeUlpRtol, 0);
 }
 
 TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
@@ -298,7 +324,7 @@ TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
   // Expected tensor, equal
   Tensor expected = tf.make({4}, {5.5, 4.4, 3.3, 2.2});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, kArangeUlpRtol, 0);
 
   end = Scalar(1.09);
   out = tf.zeros({5});
@@ -311,5 +337,5 @@ TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
   // Expected tensor, equal
   expected = tf.make({5}, {5.5, 4.4, 3.3, 2.2, 1.1});
 
-  EXPECT_TENSOR_EQ(out, expected);
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, kArangeUlpRtol, 0);
 }

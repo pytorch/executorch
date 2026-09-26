@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -19,8 +20,6 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -36,11 +35,9 @@ class OpMmOutTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
 
     if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      if (DTYPE == ScalarType::Half) {
-        GTEST_SKIP()
-            << "skip Half because torch::executor::aten::mm_out does not support Half";
-        return;
-      }
+      ET_SKIP_IF(
+          DTYPE == ScalarType::Half,
+          "skip Half because torch::executor::aten::mm_out does not support Half");
     }
 
     // matmul gives 4 * 2 * 3 = 24
@@ -135,9 +132,9 @@ TEST_F(OpMmOutTest, MismatchedDimensionsDies) {
 }
 
 TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimension size");
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.full({2, 2}, 3);
 
@@ -154,9 +151,9 @@ TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
 }
 
 TEST_F(OpMmOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong out shape");
   TensorFactory<ScalarType::Int> tf;
   Tensor x = tf.ones({10, 3});
 
@@ -255,8 +252,8 @@ TEST_F(OpMmOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpMmOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpMmOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -296,4 +293,20 @@ TEST_F(OpMmOutTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_mm_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpMmOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // All three tensors share the same non-default dim order, so the kernel's
+  // same dim order check passes and only the default dim order check rejects.
+  Tensor x = tf.make_with_dimorder({3, 4}, std::vector<float>(12, 2), {1, 0});
+  Tensor y = tf.make_with_dimorder({4, 5}, std::vector<float>(20, 3), {1, 0});
+  Tensor out = tf.make_with_dimorder({3, 5}, std::vector<float>(15), {1, 0});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, y, out));
 }

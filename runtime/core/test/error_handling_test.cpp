@@ -28,6 +28,21 @@ Result<uint64_t> get_abs(int64_t num) {
   }
 }
 
+// Helpers that use ET_UNWRAP in expression position. They pin the macro's
+// expression-form contract (see result.h): a change that turns ET_UNWRAP back
+// into a statement-only macro (requiring a variable-name argument) would stop
+// these from compiling.
+Result<uint64_t> double_abs_unwrap(int64_t num) {
+  uint64_t value = ET_UNWRAP(get_abs(num));
+  return value * 2;
+}
+
+Result<uint64_t> double_abs_unwrap_with_message(int64_t num) {
+  uint64_t value =
+      ET_UNWRAP(get_abs(num), "get_abs failed for %d", static_cast<int>(num));
+  return value * 2;
+}
+
 Result<std::string> get_op_name(int64_t op) {
   auto abs_result = get_abs(op);
   if (!abs_result.ok()) {
@@ -105,6 +120,72 @@ class Movable {
   mutable void* buffer_;
 };
 
+TEST(ErrorHandlingTest, ToStringKnownError) {
+  EXPECT_STREQ(executorch::runtime::to_string(Error::Ok), "Error::Ok");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::Internal), "Error::Internal");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidState),
+      "Error::InvalidState");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::EndOfMethod), "Error::EndOfMethod");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::AlreadyLoaded),
+      "Error::AlreadyLoaded");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::NotSupported),
+      "Error::NotSupported");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::NotImplemented),
+      "Error::NotImplemented");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidArgument),
+      "Error::InvalidArgument");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidType), "Error::InvalidType");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::OperatorMissing),
+      "Error::OperatorMissing");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::RegistrationExceedingMaxKernels),
+      "Error::RegistrationExceedingMaxKernels");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::RegistrationAlreadyRegistered),
+      "Error::RegistrationAlreadyRegistered");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::NotFound), "Error::NotFound");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::MemoryAllocationFailed),
+      "Error::MemoryAllocationFailed");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::AccessFailed),
+      "Error::AccessFailed");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidProgram),
+      "Error::InvalidProgram");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::InvalidExternalData),
+      "Error::InvalidExternalData");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::OutOfResources),
+      "Error::OutOfResources");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::DelegateInvalidCompatibility),
+      "Error::DelegateInvalidCompatibility");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::DelegateMemoryAllocationFailed),
+      "Error::DelegateMemoryAllocationFailed");
+  EXPECT_STREQ(
+      executorch::runtime::to_string(Error::DelegateInvalidHandle),
+      "Error::DelegateInvalidHandle");
+}
+
+TEST(ErrorHandlingTest, ToStringUnknownError) {
+  auto unknown = static_cast<Error>(0xFF);
+  const char* result = executorch::runtime::to_string(unknown);
+  EXPECT_STREQ(result, "Error::Unknown");
+}
+
 TEST(ErrorHandlingTest, ResultBasic) {
   Result<uint32_t> r(1);
   ASSERT_TRUE(r.ok());
@@ -175,6 +256,28 @@ TEST(ErrorHandlingTest, ResultUnwrap) {
   auto res = get_op_name(-1);
   ASSERT_FALSE(res.ok());
   ASSERT_EQ(res.error(), Error::InvalidArgument);
+}
+
+TEST(ErrorHandlingTest, EtUnwrapExpressionForm) {
+  auto ok = double_abs_unwrap(5);
+  ASSERT_TRUE(ok.ok());
+  EXPECT_EQ(*ok, 10u);
+
+  auto err = double_abs_unwrap(-1);
+  EXPECT_FALSE(err.ok());
+  EXPECT_EQ(err.error(), Error::InvalidArgument);
+}
+
+TEST(ErrorHandlingTest, EtUnwrapExpressionFormWithMessage) {
+  executorch::runtime::runtime_init();
+
+  auto ok = double_abs_unwrap_with_message(4);
+  ASSERT_TRUE(ok.ok());
+  EXPECT_EQ(*ok, 8u);
+
+  auto err = double_abs_unwrap_with_message(-2);
+  EXPECT_FALSE(err.ok());
+  EXPECT_EQ(err.error(), Error::InvalidArgument);
 }
 
 TEST(ErrorHandlingTest, ResultNoCopy) {

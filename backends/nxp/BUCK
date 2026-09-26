@@ -31,6 +31,7 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:pass_manager",
+        "//executorch/exir/passes:fold_redundant_qdq_pass",
     ],
 )
 
@@ -56,6 +57,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":aten_passes",
         "//caffe2:torch",
+        "//executorch/backends/transforms:quantize_fused_convbn_bias_pass",
         "//pytorch/ao:torchao",  # @manual
     ],
 )
@@ -65,6 +67,8 @@ fbcode_target(_kind = runtime.python_library,
     srcs = glob(["backend/**/*.py"]),
     deps = [
         "fbsource//third-party/pypi/neutron_converter:neutron_converter",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
     ],
 )
 
@@ -74,7 +78,6 @@ fbcode_target(_kind = runtime.python_library,
         "nxp_backend.py",
         "neutron_partitioner.py",
         "neutron_node_extraction.py",
-        "neutron_pass_manager.py",
     ],
     deps = [
         ":neutron_sdk",

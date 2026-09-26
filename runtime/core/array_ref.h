@@ -30,6 +30,7 @@
 #include <cstdint>
 
 #include <c10/util/irange.h>
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
@@ -161,7 +162,8 @@ class ArrayRef final {
   /// slice(n, m) - Take M elements of the array starting at element N
   ArrayRef<T> slice(size_t N, size_t M) const {
     // cant slice longer then the array
-    ET_CHECK(N + M <= size());
+    size_t end = 0;
+    ET_CHECK(!c10::add_overflows(N, M, &end) && end <= size());
     return ArrayRef<T>(data() + N, M);
   }
 

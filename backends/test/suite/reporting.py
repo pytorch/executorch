@@ -60,6 +60,8 @@ OP_COUNT_IGNORED_OPS = {
 class TestResult(IntEnum):
     """Represents the result of a test case run, indicating success or a specific failure reason."""
 
+    __test__ = False
+
     SUCCESS = 0
     """ The test succeeded with the backend delegate part or all of the graph. """
 
@@ -155,6 +157,8 @@ class TestCaseSummary:
     Contains summary results for the execution of a single test case.
     """
 
+    __test__ = False
+
     backend: str
     """ The name of the target backend. """
 
@@ -192,10 +196,10 @@ class TestCaseSummary:
     """ The total runtime of the to_edge_transform_and_lower stage, or none, if the test did not run the quantize stage. """
 
     delegated_op_counts: Counter | None = None
-    """ The number of delegated occurances of each operator in the graph. """
+    """ The number of delegated occurrences of each operator in the graph. """
 
     undelegated_op_counts: Counter | None = None
-    """ The number of undelegated occurances of each operator in the graph. """
+    """ The number of undelegated occurrences of each operator in the graph. """
 
     pte_size_bytes: int | None = None
     """ The size of the PTE file in bytes. """
@@ -210,6 +214,8 @@ class TestCaseSummary:
 
 @dataclass
 class TestSessionState:
+    __test__ = False
+
     seed: int
 
     # True if the CSV header has been written to report__path.

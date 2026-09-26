@@ -13,12 +13,14 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <new>
 
 #include <executorch/runtime/platform/compat_unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -26,7 +28,7 @@
 // Some platforms (e.g. Xtensa) do not support pread() that we use to read the
 // file at different offsets simultaneously from multiple threads not affecting
 // each other. We list them below and use a workaround for them.
-#if defined(__xtensa__)
+#if defined(__xtensa__) || defined(__hexagon__)
 #define ET_HAVE_PREAD 0
 #endif // defined(__xtensa__)
 
@@ -42,7 +44,32 @@ namespace executorch {
 namespace extension {
 
 namespace {
+inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
+  // Use the nothrow form so allocation failure returns nullptr instead of
+  // throwing std::bad_alloc. ExecuTorch is built exception-free and callers
+  // (e.g. FileDataLoader::load) check for nullptr and return
+  // Error::MemoryAllocationFailed; a throw here would unwind with no landing
+  // pad and abort the process.
+  return ::operator new(size, alignment, std::nothrow);
+}
 
+inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
+  return ::operator delete(ptr, alignment);
+}
+
+/**
+ * FreeableBuffer::FreeFn-compatible callback.
+ *
+ * `data` is the original buffer pointer.
+ * `context` is the original alignment.
+ *
+ * `size` is unused.
+ */
+void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
+  et_aligned_free(
+      data,
+      static_cast<std::align_val_t>(reinterpret_cast<uintptr_t>(context)));
+}
 /**
  * Returns true if the value is an integer power of 2.
  */
@@ -54,7 +81,7 @@ static bool is_power_of_2(size_t value) {
 FileDataLoader::~FileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
-  std::free(const_cast<char*>(file_name_));
+  et_aligned_free(const_cast<char*>(file_name_), alignment_);
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
   if (fd_ == -1) {
@@ -99,43 +126,20 @@ Result<FileDataLoader> FileDataLoader::from(
     return Error::AccessFailed;
   }
   size_t file_size = st.st_size;
-
   // Copy the filename so we can print better debug messages if reads fail.
-  const char* file_name_copy = ::strdup(file_name);
+  size_t file_name_len = ::strlen(file_name) + 1;
+  char* file_name_copy =
+      (char*)et_aligned_alloc(file_name_len, std::align_val_t(alignment));
+
   if (file_name_copy == nullptr) {
     ET_LOG(Error, "strdup(%s) failed", file_name);
     ::close(fd);
     return Error::MemoryAllocationFailed;
   }
+  ::strcpy(file_name_copy, file_name);
 
   return FileDataLoader(fd, file_size, alignment, file_name_copy);
 }
-
-namespace {
-
-inline void* et_aligned_alloc(size_t size, std::align_val_t alignment) {
-  return ::operator new(size, alignment);
-}
-
-inline void et_aligned_free(void* ptr, std::align_val_t alignment) {
-  return ::operator delete(ptr, alignment);
-}
-
-/**
- * FreeableBuffer::FreeFn-compatible callback.
- *
- * `data` is the original buffer pointer.
- * `context` is the original alignment.
- *
- * `size` is unused.
- */
-void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
-  et_aligned_free(
-      data,
-      static_cast<std::align_val_t>(reinterpret_cast<uintptr_t>(context)));
-}
-
-} // namespace
 
 Result<FreeableBuffer> FileDataLoader::load(
     size_t offset,
@@ -146,10 +150,12 @@ Result<FreeableBuffer> FileDataLoader::load(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
+  size_t total_size;
+  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      !overflow && total_size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu",
+      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
       file_name_,
       offset,
       size,
@@ -207,10 +213,12 @@ ET_NODISCARD Error FileDataLoader::load_into(
       fd_ >= 0,
       InvalidState,
       "Uninitialized");
+  size_t total_size;
+  bool overflow = c10::add_overflows(offset, size, &total_size);
   ET_CHECK_OR_RETURN_ERROR(
-      offset + size <= file_size_,
+      !overflow && total_size <= file_size_,
       InvalidArgument,
-      "File %s: offset %zu + size %zu > file_size_ %zu",
+      "File %s: offset %zu + size %zu > file_size_ %zu, or overflow detected",
       file_name_,
       offset,
       size,

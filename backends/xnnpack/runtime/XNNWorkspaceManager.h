@@ -58,6 +58,18 @@ class XNNWorkspaceManager {
   runtime::Result<std::shared_ptr<XNNWorkspace>> get_or_create_workspace(
       uintptr_t program_id) const;
 
+  /**
+   * Retrieve a workspace for the given program ID, using the specified sharing
+   * mode instead of the stored mode. A workspace will be created if needed.
+   *
+   * @param program_id The ID of the program requesting a workspace.
+   * @param mode The workspace sharing mode to use.
+   * @return A Result containing a shared_ptr to the workspace, or an error.
+   */
+  runtime::Result<std::shared_ptr<XNNWorkspace>> get_or_create_workspace(
+      uintptr_t program_id,
+      WorkspaceSharingMode mode) const;
+
  private:
   // The active sharing mode. Changes to this affect only models loaded after
   // the change.

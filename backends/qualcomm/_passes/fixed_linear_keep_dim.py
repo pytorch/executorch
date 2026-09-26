@@ -91,5 +91,4 @@ class FixedLinearKeepDim(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         self._fixed_keep_dim(graph_module)
         dead_code_elimination_pass(graph_module)
-        graph_module.recompile()
         return PassResult(graph_module, True)

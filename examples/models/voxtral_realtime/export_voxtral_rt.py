@@ -12,21 +12,28 @@ Produces a single .pte with three methods:
   - token_embedding: token_ids (1, seq_len) -> embeds (1, seq_len, 3072)
 
 With --streaming, produces a streaming .pte instead:
-  - encode_audio_chunk: mel_chunk (1,128,8) + conv states + enc_pos -> audio_embeds + new states
+  - encode_audio_chunk: mel_chunk (1,128,8) + enc_pos (4,) -> audio_embeds (1,1,3072)
   - text_decoder:       same as above
   - token_embedding:    same as above
 
 Backend support:
   - XNNPACK (default): Uses custom SDPA op (torch.ops.llama.custom_sdpa) for optimal performance
-  - Metal/AOTI: Automatically switches to standard PyTorch SDPA (F.scaled_dot_product_attention)
-                for text_decoder to avoid AOTI compilation issues. Uses Dim.AUTO for audio encoder
-                dynamic shapes (explicit bounds cause issues with AOTI). All components run on Metal GPU.
+  - Metal/AOTI: Uses MetalSDPA (_scaled_dot_product_attention_math_for_mps) for both text_decoder
+                and streaming encoder (transpose_kv=True), avoiding custom_sdpa which is
+                incompatible with AOTI. Uses Dim.AUTO for audio encoder dynamic shapes
+                (explicit bounds cause issues with AOTI).
+  - CUDA/ROCm AOTI: Uses StandardSDPA (F.scaled_dot_product_attention with GQA expansion) for
+                    text_decoder and streaming encoder (transpose_kv=True). Compiles through
+                    AOTInductor for the selected GPU runtime. CUDA supports int4 quantization via
+                    the _weight_int4pack_mm fallback kernel.
   - Portable: Uses custom SDPA like XNNPACK
 
 Usage:
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602
     python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --streaming
-    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend metal --dtype bf16 --qlinear-encoder fpa4w --qlinear fpa4w
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend cuda --qlinear 4w
+    python export_voxtral_rt.py --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 --backend rocm --dtype bf16 --streaming
 """
 
 import argparse
@@ -34,9 +41,7 @@ import os
 
 import torch
 import torch.nn as nn
-
 from executorch.examples.models.voxtral_realtime.model import load_model
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -44,7 +49,6 @@ from executorch.exir import (
 )
 from executorch.exir.passes import MemoryPlanningPass
 from torch.export import Dim, export
-
 
 # ---------------------------------------------------------------------------
 # Export wrappers
@@ -94,41 +98,98 @@ class TokenEmbeddingExport(nn.Module):
         return self.tok_embeddings(token_ids)
 
 
+def _pack_aoti_int4_weights(module, *, use_matvec=False):
+    from executorch.backends.cuda.aoti_packed_int4_tensor import (
+        pack_int4_weights_for_aoti,
+    )
+
+    packed = pack_int4_weights_for_aoti(module, use_matvec=use_matvec)
+    if packed == 0:
+        raise RuntimeError("TorchAO did not produce any packable INT4 weights")
+    print(f"  Packed {packed} linear weights for the AOTI Triton W4 path")
+    return packed
+
+
+def _validate_aoti_int4_graph(program, packed_count):
+    packed_targets = {
+        torch.ops.triton.int4_matmul.default,
+        torch.ops.triton.int4_matvec_bf16.default,
+    }
+    graph_count = sum(
+        node.op == "call_function" and node.target in packed_targets
+        for node in program.graph.nodes
+    )
+    if graph_count < packed_count:
+        raise RuntimeError(
+            "Packed INT4 graph mismatch: "
+            f"packed {packed_count} linear weights but exported only "
+            f"{graph_count} Triton W4 nodes"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
 
 
 def _export_decoder_and_embedding(
-    programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    programs,
+    model,
+    max_seq_len,
+    qlinear,
+    qlinear_group_size,
+    qlinear_packing_format,
+    qembedding,
+    qembedding_group_size,
+    use_aoti_packed_int4=False,
+    device="cpu",
 ):
     """Export text_decoder and token_embedding into programs dict."""
     from executorch.extension.llm.export.quantize import quantize_model_
 
-    param_dtype = torch.float32
+    param_dtype = next(model.parameters()).dtype
 
     print("\nExporting text_decoder...")
     text_decoder = TextDecoderExport(model)
     text_decoder.eval()
 
+    packed_linear_count = 0
+    use_packed_matvec = use_aoti_packed_int4 and qlinear == "4w"
     if qlinear:
         print(f"  Quantizing decoder ({qlinear})...")
         quantize_model_(
             text_decoder,
             qlinear_config=qlinear,
             qlinear_group_size=qlinear_group_size,
+            qlinear_packing_format=qlinear_packing_format,
         )
+        if use_packed_matvec:
+            packed_linear_count = _pack_aoti_int4_weights(
+                text_decoder,
+                use_matvec=True,
+            )
 
-    seq_dim = Dim("seq_len", min=1, max=max_seq_len)
-    sample_embeds = torch.randn(1, 4, model.config.dim, dtype=param_dtype)
-    sample_pos = torch.arange(4, dtype=torch.long)
+    # Native runners decode one token per call; static M=1 enables matvec dispatch.
+    if use_packed_matvec:
+        sample_embeds = torch.randn(
+            1, 1, model.config.dim, dtype=param_dtype, device=device
+        )
+        sample_pos = torch.zeros(1, dtype=torch.long, device=device)
+        dynamic_shapes = None
+    else:
+        seq_dim = Dim("seq_len", min=1, max=max_seq_len)
+        sample_embeds = torch.randn(
+            1, 4, model.config.dim, dtype=param_dtype, device=device
+        )
+        sample_pos = torch.arange(4, dtype=torch.long, device=device)
+        dynamic_shapes = {
+            "input_embeds": {1: seq_dim},
+            "cache_position": {0: seq_dim},
+        }
     programs["text_decoder"] = export(
         text_decoder,
         (sample_embeds, sample_pos),
-        dynamic_shapes={
-            "input_embeds": {1: seq_dim},
-            "cache_position": {0: seq_dim},
-        },
+        dynamic_shapes=dynamic_shapes,
         strict=True,
     )
     print(f"  text_decoder exported (sample input: {sample_embeds.shape})")
@@ -142,10 +203,11 @@ def _export_decoder_and_embedding(
         quantize_model_(
             tok_emb,
             qembedding_config=qembedding,
+            qembedding_group_size=qembedding_group_size,
         )
 
     tok_seq_dim = Dim("tok_seq_len", min=1, max=max_seq_len)
-    sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long)
+    sample_ids = torch.tensor([[0, 1, 2, 3]], dtype=torch.long, device=device)
     programs["token_embedding"] = export(
         tok_emb,
         (sample_ids,),
@@ -153,49 +215,62 @@ def _export_decoder_and_embedding(
         strict=True,
     )
     print(f"  token_embedding exported (sample input: {sample_ids.shape})")
+    return packed_linear_count
 
 
 def export_all(
     model,
     max_seq_len,
     qlinear_encoder=None,
-    qlinear_encoder_group_size=32,
+    qlinear_encoder_group_size=None,
+    qlinear_encoder_packing_format=None,
     qlinear=None,
-    qlinear_group_size=32,
+    qlinear_group_size=None,
+    qlinear_packing_format=None,
     qembedding=None,
+    qembedding_group_size=None,
+    use_aoti_packed_int4=False,
     backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
 
     programs = {}
-    param_dtype = torch.float32
+    packed_linear_counts = {}
+    param_dtype = next(model.parameters()).dtype
+    device = "cuda:0" if backend == "cuda" else "cpu"
 
     # 1. Audio encoder
     print("\nExporting audio_encoder...")
     audio_encoder = AudioEncoderExport(model)
     audio_encoder.eval()
 
+    packed_linear_count = 0
     if qlinear_encoder:
         print(f"  Quantizing encoder ({qlinear_encoder})...")
         quantize_model_(
             audio_encoder,
             qlinear_config=qlinear_encoder,
             qlinear_group_size=qlinear_encoder_group_size,
+            qlinear_packing_format=qlinear_encoder_packing_format,
         )
+        if use_aoti_packed_int4 and qlinear_encoder == "4w":
+            packed_linear_count = _pack_aoti_int4_weights(audio_encoder)
 
-    # For Metal/AOTI: use max size as sample and Dim.AUTO (explicit bounds cause issues)
+    # For Metal/CUDA/AOTI: use max size as sample and Dim.AUTO (explicit bounds cause issues)
     # For XNNPACK: use small sample with explicit bounds
-    if backend == "metal":
+    if backend in ("metal", "cuda"):
         max_t_mel = 24000  # 3000 * 8
         sample_mel = torch.randn(
-            1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype
+            1, model.config.num_mel_bins, max_t_mel, dtype=param_dtype, device=device
         )
         dynamic_shapes = {"mel": {2: Dim.AUTO}}
     else:
         _t_mel_base = Dim("_t_mel_base", min=1, max=3000)
         t_mel_dim = 8 * _t_mel_base
-        sample_mel = torch.randn(1, model.config.num_mel_bins, 160, dtype=param_dtype)
+        sample_mel = torch.randn(
+            1, model.config.num_mel_bins, 160, dtype=param_dtype, device=device
+        )
         dynamic_shapes = {"mel": {2: t_mel_dim}}
 
     programs["audio_encoder"] = export(
@@ -204,12 +279,25 @@ def export_all(
         dynamic_shapes=dynamic_shapes,
         strict=True,
     )
+    if packed_linear_count:
+        packed_linear_counts["audio_encoder"] = packed_linear_count
     print(f"  audio_encoder exported (sample input: {sample_mel.shape})")
 
     # 2-3. Text decoder + token embedding
-    _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    packed_linear_count = _export_decoder_and_embedding(
+        programs,
+        model,
+        max_seq_len,
+        qlinear,
+        qlinear_group_size,
+        qlinear_packing_format,
+        qembedding,
+        qembedding_group_size,
+        use_aoti_packed_int4=use_aoti_packed_int4,
+        device=device,
     )
+    if packed_linear_count:
+        packed_linear_counts["text_decoder"] = packed_linear_count
 
     metadata = {
         "sample_rate": 16000,
@@ -220,9 +308,10 @@ def export_all(
         "dim": model.config.dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "sliding_window": model.config.sliding_window,
     }
 
-    return programs, metadata
+    return programs, metadata, packed_linear_counts
 
 
 def export_streaming(
@@ -230,17 +319,23 @@ def export_streaming(
     max_seq_len,
     max_enc_len=750,
     qlinear_encoder=None,
-    qlinear_encoder_group_size=32,
+    qlinear_encoder_group_size=None,
+    qlinear_encoder_packing_format=None,
     qlinear=None,
-    qlinear_group_size=32,
+    qlinear_group_size=None,
+    qlinear_packing_format=None,
     qembedding=None,
+    qembedding_group_size=None,
+    use_aoti_packed_int4=False,
     backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
     from executorch.extension.llm.export.quantize import quantize_model_
 
     programs = {}
-    param_dtype = torch.float32
+    packed_linear_counts = {}
+    param_dtype = next(model.parameters()).dtype
+    device = "cuda:0" if backend == "cuda" else "cpu"
 
     # 1. Streaming audio encoder
     print("\nExporting encode_audio_chunk...")
@@ -249,35 +344,53 @@ def export_streaming(
     )
 
     streaming_enc = StreamingAudioEncoderExport(model, max_enc_len=max_enc_len)
+    streaming_enc.to(device=device, dtype=param_dtype)
     streaming_enc.eval()
 
+    packed_linear_count = 0
     if qlinear_encoder:
         print(f"  Quantizing encoder ({qlinear_encoder})...")
         quantize_model_(
             streaming_enc,
             qlinear_config=qlinear_encoder,
             qlinear_group_size=qlinear_encoder_group_size,
+            qlinear_packing_format=qlinear_encoder_packing_format,
         )
+        if use_aoti_packed_int4 and qlinear_encoder == "4w":
+            packed_linear_count = _pack_aoti_int4_weights(streaming_enc)
 
-    sample_mel_chunk = torch.randn(1, model.config.num_mel_bins, 8, dtype=param_dtype)
-    sample_conv1_state = torch.zeros(1, model.config.num_mel_bins, 2, dtype=param_dtype)
-    sample_conv2_state = torch.zeros(1, model.config.enc_dim, 2, dtype=param_dtype)
-    sample_enc_pos = torch.arange(4, dtype=torch.long)
+    sample_mel_chunk = torch.randn(
+        1, model.config.num_mel_bins, 8, dtype=param_dtype, device=device
+    )
+    sample_enc_pos = torch.arange(4, dtype=torch.long, device=device)
 
     programs["encode_audio_chunk"] = export(
         streaming_enc,
-        (sample_mel_chunk, sample_conv1_state, sample_conv2_state, sample_enc_pos),
+        (sample_mel_chunk, sample_enc_pos),
         dynamic_shapes=None,
         strict=True,
     )
+    if packed_linear_count:
+        packed_linear_counts["encode_audio_chunk"] = packed_linear_count
     print(
         f"  encode_audio_chunk exported (fixed shapes: mel_chunk={sample_mel_chunk.shape})"
     )
 
     # 2-3. Text decoder + token embedding
-    _export_decoder_and_embedding(
-        programs, model, max_seq_len, qlinear, qlinear_group_size, qembedding
+    packed_linear_count = _export_decoder_and_embedding(
+        programs,
+        model,
+        max_seq_len,
+        qlinear,
+        qlinear_group_size,
+        qlinear_packing_format,
+        qembedding,
+        qembedding_group_size,
+        use_aoti_packed_int4=use_aoti_packed_int4,
+        device=device,
     )
+    if packed_linear_count:
+        packed_linear_counts["text_decoder"] = packed_linear_count
 
     # Derive STFT overlap from audio parameters.
     # Left overlap: next multiple of hop_length >= n_fft/2
@@ -306,6 +419,7 @@ def export_streaming(
         "enc_dim": model.config.enc_dim,
         "vocab_size": model.config.vocab_size,
         "max_seq_len": max_seq_len,
+        "sliding_window": model.config.sliding_window,
         "streaming": 1,
         "step_samples": step_samples,
         "chunk_mel_len": chunk_mel_len,
@@ -317,7 +431,7 @@ def export_streaming(
         "mel_skip_frames": mel_skip_frames,
     }
 
-    return programs, metadata
+    return programs, metadata, packed_linear_counts
 
 
 # Custom decomposition for Metal backend compatibility.
@@ -333,8 +447,16 @@ def _linear_bias_decomposition(input, weight, bias=None):
     return out
 
 
-def lower_to_executorch(programs, metadata, backend="xnnpack"):
+def lower_to_executorch(
+    programs,
+    metadata,
+    backend="xnnpack",
+    codesign_identity=None,
+    packed_linear_counts=None,
+):
     """Lower exported programs to ExecuTorch."""
+    transform_passes = None
+
     if backend == "xnnpack":
         from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
             XnnpackDynamicallyQuantizedPartitioner,
@@ -349,27 +471,69 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
     elif backend == "metal":
         from executorch.backends.apple.metal.metal_backend import MetalBackend
         from executorch.backends.apple.metal.metal_partitioner import MetalPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
 
         print("\nLowering to ExecuTorch with Metal...")
 
         # Run decompositions for Metal backend
         updated_programs = {}
+        decomp_table = torch.export.default_decompositions()
+        decomp_table[torch.ops.aten.linear.default] = _linear_bias_decomposition
         for key, ep in programs.items():
-            updated_programs[key] = ep.run_decompositions(
-                {torch.ops.aten.linear.default: _linear_bias_decomposition}
-            )
+            updated_programs[key] = ep.run_decompositions(decomp_table)
         programs = updated_programs
 
         partitioner = {}
         for key in programs:
             compile_specs = [MetalBackend.generate_method_name_compile_spec(key)]
+            if codesign_identity:
+                compile_specs.append(
+                    CompileSpec("codesign_identity", codesign_identity.encode("utf-8"))
+                )
             partitioner[key] = [MetalPartitioner(compile_specs)]
+    elif backend in ("cuda", "cuda-windows", "rocm"):
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from torch._inductor.decomposition import conv1d_to_conv2d
+
+        backend_name = {
+            "cuda": "CUDA",
+            "cuda-windows": "CUDA (Windows)",
+            "rocm": "ROCm",
+        }[backend]
+        print(f"\nLowering to ExecuTorch with {backend_name}...")
+
+        # Run conv1d decomposition for AOTI GPU backends
+        updated_programs = {}
+        for key, ep in programs.items():
+            updated_programs[key] = ep.run_decompositions(
+                {torch.ops.aten.conv1d.default: conv1d_to_conv2d}
+            )
+        programs = updated_programs
+        for key, packed_count in (packed_linear_counts or {}).items():
+            _validate_aoti_int4_graph(programs[key], packed_count)
+
+        partitioner = {}
+        for key in programs:
+            compile_specs = [CudaBackend.generate_method_name_compile_spec(key)]
+            if backend == "cuda-windows":
+                compile_specs.append(CompileSpec("platform", b"windows"))
+            partitioner[key] = [CudaPartitioner(compile_specs)]
+    elif backend == "mlx":
+        from executorch.backends.mlx.partitioner import MLXPartitioner
+        from executorch.backends.mlx.passes import get_default_passes
+
+        print("\nLowering to ExecuTorch with MLX...")
+        partitioner = {key: [MLXPartitioner()] for key in programs}
+        transform_passes = get_default_passes()
     else:
         print("\nLowering to ExecuTorch (portable)...")
         partitioner = []
 
     et_prog = to_edge_transform_and_lower(
         programs,
+        transform_passes=transform_passes,
         partitioner=partitioner,
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False,
@@ -392,6 +556,41 @@ def lower_to_executorch(programs, metadata, backend="xnnpack"):
 # ---------------------------------------------------------------------------
 
 
+def _validate_rocm_args(parser, args):
+    if torch.version.hip is None:
+        parser.error("--backend=rocm requires a ROCm PyTorch build")
+    if not torch.cuda.is_available():
+        parser.error("--backend=rocm requires a visible AMD GPU")
+    if args.dtype != "bf16":
+        parser.error("--backend=rocm currently requires --dtype=bf16")
+    if args.qlinear not in (None, "4w"):
+        parser.error("ROCm decoder quantization currently supports only 4w")
+    if args.qlinear_encoder not in (None, "4w"):
+        parser.error("ROCm encoder quantization currently supports only 4w")
+    if args.qembedding not in (None, "8w"):
+        parser.error("ROCm embedding quantization currently supports only 8w")
+    if (
+        args.qlinear_packing_format == "tile_packed_to_4d"
+        or args.qlinear_encoder_packing_format == "tile_packed_to_4d"
+    ):
+        parser.error(
+            "tile_packed_to_4d requires a CUDA-only int4 fallback; "
+            "omit the packing format for ROCm"
+        )
+
+
+def _validate_export_args(parser, args, backend_for_export):
+    if args.backend == "rocm":
+        _validate_rocm_args(parser, args)
+
+    if args.qlinear == "fpa4w" and backend_for_export != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+    if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
+        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
+    if args.sliding_window is not None and not args.streaming:
+        parser.error("--sliding-window only applies to --streaming mode")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Export Voxtral Realtime to ExecuTorch"
@@ -404,7 +603,15 @@ def main():
     parser.add_argument(
         "--backend",
         default="xnnpack",
-        choices=["portable", "xnnpack", "metal"],
+        choices=[
+            "portable",
+            "xnnpack",
+            "mlx",
+            "metal",
+            "cuda",
+            "cuda-windows",
+            "rocm",
+        ],
         help="Backend for acceleration (default: xnnpack)",
     )
     parser.add_argument(
@@ -427,32 +634,50 @@ def main():
     parser.add_argument(
         "--qlinear",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize decoder linear layers.",
     )
     parser.add_argument(
         "--qlinear-group-size",
         type=int,
-        default=32,
+        default=None,
         help="Group size for decoder linear quantization (default: 32).",
+    )
+    parser.add_argument(
+        "--qlinear-packing-format",
+        default=None,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for decoder 4w quantization (CUDA: tile_packed_to_4d).",
     )
     parser.add_argument(
         "--qlinear-encoder",
         default=None,
-        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w"],
+        choices=["4w", "8w", "8da4w", "8da8w", "fpa4w", "nvfp4"],
         help="Quantize encoder linear layers (separate from decoder).",
     )
     parser.add_argument(
         "--qlinear-encoder-group-size",
         type=int,
-        default=32,
+        default=None,
         help="Group size for encoder linear quantization (default: 32).",
+    )
+    parser.add_argument(
+        "--qlinear-encoder-packing-format",
+        default=None,
+        choices=["tile_packed_to_4d"],
+        help="Packing format for encoder 4w quantization (CUDA: tile_packed_to_4d).",
     )
     parser.add_argument(
         "--qembedding",
         default=None,
-        choices=["8w"],
-        help="Quantize embedding layers (8-bit weight-only).",
+        choices=["4w", "8w", "nvfp4"],
+        help="Quantize embedding layers.",
+    )
+    parser.add_argument(
+        "--qembedding-group-size",
+        type=int,
+        default=None,
+        help="Group size for embedding quantization (default: 0 = per-channel).",
     )
     parser.add_argument(
         "--streaming",
@@ -465,25 +690,52 @@ def main():
         default=750,
         help="Encoder sliding window size for streaming (default: 750).",
     )
+    parser.add_argument(
+        "--sliding-window",
+        type=int,
+        default=None,
+        help="Decoder sliding window size for streaming (default: from params.json, "
+        "typically 8192). Smaller values reduce memory and improve decode speed "
+        "but limit how far back the decoder can attend. Only used with --streaming.",
+    )
+    parser.add_argument(
+        "--dtype",
+        default="fp32",
+        choices=["fp32", "bf16"],
+        help="Model dtype (default: fp32).",
+    )
+    parser.add_argument(
+        "--codesign-identity",
+        default=None,
+        help="macOS code signing identity for the Metal backend .so. "
+        "Use '-' for ad-hoc or a Developer ID for notarized apps. "
+        "If omitted, the .so is not signed.",
+    )
     args = parser.parse_args()
-
-    # Validate fpa4w quantization requires Metal backend
-    if args.qlinear == "fpa4w" and args.backend != "metal":
-        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
-    if args.qlinear_encoder == "fpa4w" and args.backend != "metal":
-        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
+    backend_for_export = (
+        "cuda" if args.backend in ("cuda-windows", "rocm") else args.backend
+    )
+    _validate_export_args(parser, args, backend_for_export)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load model
+    model_dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
+
     print("Loading model...")
-    use_standard_attention = args.backend == "metal"
     model = load_model(
         args.model_path,
         max_seq_len=args.max_seq_len,
         n_delay_tokens=args.delay_tokens,
-        use_standard_attention=use_standard_attention,
+        dtype=model_dtype,
+        backend=backend_for_export,
+        streaming=args.streaming,
+        sliding_window=args.sliding_window,
     )
+
+    # Move to CUDA for CUDA backend export (AOTInductor needs CUDA tensors)
+    if backend_for_export == "cuda":
+        print("Moving model to CUDA...")
+        model.to(torch.device("cuda:0"))
 
     # Untie output/embedding weights before quantization so each layer gets
     # its own quantization config (embedding: 8w, output linear: 8da4w).
@@ -497,20 +749,34 @@ def main():
     quant_args = {
         "qlinear_encoder": args.qlinear_encoder,
         "qlinear_encoder_group_size": args.qlinear_encoder_group_size,
+        "qlinear_encoder_packing_format": args.qlinear_encoder_packing_format,
         "qlinear": args.qlinear,
         "qlinear_group_size": args.qlinear_group_size,
+        "qlinear_packing_format": args.qlinear_packing_format,
         "qembedding": args.qembedding,
-        "backend": args.backend,
+        "qembedding_group_size": args.qembedding_group_size,
+        "use_aoti_packed_int4": args.backend == "rocm",
+        "backend": backend_for_export,
     }
     if args.streaming:
-        programs, metadata = export_streaming(
+        programs, metadata, packed_linear_counts = export_streaming(
             model, args.max_seq_len, args.max_enc_len, **quant_args
         )
     else:
-        programs, metadata = export_all(model, args.max_seq_len, **quant_args)
+        programs, metadata, packed_linear_counts = export_all(
+            model, args.max_seq_len, **quant_args
+        )
+
+    metadata["delay_tokens"] = args.delay_tokens
 
     # Lower
-    et = lower_to_executorch(programs, metadata, backend=args.backend)
+    et = lower_to_executorch(
+        programs,
+        metadata,
+        backend=args.backend,
+        codesign_identity=args.codesign_identity,
+        packed_linear_counts=packed_linear_counts,
+    )
 
     # Save
     pte_path = os.path.join(args.output_dir, "model.pte")
@@ -519,6 +785,11 @@ def main():
         et.write_to_file(f)
     size_mb = os.path.getsize(pte_path) / (1024 * 1024)
     print(f"Saved {size_mb:.1f} MB")
+
+    # Write tensor data for AOTI GPU backends (.ptd file with compiled .so and weights)
+    if et._tensor_data:
+        et.write_tensor_data_to_file(args.output_dir)
+        print(f"Saved tensor data to {args.output_dir}/")
 
     print("\nDone!")
 

@@ -144,30 +144,14 @@ def quantize(  # noqa C901
         from torchao.utils import unwrap_tensor_subclass
 
         def filter_fn(m, fqn):
-            # Check if it's a regular nn.Linear
-            is_linear = isinstance(m, nn.Linear)
-
-            # Check if it's a LoRALinear (which has a base weight parameter to quantize)
-            is_lora_linear = False
-            try:
-                from executorch.examples.models.llama.lora import LoRALinear
-
-                is_lora_linear = isinstance(m, LoRALinear)
-            except ImportError:
-                pass
-
-            # Check if the weight shape is compatible with group size
-            has_shape_compatible_with_group_size = False
-            if is_linear or is_lora_linear:
-                if group_size == 0:
-                    has_shape_compatible_with_group_size = True
-                else:
-                    has_shape_compatible_with_group_size = (
-                        m.weight.shape[1] % group_size == 0
-                    )
-            return (
-                is_linear or is_lora_linear
-            ) and has_shape_compatible_with_group_size
+            if not isinstance(m, nn.Linear):
+                return False
+            parts = fqn.split(".")
+            if "lora_a" in parts or "lora_b" in parts:
+                return False
+            if group_size == 0:
+                return True
+            return m.weight.shape[1] % group_size == 0
 
         weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
@@ -206,7 +190,6 @@ def quantize(  # noqa C901
             ),
         )
         quantize_(model, q_config)
-        model = unwrap_tensor_subclass(model)
 
         return model
     else:
@@ -705,8 +688,11 @@ class QuantizedGroupEmbedding(torch.nn.Module):
         dtype=torch.half,
         packed=False,
         bitwidth: int = 8,
+        scales_precision: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        if scales_precision is None:
+            scales_precision = torch.float16
         if group_size is None or group_size == 0:
             group_size = embedding_dim
         self.group_size = group_size
@@ -745,12 +731,15 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             self.register_buffer(
                 "scales",
                 torch.ones(
-                    (vocab_size, groups_per_row), dtype=torch.float16, device=device
+                    (vocab_size, groups_per_row),
+                    dtype=scales_precision,
+                    device=device,
                 ),
             )
         else:
             self.register_buffer(
-                "scales", torch.ones((vocab_size,), dtype=torch.float16, device=device)
+                "scales",
+                torch.ones((vocab_size,), dtype=scales_precision, device=device),
             )
 
     @torch.no_grad()
@@ -771,6 +760,14 @@ class QuantizedGroupEmbedding(torch.nn.Module):
                 self.weight, self.scales, None, -8, 7, indices, dtype=self.dtype
             )
 
+    def _apply(self, fn, recurse=True):
+        """Override _apply to update self.dtype when the module is cast via .to(dtype)."""
+        super()._apply(fn, recurse)
+        # Probe the new dtype from the scales buffer, which gets cast by super()._apply.
+        if self.scales is not None:
+            self.dtype = self.scales.dtype
+        return self
+
 
 ############################ Source Transform Start #######################
 
@@ -778,8 +775,8 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
-    dtype_override: Optional[DType] = None,
     quantize_with_hqq: bool = True,
+    range_learning: bool = False,
 ):
     if embedding_quantize.startswith("torchao:"):
         from torchao.prototype.quantization.embedding.api import (
@@ -795,13 +792,14 @@ def get_quant_embedding_transform(
             is_asymmetric = True
         else:
             bitwidth, group_size, is_asymmetric = quant_args
+            # bool("false") is True, so the third field has to be parsed as text.
+            is_asymmetric = is_asymmetric.strip().lower() not in ("false", "0", "no")
 
         if group_size in ["none", "None", "0"]:
             group_size = 0
 
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        is_asymmetric = bool(is_asymmetric)
         weight_dtype = getattr(torch, f"int{bitwidth}")
         granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
         mapping_type = (
@@ -822,6 +820,7 @@ def get_quant_embedding_transform(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
                         mapping_type=mapping_type,
+                        range_learning=range_learning,
                     ).quantize(model)
             return model
 
@@ -833,13 +832,11 @@ def get_quant_embedding_transform(
     else:
         group_size = int(group_size)
     bitwidth = int(bitwidth)
-    torch_dtype = dtype_override.to_torch_dtype() if dtype_override else None
     return lambda model: EmbeddingQuantHandler(
         model,
         bitwidth=bitwidth,
         group_size=group_size,
         packed=(bitwidth in [2, 4]),
-        precision=torch_dtype,
         quantize_with_hqq=quantize_with_hqq,
     ).quantized_model()
 

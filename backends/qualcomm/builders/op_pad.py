@@ -18,7 +18,17 @@ from .qnn_constants import OpPad, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Pad(NodeVisitor):
-    target = ["aten.constant_pad_nd.default"]
+    target = [
+        "aten.constant_pad_nd.default",
+        "aten.reflection_pad1d.default",
+        "aten.reflection_pad2d.default",
+    ]
+
+    _SCHEME_MAP = {
+        "aten.constant_pad_nd.default": OpPad.Scheme.CONSTANT,
+        "aten.reflection_pad1d.default": OpPad.Scheme.MIRROR_REFLECT,
+        "aten.reflection_pad2d.default": OpPad.Scheme.MIRROR_REFLECT,
+    }
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -37,7 +47,6 @@ class Pad(NodeVisitor):
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        pad_input_tensors = [pad_inp_tensor_wrapper]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
@@ -47,7 +56,6 @@ class Pad(NodeVisitor):
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        pad_output_tensors = [output_tensor_wrapper]
 
         pad_amount_shape = [input_tensor.dim(), 2]
         # pytorch padding start from the last index
@@ -62,28 +70,30 @@ class Pad(NodeVisitor):
 
         if QCOM_AXIS_ORDER in node.meta:
             pad_amount = pad_amount[list(node.meta[QCOM_AXIS_ORDER])]
-        pad_amount_val = node.args[2]
 
+        scheme = self._SCHEME_MAP[node.target.__name__]
         pad_op = PyQnnManager.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpPad.op_name,
         )
-        pad_op.AddInputTensors(pad_input_tensors)
-        pad_op.AddOutputTensors(pad_output_tensors)
+        pad_op.AddInputTensors([pad_inp_tensor_wrapper])
+        pad_op.AddOutputTensors([output_tensor_wrapper])
 
-        # For now, we only support constant (0) padding due to torch implementation
         pad_op.AddScalarParam(
             OpPad.param_scheme,
             PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {QCOM_DATA: np.uint32(OpPad.Scheme.CONSTANT)},
+            {QCOM_DATA: np.uint32(scheme)},
         )
 
-        pad_op.AddScalarParam(
-            OpPad.param_pad_constant_value,
-            QNN_TENSOR_TYPE_MAP[type(pad_amount_val)],
-            {QCOM_DATA: pad_amount_val},
-        )
+        # pad_constant_value is only applicable for CONSTANT scheme, meaning the PAD op
+        if scheme == OpPad.Scheme.CONSTANT:
+            pad_amount_val = node.args[2]
+            pad_op.AddScalarParam(
+                OpPad.param_pad_constant_value,
+                QNN_TENSOR_TYPE_MAP[type(pad_amount_val)],
+                {QCOM_DATA: pad_amount_val},
+            )
 
         pad_op.AddTensorParam(
             OpPad.param_pad_amount,

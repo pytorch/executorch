@@ -32,12 +32,14 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "t_layout", "DEFAULT_LAYOUT")}
 const lowp ivec4 axis_map = unhash_axis_map(t_layout);
 const lowp int packed_dim = unhash_packed_dim(t_layout);
 
 void main() {
-  const int out_buf_idx = int(gl_GlobalInvocationID.x);
+  const int out_buf_idx = int(linear_idx_from_gid());
   // On the CPU, the number of elements is determined based on a buffer of int8
   // elements. However, on the GPU, since the int8 data type is not supported
   // each group of 4 elements is interepreted as 1 int32 element. Thus each

@@ -11,6 +11,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNPACKBackend.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -27,6 +28,7 @@ using executorch::extension::TensorPtr;
 using executorch::runtime::BackendOption;
 using executorch::runtime::BackendOptions;
 using executorch::runtime::Error;
+using executorch::runtime::LoadBackendOptionsMap;
 
 TensorPtr create_input_tensor(float val);
 void run_and_validate_two_models(
@@ -176,4 +178,73 @@ void set_and_check_workspace_sharing_mode(WorkspaceSharingMode mode) {
   status = get_option(xnnpack_backend_key, read_option);
 
   ASSERT_TRUE(std::get<int>(read_option.value) == static_cast<int>(mode));
+}
+
+static void load_and_run_model_with_runtime_specs(
+    const char* model_path_env,
+    const LoadBackendOptionsMap& backend_options_map,
+    float input_a,
+    float input_b,
+    float input_c,
+    float expected_output) {
+  Module module(std::getenv(model_path_env));
+
+  auto err = module.load(backend_options_map);
+  ASSERT_EQ(err, Error::Ok);
+
+  auto a = create_input_tensor(input_a);
+  auto b = create_input_tensor(input_b);
+  auto c = create_input_tensor(input_c);
+
+  auto result = module.forward({a, b, c});
+  ASSERT_TRUE(result.ok());
+
+  auto& output_tensor = result.get()[0].toTensor();
+  for (auto i = 0; i < output_tensor.numel(); ++i) {
+    ASSERT_EQ(output_tensor.const_data_ptr<float>()[i], expected_output);
+  }
+}
+
+TEST(RuntimeSpec, OverridesGlobalWorkspaceMode) {
+  executorch::runtime::runtime_init();
+
+  // Set global mode to Disabled.
+  set_and_check_workspace_sharing_mode(WorkspaceSharingMode::Disabled);
+
+  // Load a model with runtime spec overriding to Global.
+  BackendOptions<1> xnnpack_opts;
+  xnnpack_opts.set_option(
+      workspace_sharing_mode_option_key,
+      static_cast<int>(WorkspaceSharingMode::Global));
+  LoadBackendOptionsMap map;
+  map.set_options(xnnpack_backend_key, xnnpack_opts.view());
+
+  // The model should load and run correctly with the overridden mode.
+  // Expected output of add model: 2a + 2b + c = 2*1 + 2*2 + 3 = 9.
+  load_and_run_model_with_runtime_specs(
+      "ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH", map, 1.0, 2.0, 3.0, 9.0);
+
+  // Verify the global mode is still Disabled (not modified by runtime spec).
+  BackendOption read_option;
+  strcpy(read_option.key, workspace_sharing_mode_option_key);
+  read_option.value = -1;
+  auto status = get_option(xnnpack_backend_key, read_option);
+  ASSERT_EQ(status, Error::Ok);
+  ASSERT_EQ(
+      std::get<int>(read_option.value),
+      static_cast<int>(WorkspaceSharingMode::Disabled));
+}
+
+TEST(RuntimeSpec, NotSetFallsBackToGlobal) {
+  executorch::runtime::runtime_init();
+
+  // Set global mode to PerModel.
+  set_and_check_workspace_sharing_mode(WorkspaceSharingMode::PerModel);
+
+  // Load a model with empty runtime specs (no overrides).
+  LoadBackendOptionsMap map;
+
+  // The model should load and run correctly using the global PerModel mode.
+  load_and_run_model_with_runtime_specs(
+      "ET_XNNPACK_GENERATED_ADD_LARGE_PTE_PATH", map, 1.0, 2.0, 3.0, 9.0);
 }

@@ -2,10 +2,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-
 from typing import cast, Sequence, Set, Type, TypeAlias
 
+import torch
 import torch.fx
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -13,10 +12,19 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     expand_around_channel,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
+from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPool2dPass
+from executorch.backends.arm._passes.symbolic_value_range import (
+    evaluate_symbolic_expr_values,
+)
+from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
+)
+from executorch.backends.arm.tosa.specification import get_context_shape_env
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 Slices: TypeAlias = list[tuple[int, int, int]]
+SymIntLike = int | torch.SymInt
 
 conv2d_op = exir_ops.edge.aten.convolution.default
 max_pooling_op = exir_ops.edge.aten.max_pool2d.default
@@ -26,24 +34,176 @@ slice_op = exir_ops.edge.aten.slice_copy.Tensor
 valid_operators = [conv2d_op, max_pooling_op, avg_pooling_op]
 
 
-def conv_remainder(input_length, pad, dilation, weight, stride) -> int:
+def conv_remainder(
+    input_length: SymIntLike, pad: int, dilation: int, weight: int, stride: int
+) -> SymIntLike:
     """Returns the remainder of input_length; given the padding, dilation,
     stride, and kernel size.
     """
     return (input_length + 2 * pad - dilation * (weight - 1) - 1) % stride
 
 
-def pooling_remainder(input_size, pad, kernel_size, stride) -> int:
+def has_dynamic_conv_padding(conv_node: torch.fx.Node) -> bool:
+    """Return whether rewriting a convolution requires symbolic padding.
+
+    Args:
+        conv_node (torch.fx.Node): Convolution node to inspect.
+
+    Returns:
+        bool: Whether the convolution needs runtime padding.
+
+    """
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return True
+
+    input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
+    weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
+    spatial_rank = len(input_shape) - 2
+    strides = expand_around_channel(cast(Sequence[int] | int, stride_hw), spatial_rank)
+    pads = expand_around_channel(cast(Sequence[int] | int, pad_hw), spatial_rank)
+    dilations = expand_around_channel(
+        cast(Sequence[int] | int, dilation_hw), spatial_rank
+    )
+    shape_env = get_context_shape_env()
+
+    for axis_index, (stride, pad, dilation) in enumerate(zip(strides, pads, dilations)):
+        remainder = conv_remainder(
+            input_shape[axis_index + 2],
+            pad,
+            dilation,
+            weight_shape[axis_index + 2],
+            stride,
+        )
+        if not isinstance(remainder, torch.SymInt):
+            continue
+        exact_values = evaluate_symbolic_expr_values(remainder.node.expr, shape_env)
+        if exact_values is None or (len(exact_values) != 1 and max(exact_values) != 0):
+            return True
+
+    return False
+
+
+def pooling_remainder(
+    input_size: SymIntLike, pad: int, kernel_size: int, stride: int
+) -> SymIntLike:
     """Returns the remainder of input_length; given the padding, stride, and
     kernel size.
     """
     return (input_size + 2 * pad - kernel_size) % stride
 
 
-def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
-    slices = []
+def has_dynamic_pooling_padding(pooling_node: torch.fx.Node) -> bool:
+    """Return whether rewriting a pool requires symbolic padding.
 
-    input_node, weight, _, stride_hw, pad_hw, dilation_hw, _, _, _ = conv_node.args
+    Args:
+        pooling_node (torch.fx.Node): Pooling node to inspect.
+
+    Returns:
+        bool: Whether the pooling operation needs runtime padding.
+
+    """
+    input_node = cast(torch.fx.Node, pooling_node.args[0])
+    kernel_size = pooling_node.args[1]
+    stride = (
+        pooling_node.args[2]
+        if len(pooling_node.args) >= 3 and pooling_node.args[2]
+        else kernel_size
+    )
+    padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
+    ceil_mode_index = (
+        5
+        if pooling_node.target
+        in (
+            max_pooling_op,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        )
+        else 4
+    )
+    ceil_mode = (
+        pooling_node.args[ceil_mode_index]
+        if len(pooling_node.args) > ceil_mode_index
+        else False
+    )
+    input_shape = input_node.meta["val"].shape
+    kernel_sizes = expand_around_channel(cast(Sequence[int] | int, kernel_size), 2)
+    strides = expand_around_channel(cast(Sequence[int] | int, stride), 2)
+    pads = expand_around_channel(cast(Sequence[int] | int, padding), 2)
+    shape_env = get_context_shape_env()
+
+    for dim, (kernel, stride, pad) in enumerate(
+        zip(kernel_sizes, strides, pads), start=2
+    ):
+        adjusted_pad = adjust_pooling_pad_if_needed(
+            input_shape[dim], kernel, stride, pad, bool(ceil_mode)
+        )
+        if not isinstance(adjusted_pad, torch.SymInt):
+            continue
+        exact_values = evaluate_symbolic_expr_values(adjusted_pad.node.expr, shape_env)
+        if exact_values is None or len(exact_values) != 1:
+            return True
+
+    return False
+
+
+def _greater_than(input: SymIntLike, other: int) -> bool | torch.SymBool:
+    """Returns whether an int or SymInt is greater than another value."""
+    if isinstance(input, torch.SymInt):
+        shape_env = get_context_shape_env()
+        exact_values = evaluate_symbolic_expr_values(input.node.expr, shape_env)
+        if exact_values is not None:
+            return max(exact_values) > other
+        value_ranges = shape_env.bound_sympy(input.node.expr)
+        return value_ranges.upper > other
+    else:
+        return input > other
+
+
+def _get_slice_adjustment(
+    remainder: SymIntLike,
+    pad: int,
+    stride: int,
+) -> SymIntLike | None:
+    """Return the amount to slice from the end of a conv dimension.
+
+    The required trim is ``max(remainder - pad, 0)``. For symbolic shapes we
+    encode that clamp using only integer arithmetic that the TOSA shape
+    materializer already supports: a sum of floor-div terms over the possible
+    residue classes.
+
+    """
+    if not isinstance(remainder, torch.SymInt):
+        return remainder - pad if remainder > pad else None
+
+    shape_env = get_context_shape_env()
+    exact_values = evaluate_symbolic_expr_values(remainder.node.expr, shape_env)
+    if exact_values is not None:
+        adjustments = {max(value - pad, 0) for value in exact_values}
+        if len(adjustments) == 1:
+            exact_adjustment = next(iter(adjustments))
+            return exact_adjustment if exact_adjustment > 0 else None
+
+    if pad >= stride - 1:
+        return None
+
+    adjustment: SymIntLike | None = None
+    for threshold in range(pad + 1, stride):
+        term = (remainder + stride - threshold) // stride
+        adjustment = term if adjustment is None else adjustment + term
+
+    return adjustment
+
+
+def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
+    slices: Slices = []
+
+    input_node, weight, _, stride_hw, pad_hw, dilation_hw, transposed, _, _ = (
+        conv_node.args
+    )
+    if transposed:
+        return slices
     weight_shape = cast(torch.fx.Node, weight).meta["val"].shape
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
     spatial_rank = len(input_shape) - 2
@@ -59,8 +219,12 @@ def get_slices_convolution(conv_node: torch.fx.Node) -> Slices:
         remainder = conv_remainder(
             input_shape[dim], pad, dilation, weight_shape[dim], stride
         )
-        if remainder > pad:
-            adjustment = remainder - pad
+        adjustment = _get_slice_adjustment(
+            remainder,
+            pad,
+            stride,
+        )
+        if adjustment is not None:
             args = (dim, 0, input_shape[dim] - adjustment)
             slices.append(args)
 
@@ -72,7 +236,11 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
 
     input_node = pooling_node.args[0]
     kernel_size = pooling_node.args[1]
-    stride = pooling_node.args[2]
+    stride = (
+        pooling_node.args[2]
+        if len(pooling_node.args) >= 3 and pooling_node.args[2]
+        else kernel_size
+    )
     padding = pooling_node.args[3] if len(pooling_node.args) >= 4 else 0
 
     input_shape = cast(torch.fx.Node, input_node).meta["val"].shape
@@ -87,7 +255,7 @@ def get_slices_pooling(pooling_node: torch.fx.Node) -> Slices:
         remainder = pooling_remainder(
             input_shape[dim], pad_size, kernel_length, stride_length
         )
-        if remainder > pad_size:
+        if _greater_than(remainder, pad_size):
             adjustment = remainder - pad_size
             args = (dim, 0, input_shape[dim] - adjustment)
             slices.append(args)
@@ -187,11 +355,12 @@ class SizeAdjustInputPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = {
         RewriteConvPass,
+        RewriteMaxPool2dPass,
     }
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
-        modified_graph = False
+        modified = False
         for node in graph.nodes:
             if node.op != "call_function":
                 continue
@@ -206,18 +375,35 @@ class SizeAdjustInputPass(ArmPass):
 
             parent_node = node.args[0]
             with graph_module.graph.inserting_before(node):
+                # ``Graph.create_node`` rejects raw SymInts in
+                # call_function args. Aggregate every slice arg across
+                # all entries and lift via a single ``materialize_symints``
+                # call -- the helper walks the graph once for producer
+                # discovery, so a single call amortises that cost and lets
+                # symints with shared sub-expressions get hash-consed into
+                # one subgraph. Plain ints pass through unchanged.
+                flat = [a for args in slice_args for a in args]
+                materialized = iter(graph.materialize_symints(flat))
+                # Pop exactly len(args) values from the materialized iterator
+                # and pack them back into a tuple -- regroups the flat list
+                # of lifted values into the original (dim, start, end) shape.
+                lifted_slice_args = [
+                    tuple(next(materialized) for _ in args) for args in slice_args
+                ]
+
                 last_node = cast(torch.fx.Node, parent_node)
-                for args in slice_args:
+                for args in lifted_slice_args:
                     slice_node = create_node(
-                        graph, slice_op, (last_node,) + args, from_node=node
+                        graph,
+                        slice_op,
+                        (last_node,) + args,
+                        from_node=node,
                     )
                     last_node = slice_node
                 node.replace_input_with(cast(torch.fx.Node, parent_node), last_node)
-                modified_graph = True
+                modified = True
 
-        if modified_graph:
+        if modified:
             graph_module = super().call(graph_module).graph_module
-            graph.eliminate_dead_code()
-            graph_module.recompile()
 
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, modified)

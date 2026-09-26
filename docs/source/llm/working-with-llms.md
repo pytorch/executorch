@@ -15,5 +15,6 @@ export-llm-optimum
 export-custom-llm
 run-with-c-plus-plus
 build-run-llama3-qualcomm-ai-engine-direct-backend
+run-on-android
 run-on-ios
 ```

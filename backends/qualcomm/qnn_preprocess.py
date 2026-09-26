@@ -8,18 +8,25 @@ import logging
 from collections import defaultdict
 from typing import Dict, final, List
 
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch  # noqa: F401
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageInfo,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_TENSOR_NAME,
+)
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
     get_current_qnn_manager,
 )
@@ -28,6 +35,9 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
+from executorch.exir.backend.utils import DelegateMappingBuilder
+from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.operator.convert import unwrap_op_overload
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -35,6 +45,49 @@ DEFAULT_GRAPH_NAME = "forward"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+
+
+def _check_io_binding(edge_program: ExportedProgram, nodes_to_wrappers) -> None:
+    """Fail here if QNN's graph I/O will not line up with the delegate signature.
+
+    At runtime the delegate binds its arguments positionally: it walks the tensor
+    lists recovered from the context binary and consumes one argument per tensor
+    the name prefixes mark as bindable (QnnExecuTorchBackend::execute). Nothing
+    reconciles that walk with the number of arguments ExecuTorch actually passes,
+    so a graph that publishes extra I/O reads past the end of the argument list on
+    device. Catching it here costs one pass over the wrappers and reports the
+    offending tensor names instead of a register dump.
+    """
+    qnn_inputs, qnn_outputs = set(), set()
+    for wrappers in nodes_to_wrappers.values():
+        for wrapper in wrappers.values():
+            name = PyQnnManager.PyQnnTensorWrapper(wrapper).GetName()
+            # Mutable buffers are threaded through separately and never consume a
+            # delegate argument; the runtime skips them by the same marker.
+            if "mutbuf_" in name:
+                continue
+            if name.startswith("input_"):
+                qnn_inputs.add(name)
+            elif name.startswith("output_"):
+                qnn_outputs.add(name)
+
+    signature = edge_program.graph_signature
+    num_inputs = len(signature.user_inputs)
+    num_outputs = len(signature.user_outputs)
+    if len(qnn_inputs) == num_inputs and len(qnn_outputs) == num_outputs:
+        return
+
+    raise RuntimeError(
+        "QNN graph I/O does not match the delegated program signature. QNN "
+        f"declares {len(qnn_inputs)} graph inputs and {len(qnn_outputs)} graph "
+        f"outputs; the signature declares {num_inputs} user inputs and "
+        f"{num_outputs} user outputs. The runtime binds delegate arguments "
+        "positionally, so this reads past the end of the argument list on device."
+        f"\n  qnn inputs        : {sorted(qnn_inputs)}"
+        f"\n  qnn outputs       : {sorted(qnn_outputs)}"
+        f"\n  signature inputs  : {list(signature.user_inputs)}"
+        f"\n  signature outputs : {list(signature.user_outputs)}"
+    )
 
 
 @final
@@ -45,15 +98,16 @@ class QnnBackend(BackendDetails):
         enable_tensor_dump: bool,
         op_package_infos: List[QnnExecuTorchOpPackageInfo],
         use_mha2sha: bool,
+        backend_type: QnnExecuTorchBackendType,
     ):
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation
                 node.meta.pop(QCOM_AXIS_ORDER, "")
         # QNN Delegate Specific Passes
-        graph_module = QnnPassManager().transform_for_preprocess_pipeline(
-            edge_program, use_mha2sha=use_mha2sha
-        )
+        graph_module = get_qnn_pass_manager_cls(
+            backend_type
+        )().transform_for_preprocess_pipeline(edge_program, use_mha2sha=use_mha2sha)
         assert graph_module is not None
 
         nodes_to_wrappers = defaultdict(dict)
@@ -81,11 +135,12 @@ class QnnBackend(BackendDetails):
                         "is not supported in Qnn Delegate"
                     )
                     try:
+                        op = unwrap_op_overload(node.target)
                         context_loader_target = eval(
-                            f"torch.ops.{OpContextLoader.namespace}.{node.target.__name__}",
-                            globals().update(torch.__dict__),
+                            f"torch.ops.{OpContextLoader.namespace}.{op.__name__}",
+                            {"torch": torch},
                         )
-                        assert node.target == context_loader_target, err_msg
+                        assert op == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
                         return node.meta[OpContextLoader.meta_ctx_bin]
                     except:
@@ -100,6 +155,7 @@ class QnnBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
 
+        _check_io_binding(edge_program, nodes_to_wrappers)
         return py_op_wrapper_list
 
     @staticmethod
@@ -118,6 +174,7 @@ class QnnBackend(BackendDetails):
             qnn_manager.IsTensorDump(),
             obj_options.op_package_options.op_package_infos,
             obj_options.use_mha2sha,
+            obj_options.backend_options.backend_type,
         )
 
         qnn_context_binary = qnn_manager.Compile(
@@ -138,7 +195,7 @@ class QnnBackend(BackendDetails):
         )
 
     @staticmethod
-    def preprocess_multimethod(
+    def preprocess_multimethod(  # noqa: C901
         edge_programs: Dict[str, List[ExportedProgram]],
         compile_specs: Dict[str, List[List[CompileSpec]]],
     ) -> PreprocessResult:
@@ -161,8 +218,9 @@ class QnnBackend(BackendDetails):
         qnn_manager = get_current_qnn_manager(
             option.backend_options.backend_type, compile_spec
         )
+        debug_handle_builder = DelegateMappingBuilder(generated_identifiers=False)
         for i in range(num_sub_graphs):
-            # e.g. 2 methods (x, y) with 3 partitions
+            # e.g. 2 methods (x, y) with 3 subgraphs(partitions)
             #      > context_binary_0: [x.subgraph_0, y.subgraph_0]
             #      > context_binary_1: [x.subgraph_1, y.subgraph_1]
             #      > context_binary_2: [x.subgraph_2, y.subgraph_2]
@@ -175,7 +233,22 @@ class QnnBackend(BackendDetails):
                     qnn_manager.IsTensorDump(),
                     option.op_package_options.op_package_infos,
                     option.use_mha2sha,
+                    option.backend_options.backend_type,
                 )
+                if qnn_manager.IsTensorDump():
+                    for node in programs[i].graph.nodes:
+                        # Skip multi-output nodes: devtools only supports
+                        # single-output intermediate capture (len == 1).
+                        if (
+                            (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
+                            and QCOM_TENSOR_NAME in node.meta
+                            and len(node.meta[QCOM_TENSOR_NAME]) == 1
+                            and node.op == "call_function"
+                        ):
+                            debug_handle_builder.insert_delegate_mapping_entry(
+                                handles=handle_id,
+                                identifier=node.meta[QCOM_TENSOR_NAME][0],
+                            )
                 if isinstance(py_op_wrappers, bytes):
                     ctx_binary_list.append(py_op_wrappers)
                 else:
@@ -185,7 +258,6 @@ class QnnBackend(BackendDetails):
                             for py_op_wrapper in py_op_wrappers
                         ]
                     )
-
             if len(py_op_wrapper_list) == len(edge_programs.values()):
                 qnn_context_binary = qnn_manager.Compile(
                     graph_names, py_op_wrapper_list
@@ -204,13 +276,16 @@ class QnnBackend(BackendDetails):
                     all_processed_results[key].append(
                         PreprocessResult(
                             processed_bytes=bytes(qnn_context_binary),
-                            debug_handle_map={},
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
                         )
                     )
             elif len(ctx_binary_list) == len(edge_programs.values()):
                 for i, key in enumerate(edge_programs.keys()):
                     all_processed_results[key].append(
-                        PreprocessResult(processed_bytes=ctx_binary_list[i])
+                        PreprocessResult(
+                            processed_bytes=ctx_binary_list[i],
+                            debug_handle_map=debug_handle_builder.get_delegate_mapping(),
+                        )
                     )
             else:
                 raise RuntimeError("Hybrid compilation is not supported")

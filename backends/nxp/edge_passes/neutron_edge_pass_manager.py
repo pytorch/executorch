@@ -10,21 +10,26 @@ from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_q
     MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
     MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass,
 )
-from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.edge_passes.remove_as_strided_copy_nodes import (
     RemoveUselessAsStridedCopyNodes,
 )
-from torch.fx.passes.infra.pass_manager import PassManager
+from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_manager import PassManager
+from executorch.exir.passes.fold_redundant_qdq_pass import (
+    FoldRedundantDequantizeQuantizePass,
+)
 
 
 class NeutronEdgePassManager(PassManager):
 
-    def __init__(self, passes: list[NeutronEdgePass] = None):
-        passes: list[NeutronEdgePass] = passes or [
+    def __init__(self, passes: list[ExportPass] = None):
+        passes: list[ExportPass] = passes or [
             MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             RemoveUselessAsStridedCopyNodes(),
             ConvertReshapingNodesToViewPass(),
+            # Auxiliary-op splitting can introduce DQ -> Q on fanout branches.
+            FoldRedundantDequantizeQuantizePass(),
         ]
 
         super().__init__(

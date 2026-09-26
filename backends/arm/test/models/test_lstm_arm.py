@@ -143,7 +143,7 @@ def test_lstm_vgf_no_quant():
 
 
 def test_lstm_tosa_INT_16a8w():
-    """Test LSTM model with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    """Test LSTM 16A8W quantization (16-bit activations, 8-bit weights)."""
 
     pipeline = TosaPipelineINT[input_t](
         TestLSTM.lstm,

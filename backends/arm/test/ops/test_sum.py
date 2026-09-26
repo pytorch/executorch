@@ -5,12 +5,16 @@
 
 from typing import Callable, Tuple
 
+import pytest
+
 import torch
+
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -62,6 +66,32 @@ class Sum(torch.nn.Module):
         return x.sum(dim=dim, keepdim=keepdim)
 
 
+class ScalarSum(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x.sum(dim=0, keepdim=True)
+
+
+def test_sum_dim_intlist_scalar_input_tosa_FP_not_delegated():
+    pipeline = OpNotSupportedPipeline[input_t1](
+        ScalarSum(),
+        (torch.tensor(1.0),),
+        {
+            "executorch_exir_dialects_edge__ops_aten_sum_dim_IntList": 1,
+        },
+    )
+    pipeline.run()
+
+
+def test_sum_bool_tosa_INT() -> None:
+    pipeline = TosaPipelineINT(
+        Sum(),
+        (torch.ones(1, dtype=torch.bool), [], False),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
+
+
 @common.parametrize(
     "test_data",
     Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
@@ -96,7 +126,16 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters)
+# dim=None cases skipped: executorch.devtools.bundled_program.config rejects
+# None as a model input (cannot be serialized into the bundled program).
+_DIM_NONE_SKIP_REASON = "bundled_program cannot serialize None as a model input"
+_dim_none_skips = {
+    "dim_None": _DIM_NONE_SKIP_REASON,
+    "dim_None_4d_tensor": _DIM_NONE_SKIP_REASON,
+}
+
+
+@common.parametrize("test_data", Sum.test_parameters, skips=_dim_none_skips)
 @common.XfailIfNoCorstone300
 def test_sum_u55_INT_1_0(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -108,7 +147,7 @@ def test_sum_u55_INT_1_0(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters)
+@common.parametrize("test_data", Sum.test_parameters, skips=_dim_none_skips)
 @common.XfailIfNoCorstone320
 def test_sum_u85_INT_1_0(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -120,15 +159,28 @@ def test_sum_u85_INT_1_0(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters | Sum.test_parameters_fp16)
+@common.parametrize(
+    "test_data",
+    Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
+    data = test_data()
+    match data[0].dtype:
+        case torch.bfloat16:
+            atol = 1e-1
+            rtol = 1e-1
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Sum(),
-        test_data(),
+        data,
         aten_op,
         run_on_vulkan_runtime=True,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
@@ -219,4 +271,61 @@ def test_sum_tosa_FP(test_data: Callable[[], input_t2]):
 @common.parametrize("test_data", SumDefault.test_parameters)
 def test_sum_tosa_INT(test_data: Callable[[], input_t2]):
     pipeline = TosaPipelineINT[input_t1](SumDefault(), test_data(), SumDefault.aten_op)
+    pipeline.run()
+
+
+# a16w8 (int16 IO + int8 weights) coverage for sum.dim_IntList. Surfaces the
+# Ethos-U85 int16 ReduceSum silent-zero issue tracked upstream at
+# https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/issues/23.
+
+
+class SumLastDim(torch.nn.Module):
+    """Reduce the last dim with keepdim=True."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.sum(dim=-1, keepdim=True)
+
+
+a16w8_sum_test_parameters = {
+    "rank1_16": lambda: (torch.rand(16),),
+    "rank3_8x1x16": lambda: (torch.rand(8, 1, 16),),
+    "rank3_4x4x16": lambda: (torch.rand(4, 4, 16),),
+}
+
+
+@common.parametrize("test_data", a16w8_sum_test_parameters)
+@common.XfailIfNoCorstone300
+def test_sum_dim_intlist_a16w8_u55_INT(test_data: Callable[[], input_t1]):
+    pipeline = EthosU55PipelineINT[input_t1](
+        SumLastDim(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
+    )
+    pipeline.run()
+
+
+# All cases hit upstream Vela issue #23 (linked above). strict=False so the
+# test target stays green both on stock Vela 5.0 (cases XFAIL) and once the
+# Vela fix is in tree (cases XPASS).
+@common.parametrize("test_data", a16w8_sum_test_parameters)
+@common.XfailIfNoCorstone320
+@pytest.mark.xfail(
+    reason="Ethos-U85 int16 ReduceSum returns zero (vela#23)", strict=False
+)
+def test_sum_dim_intlist_a16w8_u85_INT(test_data: Callable[[], input_t1]):
+    pipeline = EthosU85PipelineINT[input_t1](
+        SumLastDim(),
+        test_data(),
+        aten_op,
+        exir_ops=[],
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+        qtol=128,
+        epsilon=2**-16,
+    )
     pipeline.run()

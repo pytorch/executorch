@@ -50,6 +50,10 @@ class ThreadPool final {
   ThreadPool(ThreadPool&&) = delete;
   ThreadPool& operator=(ThreadPool&&) = delete;
 
+  /**
+   * Returns the number of threads in the threadpool. This number does not
+   * reflect temporary lowering via UseNThreadsThreadPoolGuard.
+   */
   size_t get_thread_count() const;
 
   /**
@@ -97,6 +101,8 @@ class ThreadPool final {
   // which case this mutex will be useful. Otherwise remove it.
   mutable std::mutex mutex_;
   std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)> threadpool_;
+  // The number of threads in the threadpool.
+  size_t thread_count_;
 };
 
 /**

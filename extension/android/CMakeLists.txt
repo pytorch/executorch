@@ -161,8 +161,17 @@ if(EXECUTORCH_JNI_CUSTOM_LIBRARY)
   )
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_IMAGE)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_image.cpp)
+  # jnigraphics provides AndroidBitmap_lockPixels, used to read Bitmap storage.
+  list(APPEND link_libraries extension_image jnigraphics)
+  target_compile_definitions(
+    executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_IMAGE=1
+  )
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
-  target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp jni/log.cpp)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_training.cpp)
   list(APPEND link_libraries extension_training)
   target_compile_definitions(
     executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_TRAINING=1
@@ -172,7 +181,6 @@ endif()
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(
     executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/jni_layer_asr.cpp
-                           jni/log.cpp
   )
   list(APPEND link_libraries extension_llm_runner extension_asr_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
@@ -186,6 +194,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
         ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/prompt_processor.cpp
         ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/token_generator.cpp
         ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/attention_sink_rope_runner.cpp
         ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/rpc_mem.cpp
         ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/llama/runner/kv_manager.cpp
     )
@@ -225,6 +234,12 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
       executorch_jni PRIVATE EXECUTORCH_BUILD_MEDIATEK=1
     )
   endif()
+endif()
+
+# Hook for extended build targets (e.g., internal or partner-specific JNI
+# extensions). This is a no-op when extended_targets/ does not exist.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fb/extended_targets/CMakeLists.txt")
+  include("${CMAKE_CURRENT_SOURCE_DIR}/fb/extended_targets/CMakeLists.txt")
 endif()
 
 target_include_directories(

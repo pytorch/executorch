@@ -7,7 +7,7 @@ import logging
 from math import pi
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -19,6 +19,7 @@ from executorch.exir.pass_base import ExportPass
 
 
 edge_atan = exir_ops.edge.aten.atan.default  # MI case
+logger = logging.getLogger(__name__)
 
 
 def _get_atan_ops(op):
@@ -40,7 +41,7 @@ def _get_atan_ops(op):
     )
 
 
-class DecomposeAtanPass(ArmPass):
+class DecomposeAtanPass(ArmOpTargetedPass):
     """Decomposes the atan operator into a rational (Padé) approximation."""
 
     _passes_required_after: Set[Type[ExportPass]] = {
@@ -49,6 +50,18 @@ class DecomposeAtanPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = (edge_atan,)
+
+    def call(self, graph_module):
+        self._approximated = 0
+        result = super().call(graph_module)
+        if self._approximated:
+            logger.info(
+                "DecomposeAtanPass: approximated %d atan operator(s); "
+                "small numerical errors may be introduced.",
+                self._approximated,
+            )
+        return result
 
     def _rational_approximation(self, z, ops, meta):
         """Creates a (2,1) Padé approximation for atan(x) on [-1, 1]."""
@@ -77,16 +90,14 @@ class DecomposeAtanPass(ArmPass):
         return super().call_operator(op_mul, (z, prod), {}, meta, updated=True)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op is not edge_atan:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         if self._is_quantized_meta(meta):
             # If quantized, node should be replace by table op
             return super().call_operator(op, args, kwargs, meta)
 
-        logging.info(
-            f"Approximating atan. This may introduce small numerical errors. For details, see {__file__}."
-        )
+        self._approximated += 1
 
         ops = _get_atan_ops(op)
         (

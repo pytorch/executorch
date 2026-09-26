@@ -8,7 +8,7 @@ current state.
 ## Layout
 - `examples/` : Example end to end flows from model definition to optimizer.step()
 - `module/`: Utility class to provide an improved UX when using ExecuTorch for Training.
-- `optimizer/`: Cpp implementations of various optimizers, currently only SGD though Adam is planned.
+- `optimizer/`: C++ implementations of various optimizers, currently SGD and AdamW. Adam is planned.
 - `test/`: Tests that cover multiple subdirs.
 
 ## Technical Birds Eye view
@@ -247,7 +247,7 @@ cmake \
 Then you can build the runtime componenets with
 
 ```bash
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Now you should be able to find the executable built at `./cmake-out/extension/training/train_xor` you can run the executable with the model you generated as such

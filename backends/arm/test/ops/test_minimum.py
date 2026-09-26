@@ -9,6 +9,9 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -97,7 +100,12 @@ def test_minimum_u85_INT(test_data: Tuple):
     ).run()
 
 
-@common.parametrize("test_data", Minimum.test_parameters | Minimum.test_parameters_fp16)
+@common.parametrize(
+    "test_data",
+    Minimum.test_parameters
+    | Minimum.test_parameters_bf16
+    | Minimum.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_minimum_vgf_no_quant(test_data: test_t):
     pipeline = VgfPipeline[test_t](
@@ -120,6 +128,21 @@ def test_minimum_vgf_quant(test_data: test_t):
         exir_op,
         quantize=True,
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Minimum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_minimum_vgf_quant_a16w8(test_data: test_t):
+    pipeline = VgfPipeline[test_t](
+        Minimum(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
     pipeline.run()
 
 

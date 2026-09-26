@@ -1,0 +1,85 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "muse-glimmer-base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/muse-glimmer",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out"
+            }
+        },
+        {
+            "name": "muse-glimmer-cuda",
+            "displayName": "Muse Glimmer runner (CUDA)",
+            "inherits": ["muse-glimmer-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_CUDA": "ON"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": ["Linux", "Windows"]
+            }
+        },
+        {
+            "name": "muse-glimmer-mlx",
+            "displayName": "Muse Glimmer runner (MLX)",
+            "inherits": ["muse-glimmer-base"],
+            "cacheVariables": {
+                "EXECUTORCH_BUILD_MLX": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "muse-glimmer-cuda",
+            "displayName": "Build Muse Glimmer runner (CUDA)",
+            "configurePreset": "muse-glimmer-cuda",
+            "targets": ["solo_runner", "dflash_runner", "muse_glimmer_worker"]
+        },
+        {
+            "name": "muse-glimmer-mlx",
+            "displayName": "Build Muse Glimmer runner (MLX)",
+            "configurePreset": "muse-glimmer-mlx",
+            "targets": ["solo_runner", "dflash_runner", "muse_glimmer_worker"]
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "muse-glimmer-cuda",
+            "displayName": "Configure and build Muse Glimmer runner (CUDA)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "muse-glimmer-cuda"
+                },
+                {
+                    "type": "build",
+                    "name": "muse-glimmer-cuda"
+                }
+            ]
+        },
+        {
+            "name": "muse-glimmer-mlx",
+            "displayName": "Configure and build Muse Glimmer runner (MLX)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "muse-glimmer-mlx"
+                },
+                {
+                    "type": "build",
+                    "name": "muse-glimmer-mlx"
+                }
+            ]
+        }
+    ]
+}

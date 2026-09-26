@@ -123,16 +123,93 @@ def _patch_build_mode_flags(kwargs):
         # @oss-disable: "fbsource//xplat/assistant/oacr/native/scripts:compiler_flag_O2": ["-O2"],
     })
 
+    # Add pthread flags for Emscripten/WASM builds with threading support.
+    # Required when linking into WASM binaries that use -sUSE_PTHREADS=1.
+    # Without these flags, wasm-ld fails with:
+    #   "error: --shared-memory is disallowed by <file>.o because it was not
+    #    compiled with 'atomics' or 'bulk-memory' features."
+    kwargs["compiler_flags"] = kwargs["compiler_flags"] + select({
+        "DEFAULT": [],
+        # @oss-disable: "ovr_config//runtime:wasm-emscripten": ["-pthread", "-matomics", "-mbulk-memory"],
+    })
+
     return kwargs
+
+def _has_pytorch_dep(dep_list):
+    """Check if a dependency list contains PyTorch/ATen dependencies."""
+    if not dep_list:
+        return False
+    for dep in dep_list:
+        if type(dep) == "string":
+            if "torch" in dep or "libtorch" in dep or "caffe2" in dep:
+                return True
+    return False
+
+def _is_aten_target(kwargs):
+    """Whether a target compiles against ATen.
+
+    Keyed on exact dep names, not a substring: every label contains "torch".
+    """
+    aten_external_deps = [
+        "c10",
+        "gmock_aten",
+        "gtest_aten",
+        "libtorch",
+        "libtorch_python",
+        "torch-core-cpp",
+    ]
+    aten_resolved_external_deps = [
+        "c10",
+        "libtorch",
+        "libtorch_python",
+        "torch-core-cpp",
+    ]
+    # The ATen-flavored gtest and gmock names resolve to the same internal
+    # labels as their ordinary variants, so only their short names are unique.
+    for key in ["external_deps", "exported_external_deps"]:
+        for dep in kwargs.get(key) or []:
+            if dep in aten_external_deps:
+                return True
+
+    # A target can also name one of those through external_dep_location, which
+    # hands back the resolved label and puts it in an ordinary dep list.
+    aten_targets = []
+
+    def _note_aten_targets(targets):
+        for target in targets:
+            if target not in aten_targets:
+                aten_targets.append(target)
+        return targets
+
+    for name in aten_resolved_external_deps:
+        resolved = env.resolve_external_dep(name)
+        if resolved != env.EXTERNAL_DEP_FALLTHROUGH:
+            selects.apply(obj = resolved, function = _note_aten_targets)
+
+    # A dep list can be a select(), so collect through selects.apply rather than
+    # walking it. The lists it holds are the same shape either way.
+    found = []
+
+    def _note_aten_deps(targets):
+        for dep in targets:
+            if dep in aten_targets:
+                found.append(dep)
+        return targets
+
+    for key in ["deps", "exported_deps"]:
+        if kwargs.get(key):
+            selects.apply(obj = kwargs.get(key), function = _note_aten_deps)
+    if found:
+        return True
+
+    for key in ["xplat_deps", "fbcode_deps"]:
+        if _has_pytorch_dep(kwargs.get(key)):
+            return True
+    return False
 
 def _patch_test_compiler_flags(kwargs):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
-
-    # Required globally by all c++ tests.
-    kwargs["compiler_flags"] += [
-        "-std=c++17",
-    ]
 
     # Relaxing some constraints for tests
     kwargs["compiler_flags"] += [
@@ -228,9 +305,21 @@ def _patch_kwargs_cxx(kwargs):
     env.remove_platform_specific_args(kwargs)
     return _patch_kwargs_common(kwargs)
 
+def _patch_aten_mode_std(kwargs, aten_mode):
+    """Raises an ATen-mode target to C++20, which PyTorch's headers require.
+
+    A plain compiler flag, which the prelude places after the toolchain's.
+    """
+    if aten_mode:
+        kwargs["compiler_flags"] = kwargs.get("compiler_flags", []) + ["-std=c++20"]
+    return kwargs
+
 def _cxx_library_common(*args, **kwargs):
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
+    _patch_aten_mode_std(kwargs, aten_mode)
 
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_headers(kwargs)
@@ -255,8 +344,11 @@ def _cxx_library(*args, **kwargs):
         _cxx_library_common(*args, **kwargs)
 
 def _cxx_binary_helper(*args, **kwargs):
+    # Before _patch_kwargs_cxx, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
+    _patch_aten_mode_std(kwargs, aten_mode)
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_cxx_compiler_flags(kwargs)
 
@@ -285,11 +377,14 @@ def _cxx_test(*args, **kwargs):
     env.cxx_test(*args, **kwargs)
 
 def _cxx_python_extension(*args, **kwargs):
+    # Before _patch_kwargs_common, which consumes external_deps.
+    aten_mode = _is_aten_target(kwargs)
     _patch_kwargs_common(kwargs)
     _remove_caffe2_deps(kwargs)
     kwargs["srcs"] = _patch_executorch_references(kwargs["srcs"])
     if "types" in kwargs:
         kwargs["types"] = _patch_executorch_references(kwargs["types"])
+    _patch_aten_mode_std(kwargs, aten_mode)
     env.cxx_python_extension(*args, **kwargs)
 
 def _export_file(*args, **kwargs):
@@ -338,6 +433,21 @@ def _python_library(*args, **kwargs):
 
 def _python_binary(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+
+    # In OSS, native.python_binary doesn't support fbcode-specific params.
+    # Convert main_src -> main, and move srcs entries into main if needed.
+    if env.is_oss:
+        main_src = kwargs.pop("main_src", None)
+        srcs = kwargs.pop("srcs", None)
+        if main_src:
+            kwargs.setdefault("main", main_src)
+        elif srcs:
+            # If srcs provided but no main/main_src, use first src as main
+            if "main" not in kwargs:
+                kwargs["main"] = srcs[0]
+        if srcs != None:
+            kwargs["srcs"] = srcs
+
     env.python_binary(*args, **kwargs)
 
 def _python_test(*args, **kwargs):

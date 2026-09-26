@@ -61,8 +61,25 @@ class RmsNormVisitor(NodeVisitor):
         axes = [node.args[0].meta["val"].dim() - 1]
         axes_shape = [len(axes)]
 
-        weight_node = self.get_node(node.args[2])
-        weight_tensor = get_parameter(weight_node, self.edge_program)
+        has_weight = len(node.args) > 2 and node.args[2] is not None
+        if has_weight:
+            weight_node = self.get_node(node.args[2])
+            weight_tensor = get_parameter(weight_node, self.edge_program)
+        else:
+            # elementwise_affine=False: use all-ones weight as identity
+            weight_tensor = torch.ones(normalized_shapes, dtype=torch.float32)
+            weight_node = torch.fx.Node(
+                node.graph,
+                node.name + "_runtime_weight",
+                "call_function",
+                exir_ops.edge.aten.tensor.default,
+                (),
+                {},
+            )
+            if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
+                quant_attrs = quant_attrs.copy()
+                quant_attrs[QCOM_ZERO_POINT] = 0
+                weight_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             node,

@@ -1,13 +1,11 @@
-import os
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
-from .scripts.download_qnn_sdk import install_qnn_sdk, is_linux_x86
-
-
-env_flag = os.getenv("EXECUTORCH_BUILDING_WHEEL", "0").lower()
-# If users have preinstalled QNN_SDK_ROOT, we will use it.
-qnn_sdk_root_flag = os.getenv("QNN_SDK_ROOT", None)
-
-if env_flag not in ("1", "true", "yes") and not qnn_sdk_root_flag and is_linux_x86():
-    ok = install_qnn_sdk()
-    if not ok:
-        raise RuntimeError("Failed to install QNN SDK. Please check the logs above.")
+# Deliberately empty. Importing this package must have no side effects, and it must not be the
+# home of anything a submodule needs, because build systems that assemble a package from a file
+# list can leave this file out and synthesize an empty one in its place. The Qualcomm SDK setup
+# that used to live here is in utils/qnn_sdk_setup.py, called by the code paths that start a
+# backend.

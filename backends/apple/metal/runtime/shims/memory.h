@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace executorch {
@@ -23,7 +22,8 @@ extern "C" {
 
 // Global storage declarations
 extern std::unordered_map<void*, int32_t> memory_to_n_tensor;
-extern std::unordered_set<std::shared_ptr<Tensor>> tensors;
+// Maps raw Tensor* → shared_ptr<Tensor> for O(1) lookup/deletion.
+extern std::unordered_map<Tensor*, std::shared_ptr<Tensor>> tensors;
 
 // Memory-related operations
 AOTITorchError aoti_torch_create_tensor_from_blob_v2(

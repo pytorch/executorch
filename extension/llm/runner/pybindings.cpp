@@ -121,8 +121,8 @@ class PyTextLLMRunner {
     }
     {
       py::gil_scoped_release release;
-      Error error = runner_->prefill(prompt, config);
-      THROW_IF_ERROR(error, "Prefill failed");
+      auto result = runner_->prefill(prompt, config.num_bos, config.num_eos);
+      THROW_IF_ERROR(result.error(), "Prefill failed");
     }
   }
 
@@ -234,8 +234,8 @@ class PyMultimodalRunner {
     }
     {
       py::gil_scoped_release release;
-      Error error = runner_->prefill(inputs);
-      THROW_IF_ERROR(error, "Prefill failed");
+      auto result = runner_->prefill(inputs, 0, 0);
+      THROW_IF_ERROR(result.error(), "Prefill failed");
     }
   }
 
@@ -297,7 +297,7 @@ PYBIND11_MODULE(_llm_runner, m) {
           "resolve_max_new_tokens",
           &GenerationConfig::resolve_max_new_tokens,
           py::arg("max_context_len"),
-          py::arg("num_prompt_tokens"),
+          py::arg("num_tokens_occupied"),
           "Resolve the maximum number of new tokens to generate based on constraints")
       .def("__repr__", [](const GenerationConfig& config) {
         return "<GenerationConfig max_new_tokens=" +
@@ -325,6 +325,9 @@ PYBIND11_MODULE(_llm_runner, m) {
       .def_readonly("inference_end_ms", &Stats::inference_end_ms)
       .def_readonly(
           "aggregate_sampling_time_ms", &Stats::aggregate_sampling_time_ms)
+      .def_readonly(
+          "aggregate_model_execution_time_ms",
+          &Stats::aggregate_model_execution_time_ms)
       .def_readonly("num_prompt_tokens", &Stats::num_prompt_tokens)
       .def_readonly("num_generated_tokens", &Stats::num_generated_tokens)
       .def("on_sampling_begin", &Stats::on_sampling_begin)
@@ -568,7 +571,8 @@ PYBIND11_MODULE(_llm_runner, m) {
 
   m.def(
       "make_image_input",
-      [](torch::Tensor image_tensor) -> MultimodalInput {
+      [](torch::Tensor image_tensor,
+         const std::string& layout) -> MultimodalInput {
         if (image_tensor.dim() == 4) {
           if (image_tensor.size(0) != 1) {
             throw std::runtime_error(
@@ -579,30 +583,31 @@ PYBIND11_MODULE(_llm_runner, m) {
 
         if (image_tensor.dim() != 3) {
           throw std::runtime_error(
-              "Image tensor must be 3-dimensional (H, W, C) or 4-dimensional (1, H, W, C)");
+              "Image tensor must have shape (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)");
+        }
+
+        if (!image_tensor.is_contiguous()) {
+          throw std::runtime_error("Image tensor must be contiguous");
         }
 
         int64_t height, width, channels;
-        // Check for memory format and permute to CHW if necessary
-        if (image_tensor.is_contiguous(at::MemoryFormat::ChannelsLast)) {
-          // Input is HWC, permute to CHW
+        if (layout == "CHW") {
+          channels = image_tensor.size(0);
+          height = image_tensor.size(1);
+          width = image_tensor.size(2);
+        } else if (layout == "HWC") {
           height = image_tensor.size(0);
           width = image_tensor.size(1);
           channels = image_tensor.size(2);
           image_tensor = image_tensor.permute({2, 0, 1});
-        } else if (image_tensor.is_contiguous(at::MemoryFormat::Contiguous)) {
-          // Input is CHW
-          channels = image_tensor.size(0);
-          height = image_tensor.size(1);
-          width = image_tensor.size(2);
         } else {
           throw std::runtime_error(
-              "Image tensor must be contiguous in either channels last (H, W, C) or contiguous (C, H, W) format.");
+              "Image tensor layout must be 'CHW' or 'HWC'");
         }
 
         if (channels != 3 && channels != 4) {
           throw std::runtime_error(
-              "Image must have 3 (RGB) or 4 (RGBA) channels");
+              "Image must have 3 (RGB) or 4 (RGBA) channels in the dimension specified by layout");
         }
 
         image_tensor = image_tensor.contiguous();
@@ -627,8 +632,9 @@ PYBIND11_MODULE(_llm_runner, m) {
               "Unsupported image tensor dtype. Only uint8 and float32 are supported.");
         }
       },
-      "Create an image input from a torch tensor (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
-      py::arg("image_tensor"));
+      "Create an image input from a contiguous uint8 or float32 torch tensor. layout must be 'CHW' or 'HWC' and defaults to 'CHW'.",
+      py::arg("image_tensor"),
+      py::arg("layout") = "CHW");
 
   m.def(
       "make_audio_input",

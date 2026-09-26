@@ -8,10 +8,12 @@
 
 #pragma once
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
+#include <cstring>
 #include <memory>
 
 namespace executorch {
@@ -33,15 +35,35 @@ class SharedPtrDataLoader final : public executorch::runtime::DataLoader {
       size_t offset,
       size_t size,
       ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
+    size_t total_size;
+    bool overflow = c10::add_overflows(offset, size, &total_size);
     ET_CHECK_OR_RETURN_ERROR(
-        offset + size <= size_,
+        !overflow && total_size <= size_,
         InvalidArgument,
-        "offset %zu + size %zu > size_ %zu",
+        "offset %zu + size %zu > size_ %zu, or overflow detected",
         offset,
         size,
         size_);
     return executorch::runtime::FreeableBuffer(
         static_cast<uint8_t*>(data_.get()) + offset, size, /*free_fn=*/nullptr);
+  }
+
+  ET_NODISCARD executorch::runtime::Error load_into(
+      size_t offset,
+      size_t size,
+      ET_UNUSED const SegmentInfo& segment_info,
+      void* buffer) const override {
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer != nullptr,
+        InvalidArgument,
+        "Destination buffer cannot be null");
+
+    auto result = load(offset, size, segment_info);
+    if (!result.ok()) {
+      return result.error();
+    }
+    std::memcpy(buffer, result->data(), size);
+    return executorch::runtime::Error::Ok;
   }
 
   ET_NODISCARD executorch::runtime::Result<size_t> size() const override {

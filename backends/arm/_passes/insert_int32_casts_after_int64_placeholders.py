@@ -36,8 +36,6 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
     # Key: op overload; Value: zero-based indices of positional args that must be i64.
     I64_INPUT_ARG_POSITIONS = {
         torch.ops.aten.one_hot.default: (0,),
-        torch.ops.aten.index_copy_.default: (2,),
-        torch.ops.aten.index_copy.default: (2,),
     }
 
     def _insert_callsite_i32_to_i64_casts(self, graph_module: torch.fx.GraphModule):
@@ -91,8 +89,10 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
         modified = False
         graph = graph_module.graph
         for node in graph.nodes:
-            if node.op != "placeholder":
+            if node.op not in ("placeholder", "get_attr"):
                 continue
+            if "val" not in node.meta:
+                continue  # Ignore submodule get_attrs
             node_val = node.meta["val"]
             if not self._is_tensor_of_dtype(node_val, torch.int64):
                 continue
@@ -110,14 +110,12 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
                 users = [user for user in node.users if user != cast_after]
                 for user in users:
                     user.replace_input_with(node, cast_after)
-                logger.warning(
-                    f"Inserting a casting node {cast_after.name} after {node.name} to cast int64 placeholder"
-                    f" to int32 for {node.name} defined in {node.meta.get('stack_trace','[no stack trace found]')}"
-                )
+                self._placeholder_casts_inserted += 1
                 modified = True
         return modified
 
     def call(self, graph_module: torch.fx.GraphModule):
+        self._placeholder_casts_inserted = 0
         modified = False
         modified |= self._insert_placeholder_i64_to_i32_casts(graph_module)
         modified |= self._insert_callsite_i32_to_i64_casts(graph_module)
@@ -126,4 +124,10 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ArmPass):
             graph_module.graph.eliminate_dead_code()
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
+        if self._placeholder_casts_inserted:
+            logger.warning(
+                "InsertInt32CastsAfterInt64PlaceholdersPass: inserted %d "
+                "int64-to-int32 placeholder cast(s).",
+                self._placeholder_casts_inserted,
+            )
         return PassResult(graph_module, modified)

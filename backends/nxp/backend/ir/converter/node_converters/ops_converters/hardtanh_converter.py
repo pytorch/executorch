@@ -1,47 +1,37 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    CustomDelegationOptions,
-    NodeConverter,
-)
-from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
-    BuiltinOperator,
+
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clamp_converter import (
+    ClampConverter,
 )
 from torch.fx import Node
-from torch.nn import Parameter
 
 
-class HardTanhConverter(NodeConverter):
-
-    # Maps possible input parameters of HardTanh to equivalent ReLU-based operators supported by TFLite.
-    supported_modes_map = {
-        (0.0, 6.0): BuiltinOperator.RELU6,
-        (-1.0, 1.0): BuiltinOperator.RELU_N1_TO_1,
-        (0.0, 1.0): BuiltinOperator.RELU_0_TO_1,
-        (0.0, float("inf")): BuiltinOperator.RELU,
-    }
-
+class HardTanhConverter(ClampConverter):
     @staticmethod
-    def _is_supported_in_IR(
-        node: Node,
-        parameters_mapping: dict[str, Parameter],
-        custom_delegation_options: CustomDelegationOptions,
-    ) -> bool:
-        _, min_value, max_value = node.args
-        return (min_value, max_value) in HardTanhConverter.supported_modes_map.keys()
+    def _get_bounds(node: Node) -> tuple[float | None, float | None]:
+        args = node.args
 
-    def convert(self, node: Node):
-        """Convert 'aten::hardtanh' to it's supported ReLU equivalent."""
-        self.assert_convertible(node)
+        match len(args):
+            case 1:
+                min_val = -1
+                max_val = 1
 
-        t_op = self._create_tflite_op_with_io_tensors(node)
+            case 2:
+                min_val = args[1]
+                max_val = 1
 
-        _, min_value, max_value = node.args
+            case 3:
+                min_val = args[1]
+                max_val = args[2]
 
-        op = self.supported_modes_map[(min_value, max_value)]
-        t_op.opcode_index = self.builder.op_code_index_for_op_type(op)
+            case _:
+                # should not occur
+                raise ValueError(
+                    f"Unexpected number of arguments for HardTanh node: {len(args)}"
+                )
 
-        self.builder.append_operators([t_op])
+        return min_val, max_val

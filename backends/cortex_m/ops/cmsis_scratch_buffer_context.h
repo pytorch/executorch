@@ -1,3 +1,4 @@
+// cppcheck-suppress-file unusedFunction
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
@@ -7,10 +8,8 @@
  */
 #pragma once
 
-#include "cortex_m_ops_common.h"
-extern "C" {
 #include "arm_nnfunctions.h"
-}
+#include "cortex_m_ops_common.h"
 
 namespace cortex_m {
 namespace native {
@@ -50,7 +49,7 @@ class CMSISScratchBufferContext final {
       Tensor& scratch_buffer,
       const Tensor& weights,
       const Tensor& weight_zero_point,
-      const torch::executor::optional<Tensor>& bias)
+      const std::optional<Tensor>& bias)
       : scratch_ptr_(scratch_buffer.mutable_data_ptr<int8_t>()),
         total_size_(scratch_buffer.size(0)),
         base_ptr_(reinterpret_cast<uint8_t*>(scratch_ptr_)),

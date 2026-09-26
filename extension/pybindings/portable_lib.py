@@ -33,6 +33,32 @@ import torch as _torch
 
 logger = logging.getLogger(__name__)
 
+# Auto-discover the OpenVINO C library path from the pip-installed openvino
+# package so the C++ backend's dlopen("libopenvino_c.so") works without the
+# user having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
+if not os.environ.get("OPENVINO_LIB_PATH"):
+    try:
+        import glob
+        import importlib.util
+
+        spec = importlib.util.find_spec("openvino")
+        if spec is not None and spec.submodule_search_locations:
+            _ov_dir = spec.submodule_search_locations[0]
+            _ov_libs = sorted(
+                glob.glob(os.path.join(_ov_dir, "libs", "libopenvino_c.so*"))
+            )
+            if _ov_libs:
+                os.environ["OPENVINO_LIB_PATH"] = _ov_libs[0]
+            else:
+                logger.warning(
+                    "OpenVINO package found but libopenvino_c.so not in %s; "
+                    "set OPENVINO_LIB_PATH manually if needed",
+                    os.path.join(_ov_dir, "libs"),
+                )
+            del _ov_libs, _ov_dir, spec
+    except Exception as e:
+        logger.debug("OpenVINO auto-discovery failed: %s", e)
+
 # Update the DLL search path on Windows. This is the recommended way to handle native
 # extensions.
 if sys.platform == "win32":
@@ -42,16 +68,17 @@ if sys.platform == "win32":
         os.add_dll_directory(pybindings_dir)
     except Exception as e:
         logger.error(
-            "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
+            "Failed to add the pybinding extension DLL to the search path. "
+            "The extension may not work: %s",
             e,
         )
 
-# Let users import everything from the C++ _portable_lib extension as if this
+# Let users import everything from the C++ _C extension as if this
 # python file defined them. Although we could import these dynamically, it
 # wouldn't preserve the static type annotations.
 #
 # Note that all of these are experimental, and subject to change without notice.
-from executorch.extension.pybindings._portable_lib import (  # noqa: F401
+from executorch.extension.pybindings._C import (  # noqa: F401
     # Disable "imported but unused" (F401) checks.
     _create_profile_block,  # noqa: F401
     _dump_profile_results,  # noqa: F401
@@ -62,6 +89,7 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     _load_for_executorch,  # noqa: F401
     _load_for_executorch_from_buffer,  # noqa: F401
     _load_for_executorch_from_bundled_program,  # noqa: F401
+    _load_for_executorch_from_data_loader,  # noqa: F401
     _load_program,  # noqa: F401
     _load_program_from_buffer,  # noqa: F401
     _reset_profile_results,  # noqa: F401
@@ -72,10 +100,11 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401
     MethodMeta,  # noqa: F401
+    TensorInfo,  # noqa: F401
     Verification,  # noqa: F401
 )
 
-# Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`
+# Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
 del _torch
 del _exir_warnings

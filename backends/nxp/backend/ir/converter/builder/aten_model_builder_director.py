@@ -8,6 +8,10 @@ from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
+
+from executorch.backends.nxp.backend.ir.converter.tensor_utils import (
+    get_name_of_node_output,
+)
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from torch.fx import Node
 from torch.nn import Parameter
@@ -30,19 +34,26 @@ class AtenModelBuilderDirector(ModelBuilder):
         if self.tensor_exists(node.name):
             return
 
-        tensor = node.meta["val"]
-        if isinstance(tensor, tuple):
-            tensor = tensor[0]  # Fake tensor
-        _type = translator.convert_data_type(tensor.dtype)
-        shape = list(tensor.shape)
+        def _append_tensor(tensor_, name=None):
+            type_ = translator.convert_data_type(tensor_.dtype)
+            shape = list(tensor_.shape)
 
-        if node_format.is_channels_first():
-            shape = translator.dims_to_channels_last(shape)
+            if node_format.is_channels_first():
+                shape = translator.dims_to_channels_last(shape)
 
-        tensor = self.create_empty_tensor(node.name, _type, shape)
-        tensor.tensor_format = DataFormat.convert_executorch_format_to_neutron(
-            node_format
-        )
+            tensor = self.create_empty_tensor(name or node.name, type_, shape)
+            tensor.tensor_format = DataFormat.convert_executorch_format_to_neutron(
+                node_format
+            )
+
+        tensor_or_tuple = node.meta["val"]
+        if isinstance(tensor_or_tuple, tuple):
+            # The `node` can produce multiple output tensors, which are represented using this tuple.
+            for i, t in enumerate(tensor_or_tuple):
+                _append_tensor(t, get_name_of_node_output(node, i))
+
+        else:
+            _append_tensor(tensor_or_tuple)
 
     def append_as_static_tensor(
         self, node: Node, node_format: DataFormat, tensor: Parameter

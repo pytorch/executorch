@@ -13,7 +13,6 @@ import sys
 from typing import Any, Dict, List, Type
 
 import torch
-from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
@@ -60,7 +59,7 @@ class ModuleIndex(nn.Module):
     def forward(self, x):
         # Weird index that happens to generate a None in torch.index.Tensor_out
         # which is desirable for deserialization testing. A modified form of
-        # an example index from https://pytorch.org/cppdocs/notes/tensor_indexing.html.
+        # an example index from the PyTorch C++ tensor indexing notes.
         return x[1::2, torch.tensor([1, 2])]
 
     def get_random_inputs(self):
@@ -140,7 +139,7 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
 
     @staticmethod
     def get_export_kwargs():
-        return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
+        return {}
 
 
 class ModuleAddMul(torch.nn.Module):

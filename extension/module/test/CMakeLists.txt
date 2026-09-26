@@ -17,7 +17,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs module_test.cpp)
+set(_test_srcs module_test.cpp module_device_memory_test.cpp)
 
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
@@ -25,12 +25,16 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
   COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+          "ModuleAdd,ModuleSharedState" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAddMul,ModuleLinear" --external-constants --outdir
     "${CMAKE_CURRENT_BINARY_DIR}"
+  COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program_with_device_info
+          --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
@@ -41,6 +45,8 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
 )
 
 set(test_env
@@ -49,6 +55,8 @@ set(test_env
     "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
     "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
     "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
+    "ET_MODULE_SHARED_STATE=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
+    "ET_MODULE_ADD_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
 )
 
 et_cxx_test(

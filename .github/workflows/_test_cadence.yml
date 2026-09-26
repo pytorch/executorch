@@ -1,0 +1,89 @@
+name: Test Cadence
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        description: 'Name of the docker image to use, without registry or tag suffix'
+        required: false
+        type: string
+        default: ci-image:executorch-ubuntu-22.04-clang12
+      runner:
+        description: 'Runner type'
+        required: false
+        type: string
+        default: mt-l-x86iavx512-32-256
+      ref:
+        description: 'Git ref to checkout'
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      timeout:
+        description: 'Job timeout in minutes'
+        required: false
+        type: number
+        default: 90
+
+jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
+  test-aot:
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      job-name: test-aot
+      runner: ${{ inputs.runner }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: recursive
+      ref: ${{ inputs.ref }}
+      timeout: ${{ inputs.timeout }}
+      script: |
+        set -eux
+        conda create -y -n cadence_test python=3.12 > /dev/null
+        conda activate cadence_test
+
+        ./install_requirements.sh > /dev/null
+        pip install -e . --no-build-isolation > /dev/null
+        pip install beartype later pyre_extensions pytest-rerunfailures==15.1 pytest-xdist
+
+        python -m pytest backends/cadence/aot/tests/ -v -n auto --reruns 2 --reruns-delay 1
+
+  test-ops:
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      job-name: test-ops
+      runner: ${{ inputs.runner }}
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/${{ inputs.docker-image }}-${{ needs.docker-image.outputs.ci-docker-hash }}
+      submodules: recursive
+      ref: ${{ inputs.ref }}
+      timeout: ${{ inputs.timeout }}
+      download-artifact: cadence-runner-build
+      script: |
+        set -eux
+        conda create -y -n cadence_test python=3.12 > /dev/null
+        conda activate cadence_test
+
+        ./install_requirements.sh > /dev/null
+        pip install -e . --no-build-isolation > /dev/null
+        pip install beartype later pyre_extensions pytest-rerunfailures==15.1 pytest-xdist
+
+        # Use the pre-built runner from the build job
+        mkdir -p cmake-out/backends/cadence
+        cp "${RUNNER_ARTIFACT_DIR}/cadence_runner" cmake-out/backends/cadence/cadence_runner
+        chmod +x cmake-out/backends/cadence/cadence_runner
+
+        export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/backends/cadence/utils/FACTO"
+        python -m pytest examples/cadence/operators/ -v -n auto --reruns 2 --reruns-delay 1

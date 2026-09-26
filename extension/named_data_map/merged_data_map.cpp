@@ -12,13 +12,13 @@
 #include <unordered_map>
 #include <vector>
 
-using executorch::aten::string_view;
 using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::ET_RUNTIME_NAMESPACE::TensorLayout;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+using std::string_view;
 
 namespace executorch::extension {
 namespace ET_MERGED_DATA_MAP_NAMESPACE {
@@ -37,7 +37,7 @@ namespace ET_MERGED_DATA_MAP_NAMESPACE {
       "No non-empty named data maps provided to merge");
 
   // Check for duplicate keys.
-  std::unordered_map<std::string, uint32_t> key_to_map_index;
+  KeyToMapIndex key_to_map_index;
   for (const uint32_t i : c10::irange(valid_data_maps.size())) {
     const auto cur_map = valid_data_maps[i];
     uint32_t num_keys = cur_map->get_num_keys().get();
@@ -47,7 +47,8 @@ namespace ET_MERGED_DATA_MAP_NAMESPACE {
       ET_CHECK_OR_RETURN_ERROR(
           inserted,
           InvalidArgument,
-          "Duplicate key %s in named data maps at index %u and %" PRIu32,
+          "Duplicate key %s in named data maps at index %" PRIu32
+          " and %" PRIu32,
           cur_key,
           it->second,
           i);
@@ -58,9 +59,13 @@ namespace ET_MERGED_DATA_MAP_NAMESPACE {
 
 ET_NODISCARD Result<const TensorLayout> MergedDataMap::get_tensor_layout(
     string_view key) const {
-  const auto it = key_to_map_index_.find(key.data());
+  const auto it = key_to_map_index_.find(key);
   if (it == key_to_map_index_.end()) {
-    ET_LOG(Debug, "Key %s not found in named data maps.", key.data());
+    ET_LOG(
+        Debug,
+        "Key %.*s not found in named data maps.",
+        static_cast<int>(key.size()),
+        key.data());
     return Error::NotFound;
   }
   return named_data_maps_.at(it->second)->get_tensor_layout(key);
@@ -68,9 +73,13 @@ ET_NODISCARD Result<const TensorLayout> MergedDataMap::get_tensor_layout(
 
 ET_NODISCARD
 Result<FreeableBuffer> MergedDataMap::get_data(string_view key) const {
-  const auto it = key_to_map_index_.find(key.data());
+  const auto it = key_to_map_index_.find(key);
   if (it == key_to_map_index_.end()) {
-    ET_LOG(Debug, "Key %s not found in named data maps.", key.data());
+    ET_LOG(
+        Debug,
+        "Key %.*s not found in named data maps.",
+        static_cast<int>(key.size()),
+        key.data());
     return Error::NotFound;
   }
   return named_data_maps_.at(it->second)->get_data(key);
@@ -80,11 +89,12 @@ ET_NODISCARD Error MergedDataMap::load_data_into(
     string_view key,
     void* buffer,
     size_t size) const {
-  const auto it = key_to_map_index_.find(key.data());
+  const auto it = key_to_map_index_.find(key);
   ET_CHECK_OR_RETURN_ERROR(
       it != key_to_map_index_.end(),
       NotFound,
-      "Key %s not found in named data maps",
+      "Key %.*s not found in named data maps",
+      static_cast<int>(key.size()),
       key.data());
   return named_data_maps_.at(it->second)->load_data_into(key, buffer, size);
 }
@@ -98,7 +108,7 @@ ET_NODISCARD Result<const char*> MergedDataMap::get_key(uint32_t index) const {
   ET_CHECK_OR_RETURN_ERROR(
       index < total_num_keys,
       InvalidArgument,
-      "Index %u out of range of size %u",
+      "Index %" PRIu32 " out of range of size %" PRIu32,
       index,
       total_num_keys);
   for (auto i : c10::irange(named_data_maps_.size())) {

@@ -34,6 +34,9 @@ class XNNWorkspace {
   XNNWorkspace& operator=(XNNWorkspace&&) = delete;
 
   std::pair<std::unique_lock<std::mutex>, xnn_workspace_t> acquire() {
+    if (!lock_required_) {
+      return {std::unique_lock<std::mutex>{}, workspace_.get()};
+    }
     auto lock = std::unique_lock<std::mutex>(mutex_);
     return {std::move(lock), workspace_.get()};
   }
@@ -50,6 +53,18 @@ class XNNWorkspace {
   // have the same raw pointer due to memory reuse.
   uint64_t id() const {
     return id_;
+  }
+
+  void disable_locking() {
+    lock_required_ = false;
+  }
+
+  void set_uses_weight_cache() {
+    uses_weight_cache_.store(true, std::memory_order_release);
+  }
+
+  bool uses_weight_cache() const {
+    return uses_weight_cache_.load(std::memory_order_acquire);
   }
 
   static runtime::Result<std::shared_ptr<XNNWorkspace>> create() {
@@ -72,6 +87,8 @@ class XNNWorkspace {
   static inline std::atomic<uint64_t> next_id_{0};
   std::mutex mutex_;
   uint64_t id_;
+  bool lock_required_ = true;
+  std::atomic<bool> uses_weight_cache_{false};
   WorkspacePtr workspace_;
 };
 

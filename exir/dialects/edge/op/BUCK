@@ -18,7 +18,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
 )
 
-fbcode_target(_kind = python_unittest,
+fbcode_target(_kind = runtime.python_test,
     name = "test_api",
     srcs = [
         "test/test_api.py",

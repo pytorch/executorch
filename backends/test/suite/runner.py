@@ -1,6 +1,8 @@
 import argparse
 import hashlib
 import importlib
+import logging
+import os
 import random
 import re
 import time
@@ -92,6 +94,7 @@ def run_test(  # noqa: C901
     params: dict | None,
     dynamic_shapes: Any | None = None,
     generate_random_test_inputs: bool = True,
+    artifact_dir: str | None = None,
 ) -> TestCaseSummary:
     """
     Top-level test run function for a model, input set, and tester. Handles test execution
@@ -201,6 +204,11 @@ def run_test(  # noqa: C901
             # We can do this if we ever see to_executorch() or serialize() fail due a backend issue.
             return build_result(TestResult.UNKNOWN_FAIL, e)
 
+        artifact_name = None
+        if artifact_dir:
+            base = test_base_name.removeprefix("test_")
+            artifact_name = f"{base}_{subtest_index}" if subtest_index > 0 else base
+
         # TODO We should consider refactoring the tester slightly to return more signal on
         # the cause of a failure in run_method_and_compare_outputs. We can look for
         # AssertionErrors to catch output mismatches, but this might catch more than that.
@@ -210,11 +218,25 @@ def run_test(  # noqa: C901
                 statistics_callback=lambda stats: error_statistics.append(stats),
                 atol=1e-1,
                 rtol=4e-2,
+                artifact_dir=artifact_dir,
+                artifact_name=artifact_name,
             )
         except AssertionError as e:
             return build_result(TestResult.OUTPUT_MISMATCH_FAIL, e)
         except Exception as e:
             return build_result(TestResult.PTE_RUN_FAIL, e)
+
+        # Dump .pte after successful comparison.
+        if artifact_dir and artifact_name and flow.supports_serialize:
+            logger = logging.getLogger(__name__)
+            try:
+                pte_path = os.path.join(artifact_dir, f"{artifact_name}.pte")
+                tester.stages[StageType.SERIALIZE].dump_artifact(pte_path)
+                logger.info(f"Saved golden .pte to {pte_path}")
+            except Exception:
+                logger.warning(
+                    f"Failed to save .pte for {artifact_name}", exc_info=True
+                )
     else:
         # Skip the test if nothing is delegated
         return build_result(TestResult.SUCCESS_UNDELEGATED)

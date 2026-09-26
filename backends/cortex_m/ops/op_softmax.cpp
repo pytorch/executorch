@@ -11,11 +11,6 @@
 #include <cstdint>
 #include <limits>
 
-// Include CMSIS-NN headers with C linkage
-extern "C" {
-#include "arm_nnfunctions.h"
-}
-
 namespace cortex_m {
 namespace native {
 
@@ -41,6 +36,7 @@ inline int64_t normalize_dim(const Tensor& tensor, int64_t dim) {
 
 } // namespace
 
+// cppcheck-suppress unusedFunction
 Tensor& softmax_out(
     KernelRuntimeContext& context,
     const Tensor& input,

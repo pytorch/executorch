@@ -11,16 +11,138 @@ quantization specs consumed by the annotator.
 
 """
 
-
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Any, Callable, cast, Optional
 
 import torch
+from torch.fx import Node
 from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
+    FixedQParamsQuantizationSpec,
     QuantizationSpec,
+    QuantizationSpecBase,
+    SharedQuantizationSpec,
 )
+
+
+def _is_canonical_flow_offset_grid_sampler(node: Node) -> bool:  # noqa: C901
+    if node.target != torch.ops.aten.grid_sampler.default or len(node.args) < 5:
+        return False
+    if tuple(node.args[2:5]) != (0, 1, True):
+        return False
+    image = node.args[0]
+    if not isinstance(image, Node):
+        return False
+    image_value = image.meta.get("val")
+    output_value = node.meta.get("val")
+    if (
+        not isinstance(image_value, torch.Tensor)
+        or len(image_value.shape) != 4
+        or int(image_value.shape[0]) != 1
+        or int(image_value.shape[1]) not in (3, 4)
+        or not isinstance(output_value, torch.Tensor)
+        or tuple(output_value.shape) != tuple(image_value.shape)
+    ):
+        return False
+    grid = node.args[1]
+    if not isinstance(grid, Node) or grid.target != torch.ops.aten.permute.default:
+        return False
+    permutation = grid.args[1]
+    if not isinstance(permutation, (list, tuple)) or list(permutation) != [0, 2, 3, 1]:
+        return False
+    add = grid.args[0]
+    if not isinstance(add, Node) or add.target != torch.ops.aten.add.Tensor:
+        return False
+    if len(add.args) > 2 and add.args[2] != 1:
+        return False
+    if add.kwargs.get("alpha", 1) != 1:
+        return False
+    for base_grid, flow_slice in (
+        (add.args[0], add.args[1]),
+        (add.args[1], add.args[0]),
+    ):
+        if not isinstance(flow_slice, Node) or flow_slice.target not in (
+            torch.ops.aten.slice.Tensor,
+            torch.ops.aten.slice_copy.Tensor,
+        ):
+            continue
+        flow, dim, start, end, *step = flow_slice.args
+        if dim != 1 or (start, end) not in ((0, 2), (2, 4)):
+            continue
+        if (
+            step not in ([], [1])
+            or flow_slice.kwargs.get("step", 1) != 1
+            or not isinstance(flow, Node)
+        ):
+            continue
+        flow_value = flow.meta.get("val")
+        while isinstance(base_grid, Node) and base_grid.target in (
+            torch.ops.aten.to.dtype,
+            torch.ops.aten.to.dtype_layout,
+            torch.ops.aten.alias.default,
+        ):
+            base_grid = base_grid.args[0]
+        if not isinstance(base_grid, Node):
+            continue
+        base_value = base_grid.meta.get("val")
+        if (
+            not isinstance(flow_value, torch.Tensor)
+            or len(flow_value.shape) != 4
+            or tuple(flow_value.shape[:2]) != (1, 4)
+        ):
+            continue
+        height, width = map(int, flow_value.shape[2:])
+        if height <= 1 or width <= 1:
+            continue
+        if tuple(image_value.shape[2:]) != (height, width):
+            continue
+        if not isinstance(base_value, torch.Tensor) or tuple(base_value.shape) != (
+            1,
+            2,
+            height,
+            width,
+        ):
+            continue
+        if base_grid.target != torch.ops.aten.cat.default or base_grid.args[1] != 1:
+            continue
+        axes = base_grid.args[0]
+        if not isinstance(axes, (list, tuple)) or len(axes) != 2:
+            continue
+
+        def matches_axis(axis_node, axis):
+            if not isinstance(axis_node, Node) or axis_node.target not in (
+                torch.ops.aten.expand.default,
+                torch.ops.aten.expand_copy.default,
+            ):
+                return False
+            view = axis_node.args[0]
+            if not isinstance(view, Node) or view.target not in (
+                torch.ops.aten.view.default,
+                torch.ops.aten.view_copy.default,
+            ):
+                return False
+            linspace = view.args[0]
+            if (
+                not isinstance(linspace, Node)
+                or linspace.target != torch.ops.aten.linspace.default
+            ):
+                return False
+            if linspace.kwargs.get("dtype") not in (None, torch.float32):
+                return False
+            extent = width if axis == 3 else height  # noqa: B023
+            expected_view = [1, 1, 1, width] if axis == 3 else [1, 1, height, 1]  # noqa: B023  # fmt: skip
+            expected_expand = [1, -1, height, -1] if axis == 3 else [1, -1, -1, width]  # noqa: B023  # fmt: skip
+            return (
+                tuple(linspace.args[:3]) == (-1.0, 1.0, extent)
+                and list(view.args[1]) == expected_view
+                and list(axis_node.args[1]) == expected_expand
+            )
+
+        if matches_axis(axes[0], 3) and matches_axis(axes[1], 2):
+            return True
+    return False
 
 
 @dataclass(eq=True, frozen=True)
@@ -31,27 +153,30 @@ class QuantizationConfig:
     expose validated accessors.
 
     Attributes:
-        input_activation (QuantizationSpec | None): Spec for input activations.
-        output_activation (QuantizationSpec | None): Spec for output activations.
-        weight (QuantizationSpec | None): Spec for weights.
-        bias (QuantizationSpec | None): Spec for bias values.
+        input_activation (Optional[QuantizationSpec]): Spec for input activations.
+        output_activation (Optional[QuantizationSpec]): Spec for output activations.
+        weight (Optional[QuantizationSpec]): Spec for weights.
+        bias (Optional[QuantizationSpec]): Spec for bias values.
 
     """
 
-    input_activation: QuantizationSpec | None
-    output_activation: QuantizationSpec | None
-    weight: QuantizationSpec | None
-    bias: QuantizationSpec | None
+    input_activation: Optional[QuantizationSpecBase]
+    output_activation: Optional[QuantizationSpecBase]
+    weight: Optional[QuantizationSpecBase]
+    bias: Optional[QuantizationSpecBase] | Callable[[Any], Any]
+    label: Optional[str] = None  # Optional label for debugging/visualization purposes
 
-    def get_input_act_qspec(self) -> QuantizationSpec | None:
+    def get_input_act_qspec(
+        self, node: Optional[Node] = None, input_node: Optional[Node] = None
+    ) -> Optional[QuantizationSpecBase]:
         """Get the validated input activation spec.
 
         Validate that the input activation qscheme is supported before
         returning the spec.
 
         Returns:
-            QuantizationSpec | None: Input activation spec, or ``None`` when
-                unset.
+            Optional[QuantizationSpecBase]: Input activation spec, or ``None`` when
+                unset. The ``node`` and ``input_node`` arguments are used by subclasses.
 
         Raises:
             ValueError: If the qscheme is not per-tensor affine or symmetric.
@@ -60,7 +185,9 @@ class QuantizationConfig:
         if self.input_activation is None:
             return None
         # Validate that input_activation uses a supported qscheme
-        if self.input_activation.qscheme not in [
+        if not hasattr(
+            self.input_activation, "qscheme"
+        ) or self.input_activation.qscheme not in [
             torch.per_tensor_affine,
             torch.per_tensor_symmetric,
         ]:
@@ -69,15 +196,18 @@ class QuantizationConfig:
             )
         return self.input_activation
 
-    def get_output_act_qspec(self) -> QuantizationSpec | None:
+    def get_output_act_qspec(
+        self, node: Optional[Node] = None
+    ) -> Optional[QuantizationSpecBase]:
         """Get the validated output activation spec.
 
         Validate that the output activation qscheme is supported before
         returning the spec.
 
         Returns:
-            QuantizationSpec | None: Output activation spec, or ``None`` when
-                unset.
+            Optional[QuantizationSpecBase]: Output activation spec, or ``None`` when
+                unset. The ``node`` argument is currently unused and kept for
+                API parity.
 
         Raises:
             ValueError: If the qscheme is not per-tensor affine or symmetric.
@@ -86,7 +216,9 @@ class QuantizationConfig:
         if self.output_activation is None:
             return None
         # Validate that output_activation uses a supported qscheme
-        if self.output_activation.qscheme not in [
+        if not hasattr(
+            self.output_activation, "qscheme"
+        ) or self.output_activation.qscheme not in [
             torch.per_tensor_affine,
             torch.per_tensor_symmetric,
         ]:
@@ -95,14 +227,16 @@ class QuantizationConfig:
             )
         return self.output_activation
 
-    def get_weight_qspec(self) -> QuantizationSpec | None:
+    def get_weight_qspec(
+        self, node: Optional[Node] = None
+    ) -> Optional[QuantizationSpecBase]:
         """Get the validated weight spec.
 
         Validate that the weight qscheme is supported (per-tensor or
         per-channel symmetric) before returning the spec.
 
         Returns:
-            QuantizationSpec | None: Weight spec, or ``None`` when unset.
+            Optional[QuantizationSpecBase]: Weight spec, or ``None`` when unset.
 
         Raises:
             ValueError: If the qscheme is not a supported symmetric scheme.
@@ -111,25 +245,27 @@ class QuantizationConfig:
         if self.weight is None:
             return None
         # Validate that weight uses a supported qscheme
-        if self.weight.qscheme not in [
+        if not hasattr(self.weight, "qscheme") or self.weight.qscheme not in [
             torch.per_tensor_symmetric,
             torch.per_channel_symmetric,
         ]:
             raise ValueError(f"Unsupported quantization_spec {self.weight} for weight")
         return self.weight
 
-    def get_bias_qspec(self, node: torch.fx.Node) -> QuantizationSpec | None:
+    def get_bias_qspec(
+        self, node: Optional[Node] = None
+    ) -> Optional[QuantizationSpecBase] | Callable[[Any], Any]:
         """Get the derived or validated bias spec.
 
         For conv/linear ops, derive bias qparams from the input/weight observers.
         Otherwise, validate a user-provided floating-point bias spec.
 
         Args:
-            node (torch.fx.Node): Node whose bias spec is requested.
+            node (Optional[Node]): Node whose bias spec is requested.
 
         Returns:
-            QuantizationSpec | None: Derived or provided bias spec, or ``None``
-                when unset.
+            Optional[QuantizationSpecBase]: Derived or provided bias spec, or
+                ``None`` when unset.
 
         Raises:
             ValueError: If deriving qparams sees an unexpected number of
@@ -137,6 +273,17 @@ class QuantizationConfig:
                 floating-point.
 
         """
+        if self.bias is None or node is None:
+            return None
+
+        # A runtime activation scale cannot be multiplied into a static
+        # derived INT32 bias scale at AOT time. Keep the bias in floating
+        # point and add it after dynamic accumulator rescaling.
+        if (
+            isinstance(self.input_activation, QuantizationSpec)
+            and self.input_activation.is_dynamic
+        ):
+            return None
 
         def _derive_qparams_fn(
             obs_or_fqs: list[ObserverOrFakeQuantize],
@@ -168,9 +315,9 @@ class QuantizationConfig:
             weight_obs_or_fq = obs_or_fqs[1]
             act_scale, _ = act_obs_or_fq.calculate_qparams()
             weight_scale, _ = weight_obs_or_fq.calculate_qparams()
-            return torch.tensor(act_scale * weight_scale).to(
-                torch.float32
-            ), torch.full_like(weight_scale, fill_value=0, dtype=torch.int32)
+            return (act_scale * weight_scale).to(torch.float32), torch.full_like(
+                weight_scale, fill_value=0, dtype=torch.int32
+            )
 
         if node.target in [
             torch.ops.aten.conv1d.default,
@@ -184,6 +331,12 @@ class QuantizationConfig:
             if self.input_activation is None or self.weight is None:
                 raise ValueError(
                     "Input activation and weight QuantizationConfig must be specified."
+                )
+            if not isinstance(
+                self.input_activation, QuantizationSpec
+            ) or not isinstance(self.weight, QuantizationSpec):
+                raise ValueError(
+                    "QuantizationConfig input_activation and weight must be instances of QuantizationSpec."
                 )
 
             if (self.input_activation.dtype == self.weight.dtype == torch.int8) or (
@@ -211,7 +364,7 @@ class QuantizationConfig:
                             ch_axis = 0
 
                 quantization_spec = DerivedQuantizationSpec(
-                    derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
+                    derived_from=((input_act, node), (weight, node)),  # type: ignore[arg-type]
                     derive_qparams_fn=_derive_qparams_fn,
                     dtype=torch.int32,
                     quant_min=torch.iinfo(torch.int32).min + 1,
@@ -225,11 +378,223 @@ class QuantizationConfig:
                     f"Bias quantization of types: i:{self.input_activation.dtype}, w:{self.weight.dtype} not implemented"
                 )
 
-        if self.bias is None:
-            return None
-        # Validate that bias dtype is floating-point
-        if self.bias.dtype != torch.float:
-            raise ValueError(
-                "Only float dtype for bias is supported for bias right now"
-            )
         return self.bias
+
+
+class TOSAQuantizationConfig(QuantizationConfig):
+    """Configures quantization, while enforcing TOSA specific constraints."""
+
+    quantize_grid_sampler_grid = False
+
+    # Ops whose output range matches their input's, so reusing the input qspec
+    # costs no resolution. Ops that compress the value range do not belong here.
+    SHARED_OUTPUT_ACT_QSPEC_PATTERNS = {
+        torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.upsample_bilinear2d.vec,
+        torch.ops.aten.upsample_nearest2d.vec,
+        torch.ops.aten.avg_pool2d.default,
+        torch.ops.aten.max_pool2d.default,
+        torch.ops.aten.mean.default,
+        torch.ops.aten.mean.dim,
+    }
+
+    SHARED_INPUT_ACT_QSPEC_PATTERNS = {
+        torch.ops.aten.lt.Tensor,
+        torch.ops.aten.le.Tensor,
+        torch.ops.aten.gt.Tensor,
+        torch.ops.aten.ge.Tensor,
+        torch.ops.aten.eq.Tensor,
+        torch.ops.aten.ne.Tensor,
+    }
+
+    def get_input_act_qspec(self, node=None, input_node=None):
+        """Return the configured input quantization spec.
+
+        For comparison operators, make sure that both inputs share the same
+        quantization spec, by returning a SharedQuantizationSpec that ties the
+        quantization of both inputs together.
+
+        For trigonometric ops, ensure that input spec has fixed qparams.
+
+        For other operators, return the default input activation spec.
+
+        """
+        # MLETORCH-1853: Fix lazy import when moving files around
+        from executorch.backends.arm.quantizer.quantization_annotator import (
+            _fixed_input_qspec_ops,
+            _get_fixed_qparams_qspec,
+        )
+
+        if node is None or input_node is None:
+            return super().get_input_act_qspec(node, input_node)
+
+        if node.target in self.SHARED_INPUT_ACT_QSPEC_PATTERNS:
+            if input_node == node.args[0]:
+                return super().get_input_act_qspec(node, input_node)
+            else:
+                return SharedQuantizationSpec((node.args[0], node))
+        elif node.target == torch.ops.aten.grid_sampler.default:
+            if input_node == node.args[0]:
+                input_act_qspec = super().get_input_act_qspec(node, input_node)
+                return _get_fixed_qparams_qspec(
+                    node.target, _fixed_input_qspec_ops, input_act_qspec
+                )
+            if not self.quantize_grid_sampler_grid:
+                return None
+            return super().get_input_act_qspec(node, input_node)
+        elif node.target in _fixed_input_qspec_ops:
+            input_act_qspec = super().get_input_act_qspec(node, input_node)
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_input_qspec_ops, input_act_qspec
+            )
+
+        return super().get_input_act_qspec(node, input_node)
+
+    def get_weight_qspec(
+        self, node: Optional[Node] = None
+    ) -> Optional[QuantizationSpecBase]:
+        """Return the configured weight quantization spec.
+
+        For conv transpose, return the per-channel quantization spec with
+        `ch_axis=1` to match the IOHW weight format used by TOSA, instead of
+        the default `ch_axis=0`. If no weight spec is configured, return
+        ``None``.
+
+        """
+        weight_qspec = super().get_weight_qspec()
+        if (
+            node is not None
+            and weight_qspec is not None
+            and isinstance(weight_qspec, QuantizationSpec)
+            and weight_qspec.qscheme == torch.per_channel_symmetric
+            and node.target == torch.ops.aten.conv_transpose2d.input
+        ):
+            # MLETORCH-1853: Fix lazy import when moving files around
+            from executorch.backends.arm.quantizer.quantization_annotator import (
+                _adjust_weight_qspec_for_conv_transpose,
+            )
+
+            weight_qspec = _adjust_weight_qspec_for_conv_transpose(node, weight_qspec)
+
+        return weight_qspec
+
+    def get_output_act_qspec(
+        self, node: Optional[Node] = None
+    ) -> Optional[QuantizationSpecBase]:
+        """Return the configured output activation quantization spec.
+
+        If node is a pooling or upsample operator, returns a shared quantization spec.
+        If no weight spec is configured, return ``None``.
+        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is float32.
+
+        """
+        if node is None:
+            return super().get_output_act_qspec()
+        # MLETORCH-1853: Fix lazy import when moving files around
+        from executorch.backends.arm.quantizer.quantization_annotator import (
+            _fixed_output_qspec_ops,
+            _get_fixed_qparams_qspec,
+        )
+
+        if node.target in _fixed_output_qspec_ops:
+            output_act_qspec = super().get_output_act_qspec(node)
+            if output_act_qspec is None:
+                return None
+            return _get_fixed_qparams_qspec(
+                node.target, _fixed_output_qspec_ops, output_act_qspec
+            )
+        if node.target == torch.ops.aten.to.dtype:
+            from executorch.backends.arm.quantizer.quantizer_support import CastCheck
+
+            input_node = node.all_input_nodes[0]
+            input_val = input_node.meta.get("val", None)
+            output_val = node.meta.get("val", None)
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_integer_to_integer(input_val.dtype, output_val.dtype)
+            ):
+                return None
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_integer_to_float(input_val.dtype, output_val.dtype)
+                and output_val.dtype == torch.float32
+            ):
+                return FixedQParamsQuantizationSpec(
+                    dtype=input_val.dtype,
+                    scale=1.0,
+                    zero_point=0,
+                    quant_min=torch.iinfo(input_val.dtype).min,
+                    quant_max=torch.iinfo(input_val.dtype).max,
+                    qscheme=torch.per_tensor_symmetric,
+                    is_dynamic=False,
+                )
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_float_identity(input_val.dtype, output_val.dtype)
+            ):
+                return SharedQuantizationSpec((input_node, node))
+            return super().get_output_act_qspec(node)
+        if node.target not in self.SHARED_OUTPUT_ACT_QSPEC_PATTERNS:
+            return super().get_output_act_qspec()
+        if len(node.args) == 0:
+            return super().get_output_act_qspec()
+        return SharedQuantizationSpec((cast(Node, node.args[0]), node))
+
+
+class VGFQuantizationConfig(TOSAQuantizationConfig):
+    """Configure quantization for VGF-specific lowering paths."""
+
+    quantize_grid_sampler_grid = True
+
+    @staticmethod
+    def _snorm_compatible_qspec(
+        qspec: Optional[QuantizationSpecBase],
+    ) -> Optional[QuantizationSpecBase]:
+        if qspec is None:
+            return None
+        if not isinstance(qspec, QuantizationSpec):
+            raise ValueError("SNORM-compatible qparams require a QuantizationSpec.")
+        if qspec.quant_min == -127 and qspec.quant_max == 127:
+            return qspec
+        return replace(qspec, quant_min=-127, quant_max=127)
+
+    def get_input_act_qspec(self, node=None, input_node=None):
+        """Return the input activation spec for a VGF graph node.
+
+        Args:
+            node (Optional[Node]): Node whose input spec is requested.
+            input_node (Optional[Node]): Input node whose spec is requested.
+
+        Returns:
+            Optional[QuantizationSpecBase]: Input activation spec, or ``None``.
+
+        """
+        if (
+            node is not None
+            and input_node is not None
+            and _is_canonical_flow_offset_grid_sampler(node)
+            and input_node == node.args[0]
+        ):
+            qspec = QuantizationConfig.get_input_act_qspec(self, node, input_node)
+            if isinstance(qspec, QuantizationSpec) and qspec.dtype == torch.int8:
+                return self._snorm_compatible_qspec(qspec)
+        return super().get_input_act_qspec(node, input_node)
+
+    def get_output_act_qspec(self, node=None):
+        """Return the output activation spec for a VGF graph node.
+
+        Args:
+            node (Optional[Node]): Node whose output spec is requested.
+
+        Returns:
+            Optional[QuantizationSpecBase]: Output activation spec, or ``None``.
+
+        """
+        if node is not None and _is_canonical_flow_offset_grid_sampler(node):
+            qspec = QuantizationConfig.get_output_act_qspec(self, node)
+            if isinstance(qspec, QuantizationSpec) and qspec.dtype == torch.int8:
+                return self._snorm_compatible_qspec(qspec)
+        return super().get_output_act_qspec(node)

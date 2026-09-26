@@ -12,16 +12,20 @@ from multiprocessing.connection import Client
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.quantizer.annotators import (
-    QuantizationConfig,
-    QuantizationSpec,
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    make_quantizer,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
 )
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
-    PerChannelParamObserver,
+    PerChannelParamObserverWithLossEvaluation,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     _derived_bias_quant_spec,
     MovingAverageMinMaxObserver,
+    QuantizationConfig,
 )
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
@@ -30,16 +34,11 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 )
 from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
 from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
-    get_backend_type,
     get_imagenet_dataset,
     make_output_dir,
-    make_quantizer,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
     topk_accuracy,
 )
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 def get_instance(repo_path: str, checkpoint_path: str):
@@ -58,7 +57,7 @@ def get_instance(repo_path: str, checkpoint_path: str):
 
 
 def main(args):
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
@@ -73,7 +72,11 @@ def main(args):
     pte_filename = "fastvit_qnn"
 
     def get_custom_quantizer():
-        quantizer = make_quantizer(quant_dtype=QuantDtype.use_8a8w)
+        quantizer = make_quantizer(
+            quant_dtype=QuantDtype.use_8a8w,
+            backend=qnn_config.backend,
+            soc_model=qnn_config.soc_model,
+        )
 
         # there are lots of outliers appearing in fastvit parameters
         # we need to apply special configuration to saturate their impact
@@ -90,7 +93,7 @@ def main(args):
             quant_max=torch.iinfo(torch.int8).max,
             qscheme=torch.per_channel_symmetric,
             ch_axis=0,
-            observer_or_fake_quant_ctr=PerChannelParamObserver.with_args(
+            observer_or_fake_quant_ctr=PerChannelParamObserverWithLossEvaluation.with_args(
                 **{"steps": 100, "use_mse": True}
             ),
         )
@@ -113,40 +116,26 @@ def main(args):
         return quantizer
 
     # lower to QNN
-    backend = get_backend_type(args.backend)
     quantizer = {
         QnnExecuTorchBackendType.kGpuBackend: None,
         QnnExecuTorchBackendType.kHtpBackend: get_custom_quantizer(),
-    }[backend]
+    }[qnn_config.backend]
     build_executorch_binary(
-        convert_linear_to_conv2d(get_instance(args.oss_repo, args.pretrained_weight)),
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
+        model=convert_linear_to_conv2d(
+            get_instance(args.oss_repo, args.pretrained_weight)
+        ),
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
         dataset=inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
         custom_quantizer=quantizer,
-        backend=backend,
-        shared_buffer=args.shared_buffer,
-        online_prepare=args.online_prepare,
     )
-
-    if args.compile_only:
-        return
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
-    adb.push(inputs=inputs, backends={backend})
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -218,7 +207,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

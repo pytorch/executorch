@@ -6,6 +6,7 @@
 import torch
 
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import merge_decomposed_graph
 
@@ -15,7 +16,7 @@ class SliceCopy(torch.nn.Module):
         super().__init__()
         self.val_shape = val_shape
         if dims[0] is None:
-            self.shifts = [shifts[0] % torch.numel(torch.tensor(val_shape))]
+            self.shifts = [shifts[0] % torch.numel(torch.empty(val_shape))]
         else:
             self.shifts = [shift % val_shape[dim] for shift, dim in zip(shifts, dims)]
         self.dims = dims
@@ -73,6 +74,5 @@ class DecomposeRoll(ExportPass):
                     )
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

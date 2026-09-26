@@ -310,3 +310,38 @@ def test_split_tensor_vgf_quant(test_data: Tuple):
         quantize=True,
     )
     pipeline.run()
+
+
+a16w8_split_test_parameters = {
+    "a16w8_1d_split_2": lambda: (torch.rand(10), 2, 0),
+    "a16w8_2d_split_4": lambda: (torch.rand(8, 4), 4, 0),
+    "a16w8_3d_split_4": lambda: (torch.rand(4, 4, 8), 4, 2),
+}
+
+
+@common.parametrize("test_data", a16w8_split_test_parameters)
+@common.XfailIfNoCorstone300
+def test_split_a16w8_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Split(),
+        test_data(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", a16w8_split_test_parameters)
+@common.XfailIfNoCorstone320
+def test_split_a16w8_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Split(),
+        test_data(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        a16w8_quantization=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()

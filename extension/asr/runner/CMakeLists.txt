@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 #
-# ASR runner for models like Whisper
+# ASR runners for Seq2Seq (Whisper) and Transducer (RNN-T/TDT) models
 #
 # ### Editing this file ###
 #
@@ -22,11 +22,13 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 set(runner_deps executorch_core extension_module extension_tensor
-                tokenizers::tokenizers
+                extension_llm_runner tokenizers::tokenizers
 )
 
 # Define runner library
-add_library(extension_asr_runner STATIC runner.cpp)
+add_library(
+  extension_asr_runner STATIC seq2seq_runner.cpp transducer_runner.cpp
+)
 target_include_directories(
   extension_asr_runner INTERFACE ${_common_include_directories}
 )
@@ -34,22 +36,6 @@ target_link_libraries(extension_asr_runner PUBLIC ${runner_deps})
 set_target_properties(
   extension_asr_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
-
-# If the project is configured to build with CUDA support, try to find a CUDA
-# runtime (prefer the CUDAToolkit package). If found, expose a compile-time
-# macro so sources can conditionally compile CUDA-aware code.
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit QUIET)
-  if(CUDAToolkit_FOUND)
-    target_compile_definitions(extension_asr_runner PUBLIC CUDA_AVAILABLE)
-    message(STATUS "CUDAToolkit found; defining CUDA_AVAILABLE for ASR runner")
-  else()
-    message(
-      STATUS
-        "CUDA requested (EXECUTORCH_BUILD_CUDA=ON) but no CUDA runtime found"
-    )
-  endif()
-endif()
 
 install(
   TARGETS extension_asr_runner

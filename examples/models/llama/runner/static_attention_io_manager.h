@@ -9,11 +9,15 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
 
+#include <c10/util/safe_numerics.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
@@ -53,16 +57,32 @@ class StaticKVCache {
         style_(style),
         input_ptrs_(n_caches_),
         output_ptrs_(n_caches_) {
-    size_t total_cache_len =
-        std::accumulate(cache_lengths_.begin(), cache_lengths_.end(), 0);
-    cache_data_size_ = total_cache_len * n_heads_per_cache_ * head_dim_;
-    update_data_size_ =
-        n_caches_ * n_heads_per_cache_ * max_input_len_ * head_dim_;
+    size_t total_cache_len = 0;
+    for (size_t cache_len : cache_lengths_) {
+      ET_CHECK_MSG(
+          !c10::add_overflows(total_cache_len, cache_len, &total_cache_len),
+          "Overflow summing cache lengths");
+    }
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            total_cache_len, n_heads_per_cache_, &cache_data_size_) &&
+            !c10::mul_overflows(cache_data_size_, head_dim_, &cache_data_size_),
+        "Overflow computing cache_data_size_");
+    ET_CHECK_MSG(
+        !c10::mul_overflows(
+            n_caches_, n_heads_per_cache_, &update_data_size_) &&
+            !c10::mul_overflows(
+                update_data_size_, max_input_len_, &update_data_size_) &&
+            !c10::mul_overflows(
+                update_data_size_, head_dim_, &update_data_size_),
+        "Overflow computing update_data_size_");
 
     cache_data_ = allocator_.allocate(cache_data_size_);
     update_data_ = allocator_.allocate(update_data_size_);
     ET_CHECK(cache_data_ != nullptr);
     ET_CHECK(update_data_ != nullptr);
+    std::fill(cache_data_, cache_data_ + cache_data_size_, T(0));
+    std::fill(update_data_, update_data_ + update_data_size_, T(0));
     init_ptrs();
   }
 
@@ -185,6 +205,7 @@ class StaticKVCache {
    */
   void reset() {
     std::fill(cache_pos_.begin(), cache_pos_.end(), 0);
+    std::fill(cache_data_, cache_data_ + cache_data_size_, T(0));
   }
 
  private:
@@ -276,14 +297,16 @@ class StaticAttentionMask {
       size_t head_dim,
       T zero_val,
       T mask_val,
-      StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK)
+      StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK,
+      bool is_sliding_window = false)
       : cache_len_(cache_len),
         input_len_(input_len),
         head_dim_(head_dim),
         cache_valid_len_(0),
         zero_val_(zero_val),
         mask_val_(mask_val),
-        style_(style) {
+        style_(style),
+        is_sliding_window_(is_sliding_window) {
     data_size_ = input_len_ * (cache_len_ + input_len_);
     data_ = allocator_.allocate(data_size_);
     ET_CHECK(data_ != nullptr);
@@ -330,8 +353,39 @@ class StaticAttentionMask {
   void set_causal_mask() {
     for (size_t i = 0; i < input_len_; i++) {
       auto* p = data_ + (cache_len_ + input_len_) * i;
-      std::fill(p + cache_len_, p + cache_len_ + 1 + i, zero_val_);
+      size_t first_visible = 0;
+      if (is_sliding_window_ && i + 1 > cache_len_) {
+        first_visible = i + 1 - cache_len_;
+      }
+      std::fill(p + cache_len_, p + cache_len_ + first_visible, mask_val_);
+      std::fill(
+          p + cache_len_ + first_visible, p + cache_len_ + 1 + i, zero_val_);
       std::fill(p + cache_len_ + 1 + i, p + cache_len_ + input_len_, mask_val_);
+    }
+  }
+
+  void set_sliding_window_mask(size_t input_pos) {
+    if (!is_sliding_window_ || cache_len_ == 0) {
+      return;
+    }
+
+    const size_t valid_cache_len = std::min(input_pos, cache_len_);
+    const size_t cache_pos = input_pos % cache_len_;
+    for (size_t row = 0; row < input_len_; row++) {
+      auto* p = data_ + (cache_len_ + input_len_) * row;
+      std::fill(p, p + cache_len_, mask_val_);
+      // Row k already sees k + 1 in-chunk keys, leaving W - k - 1
+      // cache keys. cache_pos is the next ring slot, so the previous slot has
+      // age zero.
+      const size_t max_age = row + 1 < cache_len_
+          ? std::min(valid_cache_len, cache_len_ - row - 1)
+          : 0;
+      for (size_t col = 0; col < cache_len_; col++) {
+        const size_t age = (cache_pos + cache_len_ - 1 - col) % cache_len_;
+        if (age < max_age) {
+          p[col] = zero_val_;
+        }
+      }
     }
   }
 
@@ -355,6 +409,7 @@ class StaticAttentionMask {
   T zero_val_;
   T mask_val_;
   StaticAttentionUpdateStyle style_;
+  bool is_sliding_window_;
   AllocatorT allocator_;
   size_t data_size_ = 0;
   T* data_;
@@ -440,6 +495,7 @@ class StaticAttentionIOManager {
     StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK;
     bool generate_full_logits = true;
     std::optional<size_t> last_valid_token_pos_index = 0;
+    std::vector<size_t> lora_input_indices;
   };
 
   StaticAttentionIOManager(StaticAttentionIOConfig config)
@@ -474,6 +530,10 @@ class StaticAttentionIOManager {
    */
   PerCacheLenMasks& add_mask(size_t input_len, MaskT zero_val, MaskT mask_val) {
     PerCacheLenMasks masks;
+    size_t global_cache_len = 0;
+    for (const auto& pair : config_.cache_len_to_mask_idx) {
+      global_cache_len = std::max(global_cache_len, pair.first);
+    }
     for (auto& pair : config_.cache_len_to_mask_idx) {
       masks.emplace_back(
           pair.first,
@@ -483,7 +543,8 @@ class StaticAttentionIOManager {
               config_.head_dim,
               zero_val,
               mask_val,
-              config_.style));
+              config_.style,
+              pair.first > 0 && pair.first < global_cache_len));
     }
     auto it = attentionMasks_.emplace(input_len, std::move(masks));
     return it.first->second;
@@ -584,6 +645,49 @@ class StaticAttentionIOManager {
   }
 
   /**
+   * Load LoRA adapter weights from a NamedDataMap and bind them to the
+   * method's inputs.
+   *
+   * Keys are read in data-map index order and copied into internal buffers
+   * before binding, so the bound input memory remains valid after this call.
+   * If the data map and config_.lora_input_indices have different counts, this
+   * method binds only the first min(counts) entries and leaves any remaining
+   * configured LoRA inputs unchanged.
+   */
+  void load_lora_io_adapter(
+      torch::executor::Method& method,
+      const executorch::runtime::NamedDataMap& data_map) {
+    if (config_.lora_input_indices.empty()) {
+      return;
+    }
+    auto num_keys_result = data_map.get_num_keys();
+    ET_CHECK(num_keys_result.ok());
+    auto num_keys = num_keys_result.get();
+    if (num_keys != config_.lora_input_indices.size()) {
+      num_keys = config_.lora_input_indices.size();
+    }
+    if (num_keys != lora_buffers_.size()) {
+      lora_buffers_.resize(num_keys);
+    }
+    ET_LOG(Info, "Loading %u LoRA adapter tensors", num_keys);
+    for (uint32_t i = 0; i < num_keys; i++) {
+      auto key_result = data_map.get_key(i);
+      ET_CHECK(key_result.ok());
+
+      auto data_result = data_map.get_data(key_result.get());
+      ET_CHECK(data_result.ok());
+
+      auto nbytes = data_result.get().size();
+      lora_buffers_[i].resize(nbytes);
+      std::memcpy(lora_buffers_[i].data(), data_result.get().data(), nbytes);
+
+      set_input_raw(
+          method, config_.lora_input_indices[i], lora_buffers_[i].data());
+    }
+    ET_LOG(Info, "Loaded %u LoRA adapter tensors", num_keys);
+  }
+
+  /**
    * Prefill helper. Run multiple inferences as needed depending on the length
    * of the prompt and method's input length. Returns the position in the output
    * that corresponds to the end of the prompt during the last inference.
@@ -612,12 +716,19 @@ class StaticAttentionIOManager {
         return config_.generate_full_logits ? input_len - 1 : 0;
       }
       std::copy(&tokens[i], &tokens[i + batch_len], input_buffer.begin());
+      if (batch_len < input_len) {
+        std::fill(
+            input_buffer.begin() + batch_len, input_buffer.end(), TokenT(0));
+      }
       if (!config_.generate_full_logits && config_.last_valid_token_pos_index) {
         last_valid_token_pos_ = batch_len - 1;
         set_input(
             method,
             *config_.last_valid_token_pos_index,
             &last_valid_token_pos_);
+      }
+      for (auto& pair : masks) {
+        pair.second->set_sliding_window_mask(input_pos_);
       }
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
@@ -670,6 +781,9 @@ class StaticAttentionIOManager {
       if (input_pos_ + 1 > config_.max_context_len) {
         ET_LOG(Error, "Maximum context size reached, stopping decode.");
         break;
+      }
+      for (auto& pair : masks) {
+        pair.second->set_sliding_window_mask(input_pos_);
       }
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
@@ -863,10 +977,34 @@ class StaticAttentionIOManager {
   }
 
  private:
+  void
+  set_input_raw(executorch::runtime::Method& method, size_t idx, void* data) {
+    auto methodMeta = method.method_meta();
+    auto inputMeta = methodMeta.input_tensor_meta(idx);
+    ET_CHECK(inputMeta.ok());
+    auto impl = ::executorch::runtime::etensor::TensorImpl(
+        inputMeta->scalar_type(),
+        inputMeta->sizes().size(),
+        const_cast<executorch::aten::TensorImpl::SizesType*>(
+            inputMeta->sizes().data()),
+        data,
+        const_cast<executorch::aten::TensorImpl::DimOrderType*>(
+            inputMeta->dim_order().data()));
+    executorch::runtime::etensor::Tensor t(&impl);
+    ET_CHECK(data != nullptr);
+    ET_CHECK(method.set_input(t, idx) == executorch::runtime::Error::Ok);
+  }
+
   template <typename T>
   void set_input(executorch::runtime::Method& method, size_t idx, T* data) {
     auto methodMeta = method.method_meta();
     auto inputMeta = methodMeta.input_tensor_meta(idx);
+    ET_CHECK_MSG(
+        sizeof(T) == executorch::runtime::elementSize(inputMeta->scalar_type()),
+        "set_input: sizeof(T)=%zu but model expects element size %zu for input %zu",
+        sizeof(T),
+        executorch::runtime::elementSize(inputMeta->scalar_type()),
+        idx);
     auto impl = ::executorch::runtime::etensor::TensorImpl(
         inputMeta->scalar_type(),
         inputMeta->sizes().size(),
@@ -986,6 +1124,7 @@ class StaticAttentionIOManager {
   std::vector<RopeT> rope_freqs_cos_override_;
   std::vector<RopeT> rope_freqs_sin_override_;
   int64_t last_valid_token_pos_;
+  std::vector<std::vector<uint8_t>> lora_buffers_;
 };
 
 } // namespace example

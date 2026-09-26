@@ -174,7 +174,7 @@ TEST(XNNExecutorTest, ResizeOutputsWithLongTensorConvertsInt32ToInt64) {
   ASSERT_EQ(executor.prepare_args(span), Error::Ok);
   executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext context;
   ASSERT_EQ(executor.forward(context), Error::Ok);
-  ASSERT_EQ(executor.resize_outputs(span), Error::Ok);
+  ASSERT_EQ(executor.convert_outputs(span), Error::Ok);
 
   Tensor& result = args[2]->toTensor();
   ASSERT_EQ(result.scalar_type(), executorch::aten::ScalarType::Long);

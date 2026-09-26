@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -72,6 +73,15 @@ class BackendDetails(ABC):
                     " should be a final backend implementation and should not be subclassed "
                     f"(attempted by '{cls.__name__}')."
                 )
+
+    @classmethod
+    def copy_exported_program_for_preprocess(
+        cls,
+        edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Return an isolated program for backend preprocessing."""
+        return copy.deepcopy(edge_program)
 
     @staticmethod
     # all backends need to implement this method

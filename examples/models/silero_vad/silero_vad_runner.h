@@ -52,8 +52,28 @@ class SileroVadRunner {
       float threshold,
       SegmentCallback segment_cb);
 
+  void reset_stream();
+
+  float process_frame(const float* audio_data, int64_t num_samples);
+
   double frame_duration() const {
     return frame_duration_;
+  }
+
+  int64_t sample_rate() const {
+    return sample_rate_;
+  }
+
+  int64_t window_size() const {
+    return window_size_;
+  }
+
+  int64_t context_size() const {
+    return context_size_;
+  }
+
+  int64_t stream_frame_index() const {
+    return stream_frame_index_;
   }
 
  private:
@@ -66,6 +86,11 @@ class SileroVadRunner {
   double frame_duration_;
 
   static constexpr int64_t kHiddenDim = 128;
+
+  std::vector<float> stream_state_data_;
+  std::vector<float> stream_context_;
+  std::vector<float> stream_input_;
+  int64_t stream_frame_index_ = 0;
 };
 
 } // namespace silero_vad

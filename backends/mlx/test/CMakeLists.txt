@@ -1,0 +1,236 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# MLX backend tests
+
+# Strict compiler flags for the test runner — mlxdelegate uses PRIVATE so these
+# don't propagate to downstream consumers
+set(_mlx_test_compile_options -Wall -Werror -Wconversion -Wsign-conversion
+                              -Wshorten-64-to-32
+)
+
+# Sanitizers are inherited from parent via EXECUTORCH_MLX_ENABLE_SANITIZERS
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  list(APPEND _mlx_test_compile_options -fsanitize=address,undefined
+       -fno-omit-frame-pointer
+  )
+endif()
+
+# Op test runner - generic test binary for testing individual ops
+add_executable(op_test_runner op_test_runner.cpp)
+
+target_compile_options(op_test_runner PRIVATE ${_mlx_test_compile_options})
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_link_options(op_test_runner PRIVATE ${_mlx_sanitizer_link_options})
+endif()
+
+target_link_libraries(
+  op_test_runner PRIVATE extension_module extension_tensor executorch
+                         mlxdelegate extension_llm_cache
+)
+
+# --------------------------------------------------------------------------
+# Compile-only strict warnings test for delegate headers
+#
+# Verifies MLXExecutor.h, MLXInterpreter.h, MLXLoader.h compile cleanly under
+# -Wconversion -Wsign-conversion -Wshorten-64-to-32 -Werror. ExecuTorch and MLX
+# headers are suppressed via pragma in the source file. This target is never
+# linked or run — a successful compile is the test.
+# --------------------------------------------------------------------------
+add_library(strict_compile_test OBJECT strict_compile_test.cpp)
+target_compile_options(strict_compile_test PRIVATE ${_mlx_test_compile_options})
+target_include_directories(
+  strict_compile_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+target_link_libraries(
+  strict_compile_test PRIVATE mlx_schema executorch_core mlx
+)
+add_dependencies(op_test_runner strict_compile_test)
+
+# Multi-threaded inference test
+include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+if(APPLE)
+  et_cxx_test(
+    mlx_metallib_path_test SOURCES
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+  )
+  target_include_directories(
+    mlx_metallib_path_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../runtime
+  )
+  set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/mlx_metallib_path_test.mm
+    ${CMAKE_CURRENT_LIST_DIR}/../runtime/SwiftPMMetallibPath.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+  )
+  if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+    target_compile_options(
+      mlx_metallib_path_test PRIVATE -fsanitize=address,undefined
+                                     -fno-omit-frame-pointer
+    )
+    target_link_options(
+      mlx_metallib_path_test PRIVATE ${_mlx_sanitizer_link_options}
+    )
+  endif()
+  target_link_libraries(mlx_metallib_path_test ${FOUNDATION_FRAMEWORK})
+endif()
+
+et_cxx_test(
+  multi_thread_test_runner
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/multi_thread_test_runner.cpp
+  EXTRA_LIBS
+  extension_module
+  extension_tensor
+  mlxdelegate
+)
+
+# Add sanitizer link flags to multi_thread_test_runner if enabled
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_link_options(
+    multi_thread_test_runner PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Per-session mutable-state manager unit test (no model/tokenizer needed).
+add_executable(mlx_mutable_state_test mlx_mutable_state_test.cpp)
+target_include_directories(
+  mlx_mutable_state_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+target_link_libraries(
+  mlx_mutable_state_test PRIVATE mlxdelegate mlx_schema mlx executorch_core
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_mutable_state_test PRIVATE -fsanitize=address,undefined
+                                   -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_mutable_state_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
+
+# Lazy-graph evaluation threshold (kEvalThresholdBytesKey). Drives the
+# interpreter over hand-built programs; no model/tokenizer needed.
+et_cxx_test(
+  mlx_eval_threshold_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_eval_threshold_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_eval_threshold_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_eval_threshold_test PRIVATE -fsanitize=address,undefined
+                                    -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_eval_threshold_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Temp-slot release. Drives the interpreter over hand-built programs; no
+# model/tokenizer needed.
+et_cxx_test(
+  mlx_temp_release_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_temp_release_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_temp_release_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_temp_release_test PRIVATE -fsanitize=address,undefined
+                                  -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_temp_release_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
+# links GTest + executorch_core and registers the ctest target.
+et_cxx_test(
+  mlx_sequence_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_cache_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_sequence_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_sequence_cache_test PRIVATE -fsanitize=address,undefined
+                                    -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+et_cxx_test(
+  mlx_batched_sequence_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_batched_sequence_cache_test.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_clone_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+target_include_directories(
+  mlx_batched_sequence_cache_test
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_batched_sequence_cache_test PRIVATE -fsanitize=address,undefined
+                                            -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_batched_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()
+
+et_cxx_test(
+  mlx_cell_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_cell_cache_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+  extension_llm_cache
+)
+target_include_directories(
+  mlx_cell_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_cell_cache_test PRIVATE -fsanitize=address,undefined
+                                -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_cell_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()

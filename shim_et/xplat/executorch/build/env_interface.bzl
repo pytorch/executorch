@@ -23,6 +23,8 @@ _EXTERNAL_DEPS = {
     "aten-core": [],  # TODO(larryliu0820): Add support
     # ATen native_functions.yaml file deps
     "aten-src-path": "//third-party:aten_src_path",
+    # Just the c10 core of PyTorch: Device, ScalarType, and the C10_* macros
+    "c10": "//third-party:libtorch",
     "cpuinfo": [],  # TODO(larryliu0820): Add support
     # Flatbuffer C++ library deps
     "flatbuffers-api": "//third-party:flatbuffers-api",
@@ -45,7 +47,7 @@ _EXTERNAL_DEPS = {
     "libtorch_python": "//third-party:libtorch_python",
     "log": [], # Intentionally not supporting OSS buck build log
     # Huggingface Tokenizer
-    "nlohmann_json": [], # Intentionally not supporting OSS buck build HF tokenizer.
+    "nlohmann_json": "//extension/llm/tokenizers/third-party:nlohmann_json",
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
     "pcre2": "//extension/llm/tokenizers/third-party:pcre2",
@@ -142,6 +144,7 @@ def _remove_unsupported_kwargs(kwargs):
     kwargs.pop("types", None)  # will have to find a different way to handle .pyi files in oss
     kwargs.pop("resources", None)  # doesn't support resources in python_library/python_binary yet
     kwargs.pop("feature", None)  # internal-only, used for Product-Feature Hierarchy (PFH)
+    kwargs.pop("supports_static_listing", None)  # fbcode-only python_test kwarg
     return kwargs
 
 def _patch_headers(kwargs):

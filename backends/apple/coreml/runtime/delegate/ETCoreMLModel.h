@@ -37,17 +37,32 @@ __attribute__((objc_subclassing_restricted))
                     orderedOutputNames:(NSOrderedSet<NSString*>*)orderedOutputNames
                                  error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
 
+/// Constructs an `ETCoreMLModel` instance from a compiled model URL (for cache-based loading).
+///
+/// @param compiledModelURL The URL of the compiled model (.mlmodelc directory).
+/// @param identifier The unique identifier for this model.
+/// @param configuration The model configuration.
+/// @param orderedInputNames   The ordered input names of the model.
+/// @param orderedOutputNames   The ordered output names of the model.
+/// @param error   On failure, error is filled with the failure information.
+- (nullable instancetype)initWithCompiledModelURL:(NSURL*)compiledModelURL
+                                       identifier:(NSString*)identifier
+                                    configuration:(MLModelConfiguration*)configuration
+                                orderedInputNames:(NSOrderedSet<NSString*>*)orderedInputNames
+                               orderedOutputNames:(NSOrderedSet<NSString*>*)orderedOutputNames
+                                            error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
+
 /// The underlying MLModel.
 @property (strong, readonly, nonatomic) MLModel* mlModel;
 
 /// The model state.
 @property (strong, readonly, nonatomic, nullable) id state;
 
-/// The asset from which the model is loaded.
-@property (strong, readonly, nonatomic) ETCoreMLAsset* asset;
+/// The asset from which the model is loaded (for asset-based loading).
+@property (strong, readonly, nonatomic, nullable) ETCoreMLAsset* asset;
 
-/// The asset identifier.
-@property (strong, readonly, nonatomic) NSString* identifier;
+/// The model identifier.
+@property (copy, readonly, nonatomic) NSString* identifier;
 
 /// The ordered input names of the model.
 @property (copy, readonly, nonatomic) NSOrderedSet<NSString*>* orderedInputNames;

@@ -28,19 +28,35 @@ class BroadcastArgsPass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    targeted_ops = {
+    target_ops = {
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.sub.Tensor,
         # mul is indirectly targeting div as div is decompsed to reciprocal + mul
         exir_ops.edge.aten.mul.Tensor,
     }
 
-    def call(self, graph_module: GraphModule) -> PassResult:
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
         tosa_spec = get_context_spec()
         if not tosa_spec.is_U55_subset:
-            return PassResult(graph_module, False)
+            return False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in self.targeted_ops:
+            if node.op != "call_function" or node.target not in self.target_ops:
+                continue
+            output_shape = get_first_fake_tensor(node).shape
+            broadcasts = 0
+            for arg in node.args:
+                if not isinstance(arg, Node):
+                    continue
+                if get_first_fake_tensor(arg).shape != output_shape:
+                    broadcasts += 1
+                if broadcasts > 1:
+                    return True
+        return False
+
+    def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function" or node.target not in self.target_ops:
                 continue
 
             output_shape = get_first_fake_tensor(node).shape
@@ -67,7 +83,8 @@ class BroadcastArgsPass(ArmPass):
                             inherit_qparams=False,
                         )
                         node.replace_input_with(arg, repeat)
+                    modified = True
 
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

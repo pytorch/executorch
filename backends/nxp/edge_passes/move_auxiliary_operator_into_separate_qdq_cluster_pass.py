@@ -5,23 +5,32 @@
 
 import torch
 
+from executorch.backends.nxp.backend.ops_aliases import (
+    AdaptiveAvgPool2D,
+    AddMM,
+    AvgPool2D,
+    Clone,
+    CloneDimOrder,
+    Convolution,
+    DequantizePerTensor,
+    GetItem,
+    HardTanh,
+    MaxPool2DWithIndices,
+    MM,
+    PermuteCopy,
+    QuantizePerTensor,
+    Relu,
+    Sigmoid,
+    SqueezeCopyDims,
+    Tanh,
+    UnsqueezeCopy,
+    ViewCopy,
+)
+
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 from torch.fx.passes.infra.pass_base import PassResult
-
-# Operator aliases for better readability.
-AddMM = exir_ops.edge.aten.addmm.default
-ViewCopy = exir_ops.edge.aten.view_copy.default
-MM = exir_ops.edge.aten.mm.default
-Conv = exir_ops.edge.aten.convolution.default
-HardTanh = exir_ops.edge.aten.hardtanh.default
-Relu = exir_ops.edge.aten.relu.default
-Sigmoid = exir_ops.edge.aten.sigmoid.default
-Tanh = exir_ops.edge.aten.tanh.default
-Clone = exir_ops.edge.aten.clone.default
-CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
 
 
 def insert_qdq_pair_after_node(
@@ -31,7 +40,7 @@ def insert_qdq_pair_after_node(
     with graph.inserting_after(anchor):
         quantize_op = graph.create_node(
             op="call_function",
-            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            target=QuantizePerTensor,
             args=(),  # Will be added later.
         )
         quantize_op.meta = anchor.meta
@@ -40,7 +49,7 @@ def insert_qdq_pair_after_node(
     with graph.inserting_after(quantize_op):
         dequantize_op = graph.create_node(
             op="call_function",
-            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            target=DequantizePerTensor,
             args=(quantize_op,) + q_params,
         )
         dequantize_op.meta = quantize_op.meta
@@ -55,8 +64,7 @@ def _is_dequantize(node_: Node) -> bool:
     return (
         hasattr(node_, "op")
         and node_.op == "call_function"
-        and node_.target
-        == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+        and node_.target == DequantizePerTensor
     )
 
 
@@ -64,8 +72,7 @@ def _is_quantize(node_: Node) -> bool:
     return (
         hasattr(node_, "op")
         and node_.op == "call_function"
-        and node_.target
-        == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+        and node_.target == QuantizePerTensor
     )
 
 
@@ -100,13 +107,33 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     main_cluster_node_to_auxiliary_nodes = {
         AddMM: [
             ViewCopy,
+            PermuteCopy,
         ],
         MM: [
             ViewCopy,
+            PermuteCopy,
         ],
         ViewCopy: [Clone, CloneDimOrder],
-        Conv: [
-            ViewCopy,  # For 1D conv.
+        Convolution: [
+            ViewCopy,  # For 1D conv
+        ],
+        # AvgPool1D is represented in edge as Unsqueeze -> AvgPool2D -> Squeeze. The reshaping nodes must be moved out
+        #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        AvgPool2D: [
+            ViewCopy,
+            UnsqueezeCopy,
+        ],
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> GetItem -> Squeeze. The reshaping nodes must be moved out
+        #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        MaxPool2DWithIndices: [
+            ViewCopy,
+            UnsqueezeCopy,
+        ],
+        # AdaptiveAvgPool1D is represented in edge as Unsqueeze -> AdaptiveAvgPool2D -> Squeeze. The reshaping nodes
+        # must be moved out of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        AdaptiveAvgPool2D: [
+            ViewCopy,
+            UnsqueezeCopy,
         ],
     }
 
@@ -198,7 +225,7 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             Sigmoid,
             Tanh,
         ],
-        Conv: [
+        Convolution: [
             HardTanh,
             Relu,
             Sigmoid,
@@ -206,6 +233,24 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,  # For 1D conv.
         ],
         ViewCopy: [Clone, CloneDimOrder],
+        # AvgPool1D is represented in edge as Unsqueeze -> AvgPool2D -> Squeeze. The reshaping nodes must be moved out
+        #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        AvgPool2D: [
+            ViewCopy,
+            SqueezeCopyDims,
+        ],
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> GetItem -> Squeeze. The reshaping nodes must be moved out
+        #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        GetItem: [
+            ViewCopy,
+            SqueezeCopyDims,
+        ],
+        # AdaptiveAvgPool1D is represented in edge as Unsqueeze -> AdaptiveAvgPool2D -> Squeeze. The reshaping nodes
+        # must be moved out of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        AdaptiveAvgPool2D: [
+            ViewCopy,
+            SqueezeCopyDims,
+        ],
     }
 
     def run(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -238,7 +283,14 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
                 continue
 
             # Make sure the nodes are part of the same QDQ cluster.
-            cluster = QDQClusterRecognizer().get_qdq_cluster(main_cluster_node)
+            # In the use case where `main_cluster_node` is mapped to a `getitem`, its parent node must be used to
+            #  satisfy the requirements of the `QDQClusterRecognizer`.
+            actual_main_cluster_node = (
+                main_cluster_node
+                if main_cluster_node.target != GetItem
+                else main_cluster_node.args[0]
+            )
+            cluster = QDQClusterRecognizer().get_qdq_cluster(actual_main_cluster_node)
             if any(
                 node_ not in cluster
                 for node_ in [quantize_node, aux_node, main_cluster_node]

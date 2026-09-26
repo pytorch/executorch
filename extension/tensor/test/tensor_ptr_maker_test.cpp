@@ -23,6 +23,64 @@ class TensorPtrMakerTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorPtrMakerTest, TypedPointerDeducesItsOwnScalarType) {
+  // for_blob, from_blob and from_blob with strides are three separate entry
+  // points. All three used to take the pointer as void* and default to Float.
+  std::vector<int8_t> bytes = {1, 2, 3, 4};
+
+  auto from_maker = for_blob(bytes.data(), {2, 2}).make_tensor_ptr();
+  EXPECT_EQ(from_maker->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(from_maker->nbytes(), bytes.size() * sizeof(int8_t));
+
+  auto blob = from_blob(bytes.data(), {2, 2});
+  EXPECT_EQ(blob->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(blob->nbytes(), bytes.size() * sizeof(int8_t));
+
+  auto strided = from_blob(bytes.data(), {2, 2}, {2, 1});
+  EXPECT_EQ(strided->scalar_type(), executorch::aten::ScalarType::Char);
+  EXPECT_EQ(strided->nbytes(), bytes.size() * sizeof(int8_t));
+
+  // An untyped pointer has nothing to deduce from and keeps the default.
+  void* untyped = bytes.data();
+  auto from_void = from_blob(untyped, {2, 2});
+  EXPECT_EQ(from_void->scalar_type(), executorch::aten::ScalarType::Float);
+
+  // An explicit type still reinterprets, on the builder and on the factory.
+  auto reinterpreted =
+      from_blob(bytes.data(), {2, 2}, executorch::aten::ScalarType::Float);
+  EXPECT_EQ(reinterpreted->scalar_type(), executorch::aten::ScalarType::Float);
+  auto overridden = for_blob(bytes.data(), {2, 2})
+                        .type(executorch::aten::ScalarType::Float)
+                        .make_tensor_ptr();
+  EXPECT_EQ(overridden->scalar_type(), executorch::aten::ScalarType::Float);
+}
+
+TEST_F(TensorPtrMakerTest, TypedPointerDeducesItsOwnScalarTypeWithDeleter) {
+  // The fluent builder is the only path that can combine deduction with a
+  // custom deleter, because the deleter is not a positional parameter there.
+  // The deleter still has to run exactly once and receive the pointer it was
+  // given, so that a typed delete[] stays correct.
+  auto deleter_calls = 0;
+  void* deleted_ptr = nullptr;
+  auto* data = new int8_t[4]();
+
+  {
+    auto tensor = for_blob(data, {2, 2})
+                      .deleter([&deleter_calls, &deleted_ptr](void* ptr) {
+                        ++deleter_calls;
+                        deleted_ptr = ptr;
+                        delete[] static_cast<int8_t*>(ptr);
+                      })
+                      .make_tensor_ptr();
+    EXPECT_EQ(tensor->scalar_type(), executorch::aten::ScalarType::Char);
+    EXPECT_EQ(tensor->nbytes(), 4 * sizeof(int8_t));
+    EXPECT_EQ(deleter_calls, 0);
+  }
+
+  EXPECT_EQ(deleter_calls, 1);
+  EXPECT_EQ(deleted_ptr, static_cast<void*>(data));
+}
+
 TEST_F(TensorPtrMakerTest, CreateTensorUsingTensorMaker) {
   float data[20] = {2};
   auto tensor =
@@ -195,6 +253,7 @@ TEST_F(TensorPtrMakerTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {4, 5},
       executorch::aten::ScalarType::Float,
+      executorch::aten::DeviceType::CPU,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);
@@ -505,4 +564,55 @@ TEST_F(TensorPtrMakerTest, CreateRandnTensorWithIntType) {
     auto val = tensor->const_data_ptr<int32_t>()[i];
     EXPECT_EQ(val, 0);
   }
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobDefaultsToCPU) {
+  float data[8] = {};
+  auto tensor = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float)
+                    .make_tensor_ptr();
+
+  // Type only: the default index is 0 in one build mode and -1 in the other, so
+  // asserting it would pass in one and fail in the other.
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CPU);
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobCarriesTheDeviceItIsGiven) {
+  float data[8] = {};
+  auto tensor = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float)
+                    .device(executorch::aten::Device(
+                        executorch::aten::DeviceType::CUDA, 3))
+                    .make_tensor_ptr();
+
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CUDA);
+  EXPECT_EQ(tensor->device().index(), 3);
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobDeviceSurvivesLaterSetters) {
+  float data[8] = {};
+  auto tensor = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float)
+                    .device(executorch::aten::Device(
+                        executorch::aten::DeviceType::CUDA, 0))
+                    .dim_order({1, 0})
+                    .strides({1, 2})
+                    .make_tensor_ptr();
+
+  // The strides are asserted with a value a contiguous tensor would not have,
+  // so a setter that silently ignored its argument would fail here rather than
+  // pass.
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CUDA);
+  EXPECT_EQ(tensor->device().index(), 0);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->strides()[1], 2);
+}
+
+TEST_F(TensorPtrMakerTest, ForBlobDeviceAcceptsANamedBuilder) {
+  float data[8] = {};
+  auto maker = for_blob(data, {2, 4}, executorch::aten::ScalarType::Float);
+  maker.device(executorch::aten::Device(executorch::aten::DeviceType::CUDA, 1));
+  auto tensor = std::move(maker).make_tensor_ptr();
+
+  // Choosing a device at run time and applying it to a named builder is the
+  // case this setter exists for, and an rvalue-only qualifier would reject it.
+  EXPECT_EQ(tensor->device().type(), executorch::aten::DeviceType::CUDA);
+  EXPECT_EQ(tensor->device().index(), 1);
 }

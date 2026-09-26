@@ -138,7 +138,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
       </em>
 </p>
 
-[Please visit this section to try it on non-CPU backend, including CoreML, MPS, Qualcomm HTP or MediaTek](non_cpu_backends.md).
+[Please visit this section to try it on non-CPU backend, including CoreML, Qualcomm HTP or MediaTek](non_cpu_backends.md).
 
 # Instructions
 
@@ -277,6 +277,9 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -285,7 +288,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out-android .
 
-cmake --build cmake-out-android -j16 --target install --config Release
+cmake --build cmake-out-android -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 **1.2 Build llama runner for android**
@@ -300,11 +303,11 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-    -DSUPPORT_REGEX_LOOKAHEAD=ON
+    -DSUPPORT_REGEX_LOOKAHEAD=ON \
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 
-cmake --build cmake-out-android/examples/models/llama -j16 --config Release
+cmake --build cmake-out-android/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 **2. Run on Android via adb shell**
@@ -336,7 +339,7 @@ Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examp
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require an arm64 machine, either an Arm-based Mac or an Arm64 Linux machine, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
 ```
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
 ```
@@ -397,7 +400,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --config Release --target install
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release --target install
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
@@ -407,7 +410,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_BUILD_TYPE=Release \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+cmake --build cmake-out/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 Finally run your model (similar to step 3.3 above):
@@ -522,3 +525,65 @@ CMake Error at runner/CMakeLists.txt:72 (add_subdirectory):
 
   does not contain a CMakeLists.txt file.
 ```
+
+# Mixture-of-Experts (MoE) Quantized Custom Op
+
+The `--use_moe_quantized_op` flag enables a portable-runtime custom op
+(`llama::quantized_moe_ffn`) that replaces the eager
+`MOEFeedForward` module with a fused INT4-weight, INT8-dyn-act MoE
+feed-forward kernel. On aarch64, the op uses torchao's optimized
+`linear_8bit_act_xbit_weight::linear_operator` (NEON i8mm/dotprod).
+On x86, a reference path unpacks torchao blobs, dequantizes, and uses
+cpublas::gemm — numerically equivalent, suitable for testing.
+
+## Supported configs
+
+| Knob | Value |
+|---|---|
+| Weight quantization | symmetric INT4 (zero_point=0), `group_size=32` |
+| Activation quantization | INT8 dynamic per-row (handled inside torchao) |
+| Routing | sigmoid+biased top-k+un-biased gather+renormalize×`route_scale` OR softmax |
+| Shapes | works for any `dim`, `hidden_dim` divisible by `group_size` |
+| dtypes | fp32 activations only at the op boundary in v1 |
+
+## AOT export
+
+Add `--use_moe_quantized_op` to the Llama export command described above.
+
+The source transform (`source_transformation/moe.py`) walks the eager
+graph, INT4 group-quantizes each per-expert weight, packs each expert
+through `torch.ops.torchao._pack_8bit_act_4bit_weight`, and replaces
+each `MOEFeedForward` instance with `QuantizedMoEFFN` carrying
+`[E, packed_bytes]` opaque buffers. Tracing reaches the Meta kernel
+registered in `executorch.extension.llm.custom_ops.custom_ops`.
+
+## Runtime build
+
+The runtime kernel ships in `extension/llm/custom_ops/op_moe.cpp`. It
+always compiles with a portable reference fallback (unpack + dequant +
+`cpublas::gemm`) that works on any platform. The optimized build option
+uses torchao's fused `linear_operator` (NEON i8mm/dotprod on aarch64)
+instead of the reference path.
+
+In CMake, opt in to the optimized path with:
+
+```cmake
+-DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON
+```
+
+In Buck, `_get_quantized_moe_deps()` in `targets.bzl` wires:
+- **arm64**: optimized torchao `linear_operator` + weight-packing
+- **other architectures**: weight-packing headers only (reference path)
+
+## Validation
+
+- Python: `buck2 test executorch/extension/llm/custom_ops:test_quantized_moe`
+  runs the source-transform, Meta-kernel, validation, numerical-parity,
+  export-wiring, and config tests. These are validated on x86, which uses
+  the reference kernel path; the optimized torchao path is compiled and
+  exercised by the same suite when built for aarch64.
+- C++: `buck2 test executorch/extension/llm/custom_ops:op_moe_test`
+  verifies the op is registered and links.
+- E2E (requires a real checkpoint): build a PTE with
+  `--use_moe_quantized_op` and compare against ET eager;
+  bar is SQNR > 20 dB and cosine > 0.99.

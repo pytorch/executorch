@@ -17,8 +17,8 @@
  */
 
 #include <executorch/backends/samsung/runtime/enn_executor.h>
+#include <executorch/backends/samsung/runtime/extension/exynos_file_data_loader.h>
 #include <executorch/backends/samsung/runtime/profile.hpp>
-#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/executor/method.h>
@@ -27,6 +27,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <gflags/gflags.h>
 
+#include <algorithm>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -45,8 +46,8 @@ DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
 DEFINE_string(output_path, "", "Output Execution results to target directory.");
 
 using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
 using namespace torch::executor::enn;
+using executorch::backends::enn::ExynosFileDataLoader;
 
 std::vector<std::string> split(std::string str, char delimiter = ' ') {
   std::vector<std::string> result;
@@ -96,10 +97,26 @@ class DataReader {
     return data_set_[index].size();
   }
 
+  // Some ops rewrite their input buffer in place during execute(), so a
+  // repeated execution would otherwise run on whatever the previous
+  // execution left behind. Snapshot the pristine bytes once inputs are set,
+  // then restore() before every execution.
+  void snapshot() {
+    pristine_ = data_set_;
+  }
+
+  void restore() {
+    for (size_t i = 0; i < data_set_.size(); ++i) {
+      std::copy(
+          pristine_[i].cbegin(), pristine_[i].cend(), data_set_[i].begin());
+    }
+  }
+
   ~DataReader() = default;
 
  private:
   std::vector<data_t> data_set_;
+  std::vector<data_t> pristine_;
   int32_t index_ = 0;
 };
 
@@ -118,27 +135,11 @@ void saveOutput(const exec_aten::Tensor& tensor, int32_t output_index) {
   fout.close();
 }
 
-struct EnnApiDeinit {
-  void operator()(EnnApi* ptr) const {
-    if (ptr == nullptr) {
-      return;
-    }
-
-    auto ret = ptr->EnnDeinitialize();
-    ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn Deinitialize failed.");
-  }
-};
-
-std::unique_ptr<EnnApi, EnnApiDeinit> exynos_npu_init() {
-  EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
-  auto ret = enn_api_inst->EnnInitialize();
-  ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn initialize failed.");
-  return std::unique_ptr<EnnApi, EnnApiDeinit>(enn_api_inst);
-}
-
 int main(int argc, char** argv) {
   auto before_init = std::chrono::high_resolution_clock::now();
-  std::unique_ptr<EnnApi, EnnApiDeinit> instance = exynos_npu_init();
+  // The EnnApi singleton initializes the NPU on construction and deinitializes
+  // it on process teardown.
+  EnnApi::getEnnApiInstance();
   auto after_init = std::chrono::high_resolution_clock::now();
   double interval_init = std::chrono::duration_cast<std::chrono::microseconds>(
                              after_init - before_init)
@@ -159,10 +160,10 @@ int main(int argc, char** argv) {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+  Result<ExynosFileDataLoader> loader = ExynosFileDataLoader::from(model_path);
   ET_CHECK_MSG(
       loader.ok(),
-      "FileDataLoader::from() failed: 0x%" PRIx32,
+      "ExynosFileDataLoader::from() failed: 0x%" PRIx32,
       (uint32_t)loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
@@ -312,46 +313,37 @@ int main(int argc, char** argv) {
     ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
   }
   EXYNOS_ATRACE_END();
+  input_data_reader.snapshot();
 
   // Warm up
   ET_LOG(Info, "Perform %d inference for warming up", FLAGS_warm_up);
   Error status;
   for (int i = 0; i < FLAGS_warm_up; ++i) {
+    input_data_reader.restore();
     status = method->execute();
   }
-
-  // Run the model.
-  ET_LOG(Info, "Start 1st inference.");
-  auto before_exec = std::chrono::high_resolution_clock::now();
-  status = method->execute();
-  auto after_exec = std::chrono::high_resolution_clock::now();
-  double interval_1st_infs =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          after_exec - before_exec)
-          .count() /
-      1000.0;
 
   ET_LOG(Info, "Start inference.");
-  before_exec = std::chrono::high_resolution_clock::now();
+  std::chrono::microseconds infs_duration{0};
   for (int i = 0; i < FLAGS_num_executions; ++i) {
+    // Restored outside the timed section so it measures execute() alone,
+    // not the cost of undoing the previous iteration's input mutation.
+    input_data_reader.restore();
+    auto before_exec = std::chrono::high_resolution_clock::now();
     status = method->execute();
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    infs_duration += std::chrono::duration_cast<std::chrono::microseconds>(
+        after_exec - before_exec);
   }
-  after_exec = std::chrono::high_resolution_clock::now();
-  double interval_infs = std::chrono::duration_cast<std::chrono::microseconds>(
-                             after_exec - before_exec)
-                             .count() /
-      1000.0;
+  double interval_infs = infs_duration.count() / 1000.0;
 
   if (FLAGS_dump_statistics) {
     auto output_file_name = "statistics.txt";
     std::ofstream fout(output_file_name);
     fout << "init: " + std::to_string(interval_init)
          << "\nload: " + std::to_string(interval_load)
-         << "\n1st: " + std::to_string(interval_1st_infs)
          << "\navg: " +
-            std::to_string(
-                (interval_infs + interval_1st_infs) /
-                ((float)FLAGS_num_executions + 1.f))
+            std::to_string(interval_infs / (float)FLAGS_num_executions)
          << std::endl;
     fout.close();
   }

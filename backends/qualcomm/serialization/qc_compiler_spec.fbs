@@ -29,16 +29,31 @@ table HtpInfo {
   vtcm_size_in_mb:uint;
 }
 
+/// Defines the LPAI hardware architecture available for LPAI backend.
+enum LpaiHardwareVersion: int {
+  NONE = 0,
+  V6 = 6,
+  V7 = 7,
+}
+
+table LpaiInfo {
+  /// Represent the LPAI hardware version
+  lpai_hardware_version:LpaiHardwareVersion;
+}
+
 /// You could refer to Qualcomm AI Engine Direct SDK
 /// to get SoC Model in supported snapdragon devices
 enum QcomChipset: int {
   UNKNOWN_SM = 0,
   SA8295 = 39,
   SA8797 = 72,
+  SC8380XP = 60,
+  SM7675 = 70,
   SM8350 = 30,
   SM8450 = 36,
   SM8475 = 42,
   SM8550 = 43,
+  SM8635 = 68,
   SM8650 = 57,
   SM8750 = 69,
   SM8850 = 87,
@@ -53,6 +68,7 @@ enum QcomChipset: int {
   SW6100 = 96,
   QCM6490 = 93,
   SM8845 = 97,
+  SA8540 = 62,
 }
 
 /// Indicate the information of the specified SoC.
@@ -62,6 +78,9 @@ table SocInfo {
 
   /// Identifies the htp information of the specified SoC.
   htp_info:HtpInfo;
+
+  /// Identifies the lpai information of the specified SoC.
+  lpai_info:LpaiInfo;
 }
 
 /// Defines performance modes available for GPU backend.
@@ -136,6 +155,7 @@ enum QnnExecuTorchBackendType: int {
   kGpuBackend,
   kHtpBackend,
   kDspBackend,
+  kLpaiBackend,
 }
 
 /// Defines pd sessions available for HTP backend.
@@ -188,7 +208,53 @@ table QnnExecuTorchHtpBackendOptions {
   use_slc_allocator:bool;
 }
 
-/// Logging level of the delegate and QNN backend.
+/// Real-time: Indicates that the model is intended for real-time use cases, where a specific performance threshold must be met.
+/// Non-real-time: Refers to models without strict performance requirements.
+enum QnnExecuTorchLpaiClientPerf: int {
+  /// this is the limit of old version flatbuffer
+  kUndefined = 0,
+  kRealTime,
+  kNonRealTime,
+}
+
+/// Offloaded Ops shall be executed on core with affinity specified.
+enum QnnExecuTorchLpaiCoreAffinity: int {
+  /// this is the limit of old version flatbuffer
+  kUndefined = 0,
+  kSoft,
+  kHard,
+}
+
+/// Target environment for model execution.
+enum QnnExecuTorchLpaiTargetEnv: int {
+  kX86 = 0,
+  kArm,
+  kAdsp,
+}
+
+/// Specifies the backend options for the LPAI backend.
+table QnnExecuTorchLpaiBackendOptions {
+  /// Specifies how frequently inference must be completed.
+  fps:int;
+
+  /// Determines the hardware configuration to meet the latency requirement for inference.
+  ftrt_ratio:int;
+
+  /// Refers to models w/wo strict performance requirements.
+  client_perf_type:QnnExecuTorchLpaiClientPerf;
+
+  /// Offloaded Ops shall be executed on core with affinity specified.
+  affinity:QnnExecuTorchLpaiCoreAffinity;
+
+  /// Select which core for execution
+  core_selection:uint;
+
+  /// Specifies the target environment for model execution.
+  target_env:QnnExecuTorchLpaiTargetEnv;
+}
+
+/// Determines the hardware configuration to meet the latency requirement for inference.
+/// To ensure inference completes within this reduced time window, the eNPU must be boosted.
 enum QnnExecuTorchLogLevel: int {
   kLogOff = 0,
   kLogLevelError,
@@ -211,6 +277,7 @@ enum QnnExecuTorchOpPackageTarget: int {
   UNKNOWN = 0,
   CPU,
   HTP,
+  LPAI,
 }
 
 /// The platform of the op package library.
@@ -218,6 +285,7 @@ enum QnnExecuTorchOpPackagePlatform: int {
   UNKNOWN = 0,
   X86_64,
   AARCH64_ANDROID,
+  HEXAGON,
 }
 
 table QnnExecuTorchOpPackageInfo {
@@ -258,6 +326,8 @@ table QnnExecuTorchBackendOptions {
   htp_options:QnnExecuTorchHtpBackendOptions;
 
   gpu_options:QnnExecuTorchGpuBackendOptions;
+
+  lpai_options:QnnExecuTorchLpaiBackendOptions;
 }
 
 table QnnExecuTorchOptions {

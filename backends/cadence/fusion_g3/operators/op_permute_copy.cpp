@@ -18,7 +18,6 @@
 using ::executorch::aten::ArrayRef;
 using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
-using ::executorch::aten::SizesType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
@@ -105,8 +104,8 @@ Tensor& permute_copy_out(
   signed char* out_data = out.mutable_data_ptr<signed char>();
   const signed char* const inp_data = in.const_data_ptr<signed char>();
 
-  if (((out.scalar_type() == in.scalar_type()) &&
-           (out.scalar_type() == ScalarType::Int) ||
+  if ((out.scalar_type() == in.scalar_type()) &&
+      ((out.scalar_type() == ScalarType::Int) ||
        (out.scalar_type() == ScalarType::Short) ||
        (out.scalar_type() == ScalarType::Char) ||
        (out.scalar_type() == ScalarType::UInt32) ||

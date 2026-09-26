@@ -1,0 +1,35 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode:
+        return
+
+    # Copyright 2026 Arm Limited and/or its affiliates.
+    # All rights reserved.
+    #
+    # This source code is licensed under the BSD-style license found in the
+    # LICENSE file in the root directory of this source tree.
+
+
+
+    python_library(
+        name = "quantizer_reporter",
+        srcs = [
+            "quantizer_reporter.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//pytorch/ao:torchao",
+            "fbsource//third-party/pypi/tabulate:tabulate",
+        ],
+    )
+
+    python_library(
+        name = "target_config",
+        srcs = [
+            "target_config.py",
+        ],
+        deps = [
+            "fbsource//third-party/cmsis-nn:cmsis_nn_py",
+        ],
+    )

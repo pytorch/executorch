@@ -14,16 +14,13 @@ import typing
 import torch
 import torch.fx as fx
 
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
-from executorch.backends.arm._passes.convert_permute_singleton_to_view_pass import (
-    is_singleton_permutation,
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_param_node,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
-from executorch.backends.arm._passes.to_tosa_memory_format_pass import (
-    ToTosaMemoryFormatPass,
-)
-from executorch.backends.arm.operators.op_permute import transform_permutation_vector
-from executorch.backends.arm.tosa.utils import tosa_shape
+from executorch.backends.arm.constants import MAX_U55_INDEX_TENSOR_ELEMENTS
+from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -86,7 +83,11 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         exir_ops.edge.aten.permute_copy.default,
     ]
 
-    target_ops_i8_i16 = (*TableOps.included_ops(), exir_ops.edge.aten.amax.default)
+    target_ops_i8_i16 = (
+        *TableOps.included_ops(),
+        exir_ops.edge.aten.amax.default,
+        exir_ops.edge.aten.amin.default,
+    )
 
     def is_node_supported(  # noqa: C901
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
@@ -129,13 +130,13 @@ class EthosU55DtypeSupport(OperatorSupportBase):
             ifm_dtype = _try_determine_dtype(ifm)
             if ifm_dtype is not None and ifm_dtype not in (torch.int8, torch.int16):
                 self.reporter.report_reject(
-                    node, f"Unsupported input dtype {dtype} (Supports i8, i16)."
+                    node, f"Unsupported input dtype {ifm_dtype} (Supports i8, i16)."
                 )
                 return False
             weight_dtype = _try_determine_dtype(weight)
             if weight_dtype is not None and weight_dtype not in (torch.int8,):
                 self.reporter.report_reject(
-                    node, f"Unsupported weight dtype {dtype} (Supports i8)."
+                    node, f"Unsupported weight dtype {weight_dtype} (Supports i8)."
                 )
                 return False
             if len(node.all_input_nodes) > 2:
@@ -143,7 +144,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
                 bias_dtype = _try_determine_dtype(bias)
                 if bias_dtype is not None and bias_dtype not in (torch.int32,):
                     self.reporter.report_reject(
-                        node, f"Unsupported bias dtype {dtype} (Supports i32)."
+                        node, f"Unsupported bias dtype {bias_dtype} (Supports i32)."
                     )
                     return False
 
@@ -153,10 +154,10 @@ class EthosU55DtypeSupport(OperatorSupportBase):
         ):
             for input_node in node.all_input_nodes:
                 dtype = _try_determine_dtype(input_node)
-                if dtype is not None and dtype not in (torch.int8, torch.int16):
+                if dtype is not None and dtype not in (torch.int8,):
                     self.reporter.report_reject(
-                        input_node,
-                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports i8, i16).",
+                        node,
+                        f"Input {input_node.name} has unsupported dtype {dtype} (Supports int8).",
                     )
                     return False
 
@@ -187,7 +188,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
         exir_ops.edge.aten.logical_not.default,
-        exir_ops.edge.aten.amin.default,  # REDUCE_MIN
         exir_ops.edge.aten.conv3d.default,  # CONV3D
         exir_ops.edge.aten.conv3d.padding,  # CONV3D (deprecated alias)
         exir_ops.edge.aten.eq.Tensor,
@@ -202,23 +202,15 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.ne.Scalar,
-        exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.gather.default,  # GATHER
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
-        exir_ops.edge.aten.index.Tensor,  # GATHER
-        exir_ops.edge.aten.index_select.default,  # GATHER
         exir_ops.edge.aten.index_put.default,  # SCATTER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
-        exir_ops.edge.aten.unfold_copy.default,  # GATHER
-        exir_ops.edge.aten.upsample_nearest2d.vec,  # RESIZE
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
-        exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
-        exir_ops.edge.aten.reflection_pad3d.default,  # REVERSE
         exir_ops.edge.aten.where.self,  # SELECT
     ]
 
@@ -251,18 +243,12 @@ class EthosU55NotSupported(OperatorSupportBase):
         return True
 
 
-shape_t = list[int]
+class EthosU55ResizeCheck(OperatorSupportBase):
+    """Accept nearest-neighbor upscales supported by Ethos-U55.
 
-
-class EthosU55ViewCheck(OperatorSupportBase):
-    """Validate view/select shapes and dtypes for U55.
-
-    Performs lightweight checks on output shape rank and product constraints,
-    with awareness that transposes may be inserted around view/select during
-    lowering to channels-last.
-
-    Attributes:
-        reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+    Ethos-U55 supports nearest-neighbor TOSA RESIZE when both spatial dimensions
+    have batch size 1 and use the same power-of-two scale in the range 2x
+    through 8x.
 
     """
 
@@ -273,375 +259,12 @@ class EthosU55ViewCheck(OperatorSupportBase):
             reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
 
         """
-        super().__init__()
         self.reporter = reporter
-
-    _MAX_AXIS_PRODUCT = 65536
-
-    def axes_product(self, shape: shape_t) -> int:
-        """Return the product of all axes in ``shape``.
-
-        Args:
-            shape (shape_t): Shape.
-
-        Returns:
-            int: Product of the axis sizes.
-
-        """
-        product = 1
-        for axes in shape:
-            product *= axes
-        return product
-
-    def _check_rank_constraints(
-        self,
-        node: fx.Node,
-        input_shape: shape_t,
-        output_shape: shape_t,
-        dtype: torch.dtype | None,
-    ) -> bool:
-        """Validate high-rank reshape scenarios against U55 restrictions. If
-        either input or output rank of node is >4, figuring out whether a
-        transpose is needed or not is complex. Instead, conservatively check
-        that the corresponding transpose is supported on hardware.
-
-        Args:
-            node (fx.Node): Reshape node under inspection.
-            input_shape (shape_t): Source tensor dimensions.
-            output_shape (shape_t): Destination tensor dimensions.
-            dtype (torch.dtype | None): Detected tensor dtype, if known.
-
-        Returns:
-            bool: ``True`` when rank/product constraints are satisfied.
-
-        """
-        input_rank = len(input_shape)
-        output_rank = len(output_shape)
-
-        if input_rank > 4:
-            if self.axes_product(input_shape) > self._MAX_AXIS_PRODUCT:
-                self.reporter.report_reject(
-                    node,
-                    f"Input may require transpose operator. No support for {input_shape=}, "
-                    f"{dtype=}. Product of axes must be <={self._MAX_AXIS_PRODUCT}",
-                )
-                return False
-            if dtype == torch.int32:
-                self.reporter.report_reject(
-                    node,
-                    "Input may require transpose operator. No support for rank >= 4 transposes in int32.",
-                )
-                return False
-
-        if output_rank > 4:
-            if self.axes_product(output_shape) > self._MAX_AXIS_PRODUCT:
-                shape = output_shape
-                self.reporter.report_reject(
-                    node,
-                    f"Operator may require transpose operator. No support for {shape=}, "
-                    f"{dtype=}. Product of axes must be <={self._MAX_AXIS_PRODUCT}",
-                )
-                return False
-            if dtype == torch.int32:
-                self.reporter.report_reject(
-                    node,
-                    "Output may require transpose operator. No support for rank >= 4 transposes in int32.",
-                )
-                return False
-
-        return True
-
-    @staticmethod
-    def _spatial_rank(rank: int) -> int:
-        assert rank < 5, "Spatial rank determination only valid for rank <5."
-        if rank == 4:
-            return 2
-        if rank == 3:
-            return 1
-        return 0
-
-    def _transpose_requirements(
-        self, input_shape: shape_t, output_shape: shape_t
-    ) -> tuple[bool, bool]:
-        """Determine if reshaping requires input or output transposes. For ranks
-        >4, assume transpose is needed as we cannot determine the spatial rank
-        reliably which is needed to determine if a transpose is needed.
-
-        Args:
-            input_shape (shape_t): Original tensor shape.
-            output_shape (shape_t): Reshaped tensor shape.
-
-        Returns:
-            tuple[bool, bool]: ``(needs_input_transpose, needs_output_transpose)``.
-
-        """
-        input_rank = len(input_shape)
-        output_rank = len(output_shape)
-        if input_rank > 4 and output_rank <= 4:
-            # Assume input needs transpose if going from high-rank to low-rank
-            return (
-                True,
-                output_rank == 4
-                and ToTosaMemoryFormatPass.memory_format_differs(
-                    output_shape, self._spatial_rank(output_rank)
-                ),
-            )
-        elif input_rank <= 4 and output_rank > 4:
-            # Assume output needs transpose if going from low-rank to high-rank
-            return (
-                input_rank == 4
-                and ToTosaMemoryFormatPass.memory_format_differs(
-                    input_shape, self._spatial_rank(input_rank)
-                ),
-                True,
-            )
-
-        input_sr = self._spatial_rank(input_rank)
-        output_sr = self._spatial_rank(output_rank)
-        nhwc_to_nchw = input_rank >= 4 and output_rank < 4
-        nchw_to_nhwc = input_rank < 4 and output_rank >= 4
-        channel_reshape = ToTosaMemoryFormatPass.is_channel_reshape(
-            input_shape, output_shape, input_sr, output_sr
-        )
-
-        needs_input_transpose = (
-            channel_reshape or nhwc_to_nchw
-        ) and ToTosaMemoryFormatPass.memory_format_differs(input_shape, input_sr)
-        needs_output_transpose = (
-            channel_reshape or nchw_to_nhwc
-        ) and ToTosaMemoryFormatPass.memory_format_differs(output_shape, output_sr)
-        return needs_input_transpose, needs_output_transpose
-
-    def _check_transpose_constraints(
-        self,
-        node: fx.Node,
-        dtype: torch.dtype | None,
-        input_shape: shape_t,
-        output_shape: shape_t,
-        needs_input_transpose: bool,
-        needs_output_transpose: bool,
-    ) -> bool:
-        """Apply dtype- and size-based constraints for transpose insertions.
-
-        based on:
-            - NCHW -> NHWC or NHWC -> NCHW transposes are not supported in int32.
-            - Transposes with product of axes >65536 are not supported.
-
-        Args:
-            node (fx.Node): Node requiring validation.
-            dtype (torch.dtype | None): Resolved dtype of the reshape.
-            input_shape (shape_t): Source tensor shape.
-            output_shape (shape_t): Destination tensor shape.
-            needs_input_transpose (bool): Whether an input transpose is expected.
-            needs_output_transpose (bool): Whether an output transpose is expected.
-
-        Returns:
-            bool: ``True`` if any implied transpose satisfies U55 limits.
-
-        """
-        if dtype == torch.int32 and (needs_input_transpose or needs_output_transpose):
-            self.reporter.report_reject(
-                node,
-                "Operator requires transpose operator. No support for transpose with "
-                "rank >= 4 in int32, got rank=4.",
-            )
-            return False
-
-        if (
-            needs_input_transpose
-            and self.axes_product(input_shape) > self._MAX_AXIS_PRODUCT
-        ):
-            self.reporter.report_reject(
-                node,
-                f"Operator requires transpose operator. No support for {input_shape=}, "
-                f"{dtype=}. Product of axes must be <{self._MAX_AXIS_PRODUCT}",
-            )
-            return False
-        if (
-            needs_output_transpose
-            and self.axes_product(output_shape) > self._MAX_AXIS_PRODUCT
-        ):
-            self.reporter.report_reject(
-                node,
-                f"Operator requires transpose operator. No support for {output_shape=}, "
-                f"{dtype=}. Product of axes must be <{self._MAX_AXIS_PRODUCT}",
-            )
-            return False
-
-        return True
-
-    # TODO: Extend this check to comply with u55 restrictions
-    def is_node_supported(
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ) -> bool:
-        """Check whether a given view/select node is U55-supported.
-
-        Currently only checks dtypes and product of axes.
-
-        It is not the view operator itself that is not supported on U55. In
-        order for the view operator to be compatible with the channels-last
-        format of TosaBackend, transposes may need to be inserted before and
-        after the view op. If that happens and that transpose operator does not
-        adhere to the limitations then it will result in the following error:
-
-            CPU performance estimation for "Transpose" not implemented.
-            ...
-            CPU operations are not supported for GraphAPI input
-
-        Args:
-            submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
-            node (fx.Node): FX node for ``view_copy`` or ``select``.
-
-        Returns:
-            bool: False if rejected by constraints; otherwise, True.
-
-        """
-        # Select decomposes into squeeze, which in turn becomes a view. Therefore,
-        # perform the same check on select operators as view operators.
-        if node.target not in (
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.select.int,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.select_copy.int,
-        ):
-            return True
-
-        shape = list(get_first_fake_tensor(node).shape)
-
-        dtype = _try_determine_dtype(node)
-
-        output_rank = len(shape)
-        input_shape = list(get_first_fake_tensor(node.all_input_nodes[0]).shape)
-        input_rank = len(input_shape)
-
-        if not self._check_rank_constraints(node, input_shape, shape, dtype):
-            return False
-        if input_rank > 4 and output_rank > 4:
-            # If both input and output have rank >4, and passed the above checks, we can accept
-            # the node
-            return True
-
-        needs_input_transpose, needs_output_transpose = self._transpose_requirements(
-            input_shape, shape
-        )
-        return self._check_transpose_constraints(
-            node,
-            dtype,
-            input_shape,
-            shape,
-            needs_input_transpose,
-            needs_output_transpose,
-        )
-
-
-class EthosU55TransposeCheck(OperatorSupportBase):
-    """Validate permute nodes against U55 reshape/transpose limits.
-
-    Applies dtype- and rank-specific constraints to permutations. Tests both
-    NCHW and NHWC interpretations for rank-3/4 shapes since dim order is unknown
-    at partition time.
-
-    Attributes:
-        reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
-
-    """
-
-    def __init__(self, reporter: WhyNoPartitionReporter):
-        """Initialize the check with a reporter.
-
-        Args:
-            reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
-
-        """
-        super().__init__()
-        self.reporter = reporter
-
-    def _pad_to_rank_4(
-        self, shape: shape_t, permutation: list[int]
-    ) -> tuple[shape_t, shape_t]:
-        """Pad shape/permutation to rank 4 by prepending ones/indices.
-
-        Args:
-            shape (list[int]): Original shape.
-            permutation (list[int]): Original permutation indices.
-
-        Returns:
-            tuple[list[int], list[int]]: Padded shape and permutation.
-
-        """
-        diff = 4 - len(shape)
-        padded_shape = [1] * diff + shape
-        for i in range(len(permutation)):
-            permutation[i] += diff
-        padded_permutation = list(range(diff)) + permutation
-        return padded_shape, padded_permutation
-
-    def axes_product(self, nhwc_shape: shape_t) -> int:
-        """Return the product of all axes in ``nhwc_shape``.
-
-        Args:
-            nhwc_shape (list[int]): Shape in NHWC order.
-
-        Returns:
-            int: Product of the axis sizes.
-
-        """
-        product = 1
-        for axes in nhwc_shape:
-            product *= axes
-        return product
-
-    def _permute_constraint_i8_i16(
-        self, nhwc_shape: list[int], permutation: list[int]
-    ) -> bool:
-        """Return True if permutation meets i8/i16 constraints."""
-        N, H, W, C = nhwc_shape
-
-        if is_singleton_permutation(nhwc_shape, permutation):
-            return True
-
-        match permutation:
-            case (0, 1, 2, 3):  # NHWC -> NHWC
-                return True
-            case (
-                (0, 2, 1, 3) | (0, 1, 3, 2) | (0, 3, 1, 2) | (0, 2, 3, 1) | (0, 3, 2, 1)
-            ):
-                # NHWC -> NWHC, NHCW, NCWH, NCHW, NCHW -> NHWC
-                return N * H <= 65536 and W <= 65536 and C <= 65536
-            case _:
-                return self.axes_product(nhwc_shape) <= 65536
-
-    def _permute_constraint_i32(
-        self, nhwc_shape: list[int], permutation: list[int]
-    ) -> bool:
-        """Return True if permutation meets i32 constraints."""
-        N, H, W, C = nhwc_shape
-        match permutation:
-            case (0, 1, 2, 3):  # NHWC -> NHWC
-                return C <= 32768
-            case (0, 2, 1, 3):  # NHWC -> NHWC
-                return N == 1 and H <= 65536 and W <= 65536 and C <= 16384
-            case (0, 1, 3, 2):  # NHWC -> NHCW
-                return N * H <= 65536 and W <= 65536 and C <= 65536
-            case _:
-                return False
-
-    def _permute_constraint(self, shape, permutation, dtype):
-        """Return True if permutation meets dtype-specific constraints."""
-        if dtype in (torch.int8, torch.int16):
-            return self._permute_constraint_i8_i16(shape, permutation)
-        if dtype == torch.int32:
-            return not self._permute_constraint_i32(shape, permutation)
-        return True
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        """Return True if a permute node satisfies U55 constraints.
-
-        Tests both NCHW and NHWC interpretations for rank-3/4 shapes, and
-        applies dtype-specific limits to shapes and permutations.
+        """Return True when a resize satisfies the U55 constraints.
 
         Args:
             submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
@@ -651,47 +274,244 @@ class EthosU55TransposeCheck(OperatorSupportBase):
             bool: True if supported; otherwise, False.
 
         """
-        if not node.target == exir_ops.edge.aten.permute_copy.default:
+        if node.target != exir_ops.edge.aten.upsample_nearest2d.vec:
             return True
 
-        shape = list(get_first_fake_tensor(node).shape)
-        dtype = _try_determine_dtype(node)
-        permutation = list(typing.cast(list[int], node.args[1]))
+        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        output_shape = get_first_fake_tensor(node).shape
+        input_batch = input_shape[0]
+        output_batch = output_shape[0]
+        if isinstance(input_batch, torch.SymInt) or isinstance(
+            output_batch, torch.SymInt
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 nearest-neighbor resize requires a static batch size of 1.",
+            )
+            return False
+        if input_batch != 1 or output_batch != 1:
+            self.reporter.report_reject(
+                node, "U55 nearest-neighbor resize requires batch size 1."
+            )
+            return False
 
-        rank = len(shape)
-        if rank > 4:
-            if dtype == torch.int32:
-                self.reporter.report_reject(
-                    node, f"No support for {permutation=} in int32."
-                )
-                return False
-            if dtype in (torch.int8, torch.int16):
-                if self.axes_product(shape) > 65536:
-                    self.reporter.report_reject(
-                        node,
-                        f"No support for {shape=}, {dtype=}. Product of axes must be <65536",
-                    )
-                    return False
-            return True
-
-        shape, permutation = self._pad_to_rank_4(shape, permutation)
-        if rank == 3 or rank == 4:
-            # For rank 3 and 4, we can have channels first or channels last dim order.
-            # Since we don't know which at partition-time, test both.
-
-            nhwc_shape = tosa_shape(shape, [0, 2, 3, 1])
-            nhwc_permutation = transform_permutation_vector(permutation, [0, 2, 3, 1])
-
-            if not self._permute_constraint(nhwc_shape, nhwc_permutation, dtype):
+        scale_factors_arg = node.args[2]
+        if scale_factors_arg is not None:
+            scale_factors = typing.cast(typing.Sequence[float], scale_factors_arg)
+            if len(scale_factors) != 2 or not (
+                scale_factors[0] == scale_factors[1] and scale_factors[0] in (2, 4, 8)
+            ):
                 self.reporter.report_reject(
                     node,
-                    f"Unsupported NHWC {nhwc_shape=} for {nhwc_permutation=}, {dtype=}",
+                    "U55 nearest-neighbor resize requires equal 2x, 4x, or 8x "
+                    "scale factors.",
                 )
                 return False
+            return True
 
-        if not self._permute_constraint(shape, permutation, dtype):
+        input_height, input_width = input_shape[-2:]
+        output_height, output_width = output_shape[-2:]
+        if any(
+            isinstance(dim, torch.SymInt)
+            for dim in (input_height, input_width, output_height, output_width)
+        ):
             self.reporter.report_reject(
-                node, f"Unsupported NCHW {shape=} for {permutation=}, {dtype=}"
+                node,
+                "U55 nearest-neighbor resize with an explicit size requires "
+                "static spatial dimensions.",
+            )
+            return False
+        if any(
+            output_height == input_height * scale
+            and output_width == input_width * scale
+            for scale in (2, 4, 8)
+        ):
+            return True
+
+        self.reporter.report_reject(
+            node, "U55 nearest-neighbor resize requires a 2x, 4x, or 8x upscale."
+        )
+        return False
+
+
+class EthosU55ReverseCheck(OperatorSupportBase):
+    """Accept the REVERSE cases proven to run on Ethos-U55."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target == exir_ops.edge.aten.flip.default:
+            input_rank = len(get_first_fake_tensor(node.all_input_nodes[0]).shape)
+            dims = typing.cast(typing.Sequence[int], node.args[1])
+            if input_rank == 4 and len(dims) == 1 and dims[0] % input_rank in (1, 2):
+                return True
+            self.reporter.report_reject(
+                node,
+                "U55 flip support is limited to rank-4 channel or height reversal.",
+            )
+            return False
+
+        reflection_pad_constraints = {
+            exir_ops.edge.aten.reflection_pad1d.default: ((2, 3), (2,)),
+            exir_ops.edge.aten.reflection_pad2d.default: ((3, 4), (2, 4)),
+            exir_ops.edge.aten.reflection_pad3d.default: ((4, 5), (6,)),
+        }
+        if node.target in reflection_pad_constraints:
+            input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+            padding = typing.cast(typing.Sequence[int], node.args[1])
+            supported_ranks, supported_padding_lengths = reflection_pad_constraints[
+                node.target
+            ]
+            if (
+                len(input_shape) in supported_ranks
+                and len(padding) in supported_padding_lengths
+            ):
+                spatial_sizes = tuple(reversed(input_shape[-(len(padding) // 2) :]))
+                pad_pairs = tuple(zip(padding[::2], padding[1::2]))
+                if all(
+                    isinstance(size, int) and 0 <= before < size and 0 <= after < size
+                    for (before, after), size in zip(pad_pairs, spatial_sizes)
+                ):
+                    return True
+            self.reporter.report_reject(
+                node,
+                "U55 reflection padding requires a supported static input rank "
+                "and nonnegative padding smaller than its spatial dimension.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55UnfoldCopyCheck(OperatorSupportBase):
+    """Accept bounded static unfold_copy cases that lower to slices."""
+
+    max_windows = 16
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.unfold_copy.default:
+            return True
+
+        input_arg, dim, size, step = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        input_tensor = get_first_fake_tensor(input_node)
+        input_shape = input_tensor.shape
+        if (
+            input_tensor.dtype == torch.bool
+            or not all(isinstance(arg, int) for arg in (dim, size, step))
+            or any(not isinstance(value, int) for value in input_shape)
+        ):
+            self.reporter.report_reject(
+                node, "U55 unfold_copy requires static non-BOOL input."
+            )
+            return False
+
+        rank = len(input_shape)
+        dim = typing.cast(int, dim) % rank
+        size = typing.cast(int, size)
+        step = typing.cast(int, step)
+        windows = (input_shape[dim] - size) // step + 1
+        if windows > self.max_windows:
+            self.reporter.report_reject(
+                node,
+                f"U55 unfold_copy supports at most {self.max_windows} windows.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55IndexTensorCheck(OperatorSupportBase):
+    """Accept single constant index.Tensor cases that lower to slices."""
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.exported_program = exported_program
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.index.Tensor:
+            return True
+
+        input_arg, indices_arg = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        indices = typing.cast(typing.Sequence[fx.Node | None], indices_arg)
+        input_shape = get_first_fake_tensor(input_node).shape
+        tensor_indices = [index for index in indices if index is not None]
+        if len(tensor_indices) != 1:
+            self.reporter.report_reject(
+                node,
+                "U55 index.Tensor only supports indexing along one dimension but got "
+                f"{len(tensor_indices)}.",
+            )
+            return False
+
+        index_node = tensor_indices[0]
+        index_shape = get_first_fake_tensor(index_node).shape
+        if (
+            not is_param_node(self.exported_program, index_node)
+            or len(index_shape) != 1
+            or index_shape[0] == 0
+            or index_shape[0] > MAX_U55_INDEX_TENSOR_ELEMENTS
+            or any(not isinstance(size, int) for size in input_shape)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 index.Tensor requires static input shape and a constant "
+                f"rank-1 index with at most {MAX_U55_INDEX_TENSOR_ELEMENTS} elements.",
+            )
+            return False
+
+        return True
+
+
+class EthosU55IndexSelectCheck(OperatorSupportBase):
+    """Accept constant contiguous index_select cases that lower to a slice."""
+
+    def __init__(
+        self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
+    ):
+        self.exported_program = exported_program
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        del submodules
+        if node.target != exir_ops.edge.aten.index_select.default:
+            return True
+
+        input_arg, dim, index_arg = node.args
+        input_node = typing.cast(fx.Node, input_arg)
+        index_node = typing.cast(fx.Node, index_arg)
+        input_shape = get_first_fake_tensor(input_node).shape
+        index_shape = get_first_fake_tensor(index_node).shape
+        if (
+            not isinstance(dim, int)
+            or len(input_shape) == 0
+            or not is_param_node(self.exported_program, index_node)
+            or len(index_shape) != 1
+            or index_shape[0] == 0
+            or any(not isinstance(size, int) for size in input_shape)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 index_select requires static input shape and nonempty "
+                "constant indices.",
             )
             return False
 

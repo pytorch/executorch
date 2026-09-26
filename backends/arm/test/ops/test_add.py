@@ -15,6 +15,7 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
+    EthosU65PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
@@ -183,6 +184,18 @@ def test_add_tensor_u55_INT(test_data: input_t1):
 
 
 @common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone300_u65
+def test_add_tensor_u65_INT(test_data: input_t1):
+    pipeline = EthosU65PipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
 def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -250,7 +263,9 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data | Add.test_data_fp16)
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_no_quant(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -274,6 +289,153 @@ def test_add_tensor_vgf_quant(test_data: input_t1):
         exir_op,
         run_on_vulkan_runtime=True,
         quantize=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_tensor_vgf_quant_a16w8(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(get_symmetric_a16w8_quantization_config())
+    pipeline.run()
+
+
+class AddConvResidual(torch.nn.Module):
+    """Conv(x) + x — residual block.
+
+    Creates non-unit IFM scales
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv(x) + x
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+def test_add_conv_residual_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+@common.XfailIfNoCorstone300
+def test_add_conv_residual_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddConvResidual.test_data)
+@common.XfailIfNoCorstone320
+def test_add_conv_residual_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddConvResidual(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+class AddDualConv(torch.nn.Module):
+    """Conv1(x) + conv2(x) — both inputs have Rescale producers."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        return self.conv1(x) + self.conv2(x)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+def test_add_dual_conv_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](AddDualConv(), test_data(), aten_op, exir_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+@common.XfailIfNoCorstone300
+def test_add_dual_conv_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddDualConv.test_data)
+@common.XfailIfNoCorstone320
+def test_add_dual_conv_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddDualConv(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+class AddMultiReader(torch.nn.Module):
+    """Conv2(conv1(x)) + conv3(conv1(x)) — conv1's output Rescale has two
+    readers.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv2 = torch.nn.Conv2d(3, 3, 1, bias=False)
+        self.conv3 = torch.nn.Conv2d(3, 3, 1, bias=False)
+
+    def forward(self, x):
+        y = self.conv1(x)
+        return self.conv2(y) + self.conv3(y)
+
+    test_data = {
+        "4d_randn": lambda: (torch.randn(1, 3, 4, 4),),
+    }
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+def test_add_multi_reader_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+@common.XfailIfNoCorstone300
+def test_add_multi_reader_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AddMultiReader.test_data)
+@common.XfailIfNoCorstone320
+def test_add_multi_reader_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        AddMultiReader(), test_data(), aten_op, exir_op
     )
     pipeline.run()
 
@@ -343,5 +505,46 @@ def test_add_tensor_u85_INT_16a8w(test_data: input_t1):
 
     pipeline.quantizer.set_global(
         get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+aten_op_scalar = "torch.ops.aten.add.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_add_Scalar"
+
+
+class AddScalar(torch.nn.Module):
+    def forward(self, x: torch.Tensor):
+        return torch.ops.aten.add.Scalar(x, 1.5)
+
+
+@common.parametrize(
+    "test_data", Add.test_data | Add.test_data_fp16 | Add.test_data_bf16
+)
+@common.SkipIfNoModelConverter
+def test_add_scalar_vgf_no_quant(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AddScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        run_on_vulkan_runtime=True,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.SkipIfNoModelConverter
+def test_add_scalar_vgf_quant(test_data: input_t1):
+    # Quantized scalar add is lowered through the Tensor overload.
+    # We keep this as add.Tensor rather than add.Scalar.
+    pipeline = VgfPipeline[input_t1](
+        AddScalar(),
+        test_data(),
+        aten_op,
+        exir_op,
+        run_on_vulkan_runtime=True,
+        quantize=True,
     )
     pipeline.run()

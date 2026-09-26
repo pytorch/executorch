@@ -82,12 +82,12 @@ macro(define_overridable_option NAME DESCRIPTION VALUE_TYPE DEFAULT_VALUE)
   if(DEFINED ${NAME} AND NOT DEFINED CACHE{${NAME}})
     set(${NAME}
         ${${NAME}}
-        CACHE ${VALUE_TYPE} ${DESCRIPTION} FORCE
+        CACHE ${VALUE_TYPE} "${DESCRIPTION}" FORCE
     )
   else()
     set(${NAME}
         ${DEFAULT_VALUE}
-        CACHE ${VALUE_TYPE} ${DESCRIPTION}
+        CACHE ${VALUE_TYPE} "${DESCRIPTION}"
     )
   endif()
 

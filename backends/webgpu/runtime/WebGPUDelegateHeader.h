@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstddef>
+
+#include <executorch/runtime/core/result.h>
+
+namespace executorch {
+namespace backends {
+namespace webgpu {
+
+struct WebGPUDelegateHeader {
+  bool is_valid() const;
+
+  static executorch::runtime::Result<WebGPUDelegateHeader> parse(
+      const void* data,
+      size_t buffer_size);
+
+  uint32_t header_size;
+  uint32_t flatbuffer_offset;
+  uint32_t flatbuffer_size;
+  uint32_t bytes_offset;
+  uint64_t bytes_size;
+};
+
+} // namespace webgpu
+} // namespace backends
+} // namespace executorch

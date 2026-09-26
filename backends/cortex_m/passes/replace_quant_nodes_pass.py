@@ -21,23 +21,32 @@ class ReplaceQuantNodesPass(ExportPass):
     """
 
     @staticmethod
-    def _is_qualified_int8_node(args) -> bool:
-        return (
-            args[3] >= torch.iinfo(torch.int8).min  # qmin
-            and args[4] <= torch.iinfo(torch.int8).max  # qmax
-            and args[5] == torch.int8  # dtype
-        )
+    def _is_qualified_node(args) -> bool:
+        """Match int8 OR int16 (de)quantize_per_tensor nodes. The cortex_m C++
+        kernels handle both dtypes via MVE-vectorized paths."""
+        dtype = args[5]
+        if dtype == torch.int8:
+            return (
+                args[3] >= torch.iinfo(torch.int8).min  # qmin
+                and args[4] <= torch.iinfo(torch.int8).max  # qmax
+            )
+        if dtype == torch.int16:
+            return (
+                args[3] >= torch.iinfo(torch.int16).min  # qmin
+                and args[4] <= torch.iinfo(torch.int16).max  # qmax
+            )
+        return False
 
     def __init__(self):
         super().__init__()
         self.op_replacements = {
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: {
                 "new_target": exir_ops.edge.cortex_m.quantize_per_tensor.default,
-                "qualifier": self._is_qualified_int8_node,
+                "qualifier": self._is_qualified_node,
             },
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: {
                 "new_target": exir_ops.edge.cortex_m.dequantize_per_tensor.default,
-                "qualifier": self._is_qualified_int8_node,
+                "qualifier": self._is_qualified_node,
             },
         }
         self.disallowed_targets = {

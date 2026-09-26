@@ -47,28 +47,43 @@ def _get_mask_buffer(graph_module: fx.GraphModule) -> torch.Tensor:
     return buffers["mask"]
 
 
-def test_replace_inf_and_limit_values_no_target_clamps_inf_constants():
+def test_replace_inf_and_limit_values_clamps_inf_constants():
     """Trace a module with infinities, run ReplaceInfAndLimitValuesPass, and
-    expect the buffer and scalar literals to be clamped to ±255 with no
-    infinities left.
+    expect the buffer and scalar literals to be clamped to the configured finite
+    values.
     """
+    QUANTIZED_NEG_INF = -42.0
+    QUANTIZED_POS_INF = 13.0
+
     gm = fx.symbolic_trace(ModuleWithInf())
 
-    result = ReplaceInfAndLimitValuesPass().call(gm)
+    result = ReplaceInfAndLimitValuesPass(
+        neg_inf=QUANTIZED_NEG_INF,
+        pos_inf=QUANTIZED_POS_INF,
+    ).call(gm)
     mask_after_pass = _get_mask_buffer(result.graph_module)
 
     assert result.modified
-    expected = torch.tensor([255.0, -255.0], dtype=mask_after_pass.dtype)
+    expected = torch.tensor(
+        [QUANTIZED_POS_INF, QUANTIZED_NEG_INF],
+        dtype=mask_after_pass.dtype,
+    )
     assert torch.equal(mask_after_pass, expected)
     assert not torch.isinf(mask_after_pass).any()
-    assert sorted(_get_add_constants(result.graph_module)) == [-255, 255]
+    assert sorted(_get_add_constants(result.graph_module)) == [
+        QUANTIZED_NEG_INF,
+        QUANTIZED_POS_INF,
+    ]
 
 
-def test_replace_inf_and_limit_values_no_target_respects_disallowed_nodes():
+def test_replace_inf_and_limit_values_respects_disallowed_nodes():
     """When nodes opt out of transforms, running the pass in TFA mode should
-    leave the mask buffer untouched while still clamping scalar literals to
-    ±255.
+    leave the mask buffer untouched while still clamping scalar literals to the
+    configured finite values.
     """
+    QUANTIZED_NEG_INF = -1_000_000.0
+    QUANTIZED_POS_INF = 10_000.0
+
     gm = fx.symbolic_trace(ModuleWithInf())
     mask_before = _get_mask_buffer(gm).clone()
 
@@ -82,7 +97,10 @@ def test_replace_inf_and_limit_values_no_target_respects_disallowed_nodes():
         ):
             node.meta[DISALLOW_TFA_META_KEY] = True
 
-    replace_inf = ReplaceInfAndLimitValuesPass()
+    replace_inf = ReplaceInfAndLimitValuesPass(
+        neg_inf=QUANTIZED_NEG_INF,
+        pos_inf=QUANTIZED_POS_INF,
+    )
     replace_inf.is_tfa_pass = True
 
     result = replace_inf.call(gm)
@@ -91,4 +109,7 @@ def test_replace_inf_and_limit_values_no_target_respects_disallowed_nodes():
     mask_after = _get_mask_buffer(result.graph_module)
     assert torch.equal(mask_after, mask_before)
     assert torch.isinf(mask_after).tolist() == [True, True]
-    assert sorted(_get_add_constants(result.graph_module)) == [-255, 255]
+    assert sorted(_get_add_constants(result.graph_module)) == [
+        QUANTIZED_NEG_INF,
+        QUANTIZED_POS_INF,
+    ]

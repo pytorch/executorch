@@ -264,7 +264,7 @@ test_model_with_qnn() {
         ;;
   esac
 
-  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
+  "${PYTHON_EXECUTABLE}" -m examples.qualcomm.${SCRIPT_FOLDER}.${EXPORT_SCRIPT} --build_folder ${CMAKE_OUTPUT_DIR} --soc_model ${QNN_CHIPSET} --ci --compile_only $EXTRA_FLAGS
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
@@ -307,11 +307,6 @@ test_model_with_coreml() {
     COREML_EXECUTOR_RUNNER_OUT_DIR="${out_dir}" examples/apple/coreml/scripts/build_executor_runner.sh
     "${out_dir}/coreml_executor_runner" --model_path "${EXPORTED_MODEL}"
   fi
-}
-
-test_model_with_mps() {
-  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --use_fp16
-  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
 }
 
 test_model_with_mediatek() {
@@ -363,12 +358,6 @@ elif [[ "${BACKEND}" == *"coreml"* ]]; then
     dtype=float32
   fi
   test_model_with_coreml "${should_test_coreml}" "${test_with_pybindings}" "${dtype}"
-  if [[ $? -eq 0 ]]; then
-    prepare_artifacts_upload
-  fi
-elif [[ "${BACKEND}" == *"mps"* ]]; then
-  echo "Testing ${MODEL_NAME} with mps..."
-  test_model_with_mps
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi

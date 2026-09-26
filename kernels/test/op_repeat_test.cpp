@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -87,9 +88,9 @@ class OpRepeatOutTest : public OperatorTest {
 };
 
 TEST_F(OpRepeatOutTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
 #define TEST_ENTRY(ctype, dtype) run_dtype_tests<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -209,9 +210,9 @@ TEST_F(OpRepeatOutTest, NegativeRepeatDie) {
 }
 
 TEST_F(OpRepeatOutTest, WrongOutputShapeDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong output shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong output shape");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones(
@@ -246,9 +247,9 @@ TEST_F(OpRepeatOutTest, OutputDtypeMismatchedDie) {
 // Right now we only support the dimension of input and output no larger
 // than 16.
 TEST_F(OpRepeatOutTest, TooManyDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle larger number of dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle larger number of dimensions");
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones(
@@ -361,9 +362,9 @@ TEST_F(OpRepeatOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpRepeatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -384,9 +385,9 @@ TEST_F(OpRepeatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpRepeatOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op) */

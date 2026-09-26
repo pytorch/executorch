@@ -28,9 +28,10 @@ input_t = Tuple[torch.Tensor]
 
 
 class TestAutoencoderKL:
-    """
-    Test class of AutoencoderKL.
+    """Test class of AutoencoderKL.
+
     AutoencoderKL is the encoder/decoder used by Stable Diffusion 3.5 Medium
+
     """
 
     def _prepare_inputs(self, batch_size=4, num_channels=3, sizes=(32, 32)):
@@ -78,7 +79,7 @@ def test_vae_tosa_INT():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=1.0,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
+            atol=0.1,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
             frobenius_threshold=None,
             cosine_threshold=None,
         )
@@ -114,7 +115,7 @@ def test_vae_vgf_quant():
             aten_op=[],
             exir_op=[],
             use_to_edge_transform_and_lower=True,
-            atol=1.0,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
+            atol=0.1,  # TODO: MLETORCH-990 Reduce tolerance of vae(AutoencoderKL) with INT
             quantize=True,
         )
         pipeline.run()

@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 
+#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/event_tracer.h>
@@ -20,6 +21,7 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -72,6 +74,15 @@ class Program final {
      */
     InternalConsistency,
   };
+
+  /**
+   * The highest program schema version that this runtime can read.
+   *
+   * Keep in sync with EXECUTORCH_SCHEMA_VERSION in
+   * //executorch/exir/version.py, which is the version that the exporter stamps
+   * into every PTE file.
+   */
+  static constexpr uint32_t kMaxSupportedSchemaVersion = 0;
 
   /**
    * Loads a Program from the provided loader. The Program will hold a pointer
@@ -139,6 +150,9 @@ class Program final {
    * @param[in] event_tracer The event tracer to use for this method run.
    * @param[in] named_data_map An optional map of {name, blob} used to resolve
    *     data that is external to the PTE, if any.
+   * @param[in] backend_options An optional map of per-backend load-time options
+   *     (RuntimeSpecs). Each backend will receive its corresponding options
+   *     during initialization.
    *
    * @returns The loaded method on success, or an error on failure.
    */
@@ -146,7 +160,9 @@ class Program final {
       const char* method_name,
       MemoryManager* memory_manager,
       EventTracer* event_tracer = nullptr,
-      const NamedDataMap* named_data_map = nullptr) const;
+      const NamedDataMap* named_data_map = nullptr,
+      const LoadBackendOptionsMap* backend_options = nullptr,
+      Span<const Kernel> kernel_registry = {}) const;
 
   /**
    * Gathers metadata for the named method.

@@ -20,7 +20,9 @@ fbcode_target(_kind = runtime.python_library,
     ],
     base_module = "executorch.profiler",
     visibility = ["PUBLIC"],
-    external_deps = ["prettytable"],
+    deps = [
+        "fbsource//third-party/pypi/prettytable:prettytable",
+    ],
 )
 
 fbcode_target(_kind = runtime.python_library,

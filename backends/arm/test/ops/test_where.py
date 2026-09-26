@@ -12,6 +12,7 @@ from executorch.backends.arm.quantizer import (
 )
 
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.quantize import ArmQuantize
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
@@ -19,7 +20,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 
 aten_op = "torch.ops.aten.where.self"
 exir_op = "executorch_exir_dialects_edge__ops_aten_where_self"
@@ -189,8 +189,11 @@ test_modules_FP_bf16 = {
 }
 
 test_modules_FP_unsupported_dtype = {
-    "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
-    "int32_scalar_cond": lambda: int32_scalar_cond,
+    "float32_tensor_cond_tuple_dtype": lambda: (
+        float32_tensor_cond_tuple_dtype,
+        1,
+    ),
+    "int32_scalar_cond": lambda: (int32_scalar_cond, 0),
 }
 
 test_modules_INT = {
@@ -215,11 +218,12 @@ def test_where_self_tosa_FP(test_module):
 
 @common.parametrize("test_module", test_modules_FP_unsupported_dtype)
 def test_where_self_tosa_FP_unsupported_dtype(test_module):
+    module, n_expected_delegates = test_module()
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module(),
-        test_module().get_inputs(),
+        module,
+        module.get_inputs(),
         {exir_op: 1},
-        n_expected_delegates=1,  # condition can be delegated
+        n_expected_delegates=n_expected_delegates,
     )
     pipeline.run()
 
@@ -269,7 +273,7 @@ def test_where_self_u55_INT_not_delegated(test_module):
         u55_subset=True,
     )
     pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
+        "quantize", ArmQuantize(quantizer, get_symmetric_quantization_config())
     )
     pipeline.run()
 
@@ -288,7 +292,7 @@ def test_where_self_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_FP)
+@common.parametrize("test_module", test_modules_FP | test_modules_FP_bf16)
 @common.SkipIfNoModelConverter
 def test_where_self_vgf_no_quant(test_module):
     module = test_module()

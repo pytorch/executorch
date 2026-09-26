@@ -14,8 +14,6 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::Tensor;
-
 DEFINE_UNARY_UFUNC_REALHBF16(ceil_out, std::ceil)
 
 } // namespace native

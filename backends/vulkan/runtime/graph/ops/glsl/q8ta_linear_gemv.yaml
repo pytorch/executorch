@@ -11,8 +11,11 @@ q8ta_linear_gemv:
     TILE_K4: 1
     TILE_N4: 2
     WGS: 64
+    USE_INT8_DOT_PRODUCT_EXT: 1
   generate_variant_forall:
     DTYPE:
       - VALUE: float
   shader_variants:
     - NAME: q8ta_linear_gemv
+    - NAME: q8ta_linear_gemv_fallback
+      USE_INT8_DOT_PRODUCT_EXT: 0

@@ -22,7 +22,7 @@ namespace impl {
 using Tensor = executorch::aten::Tensor;
 using ScalarType = executorch::aten::ScalarType;
 
-template <bool is_sub, const char* op_name>
+template <bool is_sub, ET_OPERATOR_NAME_TYPE op_name>
 Tensor& opt_add_sub_out_impl(
     KernelRuntimeContext& ctx,
     const Tensor& a,

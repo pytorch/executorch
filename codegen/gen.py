@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from __future__ import annotations
 
 import argparse
@@ -309,8 +314,8 @@ Kernel(
         internal::EventTracerProfileOpScope event_tracer_op_scope(context.internal_event_tracer(), "native_call_{f.func.name}");
         EXECUTORCH_SCOPE_PROF("native_call_{f.func.name}");
         {ret_prefix}{kernel_call}(context, {args_str});
-        {event_tracer_output_logging}
         {return_assignment}
+        {event_tracer_output_logging}
 {exception_boundary_end}
     }}
 ),
@@ -353,6 +358,7 @@ def gen_unboxing(
         filename,
         items,
         key_fn=key_func,
+        base_env={"fn_header": header if not items else []},
         env_callable=lambda unbox_kernel_entry: {
             "unboxed_kernels": [
                 ComputeCodegenUnboxedKernels(

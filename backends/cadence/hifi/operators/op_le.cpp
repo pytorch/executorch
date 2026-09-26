@@ -18,8 +18,6 @@ using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
-using executorch::runtime::CppTypeToScalarType;
-using executorch::runtime::promoteTypes;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 
@@ -95,15 +93,21 @@ Tensor& le_Tensor_out(
       for (int i = 0; i < b.dim(); i++)
         inp2_shape[i + off_b] = b.size(i);
 
-      WORD32 ret_val = xa_nn_elm_greater_lesser_equal_broadcast_4D_f32xf32_f32(
-          p_out, out_shape, p_inp1, inp1_shape, p_inp2, inp2_shape, 2);
+      WORD32 ret_val = xa_nn_elm_compare_broadcast_4D_f32xf32_f32(
+          p_out,
+          out_shape,
+          p_inp1,
+          inp1_shape,
+          p_inp2,
+          inp2_shape,
+          COMPARE_LESSEREQUAL);
 
       ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
     } else {
       int num_elm = out.numel();
 
-      WORD32 ret_val = xa_nn_elm_greater_lesser_equal_f32xf32_f32(
-          p_out, p_inp1, p_inp2, num_elm, 2);
+      WORD32 ret_val = xa_nn_elm_compare_f32xf32_f32(
+          p_out, p_inp1, p_inp2, num_elm, COMPARE_LESSEREQUAL);
 
       ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
     }

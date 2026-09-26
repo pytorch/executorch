@@ -30,13 +30,13 @@ configure_and_build_main() {
         -B$CMAKE_OUT_DIR
     fi
 
-    cmake --build $CMAKE_OUT_DIR -j16 --target install
+    cmake --build $CMAKE_OUT_DIR -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
     # -DCMAKE_CXX_FLAGS="-DVULKAN_DEBUG" \
 }
 
 # Function to build main project only
 build_main() {
-    cmake --build $CMAKE_OUT_DIR -j16 --target install
+    cmake --build $CMAKE_OUT_DIR -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 }
 
 # Function to configure and build tests
@@ -65,12 +65,12 @@ configure_and_build_tests() {
             -B$CMAKE_OUT_DIR/backends/vulkan/test/custom_ops
     fi
 
-    cmake --build $CMAKE_OUT_DIR/backends/vulkan/test/custom_ops -j16 --target all
+    cmake --build $CMAKE_OUT_DIR/backends/vulkan/test/custom_ops -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target all
 
 }
 
 build_tests() {
-    cmake --build $CMAKE_OUT_DIR/backends/vulkan/test/custom_ops -j16 --target all
+    cmake --build $CMAKE_OUT_DIR/backends/vulkan/test/custom_ops -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target all
 }
 
 # Function to rebuild both main and tests
@@ -120,7 +120,7 @@ ANDROID_MODE=false
 CMAKE_OUT_DIR="cmake-out"
 
 # Check for --android flag and adjust arguments accordingly
-if [[ "$1" == "--android" ]]; then
+if [[ "${1:-}" == "--android" ]]; then
     ANDROID_MODE=true
     CMAKE_OUT_DIR="cmake-android-out"
     shift  # Remove --android from arguments

@@ -9,9 +9,10 @@ import numbers
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from torch.fx import GraphModule
 
 
 _ADD_OPS = (
@@ -30,24 +31,20 @@ def _get_ops(op):
         if op is exir_ops.edge.aten.add.Tensor:
             return (
                 exir_ops.edge.aten.mul.Tensor,
-                exir_ops.edge.aten.full.default,
                 exir_ops.edge.aten.add.Tensor,
             )
         return (
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.full.default,
             torch.ops.aten.add.Tensor,
         )
     if op in _SUB_OPS:
         if op is exir_ops.edge.aten.sub.Tensor:
             return (
                 exir_ops.edge.aten.mul.Tensor,
-                exir_ops.edge.aten.full.default,
                 exir_ops.edge.aten.sub.Tensor,
             )
         return (
             torch.ops.aten.mul.Tensor,
-            torch.ops.aten.full.default,
             torch.ops.aten.sub.Tensor,
         )
     raise RuntimeError(f"Unsupported operator {op}")
@@ -59,32 +56,39 @@ def _should_decompose(alpha) -> bool:
     return False
 
 
-class DecomposeAddSubAlphaPass(ArmPass):
+class DecomposeAddSubAlphaPass(ArmOpTargetedPass):
     """Rewrite add/sub with alpha into a mul followed by add/sub."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = _ADD_OPS + _SUB_OPS
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        for node in graph_module.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target in self.target_ops
+                and _should_decompose(node.kwargs.get("alpha", 1))
+            ):
+                return True
+        return any(
+            isinstance(child, GraphModule) and self.should_run_pass(child)
+            for child in graph_module.children()
+        )
 
     def call_operator(self, op, args, kwargs, meta, updated: bool | None = False):
-        if op not in _ADD_OPS + _SUB_OPS:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         alpha = kwargs.get("alpha", 1)
         if not _should_decompose(alpha):
             return super().call_operator(op, args, kwargs, meta, updated)
 
-        mul_op, full_op, binary_op = _get_ops(op)
+        mul_op, binary_op = _get_ops(op)
         lhs, rhs = args
 
-        alpha_full = super().call_operator(
-            full_op,
-            ((1,), float(alpha)),
-            {"device": meta["val"].device, "dtype": meta["val"].dtype},
-            meta,
-            updated=True,
-        )
         scaled_rhs = super().call_operator(
             mul_op,
-            (rhs, alpha_full),
+            (rhs, super().call_scalar(alpha, meta)),
             {},
             meta,
             updated=True,

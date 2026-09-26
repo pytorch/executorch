@@ -16,7 +16,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -24,7 +26,6 @@ using namespace ::testing;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
 using executorch::extension::merged_data_map::MergedDataMap;
-using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
@@ -121,8 +122,7 @@ void compare_ndm_api_calls(
     EXPECT_EQ(merged_load_into, Error::Ok);
     for (auto j : c10::irange(ndm_meta.nbytes())) {
       EXPECT_EQ(
-          ((uint8_t*)merged_buffer.get())[j],
-          ((uint8_t*)merged_buffer.get())[j]);
+          ((uint8_t*)ndm_buffer.get())[j], ((uint8_t*)merged_buffer.get())[j]);
     }
   }
 }
@@ -171,4 +171,26 @@ TEST_F(MergedDataMapTest, CheckDataMapContents) {
   // API calls produce equivalent results.
   compare_ndm_api_calls(data_maps_["addmul"].get(), &merged_map.get());
   compare_ndm_api_calls(data_maps_["linear"].get(), &merged_map.get());
+}
+
+TEST_F(MergedDataMapTest, LookupUsesStringViewLength) {
+  std::vector<const NamedDataMap*> ndms = {data_maps_["addmul"].get()};
+  Result<MergedDataMap> merged_map =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
+  ASSERT_EQ(merged_map.error(), Error::Ok);
+
+  const char* key = data_maps_["addmul"]->get_key(0).get();
+  const size_t key_size = std::strlen(key);
+  const std::string storage = std::string(key) + ".not-part-of-key";
+  const std::string_view bounded_key(storage.data(), key_size);
+
+  EXPECT_EQ(merged_map->get_data(bounded_key).error(), Error::Ok);
+  EXPECT_EQ(merged_map->get_tensor_layout(bounded_key).error(), Error::Ok);
+  const auto layout = merged_map->get_tensor_layout(bounded_key);
+  ASSERT_EQ(layout.error(), Error::Ok);
+  const size_t data_size = layout->nbytes();
+  auto buffer = std::make_unique<uint8_t[]>(data_size);
+  EXPECT_EQ(
+      merged_map->load_data_into(bounded_key, buffer.get(), data_size),
+      Error::Ok);
 }

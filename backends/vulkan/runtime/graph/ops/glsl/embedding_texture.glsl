@@ -35,13 +35,16 @@ ${layout_declare_ubo(B, "BufferMetadata", "weight")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
+${layout_declare_spec_const(C, "int", "indices_layout", "CONTIG_LAYOUT_INT")}
+
 int load_embedding_idx(const TensorIndex4D out_tidx) {
   TensorIndex4D indices_tidx;
   indices_tidx.data.xyz = out_tidx.data.yzw;
   indices_tidx.data.w = 0;
 
   TextureElementIndex elem_pos = tensor4d_idx_to_texture_element_idx_simple(
-    indices, indices_tidx);
+    indices, indices_tidx, indices_layout);
 
   const ivec4 in_texel = texelFetch(t_indices, elem_pos.pos, 0);
   return in_texel[elem_pos.comp];
@@ -63,7 +66,8 @@ void main() {
     return;
   }
 
-  TensorIndex4D out_tidx = texture_pos_to_tensor4d_idx_simple(outp, out_pos);
+  TensorIndex4D out_tidx =
+      texture_pos_to_tensor4d_idx_simple(outp, out_pos, out_layout);
   const int embedding_idx = load_embedding_idx(out_tidx);
 
   const VEC4_T weight_texel = load_weight_texel(embedding_idx, out_tidx.data.x);

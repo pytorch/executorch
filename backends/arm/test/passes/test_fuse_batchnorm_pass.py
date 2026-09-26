@@ -54,6 +54,18 @@ class MergeOneOfTwoBN(torch.nn.Module):
         return x
 
 
+class MergeOneOfTwoBNBf16(MergeOneOfTwoBN):
+    ops_before_pass: ClassVar[Dict[str, int]] = MergeOneOfTwoBN.ops_before_pass
+    ops_after_pass: ClassVar[Dict[str, int]] = MergeOneOfTwoBN.ops_before_pass
+
+    def __init__(self, affine: bool):
+        super().__init__(affine)
+        self.to(torch.bfloat16)
+
+    def get_inputs(self) -> input_t:
+        return (torch.randn(1, 3, 256, 256, dtype=torch.bfloat16),)
+
+
 class MergeTwosOfTwoBN(torch.nn.Module):
     ops_before_pass: ClassVar[Dict[str, int]] = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 2,
@@ -90,6 +102,47 @@ class MergeTwosOfTwoBN(torch.nn.Module):
         x = self.conv2d2(x)
         x = self.batch_norm2d(x)
         return x
+
+
+class MergeConvTransposeBN(torch.nn.Module):
+    ops_before_pass: ClassVar[Dict[str, int]] = {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+    ops_after_pass: ClassVar[Dict[str, int]] = {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_convolution_default": 1,
+    }
+
+    def __init__(
+        self,
+        groups: int = 1,
+        bias: bool = False,
+        affine: bool = True,
+        in_channels: int = 4,
+        out_channels: int = 6,
+    ) -> None:
+        super().__init__()
+        self.conv_transpose2d = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=2,
+            stride=2,
+            groups=groups,
+            bias=bias,
+        )
+        self.batch_norm2d = torch.nn.BatchNorm2d(out_channels, affine=affine)
+        self.batch_norm2d.running_mean = torch.rand(out_channels)
+        self.batch_norm2d.running_var = torch.rand(out_channels)
+        if affine:
+            self.batch_norm2d.weight = torch.nn.Parameter(torch.rand(out_channels))
+            self.batch_norm2d.bias = torch.nn.Parameter(torch.rand(out_channels))
+
+    def get_inputs(self) -> input_t:
+        return (torch.randn(1, self.conv_transpose2d.in_channels, 8, 8),)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.batch_norm2d(self.conv_transpose2d(x))
 
 
 class MergeMultipleUsersBN(torch.nn.Module):
@@ -131,7 +184,7 @@ class MergeMultipleUsersBN(torch.nn.Module):
         z = self.conv2d2(x)
         a = self.batch_norm2d(
             y
-        )  # Can be fused despite paramters of conv2d2 having multiple users.
+        )  # Can be fused despite parameters of conv2d2 having multiple users.
 
         return z, a
 
@@ -141,6 +194,20 @@ modules: Dict[str, ModuleWithBatchNormAttrs] = {
     "merge_one_of_two_bn": cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBN(False)),
     "merge_two_of_two_bn_affine": cast(
         ModuleWithBatchNormAttrs, MergeTwosOfTwoBN(True)
+    ),
+    "merge_conv_transpose_bn": cast(ModuleWithBatchNormAttrs, MergeConvTransposeBN()),
+    "merge_grouped_conv_transpose_bn": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2)
+    ),
+    "merge_grouped_conv_transpose_bn_bias": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2, bias=True)
+    ),
+    "merge_grouped_conv_transpose_bn_no_affine": cast(
+        ModuleWithBatchNormAttrs, MergeConvTransposeBN(groups=2, affine=False)
+    ),
+    "merge_grouped_conv_transpose_bn_equal_channels": cast(
+        ModuleWithBatchNormAttrs,
+        MergeConvTransposeBN(groups=2, in_channels=4, out_channels=4),
     ),
     "merge_multiple_users_bn_affine": cast(
         ModuleWithBatchNormAttrs, MergeMultipleUsersBN(True)
@@ -161,5 +228,20 @@ def test_fuse_batch_norm2d_tosa_FP(module: ModuleWithBatchNormAttrs) -> None:
         ops_before_pass=module.ops_before_pass,
         ops_after_pass=module.ops_after_pass,
         passes_with_exported_program=[FuseBatchNorm2dPass],
+    )
+    pipeline.run()
+
+
+def test_fuse_batch_norm2d_tosa_FP_bf16_skips_fusion() -> None:
+    module = cast(ModuleWithBatchNormAttrs, MergeOneOfTwoBNBf16(True))
+    nn_module = cast(torch.nn.Module, module)
+    pipeline = PassPipeline[input_t](
+        nn_module,
+        module.get_inputs(),
+        quantize=False,
+        ops_before_pass=module.ops_before_pass,
+        ops_after_pass=module.ops_after_pass,
+        passes_with_exported_program=[FuseBatchNorm2dPass],
+        tosa_extensions=["bf16"],
     )
     pipeline.run()

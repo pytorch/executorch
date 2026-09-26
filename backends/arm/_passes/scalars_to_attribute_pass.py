@@ -11,9 +11,9 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.exir.graph_module import get_cond_while_submodules
-
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+from torch.fx.node import Argument
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
@@ -26,26 +26,47 @@ class ScalarsToAttributePass(ArmPass):
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
         torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.rsub.Scalar,
         torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul_.Tensor,
         torch.ops.aten.div.Tensor,
         torch.ops.aten.div_.Tensor,
+        torch.ops.aten.div.Tensor_mode,
     ]
+
+    @staticmethod
+    def _is_scalar_arg(arg: object) -> bool:
+        return isinstance(arg, (int, float))
+
+    def _has_scalar_arg(self, node: Node) -> bool:
+        return (
+            node.op == "call_function"
+            and node.target in self.targeted_ops
+            and any(self._is_scalar_arg(arg) for arg in node.args)
+        )
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if any(
+            self._has_scalar_arg(cast(Node, node)) for node in graph_module.graph.nodes
+        ):
+            return True
+        return any(
+            any(
+                self._has_scalar_arg(cast(Node, node)) for node in submodule.graph.nodes
+            )
+            for _, submodule, _ in get_cond_while_submodules(graph_module)
+        )
 
     def _convert_scalar_args(
         self,
         graph_module: GraphModule,
         n: Node,
-    ) -> None:
+    ) -> bool:
         """Convert scalar literal args of targeted_ops in node n of graph_module
         into attribute get_attr nodes with registered buffers.
         """
         if n.op != "call_function" or n.target not in self.targeted_ops:
-            return
+            return False
 
         biggest_rank = 1
         for arg in n.args:
@@ -53,10 +74,14 @@ class ScalarsToAttributePass(ArmPass):
                 shape = get_first_fake_tensor(arg).shape
                 biggest_rank = max(biggest_rank, len(shape))
 
+        modified = False
         output_fake_tensor = get_first_fake_tensor(n)
-        new_args: list[Node | int] = []
+        new_args: list[Argument] = []
         for arg in n.args:
             if isinstance(arg, Node):
+                new_args.append(arg)
+                continue
+            if not self._is_scalar_arg(arg):
                 new_args.append(arg)
                 continue
             if isinstance(arg, int) and not torch.is_floating_point(output_fake_tensor):
@@ -94,23 +119,26 @@ class ScalarsToAttributePass(ArmPass):
                     n.replace_all_uses_with(sub)
                     sub.meta["val"] = n.meta["val"]
                 graph_module.graph.erase_node(n)
+            modified = True
+        return modified
 
-    def handle_control_nodes(self, node: Node, graph_module: GraphModule) -> None:
+    def handle_control_nodes(self, graph_module: GraphModule) -> bool:
         """Apply scalar argument conversion on subgraphs of control-flow
         nodes.
         """
+        modified = False
         for _, submodule, _ in get_cond_while_submodules(graph_module):
             for submodule_node in submodule.graph.nodes:
-                # use aten.full.default for scalar constants in control subgraphs
-                self._convert_scalar_args(submodule, submodule_node)
-        graph_module.recompile()
+                modified |= self._convert_scalar_args(submodule, submodule_node)
+        return modified
 
     def call(self, graph_module: GraphModule) -> PassResult:
         # convert scalars in control-flow subgraphs and main graph
+        modified = False
         for node in list(graph_module.graph.nodes):
             n = cast(Node, node)
-            self.handle_control_nodes(n, graph_module)
-            self._convert_scalar_args(graph_module, n)
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+            modified |= self._convert_scalar_args(graph_module, n)
+        modified |= self.handle_control_nodes(graph_module)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

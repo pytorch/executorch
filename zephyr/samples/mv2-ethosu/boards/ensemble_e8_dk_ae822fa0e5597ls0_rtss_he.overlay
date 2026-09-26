@@ -1,0 +1,38 @@
+/* Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * Copyright 2026 Arm Limited and/or its affiliates.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The default board DTS routes Zephyr RAM to 256 KiB DTCM on RTSS-HE.
+ * MobileNetV2 needs much more space, so expose the contiguous SRAM0 and SRAM1
+ * banks as one 8 MiB Zephyr RAM region for this sample.
+ */
+
+/delete-node/ &sram0;
+/delete-node/ &sram1;
+
+&soc {
+	ethosu0: ethosu55@400e1000 {
+		compatible = "arm,ethos-u";
+		reg = <0x400e1000 0x1000>;
+		interrupts = <55 0>;
+		interrupt-parent = <&nvic>;
+		secure-enable;
+		privilege-enable;
+		status = "okay";
+	};
+
+	sram0: sram@2000000 {
+		compatible = "zephyr,memory-region", "mmio-sram";
+		reg = <0x2000000 DT_SIZE_M(8)>;
+		zephyr,memory-region = "SRAM0";
+	};
+};
+
+/ {
+	chosen {
+		zephyr,sram = &sram0;
+	};
+};

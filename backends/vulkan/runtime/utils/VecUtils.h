@@ -465,24 +465,8 @@ inline ivec4 make_whcn_ivec4(const std::vector<int64_t>& arr) {
 }
 
 /*
- * Wrapper around std::accumulate that accumulates values of a container of
- * integral types into int64_t. Taken from `multiply_integers` in
- * <c10/util/accumulate.h>
- */
-template <
-    typename C,
-    std::enable_if_t<std::is_integral<typename C::value_type>::value, int> = 0>
-inline int64_t multiply_integers(const C& container) {
-  return std::accumulate(
-      container.begin(),
-      container.end(),
-      static_cast<int64_t>(1),
-      std::multiplies<>());
-}
-
-/*
- * Product of integer elements referred to by iterators; accumulates into the
- * int64_t datatype. Taken from `multiply_integers` in <c10/util/accumulate.h>
+ * Computes the product of integral values referred to by iterators,
+ * accumulating into int64_t with overflow checking. Throws on overflow.
  */
 template <
     typename Iter,
@@ -491,66 +475,31 @@ template <
             typename std::iterator_traits<Iter>::value_type>::value,
         int> = 0>
 inline int64_t multiply_integers(Iter begin, Iter end) {
-  // std::accumulate infers return type from `init` type, so if the `init` type
-  // is not large enough to hold the result, computation can overflow. We use
-  // `int64_t` here to avoid this.
-  return std::accumulate(
-      begin, end, static_cast<int64_t>(1), std::multiplies<>());
+  int64_t result = 1;
+  for (Iter it = begin; it != end; ++it) {
+    const int64_t val = static_cast<int64_t>(*it);
+    VK_CHECK_COND(val >= 0, "Negative value in multiply_integers");
+    if (val == 0) {
+      return 0;
+    }
+    VK_CHECK_COND(
+        result <= std::numeric_limits<int64_t>::max() / val,
+        "Integer overflow in multiply_integers");
+    result *= val;
+  }
+  return result;
 }
 
-class WorkgroupSize final {
-  uint32_t val;
-
- public:
-  explicit WorkgroupSize() : val(0) {}
-  explicit WorkgroupSize(const uint32_t x, const uint32_t y, const uint32_t z) {
-    // shift numbers by multiple of 11 bits, since each local workgroup axis can
-    // be 1024 at most and which is 0x400. only z axis can't store 1024, because
-    // it would overflow uint32_t storage.
-    if (z == 1024) {
-      throw std::runtime_error(
-          "Workgroup size in z axis cannot be 1024 because it would overflow uint32_t storage");
-    }
-    val = x | (y << 11) | (z << 22);
-  }
-
-  explicit WorkgroupSize(const uvec3& vec) {
-    // shift numbers by multiple of 11 bits, since each local workgroup axis can
-    // be 1024 at most and which is 0x400. only z axis can't store 1024, because
-    // it would overflow uint32_t storage.
-    if (vec[2u] == 1024) {
-      throw std::runtime_error(
-          "Workgroup size in z axis cannot be 1024 because it would overflow uint32_t storage");
-    }
-    val = vec[0u] | (vec[1u] << 11) | (vec[2u] << 22);
-  }
-
-  explicit inline operator uvec3() const {
-    return {
-        val & 0x7ffu,
-        (val >> 11) & 0x7ffu,
-        (val >> 22),
-    };
-  }
-
-  explicit inline operator uint32_t() const {
-    return val;
-  }
-
-  inline constexpr uint32_t operator[](const int idx) const {
-    return (val >> (11 * idx)) & 0x7ffu;
-  }
-
-  // Equality operator
-  bool operator==(const WorkgroupSize& other) const {
-    return val == other.val;
-  }
-
-  // Inequality operator (optional, for completeness)
-  bool operator!=(const WorkgroupSize& other) const {
-    return !(*this == other);
-  }
-};
+/*
+ * Computes the product of integral values in a container, accumulating into
+ * int64_t with overflow checking. Throws on overflow.
+ */
+template <
+    typename C,
+    std::enable_if_t<std::is_integral<typename C::value_type>::value, int> = 0>
+inline int64_t multiply_integers(const C& container) {
+  return multiply_integers(container.begin(), container.end());
+}
 
 } // namespace utils
 } // namespace vkcompute

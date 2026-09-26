@@ -1,6 +1,7 @@
 load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
+    "CXX",
 )
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
@@ -23,6 +24,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/devtools/bundled_program:runtime",
+            "//executorch/kernels/portable:generated_lib",
             "//executorch/kernels/quantized:generated_lib",
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/extension/data_loader:file_data_loader",
@@ -30,7 +32,11 @@ def define_common_targets():
             "//executorch/extension/runner_util:inputs",
             "//executorch/backends/qualcomm/runtime:runtime",
         ],
-        platforms = [ANDROID],
+        # The host (CXX) build of this runner is only used by the internal
+        # fbcode buck-native x86 QNN simulator test. Keep it out of OSS builds
+        # (CXX there includes macOS, which has no QNN host libs) -- restore the
+        # original Android-only surface in OSS.
+        platforms = [ANDROID, CXX] if is_fbcode() else [ANDROID],
         external_deps = [
             "gflags",
         ],

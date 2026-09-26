@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -18,7 +19,6 @@
 #include <sys/types.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -651,17 +651,39 @@ TEST_F(OpSelectScatterOutTest, DynamicShapeUpperBoundSameAsExpected) {
 }
 
 TEST_F(OpSelectScatterOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   test_dynamic_shape(
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
 TEST_F(OpSelectScatterOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape not supported");
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
+}
+
+TEST_F(OpSelectScatterOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // src is one rank below x, so at rank 4 the same dim order check above
+  // rejects first. Only rank 5 reaches the default dim order check, because
+  // is_channels_last_dim_order accepts both 4 and 5 dims.
+  Tensor x = tf.make_with_dimorder(
+      {2, 2, 2, 2, 2}, std::vector<float>(32, 1), {0, 2, 3, 4, 1});
+  Tensor src = tf.make_with_dimorder(
+      {2, 2, 2, 2}, std::vector<float>(16, 2), {0, 2, 3, 1});
+
+  Tensor out = tf.make_with_dimorder(
+      {2, 2, 2, 2, 2}, std::vector<float>(32), {0, 2, 3, 4, 1});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
 }

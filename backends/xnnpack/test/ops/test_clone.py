@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,7 +10,8 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 
 
 class TestClone(unittest.TestCase):
@@ -61,6 +63,32 @@ class TestClone(unittest.TestCase):
         """Test FP32 clone - should be partitioned"""
         inputs = (torch.randn(2, 3, 4, 5),)
         self._test_clone_partitioned(inputs)
+
+    def test_fp32_clone_default_partitions_with_skip_dim_order(self):
+        """Test plain aten.clone.default partitioning without dim-order rewrite."""
+        inputs = (torch.randn(2, 3, 4, 5),)
+        (
+            Tester(self.Clone(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.clone.default": 1})
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    edge_compile_config=get_xnnpack_edge_compile_config(
+                        skip_dim_order=True
+                    )
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_clone_default",
+                    "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
 
     def test_fp32_clone_2d(self):
         """Test FP32 clone with 2D tensor - should be partitioned"""

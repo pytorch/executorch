@@ -1672,3 +1672,99 @@ class TestGroupPartitioner(unittest.TestCase):
 
         # With allows_single_node_partition=True, we should have partitions
         self.assertGreater(len(partitions_with_single), 0)
+
+    def test_interleaved_groups_no_false_merge(self):
+        """
+        Test that _can_merge_partitions correctly rejects merges when two
+        partition groups interleave in topological order.
+
+        This reproduces a real-world failure with
+        XnnpackDynamicallyQuantizedPartitioner on transformer decoder models
+        where cross-attention K/V projections across multiple decoder layers
+        share the same encoder ``memory`` input.  Dynamic quantization inserts
+        a shared ``choose_qparams`` node for that input, causing the DSJ phase
+        to create partition groups whose nodes span wide topological ranges.
+        When GroupBasedPartitioner later tries to merge these groups, the
+        original single-direction downstream check missed the cycle because it
+        assumed p2 is entirely before p1 — which is false for interleaved
+        groups.
+
+        The model is a minimal two-layer cross-attention decoder:
+
+        .. code-block:: text
+
+            query ──→ layer0(query, memory) ──→ layer1(x, memory) ──→ output
+                              ↑                         ↑
+            memory ───────────┴─────────────────────────┘
+                      (shared K/V input across layers)
+        """
+        import math
+
+        class DecoderLayer(torch.nn.Module):
+            def __init__(self, d: int = 256):
+                super().__init__()
+                self.q_proj = torch.nn.Linear(d, d, bias=False)
+                self.k_proj = torch.nn.Linear(d, d, bias=False)
+                self.v_proj = torch.nn.Linear(d, d, bias=False)
+                self.out_proj = torch.nn.Linear(d, d, bias=False)
+                self.ffn1 = torch.nn.Linear(d, d * 2, bias=False)
+                self.ffn2 = torch.nn.Linear(d * 2, d, bias=False)
+                self.norm1 = torch.nn.LayerNorm(d)
+                self.norm2 = torch.nn.LayerNorm(d)
+
+            def forward(self, x: torch.Tensor, mem: torch.Tensor) -> torch.Tensor:
+                q = self.q_proj(x)
+                k = self.k_proj(mem)
+                v = self.v_proj(mem)
+                attn = torch.bmm(q, k.transpose(-2, -1)) / math.sqrt(q.size(-1))
+                attn = torch.softmax(attn, dim=-1)
+                out = self.out_proj(torch.bmm(attn, v))
+                x = self.norm1(x + out)
+                x = self.norm2(x + self.ffn2(torch.relu(self.ffn1(x))))
+                return x
+
+        class TwoLayerDecoder(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.layer0 = DecoderLayer()
+                self.layer1 = DecoderLayer()
+
+            def forward(
+                self, query: torch.Tensor, memory: torch.Tensor
+            ) -> torch.Tensor:
+                x = self.layer0(query, memory)
+                x = self.layer1(x, memory)
+                return x
+
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackDynamicallyQuantizedPartitioner,
+        )
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+        from executorch.exir import to_edge_transform_and_lower
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+        model = TwoLayerDecoder().eval()
+        query = torch.randn(1, 10, 256)
+        memory = torch.randn(1, 20, 256)
+
+        exported = torch.export.export(model, (query, memory), strict=False)
+
+        quantizer = XNNPACKQuantizer().set_global(
+            get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True)
+        )
+        prepared = prepare_pt2e(exported.module(), quantizer)
+        with torch.no_grad():
+            prepared(query, memory)
+        converted = convert_pt2e(prepared)
+
+        re_exported = torch.export.export(converted, (query, memory), strict=False)
+
+        # Before the fix this raised:
+        #   AssertionError: Invalid partition, found dependency cycles
+        to_edge_transform_and_lower(
+            re_exported,
+            partitioner=[XnnpackDynamicallyQuantizedPartitioner()],
+        )

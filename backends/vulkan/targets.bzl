@@ -10,7 +10,13 @@ def get_vulkan_compiler_flags():
             "-Wno-global-constructors",
             "-Wno-missing-prototypes",
         ],
-        "ovr_config//os:windows": [],
+        # The Windows clang host build needs -Werror relaxed for the vendored
+        # VMA headers, but MSVC cl.exe rejects the gcc-style flag, so exclude
+        # pure MSVC. OSS buck2 has no compiler constraint, so guard to non-OSS.
+        "ovr_config//os:windows": select({
+            "DEFAULT": ["-Wno-error"],
+            "ovr_config//compiler:msvc": [],
+        }) if not runtime.is_oss else ["-Wno-error"],
     })
 
 def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
@@ -20,6 +26,7 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
     android_flags = []
 
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    force_no_extensions = read_config("etvk", "force_no_extensions", "0") == "1"
 
     if not no_volk:
         for flags in [default_flags, android_flags]:
@@ -68,6 +75,13 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
+    vma_dep = read_config("etvk", "vma_dep", "xplat")
+    if vma_dep == "instantiated":
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_USE_META_VMA"]
+
+    if force_no_extensions:
+        VK_API_PREPROCESSOR_FLAGS += ["-DETVK_FORCE_NO_EXTENSIONS"]
+
     return VK_API_PREPROCESSOR_FLAGS
 
 def get_labels(no_volk):
@@ -93,7 +107,10 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
-    nthreads = read_config("etvk", "shader_compile_nthreads", "-1")
+    # Default to single-threaded shader compilation on macOS to avoid
+    # multiprocessing issues with the local build toolchain.
+    default_nthreads = "1" if host_info().os.is_macos else "-1"
+    nthreads = read_config("etvk", "shader_compile_nthreads", default_nthreads)
 
     genrule_cmd = (
         "$(exe {}) ".format(gen_vulkan_spv_target) +
@@ -119,7 +136,6 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
         },
         cmd = genrule_cmd,
         default_outs = ["."],
-        labels = ["uses_dotslash"],
     )
 
     suffix = "_no_volk" if no_volk else ""
@@ -145,6 +161,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
 
 def define_common_targets(is_fbcode = False):
     debug_mode = read_config("etvk", "debug", "0") == "1"
+    vma_dep = read_config("etvk", "vma_dep", "xplat")
 
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
@@ -178,9 +195,14 @@ def define_common_targets(is_fbcode = False):
 
         suffix = "_no_volk" if no_volk else ""
 
-        VK_API_DEPS = [
-            "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
-        ]
+        if vma_dep == "instantiated":
+            VK_API_DEPS = [
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocatorInstantiated",
+            ]
+        else:
+            VK_API_DEPS = [
+                "fbsource//third-party/VulkanMemoryAllocator/3.2.0:VulkanMemoryAllocator_xplat",
+            ]
 
         default_deps = []
         android_deps = ["fbsource//third-party/toolchains:android"]
@@ -188,7 +210,7 @@ def define_common_targets(is_fbcode = False):
         if no_volk:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/toolchains:vulkan")
-                deps.append("fbsource//third-party/khronos/version-selector:vulkan-headers")
+                deps.append("fbsource//third-party/khronos:vulkan-headers")
         else:
             for deps in [default_deps, android_deps]:
                 deps.append("fbsource//third-party/volk:volk-header")
@@ -205,7 +227,7 @@ def define_common_targets(is_fbcode = False):
             mac_deps = default_deps
             if link_moltenvk:
                 mac_deps = [
-                    "//third-party/khronos/version-selector:moltenVK_static_unexported"
+                    "//third-party/khronos:moltenVK_static_unexported"
                 ]
 
             if debug_mode:

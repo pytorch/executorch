@@ -6,7 +6,9 @@
 
 import torch
 from executorch.exir import to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import merge_decomposed_graph
 
@@ -32,13 +34,17 @@ class DecomposeAny(ExportPass):
     Decompose for math equivalent op.
     """
 
-    def __init__(self, quantization_capture=False) -> None:
+    def __init__(self) -> None:
         super().__init__()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            if "any.dim" in str(node.target):
+            if node.target in {
+                exir_ops.edge.aten.any.dim,
+                exir_ops.edge.aten.any.dims,
+                exir_ops.edge.aten.any.default,
+            }:
                 dim = node.args[1] if len(node.args) > 1 else None
                 keepdim = node.args[2] if len(node.args) > 2 else False
                 model = Any(dim, keepdim)
@@ -59,6 +65,5 @@ class DecomposeAny(ExportPass):
                     )
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -178,9 +179,9 @@ TEST_F(OpCatOutTest, SmokeDim1) {
 }
 
 TEST_F(OpCatOutTest, SixteenBitFloatSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Test Half/BF16 support only for ExecuTorch mode";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Test Half/BF16 support only for ExecuTorch mode");
   test_16bit_dtype<ScalarType::Half>();
   test_16bit_dtype<ScalarType::BFloat16>();
 }
@@ -246,9 +247,9 @@ TEST_F(OpCatOutTest, AllDtypesSupported) {
 }
 
 TEST_F(OpCatOutTest, EmptyInputTensorShapeIgnored) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel doesn't ignore empty input tensor shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel doesn't ignore empty input tensor shape");
   TensorFactory<ScalarType::Int> tf;
 
   // An empty tensor with a shape totally different from the non-empty inputs.
@@ -330,9 +331,9 @@ TEST_F(OpCatOutTest, MismatchedDtypesDies) {
 }
 
 TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimensions");
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({2, 2});
 
@@ -346,9 +347,9 @@ TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
 }
 
 TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimension size");
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.zeros({2, 2});
 
@@ -363,9 +364,9 @@ TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
 }
 
 TEST_F(OpCatOutTest, WrongOutShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong out shape");
   TensorFactory<ScalarType::Int> tf;
 
   // Should be {4, 3} to match the inputs when calling cat() with dim 0.
@@ -440,9 +441,9 @@ TEST_F(OpCatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpCatOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape unbound not supported");
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"
   %rewrite(unary_op_tensor_list_in) */
@@ -462,4 +463,22 @@ TEST_F(OpCatOutTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   op_cat_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpCatOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor y = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros_channels_last({1, 6, 2, 2});
+  std::vector<Tensor> inputs = {x, y};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cat_out(TensorList(inputs.data(), inputs.size()), 1, out));
 }

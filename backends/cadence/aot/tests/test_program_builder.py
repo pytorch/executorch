@@ -2,7 +2,7 @@
 
 # pyre-strict
 import torch
-from executorch.backends.cadence.aot.program_builder import IrMode, ProgramBuilder
+from executorch.backends.test.program_builder import IrMode, ProgramBuilder
 from executorch.exir.dialects._ops import ops as exir_ops
 from later.unittest import TestCase
 from torch._export.verifier import SpecViolationError

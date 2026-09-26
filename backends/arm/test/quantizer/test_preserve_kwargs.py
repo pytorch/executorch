@@ -17,7 +17,9 @@ exir_op = "executorch_exir_dialects_edge__ops_aten_full_default"
 
 
 class FullLike(torch.nn.Module):
-    """Since full_like is replaced with full, we only need to test on reference model, not FVP."""
+    """Since full_like is replaced with full, we only need to test on reference
+    model, not FVP.
+    """
 
     test_parameters = {
         "full_like_int_val": lambda: (torch.randn(2, 2, 2, 2) * 50, 3),

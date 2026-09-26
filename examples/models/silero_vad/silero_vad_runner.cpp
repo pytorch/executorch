@@ -43,6 +43,80 @@ SileroVadRunner::SileroVadRunner(const std::string& model_path) {
   context_size_ = cs.ok() ? cs.get()[0].toInt() : 64;
   input_size_ = window_size_ + context_size_;
   frame_duration_ = static_cast<double>(window_size_) / sample_rate_;
+  reset_stream();
+}
+
+void SileroVadRunner::reset_stream() {
+  stream_state_data_.assign(static_cast<size_t>(2 * kHiddenDim), 0.0f);
+  stream_context_.assign(static_cast<size_t>(context_size_), 0.0f);
+  stream_input_.assign(static_cast<size_t>(input_size_), 0.0f);
+  stream_frame_index_ = 0;
+}
+
+float SileroVadRunner::process_frame(
+    const float* audio_data,
+    int64_t num_samples) {
+  int64_t chunk_len = std::min(window_size_, num_samples);
+
+  std::memcpy(
+      stream_input_.data(),
+      stream_context_.data(),
+      static_cast<size_t>(context_size_) * sizeof(float));
+
+  if (chunk_len > 0) {
+    std::memcpy(
+        stream_input_.data() + context_size_,
+        audio_data,
+        static_cast<size_t>(chunk_len) * sizeof(float));
+  }
+  if (chunk_len < window_size_) {
+    std::memset(
+        stream_input_.data() + context_size_ + chunk_len,
+        0,
+        static_cast<size_t>(window_size_ - chunk_len) * sizeof(float));
+  }
+
+  auto input_tensor = from_blob(
+      stream_input_.data(),
+      {1, static_cast<::executorch::aten::SizesType>(input_size_)},
+      ::executorch::aten::ScalarType::Float);
+  auto state_tensor = from_blob(
+      stream_state_data_.data(),
+      {2, 1, static_cast<::executorch::aten::SizesType>(kHiddenDim)},
+      ::executorch::aten::ScalarType::Float);
+
+  auto result = model_->execute(
+      "forward", std::vector<EValue>{input_tensor, state_tensor});
+  ET_CHECK_MSG(result.ok(), "Silero VAD forward failed.");
+
+  auto& outputs = result.get();
+  float prob = outputs[0].toTensor().const_data_ptr<float>()[0];
+
+  auto new_state = outputs[1].toTensor();
+  std::memcpy(
+      stream_state_data_.data(),
+      new_state.const_data_ptr<float>(),
+      static_cast<size_t>(2 * kHiddenDim) * sizeof(float));
+
+  if (chunk_len >= context_size_) {
+    std::memcpy(
+        stream_context_.data(),
+        audio_data + chunk_len - context_size_,
+        static_cast<size_t>(context_size_) * sizeof(float));
+  } else if (chunk_len > 0) {
+    int64_t keep = context_size_ - chunk_len;
+    std::memmove(
+        stream_context_.data(),
+        stream_context_.data() + chunk_len,
+        static_cast<size_t>(keep) * sizeof(float));
+    std::memcpy(
+        stream_context_.data() + keep,
+        audio_data,
+        static_cast<size_t>(chunk_len) * sizeof(float));
+  }
+
+  stream_frame_index_++;
+  return prob;
 }
 
 SileroVadRunner::Result SileroVadRunner::detect(
@@ -50,14 +124,7 @@ SileroVadRunner::Result SileroVadRunner::detect(
     int64_t num_samples,
     float threshold,
     SegmentCallback segment_cb) {
-  // LSTM state: (2, 1, 128) — [h, c]
-  std::vector<float> state_data(static_cast<size_t>(2 * kHiddenDim), 0.0f);
-
-  // Context: previous chunk's last context_size_ samples
-  std::vector<float> context(static_cast<size_t>(context_size_), 0.0f);
-
-  // Input buffer: [context | chunk] = input_size_ samples
-  std::vector<float> input(static_cast<size_t>(input_size_));
+  reset_stream();
 
   bool speech_active = false;
   int64_t speech_start_frame = 0;
@@ -66,78 +133,7 @@ SileroVadRunner::Result SileroVadRunner::detect(
   int num_segments = 0;
 
   for (int64_t offset = 0; offset < num_samples; offset += window_size_) {
-    int64_t chunk_len = std::min(window_size_, num_samples - offset);
-
-    // Build input: [context | chunk]
-    std::memcpy(
-        input.data(),
-        context.data(),
-        static_cast<size_t>(context_size_) * sizeof(float));
-
-    if (chunk_len == window_size_) {
-      std::memcpy(
-          input.data() + context_size_,
-          audio_data + offset,
-          static_cast<size_t>(window_size_) * sizeof(float));
-    } else {
-      // Pad the last partial chunk with zeros
-      std::memcpy(
-          input.data() + context_size_,
-          audio_data + offset,
-          static_cast<size_t>(chunk_len) * sizeof(float));
-      std::memset(
-          input.data() + context_size_ + chunk_len,
-          0,
-          static_cast<size_t>(window_size_ - chunk_len) * sizeof(float));
-    }
-
-    auto input_tensor = from_blob(
-        input.data(),
-        {1, static_cast<::executorch::aten::SizesType>(input_size_)},
-        ::executorch::aten::ScalarType::Float);
-    auto state_tensor = from_blob(
-        state_data.data(),
-        {2, 1, static_cast<::executorch::aten::SizesType>(kHiddenDim)},
-        ::executorch::aten::ScalarType::Float);
-
-    auto result = model_->execute(
-        "forward", std::vector<EValue>{input_tensor, state_tensor});
-    if (!result.ok()) {
-      ET_LOG(
-          Error,
-          "forward failed at offset %lld.",
-          static_cast<long long>(offset));
-      break;
-    }
-
-    auto& outputs = result.get();
-    float prob = outputs[0].toTensor().const_data_ptr<float>()[0];
-
-    // Update LSTM state
-    auto new_state = outputs[1].toTensor();
-    std::memcpy(
-        state_data.data(),
-        new_state.const_data_ptr<float>(),
-        static_cast<size_t>(2 * kHiddenDim) * sizeof(float));
-
-    // Update context from current chunk
-    if (chunk_len >= context_size_) {
-      std::memcpy(
-          context.data(),
-          audio_data + offset + chunk_len - context_size_,
-          static_cast<size_t>(context_size_) * sizeof(float));
-    } else {
-      // Shift existing context and append partial chunk
-      int64_t keep = context_size_ - chunk_len;
-      std::memmove(
-          context.data(),
-          context.data() + chunk_len,
-          static_cast<size_t>(keep) * sizeof(float));
-      std::memcpy(
-          context.data() + keep,
-          audio_data + offset,
-          static_cast<size_t>(chunk_len) * sizeof(float));
-    }
+    float prob = process_frame(audio_data + offset, num_samples - offset);
 
     // Threshold-based speech detection
     if (prob > threshold) {

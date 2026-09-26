@@ -1,97 +1,210 @@
-# QAIRT Visualizer
+# ExecuTorch QNN Debugger & Profiler
 
-[QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/) is a Python package designed to help you visualize and analyze data from Qualcomm AI Engine Direct (QNN) models. It provides tools to generate and interpret op traces (`optrace`) and QNN HTP Analysis Summary (`QHAS`), enabling detailed insights into your model's performance and behavior.
+This directory bundles three independent debugging and profiling flows for the ExecuTorch QNN backend. They are independent and address different failure modes — jump directly to the section you need.
 
-## Installation
+**Table of contents**
 
-You can install the QAIRT Visualizer package directly from [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/):
+- [Executorch QNN HTP Profiling](#executorch-qnn-htp-profiling)
+- [ExecuTorch QNN Intermediate Output Debugger](#executorch-qnn-intermediate-output-debugger)
+- [ExecuTorch QNN HTP Heap Profiling](#executorch-qnn-htp-heap-profiling)
+
+
+---
+# Executorch QNN HTP Profiling
+
+This section covers two complementary HTP profiling workflows.
+
+| Workflow | API | Measurement source | Device | Prepare modes | Output and accuracy |
+|:--|:--|:--|:--|:--|:--|
+| On-device OpTrace | `generate_htp_profile_result()` | Hardware trace and counters from an actual execution | Required through ADB | `online_prepare` and `offline_prepare` | `QnnHtpProfileArtifacts` including QHAS and Chrome trace; microsecond and cycle units; representative of the measured device run. |
+| Host-only Hextimate | `estimate_htp_profile_result()` | QNN compile-time performance model | Not required | `online_prepare` only | `QnnHtpProfileArtifacts` including QHAS and Chrome trace; cycle estimates only, which can differ from device measurements. |
+
+Use on-device OpTrace for accurate runtime analysis. Use host-only Hextimate for early cycle estimates when hardware is unavailable.
+
+Prepare mode controls which QNN internal graph format is stored in the `.pte`:
+
+- On-device OpTrace supports both `online_prepare` and `offline_prepare`.
+- Host-only Hextimate requires `online_prepare`.
+
+
+**Profile level**
+
+| `profile_level` | QNN configuration | Use |
+|:----------------|:------------------|:----|
+| `0` | Profiling disabled | Default inference. |
+| `2` | `QNN_PROFILE_LEVEL_DETAILED` | Collect QNN graph and per-node timing through the ExecuTorch profiler. |
+| `3` | Detailed + `QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE` | Enable HTP Optrace hardware-trace artifacts for `qnn-profile-viewer`; required at export for offline-prepare Optrace. |
+
+The rest of the guide is arranged here:
+1. **`.pte` generation prepare mode:**
+We introduce how to trigger each preparation mode in section 1.1 and 1.2:
+    - 1.1 `online_prepare`: controlled by `QnnConfig.online_prepare=True`.
+    - 1.2 `offline_prepare`: controlled by `QnnConfig.online_prepare=False`.
+
+3. **Public Functions for Generating Profiling Results**
+    + 2.1 `generate_htp_profile_result()`: generates device-based profiling results (Optrace in QNN SDK).
+    + 2.2 `estimate_htp_profile_result()`: estimates host-based profiling results (Hextimate in QNN SDK).
+
+4. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains genrated HTML, JSON and chrometrace files.
+
+5. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
+## 1. Select AOT Prepare modes for `.pte` Generation
+Users choose one prepare mode before exporting the `.pte`:
+
+| Prepare mode | QNN config | User-facing behavior |
+|:-------------|:-----------|:---------------------|
+| **online_prepare** | `QnnConfig.online_prepare=True` | Export stores a graph description; profiling tools finish preparation later. |
+| **offline_prepare** | `QnnConfig.online_prepare=False` | Export stores the finalized executable form; on-device profiling requires `profile_level=3`. |
+
+Internal detail: online prepare carries a `.dlc`, and offline prepare carries a finalized QNN context binary (`.bin`). Offline prepare must set `profile_level=3` because OpTrace instrumentation has to be baked into that context binary during export. The schematic file used by `qnn-profile-viewer` is generated or unpacked beside the dumped profiling artifacts.
+
+The example demos keep the profiling route explicit:
+
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_online.py`: on-device OpTrace with `online_prepare`.
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_offline.py`: on-device OpTrace with `offline_prepare`.
+- `examples/qualcomm/util_scripts/htp_profiling_on_host_hextimate.py`: host-only Hextimate with `online_prepare`.
+
+### 1.1 Online Prepare Mode `.pte`
+
+**Demo script**:
+```bash
+python -m examples.qualcomm.util_scripts.htp_profiling_on_device_op_trace_online \
+    --host ${host} --device ${device} --soc_model ${SOC_MODEL} --build_folder build-android \
+    -a ${path_to_output_folder} --online_prepare
+```
+
+**Export call**:
+The export step does not need to set `profile_level`:
+```python
+build_executorch_binary(
+    model=model,
+    qnn_config=qnn_config,        # online_prepare=True; profile_level not required
+    file_name=f"{args.artifact}/{pte_filename}",
+    dataset=[example_input],
+    quant_dtype=QuantDtype.use_8a8w,
+)
+```
+
+### 1.2 Offline Prepare Mode `.pte`
+**Demo script**:
+```bash
+python -m examples.qualcomm.util_scripts.htp_profiling_on_device_op_trace_offline \
+    --host ${host} --device ${device} --soc_model ${SOC_MODEL} --build_folder build-android \
+    -a ${path_to_output_folder} --profile_level 3
+```
+
+**Export call**:
+The export step **must** set `profile_level=3`:
+```python
+qnn_config.profile_level = 3
+build_executorch_binary(
+    model=model,
+    qnn_config=qnn_config,        # online_prepare=False (default)
+    file_name=f"{args.artifact}/{pte_filename}",
+    dataset=[example_input],
+    quant_dtype=QuantDtype.use_8a8w,
+)
+```
+
+## 2.1 Generate HTP Profile Result (OpTrace) `generate_htp_profile_result()`
+
+Use `generate_htp_profile_result()` when you want real on-device hardware-counter profiling. This path requires sample inputs and `adb`.
+```python
+from executorch.backends.qualcomm.debugger.utils import generate_htp_profile_result
+
+artifacts = generate_htp_profile_result(
+    artifact_dir=args.artifact,
+    soc_id=get_soc_to_chipset_map()[args.soc_model],
+    pte_path=f"{args.artifact}/{pte_filename}.pte",
+    inputs=example_inputs,
+    adb=adb,
+)
+```
+
+## 2.2 Estimation of HTP profiling on Host (Hextimate) `estimate_htp_profile_result()`
+
+Use `estimate_htp_profile_result()` when you want host-only compile-time performance estimation. This path does not use sample inputs or `adb`.
+
+> [!WARNING]
+> `estimate_htp_profile_result()` hard-errors on SDKs below 2.41 and on unsupported SoCs.
+
+**Demo script**:
+```bash
+python -m examples.qualcomm.util_scripts.htp_profiling_on_host_hextimate \
+    --soc_model QCS9100 -a ${path_to_output_folder} --online_prepare
+```
+
+```python
+from executorch.backends.qualcomm.debugger.utils import estimate_htp_profile_result
+
+estimates = estimate_htp_profile_result(
+    artifact_dir=args.artifact,
+    soc_id=get_soc_to_chipset_map()[args.soc_model],
+    pte_path=f"{args.artifact}/{pte_filename}.pte",
+)
+```
+
+Limitations:
+- Requires `QnnConfig.online_prepare=True`.
+- Requires QNN SDK >= 2.41.
+- Currently supports only the following soc_model:
+  - SA8540
+  - SA8255
+  - QCS9100
+  - SA8797
+
+## 3. HTP Profiling Output `QnnHtpProfileArtifacts`
+Both public functions `estimate_htp_profile_result()` and `generate_htp_profile_result()` return one `QnnHtpProfileArtifacts` per compiled binary in the `.pte` (partitioned graphs yield multiple entries).
+
+Important fields:
+
+- `qhas_html`: QHAS HTML report. This is the most convenient artifact for viewing the QNN HTP Analysis Summary.
+- `qhas_json`: QHAS JSON report.
+- `chrometrace_json`: Chrome trace JSON. Open it with `chrome://tracing` or Perfetto.
+- `htp_graph_json`: HTP graph JSON after optimization.
+- `htp_graph_before_json`: HTP graph JSON before optimization.
+- `runtrace_json`: runtrace JSON for device profiling, or `None` when not emitted.
+
+Other context fields:
+
+- `binary_path`: dumped internal `.dlc` or `.bin` used by `qnn-profile-viewer`.
+- `mode`: `"optrace"` or `"hextimate"`.
+- `prepare_mode`: `"online"` or `"offline"`.
+
+
+## 4. Viewing HTP Analysis Summary (QHAS) with QAIRT Visualizer
+
+**Install**
 
 ```bash
 pip install qairt-visualizer
 ```
 
-## Quick start
-This command launches an interactive GUI interface to visualize the `optrace` and `QHAS` results.
-```
-python -m examples.qualcomm.util_scripts.qairt_visualizer_demo -H ${host} -s {device} -m ${SOC_MODEL} -b build-android -a ${path_to_output_folder} --online_prepare
-```
-- If online prepare mode is `enabled`, the following artifacts will be generated:
-    - `model`.dlc
-    - `optrace`.json
-    - `QHAS`.json
-- If online prepare mode is `disabled`, the following artifacts will be generated:
-    - `model`.bin
-    - `optrace`.json
-    - `QHAS`.json
+**Usage**
 
-Note: Model visualization is supported only in online prepare mode.
-The `.bin` format is not compatible with the QAIRT visualizer.
-To enable model visualization, please add the `--online_prepare` flag.
-
-## Details
-### 1. Lower to QNN backend
-Generate an ExecuTorch binary for Qualcomm platforms.
-```python
-build_executorch_binary(
-    model,
-    example_input,
-    args.model,
-    f"{args.artifact}/{pte_filename}",
-    [example_input],
-    quant_dtype=QuantDtype.use_8a8w,
-    online_prepare=args.online_prepare,
-    optrace=True,
-)
-```
-### 2. Generate optrace and QHAS
-Generate optrace and QHAS files using QNN tools under $QNN_SDK_ROOT. After finishing, you will get a `binaries_trace` dictionary.
-``` python
-adb = SimpleADB(
-    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-    build_path=f"{args.build_folder}",
-    pte_path=f"{args.artifact}/{pte_filename}.pte",
-    workspace=f"/data/local/tmp/executorch/{pte_filename}",
-    device_id=args.device,
-    host_id=args.host,
-    soc_model=args.model,
-    target=args.target,
-)
-binaries_trace = generate_optrace(
-    args, adb, f"{args.artifact}/{pte_filename}.pte", example_input
-)
-```
-- **`binaries_trace`**: A dictionary where keys are the dumped file paths and values are tuples containing the paths to the generated optrace and QHAS JSON files.
-
-- Example 1: {"forward_0.dlc": (optrace.json, optrace_qnn_htp_analysis_summary.json)}
-- Example 2: {"forward_0.bin": (optrace.json, optrace_qnn_htp_analysis_summary.json)}
-
-### 3. Visualizing and Analyzing optrace and QHAS
-
-Once you have the optrace and QHAS files, you can leverage the QAIRT Visualizer to visualize the model graph, optrace and QHAS data. Here's how you can do it:
+QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
 
 ```python
 import qairt_visualizer
-qairt_visualizer.view(f"{args.artifact}/forward_0.dlc", reports=[optrace, qhas])
+
+for artifact in artifacts:
+    qairt_visualizer.view(reports=artifact.visualizer_reports())
+    print(f"QHAS HTML: {artifact.qhas_html}")
 ```
-or
-```python
-import qairt_visualizer
-qairt_visualizer.view(reports=[optrace, qhas])
-```
+**Example**
+The example scripts already call QAIRT Visualizer after producing artifacts when `qairt-visualizer` is installed. If it is not installed, they still print the generated `qhas_html` path:
 
-- `model`: Path to your QNN model file (e.g., `path_to_your_model.dlc`).
-- **`reports`**: List of report file paths, including the optrace (`optrace.json`) and QHAS (`optrace_qnn_htp_analysis_summary.json`).
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_online.py`
+- `examples/qualcomm/util_scripts/htp_profiling_on_device_op_trace_offline.py`
+- `examples/qualcomm/util_scripts/htp_profiling_on_host_hextimate.py`
 
-Note: Files ending with `.bin ` do not support graph visualization in qairt_visualizer.
-
-## Demo
 
 <figure>
-    <img src="assets/qairt_visualizer_demo.png" alt="QAIRT visualizer demo"> <figcaption>
+    <img src="assets/qairt_visualizer_demo.png" alt="QAIRT Visualizer showing HTP profiling results"> <figcaption>
     </figcaption>
 </figure>
 
-For more details, visit the [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
+For the viewer package, see [QAIRT Visualizer](https://pypi.org/project/qairt-visualizer/).
 
 
 # ExecuTorch QNN Intermediate Output Debugger
@@ -125,73 +238,90 @@ flowchart TB;
     debug --> output["Output Results"]
 ```
 
-## Instructions
-
-### 1. Setup
+## Prerequisites
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch.
 2. Follow the [tutorial](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html) to build Qualcomm AI Engine Direct Backend.
 
-### 2. Enable Flag
+## Instructions
 
-When executing the script, please add the flag `--dump_intermediate_outputs`. This tells QNN to dump all intermediate tensors during execution.
+### 1. Initialize debugger and build binary
 
-### 3. Add debugger to the example script
-Initialize a `QNNIntermediateDebugger`. Please pass initialized `QNNIntermediateDebugger` and the `args.dump_intermediate_outputs` to `build_executorch_binary` method as well.
-#### Example:
+Create a `QNNIntermediateDebugger` with a sample input and pass it to `build_executorch_binary`. The `--dump_intermediate_outputs` flag tells QNN to dump all intermediate tensors during execution.
+
 ```python
-from executorch.examples.qualcomm.utils import build_executorch_binary
-from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import QNNIntermediateDebugger
+from executorch.backends.qualcomm.export_utils import build_executorch_binary
+from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import (
+    OutputFormat,
+    QNNIntermediateDebugger,
+)
 
-qnn_intermediate_debugger = QNNIntermediateDebugger()
+qnn_intermediate_debugger = QNNIntermediateDebugger(sample_input=inputs[0])
 build_executorch_binary(
     model=MyModel(),
-    inputs=(torch.randn(200, 768),),
-    soc_model="SM8650",
+    qnn_config=qnn_config,
     file_name="my_model",
     dataset=my_dataset,
-    dump_intermediate_outputs=args.dump_intermediate_outputs, # Add this flag
-    qnn_intermediate_debugger=qnn_intermediate_debugger, # Add this flag
+    qnn_intermediate_debugger=qnn_intermediate_debugger, # Provide this param
 )
 ```
 
-### 4. Set data num to 1
-It is perfectly fine for users to pass the desired amount of datasets to `build_executorch_binary`, which helps achieve better quantization results. However, after `build_executorch_binary` is called, we need to ensure that we only perform one inference during execution. Please ensure that CPU and QNN is using the same input during execution; otherwise, the debugging results might not be accurate.
+After `build_executorch_binary()`, the debugger holds:
+- `edge_ep` — edge `ExportedProgram` for CPU golden inference.
+- `etrecord_file_path` — path to the generated ET record.
 
-### 5. Pass flag to SimpleADB
-When creating `SimpleADB`, please also pass the flag `args.dump_intermediate_outputs`. This tells the runner to create files that store the intermediate output schema and binary data.
-#### Example:
+### 2. Execute on device
+
+Ensure `dump_intermediate_outputs` is enabled in your `QnnConfig` (or pass `--dump_intermediate_outputs` via CLI). Only run **one inference** for debugging — multiple executions are not supported.
+
+**Note:** Intermediate tensor dumping is not currently supported in direct mode on HTP/LPAI backends.
+
 ```python
+from executorch.examples.qualcomm.utils import SimpleADB
+
 adb = SimpleADB(
-    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-    build_path=f"{args.build_folder}",
+    qnn_config=qnn_config,
     pte_path=f"{args.artifact}/{pte_filename}.pte",
     workspace=f"/data/local/tmp/executorch/{pte_filename}",
-    device_id=args.device,
-    host_id=args.host,
-    soc_model=args.model,
-    shared_buffer=args.shared_buffer,
-    dump_intermediate_outputs=args.dump_intermediate_outputs, # Add this flag
 )
+adb.push(inputs=inputs)
+adb.execute()
 ```
 
-### 6: Pull and process the results.
-After QNN execution with the runner, if the previous steps are done correctly, we should be able to get two files: `etdump.etdp` and `debug_output.bin`.
-The following example pulls the files back and calls a callback function to process the results. In this callback function, we create the `Inspector`. Then we perform CPU inference to get CPU intermediate results. Now, we have both QNN and CPU intermediate results, we can start generating results to compare the accuracy. Taking the following example, we should be able to get `debug_graph.svg` as an output in the current directory.
-#### Example:
+### 3. Pull results and compare
+
+After execution, pull `etdump.etdp` and `debug_output.bin` from the device. Use `setup_inspector()` to create the `Inspector`, then create comparators and generate results.
+
+Before comparing per-layer outputs, it is highly recommended to verify that the edge program's final output aligns with the original `nn.Module`. The debugger uses the edge program as the CPU golden reference, so if the edge graph itself has diverged (e.g., due to weights quantization or pass transformations), per-layer comparisons against it may be misleading.
+
 ```python
-from executorch.backends.qualcomm.debugger.qnn_intermediate_debugger import  OutputFormat
+from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_sample import (
+    QcomCosineSimilarityComparator, QcomMSEComparator,
+)
+
 def validate_intermediate_tensor():
-    inspector = Inspector(
+    qnn_intermediate_debugger.setup_inspector(
         etdump_path=f"{args.artifact}/etdump.etdp",
         debug_buffer_path=f"{args.artifact}/debug_output.bin",
     )
-    qnn_intermediate_debugger.intermediate_output_module(*(inputs[0]))
+
+    # Verify edge program output aligns with the original nn.Module.
+    # This ensures the edge graph is a reliable golden reference.
+    edge_result = qnn_intermediate_debugger.edge_ep.module()(*(inputs[0]))
+    with torch.no_grad():
+        source_result = source_model(*(inputs[0]))
+        score = torch.nn.functional.cosine_similarity(
+            edge_result.flatten(), source_result.flatten(), dim=0
+        ).item()
+        print("Cosine similarity between nn.Module and edge CPU:", score)
+
+    cos_comparator = qnn_intermediate_debugger.create_comparator(
+        QcomCosineSimilarityComparator, threshold=0.9
+    )
     qnn_intermediate_debugger.generate_results(
-        title="debug_graph",
-        path=".",
-        output_format=OutputFormat.SVG_GRAPHS,
-        inspector=inspector,
-        evaluator=CosineSimilarityEvaluator(0.9),
+        title="debug_cos_similarity",
+        path=args.artifact,
+        output_format=OutputFormat.SVG_GRAPH,
+        comparator=cos_comparator,
     )
 
 adb.pull_debug_output(
@@ -199,53 +329,135 @@ adb.pull_debug_output(
 )
 ```
 
-#### Additional Options
-The above example sets output formats as SVG and evaluation metrics using Cosine Similarity. Based on different needs, users can choose other output formats as shown in the `OutputFormat` class under [qnn_intermediate_debugger](./qnn_intermediate_debugger.py)
+## Comparators
+
+Create comparators via the `create_comparator()` factory, which automatically injects the `edge_ep`. A couple sample comparators are provided under [qcom_numerical_comparator_sample.py](./qcom_numerical_comparator_sample.py):
+
 ```python
-class OutputFormat(IntEnum):
-    SVG_GRAPHS = 0
-    CSV_FILES = 1
-    DUMP_RAW = 2
+cos = qnn_intermediate_debugger.create_comparator(QcomCosineSimilarityComparator, threshold=0.9)
+mse = qnn_intermediate_debugger.create_comparator(QcomMSEComparator, threshold=0.1)
 ```
 
-For evaluation metrics, if users would like to implement their own metrics, we have provided the option to implement [MetricEvaluatorBase](./metrics_evaluator.py). The following shows how to define custom metrics.
+### Custom comparators
+
+Users can also define their own comparator by implementing a derived class from  [QcomNumericalComparatorBase](./qcom_numerical_comparator_base.py). Inside the derived class, users will need to implement `metric_name()`, `is_valid_score()`, and `element_compare()`. The base class handles QNN-specific preprocessing (dequantization, layout conversion) internally — `preprocessing` cannot be overridden.
 ```python
-class RootMeanSquaredErrorEvaluator(MetricEvaluatorBase):
-    def __init__(self, threshold=0.02):
+from executorch.backends.qualcomm.debugger.qcom_numerical_comparator_base import (
+    QcomNumericalComparatorBase,
+)
+
+class MyComparator(QcomNumericalComparatorBase):
+    def __init__(self, edge_ep, threshold=0.5):
+        super().__init__(edge_ep)
         self.threshold = threshold
 
     def metric_name(self) -> str:
-        return "Root Mean Squared Error"
+        return "my_metric"
 
-    def evaluate(
-        self, qnn_output: torch.Tensor, cpu_output: torch.Tensor
-    ) -> Tuple[Any, bool]:
-        mse = F.mse_loss(qnn_output, cpu_output)
-        rmse = torch.sqrt(mse)
-        valid = rmse < self.threshold
-        return rmse, valid
+    def is_valid_score(self, score: float) -> bool:
+        return score >= self.threshold
 
-qnn_intermediate_debugger.generate_results(
-    title="my_metric",
-    path=".",
-    output_format=OutputFormat.SVG_GRAPHS,
-    inspector=inspector,
-    evaluator=RootMeanSquaredErrorEvaluator(),
+    def element_compare(self, a, b) -> float:
+        # your comparison logic here
+        ...
+```
+
+## Output formats
+
+| Format | Enum | Output |
+|--------|------|--------|
+| SVG graph | `OutputFormat.SVG_GRAPH` | Color-coded computation graph (green=pass, red=fail) |
+| CSV file | `OutputFormat.CSV_FILE` | Per-node tabular results |
+
+## Example Script
+
+An Inception_V3 demo script is provided at [qnn_intermediate_debugger_demo.py](../../../examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py).
+
+Before running, ensure the dataset is downloaded. An example dataset can be retrieved [here](https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000).
+
+```bash
+python -m examples.qualcomm.util_scripts.qnn_intermediate_debugger_demo --build_folder build-android --device $DEVICE_SERIAL --soc_model $SOC_MODEL -d path/to/imagenet/val --dump_intermediate_outputs
+```
+
+## Limitations
+1. Only one execution per debug session — multiple executions may cause unknown behavior.
+2. If you have decided to write your own runner (instead of `qnn_executor_runner`), follow the [tutorial](https://pytorch.org/executorch/stable/etdump.html) on how to implement etdump.
+3. Does not support graphs with partitions (partial delegation).
+4. Does not support LLM models.
+5. Does not support graphs with multiple methods.
+6. Intermediate tensor dumping is not currently supported in direct mode on HTP/LPAI backends.
+
+## ExecuTorch QNN HTP Heap Profiling
+
+Measures DSP memory usage when using context binary models on the HTP backend.
+
+### Introduction
+
+DSP heap profiling is available for `QnnContext_createFromBinary` use-cases. It captures total DSP heap usage at two checkpoints:
+
+- **Before the first context is created** (`before_context_created`)
+- **After the last context is freed** (`after_context_freed`)
+
+The difference between the two values represents heap consumed during context execution. The value after freeing is typically equal to or greater than before creation.
+
+### Instructions
+
+#### Run the example test
+
+```bash
+python backends/qualcomm/tests/test_qnn_delegate.py \
+    TestQNNQuantizedUtils.test_qnn_backend_runtime_option_heap_profile \
+    --build_folder build-android --host ${HOST} --device ${SN} --soc_model ${SOC_MODEL}
+```
+
+See [test_qnn_delegate.py](../tests/test_qnn_delegate.py) for the full test implementation.
+
+#### Setting
+
+```python
+from executorch.backends.qualcomm.utils.utils import generate_htp_compiler_spec
+from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_compiler_spec
+
+backend_options = generate_htp_compiler_spec(
+    use_multi_contexts=True,
+)
+
+compiler_specs = generate_qnn_executorch_compiler_spec(
+    soc_model=self.chipset_table[TestQNN.soc_model],
+    backend_options=backend_options,
+    profile_level=2,
+)
+
+# ...
+
+self.verify_output(
+    module,
+    sample_input,
+    exec_prog,
+    save_heap_result=True,
 )
 ```
 
-### Example Script
-We have provided an inception_v3 demo script to help users better understand how to apply the debugger to their scripts. Please refer to [qnn_intermediate_debugger_demo.py](../../../examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py) for the example script.
+#### Output file format
 
-Before running the example script, please ensure that dataset is downloaded. Example dataset can be retrieved [here](https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000).
+The result is written to a text file (default: `htp_heap_usage.txt`) with two lines:
 
-To execute the model:
-```bash
-python examples/qualcomm/util_scripts/qnn_intermediate_debugger_demo.py -b build-android -m ${SOC_MODEL} --device ${SERIAL_NUM} --dataset ${PATH_TO_DATASET} --dump_intermediate_outputs
+```
+DSP:before_context_created (bytes), <value>
+DSP:after_context_freed (bytes), <value>
 ```
 
-### Limitation
-1. The current debugger only supports performing one execution. Multiple executions may cause unknown behavior and are not recommended.
-2. Please ignore this if you are using `qnn_executor_runner`. If you have decided to write your own runner, please follow the [tutorial](https://pytorch.org/executorch/stable/etdump.html) on how to implement etdump into your own runner.
-3. The current debugger does not support graph with partitions. (WIP)
-4. The current debugger does not support LLM models. (WIP)
+#### Reference result
+
+Measured on SM8850. A difference of 0 means no additional heap is consumed during context binary execution.
+
+```console
+First value (before_context_created): 928212 bytes
+Second value (after_context_freed): 928212 bytes
+difference: 0.00 bytes
+```
+
+### Limitations
+
+1. Only supported HTP backend on Android and QNX platforms.
+2. By enabling this feature, initialization and cleanup time might be impacted.

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,7 +13,6 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
-    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -32,11 +31,10 @@ test_data_suite = {
     "select1d_0_dim_1_index": lambda: (torch.randn(10) + 10, 0, 1),
     "select1d_0_dim_0_index": lambda: (torch.randn(10) - 10, 0, 2),
     "select3d_0_dim_1_index": lambda: (torch.arange(-16, 16, 0.2), 0, 1),
-}
-
-test_data_not_delegated = {
+    "select5d_0_dim_1_index": lambda: (torch.rand(6, 1, 64, 4, 96), 0, 1),
     "select3d_large_after_squeeze": lambda: (torch.rand(3, 64, 3, 49, 32), 0, 0),
 }
+
 
 aten_op_copy = "torch.ops.aten.select_copy.int"
 aten_op_int = "torch.ops.aten.select.int"
@@ -124,19 +122,6 @@ def test_select_int_u55_INT(test_data: Tuple):
         aten_op_int,
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_not_delegated)
-def test_select_int_u55_INT_not_delegated(test_data: Tuple):
-    pipeline = OpNotSupportedPipeline[input_t1](
-        SelectInt(),
-        test_data(),
-        {aten_op_copy: 0},
-        n_expected_delegates=0,
-        quantize=True,
-        u55_subset=True,
     )
     pipeline.run()
 

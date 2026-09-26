@@ -181,19 +181,19 @@ class Llama3_2Decoder(EagerModelBase):
             return None
 
     def get_dynamic_shapes(self):
-        batch_size = 1
+        static = torch.export.Dim.STATIC
         dim_seq_len = torch.export.Dim("token_dim", min=1, max=self.max_seq_len)
         # Hardcoding # of tiles to be 2. image tokens per tile is 1601.
         if self.use_kv_cache:
             dynamic_shapes = {
-                "tokens": {0: batch_size, 1: dim_seq_len},
-                "encoder_input": None,
-                "encoder_mask": {0: 1, 1: dim_seq_len, 2: None},
-                "mask": {0: batch_size, 1: dim_seq_len, 2: None},
-                "input_pos": {0: batch_size, 1: dim_seq_len},
+                "tokens": {0: static, 1: dim_seq_len},
+                "encoder_input": {0: static, 1: static, 2: static},
+                "encoder_mask": {0: static, 1: dim_seq_len, 2: static},
+                "mask": {0: static, 1: dim_seq_len, 2: static},
+                "input_pos": {0: static, 1: dim_seq_len},
             }
         else:
             dynamic_shapes = {
-                "tokens": {0: batch_size, 1: dim_seq_len},
+                "tokens": {0: static, 1: dim_seq_len},
             }
         return dynamic_shapes

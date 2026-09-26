@@ -12,7 +12,7 @@ See: https://github.com/pytorch/executorch/discussions/10661. tl;dr instead of t
 
 ```bash
 $ cmake --preset macos
-$ cmake --build cmake-out -j100 --target executor_runner
+$ cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target executor_runner
 ```
 
 ## Working with Presets
@@ -32,7 +32,7 @@ $ cmake --list-presets
 $ cmake --preset llm
 
 # Build a preset with one-off configuration change
-$ cmake -DEXECUTORCH_BUILD_MPS=OFF --preset llm
+$ cmake -DEXECUTORCH_BUILD_COREML=OFF --preset llm
 ```
 
 The cmake presets roughly map to the ExecuTorch presets and are explicitly listed in [CMakePresets.json](../../../CMakePresets.json). Note that you are encouraged to rely on presets when build locally and adding build/tests in CI — CI should do what a developer would do and nothing more!
@@ -64,6 +64,20 @@ $ cmake --workflow --preset llm-debug
 $ cmake --workflow --preset llm-debug-cuda
 $ cmake --workflow --preset llm-debug-metal
 ```
+
+> [!NOTE]
+> **CUDA architecture selection:** The `llm-release-cuda` (and `llm-debug-cuda`)
+> preset sets `CMAKE_CUDA_ARCHITECTURES=native`, which auto-detects the GPU
+> on the build machine at configure time. To target a different architecture,
+> override it with `-D` on the configure step:
+> ```bash
+> cmake --preset llm-release-cuda -DCMAKE_CUDA_ARCHITECTURES="80;86;89;90;120"
+> cmake --build --preset llm-release-cuda --config Release
+> ```
+> Note that `cmake --workflow` does not accept `-D` flags, so you must run
+> configure and build as separate steps when overriding. Also note that on
+> Windows, setting `CMAKE_CUDA_ARCHITECTURES` via environment variable does
+> **not** work with CMake presets — you must use the `-D` flag.
 
 #### Understanding workflow components
 
@@ -104,8 +118,8 @@ Even when using a preset, you can explicitly override specific preset configurat
 ```cmake
 set(EXECUTORCH_BUILD_PRESET_FILE executorch/tools/cmake/preset/llm.cmake)
 
-# Although llm.cmake might have turned on `EXECUTORCH_BUILD_MPS`, you can turn if off
-set(EXECUTORCH_BUILD_MPS OFF)
+# Although llm.cmake might have turned on `EXECUTORCH_BUILD_COREML`, you can turn if off
+set(EXECUTORCH_BUILD_COREML OFF)
 
 add_subdirectory(executorch)
 ```

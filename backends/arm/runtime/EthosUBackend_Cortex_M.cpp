@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <new>
 
 #include <ethosu_driver.h>
 
@@ -24,20 +23,47 @@ using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::Error;
 using executorch::runtime::Span;
 
+// Compatibility hooks for multi-device driver / non-multi-device driver code
+// When multi-device driver code is available, these declarations are overridden
+extern "C" __attribute__((weak)) int ethosu_get_product_config_from_cop_data(
+    const void*,
+    const int,
+    uint32_t* product_out,
+    uint32_t* log2_macs_out) {
+  *product_out = 0;
+  *log2_macs_out = 0;
+  return 0;
+}
+
+extern "C" __attribute__((weak)) struct ethosu_driver* ethosu_reserve_driver_ex(
+    uint32_t,
+    uint32_t) {
+  return ethosu_reserve_driver();
+}
+
+// Overridable memcpy used by the EthosU backend for output scratch
+// shuffling. Default (weak) implementation in EthosUBackend_IoMemcpy.cpp does
+// std::memcpy. Firmware targets can supply a strong override (e.g. routing
+// through a DMA engine) to reduce CPU memcpy load on the host MCU.
+extern "C" void arm_ethos_io_memcpy(void* dst, const void* src, size_t size);
+
 namespace executorch {
 namespace backends {
 namespace arm {
 
 struct PlatformState {};
 
-PlatformState* platform_init(
+executorch::runtime::Error platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
-    executorch::runtime::MemoryAllocator* /*allocator*/) {
-  return nullptr;
+    executorch::runtime::MemoryAllocator* /*allocator*/,
+    ExecutionHandle* /*handle*/) {
+  return executorch::runtime::Error::Ok;
 }
 
-void platform_destroy(PlatformState* state) {
-  delete state;
+void platform_destroy(PlatformState* /*state*/) {}
+
+bool needs_scratch_allocation() {
+  return true;
 }
 
 Error platform_execute(
@@ -48,12 +74,28 @@ Error platform_execute(
     int output_count,
     Span<executorch::runtime::EValue*> args,
     char* ethosu_scratch) {
+  if (handles.scratch_data_size > 0 && ethosu_scratch == nullptr) {
+    ET_LOG(Error, "Ethos-U scratch buffer is missing");
+    return Error::InvalidState;
+  }
+
+  // Parse product config from command stream to reserve the correct driver
+  uint32_t product, log2_macs;
+  // The weak fallback below always returns 0, but some builds replace it
+  // with a real driver implementation that can return an error code.
+  const int product_config_status = ethosu_get_product_config_from_cop_data(
+      handles.cmd_data, handles.cmd_data_size, &product, &log2_macs);
+  if (product_config_status != 0) { // cppcheck-suppress knownConditionTrueFalse
+    ET_LOG(Error, "Failed to parse product config from command stream");
+    return Error::InvalidProgram;
+  }
+
   // Allocate driver handle and synchronously invoke driver
   auto driver =
       std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
-          ethosu_reserve_driver(), ethosu_release_driver);
+          ethosu_reserve_driver_ex(product, log2_macs), ethosu_release_driver);
   if (driver == nullptr) {
-    ET_LOG(Error, "ethosu_reserve_driver failed");
+    ET_LOG(Error, "ethosu_reserve_driver_ex failed");
     return Error::InvalidState;
   }
 
@@ -107,7 +149,11 @@ Error platform_execute(
       }
       io_bytes_total += tensor_bytes;
     } else {
-      memcpy(
+      // Routed through arm_ethos_io_memcpy so firmware can DMA-accelerate.
+#if defined(ET_ARM_ETHOSU_PROFILE_IO_COPIES)
+      EthosUBackend_output_memcpy(tensor_bytes);
+#endif
+      arm_ethos_io_memcpy(
           tensor_out.mutable_data_ptr<char>(),
           static_cast<const char*>(output_addr),
           tensor_bytes);

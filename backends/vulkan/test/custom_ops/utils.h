@@ -14,6 +14,7 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -140,6 +141,56 @@ inline std::string shape_string(const std::vector<int64_t>& shape) {
   return result;
 }
 
+// Helper function to generate a bracketed shape string for test case naming
+// Example: {1, 128, 56, 56} -> "[1,128,56,56]"
+inline std::string shape_bracket(const std::vector<int64_t>& shape) {
+  return "[" + shape_string(shape) + "]";
+}
+
+// Short dtype symbol used in standardized test case labels
+// Example: kFloat -> "f32", kHalf -> "f16", kChar -> "i8", kInt -> "i32"
+inline std::string dtype_short(vkapi::ScalarType dtype) {
+  switch (dtype) {
+    case vkapi::kFloat:
+      return "f32";
+    case vkapi::kHalf:
+      return "f16";
+    case vkapi::kChar:
+      return "i8";
+    case vkapi::kByte:
+      return "u8";
+    case vkapi::kInt:
+      return "i32";
+    case vkapi::kBool:
+      return "b";
+    default:
+      return "?";
+  }
+}
+
+// Build a standardized test label of the form:
+//   "<prefix>  <dtype_str>  <shape_str>  <storage_str>[ <suffix>]"
+// where <dtype_str> is "<in_dtype>-><out_dtype>" when the two differ, or just
+// "<in_dtype>" when they match. Sections are separated by two spaces. If
+// suffix is non-empty it is appended after a single space (allowing callers
+// to pass e.g. "[general]" or "[gemv] +bias").
+inline std::string make_test_label(
+    const std::string& prefix,
+    const std::string& in_dtype,
+    const std::string& out_dtype,
+    const std::string& shape_str,
+    const std::string& storage_str,
+    const std::string& suffix = "") {
+  const std::string dtype_str =
+      (in_dtype == out_dtype) ? in_dtype : in_dtype + "->" + out_dtype;
+  std::string label =
+      prefix + "  " + dtype_str + "  " + shape_str + "  " + storage_str;
+  if (!suffix.empty()) {
+    label += " " + suffix;
+  }
+  return label;
+}
+
 //
 // ValueSpec class
 //
@@ -170,20 +221,7 @@ struct ValueSpec {
   bool is_constant_tensor;
   bool is_none_flag;
   bool is_int4_tensor;
-  bool data_generated_ = false;
-
-  std::vector<float> float_data;
-  std::vector<int32_t> int32_data;
-  std::vector<uint16_t> half_data; // Using uint16_t as substitute for half
-  std::vector<int8_t> int8_data; // For kChar (signed 8-bit)
-  std::vector<uint8_t> uint8_data; // For kByte (unsigned 8-bit)
   std::string string_data;
-
-  std::vector<float> ref_float_data;
-  std::vector<int32_t> ref_int32_data;
-  std::vector<uint16_t> ref_half_data;
-  std::vector<int8_t> ref_int8_data;
-  std::vector<uint8_t> ref_uint8_data;
 
   ValueSpec(
       const std::vector<int64_t>& sizes,
@@ -200,7 +238,8 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(false) {
-    // Data generation is deferred until ensure_data_generated() is called
+    // Data generation is deferred until first access (any data getter or
+    // ensure_data_generated() triggers it).
   }
 
   // Constructor for tensor with custom data generation type
@@ -220,7 +259,8 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(false) {
-    // Data generation is deferred until ensure_data_generated() is called
+    // Data generation is deferred until first access (any data getter or
+    // ensure_data_generated() triggers it).
   }
 
   // Constructor for single int
@@ -235,7 +275,7 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(true) {
-    int32_data.push_back(value);
+    data_->int32_data.push_back(value);
   }
 
   // Constructor for single float
@@ -250,7 +290,7 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(true) {
-    float_data.push_back(value);
+    data_->float_data.push_back(value);
   }
 
   // Constructor for single bool
@@ -265,7 +305,7 @@ struct ValueSpec {
         is_none_flag(false),
         is_int4_tensor(false),
         data_generated_(true) {
-    int32_data.push_back(value ? 1 : 0);
+    data_->int32_data.push_back(value ? 1 : 0);
   }
 
   // Constructor for int list
@@ -279,8 +319,9 @@ struct ValueSpec {
         is_constant_tensor(false),
         is_none_flag(false),
         is_int4_tensor(false),
-        data_generated_(true),
-        int32_data(values) {}
+        data_generated_(true) {
+    data_->int32_data = values;
+  }
 
   // Factory method for string (avoids ambiguity with vector constructor)
   static ValueSpec make_string(const std::string& value) {
@@ -335,98 +376,136 @@ struct ValueSpec {
   }
 
   int32_t get_int_value() const {
-    return int32_data.empty() ? 0 : int32_data[0];
+    ensure_data_generated();
+    return data_->int32_data.empty() ? 0 : data_->int32_data[0];
   }
   float get_float_value() const {
-    return float_data.empty() ? 0.0f : float_data[0];
+    ensure_data_generated();
+    return data_->float_data.empty() ? 0.0f : data_->float_data[0];
   }
   bool get_bool_value() const {
-    return int32_data.empty() ? false : (int32_data[0] != 0);
+    ensure_data_generated();
+    return data_->int32_data.empty() ? false : (data_->int32_data[0] != 0);
   }
   const std::string& get_string_value() const {
     return string_data;
   }
   const std::vector<int32_t>& get_int_list() const {
-    return int32_data;
+    ensure_data_generated();
+    return data_->int32_data;
   }
   const std::vector<int64_t>& get_tensor_sizes() const {
     return sizes;
   }
 
+  // References and pointers into tensor data must not be held across any other
+  // access to the same spec: a mutable access may detach the shared payload,
+  // leaving a previously returned reference bound to the old payload. Consume
+  // immediately.
   const std::vector<float>& get_float_data() const {
-    return float_data;
+    ensure_data_generated();
+    return data_->float_data;
   }
   const std::vector<int32_t>& get_int32_data() const {
-    return int32_data;
+    ensure_data_generated();
+    return data_->int32_data;
   }
   const std::vector<uint16_t>& get_half_data() const {
-    return half_data;
+    ensure_data_generated();
+    return data_->half_data;
   }
   const std::vector<int8_t>& get_int8_data() const {
-    return int8_data;
+    ensure_data_generated();
+    return data_->int8_data;
   }
   const std::vector<uint8_t>& get_uint8_data() const {
-    return uint8_data;
+    ensure_data_generated();
+    return data_->uint8_data;
   }
 
   std::vector<float>& get_float_data() {
-    return float_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->float_data;
   }
   std::vector<int32_t>& get_int32_data() {
-    return int32_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->int32_data;
   }
   std::vector<uint16_t>& get_half_data() {
-    return half_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->half_data;
   }
   std::vector<int8_t>& get_int8_data() {
-    return int8_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->int8_data;
   }
   std::vector<uint8_t>& get_uint8_data() {
-    return uint8_data;
+    ensure_data_generated();
+    ensure_unique_data();
+    return data_->uint8_data;
   }
 
   const std::vector<float>& get_ref_float_data() const {
-    return ref_float_data;
+    return reference_data_->float_data;
   }
   const std::vector<int32_t>& get_ref_int32_data() const {
-    return ref_int32_data;
+    return reference_data_->int32_data;
   }
   const std::vector<uint16_t>& get_ref_half_data() const {
-    return ref_half_data;
+    return reference_data_->half_data;
   }
   const std::vector<int8_t>& get_ref_int8_data() const {
-    return ref_int8_data;
+    return reference_data_->int8_data;
   }
   const std::vector<uint8_t>& get_ref_uint8_data() const {
-    return ref_uint8_data;
+    return reference_data_->uint8_data;
   }
 
   std::vector<float>& get_ref_float_data() {
-    return ref_float_data;
+    ensure_unique_reference_data();
+    return reference_data_->float_data;
   }
   std::vector<int32_t>& get_ref_int32_data() {
-    return ref_int32_data;
+    ensure_unique_reference_data();
+    return reference_data_->int32_data;
   }
   std::vector<uint16_t>& get_ref_half_data() {
-    return ref_half_data;
+    ensure_unique_reference_data();
+    return reference_data_->half_data;
   }
   std::vector<int8_t>& get_ref_int8_data() {
-    return ref_int8_data;
+    ensure_unique_reference_data();
+    return reference_data_->int8_data;
   }
   std::vector<uint8_t>& get_ref_uint8_data() {
-    return ref_uint8_data;
+    ensure_unique_reference_data();
+    return reference_data_->uint8_data;
   }
 
   void resize_data(size_t new_size);
   void* get_mutable_data_ptr();
   float get_element(size_t index) const;
 
-  // Data generation methods for deferred generation and caching
+  // Data generation methods for deferred generation and caching.
+  //
+  // ValueSpec is not thread-safe: lazy materialization and copy-on-write
+  // detach mutate shared state from const methods. Test cases are built and
+  // executed on a single thread.
+  //
+  // Implicit materialization (any data getter, resize_data) consumes the
+  // global seed counter. Callers needing deterministic data must call
+  // ensure_data_generated(explicit_seed) before any other access; a later
+  // seeded call is a no-op once data is generated.
   bool is_data_generated() const {
     return data_generated_;
   }
-  void ensure_data_generated(int seed = -1);
-  void copy_data_from(const ValueSpec& other);
+  void ensure_data_generated(int seed = -1) const;
+  void share_data_from(const ValueSpec& other);
+  void share_reference_from(const ValueSpec& other);
 
   // Set/get constant flag
   bool is_constant() const {
@@ -434,10 +513,6 @@ struct ValueSpec {
   }
   void set_constant(bool is_constant) {
     is_constant_tensor = is_constant;
-    // Constant tensors need data immediately for test case setup
-    if (is_constant && is_tensor()) {
-      ensure_data_generated();
-    }
   }
 
   // Set/get none flag
@@ -467,12 +542,34 @@ struct ValueSpec {
       float rel_tolerance = 1e-3f) const;
 
  private:
-  void generate_tensor_data(int seed = -1);
+  struct TensorData {
+    std::vector<float> float_data;
+    std::vector<int32_t> int32_data;
+    std::vector<uint16_t> half_data;
+    std::vector<int8_t> int8_data;
+    std::vector<uint8_t> uint8_data;
+  };
+
+  void ensure_unique_data() const;
+  void ensure_unique_reference_data() const;
+  void generate_tensor_data(int seed = -1) const;
+
+  mutable bool data_generated_ = false;
+  mutable std::shared_ptr<TensorData> data_ = std::make_shared<TensorData>();
+  mutable std::shared_ptr<TensorData> reference_data_ =
+      std::make_shared<TensorData>();
 };
 
 //
 // TestCase
 //
+
+// Default per-execute() wall-clock target used by the probe-then-scale logic
+// in execute_test_cases(). Picked generously enough that even an under-sized
+// chained_dispatches factor (the probe runs at governor-pinned clock and
+// underestimates the boost-clock latency) still drives sustained GPU
+// activity during measurement.
+constexpr int kDefaultTargetExecuteTimeUs = 100000;
 
 class TestCase {
  public:
@@ -524,6 +621,46 @@ class TestCase {
     return shader_filter_;
   }
 
+  // Manual override for the number of chained dispatches per measurement
+  // iteration (a.k.a. chained_dispatches). If > 0, the framework uses this
+  // directly and skips the probe phase. 0 (the default) means adaptive
+  // (probe-then-scale).
+  void set_op_invocations_per_execute(int n) {
+    op_invocations_per_execute_ = n;
+  }
+  int get_op_invocations_per_execute() const {
+    return op_invocations_per_execute_;
+  }
+
+  // Target single-execute duration in microseconds. Used only when the
+  // manual chained_dispatches override is not set. Default
+  // kDefaultTargetExecuteTimeUs, picked generously enough to mitigate Adreno
+  // DCVS governor pinning during the probe.
+  void set_target_execute_time_us(int us) {
+    target_execute_time_us_ = us;
+  }
+  int get_target_execute_time_us() const {
+    return target_execute_time_us_;
+  }
+
+  // When true, the ComputeGraph built for this test case sets
+  // GraphConfig::force_resize, so every DynamicDispatchNode runs its resize
+  // function once during measurement setup (execute_test_case runs
+  // propagate_resize() after prepack) even when no input shape changed.
+  // Because the output is already allocated at the swept shape, the resize
+  // must recompute the same shape from the current input — a wrong resize
+  // formula resizes the output to a mismatched shape and surfaces as a test
+  // failure. Default true (opt-out): every custom_ops test exercises its
+  // resize formulas across the swept shapes. Call set_force_resize(false) for
+  // the rare op whose resize fn is intentionally not shape-preserving under a
+  // fixed output allocation.
+  void set_force_resize(bool force_resize) {
+    force_resize_ = force_resize;
+  }
+  bool get_force_resize() const {
+    return force_resize_;
+  }
+
   void add_input_spec(const ValueSpec& spec) {
     inputs_.push_back(spec);
   }
@@ -567,6 +704,9 @@ class TestCase {
     abs_tolerance_ = 2e-3f;
     rel_tolerance_ = 1e-3f;
     shader_filter_ = kDefaultShaderFilter;
+    op_invocations_per_execute_ = 0;
+    target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
+    force_resize_ = true;
   }
 
  private:
@@ -577,6 +717,9 @@ class TestCase {
   float abs_tolerance_;
   float rel_tolerance_;
   std::vector<std::string> shader_filter_;
+  int op_invocations_per_execute_ = 0; // 0 = adaptive
+  int target_execute_time_us_ = kDefaultTargetExecuteTimeUs;
+  bool force_resize_ = true;
 };
 
 //
@@ -593,8 +736,8 @@ enum class CorrectnessStatus {
 struct ShaderTiming {
   std::string shader_name;
   std::vector<float> iter_timings_us; // Individual iteration timings
-  uint32_t global_wg_size[3] = {0, 0, 0};
-  uint32_t local_wg_size[3] = {0, 0, 0};
+  uint32_t gwg[3] = {0, 0, 0};
+  uint32_t lwg[3] = {0, 0, 0};
 
   float get_avg_time_us() const {
     if (iter_timings_us.empty()) {
@@ -629,8 +772,8 @@ class BenchmarkResult {
   void add_shader_timing(
       const std::string& shader_name,
       float time_us,
-      const uint32_t global_wg[3],
-      const uint32_t local_wg[3]);
+      const uint32_t gwg[3],
+      const uint32_t lwg[3]);
 
   // Get per-shader timing data
   const std::vector<ShaderTiming>& get_shader_timings() const {
@@ -799,24 +942,81 @@ int64_t default_flop_calculator(const TestCase& test_case);
 
 using ReferenceComputeFunc = std::function<void(TestCase&)>;
 
+// Half-open index range of the operator's own dispatch nodes within a
+// benchmark graph's execute_nodes(). Staging upload nodes precede it, staging
+// download nodes follow it.
+struct OpNodeRange {
+  size_t begin = 0;
+  size_t end = 0;
+};
+
+// A benchmark graph plus the location of its repeatable operator nodes. The
+// graph is heap-held: ComputeGraph owns its Context and must never be moved
+// (a moved-from graph's destructor dereferences a null context).
+struct BenchmarkGraph {
+  std::unique_ptr<ComputeGraph> graph;
+  OpNodeRange op_nodes;
+};
+
+// Benchmark-only executor that records a graph's execute nodes into a single
+// reusable command buffer, then replays it on every execute(). Staging uploads
+// are encoded once, operator nodes N times, staging downloads once, so each
+// iteration performs the same work as the old stacked-nodes layout (1 upload +
+// N ops + 1 download) and the per-invocation divisor is unchanged. Production
+// ComputeGraph::execute() behavior is unchanged.
+//
+// Notes for interpreting benchmark numbers:
+// - Submit granularity differs from stacking N distinct nodes: all encodings
+//   live in one command buffer with one submit per iteration (the old path
+//   could split across command buffers at the node-count threshold), so
+//   per-dispatch times may shift systematically against older data.
+// - Resize functions run once via propagate_resize() in execute_test_case
+//   before recording; replay itself never re-triggers resize.
+// - Repeated encodings share one node/dispatch id, so per-repetition
+//   querypool attribution is unavailable (aggregation keys on kernel name).
+class RepeatedGraphExecutor final {
+ public:
+  RepeatedGraphExecutor(
+      ComputeGraph& graph,
+      int repetitions,
+      OpNodeRange op_nodes);
+  void execute();
+
+ private:
+  ComputeGraph& graph_;
+  std::unique_ptr<vkapi::CommandBuffer> command_;
+};
+
+// Runs a measurement at the given chained_dispatches factor. The operator is
+// built once, then its execute nodes are encoded that many times into a
+// benchmark-only reusable command buffer. The probe-then-scale orchestration
+// lives in execute_test_cases().
+//
+// write_outputs controls whether the graph's staging output buffers are copied
+// back into test_case.outputs() at the end of the run. The probe path needs
+// write_outputs=true so the correctness check has a clean single-dispatch
+// reference. The benchmarking path passes write_outputs=false to avoid the
+// per-iter GPU->CPU copy cost.
 BenchmarkResult execute_test_case(
     TestCase& test_case,
-    int warmup_runs = 3,
-    int benchmark_runs = 10);
+    int warmup_runs = 1,
+    int benchmark_runs = 1,
+    int chained_dispatches = 1,
+    bool write_outputs = true);
 
 TestResult execute_test_cases(
     std::function<std::vector<TestCase>()> test_case_generator,
     FlopCalculatorFunc flop_calculator,
     const std::string& operation_name = "Operation",
-    int warmup_runs = 3,
-    int benchmark_runs = 10,
+    int warmup_runs = 1,
+    int benchmark_runs = 1,
     ReferenceComputeFunc reference_compute_func = nullptr);
 
 TestResult execute_test_cases(
     std::function<std::vector<TestCase>()> test_case_generator,
     const std::string& operation_name = "Operation",
-    int warmup_runs = 3,
-    int benchmark_runs = 10,
+    int warmup_runs = 1,
+    int benchmark_runs = 1,
     ReferenceComputeFunc reference_compute_func = nullptr);
 
 //
@@ -864,8 +1064,18 @@ void compute_weight_sums_4bit_grouped(
     int64_t out_features,
     int64_t group_size);
 
-// Setup compute graph based on TestCase and operation name
-ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name);
+// Half-precision conversion utilities
+uint16_t float_to_half(float value);
+float half_to_float(uint16_t half_val);
+
+// Setup compute graph based on TestCase and operation name. The op function is
+// invoked once. op_invocations_per_execute is used only to reserve enough
+// descriptor capacity for benchmark-only repeated command encoding. Returns
+// the graph plus the range of the operator's own nodes for repeated encoding.
+BenchmarkGraph setup_compute_graph(
+    TestCase& test_case,
+    std::string op_name,
+    int op_invocations_per_execute = 1);
 
 } // namespace prototyping
 } // namespace vulkan

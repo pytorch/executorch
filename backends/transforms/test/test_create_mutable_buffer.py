@@ -10,7 +10,10 @@ import unittest
 
 import executorch
 import torch
-from executorch.backends.transforms.utils import create_mutable_buffer
+from executorch.backends.transforms.utils import (
+    create_constant_placeholder,
+    create_mutable_buffer,
+)
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -19,6 +22,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     Verification,
 )
 from torch.export import export
+from torch.export.graph_signature import InputKind
 from torch.utils._pytree import tree_flatten
 
 
@@ -92,6 +96,137 @@ class TestMutableBufferCreation(unittest.TestCase):
             exported_program.graph_signature.buffers_to_mutate[buffer_name]
             == target_name
         )
+
+    def test_create_mutable_buffer_renamed_name(self):
+        """
+        torch.fx renames a placeholder whose requested name is not a valid
+        identifier or collides with an existing node. Node target, graph
+        signature and state_dict must follow the assigned name.
+        """
+
+        class EmptyNetwork(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x
+
+            test_data: torch.Tensor = (torch.zeros(1),)
+
+        # "0_cache" is not a valid identifier; "x" collides with the user input
+        for requested_name in ("0_cache", "x"):
+            exported_program = export(
+                EmptyNetwork(), args=EmptyNetwork.test_data, strict=True
+            )
+            exported_program = to_edge(exported_program).exported_program()
+            graph = exported_program.graph_module.graph
+
+            buffer_node = create_mutable_buffer(
+                exp_program=exported_program,
+                name=requested_name,
+                data=torch.ones(1) * 2,
+            )
+
+            assert buffer_node.name != requested_name
+            assert buffer_node.target == buffer_node.name
+            signature = exported_program.graph_signature
+            assert buffer_node.name in signature.inputs_to_buffers
+            target = signature.inputs_to_buffers[buffer_node.name]
+            assert target in exported_program.state_dict
+            assert signature.buffers_to_mutate[buffer_node.name] == target
+
+            input_node = list(graph.nodes)[1]
+            with graph.inserting_after(input_node):
+                graph.create_node(
+                    "call_function",
+                    exir_ops.edge.aten.add.Tensor,
+                    args=(input_node, buffer_node),
+                    kwargs={},
+                )
+
+            # Recompiling emits the placeholder target as a parameter name
+            assert exported_program.module()(torch.zeros(1)) == 0
+
+    def test_create_mutable_buffer_duplicate_name_raises(self):
+        """
+        A mutable buffer cannot be silently shared, so repeating a request must
+        raise instead of deduplicating, even when torch.fx renamed the node.
+        """
+
+        class EmptyNetwork(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x
+
+            test_data: torch.Tensor = (torch.zeros(1),)
+
+        # A clean repeat is caught by the state_dict target check, a renamed
+        # repeat by the placeholder lookup; pin each to its own error.
+        for requested_name, error in (
+            ("b_cache", "already exists in state_dict"),
+            ("0_cache", "already exists in the graph"),
+        ):
+            exported_program = export(
+                EmptyNetwork(), args=EmptyNetwork.test_data, strict=True
+            )
+            exported_program = to_edge(exported_program).exported_program()
+
+            create_mutable_buffer(
+                exp_program=exported_program,
+                name=requested_name,
+                data=torch.ones(1),
+            )
+            with self.assertRaisesRegex(RuntimeError, error):
+                create_mutable_buffer(
+                    exp_program=exported_program,
+                    name=requested_name,
+                    data=torch.ones(1),
+                )
+
+    def test_mixed_kind_same_name_raises(self):
+        """
+        A name used by a mutable buffer cannot be reused by a constant
+        placeholder in either creation order; the constant dedup must not hand
+        back a mutable buffer node.
+        """
+
+        class EmptyNetwork(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x
+
+            test_data: torch.Tensor = (torch.zeros(1),)
+
+        def fresh_program():
+            ep = export(EmptyNetwork(), args=EmptyNetwork.test_data, strict=True)
+            return to_edge(ep).exported_program()
+
+        # mutable first, then constant
+        exported_program = fresh_program()
+        graph = exported_program.graph_module.graph
+        create_mutable_buffer(
+            exp_program=exported_program, name="b_cache", data=torch.ones(1)
+        )
+        with self.assertRaisesRegex(RuntimeError, "already exists as a mutable buffer"):
+            with graph.inserting_before(list(graph.nodes)[0]):
+                create_constant_placeholder(
+                    exp_program=exported_program,
+                    graph=graph,
+                    name="b_cache",
+                    kind=InputKind.PARAMETER,
+                    data=torch.ones(1),
+                )
+
+        # constant first, then mutable
+        exported_program = fresh_program()
+        graph = exported_program.graph_module.graph
+        with graph.inserting_before(list(graph.nodes)[0]):
+            create_constant_placeholder(
+                exp_program=exported_program,
+                graph=graph,
+                name="b_cache",
+                kind=InputKind.PARAMETER,
+                data=torch.ones(1),
+            )
+        with self.assertRaisesRegex(RuntimeError, "already exists in the graph"):
+            create_mutable_buffer(
+                exp_program=exported_program, name="b_cache", data=torch.ones(1)
+            )
 
 
 class TestRegisterMutableBufferPass(unittest.TestCase):

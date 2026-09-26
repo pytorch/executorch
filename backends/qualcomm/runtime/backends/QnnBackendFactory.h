@@ -22,6 +22,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htp/HtpGraph.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiContext.h>
+#include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiGraph.h>
 
 #include <memory>
 namespace executorch {
@@ -61,6 +63,7 @@ class QnnBackendFactory {
  public:
   std::unique_ptr<BackendConfigParameters> Create(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* qnn_backend_ptr,
       QnnDevice* qnn_device_ptr,
       const QnnExecuTorchContextBinary& qnn_context_blob,

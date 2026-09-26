@@ -9,6 +9,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-global-constructors"],
         deps = [
             "//executorch/extension/evalue_util:print_evalue",
+            "//executorch/extension/llm/runner:runner_lib",
             "//executorch/extension/threadpool:cpuinfo_utils",
             "//executorch/extension/threadpool:threadpool",
         ],

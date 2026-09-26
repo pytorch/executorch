@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Convolution.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dGemm.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -108,17 +111,29 @@ ValueRef prepack_biases(
   vkapi::ShaderInfo shader =
       get_nchw_to_tensor_shader(graph, v, graph.get_staging_dtype_for(weight));
 
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(v)) {
+    param_buffers.append(graph.buffer_meta_ubo(v));
+  } else {
+    param_buffers.append(graph.texture_meta_ubo(v));
+  }
+
+  std::vector<PushConstantDataInfo> pcs;
+  if (graph.is_buffer_storage(v)) {
+    pcs = {graph.sizes_pc_of(v), graph.strides_pc_of(v), graph.numel_pc_of(v)};
+  }
+
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_gwg(v),
+      graph.create_lwg(v),
       vref,
       v,
-      {},
+      param_buffers,
       // Specialization constants
       {graph.hashed_layout_of(v)},
-      {graph.sizes_pc_of(v)}));
+      pcs));
 
   return v;
 }
@@ -137,18 +152,6 @@ vkapi::ShaderInfo get_conv2d_shader(
   switch (method) {
     case Conv2dMethod::Depthwise:
       kernel_name = "conv2d_dw";
-      if (!prepack_weights) {
-        if (!stride_equals_dilation) {
-          kernel_name += "_sned";
-        }
-        const auto& weight_sizes = graph.get_tref(weight)->sizes;
-        if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
-          kernel_name += "_output_tile_3x3";
-        }
-        if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
-          kernel_name += "_output_tile_5x5";
-        }
-      }
       break;
     case Conv2dMethod::Pointwise:
       if (prepack_weights) {
@@ -221,8 +224,8 @@ ValueRef prepack_weights(
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      graph.create_global_wg_size(v),
-      graph.create_local_wg_size(v),
+      graph.create_gwg(v),
+      graph.create_lwg(v),
       vref,
       v,
       {},
@@ -294,18 +297,42 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
-utils::uvec2 get_conv2d_dw_dispatch_divisor(
-    const std::vector<int64_t>& weight_sizes) {
-  if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
-    return {4u, 2u};
+// Decide whether a SlidingWindow conv2d should be computed via the
+// im2col + GEMM path (conv2d_gemm_impl) instead of the direct convolution
+// shader. Across 26 configs on Mali-G715 (buffer path) and Adreno SM8650
+// (texture path): FP32 cases were numerically verified against the reference;
+// FP16 cases were routing/dispatch-validated only (the reference is float-only
+// for the large shapes, so FP16 outputs were not numerically checked).
+//
+// Only called for SlidingWindow conv2d (1x1 is routed to conv2d_pw and
+// Depthwise/Transposed are handled before the call site).
+//
+// Preconditions (fall back to direct conv if any fail — the im2col path is
+// either not applicable or not beneficial):
+//   - groups == 1
+//   - dilation == 1 (all dims)
+//
+// Selection rule: use im2col on Mali universally, or once the output channel
+// count is large enough to amortize the fixed ~N*K_total im2col gather cost.
+constexpr int64_t kIm2colMinCOut = 128;
+
+bool should_use_conv2d_im2col(
+    ComputeGraph& graph,
+    const ValueRef weight_data,
+    const int64_t groups_val,
+    const Kernel2dParams& kernel_params) {
+  if (groups_val != 1) {
+    return false;
   }
-  if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
-    return {4u, 2u};
+  if (kernel_params.dilation[0] != 1 || kernel_params.dilation[1] != 1) {
+    return false;
   }
-  return {4u, 2u};
+  const auto weight_sizes = graph.sizes_of(weight_data);
+  const int64_t c_out = weight_sizes.at(0);
+  return graph.device_is_mali() || c_out >= kIm2colMinCOut;
 }
 
-utils::uvec3 create_conv2d_global_wg_size(
+GlobalWorkGrid create_conv2d_gwg(
     ComputeGraph& graph,
     const Conv2dMethod method,
     const ValueRef out,
@@ -313,25 +340,50 @@ utils::uvec3 create_conv2d_global_wg_size(
     const bool stride_equals_dilation) {
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
-    return {
-        utils::div_up(image_extents[0u], 1u),
-        utils::div_up(image_extents[1u], 4u),
-        image_extents[2u]};
-  } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
-    const utils::uvec3 image_extents = graph.create_global_wg_size(out);
-    const utils::uvec2 div =
-        get_conv2d_dw_dispatch_divisor(graph.get_tref(weight_data)->sizes);
-    return {
-        utils::div_up(image_extents[0], div[0]),
-        utils::div_up(image_extents[1], div[1]),
-        image_extents[2]};
+    return GlobalWorkGrid(
+        {utils::div_up(image_extents[0u], 1u),
+         utils::div_up(image_extents[1u], 4u),
+         image_extents[2u]},
+        kTiledWorkGrid);
   } else {
-    return graph.create_global_wg_size(out);
+    return graph.create_gwg(out);
   }
 }
 
+// Determines which convolution method a dispatch uses.
+//
+// Depthwise and transposed convolutions have shader names of their own, but
+// the name alone cannot separate pointwise from sliding window: the sliding
+// window shader is itself named "conv2d", and a pointwise convolution also
+// takes that name when its weights are prepacked. Those two are therefore
+// separated by the weight's spatial extent. Shared by the global and local
+// workgroup size functions below so that the two cannot disagree about the
+// same dispatch.
+Conv2dMethod infer_conv2d_method_from_shader(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const ValueRef weight_data) {
+  const std::string& kernel_name = shader.kernel_name;
+  // Checked before the plain "conv2d" test below, which "conv2d_dw" and
+  // "conv2d_pw" would otherwise match too.
+  if (kernel_name.find("conv2d_dw") != std::string::npos) {
+    return Conv2dMethod::Depthwise;
+  }
+  if (kernel_name.find("conv2d_pw") != std::string::npos) {
+    return Conv2dMethod::Pointwise;
+  }
+  if (kernel_name.find("conv_transpose2d") != std::string::npos) {
+    return Conv2dMethod::Transposed;
+  }
+  const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
+  if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
+    return Conv2dMethod::Pointwise;
+  }
+  return Conv2dMethod::SlidingWindow;
+}
+
 // Custom global workgroup size function for conv2d
-utils::uvec3 conv2d_global_wg_size(
+GlobalWorkGrid conv2d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -339,87 +391,58 @@ utils::uvec3 conv2d_global_wg_size(
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef weight_data = resize_args.at(0);
 
-  // Determine method from shader name
-  Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_dw") != std::string::npos) {
-    method = Conv2dMethod::Depthwise;
-  } else if (
-      shader.kernel_name.find("conv2d_pw") != std::string::npos ||
-      (shader.kernel_name.find("conv2d") != std::string::npos &&
-       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
-    // Check if it's pointwise by examining weight sizes
-    const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
-    if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
-      method = Conv2dMethod::Pointwise;
-    } else {
-      method = Conv2dMethod::SlidingWindow;
-    }
-  } else if (shader.kernel_name.find("conv_transpose2d") != std::string::npos) {
-    method = Conv2dMethod::Transposed;
-  } else {
-    method = Conv2dMethod::SlidingWindow;
-  }
+  const Conv2dMethod method =
+      infer_conv2d_method_from_shader(graph, shader, weight_data);
 
   // Determine stride_equals_dilation from shader name
   bool stride_equals_dilation =
       shader.kernel_name.find("_sned") == std::string::npos;
 
-  utils::uvec3 wg_size = create_conv2d_global_wg_size(
+  const GlobalWorkGrid wg_size = create_conv2d_gwg(
       *graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
-    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+  if (method == Conv2dMethod::Pointwise) {
+    utils::uvec3 pointwise_wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1u};
 
     if (shader.kernel_name.find("s1p0") != std::string::npos) {
-      wg_size[0] *= 4;
+      pointwise_wg_size[0] *= 4;
     }
+    return GlobalWorkGrid(pointwise_wg_size, kTiledWorkGrid);
   }
 
   return wg_size;
 }
 
 // Custom local workgroup size function for conv2d
-utils::uvec3 conv2d_local_wg_size(
+LocalWorkGroup conv2d_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)args;
-  (void)resize_args;
 
-  // Determine method from shader name
-  Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_dw") != std::string::npos) {
-    method = Conv2dMethod::Depthwise;
-  } else if (
-      shader.kernel_name.find("conv2d_pw") != std::string::npos ||
-      (shader.kernel_name.find("conv2d") != std::string::npos &&
-       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
-    method = Conv2dMethod::Pointwise;
-  } else {
-    method = Conv2dMethod::SlidingWindow;
-  }
+  const ValueRef weight_data = resize_args.at(0);
+  const Conv2dMethod method =
+      infer_conv2d_method_from_shader(graph, shader, weight_data);
 
   if (method == Conv2dMethod::Pointwise) {
-    uint32_t local_wg_size_y = 1;
-    if (global_workgroup_size[1] % 8 == 0) {
-      local_wg_size_y = 8;
-    } else if (global_workgroup_size[1] % 4 == 0) {
-      local_wg_size_y = 4;
-    } else if (global_workgroup_size[1] % 2 == 0) {
-      local_wg_size_y = 2;
+    uint32_t lwg_y = 1;
+    if (gwg[1] % 8 == 0) {
+      lwg_y = 8;
+    } else if (gwg[1] % 4 == 0) {
+      lwg_y = 4;
+    } else if (gwg[1] % 2 == 0) {
+      lwg_y = 2;
     }
-    return {64 / local_wg_size_y, local_wg_size_y, 1};
-  } else if (method == Conv2dMethod::Depthwise) {
-    return {64, 1, 1};
+    return LocalWorkGroup(64u / lwg_y, lwg_y, 1u);
   } else {
-    return graph->create_local_wg_size(global_workgroup_size);
+    return graph->create_lwg(gwg);
   }
 }
 
 // Custom global workgroup size function for conv1d
-utils::uvec3 conv1d_global_wg_size(
+GlobalWorkGrid conv1d_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -428,12 +451,14 @@ utils::uvec3 conv1d_global_wg_size(
   (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
 
-  return {// out length
-          graph->size_at<uint32_t>(-1, out),
-          // out channels
-          static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
-          // out batches
-          utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
+  return GlobalWorkGrid(
+      {// out length
+       graph->size_at<uint32_t>(-1, out),
+       // out channels
+       static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
+       // out batches
+       utils::div_up_4(graph->size_at<uint32_t>(-3, out))},
+      kTiledWorkGrid);
 }
 
 void add_conv2d_node(
@@ -450,7 +475,8 @@ void add_conv2d_node(
     const ValueRef out_min,
     const ValueRef out_max,
     const ValueRef out,
-    const bool clamp_out) {
+    const bool clamp_out,
+    const bool force_direct) {
   const bool transposed_val = graph.get_bool(transposed);
 
   float out_min_val = 0.0f;
@@ -466,6 +492,68 @@ void add_conv2d_node(
 
   const Conv2dMethod method =
       get_conv2d_method(graph, weight_data, groups_val, transposed_val);
+
+  // Use tiled path for all pointwise conv2d
+  if (method == Conv2dMethod::Pointwise) {
+    return conv2d_pw_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        out,
+        transposed_val,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
+
+  if (method == Conv2dMethod::Depthwise) {
+    return conv2d_dw_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        dilation,
+        out,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
+
+  const Kernel2dParams kernel_params = create_kernel2d_params(
+      graph,
+      weight_data,
+      /*kernel_size_only = */ false,
+      stride,
+      padding,
+      dilation);
+
+  // SlidingWindow conv2d: route to the im2col + GEMM path when the heuristic
+  // indicates it is beneficial, falling back to the direct convolution shader
+  // otherwise. `force_direct` bypasses the heuristic entirely and forces the
+  // direct path (used by tests to exercise the direct shader regardless of
+  // device); the default (false) reproduces the production routing exactly.
+  const bool use_im2col = !force_direct &&
+      method == Conv2dMethod::SlidingWindow &&
+      should_use_conv2d_im2col(graph, weight_data, groups_val, kernel_params);
+  if (use_im2col) {
+    return conv2d_gemm_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        dilation,
+        out,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
 
   ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
@@ -483,13 +571,6 @@ void add_conv2d_node(
 
   check_conv_args(graph, in, out);
 
-  Kernel2dParams kernel_params = create_kernel2d_params(
-      graph,
-      weight_data,
-      /*kernel_size_only = */ false,
-      stride,
-      padding,
-      dilation);
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
 
@@ -515,97 +596,25 @@ void add_conv2d_node(
       stride_equals_dilation,
       stride_1_padding_0);
 
-  utils::uvec3 wg_size = create_conv2d_global_wg_size(
-      graph, method, out, weight_data, stride_equals_dilation);
-
-  utils::uvec3 local_wg_size;
-  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
-    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
-  }
-
-  if (method == Conv2dMethod::Pointwise) {
-    uint32_t local_wg_size_y = 1;
-    if (wg_size[1] % 8 == 0) {
-      local_wg_size_y = 8;
-    } else if (wg_size[1] % 4 == 0) {
-      local_wg_size_y = 4;
-    } else if (wg_size[1] % 2 == 0) {
-      local_wg_size_y = 2;
-    }
-    local_wg_size = {64 / local_wg_size_y, local_wg_size_y, 1};
-  } else if (method == Conv2dMethod::Depthwise) {
-    local_wg_size = {64, 1, 1};
-  } else {
-    local_wg_size = graph.create_local_wg_size(wg_size);
-  }
-
-  vkapi::ParamsBindList param_buffers;
-  std::vector<PushConstantDataInfo> push_constants;
-  if (method == Conv2dMethod::Pointwise) {
-    const utils::ivec4 kernel_param_stride_pad = {
-        kernel_params.stride[0],
-        kernel_params.stride[1],
-        kernel_params.padding[0],
-        kernel_params.padding[1],
-    };
-
-    struct Conv2dPWParams final {
-      int in_group_size;
-      int dummy_padding;
-      OutputParams out_params;
-    } param{extra_params.in_group_size, 0, out_params};
-
-    push_constants = {
-        graph.logical_limits_pc_of(out),
-        PushConstantDataInfo(
-            &kernel_param_stride_pad, sizeof(kernel_param_stride_pad)),
-        PushConstantDataInfo(&param, sizeof(param)),
-    };
-  } else if (method == Conv2dMethod::Depthwise) {
-    const utils::ivec4 kernel_param_size_stride = {
-        kernel_params.kernel_size[0],
-        kernel_params.kernel_size[1],
-        kernel_params.stride[0],
-        kernel_params.stride[1]};
-
-    const utils::ivec4 kernel_param_pad_dial = {
-        kernel_params.padding[0],
-        kernel_params.padding[1],
-        kernel_params.dilation[0],
-        kernel_params.dilation[1]};
-
-    push_constants = {
-        graph.logical_limits_pc_of(out),
-        graph.sizes_pc_of(in),
-        PushConstantDataInfo(
-            &kernel_param_size_stride, sizeof(kernel_param_size_stride)),
-        PushConstantDataInfo(
-            &kernel_param_pad_dial, sizeof(kernel_param_pad_dial)),
-        PushConstantDataInfo(
-            &extra_params, sizeof(extra_params), sizeof(utils::ivec4)),
-        PushConstantDataInfo(&out_params, sizeof(out_params)),
-    };
-  } else {
-    param_buffers = {
-        graph.logical_limits_ubo(out),
-        graph.sizes_ubo(in),
-        graph.create_params_buffer(kernel_params),
-        graph.create_params_buffer(extra_params),
-        graph.create_params_buffer(out_params),
-    };
-  }
+  vkapi::ParamsBindList param_buffers = {
+      graph.logical_limits_ubo(out),
+      graph.sizes_ubo(in),
+      graph.create_params_buffer(kernel_params),
+      graph.create_params_buffer(extra_params),
+      graph.create_params_buffer(out_params),
+  };
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      conv2d_global_wg_size,
-      conv2d_local_wg_size,
+      conv2d_gwg,
+      conv2d_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       param_buffers,
       // Push Constants
-      push_constants,
+      {},
       // Specialization Constants
       {utils::safe_downcast<int32_t>(groups_val)},
       // Resize Args
@@ -632,8 +641,7 @@ void add_conv1d_node(
       weight,
       graph.storage_type_of(out),
       utils::kChannelsPacked,
-      /* passthrough = */ false,
-      utils::kOptimizedAxisMap);
+      /* passthrough = */ false);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
@@ -690,8 +698,8 @@ void add_conv1d_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      conv1d_global_wg_size,
-      default_pick_local_wg_size,
+      conv1d_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
@@ -753,6 +761,56 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           true);
     }
   } else {
+    // Conv1d path
+    if (graph.packed_dim_of(args[0]) == WHCN::kHeightDim) {
+      // Height-packed: route to optimized conv1d implementations
+      const auto weight_sizes = graph.sizes_of(args[1]);
+      const int64_t groups_val = graph.get_int(args[8]);
+      const bool is_pointwise = weight_sizes.at(2) == 1;
+      const bool is_depthwise =
+          groups_val == weight_sizes.at(0) && weight_sizes.at(1) == 1;
+
+      // Build unified 10-arg vector:
+      //   in, weight, bias, stride, padding, dilation, groups,
+      //   output_min, output_max, out
+      // For non-clamp (args.size() == 10): output_min/max = kDummyValueRef
+      // For clamp (args.size() == 12): output_min/max from args[9]/args[10]
+      ValueRef output_min = kDummyValueRef;
+      ValueRef output_max = kDummyValueRef;
+      ValueRef out;
+      if (args.size() == 10) {
+        out = args[9];
+      } else {
+        output_min = args[9];
+        output_max = args[10];
+        out = args[11];
+      }
+
+      std::vector<ValueRef> conv1d_args = {
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[8],
+          output_min,
+          output_max,
+          out};
+
+      if (is_pointwise) {
+        VK_GET_OP_FN("et_vk.conv1d_pw.default")(graph, conv1d_args);
+      } else if (is_depthwise) {
+        VK_GET_OP_FN("et_vk.conv1d_dw.default")(graph, conv1d_args);
+      } else {
+        VK_THROW(
+            "Height-packed conv1d only supports pointwise (K=1) or "
+            "depthwise (groups=C)");
+      }
+      return;
+    }
+
+    // Existing channels-packed fallback
     if (args.size() == 10) {
       // ordinary conv1d
       return add_conv1d_node(

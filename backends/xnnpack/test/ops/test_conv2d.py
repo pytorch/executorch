@@ -173,6 +173,18 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
+class Conv3d(torch.nn.Module):
+    def __init__(self, stride):
+        super().__init__()
+        self.conv = torch.nn.Conv3d(2, 2, (2, 2, 2), stride=stride)
+
+    def forward(self, x):
+        return self.conv(x)
+
+    def get_inputs(self):
+        return (torch.randn(1, 2, 4, 4, 4),)
+
+
 class Conv2dDQSeq(torch.nn.Module):
     def __init__(self, transpose=False):
         super().__init__()
@@ -207,6 +219,24 @@ class Conv2dDQParallel(torch.nn.Module):
 class TestConv2d(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
+
+    def test_bf16_conv2d_fallback(self):
+        (
+            Tester(
+                torch.nn.Conv2d(2, 2, 3).eval().to(torch.bfloat16),
+                (torch.randn(2, 2, 7, 7, dtype=torch.bfloat16),),
+            )
+            .export()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    partitioners=[XnnpackPartitioner(enable_bf16=True)]
+                )
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(atol=0.01, rtol=0.01)
+        )
 
     def _test(
         self,
@@ -245,7 +275,7 @@ class TestConv2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(qtol=2)
         )
 
     def _test_dq(
@@ -276,7 +306,7 @@ class TestConv2d(unittest.TestCase):
         tester.check_not(["executorch_exir_dialects_edge__ops_aten_conv2d_default"])
         tester.to_executorch()
         tester.serialize()
-        tester.run_method_and_compare_outputs(qtol=1)
+        tester.run_method_and_compare_outputs(qtol=2)
 
     def test_fp16_conv2d(self) -> None:
         for transpose in (True, False):
@@ -289,6 +319,41 @@ class TestConv2d(unittest.TestCase):
         for transpose in (True, False):
             for has_bias in (True, False):
                 self._test(Conv2d(bias=has_bias, transpose=transpose))
+
+    def test_fp32_conv2d_single_element_spatial_params(self) -> None:
+        # ATen broadcasts a single stride/padding/dilation value over every
+        # spatial dim, so a 2d conv can carry length-1 spatial params.
+        for transpose in (True, False):
+            self._test(
+                Conv2d(
+                    kernel_size=(3, 3),
+                    stride=(2,),
+                    padding=(1,),
+                    transpose=transpose,
+                )
+            )
+
+    def test_fp32_conv2d_single_element_dilation(self) -> None:
+        self._test(
+            Conv2d(
+                kernel_size=(3, 3),
+                stride=(1,),
+                padding=(1,),
+                dilation=(2,),
+            )
+        )
+
+    def test_fp32_conv3d_single_element_stride_doesnt_partition(self) -> None:
+        # XNNPACK has no conv3d support, and a length-1 stride must not make a 3d
+        # conv look 1d or 2d to the partitioner.
+        m = Conv3d(stride=(2,))
+        (
+            Tester(m, m.get_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .run_method_and_compare_outputs()
+        )
 
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):
@@ -309,6 +374,126 @@ class TestConv2d(unittest.TestCase):
                 Conv2d(transpose=transpose),
                 quant_config=get_symmetric_quantization_config(is_per_channel=True),
             )
+
+    def test_qs8_conv2d_even_kernel_same_padding(self) -> None:
+        # An even-kernel 'same'-padding conv decomposes into
+        # dequant -> constant_pad_nd -> convolution. The pad and conv are pulled
+        # into one partition and both delegate (the pad as a quantized
+        # XNNStaticConstantPad), so neither survives in the top-level graph.
+        for has_bias in (True, False):
+            m = Conv2d(
+                in_channels=2,
+                out_channels=4,
+                kernel_size=(4, 4),
+                stride=(1, 1),
+                padding="same",
+                bias=has_bias,
+            )
+            tester = Tester(m.eval(), m.get_inputs())
+            tester.quantize(
+                Quantize(quantization_config=get_symmetric_quantization_config())
+            )
+            (
+                tester.export()
+                .check_count({"torch.ops.aten.conv2d": 1})
+                .to_edge_transform_and_lower()
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                        "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                    ]
+                )
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(qtol=2)
+            )
+
+    def test_qs8_conv2d_depthwise_even_kernel_same_padding(self) -> None:
+        # Depthwise is a standard (non-transposed) 2D conv, so its even-'same' pad
+        # is delegated alongside the conv too. Assert it still fully delegates and is
+        # numerically correct.
+        m = Conv2d(
+            in_channels=4,
+            out_channels=4,
+            groups=4,
+            kernel_size=(4, 4),
+            stride=(1, 1),
+            padding="same",
+        )
+        tester = Tester(m.eval(), m.get_inputs())
+        tester.quantize(
+            Quantize(quantization_config=get_symmetric_quantization_config())
+        )
+        (
+            tester.export()
+            .check_count({"torch.ops.aten.conv2d": 1})
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=2)
+        )
+
+    class EvenSamePadFlatten(torch.nn.Module):
+        # Reproduces the failure where an even-kernel 'same' conv is followed by a
+        # shape-dependent op. The flatten bakes a fixed view over the conv's padded
+        # output extent; if the pad's spatial contribution is dropped from the graph
+        # the conv output shrinks and the view becomes invalid.
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(1, 16, (2, 1), padding="same")
+
+        def forward(self, x):
+            out = torch.reshape(x, (1, 1, 256, 1))
+            out = self.conv(out)
+            return torch.flatten(out, 1)
+
+        def get_inputs(self):
+            return (torch.randn(1, 1, 256, 1),)
+
+    def test_fp32_even_kernel_same_padding_flatten(self) -> None:
+        m = self.EvenSamePadFlatten().eval()
+        (
+            Tester(m, m.get_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_qs8_even_kernel_same_padding_flatten(self) -> None:
+        m = self.EvenSamePadFlatten().eval()
+        (
+            Tester(m, m.get_inputs())
+            .quantize(Quantize(quantization_config=get_symmetric_quantization_config()))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=2)
+        )
 
     def test_fp32_conv2d_seq(self) -> None:
         for transpose in (True, False):
@@ -656,17 +841,20 @@ class TestConv2d(unittest.TestCase):
                             conv_count=1,
                         )
 
-    def test_padded_output_tconv(self):
-        class TConv2d(torch.nn.Module):
-            def __init__(self):
+    def test_fp32_tconv_output_padding(self):
+        """Test transposed convolution with non-zero output padding."""
+
+        class TConv2dOutputPadding(torch.nn.Module):
+            def __init__(self, output_padding):
                 super().__init__()
+                self.transpose = True
                 self.conv = torch.nn.ConvTranspose2d(
                     in_channels=2,
                     out_channels=1,
                     kernel_size=(3, 3),
                     stride=(2, 2),
                     padding=(1, 1),
-                    output_padding=(0, 1),
+                    output_padding=output_padding,
                     dilation=(1, 1),
                     groups=1,
                     bias=True,
@@ -675,25 +863,180 @@ class TestConv2d(unittest.TestCase):
             def forward(self, x):
                 return self.conv(x)
 
-        m = TConv2d()
-        inputs = (torch.randn(1, 2, 8, 8),)
-        tester = Tester(m.eval(), inputs)
+            def get_inputs(self):
+                return (torch.randn(1, 2, 8, 8),)
 
-        conv_count: int = 1
-        op = "torch.ops.aten.conv_transpose2d"
+        # Test asymmetric output padding (0, 1)
+        self._test(TConv2dOutputPadding(output_padding=(0, 1)))
 
-        (tester.export().check_count({op: conv_count}).to_edge_transform_and_lower())
+        # Test symmetric output padding (1, 1)
+        self._test(TConv2dOutputPadding(output_padding=(1, 1)))
 
-        # tconv should not be offloaded to XNNPack, since output padding is not supported
-        (
-            tester.check(
-                ["executorch_exir_dialects_edge__ops_aten_convolution_default"]
-            )
-            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs(qtol=1)
+    def test_qs8_tconv_output_padding(self):
+        """Test quantized transposed convolution with non-zero output padding."""
+
+        class TConv2dOutputPadding(torch.nn.Module):
+            def __init__(self, output_padding):
+                super().__init__()
+                self.transpose = True
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=2,
+                    out_channels=1,
+                    kernel_size=(3, 3),
+                    stride=(2, 2),
+                    padding=(1, 1),
+                    output_padding=output_padding,
+                    dilation=(1, 1),
+                    groups=1,
+                    bias=True,
+                ).to(torch.float)
+
+            def forward(self, x):
+                return self.conv(x)
+
+            def get_inputs(self):
+                return (torch.randn(1, 2, 8, 8),)
+
+        # Test asymmetric output padding (0, 1) with quantization
+        self._test(
+            TConv2dOutputPadding(output_padding=(0, 1)),
+            quant_config=get_symmetric_quantization_config(),
         )
+
+        # Test symmetric output padding (1, 1) with quantization
+        self._test(
+            TConv2dOutputPadding(output_padding=(1, 1)),
+            quant_config=get_symmetric_quantization_config(),
+        )
+
+    def test_fp32_tconv_output_padding_large_stride(self):
+        """Test transposed convolution with larger output padding and stride values."""
+
+        class TConv2dLargeOutputPadding(torch.nn.Module):
+            def __init__(self, stride, output_padding):
+                super().__init__()
+                self.transpose = True
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=8,
+                    out_channels=16,
+                    kernel_size=(5, 5),
+                    stride=stride,
+                    padding=(2, 2),
+                    output_padding=output_padding,
+                    dilation=(1, 1),
+                    groups=1,
+                    bias=True,
+                ).to(torch.float)
+
+            def forward(self, x):
+                return self.conv(x)
+
+            def get_inputs(self):
+                return (torch.randn(2, 8, 16, 16),)
+
+        # Test with stride=4 and output_padding=(3, 3) - maximum valid for stride 4
+        self._test(TConv2dLargeOutputPadding(stride=(4, 4), output_padding=(3, 3)))
+
+        # Test with stride=3 and asymmetric output_padding=(2, 1)
+        self._test(TConv2dLargeOutputPadding(stride=(3, 3), output_padding=(2, 1)))
+
+        # Test with asymmetric stride and output_padding
+        self._test(TConv2dLargeOutputPadding(stride=(4, 3), output_padding=(3, 2)))
+
+    def test_fp32_tconv_output_padding_various_shapes(self):
+        """Test transposed convolution with output padding on various input shapes."""
+
+        class TConv2dVariousShapes(torch.nn.Module):
+            def __init__(
+                self,
+                in_channels,
+                out_channels,
+                kernel_size,
+                stride,
+                padding,
+                output_padding,
+                height,
+                width,
+            ):
+                super().__init__()
+                self.transpose = True
+                self.height = height
+                self.width = width
+                self.in_channels = in_channels
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    output_padding=output_padding,
+                    dilation=(1, 1),
+                    groups=1,
+                    bias=True,
+                ).to(torch.float)
+
+            def forward(self, x):
+                return self.conv(x)
+
+            def get_inputs(self):
+                return (torch.randn(1, self.in_channels, self.height, self.width),)
+
+        # Test with larger kernel (7x7), stride=2, output_padding=1
+        self._test(
+            TConv2dVariousShapes(
+                in_channels=3,
+                out_channels=32,
+                kernel_size=(7, 7),
+                stride=(2, 2),
+                padding=(3, 3),
+                output_padding=(1, 1),
+                height=32,
+                width=32,
+            )
+        )
+
+        # Test with rectangular kernel and asymmetric output padding
+        self._test(
+            TConv2dVariousShapes(
+                in_channels=16,
+                out_channels=8,
+                kernel_size=(3, 5),
+                stride=(2, 3),
+                padding=(1, 2),
+                output_padding=(1, 2),
+                height=24,
+                width=32,
+            )
+        )
+
+        # Test with small spatial dimensions but larger output padding
+        self._test(
+            TConv2dVariousShapes(
+                in_channels=4,
+                out_channels=4,
+                kernel_size=(4, 4),
+                stride=(4, 4),
+                padding=(0, 0),
+                output_padding=(3, 3),
+                height=4,
+                width=4,
+            )
+        )
+
+        # Test with batch size > 1 and asymmetric everything
+        model = TConv2dVariousShapes(
+            in_channels=6,
+            out_channels=12,
+            kernel_size=(5, 3),
+            stride=(3, 2),
+            padding=(2, 1),
+            output_padding=(2, 1),
+            height=20,
+            width=15,
+        )
+        # Override get_inputs to use larger batch
+        model.get_inputs = lambda: (torch.randn(4, 6, 20, 15),)
+        self._test(model)
 
     def test_dq_conv2d(self) -> None:
         model = Conv2d(

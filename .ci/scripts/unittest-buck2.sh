@@ -45,6 +45,14 @@ done
 
 # Build only without testing
 buck2 build //codegen/tools/... \
+        //exir/_serialize/test/... \
+        //exir/backend/test:test_delegate_map_builder \
+        //exir/backend/test:test_graph_partition \
+        //exir/backend/test:test_group_partitioner \
+        //exir/backend/test:test_passes \
+        //exir/dialects/backend/test/... \
+        //exir/dialects/edge/op/... \
+        //exir/operator/... \
         //extension/llm/runner/io_manager:io_manager \
         //extension/llm/modules/... \
         //extension/llm/runner:multimodal_runner_lib \

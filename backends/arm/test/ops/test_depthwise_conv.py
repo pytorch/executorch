@@ -9,6 +9,7 @@ import pytest
 
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
 )
 from executorch.backends.arm.test import common
@@ -194,7 +195,38 @@ test_data_conv2d_FP_fp16 = {
         dtype=torch.float16,
     ),
 }
-
+test_data_conv2d_FP_fp8 = {
+    "fp8e4m3_3x3_gp3": lambda: (
+        Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            groups=3,
+            padding=2,
+            width=16,
+            height=16,
+            batches=1,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "fp8e5m2_3x3_gp3": lambda: (
+        Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=(3, 3),
+            stride=(1, 1),
+            groups=3,
+            padding=2,
+            width=16,
+            height=16,
+            batches=1,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 # Generate a new test set paired with per_channel_quant=True/False.
 test_data_conv2d_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
@@ -232,7 +264,8 @@ test_data_conv1d_INT = {
 def _get_dtype_count(model: torch.nn.Module):
     nbr_convs: int = model.nbr_convs  # noqa
     return {
-        "CONST": {"INT4": nbr_convs * 2},
+        # Each convolution has a distinct weight and shares the symmetric zero point.
+        "CONST": {"INT4": nbr_convs + 1},
         "DEPTHWISE_CONV2D": {"INT32": nbr_convs},
         "RESCALE": {"INT8": nbr_convs},
     }
@@ -253,6 +286,21 @@ def test_convolution_2d_tosa_FP_depthwise(test_data: torch.nn.Module):
         exir_op=exir_op,
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv2d_FP_fp8)
+def test_convolution_2d_tosa_FP_fp8_depthwise(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"DEPTHWISE_CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 
@@ -293,17 +341,30 @@ def test_convolution_2d_tosa_INT_a8w4_depthwise(test_data):
 
 
 @common.parametrize(
-    "test_data", test_data_conv1d_FP | test_data_conv2d_FP | test_data_conv2d_FP_fp16
+    "test_data",
+    test_data_conv1d_FP
+    | test_data_conv2d_FP
+    | test_data_conv2d_FP_bf16
+    | test_data_conv2d_FP_fp16,
 )
 @common.SkipIfNoModelConverter
 def test_convolution_2d_vgf_no_quant_depthwise(test_data: torch.nn.Module):
     model = test_data()
+    match model.dtype:
+        case torch.bfloat16:
+            atol = 2e-2
+            rtol = 2e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t](
         model,
         model.get_inputs(),
         aten_op=[],
         exir_op=exir_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 
@@ -334,6 +395,25 @@ def test_convolution_2d_vgf_quant_a8w4_depthwise(test_data):
     )
     pipeline.quantizer.set_global(
         get_symmetric_a8w4_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_conv2d_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_quant_a16w8_depthwise(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op=[],
+        exir_op=exir_op,
+        per_channel_quantization=per_channel_quantization,
+        quantize=True,
+        tosa_extensions=["int16"],
+    )
+    pipeline.quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
     )
     pipeline.run()
 

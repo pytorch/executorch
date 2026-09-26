@@ -20,9 +20,6 @@
 
 namespace vkcompute {
 
-using utils::GPUMemoryLayout;
-using utils::StorageType;
-
 void check_embedding_args(
     ComputeGraph& graph,
     const ValueRef weight,
@@ -72,8 +69,8 @@ void add_embedding_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{indices, weight}, vkapi::kRead}},
       // Shader params buffers
@@ -81,7 +78,7 @@ void add_embedding_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(indices)},
       // Resize Args
       {},
       // Resizing Logic
@@ -102,8 +99,8 @@ void add_embedding_legacy_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       {{out, vkapi::kWrite}, {{in, weight}, vkapi::kRead}},
       {
           graph.sizes_ubo(out),
@@ -111,13 +108,11 @@ void add_embedding_legacy_node(
       // Push Constants
       {},
       // Specialization Constants
-      {graph.hashed_layout_of(out),
-       graph.hashed_layout_of(in),
-       graph.hashed_layout_of(weight)},
+      {graph.hashed_layout_of(out), graph.hashed_layout_of(in)},
       // Resize Args
       {},
       // Resizing Logic
-      nullptr));
+      resize_embedding_node));
 }
 
 void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {

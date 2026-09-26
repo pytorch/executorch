@@ -47,14 +47,15 @@ class GenerationConfig:
         ...
 
     def resolve_max_new_tokens(
-        self, max_context_len: int, num_prompt_tokens: int
+        self, max_context_len: int, num_tokens_occupied: int
     ) -> int:
         """
         Resolve the maximum number of new tokens to generate based on constraints.
 
         Args:
             max_context_len: The maximum context length supported by the model
-            num_prompt_tokens: The number of tokens in the input prompt
+            num_tokens_occupied: The number of token positions already occupied
+                in the context window (e.g. pos after prefill)
 
         Returns:
             The resolved maximum number of new tokens to generate
@@ -82,10 +83,10 @@ class Stats:
     """End time of tokenizer encoding in milliseconds."""
 
     model_execution_start_ms: int
-    """Start time of model execution in milliseconds."""
+    """Start time of the most recent model execution window in milliseconds."""
 
     model_execution_end_ms: int
-    """End time of model execution in milliseconds."""
+    """End time of the most recent model execution window in milliseconds."""
 
     prompt_eval_end_ms: int
     """End time of prompt evaluation in milliseconds."""
@@ -98,6 +99,9 @@ class Stats:
 
     aggregate_sampling_time_ms: int
     """Total time spent in sampling across all tokens."""
+
+    aggregate_model_execution_time_ms: int
+    """Total time spent in model execution across all forward calls."""
 
     num_prompt_tokens: int
     """Number of tokens in the input prompt."""
@@ -479,7 +483,8 @@ class MultimodalRunner:
     def prefill(self, inputs: List[MultimodalInput]) -> None:
         """
         Prefill multimodal inputs (e.g., to rebuild KV cache from chat history)
-        without generating tokens.
+        without generating tokens. After prefill, call generate() with a
+        non-empty final text input to start decoding.
 
         Args:
             inputs: List of multimodal inputs to prefill
@@ -548,18 +553,25 @@ def make_text_input(text: str) -> MultimodalInput:
     """
     ...
 
-def make_image_input(image_tensor: torch.Tensor) -> MultimodalInput:
+def make_image_input(
+    image_tensor: torch.Tensor, layout: str = "CHW"
+) -> MultimodalInput:
     """
     Create an image input from a torch tensor.
 
     Args:
-        image_tensor: Torch tensor with shape (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)
+        image_tensor: Contiguous uint8 or float32 tensor with an optional batch
+            dimension of size 1.
+        layout: Tensor layout, either "CHW" or "HWC". Defaults to "CHW" to
+            preserve existing behavior. HWC inputs are converted to CHW
+            internally, including when height is 3 or 4.
 
     Returns:
         A MultimodalInput containing the image
 
     Raises:
-        RuntimeError: If the tensor has invalid dimensions or number of channels
+        RuntimeError: If the tensor has invalid dimensions, layout, dtype, or
+            number of channels
     """
     ...
 

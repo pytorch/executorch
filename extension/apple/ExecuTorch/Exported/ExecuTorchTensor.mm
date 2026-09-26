@@ -347,6 +347,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
     utils::toVector<DimOrderType>(dimensionOrder),
     utils::toVector<StridesType>(strides),
     static_cast<ScalarType>(dataType),
+    executorch::aten::DeviceType::CPU,
     static_cast<TensorShapeDynamism>(shapeDynamism)
   );
   return [self initWithNativeInstance:&tensor];

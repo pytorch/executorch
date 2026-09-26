@@ -21,7 +21,6 @@ using executorch::backends::xnnpack::WorkspaceSharingMode;
 using executorch::backends::xnnpack::XNNWorkspace;
 using executorch::backends::xnnpack::XNNWorkspaceManager;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 
 class XNNWorkspaceManagerTest : public ::testing::Test {
  protected:
@@ -107,6 +106,22 @@ TEST_F(XNNWorkspaceManagerTest, DisabledMode) {
       workspace2->unsafe_get_workspace(), workspace3->unsafe_get_workspace());
 }
 
+TEST_F(XNNWorkspaceManagerTest, DisabledModeAcquireDoesNotLock) {
+  workspace_manager_->set_sharing_mode(WorkspaceSharingMode::Disabled);
+
+  auto workspace_result = workspace_manager_->get_or_create_workspace(12345);
+  ASSERT_TRUE(workspace_result.ok());
+  auto workspace = workspace_result.get();
+
+  auto [lock, ptr] = workspace->acquire();
+  ASSERT_NE(ptr, nullptr);
+#ifdef XNNPACK_WORKSPACE_ALWAYS_LOCK
+  EXPECT_TRUE(lock.owns_lock());
+#else
+  EXPECT_FALSE(lock.owns_lock());
+#endif
+}
+
 TEST_F(XNNWorkspaceManagerTest, PerModelMode) {
   // In PerModel mode, calls with the same program_id should return the same
   // workspace.
@@ -137,6 +152,18 @@ TEST_F(XNNWorkspaceManagerTest, PerModelMode) {
   EXPECT_NE(workspace1, workspace3);
   EXPECT_NE(
       workspace1->unsafe_get_workspace(), workspace3->unsafe_get_workspace());
+}
+
+TEST_F(XNNWorkspaceManagerTest, PerModelAcquireStillLocks) {
+  workspace_manager_->set_sharing_mode(WorkspaceSharingMode::PerModel);
+
+  auto workspace_result = workspace_manager_->get_or_create_workspace(12345);
+  ASSERT_TRUE(workspace_result.ok());
+  auto workspace = workspace_result.get();
+
+  auto [lock, ptr] = workspace->acquire();
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_TRUE(lock.owns_lock());
 }
 
 TEST_F(XNNWorkspaceManagerTest, GlobalMode) {

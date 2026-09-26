@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -430,9 +431,9 @@ TEST_F(OpMulOutTest, OptimizedPathIgnoresLeading1Dimensions) {
 
 // Mismatched shape tests.
 TEST_F(OpMulOutTest, MismatchedNonBroadcastableInputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched shapes";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen currently supports mismatched shapes");
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -519,9 +520,9 @@ TEST_F(OpMulOutTest, AllComplexDtypesSupported) {
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports mismatched shapes";
-  }
+  ET_SKIP_IF(
+      SupportedFeatures::get()->is_aten,
+      "ATen currently supports mismatched shapes");
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -711,8 +712,8 @@ TEST_F(OpMulOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpMulOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpMulOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -921,4 +922,28 @@ TEST_F(OpMulOutTest, BroadcastDimensionMismatchWithDifferentTypes) {
     Tensor expected = tf_int.make({1, 1, 4}, {2, 4, 6, 8});
     EXPECT_TENSOR_EQ(result, expected);
   }
+}
+
+TEST_F(OpMulOutTest, BroadcastLastDimRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({3, 4}, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor b = tf.make({1, 3, 1}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 3, 4});
+
+  Tensor expected = tf.make(
+      {1, 3, 4},
+      /*data=*/{10, 20, 30, 40, 100, 120, 140, 160, 270, 300, 330, 360});
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+}
+
+TEST_F(OpMulOutTest, Broadcast2dBy1dRankMismatch) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor a = tf.make({2, 3}, /*data=*/{1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({1, 1, 3}, /*data=*/{10, 20, 30});
+  Tensor out = tf.zeros({1, 2, 3});
+
+  Tensor expected = tf.make({1, 2, 3}, /*data=*/{10, 40, 90, 40, 100, 180});
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
 }

@@ -34,8 +34,8 @@ class SubOp(torch.nn.Module):
 
 
 def _get_quantizer() -> TOSAQuantizer:
-    """
-    Returns a TOSAQuantizer configured for int8 quantization with SubOp unquantized.
+    """Returns a TOSAQuantizer configured for int8 quantization with SubOp
+    unquantized.
     """
     quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
     quantizer.set_global(_QUANT_CONFIG_INT8)
@@ -87,8 +87,8 @@ class SharedQspecMulipleClusters(torch.nn.Module):
         "quantized_decomposed.dequantize_per_tensor.default": {None: 8},
         "aten.add.Tensor": {_INT8_QSPEC: 2},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
             (0.015678614, 0, -128, 127, torch.int8): 2,
@@ -114,20 +114,24 @@ class SharedQspecMulipleClusters(torch.nn.Module):
 
 
 class SharedQspecInputForkNonShared(torch.nn.Module):
-    """Shared qspec cluster with an input fork with both inputs as non-shared qspecs."""
+    """Shared qspec cluster with an input fork with both inputs as non-shared
+    qspecs.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 4},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 4},
     }
-    inputs_qspecs = {None: 2}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 2}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 4,
+            (0.015678614, -64, -128, 127, torch.int8): 3,
+            (0.015678614, 0, -128, 127, torch.int8): 1,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 4,
+            (0.015678614, -64, -128, 127, torch.int8): 3,
+            (0.015678614, 0, -128, 127, torch.int8): 1,
         },
     }
 
@@ -137,20 +141,24 @@ class SharedQspecInputForkNonShared(torch.nn.Module):
 
 
 class SharedQspecInputForkShared(torch.nn.Module):
-    """Shared qspec cluster with an input fork with both inputs as shared qspecs."""
+    """Shared qspec cluster with an input fork with both inputs as shared
+    qspecs.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 5},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 5},
     }
-    inputs_qspecs = {None: 2}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 2}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 5,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 3,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 5,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 3,
         },
     }
 
@@ -162,20 +170,24 @@ class SharedQspecInputForkShared(torch.nn.Module):
 
 
 class SharedQspecInputForkXShared(torch.nn.Module):
-    """Shared qspec cluster with an input fork with left input as shared qspec."""
+    """Shared qspec cluster with an input fork with left input as shared
+    qspec.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 4},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 4},
     }
-    inputs_qspecs = {None: 2}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 2}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 4,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 2,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 4,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 2,
         },
     }
 
@@ -186,20 +198,24 @@ class SharedQspecInputForkXShared(torch.nn.Module):
 
 
 class SharedQspecInputForkYShared(torch.nn.Module):
-    """Shared qspec cluster with an input fork with right input as shared qspec."""
+    """Shared qspec cluster with an input fork with right input as shared
+    qspec.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 5},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 5},
     }
-    inputs_qspecs = {None: 2}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 2}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 5,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 3,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.01959827, -26, -128, 127, torch.int8): 5,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 3,
         },
     }
 
@@ -210,20 +226,23 @@ class SharedQspecInputForkYShared(torch.nn.Module):
 
 
 class SharedQspecInputForkXConstant(torch.nn.Module):
-    """Shared qspec cluster with an input fork with left input as global constant."""
+    """Shared qspec cluster with an input fork with left input as global
+    constant.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 2},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 3},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.027437577, -55, -128, 127, torch.int8): 3,
+            (0.015678614, 0, -128, 127, torch.int8): 2,
+            (0.019607844, -128, -128, 127, torch.int8): 1,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.027437577, -55, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 2,
         },
     }
     constant = torch.tensor(5.0)
@@ -233,20 +252,24 @@ class SharedQspecInputForkXConstant(torch.nn.Module):
 
 
 class SharedQspecInputForkYConstant(torch.nn.Module):
-    """Shared qspec cluster with an input fork with left input as local constant."""
+    """Shared qspec cluster with an input fork with left input as local
+    constant.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 2},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 3},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (0.027437577, -55, -128, 127, torch.int8): 3,
+            (0.015678614, 0, -128, 127, torch.int8): 1,
+            (0.019607844, -128, -128, 127, torch.int8): 2,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.027437577, -55, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 1,
+            (0.019607844, -128, -128, 127, torch.int8): 1,
         },
     }
 
@@ -255,15 +278,17 @@ class SharedQspecInputForkYConstant(torch.nn.Module):
 
 
 class SharedQspecOutputForkNonShared(torch.nn.Module):
-    """Shared qspec cluster with an output fork with both outputs as non-shared qspecs."""
+    """Shared qspec cluster with an output fork with both outputs as non-shared
+    qspecs.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 3},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 4},
         "aten.add.Tensor": {_INT8_QSPEC: 1},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 2}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
             (0.015678614, 0, -128, 127, torch.int8): 3,
@@ -282,14 +307,16 @@ class SharedQspecOutputForkNonShared(torch.nn.Module):
 
 
 class SharedQspecOutputForkShared(torch.nn.Module):
-    """Shared qspec cluster with an output fork with both outputs as shared qspecs."""
+    """Shared qspec cluster with an output fork with both outputs as shared
+    qspecs.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 4},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 6},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 3}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
             (0.015678614, 0, -128, 127, torch.int8): 6,
@@ -307,15 +334,17 @@ class SharedQspecOutputForkShared(torch.nn.Module):
 
 
 class SharedQspecManyForks(torch.nn.Module):
-    """Shared qspec cluster with a number of forks to test more complex structures."""
+    """Shared qspec cluster with a number of forks to test more complex
+    structures.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 6},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 9},
-        "aten.t.default": {None: 1},
+        "aten.t.default": {_INT8_QSPEC: 1},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
             (0.086232387, 104, -128, 127, torch.int8): 9,
@@ -334,21 +363,27 @@ class SharedQspecManyForks(torch.nn.Module):
 
 
 class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
-    """An annotated int8 surrounded by a shared qspec cluster forcing input/output qparams to be equal."""
+    """An annotated int8 surrounded by a shared qspec cluster forcing
+    input/output qparams to be equal.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 4},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 5},
         "aten.add.Tensor": {_INT8_QSPEC: 1},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (1.019109964, 123, -128, 127, torch.int8): 5,
+            (0.509554982, 123, -128, 127, torch.int8): 3,
+            (0.517394304, 119, -128, 127, torch.int8): 1,
+            (1.019109964, 123, -128, 127, torch.int8): 1,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (1.019109964, 123, -128, 127, torch.int8): 4,
+            (0.509554982, 123, -128, 127, torch.int8): 2,
+            (0.517394304, 119, -128, 127, torch.int8): 1,
+            (1.019109964, 123, -128, 127, torch.int8): 1,
         },
     }
 
@@ -360,7 +395,7 @@ class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
 
 
 class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
-    """ """
+    """"""
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 5},
@@ -368,16 +403,18 @@ class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
         "aten.ones.default": {_INT8_QSPEC: 1},
         "aten.add.Tensor": {_INT8_QSPEC: 1},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
             (0.003921569, -128, -128, 127, torch.int8): 1,
-            (0.01959827, -26, -128, 127, torch.int8): 5,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 3,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
             (0.003921569, -128, -128, 127, torch.int8): 1,
-            (0.01959827, -26, -128, 127, torch.int8): 4,
+            (0.015678614, -64, -128, 127, torch.int8): 2,
+            (0.015678614, 0, -128, 127, torch.int8): 2,
         },
     }
 
@@ -389,21 +426,25 @@ class SharedQspecSurroundedQuantizedOpConstant(torch.nn.Module):
 
 
 class SharedQspecSub(torch.nn.Module):
-    """A shared qspec node with float input"""
+    """A shared qspec node with float input."""
 
     qspecs = {
-        "quantized_decomposed.quantize_per_tensor.default": {None: 2},
-        "quantized_decomposed.dequantize_per_tensor.default": {None: 2},
+        "quantized_decomposed.quantize_per_tensor.default": {None: 4},
+        "quantized_decomposed.dequantize_per_tensor.default": {None: 4},
         "aten.sub.Tensor": {None: 1},
     }
-    inputs_qspecs = {None: 2}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 2}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
+            (0.003919654, -128, -128, 127, torch.int8): 1,
             (0.035276882, -128, -128, 127, torch.int8): 2,
+            (0.03919654, -128, -128, 127, torch.int8): 1,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
+            (0.003919654, -128, -128, 127, torch.int8): 1,
             (0.035276882, -128, -128, 127, torch.int8): 2,
+            (0.03919654, -128, -128, 127, torch.int8): 1,
         },
     }
 
@@ -416,15 +457,17 @@ class SharedQspecSub(torch.nn.Module):
 
 
 class SharedQspecCompetingQspecs(torch.nn.Module):
-    """A shared qspec node with per-channel/per-tensor annotated nodes as inputs"""
+    """A shared qspec node with per-channel/per-tensor annotated nodes as
+    inputs.
+    """
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 3},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 4},
         "aten.conv2d.default": {_INT8_QSPEC: 1},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_channel.default": {
             (0, -2147483647, 2147483647, torch.int32): 1,
@@ -456,27 +499,23 @@ class SharedQspecCompetingQspecs(torch.nn.Module):
 
 
 class SharedQspecNoQspecs(torch.nn.Module):
-    """A shared qspec node with float input/outputs"""
+    """A shared qspec node with float input/outputs."""
 
     qspecs = {
         "quantized_decomposed.quantize_per_tensor.default": {None: 2},
         "quantized_decomposed.dequantize_per_tensor.default": {None: 2},
         "aten.sub.Tensor": {None: 2},
     }
-    inputs_qspecs = {None: 1}
-    outputs_qspecs = {None: 1}
+    inputs_qspecs = {_INT8_QSPEC: 1}
+    outputs_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.dequantize_per_tensor.default": {
-            (
-                1.5259e-05,
-                -128,
-                -128,
-                127,
-                torch.int8,
-            ): 2,  # The network always has 0 output -> very small scale.
+            (1.5259e-05, -128, -128, 127, torch.int8): 1,
+            (0.03919654, -128, -128, 127, torch.int8): 1,
         },
         "quantized_decomposed.quantize_per_tensor.default": {
-            (1.5259e-05, -128, -128, 127, torch.int8): 2,
+            (1.5259e-05, -128, -128, 127, torch.int8): 1,
+            (0.03919654, -128, -128, 127, torch.int8): 1,
         },
     }
 
@@ -500,22 +539,22 @@ class Int16Branch(torch.nn.Module):
 
 
 class MixedMaximumInt8Int16(torch.nn.Module):
-    """A shared qspec node with int16/int8 inputs"""
+    """A shared qspec node with int16/int8 inputs."""
 
     qspecs = {
-        "quantized_decomposed.quantize_per_tensor.default": {None: 6},
-        "quantized_decomposed.dequantize_per_tensor.default": {None: 6},
+        "quantized_decomposed.quantize_per_tensor.default": {None: 4},
+        "quantized_decomposed.dequantize_per_tensor.default": {None: 5},
     }
-    input_qspecs = {None: 1}
-    output_qspecs = {None: 1}
+    input_qspecs = {_INT8_QSPEC: 1}
+    output_qspecs = {_INT8_QSPEC: 1}
     quant_params = {
         "quantized_decomposed.quantize_per_tensor.default": {
-            (0.015678614, 0, -128, 127, torch.int8): 4,
-            (0.000244141, 0, -32767, 32767, torch.int16): 2,
+            (0.007839307, -128, -128, 127, torch.int8): 1,
+            (0.015678614, 0, -128, 127, torch.int8): 3,
         },
         "quantized_decomposed.dequantize_per_tensor.default": {
+            (0.007839307, -128, -128, 127, torch.int8): 1,
             (0.015678614, 0, -128, 127, torch.int8): 4,
-            (0.000244141, 0, -32767, 32767, torch.int16): 2,
         },
     }
 
@@ -526,6 +565,33 @@ class MixedMaximumInt8Int16(torch.nn.Module):
 
     def forward(self, x):
         return torch.maximum(self.int16(x), self.int8(x))
+
+
+class NonSharedQspecSilu(torch.nn.Module):
+    """SiLU's output range is always narrower than its input's, so reusing the
+    input scale misaligns the quantization bins with the output distribution and
+    wastes resolution.
+    """
+
+    qspecs = {
+        "quantized_decomposed.quantize_per_tensor.default": {None: 2},
+        "quantized_decomposed.dequantize_per_tensor.default": {None: 2},
+    }
+    input_qspecs = {_INT8_QSPEC: 1}
+    output_qspecs = {_INT8_QSPEC: 1}
+    quant_params = {
+        "quantized_decomposed.quantize_per_tensor.default": {
+            (0.03919654, 76, -128, 127, torch.int8): 1,
+            (0.007980779, -94, -128, 127, torch.int8): 1,
+        },
+        "quantized_decomposed.dequantize_per_tensor.default": {
+            (0.03919654, 76, -128, 127, torch.int8): 1,
+            (0.007980779, -94, -128, 127, torch.int8): 1,
+        },
+    }
+
+    def forward(self, x):
+        return torch.nn.functional.silu(x)
 
 
 test_cases = {
@@ -581,7 +647,7 @@ test_cases = {
 
 
 @parametrize("test_case", test_cases)
-def test_shared_qspec_quantizer_no_target(test_case):
+def test_shared_qspec_quantizer(test_case):
     """Test that ops which does not change dynamic range are able to use int8
     portable kernels.
     """
@@ -614,7 +680,7 @@ float_test_cases = {
 
 
 @parametrize("test_case", float_test_cases)
-def test_shared_qspec_quantizer_no_qspecs_no_target(test_case):
+def test_shared_qspec_quantizer_no_qspecs(test_case):
     """Test that ops which does not change dynamic range are able to use int8
     portable kernels.
     """
@@ -630,7 +696,7 @@ def test_shared_qspec_quantizer_no_qspecs_no_target(test_case):
     _check_quant_params(pipeline, test_case.model.quant_params)
 
 
-def test_maximum_mixed_int8_int16_inputs_no_target():
+def test_maximum_mixed_int8_int16_inputs():
     model = MixedMaximumInt8Int16()
     inputs = (ramp_tensor(-2, 2, (2, 3, 4)),)
 
@@ -642,6 +708,26 @@ def test_maximum_mixed_int8_int16_inputs_no_target():
         model,
         inputs,
         quantizer=quantizer,
+        qspecs=model.qspecs,
+        input_qspecs=model.input_qspecs,
+        output_qspecs=model.output_qspecs,
+    )
+    pipeline.run()
+    _check_quant_params(pipeline, model.quant_params)
+
+
+def test_silu_does_not_share_input_qspec():
+    """Sharing saves nothing in return for that lost resolution: SiLU runs as a
+    lookup table whose entries are precomputed from both the input and the output
+    qparams, so a distinct output scale costs nothing at runtime.
+    """
+    model = NonSharedQspecSilu()
+    inputs = (ramp_tensor(-8, 2, (2, 3, 4)),)
+
+    pipeline = QuantizationPipeline(
+        model,
+        inputs,
+        quantizer=_get_quantizer(),
         qspecs=model.qspecs,
         input_qspecs=model.input_qspecs,
         output_qspecs=model.output_qspecs,

@@ -84,7 +84,7 @@ void quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const executorch::aten::optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   // TODO: refactor to use switch case as quantized_linear_per_tensor_out
   if (out.scalar_type() == executorch::aten::ScalarType::Byte) {
@@ -127,7 +127,7 @@ void quantized_linear_per_tensor_out(
     const int64_t out_multiplier,
     const int64_t out_shift,
     const int64_t out_zero_point,
-    __ET_UNUSED const executorch::aten::optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear_per_tensor(ctype, dtype) \
   case executorch::aten::ScalarType::dtype: {           \

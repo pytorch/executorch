@@ -135,9 +135,17 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
       t_src.mutable_data_ptr() != nullptr,
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
-  // Assign the dataptr as the input tensor dataptr
-  storage->set_data_ptr(
-      at::DataPtr(t_src.mutable_data_ptr(), at::DeviceType::CPU));
+  // The destination keeps its own TensorImpl but adopts the source storage, so
+  // the devices must agree or TensorImpl and DataPtr would disagree.
+  ET_CHECK_OR_RETURN_ERROR(
+      t_dst.device() == t_src.device(),
+      InvalidArgument,
+      "Destination device %s does not match source device %s",
+      c10::str(t_dst.device()).c_str(),
+      c10::str(t_src.device()).c_str());
+  // Preserve the source device; hardcoding CPU would mis-tag a device input's
+  // storage as host and the backend would later reject it.
+  storage->set_data_ptr(at::DataPtr(t_src.mutable_data_ptr(), t_src.device()));
   storage->set_nbytes(t_src.nbytes());
 
   return Error::Ok;
@@ -169,6 +177,21 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
         t_src.nbytes());
     // Copy the source data to the preallocated memory of the destination, which
     // must be the same size as the source.
+    //
+    // Both sides have to be host memory. Reaching here with device memory means
+    // a program planned a buffer for a tensor that lives on an accelerator, and
+    // a host memcpy into it is undefined. Reported because the alternative is a
+    // crash with no message.
+    ET_CHECK_OR_RETURN_ERROR(
+        t_dst.device().is_cpu() && t_src.device().is_cpu(),
+        NotSupported,
+        // Kept under the 256-char log buffer (runtime/platform/log.cpp) so the
+        // MemoryPlanningPass hint, which is the actionable part, is not
+        // truncated away.
+        "Planned-buffer copy needs host memory on both sides: dst device %s, src device %s. "
+        "Export with MemoryPlanningPass(alloc_graph_input=False) to share the caller's memory.",
+        c10::DeviceTypeName(t_dst.device().type()).c_str(),
+        c10::DeviceTypeName(t_src.device().type()).c_str());
     std::memcpy(dst_data_ptr, t_src.const_data_ptr(), t_src.nbytes());
   }
 

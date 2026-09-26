@@ -23,26 +23,17 @@
 #include <executorch/backends/cadence/common/xt_macros.h>
 
 using executorch::aten::RuntimeContext;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::canCast;
-using executorch::runtime::isFloatingType;
-using executorch::runtime::isIntegralType;
 using executorch::runtime::promoteTypes;
 using executorch::runtime::tensors_have_same_dim_order;
-using torch::executor::apply_ternary_elementwise_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 using torch::executor::native::utils::apply_tritensor_elementwise_fn;
-using torch::executor::native::utils::apply_unitensor_elementwise_fn;
-using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_compute_type;
-using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::max_override;
 using torch::executor::native::utils::min_override;
-using torch::executor::native::utils::promote_type_with_scalar;
-using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
 namespace impl {
@@ -155,13 +146,13 @@ Tensor& clamp_Tensor_out(
           inp_shape[i + off_inp] = in.size(i);
         }
 
-        WORD32 ret_val = xa_nn_elm_minimum_broadcast_4D_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_min_4D_Bcast_f32xf32_f32(
             out_data, out_shape, inp_data, inp_shape, max_data, max_shape);
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
 
       } else {
-        WORD32 ret_val = xa_nn_elm_minimum_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_min_f32xf32_f32(
             out_data, inp_data, max_data, out.numel());
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
@@ -192,13 +183,13 @@ Tensor& clamp_Tensor_out(
           min_shape[i + off_min] = min.size(i);
         for (int i = 0; i < inp_dim; i++)
           inp_shape[i + off_inp] = in.size(i);
-        WORD32 ret_val = xa_nn_elm_maximum_broadcast_4D_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_max_4D_Bcast_f32xf32_f32(
             out_data, out_shape, inp_data, inp_shape, min_data, min_shape);
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);
 
       } else {
-        WORD32 ret_val = xa_nn_elm_maximum_f32xf32_f32(
+        WORD32 ret_val = xa_nn_elm_max_f32xf32_f32(
             out_data, inp_data, min_data, out.numel());
 
         ET_KERNEL_CHECK(ctx, ret_val == 0, Internal, out);

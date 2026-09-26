@@ -116,5 +116,9 @@ def define_common_targets():
         exported_headers = [
             "compiler.h",
         ],
+        exported_preprocessor_flags = select({
+            "DEFAULT": [],
+            "fbsource//xplat/executorch/tools/buck/constraints:executorch-builtin-function-name-disabled": ["-DET_USE_BUILTIN_FUNCTION_NAME=0"],
+        }) if not runtime.is_oss else [],
         visibility = ["PUBLIC"],
     )

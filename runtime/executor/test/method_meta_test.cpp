@@ -12,9 +12,12 @@
 #include <limits>
 #include <vector>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/program.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
@@ -25,6 +28,7 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
+using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
 namespace executorch {
@@ -38,7 +42,7 @@ class TensorInfoTestFriend final {
       Span<const uint8_t> dim_order,
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
-      executorch::aten::string_view name) {
+      std::string_view name) {
     return TensorInfo::create(
                Span<const int32_t>(sizes.data(), sizes.size()),
                Span<const uint8_t>(dim_order.data(), dim_order.size()),
@@ -72,8 +76,15 @@ class MethodMetaTest : public ::testing::Test {
   }
 
   void SetUp() override {
+    // Required to initialize the PAL timer before tests trigger ET_LOG calls in
+    // et_pal_current_ticks().
+    executorch::runtime::runtime_init();
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
+    const char* device_path = std::getenv("ET_MODULE_ADD_WITH_DEVICE_PATH");
+    if (device_path != nullptr) {
+      load_program(device_path, "add_with_device");
+    }
   }
 
  private:
@@ -192,6 +203,27 @@ TEST_F(MethodMetaTest, MethodMetaAttribute) {
   ASSERT_EQ(bad_access.error(), Error::InvalidArgument);
 }
 
+TEST_F(MethodMetaTest, MemoryPlannedBufferDeviceDefaultsCpu) {
+  Result<MethodMeta> method_meta = programs_["add"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  // CPU-only model: all buffers should default to CPU device.
+  size_t num_buffers = method_meta->num_memory_planned_buffers();
+  ASSERT_GT(num_buffers, 0);
+
+  for (size_t i = 0; i < num_buffers; ++i) {
+    auto device = method_meta->memory_planned_buffer_device(i);
+    ASSERT_TRUE(device.ok());
+    EXPECT_EQ(device->type(), executorch::runtime::etensor::DeviceType::CPU);
+    EXPECT_EQ(device->index(), 0);
+  }
+
+  // Out of range returns error.
+  EXPECT_EQ(
+      method_meta->memory_planned_buffer_device(num_buffers).error(),
+      Error::InvalidArgument);
+}
+
 TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
   // Create sizes that will cause overflow when multiplied
   std::vector<int32_t> overflow_sizes = {
@@ -211,6 +243,97 @@ TEST_F(MethodMetaTest, TensorInfoSizeOverflow) {
           Span<const uint8_t>(dim_order.data(), dim_order.size()),
           executorch::aten::ScalarType::Float,
           false, // is_memory_planned
-          executorch::aten::string_view{nullptr, 0}),
+          std::string_view{nullptr, 0}),
       "");
+}
+
+TEST_F(MethodMetaTest, MethodMetaBufferDeviceReturnsCudaForDeviceBuffer) {
+  ASSERT_NE(programs_.find("add_with_device"), programs_.end())
+      << "ET_MODULE_ADD_WITH_DEVICE_PATH env var not set";
+  Result<MethodMeta> method_meta =
+      programs_["add_with_device"]->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  // ModuleAddWithDevice exports with enable_non_cpu_memory_planning=True.
+  // The model delegates add(a,b) to CUDA with H2D/D2H copies:
+  //   - non_const_buffer_sizes: [0, 32, 48]
+  //     (index 0 reserved, buffer 0 = 32 bytes CPU for inputs,
+  //      buffer 1 = 48 bytes CUDA for delegate output)
+  //   - non_const_buffer_device: [{buffer_idx=2, device_type=CUDA,
+  //     device_index=0}]
+  // So there are 2 planned buffers: user-facing index 0 (CPU) and index 1
+  // (CUDA).
+  ASSERT_EQ(method_meta->num_memory_planned_buffers(), 2);
+
+  // Buffer 0 should be CPU device (method inputs).
+  auto device0 = method_meta->memory_planned_buffer_device(0);
+  ASSERT_TRUE(device0.ok());
+  EXPECT_EQ(device0->type(), executorch::runtime::etensor::DeviceType::CPU);
+  EXPECT_EQ(device0->index(), 0);
+
+  // Buffer 1 should be CUDA device (delegate output).
+  auto device1 = method_meta->memory_planned_buffer_device(1);
+  ASSERT_TRUE(device1.ok());
+  EXPECT_EQ(device1->type(), executorch::runtime::etensor::DeviceType::CUDA);
+  EXPECT_EQ(device1->index(), 0);
+
+  // Out of range should return error.
+  EXPECT_EQ(
+      method_meta->memory_planned_buffer_device(2).error(),
+      Error::InvalidArgument);
+}
+
+TEST_F(MethodMetaTest, UsesBackendOnUnsetDelegatesReturnsFalse) {
+  // Construct a minimal schema-valid FlatBuffer program where delegates is
+  // unset (nullptr).
+  flatbuffers::FlatBufferBuilder fbb;
+  std::vector<int32_t> empty_inputs = {};
+  std::vector<int32_t> empty_outputs = {};
+  std::vector<int64_t> non_const_buffer_sizes = {0};
+  auto plan = executorch_flatbuffer::CreateExecutionPlanDirect(
+      fbb,
+      /*name=*/"forward",
+      /*container_meta_type=*/0,
+      /*values=*/nullptr,
+      /*inputs=*/&empty_inputs,
+      /*outputs=*/&empty_outputs,
+      /*chains=*/nullptr,
+      /*operators=*/nullptr,
+      /*delegates=*/nullptr,
+      /*non_const_buffer_sizes=*/&non_const_buffer_sizes,
+      /*non_const_buffer_device=*/nullptr);
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>> plans =
+      {plan};
+
+  auto const_offsets = fbb.CreateVector(std::vector<uint64_t>{0});
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      fbb, /*segment_index=*/0, const_offsets);
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>
+      segments = {executorch_flatbuffer::CreateDataSegment(
+          fbb, /*offset=*/0, /*size=*/0)};
+
+  auto program = executorch_flatbuffer::CreateProgramDirect(
+      fbb,
+      /*version=*/Program::kMaxSupportedSchemaVersion,
+      /*execution_plan=*/&plans,
+      /*constant_buffer=*/nullptr,
+      /*backend_delegate_data=*/nullptr,
+      /*segments=*/&segments,
+      /*constant_segment=*/constant_segment);
+  executorch_flatbuffer::FinishProgramBuffer(fbb, program);
+
+  std::vector<uint8_t> buffer(
+      fbb.GetBufferPointer(), fbb.GetBufferPointer() + fbb.GetSize());
+  if (buffer.size() < Program::kMinHeadBytes) {
+    buffer.resize(Program::kMinHeadBytes, 0);
+  }
+
+  BufferDataLoader loader(buffer.data(), buffer.size());
+  Result<Program> prog = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(prog.error(), Error::Ok);
+
+  Result<MethodMeta> method_meta = prog->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+
+  EXPECT_FALSE(method_meta->uses_backend("xnnpack"));
 }

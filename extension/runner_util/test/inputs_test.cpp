@@ -28,8 +28,6 @@ using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
-using executorch::runtime::MemoryAllocator;
-using executorch::runtime::MemoryManager;
 using executorch::runtime::Method;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;

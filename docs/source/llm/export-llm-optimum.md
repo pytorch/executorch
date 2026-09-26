@@ -1,6 +1,13 @@
-# Exporting LLMs with HuggingFace's Optimum ExecuTorch
+# Exporting LLMs with Hugging Face's Optimum ExecuTorch
 
 [Optimum ExecuTorch](https://github.com/huggingface/optimum-executorch) provides a streamlined way to export Hugging Face transformer models to ExecuTorch format. It offers seamless integration with the Hugging Face ecosystem, making it easy to export models directly from the Hugging Face Hub.
+
+Transformers also includes an
+[experimental ExecuTorch exporter](https://huggingface.co/docs/transformers/en/exporters)
+for broad programmatic export of `PreTrainedModel` architectures to XNNPACK and
+CUDA. Its generative path returns independent graph components that the caller
+must orchestrate. Use Optimum ExecuTorch when you want its CLI, quantization,
+model wrappers, and tested task-level workflows.
 
 ## Overview
 
@@ -23,7 +30,13 @@ See [Exporting LLMs](export-llm.md) for details on using the native `export_llm`
 
 ### Installation
 
-First, clone and install Optimum ExecuTorch from source:
+Install the released package from PyPI:
+
+```bash
+pip install optimum-executorch
+```
+
+To work from the latest source instead, use an isolated environment and run:
 
 ```bash
 git clone https://github.com/huggingface/optimum-executorch.git
@@ -31,13 +44,15 @@ cd optimum-executorch
 pip install '.[dev]'
 ```
 
-For access to the latest features and optimizations, install dependencies in dev mode:
+For nightly or source builds of the underlying projects, run:
 
 ```bash
 python install_dev.py
 ```
 
-This installs `executorch`, `torch`, `torchao`, `transformers`, and other dependencies from nightly builds or source.
+This may replace `executorch`, `torch`, `torchao`, `transformers`, and other
+dependencies with nightly or source builds, which is why a separate environment
+is recommended. It is not required for the released package workflow below.
 
 ## Supported Models
 
@@ -45,15 +60,11 @@ Optimum ExecuTorch supports a wide range of model architectures including decode
 
 For the complete list of supported models, see the [Optimum ExecuTorch documentation](https://github.com/huggingface/optimum-executorch#-supported-models).
 
-## Export Methods
+## CLI Export
 
-Optimum ExecuTorch offers two ways to export models:
+The `optimum-cli` command is the recommended way to export Hugging Face models. It provides a single invocation that downloads the model from the Hub, applies the configured optimizations, and writes the resulting `.pte` file.
 
-### Method 1: CLI Export
-
-The CLI is the simplest way to export models. It provides a single command to convert models from Hugging Face Hub to ExecuTorch format.
-
-#### Basic Export
+### Basic Export
 
 ```bash
 optimum-cli export executorch \
@@ -63,7 +74,7 @@ optimum-cli export executorch \
     --output_dir="./smollm2_exported"
 ```
 
-#### With Optimizations
+### With Optimizations
 
 Add custom SDPA, KV cache optimization, and quantization:
 
@@ -79,7 +90,7 @@ optimum-cli export executorch \
     --output_dir="./smollm2_exported"
 ```
 
-#### Available CLI Arguments
+### Available CLI Arguments
 
 Key arguments for LLM export include `--model`, `--task`, `--recipe` (backend), `--use_custom_sdpa`, `--use_custom_kv_cache`, `--qlinear` (linear quantization), `--qembedding` (embedding quantization), and `--max_seq_len`.
 
@@ -115,7 +126,12 @@ optimum-cli export executorch \
 
 ### Backend Support
 
-Supported backends: `xnnpack` (CPU), `coreml` (Apple GPU), `portable` (baseline), `cuda` (NVIDIA GPU). Specify with `--recipe`.
+The `xnnpack` recipe is the CPU path used in this guide. The current package
+also registers `portable`, `cuda`, `cuda-windows`, `metal`, and
+precision/compute-unit-specific Core ML recipes such as `coreml_fp16`.
+Applicability depends on the model, task, host, and installed dependencies; use
+the exact recipe documented by Optimum ExecuTorch for your target. A bare
+`coreml` recipe is not registered.
 
 ## Exporting Different Model Types
 
@@ -156,8 +172,8 @@ print(generated_text)
 After verifying your model works correctly, deploy it to device:
 
 - [Running with C++](run-with-c-plus-plus.md) - Run exported models using ExecuTorch's C++ runtime
-- [Running on Android](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) - Deploy to Android devices
-- [Running on iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) - Deploy to iOS devices
+- [Running on Android](run-on-android.md) - Java APIs for the `executorch-android` AAR (sample app: [LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android))
+- [Running on iOS](run-on-ios.md) - Objective-C and Swift APIs for the `ExecuTorchLLM` framework (sample app: [etLLM](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple))
 
 ## Performance
 

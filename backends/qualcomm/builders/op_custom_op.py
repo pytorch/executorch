@@ -20,6 +20,26 @@ from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
 
 
+def _resolve_qnn_data_type(
+    py_type: type, arg_name: str, target: str, *, of_element: bool = False
+):
+    """QNN data type for a custom-op arg type, or a ValueError naming the arg."""
+    what = "element type" if of_element else "type"
+    if py_type is str:
+        raise ValueError(
+            f"String {what} for argument '{arg_name}' of {target} is unsupported: "
+            "QNN_DATATYPE_STRING is not plumbed through AddScalarParam in "
+            "aot/python/PyQnnManagerAdaptor.h. Encode it as an int in the op "
+            "schema, or add the missing case."
+        )
+    if py_type not in QNN_TENSOR_TYPE_MAP:
+        raise ValueError(
+            f"Argument '{arg_name}' of {target} has unsupported {what} "
+            f"{py_type.__name__}: QNN_TENSOR_TYPE_MAP has no entry for it."
+        )
+    return QNN_TENSOR_TYPE_MAP[py_type]
+
+
 class CustomOp(NodeVisitor):
     target = ""
     op_package_info = QnnExecuTorchOpPackageInfo()
@@ -61,20 +81,31 @@ class CustomOp(NodeVisitor):
                     nodes_to_wrappers,
                 )
                 custom_input_tensors.append(input_tensor_wrapper)
+            elif isinstance(arg, str):
+                # str is Iterable, so it would otherwise be taken for a tensor param.
+                _resolve_qnn_data_type(str, arg_name, self.target)
             elif isinstance(arg, Iterable):
-                tensor_parm_shape = [len(arg)]
+                values = list(arg)
+                if not values:
+                    raise ValueError(
+                        f"Argument '{arg_name}' of {self.target} is empty: a QNN "
+                        "tensor param needs at least one element."
+                    )
+                tensor_parm_shape = [len(values)]
                 custom_op.AddTensorParam(
                     arg_name,
-                    QNN_TENSOR_TYPE_MAP[type(arg[0])],
+                    _resolve_qnn_data_type(
+                        type(values[0]), arg_name, self.target, of_element=True
+                    ),
                     len(tensor_parm_shape),
                     tensor_parm_shape,
-                    np.array(arg),
+                    np.array(values),
                     True,
                 )
             else:
                 custom_op.AddScalarParam(
                     arg_name,
-                    QNN_TENSOR_TYPE_MAP[type(arg)],
+                    _resolve_qnn_data_type(type(arg), arg_name, self.target),
                     {QCOM_DATA: arg},
                 )
 

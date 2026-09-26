@@ -1,0 +1,16 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains ExecuTorch device-copy ops for ATen-mode runtime
+# registration. These ops are inserted by device partitioning and are not ATen
+# native operators, so ATen-mode codegen must consume them through the custom-op
+# path.
+
+- func: et_copy::_h2d_copy.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_h2d_copy_out
+
+- func: et_copy::_d2h_copy.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_d2h_copy_out

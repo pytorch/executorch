@@ -17,7 +17,7 @@ namespace executor {
 namespace native {
 namespace internal {
 
-template <template <typename> class Comparison, const char* op_name>
+template <template <typename> class Comparison, ET_OPERATOR_NAME_TYPE op_name>
 Tensor& comparison_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
@@ -62,7 +62,7 @@ Tensor& comparison_tensor_out(
   return out;
 }
 
-template <template <typename> class Comparison, const char* op_name>
+template <template <typename> class Comparison, ET_OPERATOR_NAME_TYPE op_name>
 Tensor& comparison_scalar_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,

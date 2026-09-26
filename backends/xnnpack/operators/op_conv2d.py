@@ -140,14 +140,17 @@ class Conv2d(NodeVisitor):
         stride = cast(List[int], node.args[3])
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
+        output_padding = cast(List[int], node.args[7])
+        # ATen broadcasts a single spatial value over every spatial dim, so any of
+        # these may arrive with length 1 for a 2d convolution.
+        if len(stride) == 1:
+            stride = stride + stride
         if len(padding) == 1:
             padding = padding + padding
-
-        # args[7] = output padding
-        check_or_raise(
-            all(out_pad == 0 for out_pad in cast(List[int], node.args[7])),
-            "XNNPACK does not support output padding",
-        )
+        if len(dilation) == 1:
+            dilation = dilation + dilation
+        if len(output_padding) == 1:
+            output_padding = output_padding + output_padding
 
         check_or_raise(
             len(stride) == 2, "XNNPACK currently only supports 2D convolution"
@@ -165,8 +168,8 @@ class Conv2d(NodeVisitor):
         kwargs["group_input_channels"] = group_input_channels
         kwargs["group_output_channels"] = group_output_channels
         kwargs["groups"] = groups
-        kwargs["adjustment_height"] = 0
-        kwargs["adjustment_width"] = 0
+        kwargs["adjustment_height"] = output_padding[0]
+        kwargs["adjustment_width"] = output_padding[1]
         kwargs["flags"] = 0
 
         if is_depthwise_conv:

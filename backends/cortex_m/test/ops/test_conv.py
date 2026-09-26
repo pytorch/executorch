@@ -1,21 +1,26 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 
+import pytest
 import torch
-from executorch.backends.arm.test.common import parametrize
+from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.cortex_m.library import cmsis_nn
+from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
     ramp_tensor,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class CortexMConv1D(torch.nn.Module):
-    ops_before_transforms = {}
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -72,9 +77,8 @@ class CortexMConv2DBias(torch.nn.Module):
 
 
 class CortexMConv3D(torch.nn.Module):
-    ops_before_transforms = {}
-
-    ops_after_transforms = {}
+    ops_before_transforms: dict[str, int] = {}
+    ops_after_transforms: dict[str, int] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__()
@@ -182,10 +186,21 @@ test_cases = {
             ramp_tensor(0, 10, (3, 1, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
+    # A bias-less grouped convolution is what needs a bias synthesized for it, so
+    # keep this case bias-less, keep groups > 1, and keep the reference output
+    # away from saturation: the previous 1x1-output version summed an
+    # all-positive ramp straight to qmax, where a wrong result is
+    # indistinguishable from the correct one.
     "conv2d_groups": McuTestCase(
-        model=CortexMConv2D(4, 4, 1, groups=2),
+        model=CortexMConv2D(4, 4, 3, padding=1, groups=2),
         example_inputs=(
-            ramp_tensor(0, 10, (1, 4, 1, 1)).to(memory_format=torch.channels_last),
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
+        ),
+    ),
+    "conv2d_groups_bias": McuTestCase(
+        model=CortexMConv2DBias(4, 4, 3, padding=1, groups=2),
+        example_inputs=(
+            ramp_tensor(-5, 5, (1, 4, 8, 8)).to(memory_format=torch.channels_last),
         ),
     ),
     "conv2d_bias_ch_out_1": McuTestCase(
@@ -313,7 +328,7 @@ test_cases = {
 }
 
 
-xfails_dialect = {
+xfails_dialect: dict[str, xfail_type] = {
     "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
@@ -321,8 +336,10 @@ xfails_dialect = {
 
 
 @parametrize("test_case", test_cases, xfails=xfails_dialect)
-def test_dialect_conv2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_conv2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -330,13 +347,78 @@ def test_dialect_conv2d(test_case):
     )
 
 
-xfails_implementation = {
+xfails_implementation: dict[str, xfail_type] = {
     "conv1d": "Currently not supported.",
     "conv3d": "Currently not supported.",
 }
 
 
 @parametrize("test_case", test_cases, xfails=xfails_implementation)
-def test_implementation_conv2d(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_conv2d(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=2)
+
+
+@parametrize(
+    "test_case",
+    {name: test_cases[name] for name in ("conv2d_groups", "depthwise_conv2d")},
+)
+def test_grouped_conv2d_bias_is_populated(test_case, cortex_m_target):
+    """Assert a bias-less grouped convolution reaches the kernel with a bias.
+
+    The numeric cases only cover this on the FVP leg and only while their
+    reference output stays clear of saturation, and the depthwise kernel
+    offsets the bias by whole channel blocks, so it takes hundreds of channels
+    before a missing bias shows up at all -- far more than any case here.
+    """
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.quantize()
+    tester.export()
+    tester.to_edge()
+    tester.run_passes()
+
+    module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
+    grouped_convs = (
+        exir_ops.edge.cortex_m.quantized_conv2d.default,
+        exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
+    )
+    [conv_node] = [
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target in grouped_convs
+    ]
+    assert conv_node.args[2] is not None
+
+
+@pytest.mark.parametrize(
+    "backend", [cmsis_nn.Backend.SCALAR, cmsis_nn.Backend.DSP, cmsis_nn.Backend.MVE]
+)
+@pytest.mark.parametrize("out_channels", [1, 8, 9, 64])
+def test_dialect_single_channel_dispatch(backend, out_channels):
+    model = torch.nn.Conv2d(1, out_channels, 3, bias=False).eval()
+    inputs = (torch.randn(1, 1, 8, 8).to(memory_format=torch.channels_last),)
+    config = CortexMTargetConfig(cpu=CortexM.M55, isa=backend)
+    tester = CortexMTester(model, inputs, target_config=config)
+    tester.quantize().export().to_edge().run_passes()
+    tester.run_method_and_compare_outputs(inputs=inputs, qtol=1)
+    graph = tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
+    regular = backend == cmsis_nn.Backend.MVE and out_channels > 8
+    expected = (
+        exir_ops.edge.cortex_m.quantized_conv2d.default
+        if regular
+        else exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default
+    )
+    assert sum(node.target == expected for node in graph.nodes) == 1
+
+
+@pytest.mark.parametrize("out_channels", [1, 8, 9, 64])
+def test_implementation_single_channel_dispatch(out_channels, cortex_m_target):
+    model = torch.nn.Conv2d(1, out_channels, 3, bias=False).eval()
+    inputs = (torch.randn(1, 1, 8, 8).to(memory_format=torch.channels_last),)
+    CortexMTester(model, inputs, target_config=cortex_m_target).test_implementation(
+        qtol=1
+    )

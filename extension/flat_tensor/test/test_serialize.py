@@ -8,9 +8,12 @@
 
 import dataclasses
 import math
+import os
+import tempfile
 import unittest
 
 from typing import Dict, List, Optional
+from unittest import mock
 
 import torch
 
@@ -29,6 +32,7 @@ from executorch.exir.tensor_layout import TensorLayout
 
 from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
+    _FLAT_TENSOR_VERSION,
     _FLATBUFFER_ALIGNMENT,
     FlatTensorConfig,
     FlatTensorHeader,
@@ -279,6 +283,72 @@ class TestSerialize(unittest.TestCase):
         self._check_named_data_entries(
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
+
+    def test_deserialize_refuses_newer_version(self) -> None:
+        # A file whose version is newer than this reader understands must be
+        # refused, rather than silently misread. Serialize with a bumped
+        # version, then deserialize with the real (lower) reader version.
+        config = FlatTensorConfig()
+        serializer: DataSerializer = FlatTensorSerializer(config)
+
+        with mock.patch(
+            "executorch.extension.flat_tensor.serialize.serialize._FLAT_TENSOR_VERSION",
+            _FLAT_TENSOR_VERSION + 1,
+        ):
+            serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+
+        with self.assertRaises(NotImplementedError):
+            serializer.deserialize(Cord(serialized_data))
+
+    def test_deserialize_accepts_older_version(self) -> None:
+        # Back-compat: a file older than the reader must still load, and load
+        # correctly. Serialize at the current version, then deserialize with the
+        # reader's version bumped higher, so the file looks older than the
+        # reader. This is what `>` buys over the previous `!=`, which rejected
+        # any mismatch including older.
+        config = FlatTensorConfig()
+        serializer: DataSerializer = FlatTensorSerializer(config)
+        serialized_data = bytes(serializer.serialize(TEST_DATA_PAYLOAD))
+
+        with mock.patch(
+            "executorch.extension.flat_tensor.serialize.serialize._FLAT_TENSOR_VERSION",
+            _FLAT_TENSOR_VERSION + 1,
+        ):
+            deserialized_payload = serializer.deserialize(Cord(serialized_data))
+
+        # The older file must not just load without raising; it must round-trip
+        # intact, so a regression that loads but drops data can't pass silently.
+        for i in range(len(deserialized_payload.buffers)):
+            self.assertEqual(
+                TEST_DATA_PAYLOAD.buffers[i],
+                deserialized_payload.buffers[i],
+                f"Buffer at index {i} does not match.",
+            )
+        self._check_named_data_entries(
+            TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
+        )
+
+    def test_file_backed_data_matches_bytes(self) -> None:
+        from executorch.exir._serialize._cord import FileBackedData
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.bin")
+            with open(path, "wb") as f:
+                f.write(TEST_BUFFER[0])
+            file_data = FileBackedData.move_from(path)
+            payload = DataPayload(
+                buffers=[file_data],
+                named_data={"weight": DataEntry(0, 16, None)},
+            )
+            bytes_payload = DataPayload(
+                buffers=[TEST_BUFFER[0]],
+                named_data={"weight": DataEntry(0, 16, None)},
+            )
+            serializer = FlatTensorSerializer(FlatTensorConfig())
+            self.assertEqual(
+                bytes(serializer.serialize(bytes_payload)),
+                bytes(serializer.serialize(payload)),
+            )
 
     def test_deserialize_to_named_data_store_output(self) -> None:
         store = NamedDataStore()

@@ -23,6 +23,21 @@ fbcode_target(_kind = runtime.cxx_python_extension,
 )
 
 # Use runtime.python_library instead of the one defined in python_library.bzl,
+# The .ptn format. Its own target so safetensors stays out of :lib, and therefore
+# out of everything that depends on exir.
+fbcode_target(_kind = runtime.python_library,
+    name = "ptn",
+    typing = True,
+    srcs = [
+        "_ptn.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "//caffe2:torch",
+    ],
+)
+
 # so we can have access to EXECUTORCH_CLIENTS list.
 fbcode_target(_kind = runtime.python_library,
     name = "lib",
@@ -31,12 +46,13 @@ fbcode_target(_kind = runtime.python_library,
         "_cord.py",
         "_dataclass.py",
         "_flatbuffer.py",
+        "_flatbuffer_program.py",
         "_named_data_store.py",
         "_program.py",
         "_serialize.py",
         "data_serializer.py",
         "padding.py",
-    ],
+    ] + glob(["generated/**/*.py"]),
     resources = {
         "//executorch/schema:program.fbs": "program.fbs",
         "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
@@ -47,6 +63,7 @@ fbcode_target(_kind = runtime.python_library,
     # Please ask before changing this.
     visibility = ["PUBLIC"],
     deps = [
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
         "//executorch/exir:tensor_layout",

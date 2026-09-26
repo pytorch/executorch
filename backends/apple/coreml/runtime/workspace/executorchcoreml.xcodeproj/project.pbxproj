@@ -12,6 +12,8 @@
 		83BB78A02C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm in Sources */ = {isa = PBXBuildFile; fileRef = 83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */; };
 		83BB78BF2C66AAAE00274ED7 /* add_mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = 83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */; };
 		83BB78C02C66AAAE00274ED7 /* add_mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */; };
+		9029E4192F6CAED800530A64 /* ETCoreMLModelCache.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9029E4182F6CAED800530A64 /* ETCoreMLModelCache.mm */; };
+		905118692F3FBCCE00BFB5B7 /* ETCoreMLModelCacheTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 905118682F3FBCCE00BFB5B7 /* ETCoreMLModelCacheTests.mm */; };
 		C945E8E02B997ECE009C3FAC /* ETCoreMLModelProfiler.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */; };
 		C945E8E12B997ECE009C3FAC /* ETCoreMLModelAnalyzer.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D42B997ECD009C3FAC /* ETCoreMLModelAnalyzer.mm */; };
 		C945E8E22B997ECE009C3FAC /* program_path.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D52B997ECD009C3FAC /* program_path.mm */; };
@@ -128,6 +130,9 @@
 		83BB789F2C65DA7300274ED7 /* ETCoreMLModelDebugInfo.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelDebugInfo.mm; path = ../sdk/ETCoreMLModelDebugInfo.mm; sourceTree = "<group>"; };
 		83BB78BD2C66AAAE00274ED7 /* add_mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_mul_coreml_all.bin; path = ../test/models/add_mul_coreml_all.bin; sourceTree = "<group>"; };
 		83BB78BE2C66AAAE00274ED7 /* add_mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_mul_coreml_all.pte; path = ../test/models/add_mul_coreml_all.pte; sourceTree = "<group>"; };
+		9029E4172F6CAED800530A64 /* ETCoreMLModelCache.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelCache.h; path = ../delegate/ETCoreMLModelCache.h; sourceTree = "<group>"; };
+		9029E4182F6CAED800530A64 /* ETCoreMLModelCache.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelCache.mm; path = ../delegate/ETCoreMLModelCache.mm; sourceTree = "<group>"; };
+		905118682F3FBCCE00BFB5B7 /* ETCoreMLModelCacheTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelCacheTests.mm; path = ../test/ETCoreMLModelCacheTests.mm; sourceTree = "<group>"; };
 		C945E8CD2B997ECD009C3FAC /* ETCoreMLModelProfiler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelProfiler.h; path = ../sdk/ETCoreMLModelProfiler.h; sourceTree = "<group>"; };
 		C945E8CE2B997ECD009C3FAC /* ETCoreMLModelAnalyzer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelAnalyzer.h; path = ../sdk/ETCoreMLModelAnalyzer.h; sourceTree = "<group>"; };
 		C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelProfiler.mm; path = ../sdk/ETCoreMLModelProfiler.mm; sourceTree = "<group>"; };
@@ -461,6 +466,8 @@
 		C952663E2A7E06510016283E /* delegate */ = {
 			isa = PBXGroup;
 			children = (
+				9029E4172F6CAED800530A64 /* ETCoreMLModelCache.h */,
+				9029E4182F6CAED800530A64 /* ETCoreMLModelCache.mm */,
 				C9E7D7AB2AB55AC100CCAE5D /* com.apple.executorchcoreml_config.plist */,
 				C9D3DFAF2AA12097001CC178 /* asset.h */,
 				C9D3DFBC2AA84FC6001CC178 /* asset.mm */,
@@ -582,6 +589,7 @@
 		C9E7D7852AB3F99A00CCAE5D /* test */ = {
 			isa = PBXGroup;
 			children = (
+				905118682F3FBCCE00BFB5B7 /* ETCoreMLModelCacheTests.mm */,
 				C9E7D78C2AB3F9BF00CCAE5D /* BackendDelegateTests.mm */,
 				C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */,
 				C9E7D78A2AB3F9BF00CCAE5D /* DatabaseTests.mm */,
@@ -739,6 +747,7 @@
 				C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */,
 				C945E93A2B997EEE009C3FAC /* MIL.pb.cc in Sources */,
 				C94D51002ABDF83C00AF47FD /* ETCoreMLAssetManager.mm in Sources */,
+				9029E4192F6CAED800530A64 /* ETCoreMLModelCache.mm in Sources */,
 				C945E93E2B997EEE009C3FAC /* Model.pb.cc in Sources */,
 				C945E9362B997EEE009C3FAC /* Identity.pb.cc in Sources */,
 				C94D50EE2ABDF81B00AF47FD /* memory_buffer.cpp in Sources */,
@@ -772,6 +781,7 @@
 				C94D50ED2ABDF81900AF47FD /* inmemory_filesystem.cpp in Sources */,
 				C945E94B2B997EEE009C3FAC /* Normalizer.pb.cc in Sources */,
 				C94D50FA2ABDF83200AF47FD /* multiarray.mm in Sources */,
+				905118692F3FBCCE00BFB5B7 /* ETCoreMLModelCacheTests.mm in Sources */,
 				C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */,
 				C945E9382B997EEE009C3FAC /* Imputer.pb.cc in Sources */,
 				C945E92F2B997EEE009C3FAC /* CategoricalMapping.pb.cc in Sources */,
@@ -830,7 +840,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
-                                        "C10_USING_CUSTOM_GENERATED_MACROS",
+					C10_USING_CUSTOM_GENERATED_MACROS,
 					"$(inherited)",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -912,7 +922,7 @@
 				DEVELOPMENT_TEAM = "";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
-                                        "C10_USING_CUSTOM_GENERATED_MACROS",
+					C10_USING_CUSTOM_GENERATED_MACROS,
 					"ET_EVENT_TRACER_ENABLED=1",
 					"$(inherited)",
 				);

@@ -1,5 +1,5 @@
 ## Summary
-Qwen 3 is the latest iteration of the Qwen series of large language models (LLMs) developed by Alibaba. Edge-sized Qwen3 model variations (0.6B, 1.7B, and 4B) are currently supported .
+Qwen 3 is a family of large language models (LLMs) developed by Alibaba. Edge-sized Qwen 3 variants (0.6B, 1.7B, and 4B) are supported by this example.
 
 ## Instructions
 
@@ -8,7 +8,7 @@ Qwen 3 uses the same example code as our optimized Llama model, while the checkp
 All commands for exporting and running Llama on various backends should also be applicable to Qwen 3, by swapping the following args:
 ```
 base.model_class=[qwen3_0_6b,qwen3_1_7b,qwen3_4b]
-base.params=[examples/models/qwen3/config/0_6b_config.json,examples/models/qwen3/config/1_7b_config.json,examples/models/config/qwen3/4b_config.json]
+base.params=[examples/models/qwen3/config/0_6b_config.json,examples/models/qwen3/config/1_7b_config.json,examples/models/qwen3/config/4b_config.json]
 ```
 
 ### Example export

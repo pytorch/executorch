@@ -13,7 +13,9 @@ from executorch.examples.models.llama.attention import (
     ForwardOptions,
     register_attention,
 )
+from executorch.examples.models.llama.lora import lora_call, LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.norm import ScalelessRMSNorm
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -62,61 +64,55 @@ class StaticKVCache(nn.Module, ABC):
         """
         After inference, update the cache state for next iteration. The runtime needs to
         implement the same operation.
+
+        `pos` is the absolute position of the first token in the update. Caches smaller
+        than the sequence (sliding-window layers) wrap it into a ring index.
         """
         seq_dim = -1 if transpose else -2
         cache_len = cache.size(seq_dim)
         if cache_len == 0:
             return
-        if cache_len < update.size(seq_dim):
-            update = torch.narrow(
-                update,
-                seq_dim,
-                update.size(seq_dim) - cache_len,
-                cache_len,
-            )
-            assert update.size(seq_dim) == cache_len
+        if update_len is None:
+            update_len = update.size(seq_dim)
+
+        # Only the newest cache_len tokens fit. Drop from the front of the real-token
+        # window instead of narrowing the update tensor, which may be padded past
+        # update_len and would otherwise push padding into the cache.
+        dropped = max(0, update_len - cache_len)
+        update_pos += dropped
+        update_len -= dropped
+        pos = (pos + dropped) % cache_len
 
         if style == "shift_pointer":
+            updated = torch.roll(cache, -update_len, seq_dim)
             if transpose:
-                update_len = update_len or update.size(-1)
-                updated = torch.roll(cache, -update_len, -1)
                 updated[..., -update_len:] = update[
                     ..., update_pos : update_pos + update_len
                 ]
             else:
-                update_len = update_len or update.size(-2)
-                updated = torch.roll(cache, -update_len, -2)
                 updated[..., -update_len:, :] = update[
                     ..., update_pos : update_pos + update_len, :
                 ]
 
         if style == "smart_mask":
-            available = cache.size(-2) - pos
-            update_len = update_len or update.size(-1 if transpose else -2)
-            if update_len > available:
-                wrap = update_len - available
-                update_len = available
-            else:
-                wrap = 0
+            # Ring buffer: fill to the end of the cache, then wrap to the front.
+            contiguous_len = min(update_len, cache_len - pos)
+            wrap = update_len - contiguous_len
+            wrap_pos = update_pos + contiguous_len
 
             updated = torch.clone(cache)
             if transpose:
-                updated[..., pos : pos + update_len] = update[
-                    ..., update_pos : update_pos + update_len
+                updated[..., pos : pos + contiguous_len] = update[
+                    ..., update_pos : update_pos + contiguous_len
                 ]
                 if wrap > 0:
-                    update_pos += update_len
-                    updated[..., :wrap] = update[..., update_pos : update_pos + wrap]
-
+                    updated[..., :wrap] = update[..., wrap_pos : wrap_pos + wrap]
             else:
-                updated[..., pos : pos + update_len, :] = update[
-                    ..., update_pos : update_pos + update_len, :
+                updated[..., pos : pos + contiguous_len, :] = update[
+                    ..., update_pos : update_pos + contiguous_len, :
                 ]
                 if wrap > 0:
-                    update_pos += update_len
-                    updated[..., :wrap, :] = update[
-                        ..., update_pos : update_pos + wrap, :
-                    ]
+                    updated[..., :wrap, :] = update[..., wrap_pos : wrap_pos + wrap, :]
 
         return updated
 
@@ -196,6 +192,10 @@ class StaticAttentionMask:
         self.tensor[:, :, self.cache_len :] = input_mask
 
     def unmask(self, new_unmasked_len):
+        # Clamp to what is left of the cache region, mirroring the runtime
+        # (static_attention_io_manager.h). Without this the smart_mask branch walks
+        # past cache_len and zeroes part of the in-chunk causal mask.
+        new_unmasked_len = min(new_unmasked_len, self.cache_len - self.unmasked_len)
         if new_unmasked_len <= 0:
             return
 
@@ -203,9 +203,9 @@ class StaticAttentionMask:
             self.tensor[
                 :,
                 :,
-                max(
-                    0, self.cache_len - self.unmasked_len - new_unmasked_len
-                ) : self.cache_len
+                self.cache_len
+                - self.unmasked_len
+                - new_unmasked_len : self.cache_len
                 - self.unmasked_len,
             ] = 0
 
@@ -217,6 +217,18 @@ class StaticAttentionMask:
             ] = 0
 
         self.unmasked_len += new_unmasked_len
+
+
+def _is_kv_shared_layer(
+    layer_idx: int, n_layers: int, num_kv_shared_layers: int
+) -> bool:
+    """Check if this layer uses shared K/V from a donor layer (YOCO)."""
+    if num_kv_shared_layers <= 0:
+        return False
+    first_shared = n_layers - num_kv_shared_layers
+    if first_shared <= 0:
+        return False
+    return layer_idx >= first_shared
 
 
 class StaticAttentionIOManager:
@@ -260,6 +272,12 @@ class StaticAttentionIOManager:
             )
             for cl in set(cache_lens)
         }
+        # Global (full-attention) layers use the largest cache; local
+        # (sliding-window) layers use a strictly smaller cache. In a global-only
+        # model every layer shares the same cache, so this stays equal to it.
+        self._global_cache_len = max(
+            (mask.cache_len for mask in self._masks.values()), default=0
+        )
 
         if isinstance(config_or_model, ModelArgs):
             self._from_config(config_or_model, cache_lens_dict, batch_size, dtype)
@@ -285,6 +303,7 @@ class StaticAttentionIOManager:
         self.freqs_sin = freqs[1].to(dtype)
 
         split_mha = config.attention_type in ("static", "static_shas")
+        num_kv_shared = getattr(config, "num_kv_shared_layers", 0)
         if split_mha:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
@@ -296,6 +315,7 @@ class StaticAttentionIOManager:
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
                 if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(layer_id, config.n_layers, num_kv_shared)
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
@@ -307,6 +327,7 @@ class StaticAttentionIOManager:
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
                 if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(layer_id, config.n_layers, num_kv_shared)
             }
         else:
             self.k_caches = {
@@ -319,6 +340,7 @@ class StaticAttentionIOManager:
                 )
                 for layer_id in range(config.n_layers)
                 if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(layer_id, config.n_layers, num_kv_shared)
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
@@ -330,6 +352,7 @@ class StaticAttentionIOManager:
                 )
                 for layer_id in range(config.n_layers)
                 if cache_lens[layer_id] > 0
+                and not _is_kv_shared_layer(layer_id, config.n_layers, num_kv_shared)
             }
 
         self.generate_full_logits = config.generate_full_logits
@@ -359,6 +382,8 @@ class StaticAttentionIOManager:
         self.k_caches = {}
         self.v_caches = {}
         for attn in static_attentions:
+            if attn.is_kv_shared_layer:
+                continue
             if attn.split_mha:
                 for head_id in range(attn.n_heads):
                     cache_key = StaticKVCache.calculate_cache_key(
@@ -400,6 +425,50 @@ class StaticAttentionIOManager:
         for mask in self._masks.values():
             mask.reset()
 
+    def _is_windowed_mask(self, mask: StaticAttentionMask) -> bool:
+        """
+        A mask belongs to a local (sliding-window) layer iff its cache is strictly
+        smaller than the global cache. A pure sliding-window model is
+        indistinguishable from a global one by cache_len alone and counts as global.
+        """
+        return 0 < mask.cache_len < self._global_cache_len
+
+    def _mask_cache_outside_window(self):
+        """
+        Rewrite the cache region of every windowed mask so each query row only sees
+        its own window. `unmask` fills the cache region identically for all rows,
+        which lets query row k attend to cache_len + k + 1 keys instead of cache_len.
+
+        Express both layouts through the age of the token held in a slot -- how many
+        tokens are newer than it. With W = cache_len and v = min(pos, W) valid entries,
+        slot c is visible to query row k iff age(c) < min(v, W - 1 - k): the first term
+        is validity, the second is the window. Once k >= W - 1 the whole window lives
+        inside the chunk and nothing in the cache is visible.
+
+        Only the age mapping differs by layout. shift_pointer keeps valid entries right
+        aligned oldest to newest, so age is W - 1 - c. smart_mask is a ring indexed by
+        absolute position, so the same pattern is rotated by pos.
+
+        Composes with the in-chunk causal/window mask set by the caller, and holds for
+        both prefill chunks and decode steps.
+        """
+        for mask in self._masks.values():
+            if not self._is_windowed_mask(mask):
+                continue
+            w = mask.cache_len
+            rows = torch.arange(self.input_len).unsqueeze(1)
+            cols = torch.arange(w).unsqueeze(0)
+            if mask.style == "smart_mask":
+                age = (self.pos - 1 - cols) % w
+            else:
+                age = w - 1 - cols
+            limit = torch.clamp(w - 1 - rows, max=min(self.pos, w))
+            cache_mask = torch.full(
+                (self.input_len, w), mask.mask_val, dtype=mask.tensor.dtype
+            )
+            cache_mask[age < limit] = 0
+            mask.tensor[:, :, :w] = cache_mask
+
     def prefill(
         self,
         model: Callable[..., Any],
@@ -409,12 +478,24 @@ class StaticAttentionIOManager:
             raise RuntimeError("KV cache is full.")
 
         for mask in self._masks.values():
-            mask.set_input_mask(
-                torch.triu(
-                    torch.full((1, self.input_len, self.input_len), self.mask_val),
-                    diagonal=1,
-                )
+            input_mask = torch.triu(
+                torch.full((1, self.input_len, self.input_len), self.mask_val),
+                diagonal=1,
             )
+            # Local (sliding-window) layers use a per-layer cache_len smaller than
+            # the prompt. When the whole prompt is prefilled in a single chunk, the
+            # cache-eviction window is never exercised, so also mask keys older than
+            # the window here to reproduce the local attention instead of full causal.
+            # Only genuine local layers (cache smaller than the global cache) are
+            # windowed; a global layer is left full-causal even when its (nominal)
+            # cache is smaller than the prompt. No-op for chunked prefill
+            # (input_len <= cache_len).
+            if self._is_windowed_mask(mask) and mask.cache_len < self.input_len:
+                input_mask = input_mask + torch.tril(
+                    torch.full((1, self.input_len, self.input_len), self.mask_val),
+                    diagonal=-mask.cache_len,
+                )
+            mask.set_input_mask(input_mask)
 
         if isinstance(tokens, list):
             tokens = torch.tensor([tokens], dtype=torch.int32)
@@ -422,6 +503,7 @@ class StaticAttentionIOManager:
         logits = None
         all_logits = None
         for i in range(0, tokens.size(1), self.input_len):
+            self._mask_cache_outside_window()
             logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
             if self.generate_full_logits:
                 if all_logits is None:
@@ -455,6 +537,7 @@ class StaticAttentionIOManager:
         stop_tokens = stop_tokens or []
         new_tokens = [init_token]
         for _ in range(n):
+            self._mask_cache_outside_window()
             y = self._run_once(model, new_tokens[-1:])[0]
             if self.generate_full_logits:
                 new_tokens.append(y[:, :1, ...].argmax().item())
@@ -760,6 +843,7 @@ class StaticAttention(Attention):
         layer_id: int,
         rope: Rope,
         split_mha: bool = True,
+        is_kv_shared_layer: bool = False,
         **kwargs: Any,
     ):
         super().__init__()
@@ -776,7 +860,10 @@ class StaticAttention(Attention):
         self.attention_qkv_bias = config.attention_qkv_bias
         self.use_qk_norm = config.use_qk_norm
         self.qk_norm_before_rope = config.qk_norm_before_rope
+        self.scale_query_by = getattr(config, "scale_query_by", 1.0)
         self.split_mha = split_mha
+        self.is_kv_shared_layer = is_kv_shared_layer
+        self.num_kv_shared_layers = config.num_kv_shared_layers
         self.use_conv2d = False
         self.enable_qnn_masked_softmax = kwargs.get("enable_qnn_masked_softmax", False)
 
@@ -791,64 +878,100 @@ class StaticAttention(Attention):
                     for _ in range(self.n_heads)
                 ]
             )
-            self.wks = nn.ModuleList(
-                [
-                    nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
-                    for _ in range(self.n_kv_heads)
-                ]
-            )
-            self.wvs = nn.ModuleList(
-                [
-                    nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
-                    for _ in range(self.n_kv_heads)
-                ]
-            )
+            if is_kv_shared_layer:
+                self.wks = nn.ModuleList()
+                self.wvs = nn.ModuleList()
+                self.k_caches = nn.ModuleList()
+                self.v_caches = nn.ModuleList()
+            else:
+                self.wks = nn.ModuleList(
+                    [
+                        nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
+                        for _ in range(self.n_kv_heads)
+                    ]
+                )
+                self.wvs = nn.ModuleList(
+                    [
+                        nn.Linear(self.dim, self.head_dim, bias=self.attention_qkv_bias)
+                        for _ in range(self.n_kv_heads)
+                    ]
+                )
 
-            self.k_caches = nn.ModuleList(
-                [StaticKCache(layer_id, i) for i in range(self.n_kv_heads)]
-            )
-            self.v_caches = nn.ModuleList(
-                [StaticVCache(layer_id, i) for i in range(self.n_kv_heads)]
-            )
+                self.k_caches = nn.ModuleList(
+                    [StaticKCache(layer_id, i) for i in range(self.n_kv_heads)]
+                )
+                self.v_caches = nn.ModuleList(
+                    [StaticVCache(layer_id, i) for i in range(self.n_kv_heads)]
+                )
         else:
-            self.wqs = nn.ModuleList(
-                [
-                    nn.Linear(
-                        self.dim,
-                        self.head_dim * self.n_heads,
-                        bias=self.attention_qkv_bias,
+            has_lora = config.target_modules is not None
+            _PROJ_TARGET = {
+                "wqs": ("q_proj", self.dim, self.head_dim * self.n_heads),
+                "wks": ("k_proj", self.dim, self.head_dim * self.n_kv_heads),
+                "wvs": ("v_proj", self.dim, self.head_dim * self.n_kv_heads),
+            }
+            for attr, (target, in_dim, out_dim) in _PROJ_TARGET.items():
+                if is_kv_shared_layer and attr in ("wks", "wvs"):
+                    setattr(self, attr, nn.ModuleList())
+                    continue
+                if has_lora and target in config.target_modules:
+                    proj = LoRALinear(
+                        in_dim=in_dim,
+                        out_dim=out_dim,
+                        rank=config.r,
+                        alpha=config.lora_alpha,
+                        use_bias=self.attention_qkv_bias,
                     )
-                ]
-            )
-            self.wks = nn.ModuleList(
-                [
-                    nn.Linear(
-                        self.dim,
-                        self.head_dim * self.n_kv_heads,
-                        bias=self.attention_qkv_bias,
-                    )
-                ]
-            )
-            self.wvs = nn.ModuleList(
-                [
-                    nn.Linear(
-                        self.dim,
-                        self.head_dim * self.n_kv_heads,
-                        bias=self.attention_qkv_bias,
-                    )
-                ]
-            )
+                else:
+                    proj = nn.Linear(in_dim, out_dim, bias=self.attention_qkv_bias)
+                setattr(self, attr, nn.ModuleList([proj]))
 
-            self.k_caches = nn.ModuleList([StaticKCache(layer_id, 0)])
-            self.v_caches = nn.ModuleList([StaticVCache(layer_id, 0)])
+            if is_kv_shared_layer:
+                self.k_caches = nn.ModuleList()
+                self.v_caches = nn.ModuleList()
+            else:
+                self.k_caches = nn.ModuleList([StaticKCache(layer_id, 0)])
+                self.v_caches = nn.ModuleList([StaticVCache(layer_id, 0)])
 
-        self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+        self._init_wo(config)
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
+        self._init_qk_norms(config, is_kv_shared_layer)
 
+    def _init_wo(self, config: ModelArgs) -> None:
+        wo_use_lora = (
+            not self.split_mha
+            and config.target_modules is not None
+            and (
+                "output_proj" in config.target_modules
+                or "o_proj" in config.target_modules
+            )
+        )
+        if wo_use_lora:
+            self.wo = LoRALinear(
+                in_dim=self.n_heads * self.head_dim,
+                out_dim=self.dim,
+                rank=config.r,
+                alpha=config.lora_alpha,
+                use_bias=False,
+            )
+        else:
+            self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+
+    def _init_qk_norms(self, config: ModelArgs, is_kv_shared_layer: bool) -> None:
         if self.use_qk_norm:
-            self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
-            self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            if getattr(config, "qk_norm_affine", True):
+                self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+                if is_kv_shared_layer:
+                    self.k_norm = nn.Identity()
+                else:
+                    self.k_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
+            else:
+                self.q_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
+                if is_kv_shared_layer:
+                    self.k_norm = nn.Identity()
+                else:
+                    self.k_norm = ScalelessRMSNorm(self.head_dim, eps=config.norm_eps)
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
@@ -861,6 +984,33 @@ class StaticAttention(Attention):
         rms_norm_class=torch.nn.RMSNorm,
         **kwargs: Any,
     ) -> "StaticAttention":
+        is_kv_shared = getattr(other, "is_kv_shared_layer", False)
+
+        lora_projs = [other.wq, other.wo]
+        if other.wk is not None:
+            lora_projs.append(other.wk)
+        if other.wv is not None:
+            lora_projs.append(other.wv)
+        has_lora = any(isinstance(proj, LoRALinear) for proj in lora_projs)
+
+        if has_lora and split_mha:
+            raise ValueError(
+                "split_mha=True is not supported when the source AttentionMHA "
+                "contains LoRALinear modules. Use split_mha=False instead."
+            )
+
+        if getattr(other, "use_attn_o_gate", False) or getattr(
+            other, "use_attn_o_norm", False
+        ):
+            raise ValueError(
+                "StaticAttention does not support use_attn_o_gate or use_attn_o_norm. "
+                "These features require AttentionMHA."
+            )
+
+        qk_norm_affine = (
+            hasattr(other.q_norm_fn, "weight") if other.use_qk_norm else True
+        )
+
         config = ModelArgs(
             dim=other.dim,
             n_layers=1,  # Not used in attention layer
@@ -872,7 +1022,10 @@ class StaticAttention(Attention):
             attention_qkv_bias=other.attention_qkv_bias,
             use_qk_norm=other.use_qk_norm,
             qk_norm_before_rope=other.qk_norm_before_rope,
+            qk_norm_affine=qk_norm_affine,
             norm_eps=other.q_norm_fn.eps if other.use_qk_norm else 1e-5,
+            num_kv_shared_layers=getattr(other, "num_kv_shared_layers", 0),
+            scale_query_by=getattr(other, "scale_query_by", 1.0),
         )
 
         instance = cls(
@@ -880,8 +1033,45 @@ class StaticAttention(Attention):
             layer_id=other.layer_id,
             rope=other.rope,
             split_mha=split_mha,
+            is_kv_shared_layer=is_kv_shared,
             **kwargs,
         )
+
+        # Replace nn.Linear with LoRALinear where the source uses LoRA.
+        if has_lora:
+            # Always handle wq LoRA
+            if isinstance(other.wq, LoRALinear):
+                instance.wqs[0] = LoRALinear(
+                    in_dim=other.dim,
+                    out_dim=other.n_heads * other.head_dim,
+                    rank=other.wq.rank,
+                    alpha=other.wq.alpha,
+                    use_bias=other.attention_qkv_bias,
+                )
+            # Only handle wk/wv LoRA for non-shared layers
+            if not is_kv_shared:
+                for attr, proj, out_dim in [
+                    ("wks", other.wk, other.n_kv_heads * other.head_dim),
+                    ("wvs", other.wv, other.n_kv_heads * other.head_dim),
+                ]:
+                    if isinstance(proj, LoRALinear):
+                        getattr(instance, attr)[0] = LoRALinear(
+                            in_dim=other.dim,
+                            out_dim=out_dim,
+                            rank=proj.rank,
+                            alpha=proj.alpha,
+                            use_bias=other.attention_qkv_bias,
+                        )
+            # Always handle wo LoRA
+            if isinstance(other.wo, LoRALinear):
+                instance.wo = LoRALinear(
+                    in_dim=other.n_heads * other.head_dim,
+                    out_dim=other.dim,
+                    rank=other.wo.rank,
+                    alpha=other.wo.alpha,
+                    use_bias=other.wo.use_bias,
+                )
+
         instance.load_weights_from_attention_mha(other, rms_norm_class=rms_norm_class)
 
         return instance
@@ -902,9 +1092,24 @@ class StaticAttention(Attention):
         if self.use_conv2d:
             x = x.reshape(bsz, -1, 1, dim).transpose(1, 3)
 
-        new_qs = [wq(x) for wq in self.wqs]
-        new_ks = [wk(x) for wk in self.wks]
-        new_vs = [wv(x) for wv in self.wvs]
+        # CoreML LoRA-as-IO Path-2: when an upstream wrapper has stashed
+        # a per-key LoRA blob in attn_options, route per-projection slices
+        # to LoRALinear instances that have been tagged with `_lora_key`.
+        # Default behavior (no blob, or no `_lora_key`) is unchanged.
+        _lora_blob = kwargs.get("__lora_io_blob__")
+
+        new_qs = [lora_call(wq, x, _lora_blob) for wq in self.wqs]
+
+        shared_kv = kwargs.get("shared_kv")
+        if shared_kv is not None:
+            assert (
+                self.is_kv_shared_layer
+            ), "shared_kv provided but this is not a KV shared layer"
+            new_ks = []
+            new_vs = []
+        else:
+            new_ks = [lora_call(wk, x, _lora_blob) for wk in self.wks]
+            new_vs = [lora_call(wv, x, _lora_blob) for wv in self.wvs]
 
         if self.use_conv2d:
 
@@ -912,11 +1117,13 @@ class StaticAttention(Attention):
                 return [t.reshape(bsz, self.head_dim, -1).transpose(1, 2) for t in ts]
 
             new_qs = from_conv2ds(new_qs)
-            new_ks = from_conv2ds(new_ks)
-            new_vs = from_conv2ds(new_vs)
+            if new_ks:
+                new_ks = from_conv2ds(new_ks)
+            if new_vs:
+                new_vs = from_conv2ds(new_vs)
 
         if self.split_mha:
-            y, out_cache_state = self._forward_sha(
+            y, out_cache_state, kv_to_share = self._forward_sha(
                 new_qs,
                 new_ks,
                 new_vs,
@@ -926,10 +1133,10 @@ class StaticAttention(Attention):
                 **kwargs,
             )
         else:
-            y, out_cache_state = self._forward_mha(
+            y, out_cache_state, kv_to_share = self._forward_mha(
                 new_qs[0],
-                new_ks[0],
-                new_vs[0],
+                new_ks[0] if new_ks else None,
+                new_vs[0] if new_vs else None,
                 freqs_cos,
                 freqs_sin,
                 bsz,
@@ -939,45 +1146,59 @@ class StaticAttention(Attention):
 
         if self.use_conv2d:
             y = (
-                self.wo(
-                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3)
+                lora_call(
+                    self.wo,
+                    y.reshape(bsz, -1, 1, self.n_heads * self.head_dim).transpose(1, 3),
+                    _lora_blob,
                 )
                 .transpose(1, 3)
                 .reshape(bsz, -1, self.dim)
             )
         else:
-            y = self.wo(y)
+            y = lora_call(self.wo, y, _lora_blob)
 
-        return y, {"out_cache_state": out_cache_state}
+        update = {"out_cache_state": out_cache_state}
+        if kv_to_share is not None:
+            update["kv_to_share"] = kv_to_share
+        return y, update
 
-    def _forward_sha(
-        self,
-        new_qs,
-        new_ks,
-        new_vs,
-        freqs_cos,
-        freqs_sin,
-        seq_len,
-        **kwargs: ForwardOptions,
-    ):
-        if (freqs_cos_override := kwargs.get("freqs_cos_override")) is not None:
-            freqs_cos = freqs_cos_override  # pyre-ignore
-        if (freqs_sin_override := kwargs.get("freqs_sin_override")) is not None:
-            freqs_sin = freqs_sin_override  # pyre-ignore
-        in_cache_state = kwargs.get("in_cache_state")
-        out_cache_state = kwargs.get("out_cache_state")
+    def _apply_qk_norm(self, qs, ks=None, before_rope=False):
+        """Apply QK normalization before or after RoPE.
 
-        if self.use_qk_norm and self.qk_norm_before_rope:
-            new_qs = [self.q_norm(q) for q in new_qs]
-            new_ks = [self.k_norm(k) for k in new_ks]
+        Args:
+            qs (list): List of queries.
+            ks (list, optional): List of keys. Defaults to None.
+            before_rope (bool, optional): Whether to apply normalization before RoPE. Defaults to False.
+        """
+        if self.use_qk_norm and before_rope == self.qk_norm_before_rope:
+            qs = [self.q_norm(q) * self.scale_query_by for q in qs]
+            if ks is not None:
+                ks = [self.k_norm(k) for k in ks]
+        return qs, ks
 
-        new_qs = [self.rope(q, freqs_cos, freqs_sin) for q in new_qs]
-        new_ks = [self.rope(k, freqs_cos, freqs_sin) for k in new_ks]
+    def _apply_rope(self, qs, ks, freqs_cos, freqs_sin):
+        """Apply RoPE to queries and keys.
 
-        if self.use_qk_norm and not self.qk_norm_before_rope:
-            new_qs = [self.q_norm(q) for q in new_qs]
-            new_ks = [self.k_norm(k) for k in new_ks]
+        Args:
+            qs (list): List of queries.
+            ks (list, optional): List of keys. Defaults to None.
+            freqs_cos (list): List of cosine frequencies.
+            freqs_sin (list): List of sine frequencies.
+        """
+        qs = [self.rope(q, freqs_cos, freqs_sin) for q in qs]
+        if ks is not None:
+            ks = [self.rope(k, freqs_cos, freqs_sin) for k in ks]
+        return qs, ks
 
+    def _update_kv_cache(self, new_ks, new_vs, in_cache_state, out_cache_state):
+        """Update KV cache.
+
+        Args:
+            new_ks (list): List of new keys.
+            new_vs (list): List of new values.
+            in_cache_state (object): Initial cache state.
+            out_cache_state (object): Output cache state.
+        """
         all_ks = []
         all_vs = []
         for i in range(self.n_kv_heads if self.split_mha else 1):
@@ -989,27 +1210,175 @@ class StaticAttention(Attention):
                 new_vs[i], in_cache_state, out_cache_state
             )
             all_vs.append(vs)
+        return all_ks, all_vs, out_cache_state
 
-        cache_len = all_ks[0].size(-2) - seq_len
-        mask = kwargs["masks"][cache_len]
+    def _compute_attention(self, q, k, v, mask, enable_qnn_masked_softmax=False):
+        """Compute attention.
+
+        Args:
+            q (torch.Tensor): Query.
+            k (torch.Tensor): Key.
+            v (torch.Tensor): Value.
+            mask (torch.Tensor): Mask.
+            enable_qnn_masked_softmax (bool, optional): Whether to enable QNN masked softmax. Defaults to False.
+        """
+        attn = q @ k.transpose(-2, -1)
+        attn = attn * self.inv_scale
+        if enable_qnn_masked_softmax:
+            attn_min = torch.amin(attn, dim=-1, keepdim=True)
+            minus_value = -20
+            attn = torch.where(mask == 0, attn, attn_min + minus_value)  # prye-ignore
+        else:
+            attn = attn + mask
+        attn = F.softmax(attn, dim=-1)
+        return attn @ v
+
+    def _process_shared_kv(
+        self, new_qs, shared_kv, freqs_cos, freqs_sin, seq_len, masks
+    ):
+        """Process shared KV.
+
+        Args:
+            new_qs (list): List of new queries.
+            shared_kv (tuple): Shared KV.
+            freqs_cos (list): List of cosine frequencies.
+            freqs_sin (list): List of sine frequencies.
+            seq_len (int): Sequence length.
+            masks (list): List of masks.
+        """
+        # Apply normalization before RoPE if configured
+        new_qs, _ = self._apply_qk_norm(new_qs, None, before_rope=True)
+
+        # Apply RoPE to queries
+        new_qs, _ = self._apply_rope(new_qs, None, freqs_cos, freqs_sin)
+
+        # Apply normalization after RoPE if configured
+        new_qs, _ = self._apply_qk_norm(new_qs, None, before_rope=False)
+
+        k_shared, v_shared = shared_kv
+        cache_len = k_shared.size(-2) - seq_len
+        mask = masks[cache_len]
 
         heads = []
         for i in range(self.n_heads):
             kv_idx = i // self.n_heads_per_kv_group
-            attn = new_qs[i] @ all_ks[kv_idx].transpose(-2, -1)
-            attn = attn * self.inv_scale
-            if self.enable_qnn_masked_softmax:
-                attn_min = torch.amin(attn, dim=-1, keepdim=True)
-                minus_value = -20
-                attn = torch.where(
-                    mask == 0, attn, attn_min + minus_value
-                )  # prye-ignore
-            else:
-                attn = attn + mask
-            attn = F.softmax(attn, dim=-1)
-            heads.append(attn @ all_vs[kv_idx])
+            k_head = k_shared[:, kv_idx : kv_idx + 1, :, :].squeeze(1)
+            v_head = v_shared[:, kv_idx : kv_idx + 1, :, :].squeeze(1)
+            heads.append(
+                self._compute_attention(
+                    new_qs[i], k_head, v_head, mask, self.enable_qnn_masked_softmax
+                )
+            )
 
-        return torch.cat(heads, dim=-1), out_cache_state
+        return torch.cat(heads, dim=-1)
+
+    def _process_normal_kv(
+        self,
+        new_qs,
+        new_ks,
+        new_vs,
+        freqs_cos,
+        freqs_sin,
+        in_cache_state,
+        out_cache_state,
+        masks,
+        seq_len,
+    ):
+        """Process normal KV.
+
+        Args:
+            new_qs (list): List of new queries.
+            new_ks (list): List of new keys.
+            new_vs (list): List of new values.
+            freqs_cos (list): List of cosine frequencies.
+            freqs_sin (list): List of sine frequencies.
+            in_cache_state (object): Initial cache state.
+            out_cache_state (object): Output cache state.
+            masks (list): List of masks.
+            seq_len (int): Sequence length.
+        """
+        # Apply normalization before RoPE if configured
+        new_qs, new_ks = self._apply_qk_norm(new_qs, new_ks, before_rope=True)
+
+        # Apply RoPE
+        new_qs, new_ks = self._apply_rope(new_qs, new_ks, freqs_cos, freqs_sin)
+
+        # Apply normalization after RoPE if configured
+        new_qs, new_ks = self._apply_qk_norm(new_qs, new_ks, before_rope=False)
+
+        # Update KV cache
+        all_ks, all_vs, out_cache_state = self._update_kv_cache(
+            new_ks, new_vs, in_cache_state, out_cache_state
+        )
+
+        cache_len = all_ks[0].size(-2) - seq_len
+        mask = masks[cache_len]
+
+        heads = []
+        for i in range(self.n_heads):
+            kv_idx = i // self.n_heads_per_kv_group
+            heads.append(
+                self._compute_attention(
+                    new_qs[i],
+                    all_ks[kv_idx],
+                    all_vs[kv_idx],
+                    mask,
+                    self.enable_qnn_masked_softmax,
+                )
+            )
+
+        kv_to_share = None
+        if self.num_kv_shared_layers > 0:
+            kv_to_share = (torch.stack(all_ks, dim=1), torch.stack(all_vs, dim=1))
+
+        return torch.cat(heads, dim=-1), out_cache_state, kv_to_share
+
+    def _forward_sha(
+        self,
+        new_qs,
+        new_ks,
+        new_vs,
+        freqs_cos,
+        freqs_sin,
+        seq_len,
+        **kwargs: ForwardOptions,
+    ):
+        """Forward pass for SHA.
+
+        Args:
+            new_qs (list): List of new queries.
+            new_ks (list): List of new keys.
+            new_vs (list): List of new values.
+            freqs_cos (list): List of cosine frequencies.
+            freqs_sin (list): List of sine frequencies.
+            seq_len (int): Sequence length.
+            **kwargs: ForwardOptions.
+        """
+        if (freqs_cos_override := kwargs.get("freqs_cos_override")) is not None:
+            freqs_cos = freqs_cos_override  # pyre-ignore
+        if (freqs_sin_override := kwargs.get("freqs_sin_override")) is not None:
+            freqs_sin = freqs_sin_override  # pyre-ignore
+        in_cache_state = kwargs.get("in_cache_state")
+        out_cache_state = kwargs.get("out_cache_state")
+        shared_kv = kwargs.get("shared_kv")
+
+        if shared_kv is not None:
+            result = self._process_shared_kv(
+                new_qs, shared_kv, freqs_cos, freqs_sin, seq_len, kwargs["masks"]
+            )
+            return result, out_cache_state, None
+        else:
+            return self._process_normal_kv(
+                new_qs,
+                new_ks,
+                new_vs,
+                freqs_cos,
+                freqs_sin,
+                in_cache_state,
+                out_cache_state,
+                kwargs["masks"],
+                seq_len,
+            )
 
     def _forward_mha(
         self,
@@ -1024,24 +1393,47 @@ class StaticAttention(Attention):
     ):
         in_cache_state = kwargs.get("in_cache_state")
         out_cache_state = kwargs.get("out_cache_state")
+        shared_kv = kwargs.get("shared_kv")
 
-        q = q.view(bsz, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
-        k = k.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
-        v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        if shared_kv is not None:
+            q = q.view(bsz, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
-        if self.use_qk_norm and self.qk_norm_before_rope:
-            q = self.q_norm(q)
-            k = self.k_norm(k)
+            if self.use_qk_norm and self.qk_norm_before_rope:
+                q = self.q_norm(q) * self.scale_query_by
 
-        q = self.rope(q, freqs_cos, freqs_sin)
-        k = self.rope(k, freqs_cos, freqs_sin)
+            q = self.rope(q, freqs_cos, freqs_sin)
 
-        if self.use_qk_norm and not self.qk_norm_before_rope:
-            q = self.q_norm(q)
-            k = self.k_norm(k)
+            if self.use_qk_norm and not self.qk_norm_before_rope:
+                q = self.q_norm(q) * self.scale_query_by
 
-        k, out_cache_state = self.k_caches[0].update(k, in_cache_state, out_cache_state)
-        v, out_cache_state = self.v_caches[0].update(v, in_cache_state, out_cache_state)
+            k, v = shared_kv
+        else:
+            q = q.view(bsz, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
+            k = k.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+            v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim).transpose(1, 2)
+
+            if self.use_qk_norm and self.qk_norm_before_rope:
+                q = self.q_norm(q) * self.scale_query_by
+                k = self.k_norm(k)
+
+            q = self.rope(q, freqs_cos, freqs_sin)
+            k = self.rope(k, freqs_cos, freqs_sin)
+
+            if self.use_qk_norm and not self.qk_norm_before_rope:
+                q = self.q_norm(q) * self.scale_query_by
+                k = self.k_norm(k)
+
+            k, out_cache_state = self.k_caches[0].update(
+                k, in_cache_state, out_cache_state
+            )
+            v, out_cache_state = self.v_caches[0].update(
+                v, in_cache_state, out_cache_state
+            )
+
+        # YOCO: Store KV for sharing if this is a non-shared layer and YOCO is enabled
+        kv_to_share = (
+            (k, v) if shared_kv is None and self.num_kv_shared_layers > 0 else None
+        )
 
         mask = None
         masks = kwargs.get("masks")
@@ -1094,7 +1486,11 @@ class StaticAttention(Attention):
             # Ungroup y
             y = y_grouped.view(1, self.n_heads, Tq, D)
 
-        return y.transpose(1, 2).contiguous().view(bsz, seq_len, -1), out_cache_state
+        return (
+            y.transpose(1, 2).contiguous().view(bsz, seq_len, -1),
+            out_cache_state,
+            kv_to_share,
+        )
 
     def load_weights_from_attention_mha(
         self, other: AttentionMHA, rms_norm_class=torch.nn.RMSNorm
@@ -1106,33 +1502,43 @@ class StaticAttention(Attention):
                     other.wq.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
                 )
 
-            for i in range(self.n_kv_heads):
-                self.wks[i].weight.data.copy_(
-                    # pyre-ignore[29]
-                    other.wk.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
-                )
-                self.wvs[i].weight.data.copy_(
-                    # pyre-ignore[29]
-                    other.wv.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
-                )
+            if not self.is_kv_shared_layer:
+                for i in range(self.n_kv_heads):
+                    self.wks[i].weight.data.copy_(
+                        # pyre-ignore[29]
+                        other.wk.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
+                    )
+                    self.wvs[i].weight.data.copy_(
+                        # pyre-ignore[29]
+                        other.wv.weight[i * self.head_dim : (i + 1) * self.head_dim, :]
+                    )
         else:
             self.wqs[0].load_state_dict(other.wq.state_dict())
-            self.wks[0].load_state_dict(other.wk.state_dict())
-            self.wvs[0].load_state_dict(other.wv.state_dict())
+            if not self.is_kv_shared_layer:
+                self.wks[0].load_state_dict(other.wk.state_dict())
+                self.wvs[0].load_state_dict(other.wv.state_dict())
 
-        self.wo.weight.data.copy_(other.wo.weight)  # pyre-ignore[6]
+        self.wo.load_state_dict(other.wo.state_dict())
 
         if other.use_qk_norm:
             self.use_qk_norm = True
             self.qk_norm_before_rope = other.qk_norm_before_rope
-            self.q_norm = rms_norm_class(other.q_norm_fn.dim, other.q_norm_fn.eps).to(
-                other.q_norm_fn.weight.dtype
-            )
-            self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
-            self.k_norm = rms_norm_class(other.k_norm_fn.dim, other.k_norm_fn.eps).to(
-                other.k_norm_fn.weight.dtype
-            )
-            self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
+            self.scale_query_by = getattr(other, "scale_query_by", 1.0)
+            if hasattr(other.q_norm_fn, "weight"):
+                self.q_norm = rms_norm_class(
+                    other.q_norm_fn.dim, other.q_norm_fn.eps
+                ).to(other.q_norm_fn.weight.dtype)
+                self.q_norm.load_state_dict(other.q_norm_fn.state_dict())
+            if (
+                not self.is_kv_shared_layer
+                and hasattr(other, "k_norm_fn")
+                and other.k_norm_fn is not None
+                and hasattr(other.k_norm_fn, "weight")
+            ):
+                self.k_norm = rms_norm_class(
+                    other.k_norm_fn.dim, other.k_norm_fn.eps
+                ).to(other.k_norm_fn.weight.dtype)
+                self.k_norm.load_state_dict(other.k_norm_fn.state_dict())
 
     def adopt_hf_rope(self):
         if self.rope.use_hf_rope:

@@ -19,13 +19,12 @@ rm -rf ${SCRIPT_DIR}/executor_runner/build/*
 
 pushd ${SCRIPT_DIR}/executor_runner/build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j8 nxp_executor_runner
+make -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) nxp_executor_runner
 popd
 
 echo "** Export cifar10 model to executorch"
 # Run the AoT example
-python -m examples.nxp.aot_neutron_compile --quantize \
-    --delegate --neutron_converter_flavor SDK_25_12 -m "cifar10"
+python -m examples.nxp.aot_neutron_compile --quantize --delegate -m "cifar10"
 test -f cifar10_nxp_delegate.pte
 
 echo "** Generate test dataset"

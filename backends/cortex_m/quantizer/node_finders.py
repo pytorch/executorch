@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from abc import ABC, abstractmethod
 from typing import Callable, Iterator, List
 
+from executorch.backends.arm.quantizer.arm_quantizer_utils import NodeFinder
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.quantizer.utils import get_module_name_filter
@@ -23,17 +23,6 @@ def format_items(items) -> str:
     return ", ".join(str(item) for item in items)
 
 
-class NodeFinder(ABC):
-    @abstractmethod
-    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
-        """Return nodes of the graph module depending on NodeFinder type.
-
-        Args:
-            model (GraphModule): The graph module to search for matching nodes.
-        """
-        pass
-
-
 class GlobalNodeFinder(NodeFinder):
     """
     Finds all nodes of the graph.
@@ -44,6 +33,18 @@ class GlobalNodeFinder(NodeFinder):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__} targeting all nodes"
+
+
+class GlobalNoOutputNodeFinder(NodeFinder):
+    """Finds all graph nodes except the output node. Output nodes
+    typically wants to inherit the previous qspec rather than applying a new
+    qspec."""
+
+    def find_nodes(self, model: GraphModule) -> Iterator[Node]:
+        return (n for n in model.graph.nodes if n.op != "output")
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} targeting all non-output nodes"
 
 
 class InputNodeFinder(NodeFinder):

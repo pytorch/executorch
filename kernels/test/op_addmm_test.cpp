@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -18,7 +19,6 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -42,11 +42,9 @@ class OpAddmmOutTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
 
     if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-      if (DTYPE == ScalarType::Half) {
-        GTEST_SKIP()
-            << "skip Half because torch::executor::aten::mm_out does not support Half";
-        return;
-      }
+      ET_SKIP_IF(
+          DTYPE == ScalarType::Half,
+          "skip Half because torch::executor::aten::mm_out does not support Half");
     }
 
     // matmul gives 4 * 2 * 3 = 24, α * 24 = 48, 48 + β * self = 51
@@ -205,9 +203,9 @@ TEST_F(OpAddmmOutTest, MismatchedDimensionSizeDies) {
   Tensor right_out = tf.ones({2, 2});
   Tensor wrong_out = tf.ones({2, 2, 3});
 
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched dimensions");
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,
@@ -228,9 +226,9 @@ TEST_F(OpAddmmOutTest, WrongOutShapeDies) {
   Tensor right_out = tf.ones({10, 4});
   Tensor wrong_out = tf.ones({7, 5});
 
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong out shape");
 
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_addmm_out(self, x, y, Scalar(1), Scalar(1), wrong_out));
@@ -529,8 +527,8 @@ TEST_F(OpAddmmOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpAddmmOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape unbound not supported";
+// DISABLED: Dynamic shape unbound not supported
+TEST_F(OpAddmmOutTest, DISABLED_DynamicShapeUnbound) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import cast, Dict
 
 import torch
 
@@ -16,7 +16,7 @@ class ClampHardswishPass(ExportPass):
     """
     Adds a clamp operation before hardswish to ensure input is in the range [-3, inf).
 
-    By doing this before quantization the output range of the preceeding op is minimized,
+    By doing this before quantization the output range of the preceding op is minimized,
     potentially improving accuracy.
     """
 
@@ -32,6 +32,6 @@ class ClampHardswishPass(ExportPass):
             clamped_input = super().call_operator(
                 torch.ops.aten.clamp.default, clamped_args, {}, meta
             )
-            args = (clamped_input,)
+            args = cast(tuple[Argument, ...], (clamped_input,))
 
         return super().call_operator(op, args, kwargs, meta)

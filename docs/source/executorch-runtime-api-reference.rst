@@ -40,3 +40,26 @@ Values
 
 .. doxygenclass:: executorch::runtime::etensor::Tensor
   :members:
+
+Module Extension
+----------------
+
+The Module extension provides a higher-level C++ facade for loading programs,
+setting inputs and outputs, and executing methods with common runtime defaults.
+
+.. doxygenclass:: executorch::extension::module::Module
+  :members:
+
+.. doxygenclass:: executorch::extension::bundled_module::BundledModule
+  :members:
+
+Tensor Extension
+----------------
+
+The Tensor extension provides managed tensor helpers for C++ applications that
+need to create, alias, resize, or index tensors before passing them to runtime
+APIs.
+
+.. doxygennamespace:: executorch::extension
+  :members:
+  :content-only:

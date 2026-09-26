@@ -78,7 +78,14 @@ def define_common_targets():
             "fbsource//xplat/caffe2/c10:c10_headers",
         ] + select({
             "DEFAULT": ["fbsource//xplat/caffe2:generated_aten_config_header"],
-            "ovr_config//build_mode:arvr_mode": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
+            "ovr_config//build_mode:arvr_mode[enabled]": select({
+                "DEFAULT": ["fbsource//xplat/caffe2:ovrsource_aten_Config.h"],
+                # ovrsource_aten_Config.h is an oxx_static_library that only
+                # works on OVR-native platforms. On Android and the Windows
+                # host, it produces no outputs, so use the xplat variant.
+                "ovr_config//os:android": ["fbsource//xplat/caffe2:generated_aten_config_header"],
+                "ovr_config//os:windows": ["fbsource//xplat/caffe2:generated_aten_config_header"],
+            }),
         }) + get_sleef_deps(),
         fbcode_exported_deps = ([
             "//caffe2:aten-headers-cpu",
@@ -107,7 +114,6 @@ def define_common_targets():
                 "util/bit_cast.h",
                 "util/complex.h",
                 "util/complex_math.h",
-                "util/complex_utils.h",
                 "util/floating_point_utils.h",
                 "util/irange.h",
                 "util/llvmMathExtras.h",
@@ -134,6 +140,21 @@ def define_common_targets():
     else:
         runtime.cxx_library(
             name = "c10",
-            exported_deps = [":aten_headers_for_executorch"],
+            exported_deps = select({
+                "ovr_config//os:zephyr": [],
+                "DEFAULT": [":aten_headers_for_executorch"],
+            }),
+            xplat_exported_deps = select({
+                "ovr_config//os:zephyr": [
+                    "fbsource//xplat/caffe2/c10:c10_headers",
+                ],
+                "DEFAULT": [],
+            }),
+            fbcode_exported_deps = select({
+                "ovr_config//os:zephyr": [
+                    "//caffe2/c10:c10_headers",
+                ],
+                "DEFAULT": [],
+            }) if not runtime.is_oss else [],
             visibility = ["PUBLIC"],
         )

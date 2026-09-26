@@ -223,16 +223,19 @@ class LoweredBackendModule(torch.nn.Module):
 
         lowered_exported_program = copy.deepcopy(self._original_exported_program)
 
+        # Cache these properties to avoid rebuilding the dict on each access.
+        sig = lowered_exported_program.graph_signature
+        params_map = sig.inputs_to_parameters
+        buffers_map = sig.inputs_to_buffers
+
         # The real input nodes are the ones not buffer or parameter
         all_input_nodes = [
             node
             for node in lowered_exported_program.graph.nodes
             if (
                 node.op == "placeholder"
-                and node.name
-                not in lowered_exported_program.graph_signature.inputs_to_buffers
-                and node.name
-                not in lowered_exported_program.graph_signature.inputs_to_parameters
+                and node.name not in buffers_map
+                and node.name not in params_map
             )
         ]
 
@@ -250,9 +253,7 @@ class LoweredBackendModule(torch.nn.Module):
         # Find placeholders that are parameters or buffers, remove them from the main graph
         for node in lowered_exported_program.graph.nodes:
             if node.op == "placeholder" and (
-                node.name in lowered_exported_program.graph_signature.inputs_to_buffers
-                or node.name
-                in lowered_exported_program.graph_signature.inputs_to_parameters
+                node.name in buffers_map or node.name in params_map
             ):
                 lowered_exported_program.graph.erase_node(node)
 
@@ -383,7 +384,7 @@ def arrange_graph_placeholders(
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
-    but with placeholders in order of (Params + Buffers) (User Inputs)
+    but with placeholders in order of (Params + Buffers + Constants) (User Inputs)
 
     This is used by the delegate api which disturbs the placeholder ordering when creating a submodule
     from partitioned nodes
@@ -402,35 +403,30 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
+    # Cache these properties to avoid rebuilding the dict on each access.
+    params_map = graph_sign.inputs_to_parameters
+    buffers_map = graph_sign.inputs_to_buffers
+    constants_map = graph_sign.inputs_to_lifted_tensor_constants
     param_nodes = []
     buffer_nodes = []
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if (
-            node.name in graph_sign.inputs_to_parameters
-            and node.meta.get("delegation_tag", None) == tag
-        ):
+        is_tagged = node.meta.get("delegation_tag", None) == tag
+        if node.name in params_map and is_tagged:
             param_nodes.append(node)
-        elif (
-            node.name in graph_sign.inputs_to_buffers
-            and node.meta.get("delegation_tag", None) == tag
-        ):
+        elif node.name in buffers_map and is_tagged:
             buffer_nodes.append(node)
+        elif node.name in constants_map and is_tagged:
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
-    for param_node in param_nodes:
-        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
-        node_map[param_node] = new_node
-    for buffer_node in buffer_nodes:
-        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
-        node_map[buffer_node] = new_node
-    for input_node in input_nodes:
-        new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
-        node_map[input_node] = new_node
+    for node in param_nodes + buffer_nodes + constant_nodes + input_nodes:
+        node_map[node] = new_graph.node_copy(node, lambda x: node_map[x])
 
     # Now add all the other nodes in order
     for node in gm.graph.nodes:
@@ -445,6 +441,97 @@ def arrange_graph_placeholders(
 
     new_graph._codegen = gm.graph._codegen
     gm.graph = new_graph
+
+    return gm
+
+
+def arrange_graph_outputs(
+    gm: torch.fx.GraphModule,
+    output_specs: List[OutputSpec],
+    call_module_node: torch.fx.Node,
+) -> torch.fx.GraphModule:
+    """
+    Reorders the output tuple of the graph so that buffer mutation outputs come
+    before user outputs, matching the ordering that ExportedProgram's verifier
+    expects: [buffer_mutations..., user_outputs...].
+
+    The partitioner may produce a submodule whose output tuple has buffer
+    mutations and user outputs interleaved in arbitrary order.  The verifier
+    determines which outputs are mutations by position (first N outputs where
+    N = number of mutation specs), so a misordered tuple causes a
+    SpecViolationError.
+
+    This function builds a permutation from the output_specs (which
+    _get_new_signature already classified correctly) and rewrites the graph's
+    output node to match.  It also remaps getitem indices on the parent
+    graph's call_module_node so the parent continues to extract the correct
+    outputs.
+
+    Args:
+        gm: The graph module whose output ordering may need adjustment.
+        output_specs: The output specs built by _get_new_signature, with
+            correct kind annotations but potentially mismatched ordering
+            relative to the graph's output tuple.
+        call_module_node: The call_module node in the parent graph whose
+            getitem users need index remapping.
+
+    Returns:
+        The graph module with reordered outputs (modified in-place).
+    """
+    # Find the output node
+    output_node = None
+    for node in gm.graph.nodes:
+        if node.op == "output":
+            output_node = node
+            break
+
+    if output_node is None or not output_node.args[0]:
+        return gm
+
+    old_outputs = list(output_node.args[0])
+
+    if len(old_outputs) != len(output_specs):
+        raise RuntimeError(
+            f"Mismatch between graph outputs ({len(old_outputs)}) and "
+            f"output_specs ({len(output_specs)}). This indicates a bug in "
+            "_get_new_signature."
+        )
+
+    # Separate indices by kind: mutations first, then user outputs
+    mutation_indices = []
+    user_output_indices = []
+    for i, spec in enumerate(output_specs):
+        if spec.kind in (OutputKind.BUFFER_MUTATION, OutputKind.USER_INPUT_MUTATION):
+            mutation_indices.append(i)
+        else:
+            user_output_indices.append(i)
+
+    new_order = mutation_indices + user_output_indices
+
+    # Check if already in correct order
+    if new_order == list(range(len(old_outputs))):
+        return gm
+
+    # Build reverse mapping: old_index -> new_index
+    old_to_new = {old_idx: new_idx for new_idx, old_idx in enumerate(new_order)}
+
+    # Reorder the output tuple in the submodule graph
+    new_outputs = [old_outputs[i] for i in new_order]
+    output_node.args = (tuple(new_outputs),)
+
+    # Reorder the output_specs to match (in-place)
+    reordered_specs = [output_specs[i] for i in new_order]
+    output_specs.clear()
+    output_specs.extend(reordered_specs)
+
+    # Remap getitem indices in the parent graph
+    for user in list(call_module_node.users.keys()):
+        if user.op == "call_function" and user.target == operator.getitem:
+            old_idx = user.args[1]
+            if isinstance(old_idx, int) and old_idx in old_to_new:
+                user.args = (user.args[0], old_to_new[old_idx])
+
+    gm.graph.lint()
 
     return gm
 
@@ -706,8 +793,6 @@ def create_exported_program_from_submodule(
     # Arrange the submodule's placeholders in order
     submodule = arrange_graph_placeholders(submodule, owning_program, tag)
 
-    # TODO: we probably need to arrange the outputs wrt buffer mutations.
-
     # Get updated graph signature
     (
         subgraph_signature,
@@ -718,6 +803,11 @@ def create_exported_program_from_submodule(
     ) = _get_new_signature(
         owning_program, submodule, call_module_node, tag, is_submodule
     )
+
+    # Reorder outputs: buffer mutations first, then user outputs.
+    # The verifier expects this ordering but _get_new_signature produces
+    # output_specs in graph order which may interleave the two kinds.
+    arrange_graph_outputs(submodule, subgraph_signature.output_specs, call_module_node)
 
     in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
     out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
@@ -792,10 +882,11 @@ def create_submodule_from_nodes(
         # all uses with a getitem call to the 0th index of the result
         with gm.graph.inserting_after(submodule_node):
             proxy_out = torch.fx.Proxy(submodule_node)[0].node  # type: ignore[index]
-            submodule_node.replace_all_uses_with(proxy_out)
-            proxy_out.meta["val"] = submodule_node.meta["val"]
+            submodule_node.replace_all_uses_with(proxy_out, propagate_meta=True)
             # Reset the args since it was overwritten in the previous line
             proxy_out.args = (submodule_node, 0)
+            proxy_out.meta.pop("nn_module_stack", None)
+            proxy_out.meta.pop("source_fn_stack", None)
     else:
         # fuse_as_graphmodule will automatically propagate the metadata of the
         # partition's last node to the getitem nodes that appear after the
@@ -877,6 +968,21 @@ def _unsafe_adjust_original_program(  # noqa: C901
     Directly modify the original exported program's signature and state dict
     based on the consumed params/buffers in the delegate.
     """
+    # First pass: identify placeholder nodes that still have users in the graph.
+    # These cannot be deleted because they are shared between the delegate and
+    # the remaining program (e.g., due to identity ops like no-op dropout
+    # causing parameter aliasing across partitions).
+    nodes_to_keep = set()
+    for node in original_program.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in input_specs_to_delete and len(node.users) > 0:
+                nodes_to_keep.add(node.name)
+        else:
+            break
+
+    for name in nodes_to_keep:
+        del input_specs_to_delete[name]
+
     original_program._graph_signature.input_specs = [
         input_spec
         for input_spec in original_program.graph_signature.input_specs
@@ -913,14 +1019,14 @@ def _unsafe_adjust_original_program(  # noqa: C901
             continue
 
         if input_spec.kind == InputKind.PARAMETER:
-            del original_program._state_dict[input_target]
+            original_program._state_dict.pop(input_target, None)
         elif input_spec.kind == InputKind.BUFFER:
             if input_spec.persistent:
                 original_program._state_dict.pop(input_target, None)
             else:
-                del original_program._constants[input_spec.target]
+                original_program._constants.pop(input_spec.target, None)
         elif input_spec.kind == InputKind.CONSTANT_TENSOR:
-            del original_program._constants[input_spec.target]
+            original_program._constants.pop(input_spec.target, None)
         else:
             raise RuntimeError(f"Invalid input spec {input_spec} received")
 
