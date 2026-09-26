@@ -40,3 +40,24 @@ target_include_directories(
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
           ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
 )
+
+# Graph runtime unit tests.
+set(_graph_runtime_test_srcs runtime/test_quant_params.cpp)
+
+et_cxx_test(
+  backends_xnnpack_graph_runtime_test
+  SOURCES
+  ${_graph_runtime_test_srcs}
+  EXTRA_LIBS
+  xnnpack_backend
+  XNNPACK
+  pthreadpool
+  cpuinfo
+  xnnpack-microkernels-prod
+)
+target_include_directories(
+  backends_xnnpack_graph_runtime_test
+  PRIVATE ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/XNNPACK/include
+          ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+          ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+)
