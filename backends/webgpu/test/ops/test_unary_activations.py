@@ -9,7 +9,7 @@
 `UNARY_G1` (op name -> (torch fn, input gen)) is imported by `cases.py` to drive the
 declarative suites; each op mirrors the Vulkan `add_unary_op_node` activations. Inputs
 are deterministic and range-bounded per op (positive for sqrt/rsqrt; spanning the ±3
-knees for hardswish; reaching the ±15 clamp for tanh) so the fp64 golden is well-defined.
+knees for hardsigmoid and hardswish; reaching the ±15 clamp for tanh) so the fp64 golden is well-defined.
 """
 
 import torch
@@ -104,7 +104,8 @@ UNARY_G1 = {
     "tanh": (torch.tanh, _lin(-20.0, 20.0)),
     "round": (torch.round, _lin(-6.0, 6.0)),
     "neg": (torch.neg, _lin(-6.0, 6.0)),
+    "hardsigmoid": (F.hardsigmoid, _lin(-6.0, 6.0)),
     "hardswish": (F.hardswish, _lin(-6.0, 6.0)),
 }
-# tan + hardsigmoid deferred: absent from the Vulkan partitioner (op_registry.py),
-# so they can't be delegated yet; porting needs a partitioner extension (own diff).
+# tan deferred: absent from the Vulkan partitioner (op_registry.py), so it can't be
+# delegated yet; porting needs a partitioner extension (own diff).
