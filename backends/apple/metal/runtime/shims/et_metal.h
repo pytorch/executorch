@@ -418,6 +418,12 @@ bool removeLibraryHandle(ETMetalShaderLibrary* raw_library);
 // =======================
 // Global stream access functions
 // =======================
+// The backend runs on one stream at a time: the waits in the shims and ops
+// (before the CPU touches memory, before a buffer or region goes, around
+// aliased graphs) wait for the current stream only. Work queued on another
+// stream is not waited for, so memory must not be shared between streams.
+// The buffer pool alone keys on the stream: it only hands a freed buffer back
+// to the stream that freed it.
 ETMetalStream* getCurrentMetalStream();
 void setCurrentMetalStream(ETMetalStream* stream);
 
@@ -456,6 +462,22 @@ int metal_copy_memory(
     bool src_is_device,
     bool dst_is_device);
 void metal_cleanup_resources();
+// Records that a constant was copied into the buffer at `ptr` at `offset`, and
+// got a buffer of its own there; metal_forget_constants_buffer() says whether
+// any did, and forgets the buffer.
+void metal_record_constants_buffer(void* ptr, size_t offset);
+bool metal_forget_constants_buffer(void* ptr);
+// `nbytes`, or less if `base` is a constants buffer: then the memory of the
+// constant at its start ends where the next constant's own buffer begins.
+size_t metal_constant_extent(void* base, size_t nbytes);
+// Forgets the views registered in Metal buffers that start inside the
+// `nbytes` at `ptr`, which are going away.
+void metal_forget_views_within(void* ptr, size_t nbytes);
+// Wraps `nbytes` at `ptr` in a no-copy buffer, mapped at `ptr` if
+// `map_ptr_to_buffer` (and otherwise released again). Fails for memory a
+// mapped buffer or a CPU region already covers. Only a model's constants lie
+// inside another buffer, the one holding all of them, which is not a tensor's
+// memory (aoti_torch_mps_memcpy).
 bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer);
 
 // Records that `view_ptr` points inside the Metal buffer that owns `base_ptr`,
@@ -477,8 +499,8 @@ bool metal_is_view(void* ptr);
 
 // Records that `view_ptr`, `view_nbytes` long, is a view of the CPU memory
 // that starts at `region` and is `region_nbytes` long. Fails if that would
-// make the region overlap another one. A region's views and its
-// start are bound into one no-copy buffer over it, the way views of a Metal
+// make the region overlap another one or a Metal buffer. A region's views and
+// its start are bound into one no-copy buffer over it, the way views of a Metal
 // buffer are bound into that buffer, so that Metal orders their uses. The
 // buffer is made with the region's first view. For memory the runtime
 // allocated (`owned`), it is kept until metal_release_cpu_region(), since views
