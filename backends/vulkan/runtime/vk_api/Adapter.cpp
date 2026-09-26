@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -12,6 +14,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 namespace vkcompute {
 namespace vkapi {
@@ -86,7 +89,8 @@ VkDevice create_logical_device(
     const PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
     std::vector<Adapter::Queue>& queues,
-    std::vector<uint32_t>& queue_usage) {
+    std::vector<uint32_t>& queue_usage,
+    std::vector<std::string>& enabled_extensions_out) {
   // Find compute queues up to the requested number of queues
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
@@ -139,6 +143,8 @@ VkDevice create_logical_device(
       physical_device.handle,
       enabled_device_extensions,
       requested_device_extensions);
+  enabled_extensions_out.assign(
+      enabled_device_extensions.begin(), enabled_device_extensions.end());
 
   // Enable the base device features that ExecuTorch shaders rely on, but only
   // those that the physical device reports as supported. With pEnabledFeatures
@@ -235,9 +241,11 @@ VkDevice create_logical_device(
   VK_CHECK(vkCreateDevice(
       physical_device.handle, &device_create_info, nullptr, &handle));
 
-#ifdef USE_VULKAN_VOLK
-  volkLoadDevice(handle);
-#endif /* USE_VULKAN_VOLK */
+  // Intentionally do not call volkLoadDevice(handle).
+  // volkLoadInstance() leaves device commands routed through the Vulkan loader,
+  // which is Volk's supported mode for multiple VkDevice objects. All Vulkan
+  // shared contexts in this backend are constrained to one VkInstance so these
+  // global instance-loaded entry points remain valid for every child device.
 
   populate_queue_info(
       physical_device, handle, queues_to_get, queues, queue_usage);
@@ -275,6 +283,59 @@ bool test_linear_tiling_3d_image_support(
   return res == VK_SUCCESS;
 }
 
+// We record enabled extension names, but not the feature bits enabled
+// when the VkDevice is created. Do not treat physical-device support as proof
+// that a feature is enabled on the shared device. Until that metadata is
+// available, shared adapters use only the base shader paths.
+executorch::backends::vulkan_shared::SharedVulkanContextPtr
+checked_shared_context(
+    executorch::backends::vulkan_shared::SharedVulkanContextPtr context) {
+  VK_CHECK_COND(
+      context && context->is_valid(), "Invalid shared Vulkan context");
+  return context;
+}
+
+PhysicalDevice shared_physical_device(
+    const executorch::backends::vulkan_shared::SharedVulkanContextPtr&
+        context) {
+  PhysicalDevice physical(context->instance(), context->physical_device());
+  const uint32_t family = context->queue_family_index();
+  VK_CHECK_COND(
+      family < physical.queue_families.size() &&
+          physical.queue_families[family].queueCount > 0 &&
+          (physical.queue_families[family].queueFlags & VK_QUEUE_COMPUTE_BIT),
+      "Shared Vulkan queue family must support compute");
+  physical.num_compute_queues = 1;
+  physical.supports_int16_shader_types = false;
+  physical.supports_int64_shader_types = false;
+  physical.supports_float64_shader_types = false;
+#ifdef VK_KHR_16bit_storage
+  physical.shader_16bit_storage = {};
+#endif
+#ifdef VK_KHR_8bit_storage
+  physical.shader_8bit_storage = {};
+#endif
+#ifdef VK_KHR_shader_float16_int8
+  physical.shader_float16_int8_types = {};
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+  physical.shader_int_dot_product_features = {};
+#endif
+#ifdef VK_KHR_cooperative_matrix
+  physical.cooperative_matrix_features = {};
+  physical.supports_int8_coopmat = false;
+#endif
+#ifdef VK_NV_cooperative_matrix2
+  physical.cooperative_matrix2_features = {};
+#endif
+#ifdef VK_EXT_subgroup_size_control
+  physical.subgroup_size_control_features = {};
+#endif
+  physical.supports_subgroup_size_control = false;
+  physical.supports_compute_full_subgroups = false;
+  return physical;
+}
+
 } // namespace
 
 //
@@ -296,7 +357,8 @@ Adapter::Adapter(
           physical_device_,
           num_queues,
           queues_,
-          queue_usage_)),
+          queue_usage_,
+          enabled_device_extensions_)),
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
@@ -320,7 +382,7 @@ Adapter::Adapter(
       queue_usage_{},
       queue_mutexes_{},
       instance_(instance),
-      device_(logical_device),
+      device_(logical_device, false),
       shader_layout_cache_(device_.handle),
       shader_cache_(device_.handle),
       pipeline_layout_cache_(device_.handle),
@@ -342,6 +404,54 @@ Adapter::Adapter(
       queue_priorities);
   populate_queue_info(
       physical_device_, device_.handle, queues_to_get, queues_, queue_usage_);
+}
+
+Adapter::Adapter(
+    executorch::backends::vulkan_shared::SharedVulkanContextPtr shared_context,
+    const std::string& cache_data_path)
+    : shared_context_(checked_shared_context(std::move(shared_context))),
+      enabled_device_extensions_{},
+      queue_usage_mutex_{},
+      physical_device_(shared_physical_device(shared_context_)),
+      // Shared adapters expose only a local queue lease, not the raw VkQueue.
+      // The actual queue is accessed through with_locked_queue() so host
+      // operations are serialized by the shared mutex. queue_index == 0
+      // identifies the local lease only; it is not the Vulkan queue index used
+      // to obtain the queue.
+      queues_{
+          {shared_context_->queue_family_index(),
+           0,
+           physical_device_
+               .queue_families[shared_context_->queue_family_index()]
+               .queueFlags,
+           VK_NULL_HANDLE}},
+      queue_usage_{0},
+      queue_mutexes_{},
+      instance_(shared_context_->instance()),
+      device_(shared_context_->device(), false),
+      shader_layout_cache_(device_.handle),
+      shader_cache_(device_.handle),
+      pipeline_layout_cache_(device_.handle),
+      compute_pipeline_cache_(device_.handle, cache_data_path),
+      sampler_cache_(device_.handle),
+      vma_(instance_, physical_device_.handle, device_.handle),
+      linear_tiling_3d_enabled_(test_linear_tiling_3d_image_support(
+          device_.handle,
+          physical_device_.handle)),
+      owns_device_(false) {}
+
+void Adapter::wait_idle(const Queue& queue) {
+  if (shared_context_) {
+    VK_CHECK_COND(
+        queue.family_index == shared_context_->queue_family_index() &&
+            queue.queue_index == 0 && queue.handle == VK_NULL_HANDLE,
+        "Queue does not belong to this shared-context adapter");
+    shared_context_->with_locked_queue(
+        [](VkQueue handle) { VK_CHECK(vkQueueWaitIdle(handle)); });
+    return;
+  }
+  // Preserve the non-shared path; no registry participation is introduced.
+  VK_CHECK(vkQueueWaitIdle(queue.handle));
 }
 
 Adapter::~Adapter() {
@@ -409,6 +519,18 @@ void Adapter::submit_cmd(
       set_signal_semaphore ? 1u : 0u, // signalSemaphoreCount
       set_signal_semaphore ? &signal_semaphore : nullptr, // pSignalSemaphores
   };
+
+  if (shared_context_) {
+    VK_CHECK_COND(
+        device_queue.family_index == shared_context_->queue_family_index() &&
+            device_queue.queue_index == 0 &&
+            device_queue.handle == VK_NULL_HANDLE,
+        "Queue does not belong to this shared-context adapter");
+    shared_context_->with_locked_queue([&](VkQueue queue) {
+      VK_CHECK(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    });
+    return;
+  }
 
   std::lock_guard<std::mutex> queue_lock(
       queue_mutexes_[device_queue.queue_index % NUM_QUEUE_MUTEXES]);

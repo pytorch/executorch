@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -241,7 +243,9 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
 }
 
 void Context::wait_for_queue() {
-  VK_CHECK(vkQueueWaitIdle(queue().handle));
+  // We ask the Adapter to wait on its queue, because it knows whether the queue
+  // is local or shared.
+  adapter_p_->wait_idle(queue());
 }
 
 void Context::clear_resources() {

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -80,6 +80,7 @@ list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 file(GLOB_RECURSE vulkan_api_cpp ${RUNTIME_PATH}/api/*)
 file(GLOB_RECURSE vulkan_vkapi_cpp ${RUNTIME_PATH}/vk_api/*)
 list(APPEND vulkan_api_cpp ${vulkan_vkapi_cpp})
+list(APPEND vulkan_api_cpp ${RUNTIME_PATH}/SharedContext.cpp)
 list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
 
 # vulkan ComputeGraph files
@@ -150,7 +151,8 @@ target_include_directories(
 # executable against libvulkan_backend.a need -ldl; CMAKE_DL_LIBS provides it
 # (and is harmless where dlopen is already in libc). Matches the other backends.
 target_link_libraries(
-  vulkan_backend PRIVATE vulkan_schema executorch_core ${CMAKE_DL_LIBS}
+  vulkan_backend PRIVATE vulkan_schema executorch_core
+                         executorch_vulkan_shared_runtime ${CMAKE_DL_LIBS}
 )
 # Optionally link boost for stacktraces if boost is available
 if(DEFINED Boost_STACKTRACE_BASIC_LIBRARY)
@@ -167,6 +169,9 @@ executorch_target_link_options_shared_lib(vulkan_backend)
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
 # Test targets
+if(EXECUTORCH_BUILD_TESTS)
+  add_subdirectory(test/shared_context)
+endif()
 
 install(
   TARGETS vulkan_backend vulkan_schema
