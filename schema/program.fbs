@@ -505,8 +505,9 @@ table Program {
   // List of delegate data. Pointed to by BackendDelegateDataReference.
   backend_delegate_data: [BackendDelegateInlineData];
 
-  // List of data segments that follow the Program data in this file, sorted by
-  // offset. Elements in this schema can refer to these segments by index.
+  // List of data segments that follow the Program data in this file. Elements
+  // in this schema refer to segments by index; physical offsets need not
+  // follow table order.
   segments: [DataSegment];
 
   // Describes the offsets of each constant tensor, relative to the segment
