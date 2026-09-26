@@ -153,7 +153,15 @@ ThreadPool* get_threadpool() {
     return std::min(result, tsan_thread_limit);
   })();
 
+#if defined(_WIN32)
+  // Never destroyed. At process exit Windows terminates the worker threads
+  // before running a DLL's static destructors, so tearing the pool down there
+  // waits on a lock a terminated worker may hold and the process never exits.
+  static auto& threadpool = *new std::unique_ptr<ThreadPool>(
+      std::make_unique<ThreadPool>(num_threads));
+#else
   static auto threadpool = std::make_unique<ThreadPool>(num_threads);
+#endif
 
 // Inheriting from old threadpool to get around segfault issue
 // commented above at child_atfork

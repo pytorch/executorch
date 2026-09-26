@@ -41,6 +41,15 @@
     "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
 #endif
 
+// The prebuilt Windows package defines ET_PREBUILT_RELEASE_CRT. Its DLLs use
+// the release C++ library, and a Debug build (/MDd or /MTd, which define
+// _DEBUG) uses the debug one, whose types are laid out differently: the two
+// mixed in one process corrupt memory instead of failing to link.
+#if defined(ET_PREBUILT_RELEASE_CRT) && defined(_DEBUG)
+#error \
+    "The prebuilt ExecuTorch DLLs use the release C++ library; build this program as Release (cmake --build <dir> --config Release)"
+#endif
+
 /*
  * Define annotations aliasing C++ declaration attributes.
  * See all C++ declaration attributes here:

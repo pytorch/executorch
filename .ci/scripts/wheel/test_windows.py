@@ -13,6 +13,8 @@ from typing import List
 
 import test_base
 import test_clean_install
+import test_cpp_sdk
+import test_shared_libraries
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models import Backend, Model, MODEL_NAME_TO_MODEL
@@ -85,6 +87,18 @@ if __name__ == "__main__":
             print("⚠ VulkanBackend not registered (expected for the default wheel)")
 
         test_base.test_cmsis_nn_install()
+
+    # The wheel ships the runtime, the kernels, the delegate and the thread pool as
+    # separate DLLs here too, so check that each has exactly one owner and that all of
+    # them load.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_shared_libraries.run_tests(Path(work_dir))
+
+    # And that a C++ application outside the wheel can actually use them. Nothing else
+    # covers this: the Python extension links those DLLs itself, so it passes whether or
+    # not the package config names them or the shipped headers are complete.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_cpp_sdk.run_tests(Path(work_dir))
 
     run_tests(
         model_tests=[

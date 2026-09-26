@@ -191,6 +191,141 @@ _MACH_O_MAGIC = frozenset(
 # Symbol kinds that mean the object owns the code or storage.
 _OWNING_KINDS = frozenset("TtBbDdGgSsRrWV")
 
+_WINDOWS = sys.platform == "win32"
+
+# Components whose code a Windows DLL takes from a static archive, so the automatic export list,
+# which covers only the DLL's own objects, never names their symbols and an export count sees
+# nothing. What is observable is the direction of the link: the owner must import the registry
+# entry point from the runtime DLL, which it cannot do while carrying a private registry of its own.
+_WINDOWS_IMPORT_WITNESSES = {
+    "set of CPU kernels": ("executorch.dll", "executorch::runtime::register_kernels"),
+    "set of quantized kernels": (
+        "executorch.dll",
+        "executorch::runtime::register_kernels",
+    ),
+    # Registration is what a second copy of the delegate's runtime would break, and the one thing a
+    # PE file records about it.
+    "bundled XNNPACK runtime": (
+        "executorch.dll",
+        "executorch::runtime::register_backend",
+    ),
+}
+
+_PE_REPORTS: dict = {}
+
+
+def _dumpbin() -> str:
+    """dumpbin from the installed Visual Studio, found whether or not vcvars ran."""
+    found = shutil.which("dumpbin")
+    if found:
+        return found
+    vswhere = (
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe"
+    )
+    assert vswhere.is_file(), "Visual Studio is required to inspect the wheel's DLLs"
+    matches = [
+        line.strip()
+        for line in subprocess.run(
+            [
+                str(vswhere),
+                "-latest",
+                "-products",
+                "*",
+                "-find",
+                r"VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        if line.strip()
+    ]
+    assert matches, "the installed Visual Studio has no dumpbin"
+    return matches[-1]
+
+
+def _pe_report(library: Path, option: str) -> str:
+    """dumpbin's output for one file, cached because several checks read the same one."""
+    key = (str(library), option)
+    if key not in _PE_REPORTS:
+        result = subprocess.run(
+            [_dumpbin(), "/nologo", option, str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"dumpbin could not read {library.name}, which is a shipped binary, so the checks "
+            f"cannot be trusted: {(result.stderr or result.stdout).strip()[:200]}"
+        )
+        _PE_REPORTS[key] = result.stdout
+    return _PE_REPORTS[key]
+
+
+def _pe_exports(library: Path) -> list:
+    """The names a DLL exports, as the linker recorded them."""
+    return [
+        match.group(1)
+        for match in re.finditer(
+            r"^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]{8}\s+(\S+)",
+            _pe_report(library, "/exports"),
+            re.M,
+        )
+    ]
+
+
+def _pe_imports(library: Path) -> dict:
+    """The names a binary imports, keyed by the lowercased DLL each comes from."""
+    imports: dict = {}
+    current = None
+    for line in _pe_report(library, "/imports").splitlines():
+        header = re.match(r"^    (\S+\.dll)$", line, re.I)
+        if header:
+            current = imports.setdefault(header.group(1).lower(), [])
+            continue
+        entry = re.match(r"^\s+[0-9A-F]+\s+(\S+)$", line)
+        if entry and current is not None:
+            current.append(entry.group(1))
+    return imports
+
+
+def _pe_dependents(library: Path) -> set:
+    """The DLL names a binary records a dependency on."""
+    report = _pe_report(library, "/dependents")
+    return {
+        line.strip()
+        for line in report.splitlines()
+        if re.fullmatch(r"\s+\S+\.dll", line, re.I)
+    }
+
+
+def _decorated_prefix(symbol: str):
+    """The leading part of the MSVC decorated name for a qualified C++ name, or None for a C name.
+
+    A C++ name is decorated innermost first, so a::b::f begins ?f@b@a@@ and a constructor
+    a::B::B begins ??0B@a@@. The trailing @@ closes the scope, so a longer name that merely
+    starts with the same text cannot match, which is the anchoring the ELF reader gets from
+    matching demangled names whole.
+    """
+    symbol = symbol.removesuffix("()")
+    if "::" not in symbol:
+        return None
+    parts = symbol.split("::")
+    if parts[-1] == parts[-2]:
+        return "??0" + "@".join(reversed(parts[:-1])) + "@@"
+    return "?" + "@".join(reversed(parts)) + "@@"
+
+
+def _pe_names_include(names, symbol: str) -> bool:
+    """Whether a list of decorated names contains `symbol`."""
+    prefix = _decorated_prefix(symbol)
+    if prefix is None:
+        return symbol in names
+    return any(name.startswith(prefix) for name in names)
+
 
 def _declared_requirements() -> set:
     """Import names the installed wheel declares a requirement for.
@@ -332,7 +467,19 @@ def _loader_clean_environment() -> dict:
         "DYLD_FALLBACK_LIBRARY_PATH",
         "DYLD_INSERT_LIBRARIES",
     )
-    return {key: value for key, value in os.environ.items() if key not in overrides}
+    environment = {
+        key: value for key, value in os.environ.items() if key not in overrides
+    }
+    if _WINDOWS:
+        # The Windows loader also searches PATH, so an entry reaching the installed package
+        # would supply the DLLs a shipped binary is supposed to find on its own.
+        package = str(_installed_package_dir()).lower()
+        environment["PATH"] = os.pathsep.join(
+            entry
+            for entry in environment.get("PATH", "").split(os.pathsep)
+            if not entry.lower().startswith(package)
+        )
+    return environment
 
 
 def _dynamic_section(library) -> str | None:
@@ -392,6 +539,8 @@ def _recorded_dependencies(library) -> set:
     result apart from one this could not read, and the second is a passing check that
     examined nothing.
     """
+    if _WINDOWS:
+        return _pe_dependents(Path(library))
     if sys.platform == "darwin":
         tool = _tool("otool")
         assert tool is not None, "otool is required to inspect the wheel"
@@ -421,6 +570,8 @@ def _raw_recorded_identity(library) -> str | None:
     Separate from _recorded_identity because that function's basename reduction is correct for
     comparing names but hides whether the recorded string is absolute, which is a different fault.
     """
+    if _WINDOWS:
+        return _recorded_identity(library)
     section = _dynamic_section(library)
     if section is None:
         return None
@@ -449,8 +600,14 @@ def _recorded_identity(library) -> str | None:
 
     ELF calls it the soname. Mach-O calls it the install name and spells it as a path,
     usually relative to the consumer's runtime search path, so the two compare only by
-    the last component.
+    the last component. A DLL records the name it was linked as in its export directory, which
+    is what an import library, and so a consumer, carries.
     """
+    if _WINDOWS:
+        match = re.search(
+            r"following exports for (\S+)", _pe_report(Path(library), "/exports")
+        )
+        return match.group(1) if match else None
     if sys.platform == "darwin":
         tool = _tool("otool")
         assert tool is not None, "otool is required to inspect the wheel"
@@ -605,13 +762,17 @@ def _shipped_object_patterns() -> list[str]:
 
     Both suffixes are listed because a Mach-O Python extension is a .so by convention, so a
     dylib-only pattern silently drops the extension on macOS, which is the one artifact these
-    checks exist to verify.
+    checks exist to verify. Windows names a library .dll and a Python extension .pyd.
     """
+    if _WINDOWS:
+        return ["*.dll", "*.pyd"]
     return ["*.dylib*", "*.so*"]
 
 
 def _dynamic_lib_suffix() -> str:
     """The loadable library suffix on this platform, including the dot."""
+    if _WINDOWS:
+        return ".dll"
     return ".dylib" if sys.platform == "darwin" else ".so"
 
 
@@ -619,8 +780,10 @@ def _library_file_name(base_name: str) -> str:
     """The file name a component's library has on this platform.
 
     The component table names libraries without a suffix so one table serves both
-    platforms.
+    platforms. A PE name carries no lib prefix either.
     """
+    if _WINDOWS:
+        base_name = re.sub(r"^lib", "", base_name)
     return f"{base_name}{_dynamic_lib_suffix()}"
 
 
@@ -677,7 +840,13 @@ def _shipped_runtime_libraries(package_dir: Path):
         return []
     return [
         path
-        for path in sorted(lib_dir.glob(f"lib*{_dynamic_lib_suffix()}*"))
+        for path in sorted(
+            lib_dir.glob(
+                f"*{_dynamic_lib_suffix()}"
+                if _WINDOWS
+                else f"lib*{_dynamic_lib_suffix()}*"
+            )
+        )
         if path.is_file() and not path.is_symlink()
     ]
 
@@ -696,6 +865,8 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     compiled with hidden visibility is invisible to it. Catching that needs a running
     process, which counts what actually registered rather than what is visible.
     """
+    if _WINDOWS:
+        return _pe_names_include(_pe_exports(library), symbol)
     result = subprocess.run(
         [_tool("nm"), *_nm_defined_args(), str(library)],
         capture_output=True,
@@ -777,6 +948,12 @@ def _is_export_only(library: Path) -> bool:
         return False
     if library.name.endswith(f"_aot_lib{_dynamic_lib_suffix()}"):
         return True
+    if _WINDOWS:
+        # Compared as whole names: executorch.dll contains the text torch.dll.
+        return bool(
+            {name.lower() for name in _pe_dependents(library)}
+            & {"torch.dll", "torch_cpu.dll"}
+        )
     dynamic = _dynamic_section(library)
     if dynamic is None:
         return False
@@ -808,7 +985,7 @@ def _assert_single_definer(
     these libraries defined the backend registry symbols in one released wheel and not
     in the release before it, so the duplication this catches does happen.
     """
-    assert _tool("nm") is not None, "nm is required to inspect the wheel"
+    assert _WINDOWS or _tool("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
     libraries = [
@@ -827,6 +1004,14 @@ def _assert_single_definer(
     # A component is either wholly present or wholly absent. Some symbols defined and
     # others not means a partial build, which is neither of those and is a fault.
     present = {symbol for symbol, definers in found.items() if definers}
+    if (
+        not present
+        and _WINDOWS
+        and owner is not None
+        and what in _WINDOWS_IMPORT_WITNESSES
+    ):
+        _assert_windows_import_witness(what, owner, libraries)
+        return
     if not present:
         # When the caller has already established that the owner library ships, finding none of its
         # symbols is a fault rather than an absence. Returning success here made this a no-op the moment
@@ -860,6 +1045,34 @@ def _assert_single_definer(
             )
     where = f" owned by {owner}" if owner else ""
     print(f"✓ single {what}{where} across {len(libraries)} shipped libraries")
+
+
+def _assert_windows_import_witness(what: str, owner: str, libraries) -> None:
+    """The Windows form of the single-owner check for code a DLL takes from an archive.
+
+    The export list does not name that code, so the check asks the question the other way
+    round: the owner imports the registry entry point from the runtime DLL rather than
+    carrying it, and no other shipped binary defines that entry point.
+    """
+    runtime_dll, entry_point = _WINDOWS_IMPORT_WITNESSES[what]
+    owners = [library for library in libraries if library.name == owner]
+    assert owners, f"the wheel ships no {owner}, which owns the {what}"
+    imported = _pe_imports(owners[0]).get(runtime_dll, [])
+    assert _pe_names_include(imported, entry_point), (
+        f"{owner} does not import {entry_point} from {runtime_dll}, so the {what} it carries "
+        "registers into a registry of its own rather than the one the runtime owns"
+    )
+    definers = [
+        library.name
+        for library in libraries
+        if _pe_names_include(_pe_exports(library), entry_point)
+    ]
+    assert definers == [
+        runtime_dll
+    ], f"expected only {runtime_dll} to define {entry_point}, found {definers}"
+    print(
+        f"✓ single {what} owned by {owner}, which imports {entry_point} from {runtime_dll}"
+    )
 
 
 def _wheel_cuda_train() -> str:
@@ -1121,6 +1334,73 @@ def test_each_component_has_one_owner() -> None:
         )
 
 
+def _depends_on_torch(library: Path) -> bool:
+    """Whether a Windows binary imports torch's DLLs, which resolve once torch is imported."""
+    return any(
+        name.lower().startswith(("torch", "c10")) for name in _pe_dependents(library)
+    )
+
+
+def _import_probe(package_dir: Path, module: str) -> str:
+    """The code a clean interpreter runs to import `module` the way a user would.
+
+    Off Windows that is the import itself. On Windows nothing is added to the DLL search
+    path here: the package's own entry points have to register executorch/lib, so a probe
+    that registered it would pass whether or not they do. The pybindings extensions are
+    reached through portable_lib, the public module that loads them; everything else is
+    imported directly, which runs its package's initializer. Torch comes first only for
+    an extension that links it, as the Linux check lets the loader decide.
+    """
+    if not _WINDOWS:
+        return f"import {module}"
+    relative = Path(*module.split(".")[1:])
+    extension = next(package_dir.glob(f"{relative}.cp3*.pyd"))
+    prelude = "import torch\n" if _depends_on_torch(extension) else ""
+    if module.startswith("executorch.extension.pybindings."):
+        prelude += "import executorch.extension.pybindings.portable_lib\n"
+    return f"{prelude}import {module}"
+
+
+def test_package_entry_points_load_their_libraries() -> None:
+    """The package modules that load a shipped library find its dependencies themselves.
+
+    executorch.kernels.quantized loads the export-time quantized operators and swallows a
+    load failure, so a library that cannot find executorch/lib shows up only as quantized
+    export missing its out variants. Checked through the package in a clean interpreter,
+    the way a user reaches it, and by the operators that have to arrive, so the check fails
+    whenever the load does.
+    """
+    package_dir = _installed_package_dir()
+    if not list(package_dir.glob("kernels/quantized/*quantized_ops_aot_lib.*")):
+        print("- this wheel ships no quantized export library, nothing to check")
+        return
+    if importlib.util.find_spec("torch") is None:
+        print("- torch is not installed, skipping the package entry point check")
+        return
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import torch\n"
+            "import executorch.kernels.quantized\n"
+            "print(torch.ops.quantized_decomposed.quantize_per_tensor.overloads())\n",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_loader_clean_environment(),
+        timeout=_PROBE_TIMEOUT,
+    )
+    assert result.returncode == 0 and "'out'" in result.stdout, (
+        "importing executorch.kernels.quantized did not register the quantized out "
+        "variants, so its library failed to load and the failure was swallowed: "
+        f"{(result.stdout + result.stderr).strip()[-800:]}"
+    )
+    print(
+        "✓ executorch.kernels.quantized loads its library and registers the out variants"
+    )
+
+
 def test_python_extensions_import() -> None:
     """Every shipped Python extension must import from a clean environment.
 
@@ -1136,10 +1416,12 @@ def test_python_extensions_import() -> None:
     """
     package_dir = _installed_package_dir()
     modules = []
-    for extension in sorted(package_dir.rglob("*.so")):
+    extension_pattern = "*.pyd" if _WINDOWS else "*.so"
+    interpreter_marker = ".cp3" if _WINDOWS else ".cpython-"
+    for extension in sorted(package_dir.rglob(extension_pattern)):
         # Only Python extensions, which carry the interpreter's suffix. The plain
         # shared libraries under lib/ are checked by the load test instead.
-        if ".cpython-" not in extension.name:
+        if interpreter_marker not in extension.name:
             continue
         relative = extension.relative_to(package_dir).parent
         module = extension.name.split(".", 1)[0]
@@ -1155,11 +1437,12 @@ def test_python_extensions_import() -> None:
     environment = _loader_clean_environment()
     for module in modules:
         result = subprocess.run(
-            [sys.executable, "-c", f"import {module}"],
+            [sys.executable, "-c", _import_probe(package_dir, module)],
             capture_output=True,
             text=True,
             check=False,
             env=environment,
+            timeout=_PROBE_TIMEOUT,
         )
         if result.returncode == 0:
             print(f"✓ {module} imports from a clean environment")
@@ -1493,6 +1776,68 @@ def _assert_shipped_libraries_relocate_with_dyld() -> None:
     print("✓ every shipped library resolves without the build tree")
 
 
+_WINDOWS_LOAD_PROBE = """
+import ctypes
+import os
+import sys
+
+# Torch's own DLLs are the documented exception, as on Linux: they resolve once the package
+# that owns them is imported, which is how every binary that links them is used. Only for
+# those binaries, so the rest load without torch's directories already in the process.
+if sys.argv[3] == "torch":
+    import torch  # noqa: F401
+
+# executorch/lib, which a C++ program copies beside itself and the package's entry points
+# register. Whether they do is test_package_entry_points_load_their_libraries.
+os.add_dll_directory(sys.argv[2])
+ctypes.WinDLL(sys.argv[1])
+"""
+
+# Long enough for the slowest honest run, a Python probe importing torch or a consumer loading
+# a model, and short enough that a process which never exits fails as a named timeout well
+# inside the job's limit rather than as the whole job timing out.
+_PROBE_TIMEOUT = 300
+
+
+def _assert_shipped_libraries_load_on_windows(root: Path, package_dir: Path) -> None:
+    """Load every shipped binary under `root`, each in its own process.
+
+    `root` is where the binaries are loaded from and `package_dir` the installed package
+    that lists them; the relocation check passes a copy of the package as `root`.
+
+    LoadLibrary resolves every imported DLL and every imported symbol before it returns, so
+    a successful load answers what ldd -r answers on Linux. A process per binary, because a
+    DLL already in the process satisfies a later request by name and would stand in for a
+    dependency the binary under test cannot find itself.
+    """
+    lib_dir = root / "lib"
+    broken = {}
+    for library in _shipped_shared_objects(package_dir):
+        target = root / library.relative_to(package_dir)
+        torch_needed = "torch" if _depends_on_torch(library) else "-"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                _WINDOWS_LOAD_PROBE,
+                str(target),
+                str(lib_dir),
+                torch_needed,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_loader_clean_environment(),
+            timeout=_PROBE_TIMEOUT,
+        )
+        if result.returncode != 0:
+            broken[str(target.relative_to(root))] = result.stderr.strip()[-300:]
+    assert not broken, (
+        "shipped binaries fail to load from the package, so they need a DLL or a symbol "
+        f"nothing in the wheel or in torch provides: {broken}"
+    )
+
+
 def test_shipped_libraries_load() -> None:
     """Every shipped library must depend only on things that exist.
 
@@ -1513,6 +1858,11 @@ def test_shipped_libraries_load() -> None:
         return
     if sys.platform == "darwin":
         _assert_shipped_libraries_load_with_dyld()
+        return
+    if _WINDOWS:
+        package_dir = _installed_package_dir()
+        _assert_shipped_libraries_load_on_windows(package_dir, package_dir)
+        print("✓ every shipped library loads in an environment with torch present")
         return
     if _tool("ldd") is None:
         print("- ldd not available, skipping the load check")
@@ -1626,6 +1976,19 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
     """
     if sys.platform == "darwin":
         _assert_shipped_libraries_relocate_with_dyld()
+        return
+    if _WINDOWS:
+        # A DLL records no search path, so relocating is copying the package somewhere else
+        # and loading every binary from the copy with the original out of reach.
+        package_dir = _installed_package_dir()
+        with tempfile.TemporaryDirectory() as work_dir:
+            root = Path(work_dir) / package_dir.name
+            for library in _shipped_shared_objects(package_dir):
+                target = root / library.relative_to(package_dir)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(library, target)
+            _assert_shipped_libraries_load_on_windows(root, package_dir)
+        print("✓ every shipped library loads from a relocated copy of the package")
         return
     if _tool("ldd") is None or _tool("patchelf") is None:
         print("- ldd or patchelf unavailable, skipping the relocated load check")
@@ -1764,7 +2127,9 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     )
 
     compiled = subprocess.run(
-        [_tool("cmake"), "--build", str(build_dir)],
+        # Release named for the multi-config Visual Studio generator, whose default is Debug
+        # and so a different C++ library from the shipped DLLs. Single-config generators ignore it.
+        [_tool("cmake"), "--build", str(build_dir), "--config", "Release"],
         capture_output=True,
         text=True,
         check=False,
@@ -1942,6 +2307,9 @@ def test_wheel_platform_tag() -> None:
     if sys.platform == "darwin":
         _assert_mach_o_architecture_matches(wheels[-1])
         return
+    if _WINDOWS:
+        _assert_pe_architecture_matches(wheels[-1])
+        return
 
     if importlib.util.find_spec("auditwheel") is None:
         # Installed here rather than skipped, because auditwheel is not in any CI
@@ -2101,6 +2469,65 @@ def _unusable_runtime_path_kind(entry: str, library_name: str) -> str | None:
     return "an absolute directory the wheel has a relative route to"
 
 
+def _assert_no_recorded_paths_on_windows() -> None:
+    """The Windows form of the absolute path check.
+
+    A PE file has no runtime search path; it records each dependency by name, and the loader
+    searches for it. So the property to hold is that every recorded dependency and every
+    DLL's own recorded name is a bare file name, never a path from the build machine.
+    """
+    package_dir = _installed_package_dir()
+    offenders = {}
+    libraries = _shipped_shared_objects(package_dir)
+    for library in libraries:
+        recorded = set(_pe_dependents(library))
+        if library.suffix.lower() == ".dll":
+            identity = _recorded_identity(library)
+            if identity:
+                recorded.add(identity)
+        with_path = sorted(name for name in recorded if re.search(r"[\\/:]", name))
+        if with_path:
+            offenders[str(library.relative_to(package_dir))] = with_path
+    assert not offenders, (
+        "shipped binaries record a dependency or name as a path from the machine that built "
+        f"them, which exists nowhere else: {offenders}"
+    )
+    print(
+        f"✓ none of the {len(libraries)} shipped binaries records a path, only bare DLL names"
+    )
+
+
+# The PE machine field for each architecture a Windows wheel tag names.
+_PE_MACHINES = {"win_amd64": 0x8664, "win_arm64": 0xAA64, "win32": 0x14C}
+
+
+def _assert_pe_architecture_matches(wheel: Path) -> None:
+    """Every binary in a Windows wheel must be built for the architecture its tag names."""
+    claimed = wheel.name.split("-")[-1].removesuffix(".whl")
+    assert (
+        claimed in _PE_MACHINES
+    ), f"could not read a Windows architecture from the tag {claimed}"
+    wrong = {}
+    inspected = 0
+    with zipfile.ZipFile(wheel) as archive:
+        for name in archive.namelist():
+            if not name.lower().endswith((".dll", ".pyd")):
+                continue
+            data = archive.read(name)
+            header = int.from_bytes(data[0x3C:0x40], "little")
+            assert data[header : header + 4] == b"PE\0\0", f"{name} is not a PE file"
+            machine = int.from_bytes(data[header + 4 : header + 6], "little")
+            inspected += 1
+            if machine != _PE_MACHINES[claimed]:
+                wrong[name] = hex(machine)
+    assert inspected, f"{wheel.name} contains no DLL or extension to compare"
+    assert not wrong, (
+        f"the wheel is tagged {claimed} but these binaries are built for another "
+        f"architecture, so it would install where it cannot run: {wrong}"
+    )
+    print(f"✓ the wheel is tagged for the architecture it contains ({claimed})")
+
+
 def test_no_absolute_runtime_paths() -> None:
     """No shipped library may search a directory a user does not have.
 
@@ -2126,6 +2553,9 @@ def test_no_absolute_runtime_paths() -> None:
     # build machine's directories would ship looking correct.
     # Mach-O keeps its search path in load commands that otool reads, and otool comes
     # with the developer tools, so only the ELF side needs an install step.
+    if _WINDOWS:
+        _assert_no_recorded_paths_on_windows()
+        return
     if sys.platform != "darwin" and _tool("patchelf") is None:
         print("- patchelf not present, installing it so this check can run")
         subprocess.run(
@@ -2182,6 +2612,33 @@ def test_no_absolute_runtime_paths() -> None:
     )
 
 
+def _extension_symbol_tables(extension: Path):
+    """Predicates for whether the extension imports, and whether it defines, a symbol.
+
+    Module scope so the enclosing test stays inside the complexity limit lintrunner enforces.
+    """
+    if _WINDOWS:
+        imported = [name for names in _pe_imports(extension).values() for name in names]
+        exported = _pe_exports(extension)
+        return (
+            lambda symbol: _pe_names_include(imported, symbol),
+            lambda symbol: _pe_names_include(exported, symbol),
+        )
+    undefined = subprocess.run(
+        [_tool("nm"), *_nm_undefined_args(), str(extension)],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    defined = subprocess.run(
+        [_tool("nm"), *_nm_defined_args(), str(extension)],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    return (lambda symbol: symbol in undefined, lambda symbol: symbol in defined)
+
+
 def test_extension_contains_no_component() -> None:
     """The Python extension must link the components, not contain them.
 
@@ -2190,10 +2647,14 @@ def test_extension_contains_no_component() -> None:
     inside the extension. The direct statement is that the extension defines none of
     what the shipped libraries own, and records a dependency on each instead.
     """
-    assert _tool("nm") is not None, "nm is required to inspect the wheel"
+    assert _WINDOWS or _tool("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
-    extensions = sorted((package_dir / "extension" / "pybindings").glob("_C.*.so"))
+    extensions = sorted(
+        (package_dir / "extension" / "pybindings").glob(
+            "_C.*.pyd" if _WINDOWS else "_C.*.so"
+        )
+    )
     assert len(extensions) == 1, f"expected one _C, found {extensions}"
     extension = extensions[0]
 
@@ -2283,25 +2744,17 @@ def test_extension_contains_no_component() -> None:
     # appear in the dynamic symbol table at all, so "defines nothing" on its own is
     # satisfiable by an extension that still carries its own private runtime. An
     # UNDEFINED reference cannot be faked that way: it says the definition is not
-    # here and has to come from a dependency.
-    undefined = subprocess.run(
-        [_tool("nm"), *_nm_undefined_args(), str(extension)],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    defined = subprocess.run(
-        [_tool("nm"), *_nm_defined_args(), str(extension)],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
+    # here and has to come from a dependency. On Windows the import table says the same thing,
+    # naming the DLL each definition comes from.
+    imports_symbol, defines_symbol = _extension_symbol_tables(extension)
     candidates = (*_REGISTRY_SYMBOLS, *_THREADPOOL_SYMBOLS)
     # A symbol the extension defines itself is the hidden copy this check exists to catch. A
     # symbol it neither imports nor defines is simply unused, which happens for the backend
     # registry when the wheel is built with the optional delegates off.
     carried = [
-        symbol for symbol in candidates if symbol not in undefined and symbol in defined
+        symbol
+        for symbol in candidates
+        if not imports_symbol(symbol) and defines_symbol(symbol)
     ]
     assert not carried, (
         f"{extension.name} defines {carried} itself rather than importing it, so it carries a "
@@ -2311,7 +2764,7 @@ def test_extension_contains_no_component() -> None:
     # worst version of this: an extension that whole-archived a private runtime with
     # hidden visibility and kept the shipped one as a dependency it never uses. What it
     # calls has to be imported, and these it calls.
-    unimported = [symbol for symbol in _EXTENSION_IMPORTS if symbol not in undefined]
+    unimported = [symbol for symbol in _EXTENSION_IMPORTS if not imports_symbol(symbol)]
     assert not unimported, (
         f"{extension.name} calls {unimported} but imports none of them, so the definition it "
         "reaches is inside itself and the process holds a second registry the shipped runtime "
@@ -2352,7 +2805,7 @@ def test_shipped_library_names_are_expected() -> None:
     # a real file, so it is still caught.
     shipped = sorted(
         p
-        for p in lib_dir.glob(f"*{_dynamic_lib_suffix()}*")
+        for p in lib_dir.glob(f"*{_dynamic_lib_suffix()}" + ("" if _WINDOWS else "*"))
         if p.is_file() and not p.is_symlink()
     )
     assert shipped, f"the wheel ships a lib directory with no libraries: {lib_dir}"
@@ -2388,7 +2841,8 @@ def test_shipped_library_names_are_expected() -> None:
     # Unversioned, because the wheel build does not version these. A trailing
     # .<digits> would also be a name packaging did not produce here. These are
     # libraries, so the suffix follows the platform and macOS spells them .dylib.
-    permitted = re.compile(rf"(?:{'|'.join(known)})\{_dynamic_lib_suffix()}")
+    names = [re.sub(r"^lib", "", name) for name in known] if _WINDOWS else known
+    permitted = re.compile(rf"(?:{'|'.join(names)})\{_dynamic_lib_suffix()}")
     unknown = sorted(p.name for p in shipped if not permitted.fullmatch(p.name))
     assert not unknown, (
         f"the wheel ships {unknown} under lib/, which packaging does not produce. "
@@ -2673,6 +3127,7 @@ def run_tests(work_dir: Path) -> None:
     # hide a strong one.
     test_each_component_has_one_owner()
     test_python_extensions_import()
+    test_package_entry_points_load_their_libraries()
     test_declared_dependencies_match_the_wheel_tag()
     test_extension_contains_no_component()
     test_shipped_library_names_are_expected()
