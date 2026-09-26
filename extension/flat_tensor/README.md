@@ -20,6 +20,26 @@ Major usage is to store data outside of the PTE file for clean program-data sepa
 
 [serialize.py](https://github.com/pytorch/executorch/blob/main/extension/flat_tensor/serialize/serialize.py) contains the Python serialization and deserialization APIs.
 
+Use `save_ptd` and `load_ptd` to round-trip dictionaries of CPU tensors:
+
+```python
+import torch
+
+from executorch.extension.flat_tensor.serialize import load_ptd, save_ptd
+
+save_ptd("state.ptd", {"weight": torch.ones(2, 2)})
+tensors = load_ptd("state.ptd")
+```
+
+The APIs support strided, non-quantized tensor dtypes represented by the PTD
+schema. Contiguous and `torch.channels_last` tensors keep their memory format.
+Other strided layouts, such as transposed or expanded tensors, are normalized
+rather than preserved: they load with the same shape and values but contiguous
+strides.
+
+`save_ptd` uses the default segment alignment from `FlatTensorConfig`, so its
+files can also be loaded by the C++ `FlatTensorDataMap` with `MmapDataLoader`.
+
 ### Alignment Considerations
 
 **Segment alignment**: Data segments are aligned to this value. This is usually some multiple of 2. Specified in the [FlatTensorConfig](https://github.com/pytorch/executorch/blob/main/extension/flat_tensor/serialize/serialize.py#L96).
