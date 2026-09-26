@@ -1494,13 +1494,47 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
     )
 
 
+def _cmake_compile_definitions(work_dir: Path) -> list:
+    """The compile definitions the installed CMake package hands a consumer."""
+    config = _installed_package_dir() / "share" / "cmake" / "executorch-config.cmake"
+    source_dir = work_dir / "definitions-probe"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.19)\n"
+        "project(probe NONE)\n"
+        "find_package(executorch REQUIRED)\n"
+        'message(STATUS "DEFINITIONS=${EXECUTORCH_COMPILE_DEFINITIONS}")\n'
+    )
+    result = subprocess.run(
+        [
+            _tool("cmake"),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(work_dir / "definitions-probe-build"),
+            f"-DCMAKE_PREFIX_PATH={config.parent}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        "could not read the compile definitions from the installed CMake package:\n"
+        f"{result.stdout[-2000:]}{result.stderr[-2000:]}"
+    )
+    line = next(
+        entry for entry in result.stdout.splitlines() if "DEFINITIONS=" in entry
+    )
+    return [d for d in line.split("DEFINITIONS=", 1)[1].split(";") if d]
+
+
 def test_pkg_config_builds_a_consumer(work_dir: Path) -> None:
-    """A program built only from the flags pkg-config prints finds, links and runs the runtime.
+    """A program built from the flags pkg-config prints finds, links and runs the runtime.
 
     Meson, Autotools and plain Makefiles read pkg-config files rather than CMake packages. The
     kernels are named on the command line because the file describes only the runtime, the same
-    split as the CMake components. The flags come from the pkgconf package on the index, so the
-    check does not depend on a pkg-config the build machine happens to have.
+    split as the CMake components. pkg-config itself comes from the pkgconf package on PyPI, so
+    the check does not depend on one the build machine happens to have.
     """
     pc_dir = _installed_package_dir() / "lib" / "pkgconfig"
     assert (pc_dir / "executorch.pc").is_file(), (
@@ -1517,26 +1551,40 @@ def test_pkg_config_builds_a_consumer(work_dir: Path) -> None:
     # PKG_CONFIG_LIBDIR alone, so a system executorch.pc cannot be found instead of this one.
     environment = dict(os.environ, PKG_CONFIG_LIBDIR=str(pc_dir))
     environment.pop("PKG_CONFIG_PATH", None)
-    flags = []
-    for query in ("--cflags", "--libs"):
-        result = subprocess.run(
-            [pkg_config, query, "executorch"],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=environment,
-        )
-        assert result.returncode == 0, (
-            f"pkg-config {query} executorch failed against the installed file:\n"
-            f"{result.stdout}{result.stderr}"
-        )
-        flags += result.stdout.split()
+    result = subprocess.run(
+        [pkg_config, "--cflags", "--libs", "executorch"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+    assert result.returncode == 0, (
+        "pkg-config --cflags --libs executorch failed against the installed file:\n"
+        f"{result.stdout[-2000:]}{result.stderr[-2000:]}"
+    )
+    flags = result.stdout.split()
+
+    # Both routes describe the same libraries, so they must agree on the definitions. A
+    # missing one fails silently for the consumer: ET_EVENT_TRACER_ENABLED changes the
+    # layout of the tracer scope classes, and without ET_USE_THREADPOOL parallel_for is serial.
+    pc_definitions = sorted(f[2:] for f in flags if f.startswith("-D"))
+    cmake_definitions = sorted(_cmake_compile_definitions(work_dir))
+    assert pc_definitions == cmake_definitions, (
+        f"the pkg-config file defines {pc_definitions}, but the CMake package in the same "
+        f"wheel defines {cmake_definitions}"
+    )
 
     source = work_dir / "pkg-config-consumer.cpp"
     source.write_text(_CONSUMER_SOURCE)
     consumer = work_dir / "pkg-config-consumer"
-    kernels = [] if sys.platform == "darwin" else ["-Wl,--no-as-needed"]
-    kernels.append("-lexecutorch_kernels_optimized")
+    if sys.platform == "darwin":
+        kernels = ["-lexecutorch_kernels_optimized"]
+    else:
+        kernels = [
+            "-Wl,--push-state,--no-as-needed",
+            "-lexecutorch_kernels_optimized",
+            "-Wl,--pop-state",
+        ]
     built = subprocess.run(
         [
             _tool("c++"),
@@ -1552,7 +1600,7 @@ def test_pkg_config_builds_a_consumer(work_dir: Path) -> None:
         check=False,
     )
     assert built.returncode == 0, (
-        f"a program built with only the pkg-config flags did not compile and link:\n"
+        f"a program built with the pkg-config flags did not compile and link:\n"
         f"{built.stdout[-3000:]}{built.stderr[-3000:]}"
     )
     model, reference = _export(work_dir, "plain")

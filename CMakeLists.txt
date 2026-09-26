@@ -1090,17 +1090,26 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
-  # pip decides where the wheel lands, so its copy locates everything relative
-  # to the file itself.
+  # pip decides where the wheel lands, so the wheel's copy of this file locates
+  # everything relative to its own location.
   if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
     set(_executorch_pc_definitions "-DC10_USING_CUSTOM_GENERATED_MACROS")
     if(EXECUTORCH_ENABLE_EVENT_TRACER)
       string(APPEND _executorch_pc_definitions " -DET_EVENT_TRACER_ENABLED")
     endif()
+    # Matches the CMake package, which adds both to the runtime whenever the
+    # thread pool ships. Without the definition, parallel_for runs serially.
+    set(_executorch_pc_libs "-lexecutorch")
+    if(TARGET extension_threadpool)
+      string(APPEND _executorch_pc_definitions " -DET_USE_THREADPOOL")
+      string(APPEND _executorch_pc_libs " -lexecutorch_threadpool")
+    endif()
+    # Separate arguments, because Meson only keeps a dependency's rpath at
+    # install when the argument starts with -Wl,-rpath.
     if(APPLE)
       set(_executorch_pc_rpath "-Wl,-rpath,\${libdir}")
     else()
-      set(_executorch_pc_rpath "-Wl,--enable-new-dtags,-rpath,\${libdir}")
+      set(_executorch_pc_rpath "-Wl,--enable-new-dtags -Wl,-rpath,\${libdir}")
     endif()
     configure_file(
       tools/cmake/executorch-wheel.pc.in
