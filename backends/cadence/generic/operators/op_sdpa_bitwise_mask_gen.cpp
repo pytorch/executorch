@@ -69,10 +69,16 @@ namespace native {
   } else if (dtype == ::executorch::aten::ScalarType::Float) {
     const float* __restrict mask_data = mask.mutable_data_ptr<float>();
     uint8_t* __restrict out_data = out.mutable_data_ptr<uint8_t>();
+    // Compare in float. Xtensa DSP cores here have a single-precision FPU but
+    // no double-precision hardware, so `float < double` promotes via two
+    // soft-float library calls (__extendsfdf2, __ltdf2) on every element.
+    // Callers pass a threshold that is exactly representable in float, so
+    // rounding it does not move the boundary.
+    const float f_threshold = static_cast<float>(threshold);
     for (int64_t i = 0, out_index = 0; i < numel; i += 8, out_index++) {
       uint8_t packed_mask = 0;
       for (int64_t j = 0; j < 8; j++) {
-        packed_mask |= (mask_data[i + j] < threshold) << j;
+        packed_mask |= (mask_data[i + j] < f_threshold) << j;
       }
       out_data[out_index] = packed_mask;
     }
