@@ -59,6 +59,10 @@ std::unordered_set<Tensor*> view_handles;
 // views): the address stays tracked while any of them lives.
 std::unordered_map<void*, int32_t> not_own_handles;
 
+// Handles whose memory was freed under them (retire_handles_within). Deleting
+// one only drops the handle.
+std::unordered_set<Tensor*> retired_handles;
+
 // Size of each CPU allocation the runtime owns, so that views of it can be
 // bound into one Metal buffer over all of it (metal_register_cpu_view).
 std::unordered_map<void*, size_t> cpu_allocation_bytes;
@@ -195,6 +199,9 @@ bool region_can_cover(
     }
   }
   for (const auto& entry : tensors) {
+    if (retired_handles.count(entry.first) != 0) {
+      continue; // Its memory is gone.
+    }
     void* data = entry.first->mutable_data_ptr();
     const auto* start = static_cast<const uint8_t*>(data);
     void* data_region = nullptr;
@@ -753,6 +760,12 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       it != tensors.end(), InvalidArgument, "Didn't find tensor %p", tensor);
 
+  if (retired_handles.erase(tensor) != 0) {
+    // Its memory is gone, and its address may be another allocation's now.
+    tensors.erase(it);
+    return Error::Ok;
+  }
+
   const auto& tensor_ptr = it->second;
   void* data_ptr = tensor_ptr->mutable_data_ptr();
   if (data_ptr == nullptr) {
@@ -819,6 +832,11 @@ AOTITorchError aoti_torch_copy_(
       InvalidArgument,
       "aoti_torch_copy_ failed: src tensor is null");
 
+  ET_CHECK_OR_RETURN_ERROR(
+      retired_handles.count(self) == 0 && retired_handles.count(src) == 0,
+      InvalidArgument,
+      "aoti_torch_copy_ failed: the memory of a tensor was freed");
+
   // Get dtype information and validate compatibility
   int32_t self_dtype, src_dtype;
   aoti_torch_get_dtype(self, &self_dtype);
@@ -846,6 +864,10 @@ AOTITorchError aoti_torch_copy_(
       "numel mismatch. self.numel()=%ld, src.numel()=%ld",
       self_numel,
       src_numel);
+  if (self_numel == 0) {
+    // Nothing to copy, and a tensor with no elements has no layout to match.
+    return Error::Ok;
+  }
 
   // Get tensor metadata
   int64_t* self_strides;
@@ -1027,6 +1049,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       self != nullptr,
       InvalidArgument,
       "aoti_torch__reinterpret_tensor failed: self tensor is null");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      retired_handles.count(self) == 0,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor failed: the memory of self was freed");
 
   ET_CHECK_OR_RETURN_ERROR(
       !(sizes_ptr == nullptr && ndim > 0),
@@ -1312,6 +1339,12 @@ AOTITorchError aoti_torch_new_tensor_handle(
       InvalidArgument,
       "aoti_torch_new_tensor_handle failed: new_handle is null");
 
+  ET_CHECK_OR_RETURN_ERROR(
+      retired_handles.count(orig_handle) == 0,
+      InvalidArgument,
+      "aoti_torch_new_tensor_handle failed: the memory of orig_handle was "
+      "freed");
+
   // Get metadata from the original tensor
   int64_t* sizes_ptr;
   int64_t* strides_ptr;
@@ -1397,6 +1430,36 @@ AOTITorchError aoti_torch_new_tensor_handle(
 }
 
 // Cleanup function for clearing global state
+void retire_handles_within(void* ptr, size_t nbytes) {
+  const auto* begin = static_cast<const uint8_t*>(ptr);
+  auto within = [&](const void* address) {
+    const auto* p = static_cast<const uint8_t*>(address);
+    return begin <= p && p < begin + nbytes;
+  };
+  for (const auto& entry : tensors) {
+    const void* data = entry.second->const_data_ptr();
+    if (data != nullptr && within(data)) {
+      view_handles.erase(entry.first);
+      // Its count went to the allocation it lies in, which is this memory:
+      // views and blobs are refused outside their allocation, and CPU
+      // regions do not overlap Metal buffers.
+      view_owner.erase(entry.first);
+      retired_handles.insert(entry.first);
+    }
+  }
+  for (auto handles = not_own_handles.begin();
+       handles != not_own_handles.end();) {
+    handles = within(handles->first) ? not_own_handles.erase(handles)
+                                     : std::next(handles);
+  }
+  for (auto memory = memory_to_n_tensor.begin();
+       memory != memory_to_n_tensor.end();) {
+    memory = within(memory->first) && memory->second == NOT_OWN
+        ? memory_to_n_tensor.erase(memory)
+        : std::next(memory);
+  }
+}
+
 void cleanup_memory() {
   // Work may still be queued, e.g. after a failed run, and the memory of
   // tensors and constants is about to go.
@@ -1427,6 +1490,7 @@ void cleanup_memory() {
   not_own_handles.clear();
   view_owner.clear();
   view_handles.clear();
+  retired_handles.clear();
   cpu_allocation_bytes.clear();
 
   // Clean up Metal resources

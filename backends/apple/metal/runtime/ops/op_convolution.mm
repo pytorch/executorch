@@ -651,6 +651,8 @@ AOTITorchError aoti_torch_mps_convolution(
 
       if (actual_numel != expected_numel) {
         ET_LOG(Error, "aoti_torch_mps_convolution: Tensor size mismatch. Expected %zu, got %zu", expected_numel, actual_numel);
+        // The handle goes first: it does not own the memory yet.
+        aoti_torch_delete_tensor_object(output_tensor_handle);
         aoti_torch_mps_free(tensor_data);  // Free the allocated GPU memory on failure
         throw std::runtime_error("Tensor size mismatch");
       }

@@ -108,9 +108,10 @@ struct CpuRegion {
     // of it do, and `views` counts their handles.
     bool owned;
     int32_t views;
-    // The stream, and how many waits it had completed, when queued work last
-    // bound this buffer (metal_resolve_buffer); unset if none has.
-    ETMetalStream* bound_on = nullptr;
+    // Whether queued work has bound this buffer (metal_resolve_buffer), and
+    // how many waits the stream had completed when it last did. There is one
+    // stream (see getCurrentMetalStream).
+    bool bound = false;
     uint64_t bound_at = 0;
 };
 std::unordered_map<void*, CpuRegion> cpu_regions;
@@ -171,16 +172,15 @@ bool find_memory(void* ptr, void** base, bool* cpu) {
 
 // Records that queued work is about to use the region's buffer.
 static void note_bound(CpuRegion& region) {
-    region.bound_on = getCurrentMetalStream();
-    region.bound_at = region.bound_on->completedWaits();
+    region.bound = true;
+    region.bound_at = getCurrentMetalStream()->completedWaits();
 }
 
 // Whether work using the region's buffer may still be queued: it was bound
-// since its stream last waited, or on another stream.
+// since the stream last waited.
 static bool may_be_in_use(const CpuRegion& region) {
-    ETMetalStream* stream = getCurrentMetalStream();
-    return region.bound_on != nullptr &&
-        (region.bound_on != stream || region.bound_at == stream->completedWaits());
+    return region.bound &&
+        region.bound_at == getCurrentMetalStream()->completedWaits();
 }
 
 static bool resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset, bool bind) {
@@ -472,6 +472,19 @@ void metal_record_constants_buffer(void* ptr, size_t offset) {
 
 bool metal_forget_constants_buffer(void* ptr) {
     return constants_buffers.erase(ptr) != 0;
+}
+
+bool metal_is_constant_buffer(void* ptr) {
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    for (const auto& constants : constants_buffers) {
+        const auto* begin = static_cast<const uint8_t*>(constants.first);
+        auto buffer = ptr_to_mtl_buffer.find(constants.first);
+        if (buffer != ptr_to_mtl_buffer.end() && begin < p &&
+            p < begin + [buffer->second length]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 size_t metal_constant_extent(void* base, size_t nbytes) {

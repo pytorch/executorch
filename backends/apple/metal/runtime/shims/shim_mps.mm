@@ -381,20 +381,33 @@ AOTITorchError aoti_torch_mps_free(void* ptr) {
         try {
             // FIX: ptr is now the contents pointer, not the buffer object
             // Look up the buffer from the mapping and clean up
+            if (metal_is_constant_buffer(ptr)) {
+                ET_LOG(Error, "aoti_torch_mps_free: %p lies inside the buffer of all constants, and goes with it", ptr);
+                return Error::InvalidArgument;
+            }
+            auto owned = memory_to_n_tensor.find(ptr);
+            if (owned != memory_to_n_tensor.end() && owned->second > 0) {
+                ET_LOG(Error, "aoti_torch_mps_free: %p is a tensor's memory; it goes with the tensor", ptr);
+                return Error::InvalidArgument;
+            }
             auto it = ptr_to_mtl_buffer.find(ptr);
             if (it != ptr_to_mtl_buffer.end()) {
                 id<MTLBuffer> metal_buffer = it->second;
+                auto* begin = static_cast<uint8_t*>(ptr);
+                const size_t length = [metal_buffer length];
                 // The buffers of the constants copied into it go with it: a
                 // later allocation at those addresses must not be bound
                 // through them.
-                auto* begin = static_cast<uint8_t*>(ptr);
-                auto* end = metal_forget_constants_buffer(ptr) ? begin + [metal_buffer length] : begin;
+                auto* end = metal_forget_constants_buffer(ptr) ? begin + length : begin;
                 if (begin != end) {
                     // Queued work may read the constants through their own
                     // buffers, which do not own the memory.
                     getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
-                    metal_forget_views_within(begin, end - begin);
                 }
+                // Nor may a later allocation be bound as a view of this one,
+                // or lose its registrations to handles still left in this one.
+                metal_forget_views_within(begin, length);
+                retire_handles_within(begin, length);
                 for (auto nested = ptr_to_mtl_buffer.begin(); begin != end && nested != ptr_to_mtl_buffer.end();) {
                     auto* key = static_cast<uint8_t*>(nested->first);
                     if (key > begin && key < end) {

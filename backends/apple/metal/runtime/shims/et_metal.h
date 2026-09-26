@@ -421,6 +421,10 @@ bool metal_forget_constants_buffer(void* ptr);
 // `nbytes`, or less if `base` is a constants buffer: then the memory of the
 // constant at its start ends where the next constant's own buffer begins.
 size_t metal_constant_extent(void* base, size_t nbytes);
+// Whether `ptr` lies inside a buffer constants were copied into, past its
+// start. Nothing there was allocated on its own: a constant's own buffer goes
+// with the buffer of all constants.
+bool metal_is_constant_buffer(void* ptr);
 // Forgets the views registered in Metal buffers that start inside the
 // `nbytes` at `ptr`, which are going away.
 void metal_forget_views_within(void* ptr, size_t nbytes);
