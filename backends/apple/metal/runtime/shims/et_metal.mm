@@ -231,11 +231,19 @@ static bool resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset, boo
     return true;
 }
 
-void metal_record_strided_view(
+bool metal_record_strided_view(
     const void* tensor,
     std::vector<int64_t> sizes,
     std::vector<int64_t> strides) {
+    // The gather indexes with unsigned strides and divides by every size.
+    if (sizes.size() != strides.size() ||
+        std::any_of(sizes.begin(), sizes.end(), [](int64_t size) { return size <= 0; }) ||
+        std::any_of(strides.begin(), strides.end(), [](int64_t stride) { return stride < 0; })) {
+        ET_LOG(Error, "metal_record_strided_view: only non-empty views with non-negative strides can be packed");
+        return false;
+    }
     strided_views[tensor] = {std::move(sizes), std::move(strides)};
+    return true;
 }
 
 void metal_share_strided_view(const void* from, const void* to) {

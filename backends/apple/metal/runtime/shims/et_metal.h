@@ -547,8 +547,10 @@ MTLCommandQueue_t get_metal_command_queue();
 // writes. The tensor object itself cannot describe such strides, so it carries
 // the strides of a packed tensor and the real ones are recorded here.
 // Hand-written ops need dense input and get a packed copy from
-// metal_packed_copy_of_strided_view.
-void metal_record_strided_view(
+// metal_packed_copy_of_strided_view. Refuses (false) a view the packed copy
+// cannot gather: an empty one, which is packed anyway, or one with negative
+// strides.
+bool metal_record_strided_view(
     const void* tensor,
     std::vector<int64_t> sizes,
     std::vector<int64_t> strides);

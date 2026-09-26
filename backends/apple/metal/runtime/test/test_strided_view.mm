@@ -276,6 +276,30 @@ TEST_F(MetalStridedViewTest, HandWrittenKernelMayNotWriteAStridedView) {
   });
 }
 
+// A view the packed copy cannot gather is not recorded: an empty one (the
+// gather divides by every size) or one with negative strides.
+TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  metal_forget_strided_view(view);
+  EXPECT_FALSE(metal_record_strided_view(view, {0, 2}, {4, 1}));
+  EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {-4, 1}));
+  EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {4}));
+  EXPECT_FALSE(metal_is_strided_view(view));
+  EXPECT_TRUE(metal_record_strided_view(view, {4, 2}, {4, 1}));
+
+  // Nor is a view kept in its buffer with negative strides.
+  const int64_t sizes[2] = {4, 2};
+  const int64_t strides[2] = {-4, 1};
+  AOTITensorHandle backwards = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          base, 2, sizes, strides, /*storage_offset=*/12, &backwards),
+      Error::Ok);
+  EXPECT_EQ(backwards, nullptr);
+}
+
 // A strided view that cannot be packed is an error, rather than being bound
 // with the packed strides it carries.
 TEST_F(MetalStridedViewTest, FailingToPackIsAnError) {

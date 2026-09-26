@@ -1202,6 +1202,15 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       ET_LOG(
           Debug,
           "aoti_torch__reinterpret_tensor: non-packed strides, keeping the view in its parent's buffer");
+      // The packed copy ops take of it cannot step backwards.
+      ET_CHECK_OR_RETURN_ERROR(
+          std::all_of(
+              strides.begin(),
+              strides.end(),
+              [](auto stride) { return stride >= 0; }),
+          InvalidArgument,
+          "aoti_torch__reinterpret_tensor: a view with negative strides can "
+          "only be materialized, not kept in a Metal buffer");
       strided_view = true;
       view_sizes.assign(sizes.begin(), sizes.end());
       view_strides.assign(strides.begin(), strides.end());
@@ -1326,6 +1335,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   tensors[tensor.get()] = tensor;
   *ret_new_tensor = tensor.get();
   if (strided_view) {
+    // Non-packed, so not empty, and checked for negative strides above.
     metal_record_strided_view(
         tensor.get(), std::move(view_sizes), std::move(view_strides));
   }
