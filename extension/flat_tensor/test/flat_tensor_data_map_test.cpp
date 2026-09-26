@@ -15,6 +15,9 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <array>
+#include <limits>
+
 #include <gtest/gtest.h>
 
 using namespace ::testing;
@@ -179,26 +182,61 @@ TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
 namespace {
 
 constexpr size_t kAlignment = 16;
+constexpr char kWideTensorKey[] = "wide_tensor";
+constexpr size_t kFlatbufferOffsetFieldOffset =
+    FlatTensorHeader::kHeaderOffset + FlatTensorHeader::kMagicSize +
+    sizeof(uint32_t);
+constexpr size_t kFlatbufferSizeFieldOffset =
+    kFlatbufferOffsetFieldOffset + sizeof(uint64_t);
+constexpr size_t kSegmentBaseOffsetFieldOffset =
+    kFlatbufferSizeFieldOffset + sizeof(uint64_t);
+constexpr size_t kSegmentDataSizeFieldOffset =
+    kSegmentBaseOffsetFieldOffset + sizeof(uint64_t);
 
 size_t aligned_up(size_t size) {
   return (size + kAlignment - 1) & ~(kAlignment - 1);
 }
 
-// Builds the smallest PTD file that FlatTensorDataMap::load() accepts, stamped
-// with the given schema version and holding no data. Follows the layout written
-// by save_ptd(): the header is embedded in the flatbuffer region, so the offset
-// to the root table shifts by the size of the header.
-std::vector<uint8_t> CreateDataWithVersion(uint32_t version) {
+struct SegmentSpec {
+  uint64_t offset;
+  uint64_t size;
+  uint64_t data_size;
+};
+
+// Builds the smallest PTD metadata that FlatTensorDataMap::load() accepts.
+// The optional segment is logical: its bytes are supplied separately by the
+// test loader, so large source offsets do not require a large allocation.
+std::vector<uint8_t> CreateDataWithVersion(
+    uint32_t version,
+    const SegmentSpec* segment = nullptr) {
   flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>
+      segments;
+  std::vector<flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>
+      named_data;
+  if (segment != nullptr) {
+    const std::vector<int32_t> sizes{1};
+    const std::vector<uint8_t> dim_order{0};
+    auto tensor_layout = flat_tensor_flatbuffer::CreateTensorLayout(
+        builder,
+        executorch_flatbuffer::ScalarType::FLOAT,
+        builder.CreateVector(sizes),
+        builder.CreateVector(dim_order));
+    segments.push_back(flat_tensor_flatbuffer::CreateDataSegment(
+        builder, segment->offset, segment->size));
+    named_data.push_back(flat_tensor_flatbuffer::CreateNamedData(
+        builder,
+        builder.CreateString(kWideTensorKey),
+        /*segment_index=*/0,
+        tensor_layout));
+  }
+
   auto flat_tensor = flat_tensor_flatbuffer::CreateFlatTensor(
       builder,
       version,
-      builder.CreateVector(
-          std::vector<
-              flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>{}),
-      builder.CreateVector(
-          std::vector<
-              flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>{}));
+      builder.CreateVector(segments),
+      builder.CreateVector(named_data));
   builder.Finish(flat_tensor, flat_tensor_flatbuffer::FlatTensorIdentifier());
 
   const uint8_t* flatbuffer = builder.GetBufferPointer();
@@ -220,13 +258,13 @@ std::vector<uint8_t> CreateDataWithVersion(uint32_t version) {
   append(FlatTensorHeader::kMagic, sizeof(FlatTensorHeader::kMagic));
   uint32_t header_length = FlatTensorHeader::kHeaderExpectedLength;
   append(&header_length, sizeof(header_length));
-  uint64_t header_fields[] = {
+  const std::array<uint64_t, 4> header_fields = {
       header_size, // Offset to the flatbuffer.
       flatbuffer_size,
       header_size + aligned_up(flatbuffer_size), // Offset to the segments.
-      0, // Segment data size.
+      segment == nullptr ? 0 : segment->data_size,
   };
-  append(header_fields, sizeof(header_fields));
+  append(header_fields.data(), sizeof(header_fields));
   data.resize(sizeof(root_table_offset) + 4 + header_size, 0);
 
   // The first eight bytes of the flatbuffer were written above, before the
@@ -236,6 +274,79 @@ std::vector<uint8_t> CreateDataWithVersion(uint32_t version) {
 
   return data;
 }
+
+class WideOffsetDataLoader final : public DataLoader {
+ public:
+  WideOffsetDataLoader(
+      const uint8_t* metadata,
+      size_t metadata_size,
+      const uint8_t* segment_data,
+      size_t segment_size,
+      uint64_t source_size)
+      : metadata_(metadata),
+        metadata_size_(metadata_size),
+        segment_data_(segment_data),
+        segment_size_(segment_size),
+        source_size_(source_size) {}
+
+  Result<FreeableBuffer> load(
+      size_t,
+      size_t,
+      const SegmentInfo&) const override {
+    return Error::NotSupported;
+  }
+
+  Result<size_t> size() const override {
+    return Error::NotSupported;
+  }
+
+  Result<FreeableBuffer> load_at_offset(
+      uint64_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
+    if (segment_info.segment_type == SegmentInfo::Type::Program) {
+      if (offset > metadata_size_ || size > metadata_size_ - offset) {
+        return Error::InvalidArgument;
+      }
+      return FreeableBuffer(
+          metadata_ + static_cast<size_t>(offset), size, nullptr);
+    }
+    if (size > segment_size_) {
+      return Error::InvalidArgument;
+    }
+    last_offset_ = offset;
+    return FreeableBuffer(segment_data_, size, nullptr);
+  }
+
+  Error load_into_at_offset(
+      uint64_t offset,
+      size_t size,
+      const SegmentInfo&,
+      void* buffer) const override {
+    if (buffer == nullptr || size > segment_size_) {
+      return Error::InvalidArgument;
+    }
+    last_offset_ = offset;
+    std::memcpy(buffer, segment_data_, size);
+    return Error::Ok;
+  }
+
+  Result<uint64_t> source_size() const override {
+    return source_size_;
+  }
+
+  uint64_t last_offset() const {
+    return last_offset_;
+  }
+
+ private:
+  const uint8_t* metadata_;
+  size_t metadata_size_;
+  const uint8_t* segment_data_;
+  size_t segment_size_;
+  uint64_t source_size_;
+  mutable uint64_t last_offset_{0};
+};
 
 } // namespace
 
@@ -280,12 +391,13 @@ TEST_F(FlatTensorDataMapTest, RejectsOutOfBoundsRootOffset) {
   // guarantees 1-byte alignment, so over-allocate and offset to an aligned
   // start. The first 4 bytes of a (non-size-prefixed) flatbuffer are the
   // uoffset_t pointing at the root table; the next 4 are the file identifier.
-  constexpr size_t kAlignment = alignof(std::max_align_t);
+  constexpr size_t kBufferAlignment = alignof(std::max_align_t);
   const size_t size = valid->size();
-  std::unique_ptr<uint8_t[]> storage(new uint8_t[size + kAlignment]);
+  std::unique_ptr<uint8_t[]> storage(new uint8_t[size + kBufferAlignment]);
   const size_t offset =
-      (kAlignment - (reinterpret_cast<uintptr_t>(storage.get()) % kAlignment)) %
-      kAlignment;
+      (kBufferAlignment -
+       (reinterpret_cast<uintptr_t>(storage.get()) % kBufferAlignment)) %
+      kBufferAlignment;
   uint8_t* corrupt = storage.get() + offset;
   std::memcpy(corrupt, valid->data(), size);
 
@@ -302,4 +414,265 @@ TEST_F(FlatTensorDataMapTest, RejectsOutOfBoundsRootOffset) {
   Result<FlatTensorDataMap> corrupt_map =
       FlatTensorDataMap::load(&corrupt_loader);
   ASSERT_EQ(corrupt_map.error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, PreservesWideOffsetWhenLoadingData) {
+  constexpr uint64_t kSegmentOffset = (uint64_t{1} << 32) + 0x1234;
+  constexpr SegmentSpec kSegment{
+      kSegmentOffset,
+      sizeof(float),
+      kSegmentOffset + sizeof(float)};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const uint64_t absolute_offset =
+      header->segment_base_offset + kSegmentOffset;
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      absolute_offset + sizeof(segment_data));
+
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+  Result<FreeableBuffer> loaded = data_map->get_data(kWideTensorKey);
+
+  ASSERT_TRUE(loaded.ok());
+  EXPECT_EQ(loader.last_offset(), absolute_offset);
+  EXPECT_EQ(loaded->size(), sizeof(segment_data));
+  EXPECT_EQ(loaded->data(), &segment_data);
+}
+
+TEST_F(FlatTensorDataMapTest, PreservesWideOffsetWhenLoadingDataIntoBuffer) {
+  constexpr uint64_t kSegmentOffset = (uint64_t{1} << 32) + 0x5678;
+  constexpr SegmentSpec kSegment{
+      kSegmentOffset,
+      sizeof(float),
+      kSegmentOffset + sizeof(float)};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const uint64_t absolute_offset =
+      header->segment_base_offset + kSegmentOffset;
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      absolute_offset + sizeof(segment_data));
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+
+  float loaded = 0.0f;
+  EXPECT_EQ(
+      data_map->load_data_into(kWideTensorKey, &loaded, sizeof(loaded)),
+      Error::Ok);
+  EXPECT_EQ(loader.last_offset(), absolute_offset);
+  EXPECT_EQ(loaded, segment_data);
+}
+
+TEST_F(FlatTensorDataMapTest, ValidatesWideSourceSizeWithoutTruncation) {
+  constexpr uint64_t kSegmentOffset = (uint64_t{1} << 32) + 0x9abc;
+  constexpr SegmentSpec kSegment{
+      kSegmentOffset,
+      sizeof(float),
+      kSegmentOffset + sizeof(float)};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const uint64_t required_source_size = header->segment_base_offset +
+      kSegmentOffset + sizeof(float);
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      required_source_size - 1);
+
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+
+  EXPECT_EQ(data_map.error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsSegmentBeyondDeclaredDataRegion) {
+  constexpr uint64_t kSegmentOffset = 16;
+  constexpr SegmentSpec kSegment{
+      kSegmentOffset,
+      sizeof(float),
+      kSegmentOffset + sizeof(float) - 1};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      header->segment_base_offset + kSegmentOffset + sizeof(segment_data));
+
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+  EXPECT_EQ(
+      data_map->get_data(kWideTensorKey).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, LoadIntoHonorsRequestedSize) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
+  ASSERT_TRUE(data_map.ok());
+
+  std::array<float, 2> destination{};
+  EXPECT_EQ(
+      data_map->load_data_into(
+          "a", destination.data(), sizeof(destination[0])),
+      Error::Ok);
+  EXPECT_EQ(destination[0], 3.0f);
+  EXPECT_EQ(destination[1], 0.0f);
+}
+
+TEST_F(FlatTensorDataMapTest, LoadIntoRejectsRequestBeyondSegmentSize) {
+  constexpr uint64_t kSegmentOffset = 16;
+  constexpr SegmentSpec kSegment{kSegmentOffset, 1, kSegmentOffset + 1};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(aligned_buffer.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      header->segment_base_offset + kSegmentOffset + 1);
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+
+  float destination = 0.0f;
+  EXPECT_EQ(
+      data_map->load_data_into(
+          kWideTensorKey, &destination, sizeof(destination)),
+      Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsOverflowingSegmentRegionExtent) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+
+  const uint64_t segment_base_offset = std::numeric_limits<uint64_t>::max();
+  const uint64_t segment_data_size = 1;
+  std::memcpy(
+      data.data() + kSegmentBaseOffsetFieldOffset,
+      &segment_base_offset,
+      sizeof(segment_base_offset));
+  std::memcpy(
+      data.data() + kSegmentDataSizeFieldOffset,
+      &segment_data_size,
+      sizeof(segment_data_size));
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+  BufferDataLoader loader(aligned_buffer.data(), data.size());
+
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsOverflowingDataSegmentExtent) {
+  constexpr SegmentSpec kSegment{
+      std::numeric_limits<uint64_t>::max() - 1,
+      2,
+      0};
+  std::vector<uint8_t> data = CreateDataWithVersion(
+      FlatTensorDataMap::kMaxSupportedSchemaVersion, &kSegment);
+
+  Result<FlatTensorHeader> header =
+      FlatTensorHeader::Parse(data.data(), data.size());
+  ASSERT_TRUE(header.ok());
+  const uint64_t segment_data_size =
+      std::numeric_limits<uint64_t>::max() - header->segment_base_offset;
+  std::memcpy(
+      data.data() + kSegmentDataSizeFieldOffset,
+      &segment_data_size,
+      sizeof(segment_data_size));
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+  const float segment_data = 3.0f;
+  WideOffsetDataLoader loader(
+      aligned_buffer.data(),
+      data.size(),
+      reinterpret_cast<const uint8_t*>(&segment_data),
+      sizeof(segment_data),
+      std::numeric_limits<uint64_t>::max());
+
+  Result<FlatTensorDataMap> data_map = FlatTensorDataMap::load(&loader);
+  ASSERT_TRUE(data_map.ok());
+  EXPECT_EQ(
+      data_map->get_data(kWideTensorKey).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsOverflowingFlatbufferExtent) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+
+  const uint64_t flatbuffer_offset =
+      std::numeric_limits<uint64_t>::max();
+  const uint64_t flatbuffer_size = 1;
+  std::memcpy(
+      data.data() + kFlatbufferOffsetFieldOffset,
+      &flatbuffer_offset,
+      sizeof(flatbuffer_offset));
+  std::memcpy(
+      data.data() + kFlatbufferSizeFieldOffset,
+      &flatbuffer_size,
+      sizeof(flatbuffer_size));
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+  BufferDataLoader loader(aligned_buffer.data(), data.size());
+
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
 }

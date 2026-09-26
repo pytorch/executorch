@@ -9,6 +9,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/result.h>
@@ -127,6 +129,69 @@ class DataLoader {
    * Returns the length of the underlying data source, typically the file size.
    */
   ET_NODISCARD virtual Result<size_t> size() const = 0;
+
+  /** Loads data from a 64-bit source offset. */
+  ET_NODISCARD virtual Result<FreeableBuffer> load_at_offset(
+      uint64_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const {
+#if SIZE_MAX < UINT64_MAX
+    if (offset > std::numeric_limits<size_t>::max()) {
+      ET_LOG(
+          Error,
+          "load_at_offset() source range cannot be represented by this data loader.");
+      return Error::NotSupported;
+    }
+#endif
+    if (static_cast<uint64_t>(size) >
+        static_cast<uint64_t>(std::numeric_limits<size_t>::max()) - offset) {
+      ET_LOG(
+          Error,
+          "load_at_offset() source range cannot be represented by this data loader.");
+      return Error::NotSupported;
+    }
+    return load(static_cast<size_t>(offset), size, segment_info);
+  }
+
+  /** Loads data from a 64-bit source offset into the provided buffer. */
+  ET_NODISCARD virtual Error load_into_at_offset(
+      uint64_t offset,
+      size_t size,
+      const SegmentInfo& segment_info,
+      void* buffer) const {
+#if SIZE_MAX < UINT64_MAX
+    if (offset > std::numeric_limits<size_t>::max()) {
+      ET_LOG(
+          Error,
+          "load_into_at_offset() source range cannot be represented by this data loader.");
+      return Error::NotSupported;
+    }
+#endif
+    if (static_cast<uint64_t>(size) >
+        static_cast<uint64_t>(std::numeric_limits<size_t>::max()) - offset) {
+      ET_LOG(
+          Error,
+          "load_into_at_offset() source range cannot be represented by this data loader.");
+      return Error::NotSupported;
+    }
+    return load_into(
+        static_cast<size_t>(offset), size, segment_info, buffer);
+  }
+
+  /**
+   * Returns the 64-bit length of the underlying data source.
+   *
+   * The default implementation widens the result from `size()`. Implementations
+   * that wrap sources larger than `size_t` can represent must override this
+   * method.
+   */
+  ET_NODISCARD virtual Result<uint64_t> source_size() const {
+    Result<size_t> result = size();
+    if (!result.ok()) {
+      return result.error();
+    }
+    return static_cast<uint64_t>(result.get());
+  }
 };
 
 } // namespace runtime
