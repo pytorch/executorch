@@ -47,6 +47,121 @@ class OpNativeLayerNormTest : public OperatorTest {
   }
 
   template <ScalarType DTYPE>
+  void test_reduced_precision_large_rows() {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    // PyTorch native_layer_norm: rows alternating -1/1 and 1/5 have
+    // mean 0/3 and variance 1/4. After rounding, rstd is exactly 1/0.5.
+    for (const int32_t width : {128, 256, 512, 514}) {
+      for (const bool affine : {false, true}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "width=" << width << " affine=" << affine);
+        std::vector<CTYPE> values(2 * width);
+        std::vector<CTYPE> expected_values(2 * width);
+        for (int32_t i = 0; i < width; ++i) {
+          const float sign = i % 2 == 0 ? -1.0f : 1.0f;
+          values[i] = sign;
+          values[width + i] = 3 + 2 * sign;
+          expected_values[i] = expected_values[width + i] =
+              affine ? 2 * sign + 0.5f : sign;
+        }
+        auto input = tf.make({2, width}, values);
+        optional<Tensor> weight;
+        optional<Tensor> bias;
+        if (affine) {
+          weight = tf.full({width}, 2);
+          bias = tf.full({width}, 0.5);
+        }
+        auto out = tf.zeros({2, width});
+        auto mean = tf.zeros({2, 1});
+        auto rstd = tf.zeros({2, 1});
+        op_native_layer_norm_out(
+            input, {width}, weight, bias, 1e-5, out, mean, rstd);
+        EXPECT_TENSOR_EQ(out, tf.make({2, width}, expected_values));
+        EXPECT_TENSOR_CLOSE(mean, tf.make({2, 1}, {0, 3}));
+        EXPECT_TENSOR_EQ(rstd, tf.make({2, 1}, {1, 0.5}));
+      }
+    }
+  }
+
+  template <ScalarType DTYPE>
+  void test_large_mean_rows(
+      double base,
+      double step,
+      const std::vector<int32_t>& widths,
+      double tolerance) {
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    constexpr double eps = 1e-5;
+    for (const int32_t width : widths) {
+      // Exact moments for two-valued and constant rows, independent of the
+      // kernel's reduction algorithm.
+      const double fraction = static_cast<double>(width / 2) / width;
+      const double expected_mean = base + step * fraction;
+      const double variance = step * step * fraction * (1 - fraction);
+      const double expected_rstd = 1 / std::sqrt(variance + eps);
+      for (const bool affine : {false, true}) {
+        SCOPED_TRACE(
+            ::testing::Message() << "width=" << width << " affine=" << affine);
+        std::vector<CTYPE> values(2 * width);
+        std::vector<CTYPE> expected_values(2 * width);
+        const double scale = affine ? 1.5 : 1;
+        const double offset = affine ? 0.125 : 0;
+        for (int32_t j = 0; j < width; ++j) {
+          values[j] = base + (j % 2) * step;
+          values[width + j] = base;
+          expected_values[j] =
+              (static_cast<double>(values[j]) - expected_mean) * expected_rstd *
+                  scale +
+              offset;
+          expected_values[width + j] = offset;
+        }
+        auto input = tf.make({2, width}, values);
+        optional<Tensor> weight;
+        optional<Tensor> bias;
+        if (affine) {
+          weight = tf.full({width}, scale);
+          bias = tf.full({width}, offset);
+        }
+        auto out = tf.zeros({2, width});
+        auto mean = tf.zeros({2, 1});
+        auto rstd = tf.zeros({2, 1});
+        op_native_layer_norm_out(
+            input, {width}, weight, bias, eps, out, mean, rstd);
+        EXPECT_TENSOR_CLOSE_WITH_TOL(
+            out, tf.make({2, width}, expected_values), 0, tolerance);
+        EXPECT_TENSOR_CLOSE(
+            mean,
+            tf.make(
+                {2, 1},
+                {static_cast<CTYPE>(expected_mean), static_cast<CTYPE>(base)}));
+        EXPECT_TENSOR_CLOSE_WITH_TOL(
+            rstd,
+            tf.make(
+                {2, 1},
+                {static_cast<CTYPE>(expected_rstd),
+                 static_cast<CTYPE>(1 / std::sqrt(eps))}),
+            tolerance,
+            tolerance);
+      }
+    }
+  }
+
+  template <ScalarType DTYPE>
+  void test_tiny_epsilon(double eps) {
+    TensorFactory<DTYPE> tf;
+    auto input = tf.ones({1, 192});
+    auto out = tf.ones({1, 192});
+    auto mean = tf.zeros({1, 1});
+    auto rstd = tf.zeros({1, 1});
+    op_native_layer_norm_out(
+        input, {192}, std::nullopt, std::nullopt, eps, out, mean, rstd);
+    EXPECT_TENSOR_EQ(out, tf.zeros({1, 192}));
+    EXPECT_TENSOR_EQ(mean, tf.ones({1, 1}));
+    EXPECT_TENSOR_CLOSE(rstd, tf.full({1, 1}, 1 / std::sqrt(eps)));
+  }
+
+  template <ScalarType DTYPE>
   struct NativeLayerNormTestCase {
     using ctype = typename TensorFactory<DTYPE>::ctype;
 
@@ -543,4 +658,38 @@ TEST_F(OpNativeLayerNormTest, NonDefaultDimOrderBiasDies) {
           out0,
           out1,
           out2));
+}
+
+TEST_F(OpNativeLayerNormTest, HalfLargeRows) {
+  test_reduced_precision_large_rows<ScalarType::Half>();
+}
+
+TEST_F(OpNativeLayerNormTest, BFloat16LargeRows) {
+  test_reduced_precision_large_rows<ScalarType::BFloat16>();
+}
+
+TEST_F(OpNativeLayerNormTest, FloatLargeMeanRows) {
+  test_large_mean_rows<ScalarType::Float>(3000, 0.125, {192}, 1e-3);
+}
+
+TEST_F(OpNativeLayerNormTest, DoubleLargeMeanRows) {
+  test_large_mean_rows<ScalarType::Double>(1e8, 0.5, {192}, 1e-10);
+}
+
+TEST_F(OpNativeLayerNormTest, HalfLargeMeanRows) {
+  test_large_mean_rows<ScalarType::Half>(
+      1000, 0.5, {192, 257, 512, 4096}, 4e-3);
+}
+
+TEST_F(OpNativeLayerNormTest, BFloat16LargeMeanRows) {
+  test_large_mean_rows<ScalarType::BFloat16>(
+      300, 2, {192, 257, 512, 4096}, 1.6e-2);
+}
+
+TEST_F(OpNativeLayerNormTest, HalfTinyEpsilon) {
+  test_tiny_epsilon<ScalarType::Half>(1e-12);
+}
+
+TEST_F(OpNativeLayerNormTest, DoubleTinyEpsilon) {
+  test_tiny_epsilon<ScalarType::Double>(1e-100);
 }
