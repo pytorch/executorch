@@ -18,7 +18,9 @@
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
 #include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/platform.h>
 
 using namespace executorch::backends::metal;
@@ -34,6 +36,15 @@ constexpr int32_t kDeviceMps = 13;
 constexpr int32_t kDeviceCpu = 0;
 
 } // namespace
+
+extern "C" AOTITorchError aoti_torch_mps_topk(
+    AOTITensorHandle self,
+    int64_t k,
+    int64_t dim,
+    int32_t largest,
+    int32_t sorted,
+    AOTITensorHandle* ret0,
+    AOTITensorHandle* ret1);
 
 extern "C" AOTITorchError aoti_torch_mps_mm_out(
     AOTITensorHandle out,
@@ -1782,6 +1793,244 @@ TEST_F(MetalGraphViewTest, FreeingConstantsForgetsTheirViews) {
 
   ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
   EXPECT_FALSE(metal_is_view(memory + 5));
+}
+
+// Freeing a buffer forgets the views in it also when it holds only its first
+// constant, which gets no buffer of its own.
+TEST_F(MetalGraphViewTest, FreeingABufferForgetsTheViewsInIt) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> data(8, 1.0f);
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          0,
+          0,
+          8 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  auto* memory = static_cast<float*>(constants);
+  AOTITensorHandle constant = nullptr;
+  ASSERT_EQ(createFromBlob(memory, &constant), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          constant, 1, &two, &kStride, /*storage_offset=*/1, &view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_view(memory + 1));
+
+  ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+  EXPECT_FALSE(metal_is_view(memory + 1));
+}
+
+// Handles left in a freed buffer keep nothing at its addresses: a later
+// allocation there is tracked and bound as if they were not there, and
+// deleting them does not take its registrations.
+TEST_F(MetalGraphViewTest, FreeingABufferRetiresTheHandlesInIt) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  auto* memory = static_cast<float*>(constants);
+  AOTITensorHandle constant = nullptr;
+  ASSERT_EQ(createFromBlob(memory, &constant), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          constant, 1, &two, &kStride, /*storage_offset=*/1, &view),
+      Error::Ok);
+  ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+
+  // Metal hands a freed address to a later allocation of that size, though
+  // not always to the next one.
+  void* again = nullptr;
+  std::vector<void*> others;
+  for (int i = 0; i < 64; i++) {
+    ASSERT_EQ(aoti_torch_mps_malloc(&again, 8 * sizeof(float)), Error::Ok);
+    if (again == constants) {
+      break;
+    }
+    others.push_back(again);
+  }
+  for (void* other : others) {
+    ASSERT_EQ(aoti_torch_mps_free(other), Error::Ok);
+  }
+  ASSERT_EQ(again, constants);
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createFromBlob(memory, &blob), Error::Ok);
+  AOTITensorHandle new_view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          blob, 1, &two, &kStride, /*storage_offset=*/1, &new_view),
+      Error::Ok);
+
+  // The old handles are refused where a shim takes a handle, rather than
+  // taken for the new allocation at their address.
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  EXPECT_NE(aoti_torch_copy_(out, constant, 0), Error::Ok);
+  AOTITensorHandle refused = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          constant, 1, &two, &kStride, /*storage_offset=*/0, &refused),
+      Error::Ok);
+  EXPECT_NE(aoti_torch_new_tensor_handle(constant, &refused), Error::Ok);
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(constant), Error::Ok);
+  EXPECT_TRUE(metal_is_view(memory + 1));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(new_view), Error::Ok);
+  EXPECT_FALSE(metal_is_view(memory + 1));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(blob), Error::Ok);
+  EXPECT_EQ(aoti_torch_mps_free(again), Error::Ok);
+}
+
+// A region check does not count handles whose memory was freed: plain CPU
+// memory at those addresses can take views.
+TEST_F(MetalGraphViewTest, RegionsIgnoreHandlesWhoseMemoryWasFreed) {
+  constexpr size_t kPage = 16384;
+  void* host = nullptr;
+  ASSERT_EQ(posix_memalign(&host, kPage, kPage), 0);
+  ASSERT_TRUE(metal_buffer_nocopy(host, kPage, /*map_ptr_to_buffer=*/true));
+  auto* memory = static_cast<float*>(host);
+  AOTITensorHandle old = nullptr;
+  ASSERT_EQ(createFromBlob(memory + 8, &old), Error::Ok);
+  ASSERT_EQ(aoti_torch_mps_free(host), Error::Ok);
+
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createStridedBlob(memory, {16}, {1}, &blob), Error::Ok);
+  const int64_t four = 4;
+  AOTITensorHandle view = nullptr;
+  EXPECT_EQ(
+      aoti_torch__reinterpret_tensor(
+          blob, 1, &four, &kStride, /*storage_offset=*/4, &view),
+      Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(blob), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(old), Error::Ok);
+  free(host);
+}
+
+// topk with nothing to return gives empty tensors; a negative k is refused.
+TEST_F(MetalGraphViewTest, TopkOfNothingIsEmpty) {
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  AOTITensorHandle values = nullptr;
+  AOTITensorHandle indices = nullptr;
+  ASSERT_EQ(
+      aoti_torch_mps_topk(input, /*k=*/0, /*dim=*/1, 1, 1, &values, &indices),
+      Error::Ok);
+  EXPECT_EQ(values->numel(), 0);
+  EXPECT_EQ(values->size(0), 2);
+  EXPECT_EQ(indices->numel(), 0);
+  EXPECT_EQ(indices->scalar_type(), executorch::aten::ScalarType::Long);
+  // They copy out to the output MetalBackend::execute resizes to them, whose
+  // strides come from its dim order ({1, 1} for {2, 0}), not those the shims
+  // settle on for an empty tensor.
+  auto host = executorch::extension::make_tensor_ptr(
+      std::vector<executorch::aten::SizesType>{2, 1}, std::vector<float>{0, 0});
+  const executorch::aten::SizesType empty_sizes[2] = {2, 0};
+  ASSERT_EQ(
+      executorch::runtime::resize_tensor(*host, {empty_sizes, 2}), Error::Ok);
+  ASSERT_NE(host->strides()[1], values->strides()[1]);
+  EXPECT_EQ(aoti_torch_copy_(host.get(), values, 0), Error::Ok);
+  AOTITensorHandle more_values = nullptr;
+  AOTITensorHandle more_indices = nullptr;
+  EXPECT_EQ(
+      aoti_torch_mps_topk(
+          input, /*k=*/-1, /*dim=*/1, 1, 1, &more_values, &more_indices),
+      Error::InvalidArgument);
+}
+
+// A constant's buffer goes with the buffer of all constants, not with
+// aoti_torch_mps_free.
+TEST_F(MetalGraphViewTest, FreeingAConstantsOwnBufferIsRefused) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> data(4, 1.0f);
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          4 * sizeof(float),
+          0,
+          4 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  auto* memory = static_cast<float*>(constants);
+  AOTITensorHandle constant = nullptr;
+  ASSERT_EQ(createFromBlob(memory + 4, &constant), Error::Ok);
+  EXPECT_NE(aoti_torch_mps_free(memory + 4), Error::Ok);
+  AOTITensorHandle copy = nullptr;
+  EXPECT_EQ(aoti_torch_new_tensor_handle(constant, &copy), Error::Ok);
+  EXPECT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+}
+
+// A strided view left in a freed buffer, such as a chunk of a weight, is no
+// longer one: its record goes with the memory, not with a later deletion that
+// only drops the handle.
+TEST_F(MetalGraphViewTest, FreeingABufferForgetsTheStridedViewsInIt) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  AOTITensorHandle weight = nullptr;
+  ASSERT_EQ(
+      createStridedBlob(
+          static_cast<float*>(constants), {2, 4}, {4, 1}, &weight),
+      Error::Ok);
+  const int64_t sizes[2] = {2, 2};
+  const int64_t left_half[2] = {4, 1};
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          weight, 2, sizes, left_half, /*storage_offset=*/0, &view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_strided_view(view));
+
+  ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+  EXPECT_FALSE(metal_is_strided_view(view));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(weight), Error::Ok);
+}
+
+// Memory a tensor owns goes with the tensor, not with aoti_torch_mps_free.
+TEST_F(MetalGraphViewTest, FreeingATensorsMemoryIsRefused) {
+  const int64_t size = 4;
+  AOTITensorHandle tensor = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &size, &kStride, kFloat32, kDeviceMps, 0, &tensor),
+      Error::Ok);
+  void* memory = tensor->mutable_data_ptr();
+  EXPECT_NE(aoti_torch_mps_free(memory), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(memory));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+// A blob inside a CPU allocation keeps it alive, also when the allocation
+// already has a region: the region of an allocation is exactly that
+// allocation, so the blob is found in the allocation first.
+TEST_F(MetalGraphViewTest, BlobInsideARegionOfACpuAllocationKeepsItAlive) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* memory = static_cast<float*>(base->mutable_data_ptr());
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &two, &kStride, /*storage_offset=*/4, &view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_device_pointer(memory));
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createFromBlob(memory + 8, &blob), Error::Ok);
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(memory));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(blob), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(memory));
 }
 
 // Arguments no tensor can have are refused at the entry of each shim.

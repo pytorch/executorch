@@ -118,9 +118,10 @@ struct CpuRegion {
     // of it do, and `views` counts their handles.
     bool owned;
     int32_t views;
-    // The stream, and how many waits it had completed, when queued work last
-    // bound this buffer (metal_resolve_buffer); unset if none has.
-    ETMetalStream* bound_on = nullptr;
+    // Whether queued work has bound this buffer (metal_resolve_buffer), and
+    // how many waits the stream had completed when it last did. There is one
+    // stream (see getCurrentMetalStream).
+    bool bound = false;
     uint64_t bound_at = 0;
 };
 std::unordered_map<void*, CpuRegion> cpu_regions;
@@ -181,16 +182,15 @@ bool find_memory(void* ptr, void** base, bool* cpu) {
 
 // Records that queued work is about to use the region's buffer.
 static void note_bound(CpuRegion& region) {
-    region.bound_on = getCurrentMetalStream();
-    region.bound_at = region.bound_on->completedWaits();
+    region.bound = true;
+    region.bound_at = getCurrentMetalStream()->completedWaits();
 }
 
 // Whether work using the region's buffer may still be queued: it was bound
-// since its stream last waited, or on another stream.
+// since the stream last waited.
 static bool may_be_in_use(const CpuRegion& region) {
-    ETMetalStream* stream = getCurrentMetalStream();
-    return region.bound_on != nullptr &&
-        (region.bound_on != stream || region.bound_at == stream->completedWaits());
+    return region.bound &&
+        region.bound_at == getCurrentMetalStream()->completedWaits();
 }
 
 static bool resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset, bool bind) {
@@ -235,11 +235,8 @@ bool metal_record_strided_view(
     const void* tensor,
     std::vector<int64_t> sizes,
     std::vector<int64_t> strides) {
-    // The gather indexes with unsigned strides and divides by every size.
-    if (sizes.size() != strides.size() ||
-        std::any_of(sizes.begin(), sizes.end(), [](int64_t size) { return size <= 0; }) ||
-        std::any_of(strides.begin(), strides.end(), [](int64_t stride) { return stride < 0; })) {
-        ET_LOG(Error, "metal_record_strided_view: only non-empty views with non-negative strides can be packed");
+    if (!metal_can_pack_strided_view(sizes, strides)) {
+        ET_LOG(Error, "metal_record_strided_view: the gather cannot pack this view");
         return false;
     }
     strided_views[tensor] = {std::move(sizes), std::move(strides)};
@@ -585,6 +582,19 @@ void metal_record_constants_buffer(void* ptr, size_t offset) {
 
 bool metal_forget_constants_buffer(void* ptr) {
     return constants_buffers.erase(ptr) != 0;
+}
+
+bool metal_is_constant_buffer(void* ptr) {
+    const auto* p = static_cast<const uint8_t*>(ptr);
+    for (const auto& constants : constants_buffers) {
+        const auto* begin = static_cast<const uint8_t*>(constants.first);
+        auto buffer = ptr_to_mtl_buffer.find(constants.first);
+        if (buffer != ptr_to_mtl_buffer.end() && begin < p &&
+            p < begin + [buffer->second length]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 size_t metal_constant_extent(void* base, size_t nbytes) {
@@ -1113,6 +1123,35 @@ namespace {
 // buffer. Any slots would do: a kernel function whose arguments the gather
 // overwrites binds them again afterwards (restoreBindings).
 constexpr uint32_t kGatherMaxDims = 16;
+} // namespace
+
+bool metal_can_pack_strided_view(
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& strides) {
+    // The gather divides by every size, indexes with 32-bit unsigned element
+    // counts and strides, and takes at most kGatherMaxDims dims.
+    if (sizes.size() != strides.size() || sizes.size() > kGatherMaxDims) {
+        return false;
+    }
+    uint64_t numel = 1;
+    uint64_t extent = 0;
+    for (size_t d = 0; d < sizes.size(); d++) {
+        if (sizes[d] <= 0 || strides[d] < 0 ||
+            __builtin_mul_overflow(numel, static_cast<uint64_t>(sizes[d]), &numel) ||
+            numel > UINT32_MAX) {
+            return false;
+        }
+        uint64_t step = 0;
+        if (__builtin_mul_overflow(
+                static_cast<uint64_t>(sizes[d] - 1), static_cast<uint64_t>(strides[d]), &step) ||
+            __builtin_add_overflow(extent, step, &extent) || extent > UINT32_MAX) {
+            return false;
+        }
+    }
+    return true;
+}
+
+namespace {
 constexpr unsigned kGatherSrcIndex = 28;
 constexpr unsigned kGatherDstIndex = 29;
 constexpr unsigned kGatherParamsIndex = 30;

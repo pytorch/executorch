@@ -277,7 +277,9 @@ TEST_F(MetalStridedViewTest, HandWrittenKernelMayNotWriteAStridedView) {
 }
 
 // A view the packed copy cannot gather is not recorded: an empty one (the
-// gather divides by every size) or one with negative strides.
+// gather divides by every size), one with negative strides, one spanning more
+// than 2^32 elements or one with more than 16 dims. So a strided view that is
+// recorded can always be packed.
 TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
   AOTITensorHandle base = nullptr;
   AOTITensorHandle view = nullptr;
@@ -286,6 +288,11 @@ TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
   EXPECT_FALSE(metal_record_strided_view(view, {0, 2}, {4, 1}));
   EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {-4, 1}));
   EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {4}));
+  // Nor one spanning more elements than the gather indexes, or with more dims
+  // than it takes.
+  EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {int64_t{1} << 31, 1}));
+  EXPECT_FALSE(metal_record_strided_view(
+      view, std::vector<int64_t>(17, 1), std::vector<int64_t>(17, 1)));
   EXPECT_FALSE(metal_is_strided_view(view));
   EXPECT_TRUE(metal_record_strided_view(view, {4, 2}, {4, 1}));
 
@@ -298,23 +305,6 @@ TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
           base, 2, sizes, strides, /*storage_offset=*/12, &backwards),
       Error::Ok);
   EXPECT_EQ(backwards, nullptr);
-}
-
-// A strided view that cannot be packed is an error, rather than being bound
-// with the packed strides it carries.
-TEST_F(MetalStridedViewTest, FailingToPackIsAnError) {
-  AOTITensorHandle base = nullptr;
-  AOTITensorHandle view = nullptr;
-  createBaseAndRightHalf(&base, &view);
-  // Describe the view as spanning more elements than the gather can index.
-  // Nothing reads through it: the gather refuses it before encoding anything.
-  metal_record_strided_view(view, {4, 2}, {int64_t{1} << 31, 1});
-
-  auto copy = copyKernel();
-  copy->runCommandBlock([&]() {
-    copy->startEncoding();
-    EXPECT_THROW(copy->setArg(0, *view), std::runtime_error);
-  });
 }
 
 TEST_F(MetalStridedViewTest, CopiedHandleIsAStridedViewToo) {

@@ -43,6 +43,10 @@ AOTITorchError aoti_torch_mps_topk(
 
   void* values_ptr = nullptr;
   void* indices_ptr = nullptr;
+  void* indices_i64_ptr = nullptr;
+  // Owns values_ptr once made: an error after that deletes the handle, which
+  // frees the memory, rather than freeing the memory under it.
+  AOTITensorHandle values_handle = nullptr;
 
   try {
     @autoreleasepool {
@@ -58,8 +62,8 @@ AOTITorchError aoti_torch_mps_topk(
       }
 
       int64_t dim_size = self_tensor->sizes()[dim];
-      if (k > dim_size) {
-        ET_LOG(Error, "aoti_torch_mps_topk: k=%lld > dim_size=%lld", k, dim_size);
+      if (k < 0 || k > dim_size) {
+        ET_LOG(Error, "aoti_torch_mps_topk: k=%lld is not in [0, dim_size=%lld]", k, dim_size);
         return Error::InvalidArgument;
       }
 
@@ -95,6 +99,27 @@ AOTITorchError aoti_torch_mps_topk(
       // Total elements
       size_t num_elements = 1;
       for (auto s : out_sizes) num_elements *= s;
+
+      if (num_elements == 0) {
+        // Nothing to sort into, e.g. k == 0: empty values and indices.
+        AOTITensorHandle empty_values = nullptr;
+        AOTITorchError err = aoti_torch_empty_strided(
+            ndim, out_sizes.data(), out_strides.data(), dtype, 13, 0, &empty_values);
+        if (err != Error::Ok) {
+          return err;
+        }
+        AOTITensorHandle empty_indices = nullptr;
+        err = aoti_torch_empty_strided(
+            ndim, out_sizes.data(), out_strides.data(),
+            static_cast<int32_t>(exec_aten::ScalarType::Long), 13, 0, &empty_indices);
+        if (err != Error::Ok) {
+          aoti_torch_delete_tensor_object(empty_values);
+          return err;
+        }
+        *ret0 = empty_values;
+        *ret1 = empty_indices;
+        return Error::Ok;
+      }
 
       // Allocate output buffers
       size_t values_bytes = num_elements * element_size;
@@ -232,7 +257,6 @@ AOTITorchError aoti_torch_mps_topk(
       }
 
       // Create output tensor handles
-      AOTITensorHandle values_handle = nullptr;
       aoti_torch_create_tensor_from_blob_v2(
           values_ptr, ndim, out_sizes.data(), out_strides.data(),
           0, dtype, 13, 0, &values_handle, 0, nullptr, 0);
@@ -245,10 +269,10 @@ AOTITorchError aoti_torch_mps_topk(
       }
 
       memory_to_n_tensor[values_ptr] = 1;
+      values_ptr = nullptr;
 
       // Indices tensor — MPSGraph outputs int32, AOTInductor expects int64.
       size_t indices_i64_bytes = num_elements * sizeof(int64_t);
-      void* indices_i64_ptr = nullptr;
       allocate_mtl_buffer(&indices_i64_ptr, indices_i64_bytes);
 
       // Copy int32 → int64 on CPU (small tensor, fast)
@@ -260,7 +284,9 @@ AOTITorchError aoti_torch_mps_topk(
           dst[i] = static_cast<int64_t>(src[i]);
         }
       }
-      aoti_torch_mps_free(indices_ptr);
+      // Scratch that no handle ever lay in: back to the pool, after the wait
+      // above.
+      metal_deallocate_buffer(indices_ptr);
       indices_ptr = nullptr;
 
       int32_t indices_dtype = static_cast<int32_t>(exec_aten::ScalarType::Long);
@@ -278,9 +304,11 @@ AOTITorchError aoti_torch_mps_topk(
       if (idx_err != Error::Ok || !indices_handle) {
         ET_LOG(Error, "aoti_torch_mps_topk: failed to create indices tensor, err=%d", idx_err);
         aoti_torch_mps_free(indices_i64_ptr);
+        aoti_torch_delete_tensor_object(values_handle);
         return Error::Internal;
       }
       memory_to_n_tensor[indices_i64_ptr] = 1;
+      indices_i64_ptr = nullptr;
 
       *ret0 = values_handle;
       *ret1 = indices_handle;
@@ -291,13 +319,17 @@ AOTITorchError aoti_torch_mps_topk(
 
   } catch (const std::exception& e) {
     ET_LOG(Error, "aoti_torch_mps_topk exception: %s", e.what());
+    if (values_handle) aoti_torch_delete_tensor_object(values_handle);
     if (values_ptr) aoti_torch_mps_free(values_ptr);
     if (indices_ptr) aoti_torch_mps_free(indices_ptr);
+    if (indices_i64_ptr) aoti_torch_mps_free(indices_i64_ptr);
     return Error::Internal;
   } catch (...) {
     ET_LOG(Error, "aoti_torch_mps_topk: unknown exception");
+    if (values_handle) aoti_torch_delete_tensor_object(values_handle);
     if (values_ptr) aoti_torch_mps_free(values_ptr);
     if (indices_ptr) aoti_torch_mps_free(indices_ptr);
+    if (indices_i64_ptr) aoti_torch_mps_free(indices_i64_ptr);
     return Error::Internal;
   }
 }
