@@ -318,8 +318,8 @@ done
 # it with FetchContent at cmake time -- so fetch it at the revision that backend
 # pins. Without it the Cortex-M ops compile against headers that are not there.
 if [ -z "$CMSIS_NN" ]; then
-  CMSIS_NN_PIN=$(sed -n '/set(CMSIS_NN_VERSION/,/)/p' \
-    "$ET_ROOT/backends/cortex_m/CMakeLists.txt" | grep -oE '"[0-9a-f]{40}"' | tr -d '"')
+  CMSIS_NN_PIN=$(sed -n '/set(CMSIS_NN_VERSION/,/)/s/^[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$ET_ROOT/backends/cortex_m/CMakeLists.txt")
   if [ -z "$CMSIS_NN_PIN" ]; then
     echo "ERROR: could not read CMSIS_NN_VERSION from backends/cortex_m/CMakeLists.txt"
     exit 1

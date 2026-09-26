@@ -6,6 +6,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    DecomposeColIm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
     InsertIOQDQ,
@@ -15,11 +16,17 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
+from executorch.backends.qualcomm.builders.node_visitor import (
+    NodeVisitor,
+    to_dq_op,
+    to_q_op,
+)
 from executorch.backends.qualcomm.builders.op_custom_op import (
     _resolve_qnn_data_type,
     CustomOp,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
@@ -33,6 +40,13 @@ from executorch.backends.qualcomm.tests.models import (
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
+    Unfold,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+    QCOM_SCALE,
+    QCOM_ZERO_POINTS,
 )
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -212,6 +226,100 @@ class TestPasses(unittest.TestCase):
         # one quantize (input) and one dequantize (output) = +2 nodes.
         self.assertEqual(node_count_after, node_count_before + 2)
 
+    def test_q_dq_map_pins_per_channel_group_pairs(self):
+        """to_q_op / to_dq_op must map per_channel_group q<->dq to each other.
+
+        ``to_dq_op`` short-circuits for targets already in ``dq_ops``, so the
+        map is only consulted when converting across the pair; a wrong entry
+        here would surface later as an assertion in ``insert_quant_node``.
+        """
+        quantize_per_channel_group = (
+            exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default
+        )
+        dequantize_per_channel_group = (
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        self.assertIs(to_q_op(dequantize_per_channel_group), quantize_per_channel_group)
+        self.assertIs(
+            to_dq_op(quantize_per_channel_group), dequantize_per_channel_group
+        )
+        self.assertIs(to_q_op(quantize_per_channel_group), quantize_per_channel_group)
+        self.assertIs(
+            to_dq_op(dequantize_per_channel_group), dequantize_per_channel_group
+        )
+
+    def test_insert_io_qdq_per_channel_group_dequantizes_output(self):
+        """InsertIOQDQ must insert a dequantize_per_channel_group before output.
+
+        A pre-quantized group-wise (e.g. int4 LLM) weight parameter that feeds
+        the graph output takes the dequantize-before-output branch. The
+        insert-quantize-after-input branch is skipped for parameters, so the
+        output branch is the only place the encoding is resolved.
+        """
+        graph_module, exported_program = self._build_quantized_graph()
+
+        parameter_node = next(
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder" and is_parameter(node, exported_program)
+        )
+        output_node = next(
+            node for node in graph_module.graph.nodes if node.op == "output"
+        )
+
+        # Annotate the parameter as a group-wise quantized weight.
+        scales = torch.ones(4, 1)
+        parameter_node.meta[QCOM_QUANT_ATTRS] = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_SCALE: scales,
+            "scales": scales,
+            "zero_points": None,
+            "quant_min": -8,
+            "quant_max": 7,
+            "dtype": torch.int8,
+            "group_size": 1,
+            "output_dtype": torch.float32,
+        }
+
+        existing_outputs = output_node.args[0]
+        if not isinstance(existing_outputs, tuple):
+            existing_outputs = (existing_outputs,)
+        output_node.args = (existing_outputs + (parameter_node,),)
+        graph_module.graph.lint()
+        graph_module.recompile()
+
+        InsertIOQDQ(exported_program)._insert(graph_module)
+
+        dequantize_target = (
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        dequantize_nodes_feeding_output = [
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "call_function"
+            and node.target == dequantize_target
+            and any(user.op == "output" for user in node.users.keys())
+        ]
+        self.assertEqual(len(dequantize_nodes_feeding_output), 1)
+
+    def test_make_qnn_per_block_config_rejects_asymmetric(self):
+        """QNN blockwise expansion is symmetric-only; non-zero zero_points must
+        raise instead of silently lowering to a symmetric encoding."""
+        graph_module, exported_program = self._build_quantized_graph()
+        parameter_node = next(
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder" and is_parameter(node, exported_program)
+        )
+
+        visitor = NodeVisitor({}, exported_program, enable_tensor_dump=False)
+        quant_attrs = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_ZERO_POINTS: torch.tensor([0, 1, 0, 0]),
+        }
+        with self.assertRaisesRegex(ValueError, "symmetric"):
+            visitor.make_qnn_per_block_config(parameter_node, quant_attrs)
+
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
@@ -348,6 +456,140 @@ class TestPasses(unittest.TestCase):
                 torch.allclose(out, *ref, rtol=1e-6, atol=1e-6),
                 f"Output {i} mismatch: got {out}, expected {ref}",
             )
+
+    def test_decompose_im2col_matches_unfold(self):
+        """DecomposeColIm's im2col decomposition must produce the exact same
+        values as torch.nn.functional.unfold, across all three decomposition
+        branches:
+          - stride == kernel_size, square kernel -> pixel_unshuffle
+          - stride == kernel_size, non-square kernel -> qnn_custom.space_to_depth
+          - stride != kernel_size -> index_select gather + the tail above
+        """
+        cases = [
+            ((2, 4, 8, 8), (2, 2), (2, 2), (0, 0)),  # stride == kernel_size, square
+            ((2, 4, 9, 6), (3, 2), (3, 2), (0, 0)),  # stride == kernel_size, non-square
+            (
+                (2, 4, 8, 8),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+            ),  # stride != kernel_size, square kernel
+            (
+                (1, 2, 7, 9),
+                (2, 3),
+                (1, 1),
+                (0, 0),
+            ),  # stride != kernel_size, non-square kernel
+            (
+                (1, 3, 10, 10),
+                (3, 3),
+                (2, 2),
+                (0, 0),
+            ),  # stride != kernel_size, overlapping
+            (
+                (2, 4, 6, 6),
+                (2, 2),
+                (2, 2),
+                (1, 1),
+            ),  # nonzero padding, stride == kernel_size
+            (
+                (2, 4, 6, 6),
+                (2, 2),
+                (1, 1),
+                (1, 1),
+            ),  # nonzero padding, stride != kernel_size
+        ]
+        for shape, kernel_size, stride, padding in cases:
+            with self.subTest(
+                shape=shape, kernel_size=kernel_size, stride=stride, padding=padding
+            ):
+
+                x = torch.randn(*shape)
+                module = Unfold(kernel_size, stride, padding).eval()
+                ref = module(x)
+                exported_program = torch.export.export(module, (x,), strict=True)
+                ep = to_edge(
+                    exported_program,
+                    compile_config=EdgeCompileConfig(
+                        preserve_ops=[torch.ops.aten.im2col.default]
+                    ),
+                ).exported_program()
+                self.assertTrue(
+                    any(
+                        n.target == exir_ops.edge.aten.im2col.default
+                        for n in ep.graph_module.graph.nodes
+                    ),
+                    "im2col was decomposed in to_edge",
+                )
+                gm = DecomposeColIm()(ep.graph_module).graph_module
+                gm.recompile()
+
+                # Decomposition must actually have run: no im2col node left.
+                self.assertFalse(
+                    any(
+                        n.target == exir_ops.edge.aten.im2col.default
+                        for n in gm.graph.nodes
+                    ),
+                    "im2col node was not decomposed",
+                )
+
+                out = gm(x)
+                if isinstance(out, (list, tuple)):
+                    out = out[0]
+                self.assertTrue(
+                    torch.allclose(ref, out),
+                    f"unfold decomposition mismatch for kernel_size={kernel_size}, "
+                    f"stride={stride}: got {out}, expected {ref}",
+                )
+
+    def test_decompose_im2col_fallback(self):
+        """When stride < kernel_size, the index_select gather in
+        DecomposeColIm duplicates elements by roughly
+        (kernel_height/stride_height) * (kernel_width/stride_width).
+        Above DecomposeColIm._MAX_GATHER_EXPANSION_FACTOR, the pass must skip
+        decomposition rather than build an unbounded gather. Since QNN has no
+        node visitor for aten.im2col, the un-decomposed node then falls back
+        to CPU when lowered.
+        """
+        cases = [
+            # factor == (8/2)*(8/2) <= MAX_GATHER_EXPANSION_FACTOR: decomposed.
+            ((1, 1, 20, 20), (8, 8), (2, 2), True),
+            # factor == (9/2)*(9/2) > MAX_GATHER_EXPANSION_FACTOR: falls back.
+            ((1, 1, 20, 20), (9, 9), (2, 2), False),
+        ]
+        for shape, kernel_size, stride, should_decompose in cases:
+            with self.subTest(shape=shape, kernel_size=kernel_size, stride=stride):
+
+                x = torch.randn(*shape)
+                module = Unfold(kernel_size, stride).eval()
+
+                exported_program = torch.export.export(module, (x,), strict=True)
+                ep = to_edge(
+                    exported_program,
+                    compile_config=EdgeCompileConfig(
+                        preserve_ops=[torch.ops.aten.im2col.default]
+                    ),
+                ).exported_program()
+                self.assertTrue(
+                    any(
+                        n.target == exir_ops.edge.aten.im2col.default
+                        for n in ep.graph_module.graph.nodes
+                    ),
+                    "im2col was decomposed in to_edge",
+                )
+                gm = DecomposeColIm()(ep.graph_module).graph_module
+                gm.recompile()
+
+                im2col_present = any(
+                    n.target == exir_ops.edge.aten.im2col.default
+                    for n in gm.graph.nodes
+                )
+                self.assertNotEqual(
+                    im2col_present,
+                    should_decompose,
+                    f"im2col {'should' if should_decompose else 'should NOT'} be "
+                    f"decomposed for kernel_size={kernel_size}, stride={stride}",
+                )
 
     def test_resolve_debug_handle(self):
         name_handle_map = {
@@ -846,6 +1088,354 @@ class TestPasses(unittest.TestCase):
         reused = log.count("Use cached backend bundle")
         self.assertEqual(2, created, f"expected 2 backend creations, got {created}")
         self.assertGreaterEqual(reused, 1, "third manager must reuse the live bundle")
+
+    def test_is_graph_output_tolerates_users_without_a_name(self):
+        """call_module targets are plain strings; reading __name__ raised."""
+        from executorch.backends.qualcomm.builders.utils import is_graph_output
+
+        graph = torch.fx.Graph()
+        placeholder = graph.placeholder("x")
+        # a call_module user, whose target is a str and so has no __name__
+        graph.create_node("call_module", "_guards_fn", (placeholder,))
+        graph.output((placeholder,))
+
+        self.assertTrue(any(u.op == "call_module" for u in placeholder.users))
+        self.assertTrue(is_graph_output(placeholder))
+        self.assertTrue(is_graph_output(placeholder, 0))
+
+    def test_is_graph_output_is_per_output_not_per_node(self):
+        """Only the outputs a graph actually consumes may be published.
+
+        A multi-output node used to be treated as a whole: one escaping output
+        marked every output of that node as a graph output, so QNN published
+        values nothing reads. The published set then no longer matched the one
+        ExecuTorch bound, and the two are paired by position.
+        """
+        from executorch.backends.qualcomm.builders.utils import is_graph_output
+
+        class OnlyValues(torch.nn.Module):
+            def forward(self, x):
+                # max.dim returns (values, indices); only values is returned.
+                return torch.max(x, dim=1).values
+
+        gm = torch.export.export(
+            OnlyValues().eval(), (torch.randn(2, 3),), strict=True
+        ).module()
+        node = next(
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function" and "max" in str(n.target)
+        )
+        getitems = {
+            u.args[1]: u
+            for u in node.users
+            if getattr(u.target, "__name__", "") == "getitem"
+        }
+        self.assertEqual({0, 1}, set(getitems), "both outputs should be unpacked")
+        self.assertTrue(getitems[0].users, "values reaches the graph output")
+        self.assertFalse(getitems[1].users, "indices is dead")
+
+        self.assertTrue(is_graph_output(node), "node does reach a graph output")
+        self.assertTrue(is_graph_output(node, 0), "values is consumed")
+        self.assertFalse(
+            is_graph_output(node, 1),
+            "indices has no consumer and must not be published",
+        )
+
+    def test_unconsumed_output_is_native_not_app_read(self):
+        """The tensor type is what actually reaches QNN, so assert on it.
+
+        An unconsumed output published as APP_READ makes the QNN graph declare
+        more outputs than ExecuTorch binds, and the two are paired by position.
+        """
+        import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+        from executorch.backends.qualcomm.builders.node_visitor import NodeVisitor
+
+        class OnlyValues(torch.nn.Module):
+            def forward(self, x):
+                return torch.max(x, dim=1).values
+
+        edge_program = torch.export.export(
+            OnlyValues().eval(), (torch.randn(2, 3),), strict=True
+        )
+        node = next(
+            n
+            for n in edge_program.graph_module.graph.nodes
+            if n.op == "call_function" and "max" in str(n.target)
+        )
+        visitor = NodeVisitor({node: 0}, edge_program, enable_tensor_dump=False)
+
+        native = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
+        self.assertEqual(
+            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ,
+            visitor.get_tensor_type(node, native, 0),
+            "values is consumed and must be published",
+        )
+        self.assertEqual(
+            native,
+            visitor.get_tensor_type(node, native, 1),
+            "indices has no consumer and must stay internal",
+        )
+
+
+# Attributes PT2E compares in _union_input_edge_with when deciding whether an
+# input edge and its producer's output can share one observer.
+_SHARING_ATTRS = (
+    "dtype",
+    "is_dynamic",
+    "quant_min",
+    "quant_max",
+    "qscheme",
+    "ch_axis",
+    "scale",
+    "zero_point",
+)
+
+# (quant_dtype, is_qat, act_symmetric) combinations whose default and per-channel
+# activation specs are known not to match yet. Every 16-bit config sets
+# quant_min/quant_max unconditionally while the per-channel config omits them when
+# act_symmetric, so the two cannot share an observer. Fixing that changes the
+# observed zero_point on a path that works today, so it is left for a follow-up.
+_KNOWN_UNSHAREABLE = {
+    (QuantDtype.use_16a16w, False, True),
+    (QuantDtype.use_16a2w, False, True),
+    (QuantDtype.use_16a4w, False, True),
+    (QuantDtype.use_16a4w, True, True),
+    (QuantDtype.use_16a4w_block, False, True),
+    (QuantDtype.use_16a4w_block, True, True),
+    (QuantDtype.use_16a8w, False, True),
+    (QuantDtype.use_16a8w, True, True),
+}
+
+_Q_PER_TENSOR = {
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_tensor.tensor,
+}
+_DQ_PER_TENSOR = {
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.tensor,
+}
+
+
+def _count_requantize_clusters(graph_module):
+    """Quantize nodes fed directly by a dequantize: two observers on one edge."""
+    return sum(
+        1
+        for node in graph_module.graph.nodes
+        if node.op == "call_function"
+        and node.target in _Q_PER_TENSOR
+        and isinstance(node.args[0], torch.fx.Node)
+        and node.args[0].target in _DQ_PER_TENSOR
+    )
+
+
+class ConvReluConv(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 8, 3, padding=1)
+        self.conv2 = torch.nn.Conv2d(8, 8, 3, padding=1)
+
+    def forward(self, x):
+        return torch.relu(self.conv2(torch.relu(self.conv1(x))))
+
+
+class LinearReluLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = torch.nn.Linear(16, 32)
+        self.fc2 = torch.nn.Linear(32, 8)
+
+    def forward(self, x):
+        return torch.relu(self.fc2(torch.relu(self.fc1(x))))
+
+
+class TestActivationSpecSharing(unittest.TestCase):
+    """A per-channel op's activation spec must match the default one.
+
+    QNN uses two activation specs: the default config for most ops and the
+    per-channel config for conv and linear. PT2E gives an edge one observer only
+    when the producer's output qspec and the consumer's input qspec agree on every
+    attribute in _SHARING_ATTRS -- observer_or_fake_quant_ctr is deliberately not
+    compared, so this is about attributes, not spec identity or
+    SharedQuantizationSpec. Any drift leaves two observers on one edge, which
+    convert_pt2e materializes as a dequantize immediately followed by a quantize
+    at every conv boundary.
+    """
+
+    def test_default_and_per_channel_act_specs_can_share_an_observer(self):
+        from executorch.backends.qualcomm.quantizer.quantizer import QUANT_CONFIG_DICT
+        from torchao.quantization.pt2e.prepare import _has_same_attr
+
+        for (quant_dtype, is_qat), funcs in QUANT_CONFIG_DICT.items():
+            default_fn, per_channel_fn = funcs[0], funcs[1]
+            if default_fn is None or per_channel_fn is None:
+                continue
+            for act_symmetric in (False, True):
+                combination = (quant_dtype, is_qat, act_symmetric)
+                with self.subTest(combination=combination):
+                    default_act = default_fn(
+                        act_symmetric=act_symmetric
+                    ).output_activation
+                    per_channel_act = per_channel_fn(
+                        act_symmetric=act_symmetric, ch_axis=0
+                    ).input_activation
+                    if default_act is None or per_channel_act is None:
+                        # fp16a8w keeps activations in float.
+                        continue
+                    mismatched = [
+                        attr
+                        for attr in _SHARING_ATTRS
+                        if not _has_same_attr(default_act, per_channel_act, attr)
+                    ]
+                    if combination in _KNOWN_UNSHAREABLE:
+                        self.assertNotEqual(
+                            mismatched,
+                            [],
+                            f"{combination} is listed in _KNOWN_UNSHAREABLE but now "
+                            "matches; remove it from the list",
+                        )
+                        continue
+                    self.assertEqual(
+                        mismatched,
+                        [],
+                        f"{combination} cannot share an observer, mismatched on "
+                        + ", ".join(
+                            f"{attr}: {getattr(default_act, attr, None)} vs "
+                            f"{getattr(per_channel_act, attr, None)}"
+                            for attr in mismatched
+                        ),
+                    )
+
+    def _requantize_counts(self, module_cls, example_inputs):
+        """Redundant dequantize->quantize clusters under PTQ and QAT."""
+        from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
+
+        counts = {}
+        for is_qat in (False, True):
+            quantizer = QnnQuantizer()
+            quantizer.set_default_quant_config(
+                QuantDtype.use_8a8w,
+                is_qat=is_qat,
+                is_conv_per_channel=True,
+                is_linear_per_channel=True,
+            )
+            module = module_cls()
+            module = module.train() if is_qat else module.eval()
+            exported = torch.export.export(module, example_inputs, strict=True).module()
+            prepared = (
+                prepare_qat_pt2e(exported, quantizer)
+                if is_qat
+                else prepare_pt2e(exported, quantizer)
+            )
+            prepared(*example_inputs)
+            counts[is_qat] = _count_requantize_clusters(convert_pt2e(prepared))
+        return counts
+
+    def _assert_qat_matches_ptq(self, counts):
+        self.assertEqual(counts[False], 0, "PTQ regressed")
+        self.assertEqual(
+            counts[True],
+            counts[False],
+            "QAT inserts a dequantize->quantize round trip that PTQ does not; the "
+            "default and per-channel activation specs have drifted apart",
+        )
+
+    def test_8a8w_qat_does_not_double_quantize_conv_boundaries(self):
+        """End-to-end guard for the same invariant.
+
+        This model has no BatchNorm, so it isolates the activation-spec mismatch
+        from anything conv-bn related. Before the act_symmetric split in
+        get_8a8w_qnn_qat_config, QAT produced three redundant clusters here while
+        PTQ produced none.
+        """
+        self._assert_qat_matches_ptq(
+            self._requantize_counts(ConvReluConv, (torch.randn(2, 3, 8, 8),))
+        )
+
+    def test_8a8w_qat_does_not_double_quantize_linear_boundaries(self):
+        """The conv case above never reaches is_linear_per_channel.
+
+        Linear takes the same per-channel activation spec as conv, so the same
+        drift shows up at linear boundaries -- but ConvReluConv has no aten.linear
+        node, so nothing exercised that path.
+        """
+        self._assert_qat_matches_ptq(
+            self._requantize_counts(LinearReluLinear, (torch.randn(2, 16),))
+        )
+
+
+class TestIoBindingCheck(unittest.TestCase):
+    """_check_io_binding must fire when QNN publishes I/O the signature lacks.
+
+    The runtime binds delegate arguments positionally against the tensor list in
+    the context binary, so a graph that declares more bindable tensors than the
+    program passes reads past the end of args. That has to be caught at lowering.
+    """
+
+    @staticmethod
+    def _edge_program(num_inputs, num_outputs):
+        signature = MagicMock()
+        signature.user_inputs = [f"arg_{i}" for i in range(num_inputs)]
+        signature.user_outputs = [f"out_{i}" for i in range(num_outputs)]
+        edge_program = MagicMock()
+        edge_program.graph_signature = signature
+        return edge_program
+
+    def _run(self, names, num_inputs, num_outputs):
+        from executorch.backends.qualcomm import qnn_preprocess
+
+        wrappers = {f"n{i}": {0: object()} for i in range(len(names))}
+        by_id = {
+            id(next(iter(v.values()))): name
+            for v, name in zip(wrappers.values(), names)
+        }
+
+        class _StubWrapper:
+            def __init__(self, wrapper):
+                self._name = by_id[id(wrapper)]
+
+            def GetName(self):
+                return self._name
+
+        with unittest.mock.patch.object(
+            qnn_preprocess.PyQnnManager, "PyQnnTensorWrapper", _StubWrapper
+        ):
+            qnn_preprocess._check_io_binding(
+                self._edge_program(num_inputs, num_outputs), wrappers
+            )
+
+    def test_matching_io_passes(self):
+        self._run(
+            ["input_0_x", "output_y", "conv2d_3", "_frozen_param0"],
+            num_inputs=1,
+            num_outputs=1,
+        )
+
+    def test_mutable_buffers_do_not_consume_arguments(self):
+        # A mutable buffer is threaded through separately and is not a user input.
+        self._run(
+            ["input_0_x", "input_1_mutbuf_0_cache", "output_y"],
+            num_inputs=1,
+            num_outputs=1,
+        )
+
+    def test_extra_published_inputs_are_rejected(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run(
+                ["input_0_x", "input_1_stray", "input_2_stray", "output_y"],
+                num_inputs=1,
+                num_outputs=1,
+            )
+        message = str(ctx.exception)
+        self.assertIn("QNN declares 3 graph inputs", message)
+        self.assertIn("input_1_stray", message)
+
+    def test_extra_published_outputs_are_rejected(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run(
+                ["input_0_x", "output_y", "output_stray"], num_inputs=1, num_outputs=1
+            )
+        self.assertIn("2 graph outputs", str(ctx.exception))
 
 
 if __name__ == "__main__":

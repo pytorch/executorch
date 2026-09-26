@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <assert.h>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <iterator>

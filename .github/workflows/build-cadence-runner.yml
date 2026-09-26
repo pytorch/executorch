@@ -19,6 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   # Same-repo PRs run on pull_request, which reads the PR's own workflow AND code
   # -- so CI changes, new test jobs, code, and tests are all validated pre-merge.
   # Fork PRs can't get credentials (OIDC) on pull_request, so Meta-exported forks
@@ -26,19 +30,20 @@ jobs:
   # run condition is inlined per job (GitHub Actions has no YAML anchors and env
   # is unavailable in job-level if), so keep the copies in sync.
   cpu-build:
+    needs: docker-image
     if: >-
       github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
       contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
     with:
       job-name: build
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
       timeout: 90

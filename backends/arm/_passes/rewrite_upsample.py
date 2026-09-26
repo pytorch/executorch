@@ -46,6 +46,8 @@ class RewriteUpsamplePass(ArmPass):
         input_size: int | torch.SymInt,
         output_size: int | torch.SymInt,
         align_corners: bool,
+        resize_mode: str = "bilinear",
+        scale_factor: float | None = None,
     ):
         """Compute resize coefficients for a single spatial dimension.
 
@@ -56,6 +58,10 @@ class RewriteUpsamplePass(ArmPass):
                 symbolic.
             align_corners (bool): Whether the resize should align the corner
                 pixels.
+            resize_mode (str): TOSA resize mode, either ``"bilinear"`` or
+                ``"nearest"``.
+            scale_factor (float | None): Explicit PyTorch scale factor for the
+                axis, when one was provided.
 
         Returns:
             tuple[int, int, int, int]: Numerator, denominator, offset, and border
@@ -92,7 +98,16 @@ class RewriteUpsamplePass(ArmPass):
             scale_d = input_size - 1
         else:
             scale_d = input_size
-        ratio = sympy.nsimplify(sympy.simplify(scale_n / scale_d))
+        if resize_mode == "nearest" and scale_factor is not None:
+            # When recompute_scale_factor=False, PyTorch samples using the
+            # supplied scale rather than the ratio implied by the rounded-down
+            # output size.
+            # Quantization may round the exported value to float32 (for
+            # example, 1.6 becomes 1.6000000238). Recover the intended small
+            # rational so it can be represented by TOSA's integer scale.
+            ratio = sympy.nsimplify(scale_factor, tolerance=1e-6, rational=True)
+        else:
+            ratio = sympy.nsimplify(sympy.simplify(scale_n / scale_d))
         if ratio.free_symbols:
             raise RuntimeError(
                 "Resize requires a constant ratio: " + str(ratio) + " is not constant!"
@@ -102,7 +117,22 @@ class RewriteUpsamplePass(ArmPass):
         scale_n = int((2 * ratio_num).evalf())
         scale_d = int((2 * ratio_den).evalf())
 
-        if align_corners:
+        if resize_mode == "nearest":
+            if ratio_den == 1:
+                # For exact integer upscales, the half-pixel encoding selects
+                # the same pixels as PyTorch nearest and is supported by U55.
+                offset = scale_d // 2 - scale_n // 2
+            else:
+                # TOSA nearest samples with a half-scale bias:
+                #
+                #   input_y = floor(
+                #       (out_y * scale_d + offset + scale_n / 2) / scale_n
+                #   )
+                #
+                # PyTorch nearest uses floor(out_y * input_size / output_size).
+                # A negative half-scale offset cancels the TOSA bias.
+                offset = -(scale_n // 2)
+        elif align_corners:
             offset = 0
         else:
             # Half pixel centers so input and output sampling positions are offset by 1/2 pixel.
@@ -143,15 +173,24 @@ class RewriteUpsamplePass(ArmPass):
 
             input_size_yx = node.args[0].meta["val"].shape[2:]
             output_size_yx = node.meta["val"].shape[2:]
+            scale_factors_yx = scale_factors or (None, None)
 
             scale_y_n, scale_y_d, offset_y, border_y = (
                 RewriteUpsamplePass.get_resize_parameters_1d(
-                    input_size_yx[0], output_size_yx[0], align_corners
+                    input_size_yx[0],
+                    output_size_yx[0],
+                    align_corners,
+                    resize_mode,
+                    scale_factors_yx[0],
                 )
             )
             scale_x_n, scale_x_d, offset_x, border_x = (
                 RewriteUpsamplePass.get_resize_parameters_1d(
-                    input_size_yx[1], output_size_yx[1], align_corners
+                    input_size_yx[1],
+                    output_size_yx[1],
+                    align_corners,
+                    resize_mode,
+                    scale_factors_yx[1],
                 )
             )
 

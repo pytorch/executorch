@@ -78,7 +78,6 @@ include(${ET_DIR_PATH}/backends/arm/cmake/ArmRunnerUtils.cmake)
 add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
 
 add_executable(img_class_example main.cpp)
-include(${ET_DIR_PATH}/backends/arm/cmake/ArmRunnerUtils.cmake)
 arm_runner_link_minimal_specs(img_class_example)
 
 target_sources(
@@ -97,11 +96,6 @@ arm_runner_create_selected_ops_lib(
   cortex_m_kernels
   DEPS
   executorch
-)
-
-verify_targets_exist(
-  CONTEXT img_class_example TARGETS image_classification_cortex_m_ops_lib
-  cortex_m_kernels portable_kernels
 )
 
 target_link_libraries(

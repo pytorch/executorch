@@ -146,10 +146,18 @@ class _ExactValueAnalysis:
         return _combine_values(lhs, rhs, lambda a, b: sympy.Mod(a, b))
 
     @staticmethod
+    def python_mod(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
+        return _ExactValueAnalysis.mod(lhs, rhs)
+
+    @staticmethod
     def floordiv(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
         if rhs is None or any(value == 0 for value in rhs):
             return None
         return _combine_values(lhs, rhs, lambda a, b: sympy.floor(a / b))
+
+    @staticmethod
+    def python_floordiv(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
+        return _ExactValueAnalysis.floordiv(lhs, rhs)
 
     @staticmethod
     def pow(lhs: _ExactValues, rhs: _ExactValues) -> _ExactValues:
@@ -181,7 +189,6 @@ def evaluate_symbolic_expr_values(
 
     """
     root_expr = expr.node.expr if isinstance(expr, torch.SymInt) else expr
-
     constant_values = _constant_expr_values(root_expr)
     if constant_values is not None:
         return constant_values

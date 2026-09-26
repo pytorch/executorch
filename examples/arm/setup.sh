@@ -30,6 +30,7 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
+enable_model_explorer=0
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -55,6 +56,7 @@ OPTION_LIST=(
   "--enable-model-converter Enable MLSDK model converter setup"
   "--enable-vgf-lib Enable MLSDK vgf library setup"
   "--enable-emulation-layer Enable MLSDK Vulkan emulation layer"
+  "--enable-model-explorer Install optional Model Explorer visualization dependencies"
   "--disable-ethos-u-deps Do not setup what is needed for Ethos-U"
   "--enable-mlsdk-deps Setup what is needed for MLSDK"
   "--install-mlsdk-deps-with-pip (default) Use MLSDK PyPI packages"
@@ -142,6 +144,10 @@ function check_options() {
                 ;;
             --enable-vulkan-sdk)
                 enable_vulkan_sdk=1
+                shift
+                ;;
+            --enable-model-explorer)
+                enable_model_explorer=1
                 shift
                 ;;
             --disable-ethos-u-deps)
@@ -234,6 +240,61 @@ function setup_cortex_m_tools() {
     pip install --no-dependencies -r $et_dir/backends/cortex_m/requirements-cortex-m.txt
 }
 
+function check_model_explorer_python() {
+    local py_version
+    py_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if ! python3 -c 'import sys; raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)'; then
+        log_step "model-explorer" \
+            "Model Explorer adapters require Python 3.10-3.12; detected Python ${py_version}."
+        return 1
+    fi
+}
+
+function setup_model_explorer() {
+    check_model_explorer_python || return 1
+
+    local model_explorer_dir="${root_dir}/model-explorer"
+    local staging_dir
+    staging_dir="$(mktemp -d "${root_dir}/model-explorer.XXXXXX")"
+
+    log_step "model-explorer" "Installing optional visualization dependencies"
+    if ! python3 -m pip install --ignore-installed --no-warn-conflicts \
+        --target "${staging_dir}" \
+        -r "${et_dir}/backends/arm/requirements-arm-model-explorer.txt"; then
+        rm -rf "${staging_dir}"
+        return 1
+    fi
+    if ! PYTHONPATH="${staging_dir}" python3 -c \
+        'import pte_adapter_model_explorer.main, tosa_adapter_model_explorer.main' || \
+       ! PYTHONPATH="${staging_dir}" python3 -m model_explorer --help >/dev/null; then
+        log_step "model-explorer" "Installed packages failed validation"
+        rm -rf "${staging_dir}"
+        return 1
+    fi
+
+    python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' \
+        > "${staging_dir}/.python-version"
+    rm -rf "${model_explorer_dir}"
+    mv "${staging_dir}" "${model_explorer_dir}"
+}
+
+function warn_if_mlsdk_python_is_untested() {
+    if [[ "${enable_model_converter}" -eq 0 && \
+          "${enable_vgf_lib}" -eq 0 && \
+          "${enable_emulation_layer}" -eq 0 ]]; then
+        return
+    fi
+
+    local py_version
+    py_version="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+    if ! python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'; then
+        log_step "mlsdk" \
+            "Warning: Python 3.12 is the recommended minimum for ML SDK 0.10 VGF; detected Python ${py_version}."
+        log_step "mlsdk" \
+            "Older ExecuTorch-supported Python versions may work, but are not the reference VGF configuration."
+    fi
+}
+
 function setup_mlsdk_dependencies() {
     log_step "mlsdk" "Installing MLSDK dependencies"
     if [[ "${enable_model_converter}" -eq 1 || "${enable_emulation_layer}" -eq 1 ]]; then
@@ -311,12 +372,17 @@ function create_setup_path(){
 if [[ $is_script_sourced -eq 0 ]]; then
     set -e
 
+    ARM_SETUP_CURL_PROGRESS_ARGS=(--progress-bar)
     if [[ -n "$("${et_dir}/.ci/scripts/detect_ci.sh" --and-not-debug)" ]]; then
         ARM_SETUP_CURL_PROGRESS_ARGS=(--no-progress-meter)
         export PIP_PROGRESS_BAR=off
     fi
 
     check_options "$@"
+
+    if [[ "${enable_model_explorer}" -eq 1 ]]; then
+        check_model_explorer_python
+    fi
 
     if [[ "${#target_toolchains[@]}" -eq 0 ]]; then
         target_toolchains=("gnu")
@@ -359,10 +425,15 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
         log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
-        check_fvp_eula
-        setup_fvp
-        install_fvp
+        if [[ "${OS}" == "Linux" ]]; then
+            check_fvp_eula
+            install_fvp
+        else
+            setup_fvp
+        fi
     fi
+
+    warn_if_mlsdk_python_is_untested
 
     # Setup Vulkan SDK
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
@@ -393,6 +464,10 @@ if [[ $is_script_sourced -eq 0 ]]; then
     if [[ "${enable_vela}" -eq 1 ]]; then
         log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
+    fi
+
+    if [[ "${enable_model_explorer}" -eq 1 ]]; then
+        setup_model_explorer
     fi
 
     log_step "main" "Setup complete"

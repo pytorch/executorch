@@ -25,6 +25,7 @@ pip install transformers optimum-executorch
 | `export_llm_hf` | Export LLMs using optimum-executorch pipeline, with optional custom MLX SDPA/KV cache |
 | `run_llm_hf` | Run exported models with token-by-token generation |
 | `run_llm_hf.cpp` | C++ runner; the run path for off-graph-cache exports, and runs in-graph ones too |
+| `run_llm_batched.cpp` | C++ runner for independent off-graph sessions, with optional shared prefix caching |
 
 For exporting via the ExecuTorch LLM pipeline (e.g. `examples/models/llama`), use `--mlx` to enable the MLX delegate.
 
@@ -96,7 +97,7 @@ pip install -U "transformers @ git+https://github.com/huggingface/transformers.g
 | `--use-custom-sdpa` | `False` | Use MLX custom SDPA (`mlx::custom_sdpa`) |
 | `--use-custom-kv-cache` | `False` | Use MLX custom KV cache (`mlx::kv_cache_update`) |
 | `--use-offgraph-cache` | `False` | Use the off-graph KV cache (`kvcache::update_and_attend`); replaces the two flags above |
-| `--prefill-chunk-size` | `512` | Max tokens per forward step. Bounds the traced `seq_len` dimension and is published as `get_prefill_chunk_size` for the runner. It is also the largest single cache write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the context length. Ignored on the optimum-executorch path, which owns its own `seq_len` bound |
+| `--prefill-chunk-size` | `512` | Max tokens per forward step. Bounds the traced `seq_len` dimension and is published as `get_max_seq_len` for the runner. It is also the largest single cache write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the context length. Ignored on the optimum-executorch path, which owns its own `seq_len` bound |
 
 Off-graph exports keep no cache in the `.pte`, so the pybindings `run_llm_hf`
 cannot run them — use [`mlx_run_llm_hf`](#mlx_run_llm_hf-c) below, which builds
@@ -161,6 +162,62 @@ cmake --build cmake-out/backends/mlx/examples/llm -j$(( $(sysctl -n hw.ncpu) - 1
 ```
 
 The binary lands at `cmake-out/backends/mlx/examples/llm/mlx_run_llm_hf`.
+The same build also produces `mlx_run_llm_batched` in that directory.
+
+### Prefix-cache smoke test
+
+`mlx_run_llm_batched` uses the backend-independent prefix cache in
+[`extension/llm`](../../../../extension/llm/batching/README.md).
+Enable it with `--prefix_cache_entries`; zero, the default, disables it.
+**Cold/warm logit and token parity are not guaranteed on MLX.** Prefix reuse
+changes prefill shapes and can change numerical results. Keep reuse opt-in and
+restrict experiments to greedy generation until non-greedy sampling is
+validated; greedy sampling itself does not guarantee matching tokens.
+
+The application owns the shared `batching::PrefixCache` and captures snapshots
+with `capture_prompt(session, full_prompt_tokens)`. Each capture wraps one
+generation callback and is collected on the caller thread after
+`generation.wait()`. Capture binds to the original session identity, so the
+source Session and capture handle can move. Keep the source's current owner
+alive until generation completes; capture does not delay source closure.
+Capture is best effort and requests its clone before delivering the
+first tokens; user callback exceptions retain the Runner's normal failure
+behavior. ModuleExecutor has no prefix-policy hooks.
+`--prompt_rounds 2` repeats the prompt on a fresh session while retaining the
+cache. Use a model exported with `--use-offgraph-cache`, full or selected
+logits, and a matching tokenizer and chat template.
+
+After the Gemma 3 off-graph export below, run from the ExecuTorch root, replacing
+the tokenizer path with the tokenizer used for that export:
+
+```bash
+ET_PREFIX_TOKENIZER=/path/to/gemma3/tokenizer.json
+ET_PREFIX_RESULTS=$(mktemp -d)
+for entries in 0 2; do
+  cmake-out/backends/mlx/examples/llm/mlx_run_llm_batched \
+    --pte gemma3_offgraph.pte --tokenizer "$ET_PREFIX_TOKENIZER" \
+    --chat gemma --cache_kind batched-sequence \
+    --max_session_tokens 1024 --max_new_tokens 64 \
+    --max_decode_sequences 1 --temperature 0 --seed 42 \
+    --prefix_cache_entries "$entries" --prompt_rounds 2 \
+    --out_prefix "$ET_PREFIX_RESULTS/cache-$entries" \
+    "What is the capital of France?" \
+    > "$ET_PREFIX_RESULTS/cache-$entries.log" 2>&1 || exit 1
+done
+cmp "$ET_PREFIX_RESULTS/cache-0_0.txt" "$ET_PREFIX_RESULTS/cache-0_1.txt"
+cmp "$ET_PREFIX_RESULTS/cache-0_0.txt" "$ET_PREFIX_RESULTS/cache-2_0.txt"
+cmp "$ET_PREFIX_RESULTS/cache-0_0.txt" "$ET_PREFIX_RESULTS/cache-2_1.txt"
+cat "$ET_PREFIX_RESULTS/cache-2.log"
+```
+
+The generated text should agree across all four runs. In the cached run's
+request report, generation 0 should have zero cached prompt tokens and generation 1
+should reuse the prompt except for its final token, which is replayed for
+fresh logits. Repeat with `--cache_kind batched-cell` to check the alternative
+storage implementation. These short prompts check integration; the cache
+tests additionally cover sliding-window wrap, divergent continuations, and
+unavailable history. Model validation should also include prompts longer than
+the model's sliding window.
 
 ### Run
 
@@ -231,7 +288,7 @@ default.
 | `--temperature` | `0` | Sampling temperature; 0 is greedy argmax, which is what makes two `.pte` files comparable |
 | `--chat` | `llama3` | Chat template: `llama3`, `gemma`, `gemma4`, or `0` to disable |
 | `--kv-max-capacity` | `0` | Off-graph: history the cache may hold. Setting it selects the off-graph path |
-| `--kv-storage-dtype` | `bf16` | Off-graph: KV storage dtype (`bf16`, `fp16`, `fp32`) |
+| `--kv-storage-dtype` | PTE activation dtype | Off-graph: optional KV storage override (`bf16`, `fp16`, `fp32`); defaults to the PTE's `get_activation_dtype`, which is required, so a `.pte` exported before this metadata must be re-exported |
 | `--kv-initial-capacity` | `-1` | Off-graph: starting pool size; grows by doubling up to capacity |
 | `--kv-windows` | *(model's own)* | Off-graph: attention pattern override, e.g. `512` |
 | `--interactive` | `false` | Multi-turn chat on stdin; off-graph only |

@@ -40,16 +40,17 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
-There are two ways to get the C++ runtime. Linking the prebuilt libraries from the pip
-package needs no source checkout and is the quicker option. Building from source gives
-you every option the project has, and is what you need for a platform the wheel does not
+There are two ways to get the C++ runtime. Current main/nightly wheels include
+prebuilt libraries and need no source checkout. Building from source gives you
+every option the project has and is required for a platform the wheel does not
 cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux and macOS, `pip install executorch` ships the runtime as prebuilt shared libraries together
-with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from
-source, and without knowing much CMake.
+On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
+shared libraries together with the headers and a CMake package. Stable releases
+from before this packaging was introduced do not contain the namespaced CMake
+targets used below; use the documentation for your installed release.
 
 #### Run your first model in four steps
 
@@ -58,12 +59,12 @@ Copy these three files into an empty folder and follow along. No prior CMake kno
 **1. Install, and make a model file.**
 
 ```
-pip install executorch torch --extra-index-url https://download.pytorch.org/whl/cpu
+pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
-`torch` is named explicitly because the wheel does not depend on it, so you bring your own torch and
-keep the version under your control. You need it only to create a model file in step 1, not to run
-the C++ program.
+`torch` is installed explicitly because nightly ExecuTorch wheels do not declare
+it as a dependency. Python and PyTorch are needed to create the model file in
+step 1, but not to run the compiled C++ program.
 
 A C++ program loads a `.pte` file, which is a model that has already been exported. C++ cannot
 create one, so make it in Python first:
@@ -79,7 +80,7 @@ class Add(torch.nn.Module):
 
 example = (torch.ones(2, 2), torch.ones(2, 2))
 program = to_edge_transform_and_lower(
-    torch.export.export(Add(), example)
+    torch.export.export(Add().eval(), example)
 ).to_executorch()
 open("model.pte", "wb").write(program.buffer)
 ```
@@ -94,6 +95,8 @@ python export.py
 // main.cpp
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+
+#include <array>
 #include <cstdio>
 
 using namespace executorch::extension;
@@ -178,26 +181,41 @@ These are the components the package provides:
 | `threadpool` | Multi-threaded execution. | Linux, macOS |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS |
+| `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
+| `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
+| `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
 
 To see what your own install offers, ask CMake:
 
 ```cmake
 find_package(executorch REQUIRED)
 foreach(_component
-        runtime kernels_optimized kernels_quantized backend_xnnpack
-        backend_cuda extension_cuda backend_openvino threadpool etdump)
+        runtime kernels_optimized kernels_quantized kernels_torchao
+        backend_xnnpack backend_coreml backend_mlx backend_cuda extension_cuda
+        backend_openvino threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
 endforeach()
 ```
 
-On macOS the Core ML and MLX delegates are registered inside the Python extension rather than
-shipped as separate C++ libraries, so a C++ application there cannot link them as components; use
-them from Python, or build from source if you need them in C++.
+On macOS the Core ML and MLX delegates link the same way, by naming their
+component. Registration is handled for you: each backend registers itself through
+a static initializer, and the imported target carries the link options that keep
+that initializer from being dropped, so you do not need `-force_load` or any
+whole-archive flag of your own.
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_coreml backend_mlx)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_coreml
+                                  executorch::backend_mlx)
+```
 
 Profiling a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in
 total. It does not record the individual operators inside the delegate, because that detail comes
@@ -231,6 +249,17 @@ export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(g
 
 Without it the delegate still registers and the program still links, and the failure arrives later,
 when the model is loaded.
+
+The MLX delegate has a similar requirement. Its Metal kernels live in a separate `mlx.metallib`
+file, which MLX looks for next to whichever library holds MLX code. The wheel ships it beside the
+delegate, so a program that links the delegate where it sits needs nothing extra. A program that
+copies the delegate next to its own binary has to copy that file too, and `find_package` reports
+where it is:
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS backend_mlx)
+message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
+```
 
 #### When something does not work
 
@@ -298,12 +327,12 @@ last of the two settings decides the tag for every entry in the link.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index
-matching the CUDA version you have (`cu126`, `cu130` or `cu132`). For CUDA 12.6:
+The CUDA build is a separate package. Releases cover CUDA 13.0, 13.2 and 13.4, so pick the index
+matching the CUDA version you have (`cu130`, `cu132` or `cu134`). For CUDA 13.0:
 
 ```
 pip install executorch torch \
-  --index-url https://download.pytorch.org/whl/cu126 \
+  --index-url https://download.pytorch.org/whl/cu130 \
   --extra-index-url https://pypi.org/simple
 ```
 

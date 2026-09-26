@@ -7,10 +7,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import platform
+import tempfile
+from pathlib import Path
 from typing import List
 
 import test_base
-
+import test_clean_install
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models import Backend, Model, MODEL_NAME_TO_MODEL
@@ -68,6 +70,11 @@ def run_tests(model_tests: List[ModelTest]) -> None:
 
 
 if __name__ == "__main__":
+    # Before anything else, because this is the check that fails the way a user
+    # fails: with only the dependencies the wheel declares.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_clean_install.run_tests(Path(work_dir))
+
     if platform.system() == "Windows":
         registered = _get_registered_backend_names()
         # Vulkan backend is optional: only present when the wheel was built with

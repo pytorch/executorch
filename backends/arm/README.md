@@ -156,6 +156,49 @@ compile specs, see:
 
 Additional examples are available in `examples/arm`.
 
+#### Export recipes
+
+An `ExportRecipe` bundles those steps for a target, so a standard export needs
+no compile spec, quantizer or partitioner of its own. Each recipe carries the
+settings its target expects:
+
+```python
+from executorch.backends.arm.recipes.arm_recipe_types import ArmRecipeType
+from executorch.export import export, ExportRecipe
+
+session = export(
+    model=model,
+    example_inputs=[example_inputs],
+    export_recipe=ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U55_INT8),
+)
+session.save_to_pte("model")
+```
+
+The recipe quantizes the model, so pass `example_inputs` that are representative
+of real data; they are used to calibrate.
+
+Available recipes:
+
+| Recipe | Target |
+| --- | --- |
+| `ETHOS_U55_INT8`, `ETHOS_U65_INT8`, `ETHOS_U85_INT8` | Ethos-U NPUs, int8 |
+| `TOSA_FP`, `TOSA_INT8`, `TOSA_A16W8` | TOSA, for testing without hardware |
+| `VGF_FP`, `VGF_INT8` | VGF, for the ML SDK for Vulkan |
+
+The Ethos-U recipes accept `macs`, `system_config`, `memory_mode`,
+`extra_flags` and `config_ini`, matching the corresponding Vela options:
+
+```python
+ExportRecipe.get_recipe(ArmRecipeType.ETHOS_U85_INT8, macs=512)
+```
+
+`macs` is validated against the accelerator configurations the installed Vela
+accepts, so an unsupported count fails at recipe construction rather than during
+compilation.
+
+Reach for the step-by-step flow above when a recipe does not fit -- a custom
+quantization scheme, extra passes, or a compile spec the recipe does not expose.
+
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
 Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
@@ -360,11 +403,25 @@ List of model specific and optional passes:
        - Supported Ops:
          - torch.ops.aten.to.\[dtype|dtype_layout\]
          - exir_ops.edge.dim_order_ops.\_to_dim_order_copy.default
-    2. Post-process argmax outputs:
-       - Inserts an int64->int32 cast after the argmax operations that produce int64 outputs:
+    2. Post-process argmax and argmin outputs:
+       - Converts only downstream paths whose statically inferred values remain
+         within the int32 range.
+       - Leaves unsafe direct consumers on int64 and inserts int64 boundary
+         casts where converted paths reach unsafe consumers or model outputs.
        - Supported Ops:
          - torch.ops.aten.argmax.default
          - exir_ops.edge.aten.argmax.default
+         - torch.ops.aten.argmin.default
+         - exir_ops.edge.aten.argmin.default
+    3. Post-process TopK indices:
+       - Applies the same range-safe path conversion to `getitem(topk, 1)`.
+       - Leaves `getitem(topk, 0)` values and unsafe direct consumers unchanged.
+       - Inserts int64 boundary casts where converted paths reach unsafe
+         consumers or model outputs.
+       - Keeps gather indices int64 so an undelegated gather remains valid.
+       - Supported Ops:
+         - torch.ops.aten.topk.default
+         - exir_ops.edge.aten.topk.default
   - Example usage:
     - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
     - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py

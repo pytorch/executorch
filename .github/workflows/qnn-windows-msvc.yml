@@ -56,8 +56,8 @@ permissions:
   contents: read
 
 jobs:
-  build-qnn-windows-msvc:
-    name: build-qnn-windows-msvc
+  build-qnn-windows-x64:
+    name: build-qnn-windows-x64
     uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -70,5 +70,35 @@ jobs:
           Set-PSDebug -Trace 1
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
-          .ci/scripts/build-qnn-windows-msvc.ps1
+          .ci/scripts/build-qnn-windows-msvc.ps1 -SkipArm64Windows
         }"
+
+  build-qnn-windows-arm64:
+    name: build-qnn-windows-arm64
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+      - name: Enable long paths
+        shell: cmd
+        run: |
+          git config --system --get core.longpaths || echo "core.longpaths is not set, setting it now"
+          git config --system core.longpaths true
+
+      - name: Checkout ExecuTorch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Initialize submodules
+        shell: pwsh
+        run: |
+          git config --global http.sslBackend openssl
+          git submodule update --init --recursive
+
+      - name: Build QNN backend (arm64)
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          .ci/scripts/build-qnn-windows-msvc.ps1 -SkipX86Windows

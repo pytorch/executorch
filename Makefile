@@ -19,6 +19,8 @@
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal, MLX)
 # - sortformer: Speaker diarization model (CPU, CUDA)
+# - nemotron3-diarization: Speaker diarization model (MLX, XNNPACK)
+# - supertonic: Text-to-speech model (MLX)
 # - silero_vad: Voice activity detection model (CPU)
 # - llama:    Text generation model (CPU)
 # - llava:    Vision + language model (CPU)
@@ -91,7 +93,7 @@
 #
 # ==============================================================================
 
-.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu supertonic-mlx silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
 
 help:
 	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
@@ -120,6 +122,9 @@ help:
 	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
 	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
+	@echo "  nemotron3-diarization-mlx - Build Nemotron 3 Diarization runner with MLX backend"
+	@echo "  nemotron3-diarization-cpu - Build Nemotron 3 Diarization runner with XNNPACK backend"
+	@echo "  supertonic-mlx      - Build Supertonic runner with MLX backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
 	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
@@ -283,6 +288,17 @@ dinov2-cuda-debug:
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/dinov2/dinov2_runner"
 
+.PHONY: nemotron3-diarization-mlx
+nemotron3-diarization-mlx:
+	cmake --preset mlx-release -DEXECUTORCH_BUILD_XNNPACK=ON
+	cmake --build --preset mlx-release-install
+	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-mlx
+
+.PHONY: nemotron3-diarization-cpu
+nemotron3-diarization-cpu:
+	cmake --workflow --preset llm-release
+	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-cpu
+
 sortformer-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
 	cmake --workflow --preset llm-release-cuda
@@ -299,6 +315,15 @@ sortformer-cpu:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+supertonic-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Supertonic runner with MLX..."
+	cd examples/models/supertonic && cmake --workflow --preset supertonic-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/supertonic/supertonic_runner"
 
 voxtral_realtime-cpu:
 	@echo "==> Building and installing ExecuTorch..."

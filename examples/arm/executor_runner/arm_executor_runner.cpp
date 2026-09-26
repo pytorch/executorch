@@ -102,6 +102,9 @@
  */
 
 #include <errno.h>
+#if defined(ETHOSU55) && defined(SEMIHOSTING)
+#include <ethosu_driver.h>
+#endif
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -640,8 +643,8 @@ Error read_input_files(
     if (buffer == nullptr) {
       ET_LOG(
           Error,
-          "Reading input tensor %zu from file %s failed.",
-          i + 1,
+          "Reading input tensor %lu from file %s failed.",
+          static_cast<printf_size_t>(i + 1),
           input_filenames[i]);
       return Error::AccessFailed;
     }
@@ -1363,6 +1366,24 @@ bool run_model(RunnerContext& ctx, const void* model_data) {
   return model_ok;
 }
 
+#if defined(ETHOSU55) && defined(SEMIHOSTING)
+void set_runner_power(bool enabled) {
+  struct ethosu_driver* driver = ethosu_reserve_driver();
+  ET_CHECK_MSG(driver != nullptr, "Failed to reserve the Ethos-U driver");
+
+  int result = 0;
+  if (enabled) {
+    result = ethosu_request_power(driver);
+  } else {
+    ethosu_release_power(driver);
+  }
+  ethosu_release_driver(driver);
+
+  // ET_CHECK_MSG aborts and does not return if the power request failed.
+  ET_CHECK_MSG(result == 0, "Failed to power the Ethos-U NPU");
+}
+#endif
+
 #if defined(SEMIHOSTING)
 bool run_model_server(
     RunnerContext& ctx,
@@ -1537,11 +1558,25 @@ int main(int argc, const char* argv[]) {
   runner_init(ctx, model_data, model_size, input_buffers);
   bool model_ok = true;
 #if defined(SEMIHOSTING)
+#if defined(ETHOSU55)
+  // For semihosting FVP builds repeated U55 power cycles can make FVP fast mode
+  // stop responding, so keep one power reference across jobs.
+  // cppcheck-suppress knownConditionTrueFalse
+  const bool keep_powered = ctx.server_mode || num_inferences > 1;
+  if (keep_powered) {
+    set_runner_power(true);
+  }
+#endif
   if (ctx.server_mode) {
     model_ok = run_model_server(ctx, model_data, input_buffers);
   } else {
     model_ok = run_model(ctx, model_data);
   }
+#if defined(ETHOSU55)
+  if (keep_powered) {
+    set_runner_power(false);
+  }
+#endif
 #else
   model_ok = run_model(ctx, model_data);
 #endif

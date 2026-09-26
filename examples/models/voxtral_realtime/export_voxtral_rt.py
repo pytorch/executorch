@@ -142,7 +142,6 @@ def _export_decoder_and_embedding(
     qembedding,
     qembedding_group_size,
     use_aoti_packed_int4=False,
-    use_aoti_matvec=False,
     device="cpu",
 ):
     """Export text_decoder and token_embedding into programs dict."""
@@ -155,6 +154,7 @@ def _export_decoder_and_embedding(
     text_decoder.eval()
 
     packed_linear_count = 0
+    use_packed_matvec = use_aoti_packed_int4 and qlinear == "4w"
     if qlinear:
         print(f"  Quantizing decoder ({qlinear})...")
         quantize_model_(
@@ -163,16 +163,14 @@ def _export_decoder_and_embedding(
             qlinear_group_size=qlinear_group_size,
             qlinear_packing_format=qlinear_packing_format,
         )
-        if use_aoti_packed_int4 and qlinear == "4w":
+        if use_packed_matvec:
             packed_linear_count = _pack_aoti_int4_weights(
                 text_decoder,
-                use_matvec=use_aoti_matvec,
+                use_matvec=True,
             )
 
-    if use_aoti_matvec:
-        # TODO: Resolve fixed-shape greedy-output drift before enabling this by
-        # default; the same drift reproduces with int4_matmul.
-        # Both native runner paths invoke the decoder one token at a time.
+    # Native runners decode one token per call; static M=1 enables matvec dispatch.
+    if use_packed_matvec:
         sample_embeds = torch.randn(
             1, 1, model.config.dim, dtype=param_dtype, device=device
         )
@@ -232,7 +230,6 @@ def export_all(
     qembedding=None,
     qembedding_group_size=None,
     use_aoti_packed_int4=False,
-    use_aoti_matvec=False,
     backend="xnnpack",
 ):
     """Export all three model components with per-component quantization."""
@@ -297,7 +294,6 @@ def export_all(
         qembedding,
         qembedding_group_size,
         use_aoti_packed_int4=use_aoti_packed_int4,
-        use_aoti_matvec=use_aoti_matvec,
         device=device,
     )
     if packed_linear_count:
@@ -331,7 +327,6 @@ def export_streaming(
     qembedding=None,
     qembedding_group_size=None,
     use_aoti_packed_int4=False,
-    use_aoti_matvec=False,
     backend="xnnpack",
 ):
     """Export streaming model components with per-component quantization."""
@@ -392,7 +387,6 @@ def export_streaming(
         qembedding,
         qembedding_group_size,
         use_aoti_packed_int4=use_aoti_packed_int4,
-        use_aoti_matvec=use_aoti_matvec,
         device=device,
     )
     if packed_linear_count:
@@ -583,15 +577,11 @@ def _validate_rocm_args(parser, args):
             "tile_packed_to_4d requires a CUDA-only int4 fallback; "
             "omit the packing format for ROCm"
         )
-    if args.rocm_packed_matvec and args.qlinear != "4w":
-        parser.error("--rocm-packed-matvec requires --qlinear=4w")
 
 
 def _validate_export_args(parser, args, backend_for_export):
     if args.backend == "rocm":
         _validate_rocm_args(parser, args)
-    elif args.rocm_packed_matvec:
-        parser.error("--rocm-packed-matvec requires --backend=rocm")
 
     if args.qlinear == "fpa4w" and backend_for_export != "metal":
         parser.error("--qlinear=fpa4w can only be used with --backend=metal")
@@ -709,11 +699,6 @@ def main():
         "but limit how far back the decoder can attend. Only used with --streaming.",
     )
     parser.add_argument(
-        "--rocm-packed-matvec",
-        action="store_true",
-        help="Use the experimental fixed-shape packed INT4 decoder matvec on ROCm.",
-    )
-    parser.add_argument(
         "--dtype",
         default="fp32",
         choices=["fp32", "bf16"],
@@ -771,7 +756,6 @@ def main():
         "qembedding": args.qembedding,
         "qembedding_group_size": args.qembedding_group_size,
         "use_aoti_packed_int4": args.backend == "rocm",
-        "use_aoti_matvec": args.rocm_packed_matvec,
         "backend": backend_for_export,
     }
     if args.streaming:

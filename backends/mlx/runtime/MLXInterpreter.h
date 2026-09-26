@@ -11,10 +11,19 @@
 #include "MLXCache.h"
 #include "MLXExecutor.h"
 
+#include <algorithm>
+#include <limits>
+#include <vector>
+
 #include <mlx/array.h>
 #include <mlx/fast.h>
 #include <mlx/mlx.h>
 #include <mlx/ops.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+#include <limits>
 
 namespace executorch {
 namespace backends {
@@ -290,7 +299,26 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   }
 
   array out = fast::scaled_dot_product_attention(
-      Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+      Q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      mask_arr,
+      sinks,
+      false,
+      s);
+  if (n.mask) {
+    const auto& M = st.const_tensor_ref(*n.mask);
+    array allowed = M.dtype() == bool_
+        ? M
+        : not_equal(
+              M, array(-std::numeric_limits<float>::infinity(), M.dtype()), s);
+    array has_key = M.ndim() == 0 ? allowed : any(allowed, -1, true, s);
+    // MLX can return nonzero values or NaNs for empty rows. Select, rather
+    // than multiply, to preserve PyTorch's zero-row semantics in both cases.
+    out = where(has_key, out, array(0, out.dtype()), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -307,65 +335,50 @@ inline void exec_update_and_attend(
   if (!n.scale) {
     throw std::runtime_error("update_and_attend: scale is not set");
   }
-  // The cache does the KV write + read and declares the mask; the handler owns
-  // the query side (q, scale) and calls SDPA.
+  // The cache places the step and attends over whatever storage its layout
+  // uses; the handler reads the query side off the graph.
   const array& q = st.const_tensor_ref(n.q);
-  // The run's start is position[0], read host-side so the cache stays pure
-  // graph + integer bookkeeping. Every layer of a step reads the same position
+  // One position per query token, read host-side so the cache stays pure graph
+  // + integer bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
-  // nothing for the rest -- casting first would instead build a fresh array per
-  // layer and sync on each one.
+  // nothing for the rest.
   auto pos = st.const_tensor_ref(n.position);
   eval(pos);
-  int position;
+  // The entries are read in order off the buffer, which a strided view would
+  // walk with the wrong stride.
+  if (!pos.flags().row_contiguous) {
+    throw std::runtime_error("update_and_attend: position must be contiguous");
+  }
+  const int length = static_cast<int>(pos.size());
+  if (length != static_cast<int>(q.shape(2))) {
+    throw std::runtime_error(
+        "update_and_attend: position must hold one entry per query token");
+  }
+  std::vector<int32_t> positions(static_cast<size_t>(length));
   switch (pos.dtype()) {
     case ::mlx::core::int32:
-      position = pos.data<int32_t>()[0];
+      std::copy(
+          pos.data<int32_t>(), pos.data<int32_t>() + length, positions.begin());
       break;
     case ::mlx::core::int64:
-      position = static_cast<int>(pos.data<int64_t>()[0]);
+      std::transform(
+          pos.data<int64_t>(),
+          pos.data<int64_t>() + length,
+          positions.begin(),
+          [](int64_t p) { return static_cast<int32_t>(p); });
       break;
     default:
       throw std::runtime_error(
           std::string("update_and_attend: position must be int32 or int64, ") +
           "got " + ExecutionState::dtype_str(pos.dtype()));
   }
-  AttendSpec spec = st.cache->update_and_fetch(
+  array out = st.cache->attend(
       *n.layer_id,
-      position,
+      positions,
+      q,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),
-      s);
-  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
-  // storage precision may differ from the compute dtype).
-  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
-  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
-  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
-  // than test for Causal: None and Explicit both map to "" and are told apart
-  // only by spec.mask, so an Explicit with no mask would silently attend
-  // unmasked.
-  std::string mask_mode;
-  switch (spec.kind) {
-    case AttendSpec::Mask::None:
-      break;
-    case AttendSpec::Mask::Causal:
-      mask_mode = "causal";
-      break;
-    case AttendSpec::Mask::Explicit:
-      if (!spec.mask) {
-        throw std::runtime_error(
-            "update_and_attend: Explicit mask kind with no mask tensor");
-      }
-      break;
-  }
-  array out = fast::scaled_dot_product_attention(
-      q,
-      K,
-      V,
       static_cast<float>(*n.scale),
-      mask_mode,
-      spec.mask,
-      std::nullopt,
       s);
   // Honor the op's output-dtype contract (unset -> SDPA's native output).
   if (n.out_dtype) {
@@ -819,6 +832,11 @@ exec_reshape(const ReshapeNode& n, ExecutionState& st, StreamOrDevice s) {
 inline void
 exec_transpose(const TransposeNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, transpose(st.const_tensor_ref(n.x), n.perm, s));
+}
+
+inline void exec_flip(const FlipNode& n, ExecutionState& st, StreamOrDevice s) {
+  std::vector<int> axes(n.axes.begin(), n.axes.end());
+  st.set_tensor(n.out, flip(st.const_tensor_ref(n.x), axes, s));
 }
 
 inline void
@@ -1546,6 +1564,11 @@ inline void exec_ceil(const CeilNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_trunc(const TruncNode& n, ExecutionState& st, StreamOrDevice s) {
+  st.set_tensor(n.out, trunc(st.const_tensor_ref(n.x), s));
+}
+
+inline void
 exec_square(const SquareNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, square(st.const_tensor_ref(n.x), s));
 }
@@ -1837,6 +1860,13 @@ exec_cumsum(const CumsumNode& n, ExecutionState& st, StreamOrDevice s) {
 }
 
 inline void
+exec_cummax(const CummaxNode& n, ExecutionState& st, StreamOrDevice s) {
+  const auto& x = st.const_tensor_ref(n.x);
+  st.set_tensor(
+      n.out, cummax(x, n.axis, /*reverse=*/false, /*inclusive=*/true, s));
+}
+
+inline void
 exec_stack(const StackNode& n, ExecutionState& st, StreamOrDevice s) {
   std::vector<array> tensors;
   for (auto tid : n.tensors) {
@@ -1920,6 +1950,29 @@ inline void exec_argpartition(
 
 class Interpreter {
  public:
+  // Threshold in bytes of pending intermediates before the live per-execution
+  // tensors are evaluated. 0 (the default) disables the mechanism entirely:
+  // no traversal, no nbytes() queries, no accumulation, no root collection.
+  // Set from the kEvalThresholdBytesKey runtime spec, before init() runs the
+  // init chain. See backend_options.h for why this is a threshold and not a
+  // hard limit.
+  void set_eval_threshold_bytes(size_t bytes) {
+    eval_threshold_bytes_ = bytes;
+  }
+  size_t eval_threshold_bytes() const {
+    return eval_threshold_bytes_;
+  }
+
+  // Test-only instrumentation: counts calls to accumulate_instruction_bytes.
+  // Only ever incremented on the enabled path, so the disabled path can be
+  // asserted to be free of the accounting work.
+  static uint64_t accounting_calls() {
+    return accounting_calls_.load(std::memory_order_relaxed);
+  }
+  static void reset_accounting_calls() {
+    accounting_calls_.store(0, std::memory_order_relaxed);
+  }
+
   void run(
       const MLXProgram& prog,
       ExecutionState& st,
@@ -1927,11 +1980,39 @@ class Interpreter {
     run_chain(prog, prog.main_chain_idx, st, stream);
   }
 
+  // Entry point: owns the pending-bytes counter for this execution.
   void run_chain(
       const MLXProgram& prog,
       uint32_t chain_idx,
       ExecutionState& st,
       StreamOrDevice stream = {}) const {
+    size_t pending_bytes = 0;
+    run_chain(
+        prog,
+        chain_idx,
+        st,
+        stream,
+        pending_bytes,
+        /*accumulate_only=*/false);
+  }
+
+  // Nested chains (IF branches, SCAN bodies) share the caller's counter and
+  // pass accumulate_only=true: they add their instructions' estimates but must
+  // not trigger a threshold evaluation themselves. Deferring the check until
+  // control returns to the enclosing chain means a SCAN's collected outputs
+  // have been stacked into state and are reachable from the evaluation roots;
+  // evaluating inside the body could otherwise reset the shared counter while
+  // earlier outputs were still retained only in `collected`.
+  //
+  // accumulate_only suppresses only the threshold-triggered evaluation here.
+  // Op-internal evaluations are unaffected.
+  void run_chain(
+      const MLXProgram& prog,
+      uint32_t chain_idx,
+      ExecutionState& st,
+      StreamOrDevice stream,
+      size_t& pending_bytes,
+      bool accumulate_only) const {
     if (chain_idx >= prog.instruction_chains.size()) {
       throw std::runtime_error(
           "run_chain: chain_idx " + std::to_string(chain_idx) +
@@ -1939,41 +2020,147 @@ class Interpreter {
           std::to_string(prog.instruction_chains.size()) + ")");
     }
     const auto& chain = prog.instruction_chains[chain_idx];
+    const size_t threshold = eval_threshold_bytes_;
+
+    // Drop a temp as soon as this chain is done with it: ExecutionState holds
+    // every value a chain produces, and an AOT plan that assigns one slot per
+    // instruction leaves a long chain holding all of them. The table is built
+    // once at load; an empty one means this chain opts out.
+    const std::vector<uint32_t>* last_use = nullptr;
+    if (chain_idx < st.temp_last_use.size() &&
+        !st.temp_last_use[chain_idx].empty()) {
+      last_use = &st.temp_last_use[chain_idx];
+    }
+
     size_t idx = 0;
     for (const auto& instr : chain) {
       st.begin_op(idx, op_name(instr.op));
       if (instr.op == OpCode::SCAN) {
-        exec_scan(prog, std::get<ScanNode>(instr.node), st, stream);
+        exec_scan(
+            prog, std::get<ScanNode>(instr.node), st, stream, pending_bytes);
       } else if (instr.op == OpCode::IF) {
-        exec_if(prog, std::get<IfNode>(instr.node), st, stream);
+        exec_if(prog, std::get<IfNode>(instr.node), st, stream, pending_bytes);
       } else {
         dispatch(instr, st, stream);
       }
       st.end_op();
+
+      // Account before releasing: a shrinking op's widest tensor is often an
+      // input it was the last to read. SCAN and IF already accumulated their
+      // own child instructions through the shared counter; charging the parent
+      // for them again would double count.
+      if (threshold != 0 && instr.op != OpCode::SCAN &&
+          instr.op != OpCode::IF) {
+        accumulate_instruction_bytes(instr, st, pending_bytes);
+      }
+
+      // Release before evaluating, so the barrier skips dead temps.
+      if (last_use != nullptr) {
+        release_temp_slots(instr, st, *last_use, static_cast<uint32_t>(idx));
+      }
+
       ++idx;
+
+      if (threshold != 0 && !accumulate_only && pending_bytes >= threshold) {
+        evaluate_state_tensors(st);
+        pending_bytes = 0;
+      }
     }
   }
 
  private:
+  // Drop every temp whose last use in this chain is the instruction just run.
+  // Ids run Constant -> Input -> Output -> MutableBuffer -> Temp, so
+  // `>= mutable_buffer_end` is neither a method output nor a caller-visible
+  // buffer and dropping one cannot be observed from outside the chain.
+  static void release_temp_slots(
+      const Instruction& instr,
+      ExecutionState& st,
+      const std::vector<uint32_t>& last_use,
+      uint32_t idx) {
+    for_each_tid(instr, [&](Tid id) {
+      if (id.idx >= st.mutable_buffer_end) {
+        const uint32_t slot = st.tensor_index(id);
+        if (last_use[slot] == idx) {
+          st.tensors[slot].reset();
+        }
+      }
+    });
+  }
+
+  // Charge `pending_bytes` for one instruction. The estimate is the largest
+  // per-execution tensor the instruction touches, which tracks the size of what
+  // it just produced without needing to know which tid is its output.
+  // Constants and mutable buffers are excluded: they are not intermediates and
+  // evaluating does not release them.
+  //
+  // Only ever called when the mechanism is enabled.
+  static void accumulate_instruction_bytes(
+      const Instruction& instr,
+      const ExecutionState& st,
+      size_t& pending_bytes) {
+    accounting_calls_.fetch_add(1, std::memory_order_relaxed);
+    size_t widest = 0;
+    for_each_tid(instr, [&](Tid id) {
+      if (id.idx >= st.num_constants && !st.is_mutable_buffer(id)) {
+        uint32_t slot = st.tensor_index(id);
+        if (slot < st.tensors.size() && st.tensors[slot].has_value()) {
+          widest = std::max(widest, st.tensors[slot]->nbytes());
+        }
+      }
+    });
+    add_saturating(pending_bytes, widest);
+  }
+
+  // Saturating add: a pathological program must not wrap the counter back
+  // under the threshold and silently disable the mechanism.
+  static void add_saturating(size_t& acc, size_t add) {
+    if (add > std::numeric_limits<size_t>::max() - acc) {
+      acc = std::numeric_limits<size_t>::max();
+    } else {
+      acc += add;
+    }
+  }
+
+  // Materialize every live per-execution tensor, releasing the graph that
+  // produced them. Results are unchanged by evaluating early.
+  static void evaluate_state_tensors(ExecutionState& st) {
+    std::vector<::mlx::core::array> live;
+    live.reserve(st.tensors.size());
+    for (auto& t : st.tensors) {
+      if (t.has_value()) {
+        live.push_back(*t);
+      }
+    }
+    if (!live.empty()) {
+      ::mlx::core::eval(live);
+    }
+  }
+
+  size_t eval_threshold_bytes_{0};
+  inline static std::atomic<uint64_t> accounting_calls_{0};
+
   void exec_if(
       const MLXProgram& prog,
       const IfNode& n,
       ExecutionState& st,
-      StreamOrDevice s) const {
+      StreamOrDevice s,
+      size_t& pending_bytes) const {
     // Select one branch at runtime based on the integer condition.
     // Nonzero -> then_chain, zero -> else_chain. The selected chain's
     // instructions write the output slot(s) directly.
     const int64_t cond = resolve_int(n.cond, st);
     const uint32_t chain_idx =
         (cond != 0) ? n.then_chain_idx : n.else_chain_idx;
-    run_chain(prog, chain_idx, st, s);
+    run_chain(prog, chain_idx, st, s, pending_bytes, /*accumulate_only=*/true);
   }
 
   void exec_scan(
       const MLXProgram& prog,
       const ScanNode& n,
       ExecutionState& st,
-      StreamOrDevice s) const {
+      StreamOrDevice s,
+      size_t& pending_bytes) const {
     int axis = n.scan_axis;
     int T_int = st.const_tensor_ref(n.originals[0]).shape(axis);
     size_t T = static_cast<size_t>(T_int);
@@ -1995,7 +2182,13 @@ class Interpreter {
                 s));
       }
 
-      run_chain(prog, static_cast<uint32_t>(n.body_chain_idx), st, s);
+      run_chain(
+          prog,
+          static_cast<uint32_t>(n.body_chain_idx),
+          st,
+          s,
+          pending_bytes,
+          /*accumulate_only=*/true);
 
       for (size_t i = 0; i < num_outputs; ++i) {
         collected[i].push_back(st.const_tensor_ref(n.outputs[i]));
@@ -2004,6 +2197,21 @@ class Interpreter {
 
     for (size_t i = 0; i < num_outputs; ++i) {
       st.set_tensor(n.outputs[i], ::mlx::core::stack(collected[i], axis, s));
+    }
+
+    // The stacked outputs are new allocations the body's per-instruction
+    // estimates never saw, so charge for them here. Guarded like every other
+    // piece of the accounting.
+    if (eval_threshold_bytes_ != 0) {
+      for (size_t i = 0; i < num_outputs; ++i) {
+        const Tid id = n.outputs[i];
+        if (id.idx >= st.num_constants && !st.is_mutable_buffer(id)) {
+          uint32_t slot = st.tensor_index(id);
+          if (slot < st.tensors.size() && st.tensors[slot].has_value()) {
+            add_saturating(pending_bytes, st.tensors[slot]->nbytes());
+          }
+        }
+      }
     }
   }
   void dispatch(const Instruction& instr, ExecutionState& st, StreamOrDevice s)
@@ -2141,6 +2349,9 @@ class Interpreter {
       case OpCode::TRANSPOSE:
         ops::exec_transpose(std::get<TransposeNode>(instr.node), st, s);
         break;
+      case OpCode::FLIP:
+        ops::exec_flip(std::get<FlipNode>(instr.node), st, s);
+        break;
       case OpCode::AS_STRIDED:
         ops::exec_as_strided(std::get<AsStridedNode>(instr.node), st, s);
         break;
@@ -2235,6 +2446,9 @@ class Interpreter {
         break;
       case OpCode::CEIL:
         ops::exec_ceil(std::get<CeilNode>(instr.node), st, s);
+        break;
+      case OpCode::TRUNC:
+        ops::exec_trunc(std::get<TruncNode>(instr.node), st, s);
         break;
       case OpCode::SQUARE:
         ops::exec_square(std::get<SquareNode>(instr.node), st, s);
@@ -2369,6 +2583,9 @@ class Interpreter {
         break;
       case OpCode::CUMSUM:
         ops::exec_cumsum(std::get<CumsumNode>(instr.node), st, s);
+        break;
+      case OpCode::CUMMAX:
+        ops::exec_cummax(std::get<CummaxNode>(instr.node), st, s);
         break;
       case OpCode::STACK:
         ops::exec_stack(std::get<StackNode>(instr.node), st, s);

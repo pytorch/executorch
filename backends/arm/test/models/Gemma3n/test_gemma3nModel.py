@@ -548,8 +548,7 @@ class AudioEncoderModel(Gemma3NModule):
         self.encoder = Gemma3nAudioEncoder(config)
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        encodings, _ = self.encoder(x, mask)
-        return encodings
+        return self.encoder(x, mask)[0]
 
     @staticmethod
     def _prepare_inputs(

@@ -60,12 +60,15 @@ The `setup.sh` script has generated a `setup_path.sh` script that you need to so
 
 `source examples/arm/arm-scratch/setup_path.sh`
 
-As a simple check that your environment is set up correctly, run
+Python 3.12 is the reference and recommended minimum for the ML SDK 0.10 VGF flow. If you use an older ExecuTorch-supported Python version, the VGF preflight reports a warning so that the environment difference is visible.
+
+As a check that your environment is set up correctly, run
 
 ```bash
-which model-converter
+python -m executorch.backends.arm.vgf.check_env --aot
 ```
-Make sure the executable is located where you expect, in the `examples/arm` tree. 
+
+The preflight checks the Python recommendation, TOSA serializer, Model Converter availability/version, and converter library-path setup. You can also run `which model-converter` to inspect the selected executable.
 
 ## Build
 

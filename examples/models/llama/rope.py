@@ -378,8 +378,8 @@ class Rope(torch.nn.Module):
             else:
                 # When not using dynamic shape, use of the .item results in
                 # symints, due to querying the data from tensor.
-                # this path avoids that for mps backend, although probably mps backend
-                # can support dynamic shape?
+                # This path avoids the symints, which a backend requiring static shapes
+                # cannot consume.
                 freqs_cos = self.freqs_cos[input_pos]
                 freqs_sin = self.freqs_sin[input_pos]
 

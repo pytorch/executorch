@@ -99,6 +99,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_bitwise_or.cpp",
     "kernels/portable/cpu/op_bitwise_xor.cpp",
     "kernels/portable/cpu/op_bmm.cpp",
+    "kernels/portable/cpu/op_bucketize.cpp",
     "kernels/portable/cpu/op_cat.cpp",
     "kernels/portable/cpu/op_cdist_forward.cpp",
     "kernels/portable/cpu/op_ceil.cpp",
@@ -278,6 +279,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
     "kernels/optimized/cpu/op_sum.cpp",
+    "kernels/optimized/cpu/op_to_copy.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -297,6 +299,7 @@ QUANTIZED_KERNELS_SRCS = [
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/blas/KleidiBlas.cpp",
 ]
 
 OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
@@ -320,6 +323,7 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_to_copy.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -383,6 +387,7 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 
@@ -400,70 +405,6 @@ EXECUTOR_RUNNER_SRCS = [
 
 SIZE_TEST_SRCS = [
     "test/size_test.cpp",
-]
-
-MPS_EXECUTOR_RUNNER_SRCS = [
-    "backends/apple/mps/runtime/MPSBackend.mm",
-    "backends/apple/mps/runtime/MPSCompiler.mm",
-    "backends/apple/mps/runtime/MPSDelegateHeader.mm",
-    "backends/apple/mps/runtime/MPSDevice.mm",
-    "backends/apple/mps/runtime/MPSExecutor.mm",
-    "backends/apple/mps/runtime/MPSGraphBuilder.mm",
-    "backends/apple/mps/runtime/MPSStream.mm",
-    "backends/apple/mps/runtime/operations/ActivationOps.mm",
-    "backends/apple/mps/runtime/operations/BinaryOps.mm",
-    "backends/apple/mps/runtime/operations/ClampOps.mm",
-    "backends/apple/mps/runtime/operations/ConstantOps.mm",
-    "backends/apple/mps/runtime/operations/ConvolutionOps.mm",
-    "backends/apple/mps/runtime/operations/IndexingOps.mm",
-    "backends/apple/mps/runtime/operations/LinearAlgebra.mm",
-    "backends/apple/mps/runtime/operations/NormalizationOps.mm",
-    "backends/apple/mps/runtime/operations/OperationUtils.mm",
-    "backends/apple/mps/runtime/operations/PadOps.mm",
-    "backends/apple/mps/runtime/operations/PoolingOps.mm",
-    "backends/apple/mps/runtime/operations/QuantDequant.mm",
-    "backends/apple/mps/runtime/operations/RangeOps.mm",
-    "backends/apple/mps/runtime/operations/ReduceOps.mm",
-    "backends/apple/mps/runtime/operations/ShapeOps.mm",
-    "backends/apple/mps/runtime/operations/UnaryOps.mm",
-    "devtools/bundled_program/bundled_program.cpp",
-    "devtools/etdump/data_sinks/buffer_data_sink.cpp",
-    "devtools/etdump/emitter.cpp",
-    "devtools/etdump/etdump_flatcc.cpp",
-    "examples/apple/mps/executor_runner/mps_executor_runner.mm",
-    "extension/data_loader/file_data_loader.cpp",
-]
-
-MPS_BACKEND_BUCK_SRCS = [
-    "runtime/MPSBackend.mm",
-    "runtime/MPSCompiler.mm",
-    "runtime/MPSDelegateHeader.mm",
-    "runtime/MPSDevice.mm",
-    "runtime/MPSExecutor.mm",
-    "runtime/MPSGraphBuilder.mm",
-    "runtime/MPSStream.mm",
-    "runtime/operations/ActivationOps.mm",
-    "runtime/operations/BinaryOps.mm",
-    "runtime/operations/ClampOps.mm",
-    "runtime/operations/ConstantOps.mm",
-    "runtime/operations/ConvolutionOps.mm",
-    "runtime/operations/IndexingOps.mm",
-    "runtime/operations/LinearAlgebra.mm",
-    "runtime/operations/NormalizationOps.mm",
-    "runtime/operations/OperationUtils.mm",
-    "runtime/operations/PadOps.mm",
-    "runtime/operations/PoolingOps.mm",
-    "runtime/operations/QuantDequant.mm",
-    "runtime/operations/RangeOps.mm",
-    "runtime/operations/ReduceOps.mm",
-    "runtime/operations/ShapeOps.mm",
-    "runtime/operations/UnaryOps.mm",
-]
-
-MPS_BACKEND_SRCS = ["backends/apple/mps/" + x for x in MPS_BACKEND_BUCK_SRCS]
-
-MPS_SCHEMA_SRCS = [
-    "backends/apple/mps/serialization/schema.fbs",
 ]
 
 XNN_EXECUTOR_RUNNER_SRCS = [

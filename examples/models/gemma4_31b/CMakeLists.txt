@@ -22,6 +22,7 @@ set(_json_include
 # gflags
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
+find_package(Threads REQUIRED)
 
 # executorch
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
@@ -72,7 +73,9 @@ add_executable(gemma4_31b_worker gemma4_31b_worker.cpp gemma4_31b_engine.cpp)
 target_include_directories(
   gemma4_31b_worker PUBLIC ${_common_include_directories} ${_json_include}
 )
-target_link_libraries(gemma4_31b_worker PUBLIC ${link_libraries})
+target_link_libraries(
+  gemma4_31b_worker PUBLIC ${link_libraries} Threads::Threads
+)
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(gemma4_31b_runner)

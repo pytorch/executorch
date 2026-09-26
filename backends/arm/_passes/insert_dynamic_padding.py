@@ -6,8 +6,6 @@
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
-from executorch.backends.arm.tosa.dialect.shape import is_shape_op_node
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
 
@@ -34,13 +32,10 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
     )
 
     def _is_dynamic_padding(
-        self, padding: ProxyValue | list[int] | tuple[int, ...]
+        self, padding: list[int | ProxyValue] | tuple[int | ProxyValue, ...]
     ) -> bool:
-        return (isinstance(padding, ProxyValue) and is_shape_op_node(padding.node)) or (
-            (
-                isinstance(padding, (list, tuple))
-                and any(isinstance(p, ProxyValue) for p in padding)
-            )
+        return isinstance(padding, (list, tuple)) and any(
+            isinstance(p, ProxyValue) for p in padding
         )
 
     def call_operator(self, op, args, kwargs, meta, updated=False) -> ProxyValue:
@@ -62,24 +57,7 @@ class InsertDynamicPaddingPass(ArmOpTargetedPass):
         zero_padding_pair = [0, 0]
         spatial_rank = 3 if op == exir_ops.backend.tosa.CONV3D.default else 2
         zero_spatial_padding = [0] * (spatial_rank * 2)
-        N_padding = super().call_shape_operator(
-            exir_ops.backend.tosa.CONST_SHAPE.default,
-            (zero_padding_pair,),
-            {},
-            meta,
-            True,
-        )
-        C_padding = N_padding
-
-        padding_shape_args = [N_padding, padding, C_padding]
-
-        padding_shape = super().call_shape_operator(
-            exir_ops.backend.tosa.CONCAT_SHAPE.default,
-            (padding_shape_args,),
-            {},
-            meta,
-            True,
-        )
+        padding_shape = [*zero_padding_pair, *padding, *zero_padding_pair]
 
         pad_res = super().call_operator(
             exir_ops.backend.tosa.PAD.default,

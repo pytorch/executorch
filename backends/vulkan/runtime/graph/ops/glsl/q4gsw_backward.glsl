@@ -30,6 +30,8 @@ ${layout_declare_ubo(B, "ivec4", "dx_sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "group_size", "32")}
 
 // d_x[M, K] = d_out[M, N] @ dequant(W)[N, K], contracting over N.
@@ -44,7 +46,7 @@ void main() {
   const int nkt = (K + TILE_K - 1) / TILE_K;
   const int tiles = nmt * nkt;
 
-  const int tile_idx = int(gl_GlobalInvocationID.x);
+  const int tile_idx = int(linear_idx_from_gid());
   if (tile_idx >= tiles) {
     return;
   }

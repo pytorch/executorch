@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import argparse
+import csv
+import json
 import re
 import secrets
 import select
@@ -13,8 +15,9 @@ import tempfile
 import time
 
 from collections import deque
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Deque, List, Optional, Sequence
+from typing import Deque, Dict, List, Optional, Sequence
 
 import numpy as np
 from pytorch_tokenizers import (  # type: ignore[import-not-found, import-untyped]
@@ -25,6 +28,142 @@ FVP_ERROR_PATTERN = re.compile(
     r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)",
     re.MULTILINE,
 )
+
+ETHOSU_PMU_CYCLE_PATTERN = re.compile(r"ethosu_pmu_cycle_cntr\s*:\s*(\d+)")
+ETHOSU_PMU_COUNTER_PATTERN = re.compile(r"ethosu_pmu_cntr(\d+)\s*:\s*(\d+)")
+ETHOSU_DELEGATIONS_PATTERN = re.compile(r"NPU delegations:\s*(\d+)")
+ETHOSU85_EVENT_NAMES = [
+    "sram_read_beats",
+    "sram_write_beats",
+    "external_read_beats",
+    "external_write_beats",
+    "npu_idle",
+    "mac_active",
+    "weight_decoder_active",
+]
+
+
+@dataclass
+class EthosUPmuMeasurement:
+    npu_cycles: int
+    delegations: int
+    events: Dict[str, int]
+
+
+@dataclass
+class ProfileSample:
+    prompt_no: int
+    phase: str
+    input_pos: int
+    npu_cycles: int
+    delegations: int
+    events: Dict[str, int]
+
+
+def parse_ethosu_pmu(lines: Sequence[str]) -> EthosUPmuMeasurement:
+    text = "".join(lines)
+    cycle_match = ETHOSU_PMU_CYCLE_PATTERN.search(text)
+    if cycle_match is None:
+        raise RuntimeError("Ethos-U PMU cycle count was not found in FVP output")
+
+    counter_values = {
+        int(index): int(value)
+        for index, value in ETHOSU_PMU_COUNTER_PATTERN.findall(text)
+    }
+    events = {
+        name: counter_values.get(index, 0)
+        for index, name in enumerate(ETHOSU85_EVENT_NAMES)
+    }
+    delegations_match = ETHOSU_DELEGATIONS_PATTERN.search(text)
+    return EthosUPmuMeasurement(
+        npu_cycles=int(cycle_match.group(1)),
+        delegations=(
+            int(delegations_match.group(1)) if delegations_match is not None else 0
+        ),
+        events=events,
+    )
+
+
+def summarize_profile(
+    samples: Sequence[ProfileSample], npu_frequency_mhz: Optional[float]
+) -> Dict[str, Dict[str, float]]:
+    summary: Dict[str, Dict[str, float]] = {}
+    for phase in ("prefill", "decode"):
+        phase_samples = [sample for sample in samples if sample.phase == phase]
+        if not phase_samples:
+            continue
+        total_cycles = sum(sample.npu_cycles for sample in phase_samples)
+        mean_cycles = total_cycles / len(phase_samples)
+        values = {
+            "executions": float(len(phase_samples)),
+            "total_npu_cycles": float(total_cycles),
+            "mean_npu_cycles": mean_cycles,
+        }
+        if npu_frequency_mhz is not None:
+            values["estimated_npu_tokens_per_second"] = (
+                npu_frequency_mhz * 1_000_000 / mean_cycles
+            )
+        summary[phase] = values
+    return summary
+
+
+def write_profile(
+    path: Path,
+    samples: Sequence[ProfileSample],
+    npu_frequency_mhz: Optional[float],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    summary = summarize_profile(samples, npu_frequency_mhz)
+    if path.suffix.lower() == ".json":
+        path.write_text(
+            json.dumps(
+                {
+                    "metadata": {
+                        "ethosu_fast": False,
+                        "npu_frequency_mhz": npu_frequency_mhz,
+                        "timing_scope": "Ethos-U85 NPU only",
+                    },
+                    "samples": [asdict(sample) for sample in samples],
+                    "summary": summary,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    elif path.suffix.lower() == ".csv":
+        fieldnames = [
+            "prompt_no",
+            "phase",
+            "input_pos",
+            "npu_cycles",
+            "delegations",
+            *ETHOSU85_EVENT_NAMES,
+        ]
+        with path.open("w", encoding="utf-8", newline="") as output:
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            for sample in samples:
+                row = asdict(sample)
+                row.update(row.pop("events"))
+                writer.writerow(row)
+    else:
+        raise ValueError("--profile-output must end in .json or .csv")
+
+    print("\nEthos-U85 NPU profile (FVP estimate):")
+    for phase, values in summary.items():
+        line = (
+            f"  {phase}: executions={int(values['executions'])} "
+            f"total_cycles={int(values['total_npu_cycles'])} "
+            f"mean_cycles={values['mean_npu_cycles']:.2f}"
+        )
+        if "estimated_npu_tokens_per_second" in values:
+            line += (
+                " estimated_npu_tokens/s="
+                f"{values['estimated_npu_tokens_per_second']:.3f}"
+            )
+        print(line)
+    print(f"Profile written to {path}")
 
 
 def prepare_input(
@@ -220,12 +359,17 @@ class FvpRunnerSession:
         timeout: int,
         input_names: Optional[Sequence[str]] = None,
         server_mode: bool = False,
+        ethosu_fast: bool = True,
+        collect_profile: bool = False,
     ) -> None:
         self._fvp = fvp
         self._runner = runner
         self._pte = pte
         self._timeout = timeout
         self._server_mode = server_mode
+        self._ethosu_fast = ethosu_fast
+        self._collect_profile = collect_profile
+        self.last_pmu: Optional[EthosUPmuMeasurement] = None
         self._proc: Optional[subprocess.Popen[str]] = None
         self._recent_stdout: Deque[str] = deque(maxlen=400)
         self._tmpdir: Optional[tempfile.TemporaryDirectory[str]] = None
@@ -246,7 +390,7 @@ class FvpRunnerSession:
 
     def _build_command(self, cmd_line: str) -> List[str]:
         assert self._tmpdir_path is not None
-        return [
+        command = [
             self._fvp,
             "-C",
             "mps4_board.subsystem.ethosu.num_macs=256",
@@ -271,14 +415,19 @@ class FvpRunnerSession:
             "-C",
             f"mps4_board.subsystem.cpu0.semihosting-cwd={self._tmpdir_path}",
             "-C",
-            "mps4_board.subsystem.ethosu.extra_args='--fast'",
-            "-C",
             f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
             "-a",
             self._runner,
             "--timelimit",
             str(self._timeout),
         ]
+        if self._ethosu_fast:
+            insert_at = command.index("-a")
+            command[insert_at:insert_at] = [
+                "-C",
+                "mps4_board.subsystem.ethosu.extra_args='--fast'",
+            ]
+        return command
 
     def close(self) -> None:
         if self._proc is not None:
@@ -347,6 +496,9 @@ class FvpRunnerSession:
         self._proc.stdin.write("go\n")
         self._proc.stdin.flush()
 
+        self.last_pmu = None
+        profile_lines: List[str] = []
+
         deadline = time.monotonic() + self._timeout
         while time.monotonic() < deadline:
             self._check_proc()
@@ -362,7 +514,11 @@ class FvpRunnerSession:
                     f"\n\n[FVP stdout tail]\n{''.join(self._recent_stdout)}"
                 )
             self._recent_stdout.append(line)
+            if self._collect_profile:
+                profile_lines.append(line)
             if "SERVER_INFERENCE_DONE" in line:
+                if self._collect_profile:
+                    self.last_pmu = parse_ethosu_pmu(profile_lines)
                 if output_path.exists() and output_path.stat().st_size > 0:
                     return np.fromfile(output_path, dtype=np.float32)
                 raise RuntimeError(
@@ -434,6 +590,8 @@ class KvFvpRunnerSession:
         runner: str,
         pte: Optional[str],
         timeout: int,
+        ethosu_fast: bool = True,
+        collect_profile: bool = False,
     ) -> None:
         self._runner = FvpRunnerSession(
             fvp,
@@ -442,7 +600,10 @@ class KvFvpRunnerSession:
             timeout,
             input_names=["i0.bin", "i1.bin"],
             server_mode=True,
+            ethosu_fast=ethosu_fast,
+            collect_profile=collect_profile,
         )
+        self.samples: List[ProfileSample] = []
 
     def close(self) -> None:
         self._runner.close()
@@ -453,13 +614,41 @@ class KvFvpRunnerSession:
     def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
         self.close()
 
-    def run(self, token_id: int, input_pos: int) -> np.ndarray:
+    def run(
+        self,
+        token_id: int,
+        input_pos: int,
+        *,
+        phase: str,
+        prompt_no: int,
+    ) -> np.ndarray:
         logits = self._runner.run_inputs(
             [
                 np.array([[token_id]], dtype=np.int32),
                 np.array([input_pos], dtype=np.int32),
             ]
         )
+        if self._runner.last_pmu is not None:
+            measurement = self._runner.last_pmu
+            if measurement.npu_cycles <= 0:
+                raise RuntimeError(
+                    "Ethos-U PMU returned no cycles; ensure FVP fast mode is disabled"
+                )
+            self.samples.append(
+                ProfileSample(
+                    prompt_no,
+                    phase,
+                    input_pos,
+                    measurement.npu_cycles,
+                    measurement.delegations,
+                    measurement.events,
+                )
+            )
+            print(
+                f"\n[Ethos-U profile phase={phase} input_pos={input_pos} "
+                f"npu_cycles={measurement.npu_cycles}]",
+                flush=True,
+            )
         return logits.reshape(1, -1)[0]
 
 
@@ -573,7 +762,7 @@ def run_one_prompt_kv(
 
     logits = None
     for pos, token_id in enumerate(ids):
-        logits = runner.run(token_id, pos)
+        logits = runner.run(token_id, pos, phase="prefill", prompt_no=prompt_no)
         if topk_print:
             token_text = tokenizer.decode_token(int(token_id))
             print(
@@ -601,7 +790,12 @@ def run_one_prompt_kv(
         print(tokenizer.decode_token(next_id), end="", flush=True)
         if next_id == eos_id or step == max_new_tokens - 1:
             break
-        logits = runner.run(next_id, len(ids) - 1)
+        logits = runner.run(
+            next_id,
+            len(ids) - 1,
+            phase="decode",
+            prompt_no=prompt_no,
+        )
 
     print("\n=== Generation complete ===")
     decoded = tokenizer.decode(ids)
@@ -729,6 +923,23 @@ def main() -> None:
         help="FVP time limit in seconds for each runner call.",
     )
     parser.add_argument(
+        "--no-ethosu-fast",
+        action="store_true",
+        help="Disable Ethos-U FVP fast mode. Required for NPU PMU profiling.",
+    )
+    parser.add_argument(
+        "--profile-output",
+        type=Path,
+        default=None,
+        help="Write per-token Ethos-U85 PMU samples and summaries to .json or .csv.",
+    )
+    parser.add_argument(
+        "--npu-frequency-mhz",
+        type=float,
+        default=None,
+        help="Optional assumed NPU frequency for NPU-only token/s estimates.",
+    )
+    parser.add_argument(
         "--full-logits",
         action="store_true",
         help="Interpret runner output as full logits [window, vocab] and select the last valid token row.",
@@ -757,11 +968,25 @@ def main() -> None:
     pte_path = None if args.embedded_pte else args.pte
     if not args.embedded_pte and pte_path is None:
         raise ValueError("--pte is required unless --embedded-pte is set")
+    if args.profile_output is not None and not args.use_kv_cache:
+        raise ValueError("--profile-output requires --use-kv-cache")
+    if args.profile_output is not None and args.profile_output.suffix.lower() not in {
+        ".csv",
+        ".json",
+    }:
+        raise ValueError("--profile-output must end in .json or .csv")
+    if args.npu_frequency_mhz is not None and args.npu_frequency_mhz <= 0:
+        raise ValueError("--npu-frequency-mhz must be greater than zero")
 
     max_context_length = args.max_context_length or args.window
     if args.use_kv_cache:
         with KvFvpRunnerSession(
-            args.fvp, args.runner, pte_path, args.timeout
+            args.fvp,
+            args.runner,
+            pte_path,
+            args.timeout,
+            ethosu_fast=not (args.no_ethosu_fast or args.profile_output is not None),
+            collect_profile=args.profile_output is not None,
         ) as runner:
             for i, prompt in enumerate(prompts):
                 run_one_prompt_kv(
@@ -778,6 +1003,12 @@ def main() -> None:
                     repetition_penalty=args.repetition_penalty,
                     save_generations_path=args.save_generations,
                     topk_print=not args.no_topk_print,
+                )
+            if args.profile_output is not None:
+                write_profile(
+                    args.profile_output,
+                    runner.samples,
+                    args.npu_frequency_mhz,
                 )
     else:
         with FvpRunnerSession(args.fvp, args.runner, pte_path, args.timeout) as runner:

@@ -41,7 +41,7 @@ class UpsampleNearest2DConverter(NodeConverter):
         is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
 
         if is_alone_in_partition and h_scale == w_scale == 1:
-            # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
+            # The operator is a no-op, so the Neutron Compiler will skip it. If it's the only node in the
             #  partition, the graph would end up empty.
             return False
 

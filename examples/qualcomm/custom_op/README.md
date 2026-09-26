@@ -255,7 +255,7 @@ quantizer = make_quantizer(
     quant_dtype=QuantDtype.use_8a8w,
     custom_annotations=(annotate_fn,),
     backend=get_backend_type(args.backend),
-    soc_model=args.model,
+    soc_model=args.soc_model,
 )
 ```
 
@@ -333,3 +333,305 @@ python3 examples/qualcomm/custom_op/custom_ops_2.py \
   --build_op_package \
   --enable_x86_64
 ```
+
+### Example 3: LPAI (eNPU) custom op (`custom_ops_lpai.py`)
+
+Registers the same `torch.ops.my_ops.mul3.default` operator, but delegates it to
+the **LPAI** backend via `ExampleLpaiOpPackage`.
+
+> **Requires Qualcomm AI Engine Direct SDK >= 2.49.** SDK 2.48 is the first
+> release that ships `include/QNN/LPAI/QnnLpaiOpPackage.h`,
+> `include/QNN/LPAI/QnnLpaiOpPackageInfrastructure.h` and
+> `share/QNN/OpPackageGenerator/makefiles/LPAI/`; on older SDKs (e.g. 2.47) the
+> LPAI Mako templates are present but the headers and makefiles they depend on
+> are not, so `qnn-op-package-generator` fails and the generated sources cannot
+> be compiled. 2.49 is required for the on-device flow, which needs the direct
+> mode runtime.
+>
+> `QNN_SDK_ROOT` must be exported *before* sourcing `envsetup.sh`, otherwise the
+> script silently selects whichever SDK it finds first, and the op package is
+> then generated against the wrong headers.
+
+> **On-device execution requires direct mode.** The LPAI team does not support
+> registering an op package over FastRPC, so the DSP-side kernel is only reachable
+> when the delegate itself is compiled for Hexagon and runs inside the DSP
+> process. See [Running on device](#running-on-device-direct-mode) below.
+
+#### How the LPAI op package differs from HTP
+
+| | HTP | LPAI |
+| --- | --- | --- |
+| Interface version | `QnnOpPackage_Interface_t` v1 (`DEF_PACKAGE_OP` macros) | QNN OpPackage **v1.4** (`init` / `terminate` / `getInfo` / `validateOpConfig`) |
+| Files per op | `{OpName}.cpp` | `{OpName}_inference.c` **and** `{OpName}_compiler.cpp` |
+| Kernel entry point | `DEF_PACKAGE_OP(...)` registered impl | `executeOp` callback on `QnnLpaiOpPackage_OperationInfo_t` |
+| Tensor access | `TensorType&` wrappers | `QnnLpaiOpPackage_GlobalInfrastructure_t` accessors (`getInputTensor`, `getTensorData`, `getTensorLayout`, ...) |
+| Build outputs | one lib per hexagon arch + x86 + aarch64 | x86 host lib (compiler **and** inference side) + `hexagon-v79` inference-only skel and island image |
+
+The same sources are compiled twice, selected by the `LPAI_INFERENCE_ONLY` define:
+
+* **without** the define -> host / compiler side library
+  (`libs/x86_64-linux-clang/libQnnExampleLpaiOpPackage.so`). This library
+  contains the compiler-side callbacks (`validateOp`, `getTempBufferSize`,
+  `getLayoutSupportFlag`) **and** the inference implementation, so it is all that
+  is needed to compile a model and to run it through the LPAI x86_64 simulator.
+* **with** the define -> inference-only skel for the DSP
+  (`libs/hexagon-v79/libQnnExampleLpaiOpPackage.so`, plus the island image
+  `libs/hexagon-v79/libLpaiOpPackageIsland.so`). Building this target
+  additionally requires `HEXAGON_SDK_ROOT` and `HEXAGON_TOOLS_VERSION`.
+
+> **`HEXAGON_TOOLS_VERSION` and `HEXAGON_TOOLS_ROOT` are different variables.**
+> The op package Makefile selects the compiler with `HEXAGON_TOOLS_VERSION` (a
+> bare version number such as `8.8.06`, resolved under
+> `$HEXAGON_SDK_ROOT/tools/HEXAGON_Tools/`), while the direct mode runtime build
+> uses `HEXAGON_TOOLS_ROOT` (a full path, and it must point at **19.0**, the only
+> version that ships v81). Both are needed for the on-device flow and setting one
+> does not satisfy the other.
+
+Note that the `hexagon-v79` target produces **two** objects and both contain the
+kernel: the op package itself and `libLpaiOpPackageIsland.so`, which is linked
+with the uImage linker script the SDK ships in
+`share/QNN/OpPackageGenerator/makefiles/LPAI/island` for always-resident
+(island) memory. Both must be rebuilt, signed and deployed together; updating
+only one of them leaves the DSP running the older kernel.
+
+> **Island mode is not exercised by this example.** The island image is built,
+> signed and deployed, but the kernel is not executed from it. LPAI enables
+> island only outside of direct mode — `LpaiContextCustomConfig` sets
+> `QNN_LPAI_CONTEXT_SET_CFG_ENABLE_ISLAND` under `#ifndef __hexagon__`, and it
+> carries a pre-existing `TODO: support graph based execution in island mode`.
+> Since an op package is only reachable in direct mode (where `__hexagon__` *is*
+> defined), the two are currently mutually exclusive, and the flow below was
+> validated in non-island mode.
+
+#### Generating the op package skeleton
+
+The committed sources under `example_op_package_lpai/` were produced with:
+
+```bash
+qnn-op-package-generator \
+  -p examples/qualcomm/custom_op/example_op_package_lpai/ExampleLpaiOpPackage/config/example_op_package_lpai.xml \
+  -o <output_dir>
+```
+
+and then the two `TODO` blocks were filled in:
+* `ExampleCustomOp_inference.c` - the `mul3` kernel. Because LPAI is a fixed
+  point accelerator, the kernel reads the per-tensor quantization parameters and
+  requantizes. Element addressing uses `layoutOrder` / `layoutStride`, so the
+  input and output are free to use different memory layouts. See
+  [Quantization conventions](#quantization-conventions-on-the-enpu) for the
+  arithmetic, which has several non-obvious pitfalls.
+* `ExampleCustomOp_compiler.cpp` - `validateOp`, which checks that the input and
+  output share a data type and are rank 4 with matching dimensions.
+
+#### Quantization conventions on the eNPU
+
+The values an LPAI kernel is handed do not follow the plain
+`value = scale * (q - zero_point)` rule that the surrounding ExecuTorch
+quantize / dequantize nodes use, and the differences are easy to get wrong.
+
+The numbers below were measured with the committed example (8a8w, `mul3`,
+`--calibration_value 1.0`) by printing the values `getPerTensorQuantParams()` and
+`getTensorDataType()` return, plus the first stored byte, from inside the kernel:
+
+```
+in  offset=-128  dataType=3 (INT_8)  scale.type=1 (INT)  scale=538976320  shift=37
+out offset=-128  dataType=3 (INT_8)  scale.type=1 (INT)  scale=808464448  shift=36
+stored_in[0]=127
+```
+
+`538976320 / 2^37 = 1/255` and `808464448 / 2^36 = 3/255`, as expected for input
+range `[0, 1]` and output range `[0, 3]`.
+
+* **`getPerTensorQuantParams()` reports `offset = -128`** (for input *and*
+  output), while the Q/DQ nodes in the ExecuTorch graph use a zero point of `0`.
+  The offset biases the values *as they sit in memory*:
+
+  ```
+  code   = stored - offset          // remove the bias to get the graph's code
+  stored = code   + offset          // re-apply it before writing
+  value  = scale * code
+  ```
+
+  The measurement above confirms this: the graph's code for `1.0` is `255`, and
+  the byte the kernel actually reads is `255 + (-128) = 127`. The kernel must
+  therefore un-bias on the way in **and** re-bias on the way out; doing only one
+  of the two shifts the whole tensor by 128 codes.
+
+* **Un-biasing must wrap modulo the storage width.** With `offset = -128` the
+  codes `0..127` are stored as the bytes `128..255`, so `stored - offset`
+  produces `256..383` rather than `0..127`, and the value then saturates. Mask
+  the result (`& 0xFF`, or `& 0xFFFF` for 16 bit) before scaling. The output
+  direction gets this for free from the narrowing store, which is why the bug
+  only affects the input path — and why it only shows up for *small* values:
+  calibrating on `1.0` and running on `1.0` always yields the stored byte `127`,
+  which takes the correct branch. Running on `0.25` yields the stored byte `192`
+  and returns `3.0` instead of `0.75`. Both cases are covered by
+  `--calibration_value` / `--inference_value`.
+
+* **Saturate the code, not the stored byte.** For input `1.0` with
+  `scale = 1/255` the code is `255` and the stored byte is `127`, so a clamp
+  applied to the byte never triggers — yet a code of `256` (one past the maximum)
+  is stored as the innocent looking byte `128` and read back by the consumer as
+  code `256 - 256 = 0`. Overflow has to be caught while the value is still a
+  code. Note that this particular op cannot overflow: its output range is exactly
+  three times its input range, so `requantScale` is `1`. A kernel whose ranges
+  are not related that way can, hence the clamp.
+
+* **The reported data type's *sign* is unusable.** The op package declares
+  `QNN_DATATYPE_UFIXED_POINT_8` and the tensors really are unsigned, but
+  `getTensorDataType()` reports `LPAI_CUSTOM_OP_DATATYPE_INT_8` (enum value `3`,
+  see the measurement above). Take only the element *width* from the reported
+  type; treating the storage as signed reads `0x80` as `-128` instead of `128`
+  and collapses the tensor to the zero point.
+
+* **The scale arrives as `scale / 2^shift` with `shift > 31`** — `shift` is `37`
+  and `36` above. Computing `1u << shift` is undefined behaviour for
+  `shift >= 32` and evaluates to `0` on this DSP, so the division silently yields
+  `+inf` and every requantized value becomes `NaN`. Use `ldexpf(scale, -shift)`.
+
+> These conventions are not documented in the QNN/LPAI SDK documentation as far
+> as we can tell, which is why they are spelled out (and measured) here.
+
+> **Note:** the QNN LPAI headers `#include <cstdint>`, so the C++ compiler must
+> provide the C++ standard library headers. Pass `CC=gcc CXX=g++` (as the example
+> script does) if your default `clang` install does not ship libstdc++ headers.
+
+**x86 emulator:**
+```bash
+python3 examples/qualcomm/custom_op/custom_ops_lpai.py \
+  --build_folder build-x86 \
+  --backend lpai \
+  --soc_model SM8850 \
+  --op_package_dir examples/qualcomm/custom_op/example_op_package_lpai/ExampleLpaiOpPackage \
+  --build_op_package \
+  --enable_x86_64
+```
+
+##### Exercising the requantization edge cases
+
+The calibration input and the inference input are separate
+(`--calibration_value` / `--inference_value`). This matters: when both are the
+same tensor, the input always sits at the top of the calibrated range (code
+`255`, stored byte `127`), and the quantization pitfalls listed above are never
+reached. Two extra runs cover them, and neither needs a device:
+
+```bash
+# Low codes: calibrate on 1.0, run on 0.25 -> code 64, stored byte 192.
+# A kernel that un-biases without wrapping returns 3.0 instead of 0.75.
+python3 examples/qualcomm/custom_op/custom_ops_lpai.py \
+  --build_folder build-x86 --backend lpai --soc_model SM8850 \
+  --op_package_dir examples/qualcomm/custom_op/example_op_package_lpai/ExampleLpaiOpPackage \
+  --enable_x86_64 --calibration_value 1.0 --inference_value 0.25
+
+# Above the calibrated range: run on 2.0. The graph's quantize node clamps to
+# the calibrated maximum, so the expected result is the saturated 3.0 rather
+# than 6.0, which has to be stated explicitly.
+python3 examples/qualcomm/custom_op/custom_ops_lpai.py \
+  --build_folder build-x86 --backend lpai --soc_model SM8850 \
+  --op_package_dir examples/qualcomm/custom_op/example_op_package_lpai/ExampleLpaiOpPackage \
+  --enable_x86_64 --calibration_value 1.0 --inference_value 2.0 --expected_value 3.0
+```
+
+#### Running on device (direct mode)
+
+On-device execution goes through **direct mode**: the delegate is compiled for
+Hexagon and runs inside the DSP process, so it registers the op package locally
+instead of forwarding the registration over FastRPC. Build the runtime with:
+
+```bash
+backends/qualcomm/scripts/build.sh --build_direct_mode 0 --soc_model SM8850
+```
+
+Everything that runs on the DSP must be **signed**, including the op package.
+This is handled for you in two places:
+
+* the build command above ends by calling
+  `sign_library.sh --direct_mode`, which signs the direct mode **runtime**
+  libraries;
+* `custom_ops_lpai.py` calls `sign_library.sh --op_package_dir` whenever it
+  builds the `hexagon-v79` target (i.e. with `--build_op_package` and without
+  `--enable_x86_64`), which signs every `.so` the **op package** produces. The
+  signed objects are then deployed from
+  `$QNN_SDK_ROOT/lib/lpai-v<hw_ver>/signed`. Pass `--skip_sign_op_package` to
+  deploy the raw build outputs instead, which only load on a device that does
+  not enforce code signing.
+
+To re-sign without rebuilding, invoke the script directly:
+
+```bash
+# runtime libraries and op package together
+backends/qualcomm/scripts/sign_library.sh \
+  --direct_mode --htp_arch v81 --lpai_arch v6 \
+  --op_package_dir examples/qualcomm/custom_op/example_op_package_lpai/ExampleLpaiOpPackage
+```
+
+Note that `elfsigner.py` uses the `imp` module, which was removed in Python 3.12,
+so it has to run under an older interpreter. The example script takes care of
+this by putting its own interpreter first on `PATH`.
+
+Generate the `.pte` and push the artifacts:
+
+```bash
+python3 examples/qualcomm/custom_op/custom_ops_lpai.py \
+  --build_folder build-android \
+  --backend lpai \
+  --device <device_serial> \
+  --host <host> \
+  --soc_model SM8850 \
+  --op_package_dir examples/qualcomm/custom_op/example_op_package_lpai/ExampleLpaiOpPackage \
+  --build_op_package
+```
+
+On device, the DSP libraries must be present in **both** the workspace root and
+its `adsp/` subdirectory, because the loader searches `<path>/adsp/` first and
+then `<path>/`. The runner also needs `--domain_id 0` to select the ADSP; the
+default of `3` selects the CDSP, where LPAI is not present:
+
+```bash
+W=/data/local/tmp/executorch/custom_qnn_lpai
+ADSP_LIBRARY_PATH=$W LD_LIBRARY_PATH=$W ./qnn_executor_direct_runner \
+  --model_path $W/custom_qnn_lpai.pte \
+  --input_list_path $W/input_list.txt \
+  --output_folder_path $W \
+  --domain_id 0
+```
+
+Supported LPAI SoCs are those with an `LpaiInfo` entry in
+`backends/qualcomm/serialization/qc_schema.py` (e.g. `SM8850`, `SAR2230P`).
+
+#### Debugging on the DSP
+
+Host-side logs say nothing about what happens inside the kernel. Enable FARF
+logging and read the DSP output from `logcat`:
+
+```bash
+adb shell "echo 0x1f > $W/qnn_executor_direct_runner.farf"
+adb logcat -d -v time | grep 'ADSP:\[DS\]'
+```
+
+Two things worth knowing when reading that output:
+
+* **`printf` on the DSP garbles long argument lists.** A single call with a dozen
+  arguments prints repeating ASCII filler that looks like real but nonsensical
+  data. Use several small `printf`s with one to three arguments each.
+* A transient `EAI_ERR: Failed to reset global enpu clock level` (usually with
+  `FTQ driver invoke method (273) failed`) means the kernel never ran and the
+  output buffer was left untouched. It clears on a retry a few seconds later; do
+  not read the all-zero buffer as a measurement.
+
+#### Registering the op package for LPAI
+
+Registration is identical to HTP apart from the target enum:
+
+```python
+op_package_config.register_implementation(
+    target=QnnExecuTorchOpPackageTarget.LPAI,
+    platform=QnnExecuTorchOpPackagePlatform.X86_64,
+    op_package_path=x86_op_package_path,
+)
+```
+
+Note that the fourth argument of QNN's `registerOpPackage` is backend specific:
+for CPU / HTP it is the processor target name (`"CPU"`, `"HTP"`), whereas for
+LPAI it is an *optional target memory pool* string. The ExecuTorch runtime
+therefore passes `nullptr` for LPAI so that the backend selects its default pool.

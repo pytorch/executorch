@@ -520,6 +520,33 @@ class TestFusionPasses(TestFusionPassesBase):
             },
         )
 
+    def test_quant_view_dequant_fusion_refreshes_bypassed_meta(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 12, 1, 6, dtype=torch.float32))
+        quant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 1.2, 3, 0, 127, torch.int8),
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(quant, [-1])
+        )
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(view, 1.2, 3, 0, 127, torch.int8),
+        )
+        builder.output([dequant])
+        original_graph = builder.get_graph_module()
+
+        p = FuseQuantDequantToRequantizePass()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
+
+        # The view now consumes the quantize's float input, so its metadata must
+        # follow; a stale int8 val fails the edge verifier's dtype check.
+        (view_node,) = converted_graph.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        )
+        self.assertEqual(view_node.meta["val"].dtype, torch.float32)
+
     def test_replace_dequant_quant_with_requantize(self) -> None:
         builder = GraphBuilder()
         x_input = torch.randint(low=0, high=5, size=(2, 12, 1, 6), dtype=torch.int8)
@@ -534,12 +561,28 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         builder.output([quant])
         original_graph = builder.get_graph_module()
+        original_fx_graph = original_graph.graph
+        quant_node = original_graph.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        )[0]
+        quant_node.meta["tier_2a_sentinel"] = object()
+        quant_sentinel = quant_node.meta["tier_2a_sentinel"]
         gm_before = copy.deepcopy(original_graph)
 
         p = FuseQuantDequantToRequantizePass()
         result = cast(PassResult, p(original_graph))
         self.assertTrue(result.modified)
+        self.assertIs(result.graph_module, original_graph)
+        self.assertIs(result.graph_module.graph, original_fx_graph)
         converted_graph = result.graph_module
+        requantize_node = converted_graph.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.cadence.requantize.per_tensor
+        )[0]
+        self.assertIs(requantize_node.meta["tier_2a_sentinel"], quant_sentinel)
+        self.assertIsNot(requantize_node.meta, quant_node.meta)
+        self.assertEqual(requantize_node.meta["val"].shape, x_input.shape)
+        self.assertEqual(requantize_node.meta["val"].dtype, torch.int8)
 
         # Validate numerical accuracy
         validate_numerics(
@@ -1201,12 +1244,27 @@ class TestFuseTransposeOpPairsPass(TestFusionPassesBase):
         )
 
         # Check that the pass fuses the two transpose/permute ops.
+        original_fx_graph = gm.graph
+        output_node = next(
+            node for node in reversed(gm.graph.nodes) if node.op == "call_function"
+        )
+        output_node.meta["tier_2a_sentinel"] = object()
+        output_sentinel = output_node.meta["tier_2a_sentinel"]
+        output_shape = output_node.meta["val"].shape
         fusion_pass_result = FuseTransposeOrPermuteOpPairsPass()(gm)
         self.assertIsNotNone(fusion_pass_result)
+        self.assertIs(fusion_pass_result.graph_module, gm)
+        self.assertIs(fusion_pass_result.graph_module.graph, original_fx_graph)
         gm_after_pass = fusion_pass_result.graph_module
         if expected_is_fused:
             expected_op_counts[op1] = 0
             expected_op_counts[op2] = 0
+            replacement_view = gm_after_pass.graph.find_nodes(
+                op="call_function", target=exir_ops.edge.aten.view_copy.default
+            )[0]
+            self.assertIs(replacement_view.meta["tier_2a_sentinel"], output_sentinel)
+            self.assertIsNot(replacement_view.meta, output_node.meta)
+            self.assertEqual(replacement_view.meta["val"].shape, output_shape)
         self.check_op_counts(
             gm_after_pass,
             # pyre-fixme[6]: Incompatible parameter type

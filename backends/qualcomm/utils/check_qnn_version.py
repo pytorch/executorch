@@ -37,19 +37,43 @@ def _get_sdk_build_id(qnn_sdk_root: str):
     return PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
 
 
+class QnnSdkRootNotSet(EnvironmentError):
+    """No SDK path is configured, so there is no version to read.
+
+    Its own type because the version helpers below fall back when they see it, while any other
+    failure means the SDK is there but unreadable, which they must not hide. EnvironmentError is
+    an alias for OSError, so catching that would swallow both.
+    """
+
+
 def get_sdk_build_id():
     qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
     if not qnn_sdk_root:
-        raise EnvironmentError(
+        raise QnnSdkRootNotSet(
             "QNN_SDK_ROOT must be set to query the QNN SDK build id."
         )
     return _get_sdk_build_id(qnn_sdk_root)
 
 
+def describe_sdk_build_id() -> str:
+    """The SDK build id, or a readable stand-in when there is no SDK to ask.
+
+    For error messages only. Querying inside one raises when no SDK is configured, which replaces
+    the caller's own error with a confusing one.
+    """
+    try:
+        return get_sdk_build_id()
+    except QnnSdkRootNotSet:
+        return "unknown, no usable SDK found"
+
+
 def is_qnn_sdk_version_less_than(target_version):
     try:
         current_version = get_sdk_build_id()
-    except Exception:
+    except QnnSdkRootNotSet:
+        # No SDK path set, so there is no version to compare. Treated as older than any target,
+        # which is what the callers want when they gate a newer feature. Any other failure means
+        # the SDK is there but unreadable, and that must not be reported as an old version.
         return True
 
     match = re.search(r"v(\d+)\.(\d+)", current_version)
@@ -68,7 +92,9 @@ def is_qnn_sdk_version_less_than(target_version):
 def is_qnn_sdk_version_greater_than(target_version):
     try:
         current_version = get_sdk_build_id()
-    except Exception:
+    except QnnSdkRootNotSet:
+        # No SDK path set, so there is no version to compare. Treated as not newer than any
+        # target, the conservative answer. Any other failure is left to propagate.
         return False
 
     match = re.search(r"v(\d+)\.(\d+)", current_version)

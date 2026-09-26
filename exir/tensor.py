@@ -212,9 +212,35 @@ class TensorSpec:
         self.mem_id = None
         self.mem_obj_id = None
         self.mem_offset = None
-        # Set by InPlaceElemWiseLikeOpsPass: the base TensorSpec whose memory
-        # this spec should share (output allocated in-place over the input).
-        self.inplace_base: Optional["TensorSpec"] = None
+        # Optional TensorSpec whose storage this spec is backed by. This is
+        # metadata for memory planners; mem_offset remains an absolute offset
+        # after the winning memory plan is written back.
+        self.storage_base: Optional["TensorSpec"] = None
+        # Byte offset into storage_base when this spec is storage-backed.
+        self.storage_base_offset: int = 0
+
+    @property
+    def inplace_base(self) -> Optional["TensorSpec"]:
+        """Zero-offset compatibility alias for storage_base.
+
+        Use storage_base and storage_base_offset directly for aliases with a
+        non-zero offset.
+        """
+        internal_assert(
+            self.storage_base is None or self.storage_base_offset == 0,
+            "inplace_base is only valid for TensorSpecs whose storage_base "
+            "has offset 0.",
+        )
+        return self.storage_base
+
+    @inplace_base.setter
+    def inplace_base(self, base: Optional["TensorSpec"]) -> None:
+        internal_assert(
+            self.storage_base_offset == 0,
+            "inplace_base can only be set when storage_base_offset is 0. "
+            "Use storage_base directly for non-zero-offset aliases.",
+        )
+        self.storage_base = base
 
     @property
     def dtype(self) -> torch.dtype:

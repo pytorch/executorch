@@ -1,6 +1,7 @@
 # Running LLMs on iOS
 
-ExecuTorch’s LLM-specific runtime components provide an experimental Objective-C and Swift components around the core C++ LLM runtime.
+ExecuTorch's LLM-specific runtime provides experimental Objective-C and Swift
+components around the C++ LLM runner.
 
 ## Prerequisites
 
@@ -22,9 +23,9 @@ Swift:
 import ExecuTorchLLM
 ```
 
-### TextLLMRunner
+### TextRunner
 
-The `ExecuTorchLLMTextRunner` class (bridged to Swift as `TextLLMRunner`) provides a simple Objective-C/Swift interface for loading a text-generation model, configuring its tokenizer with custom special tokens, generating token streams, and stopping execution.
+The `ExecuTorchLLMTextRunner` class (bridged to Swift as `TextRunner`) provides a simple Objective-C/Swift interface for loading a text-generation model, configuring its tokenizer with custom special tokens, generating token streams, and stopping execution.
 This API is experimental and subject to change.
 
 #### Initialization
@@ -49,7 +50,7 @@ let modelPath     = Bundle.main.path(forResource: "llama-3.2-instruct", ofType: 
 let tokenizerPath = Bundle.main.path(forResource: "tokenizer", ofType: "model")!
 let specialTokens = ["<|bos|>", "<|eos|>"]
 
-let runner = TextLLMRunner(
+let runner = TextRunner(
   modelPath: modelPath,
   tokenizerPath: tokenizerPath,
   specialTokens: specialTokens

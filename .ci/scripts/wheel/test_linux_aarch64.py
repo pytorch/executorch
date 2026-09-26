@@ -9,11 +9,17 @@ import tempfile
 from pathlib import Path
 
 import test_base
+import test_clean_install
 import test_cpp_sdk
 import test_shared_libraries
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
+    # Before anything else, because this is the check that fails the way a user
+    # fails: with only the dependencies the wheel declares.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_clean_install.run_tests(Path(work_dir))
+
     # coremltools does not support linux aarch64 yet and install from the source fails on runtime
     # https://github.com/apple/coremltools/issues/1254
     # https://github.com/apple/coremltools/issues/2195

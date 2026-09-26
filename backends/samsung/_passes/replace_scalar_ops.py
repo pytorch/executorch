@@ -38,9 +38,16 @@ class ReplaceOpsWithScalar(ExportPass):
         if op not in self._ops_with_scalar:
             return super().call_operator(op, args, kwargs, meta)
 
+        # For pow operation, convert int scalar to float32 tensor
+        # because the PowVisitor requires both inputs to be float32
+        if op == exir_ops.edge.aten.pow.Tensor_Scalar and isinstance(args[1], int):
+            args1 = torch.tensor(float(args[1]), dtype=torch.float32)
+        else:
+            args1 = torch.tensor(args[1])
+
         return super().call_operator(
             op=self._ops_with_scalar.get(op, op),
-            args=(args[0], torch.tensor(args[1])),
+            args=(args[0], args1),
             kwargs=kwargs,
             meta=meta,
         )

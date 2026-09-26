@@ -5,10 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import inspect
+import json
 import logging
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import torch
+from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
+    resolve_input_enumerations,
+)
 
 from executorch.backends.apple.coreai.compiler.preprocess import (
     AOTCompileConfig,
@@ -196,6 +200,9 @@ class CoreAIPartitioner(Partitioner):
         uses_sidecar: bool = False,
         aot_compile_config: Optional[AOTCompileConfig] = None,
         min_deployment_version: Optional[str] = None,
+        input_enumerations: Optional[
+            Sequence[Optional[Dict[int, Sequence[int]]]]
+        ] = None,
         take_over_constant_data: bool = True,
         take_over_mutable_buffer: bool = True,
     ) -> None:
@@ -212,6 +219,11 @@ class CoreAIPartitioner(Partitioner):
         # single JSON AOT_COMPILE_CONFIG spec (presence implies AOT).
         # min_deployment_version is a general spec (it also sets the portable
         # .aimodel's OS floor), so it is emitted separately.
+        #
+        # input_enumerations declares enumerated shapes on the ET model inputs
+        # ({dim_index: [values]}, aligned to inputs); it is resolved to export
+        # symbols in :meth:`partition` and propagated to each subgraph boundary
+        # in preprocess, so it is not built into a compile spec here.
         specs = []
         if uses_sidecar:
             specs.append(CompileSpec(COMPILE_SPEC_KEYS.USES_SIDECAR.value, b"1"))
@@ -234,6 +246,8 @@ class CoreAIPartitioner(Partitioner):
             backend_id=CoreAIBackend.__name__,
             compile_specs=specs,
         )
+        self._base_compile_specs = specs
+        self._input_enumerations = input_enumerations
         self.take_over_constant_data = take_over_constant_data
         self.take_over_mutable_buffer = take_over_mutable_buffer
 
@@ -261,7 +275,24 @@ class CoreAIPartitioner(Partitioner):
             )
         logger.info("CoreAIPartitioner::partition")
         partition_tags = {}
+
+        # Resolve ET-input enumerations to export symbols and attach as a compile
+        # spec; preprocess propagates them to each subgraph's boundary.
         delegation_spec = self.delegation_spec
+        resolved = resolve_input_enumerations(
+            exported_program, self._input_enumerations
+        )
+        if resolved:
+            delegation_spec = DelegationSpec(
+                backend_id=CoreAIBackend.__name__,
+                compile_specs=self._base_compile_specs
+                + [
+                    CompileSpec(
+                        COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS.value,
+                        json.dumps(resolved).encode(),
+                    )
+                ],
+            )
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

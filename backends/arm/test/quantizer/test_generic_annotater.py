@@ -145,6 +145,17 @@ def test_flip_tosa_INT():
     )
 
 
+def test_roll_tosa_INT():
+    check_annotation(
+        SingleOpModel(
+            torch.roll,
+            (torch.randn(2, 4),),
+            shifts=(1, 2),
+            dims=(0, 1),
+        ),
+    )
+
+
 def test_concat_tosa_INT():
     check_annotation(
         SingleOpModel(

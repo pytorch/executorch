@@ -7,8 +7,7 @@ works on the Arm Corstone-320 FVP for development without hardware.
 
 ## What You'll Build
 
-- A quantized INT8 MobileNetV2 model fully delegated to the Ethos-U55 NPU
-  (110 ops, ~19 ms inference on Alif E8)
+- A quantized INT8 MobileNetV2 model with Ethos-U NPU delegation
 - A Zephyr RTOS application that loads the `.pte` model, runs inference on a
   static test image, and prints the top-5 ImageNet predictions over UART
 
@@ -18,13 +17,12 @@ works on the Arm Corstone-320 FVP for development without hardware.
 
 | Target | Description |
 |--------|-------------|
-| **Alif Ensemble E8 DevKit** | Cortex-M55 HP core + Ethos-U55 (256 MACs), 4.5 MB HP SRAM, MRAM |
+| **Alif Ensemble E8 DevKit** | Cortex-M55 HP core + Ethos-U55 (256 MACs), MRAM, 8 MiB SRAM |
 | **Corstone-320 FVP** | Virtual platform simulating Cortex-M85 + Ethos-U85 (no hardware needed, Linux only) |
 
 ### Software
 
-- Linux x86_64 (FVP and Arm toolchain are Linux-only; macOS can export models
-  but cannot run the FVP or flash)
+- Linux x86_64 for the workflow below
 - Python 3.12+
 - Alif SE Tools for flashing (Alif hardware only)
 
@@ -41,8 +39,9 @@ west init --manifest-rev v4.4.0
 
 ## Step 2: Add ExecuTorch as a Zephyr Module
 
-Copy the submanifest, configure `west` to pull only the modules we need, and
-update:
+Create the submanifest, configure `west` to pull the modules for this demo, and
+update. The project filter below is for the new workspace created in Step 1;
+when using an existing application, retain the modules that application needs.
 
 ```bash
 mkdir -p zephyr/submanifests
@@ -55,18 +54,13 @@ manifest:
       path: modules/lib/executorch
 EOF
 
-west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u
+west config manifest.project-filter -- '-.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u'
 west update
 west packages pip --install
 ```
 
-For Alif boards, also add the Alif HAL:
-
-```bash
-west config manifest.project-filter -- -.*,+zephyr,+executorch,+cmsis,+cmsis_6,+cmsis-nn,+hal_ethos_u,+hal_alif
-west update
-west packages pip --install
-```
+Zephyr 4.4.0 includes the Alif SoC and peripheral support used by this sample
+in its own source tree.
 
 Install the Zephyr SDK (compiler toolchain):
 
@@ -98,7 +92,7 @@ that matches your hardware:
 **For Alif E8 (HP Ethos-U55 with 256 MACs):**
 
 ```bash
-python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
+python -m executorch.backends.arm.scripts.aot_arm_compiler \
     --model_name=mv2 \
     --quantize --delegate \
     --target=ethos-u55-256 \
@@ -110,7 +104,7 @@ If rtss_he is used instead of rtss_hp below use `--target=ethos-u55-128` to matc
 **For Corstone-320 FVP (Ethos-U85 with 256 MACs):**
 
 ```bash
-python -m modules.lib.executorch.backends.arm.scripts.aot_arm_compiler \
+python -m executorch.backends.arm.scripts.aot_arm_compiler \
     --model_name=mv2 \
     --quantize --delegate \
     --target=ethos-u85-256 \
@@ -122,39 +116,66 @@ The Vela compiler converts the TOSA intermediate representation into an
 optimized command stream for the NPU. Use `mv2_untrained` instead of `mv2` if
 you do not want to depend on torchvision pretrained weights.
 
+These export commands retain floating-point model inputs and outputs. The
+Cortex-M runs the runtime, input/output processing, and boundary quantization
+and dequantization.
+An NPU operator count from Vela describes the compiled partition; it does not
+count all operations in the ExecuTorch program.
+
+By default, this command calibrates using the model's example input, which is
+random for `mv2`. For classification accuracy evaluation, supply representative
+calibration data and compare against PyTorch with matching input preprocessing.
+
 ## Step 5: Build the Zephyr Application
+
+The separate build directories keep the Alif and FVP board configurations and
+firmware images independent. The `-d` option is optional when building only one
+target; West otherwise uses `build`.
 
 **For Alif E8:**
 
 ```bash
-west build -d build -b ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp \
+west build -d build-alif -b ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp \
     modules/lib/executorch/zephyr/samples/mv2-ethosu -- \
     -DET_PTE_FILE_PATH=mv2_ethosu.pte
 ```
 
 **For Corstone-320 FVP:**
 
+Use the environment from Step 3: `setup_path.sh` supplies the FVP executable
+and shared-library paths. Zephyr finds `FVP_Corstone_SSE-320` on `PATH` and
+uses the board's simulator configuration. Set the sample's NPU MAC count and
+simulation limit before configuring the build; Zephyr captures
+`ARMFVP_EXTRA_FLAGS` when CMake runs.
+
 ```bash
-west build -b mps4/corstone320/fvp \
+export ARMFVP_EXTRA_FLAGS="--simlimit 10 -C mps4_board.subsystem.ethosu.num_macs=256"
+
+west build -d build-fvp -b mps4/corstone320/fvp \
     modules/lib/executorch/zephyr/samples/mv2-ethosu -- \
     -DET_PTE_FILE_PATH=mv2_u85_256.pte
 ```
 
 ## Step 6a: Run on Corstone-320 FVP
 
-Set up the FVP paths and run:
+Run the image built in Step 5:
 
 ```bash
-export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
-export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
-export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
-export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"
-
-west build -t run
+west build -d build-fvp -t run
 ```
 
-MV2 inference is cycle-accurate on the FVP and takes 10-20 minutes of wall
-clock. You should see output like:
+The Ethos-U model can report NPU cycle counts, while CPU instruction timing
+and memory-system behavior are simplified. The `<N> ms` line below measures
+`method->execute()` with Zephyr's simulated clock, rather than reading the
+NPU cycle counter. It does not establish Alif E8 hardware latency. Host wall
+time depends on the host and simulator configuration.
+
+The sample leaves Zephyr running after printing `MobileNetV2 Demo Complete`.
+`--simlimit 10` stops the FVP after ten seconds of simulated time. Confirm that
+the completion message appears before it exits. If you change the simulation
+limit or other FVP flags, rerun `west build -d build-fvp -c` before running again.
+
+You should see output like:
 
 ```
 ========================================
@@ -176,7 +197,7 @@ MobileNetV2 Demo Complete
 ### Flash with west
 
 ```bash
-west flash
+west flash -d build-alif
 ```
 
 
@@ -192,13 +213,13 @@ SE Tools directory.
 
 The Alif E8 sample build generates the binary consumed by SE Tools:
 
-- `build/zephyr/zephyr.bin`
+- `build-alif/zephyr/zephyr.bin`
 
 Create `build/images/zephyr.json` and `build/images/app-device-config.json` in
 the SE Tools directory:
 
 ```bash
-ZEPHYR_BUILD=~/zephyr_workspace/build/zephyr
+ZEPHYR_BUILD=~/zephyr_workspace/build-alif/zephyr
 
 cd <PATH_TO_ALIF_SETOOLS>/app-release-exec-linux_FW_1.109.00_DEV
 
@@ -347,7 +368,9 @@ open the serial terminal, and press reset:
 picocom -b 115200 /dev/ttyACM0
 ```
 
-Press the reset button on the E8 DevKit. You should see:
+Press the reset button on the E8 DevKit. A representative log is shown below;
+timing, model size, and scores vary with the model and software/hardware
+configuration.
 
 ```
 *** Booting Zephyr OS build v4.4.0 ***
@@ -392,13 +415,19 @@ Use `mv2_untrained` instead of `mv2` if you want to avoid downloading
 pretrained weights. In that case the class scores are arbitrary and may all be
 close to `0.0000`.
 
+The reported inference time covers one `method->execute()` call, measured with
+`k_uptime_get_32()`. Model loading, input preparation, and result reporting are
+outside that interval. For hardware comparisons, record the software versions,
+model, core/NPU configuration and clocks, and measurements over repeated runs.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Linker: `region 'FLASH' overflowed` | Model PTE too large for ITCM | Use the DDR overlay (FVP) or verify mramAddress (Alif) |
+| Linker: `region 'FLASH' overflowed` | Code and model exceed the linked image region | Check the linker map and model placement: DDR on FVP, MRAM on Alif. Changing the ATOC address does not increase linker capacity. |
 | Linker: `region 'RAM' overflowed` | Pools + model copy exceed SRAM | Set `CONFIG_ET_ARM_MODEL_PTE_DMA_ACCESSIBLE=y` to skip the SRAM copy |
-| FVP hangs after "Ethos-U backend registered" | Cycle-accurate MV2 simulation is slow | Wait 10-20 min, or use Corstone-320 (faster than 300) |
+| No Zephyr startup banner on FVP | Incorrect boot or memory layout | Check the ELF addresses and use the Corstone-320 sample overlay with separate regions for code and writable data. |
+| FVP exits before the demo completes | Simulation limit too short, configuration mismatch, or runtime failure | Inspect the console, check the exported NPU target and MAC count, and increase `--simlimit` if needed. Reconfigure after changing FVP flags. |
 | No Zephyr serial output on Alif | `SW4` still routes VCOM to SE UART | Move `SW4` to `U4` and use 115200 baud |
 | No SE Tools response | Serial terminal is open, wrong `SW4` setting, or app blocks ISP | Close terminal, set `SW4=SE`, or enter hard maintenance mode |
 | `app-write-mram` fails or app does not boot | `mramAddress` and link address differ | Use `0x80008000`, not `0x80200000` with `CONFIG_FLASH_LOAD_OFFSET=0x8000` |
@@ -408,10 +437,15 @@ close to `0.0000`.
 
 | Region | Corstone-320 FVP | Alif E8 |
 |--------|-----------------|---------|
-| Code + .rodata | ITCM (512 KB) | MRAM |
-| .data + .bss + pools | ISRAM (4 MB) | HP SRAM (4.5 MB) |
-| Model PTE (~3.5 MB) | DDR (16 MB, via overlay) | MRAM (DMA-accessible) |
+| Code + .rodata | First 512 KiB of ISRAM at `0x31000000`; boot vectors in ITCM | MRAM |
+| .data + .bss + pools | Remaining 3.5 MiB of ISRAM at `0x31080000` | Combined SRAM0/SRAM1, 8 MiB at `0x02000000` |
+| Model PTE | DDR region at `0x70000000` (16 MiB, via overlay) | MRAM (DMA-accessible) |
 | NPU delegation | Ethos-U85 (256 MACs) | Ethos-U55 (256 MACs) |
+
+These are memory-region capacities. The method and temporary allocator pools
+reserve 1.5 MiB each; the linker's RAM usage also includes other data and stacks.
+Use the build's memory summary and linker map to inspect reserved space. Neither
+region capacity nor statically reserved RAM measures peak live allocation.
 
 ## Using Claude Code with Zephyr
 

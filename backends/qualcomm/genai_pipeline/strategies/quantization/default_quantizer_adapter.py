@@ -23,17 +23,30 @@ class DefaultQuantizerAdapter:
 
     def make_quantizer(
         self,
-        quant_dtype: Any,
-        backend: Any,
-        soc_model: Any,
+        quant_dtype: Any = None,
+        backend: Any = None,
+        soc_model: Any = None,
+        quant_recipe: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Create a QNN quantizer via ``export_utils.make_quantizer``.
 
+        ``quant_dtype`` defaults to ``None`` and is only forwarded when set, so
+        ``export_utils.make_quantizer`` remains the single owner of the default
+        (``QuantDtype.use_8a8w``) rather than this wrapper duplicating it.
+
+        ``quant_recipe`` is **not** an argument of
+        ``export_utils.make_quantizer``; a recipe is applied to the constructed
+        quantizer via ``QnnQuantizer.set_recipe``, so it is consumed here and
+        never forwarded.
+
         Args:
-            quant_dtype: Quantization data type.
+            quant_dtype: Quantization data type. ``None`` leaves the default to
+                ``export_utils.make_quantizer``.
             backend: QNN backend type enum.
             soc_model: Target SoC (string name like "SM8750" or QcomChipset enum).
+            quant_recipe: Optional recipe applied via ``set_recipe`` after the
+                quantizer is constructed.
             **kwargs: Forwarded to ``make_quantizer``.
 
         Returns:
@@ -48,17 +61,27 @@ class DefaultQuantizerAdapter:
         soc_model_str = soc_model.name if hasattr(soc_model, "name") else str(soc_model)
 
         logger.debug(
-            "Creating quantizer: dtype=%s, backend=%s, soc=%s",
+            "Creating quantizer: dtype=%s, backend=%s, soc=%s, recipe=%s",
             quant_dtype,
             backend,
             soc_model_str,
+            quant_recipe,
         )
-        return _make_quantizer(
-            quant_dtype=quant_dtype,
-            backend=backend,
-            soc_model=soc_model_str,
+        make_quantizer_kwargs = {
+            "backend": backend,
+            "soc_model": soc_model_str,
             **kwargs,
-        )
+        }
+        if quant_dtype is not None:
+            make_quantizer_kwargs["quant_dtype"] = quant_dtype
+
+        quantizer = _make_quantizer(**make_quantizer_kwargs)
+
+        if quant_recipe is not None:
+            logger.debug("Applying quantization recipe via set_recipe")
+            quantizer.set_recipe(quant_recipe)
+
+        return quantizer
 
     def export_model(
         self,

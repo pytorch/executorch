@@ -17,6 +17,7 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    Conv1dAsConv2dPass,
     FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
@@ -190,6 +191,7 @@ class VulkanBackend(BackendDetails):
                 AddmmToLinearTransform(),
                 InsertDtypePromotionPass(),
                 FusePatternsPass(),
+                Conv1dAsConv2dPass(),
                 FuseClampPass(),
                 RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(),
@@ -197,6 +199,12 @@ class VulkanBackend(BackendDetails):
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
+                # Again: the three passes above rewrite views, and collapsing a
+                # chain of them can leave a view onto the shape it started from.
+                # Those reach the runtime as a shader that reads every texel and
+                # writes it back, and the earlier run happened before they were
+                # created.
+                RemoveRedundantOpsTransform(),
             ],
         )
 

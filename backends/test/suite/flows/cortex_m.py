@@ -27,11 +27,11 @@ from executorch.backends.cortex_m.test.tester import CortexMQuantize, CortexMTes
 from executorch.backends.test.suite.flow import TestFlow
 
 
-def _create_cortex_m_tester(model, inputs, **kwargs) -> CortexMTester:
+def _to_channels_last(inputs):
     # The CMSIS-NN kernels are NHWC, and CortexMConv2DCheck rejects any pattern
     # whose tensors are not channels_last. The suite hands over contiguous
     # tensors, which silently costs every convolution in the model.
-    inputs = tuple(
+    return tuple(
         (
             t.to(memory_format=torch.channels_last)
             if isinstance(t, torch.Tensor) and t.dim() == 4
@@ -39,12 +39,31 @@ def _create_cortex_m_tester(model, inputs, **kwargs) -> CortexMTester:
         )
         for t in inputs
     )
+
+
+class _ChannelsLastTester(CortexMTester):
+    """Converts on the comparison path as well as the build path.
+
+    The suite runs the program against the inputs it built the case with rather
+    than the ones handed to the tester, and the operator suite does so by
+    default, so converting only in the factory leaves the runtime reading a
+    contiguous tensor as NHWC.
+    """
+
+    def run_method_and_compare_outputs(self, *args, **kwargs):
+        if kwargs.get("inputs") is not None:
+            kwargs["inputs"] = _to_channels_last(kwargs["inputs"])
+        return super().run_method_and_compare_outputs(*args, **kwargs)
+
+
+def _create_cortex_m_tester(model, inputs, **kwargs) -> CortexMTester:
+    inputs = _to_channels_last(inputs)
     # The Serialize stage is also the stage that invokes the ELF, so its timeout
     # is the FVP's --timelimit rather than a serialization budget, and 120s is
-    # not enough for an ImageNet-sized model on an M55 with no NPU. Kept under
-    # the suite conftest's 1200s pytest timeout so the FVP reports the overrun
-    # instead of pytest killing the process.
-    return CortexMTester(model, inputs, timeout=900, **kwargs)
+    # not enough for an ImageNet-sized model on an M55 with no NPU. The suite
+    # conftest wraps each case in a pytest timeout of its own -- 1200s for
+    # models, 120s for operators -- so this only bounds a single FVP run.
+    return _ChannelsLastTester(model, inputs, timeout=900, **kwargs)
 
 
 # Models that cannot run on the FVP runner at all, so there is nothing for the
@@ -72,7 +91,6 @@ CORTEX_M_XFAILS = [
     "test_convnext_small",
     "test_densenet161",
     "test_maxvit_t",
-    "test_mnasnet1_0",
     "test_shufflenet_v2_x1_0",
     # 4.00 bytes per parameter: none of the convolutions lower, so the weights
     # stay fp32 and the 100 MiB program overruns the pool. Lowering conv1d

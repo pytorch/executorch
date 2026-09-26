@@ -313,6 +313,12 @@ def test_fold_qdq(request, kwargs):
     FoldQDQ.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends()
+@repack_pass_fixtures
+def test_fuse_batch_norm_with_conv(request, kwargs):
+    FuseBatchNormWithConv.test(request, kwargs)  # noqa: F405
+
+
 # Test case tests pytorch dtype conversion,
 # since LPAI only supports quant type casting, skip LPAI for now.
 @enumerate_backends(
@@ -324,6 +330,12 @@ def test_fold_qdq(request, kwargs):
 @repack_pass_fixtures
 def test_fuse_consecutive_cast(request, kwargs):
     FuseConsecutiveCast.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends()
+@repack_pass_fixtures
+def test_fuse_consecutive_reshape(request, kwargs):
+    FuseConsecutiveReshape.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_backends()

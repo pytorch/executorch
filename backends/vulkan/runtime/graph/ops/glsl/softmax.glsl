@@ -51,15 +51,18 @@ int tid_to_smi(const ivec2 tid) {
  * This case is simpler because each element of a texel belongs to a separate
  * reduction dim, meaning we don't have to perform reduction along a texel.
  */
-void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
+void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   const int smi = tid_to_smi(tid);
   int group_i;
 
-  scan_pos[reduce_dim] = tid.x;
-  vec4 max_elements = texelFetch(tin, scan_pos, 0);
-  for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
-       i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
-    max_elements = max(max_elements, texelFetch(tin, scan_pos, 0));
+  vec4 max_elements = vec4(-1.0 / 0.0);
+  if (in_bounds) {
+    scan_pos[reduce_dim] = tid.x;
+    max_elements = texelFetch(tin, scan_pos, 0);
+    for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
+         i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
+      max_elements = max(max_elements, texelFetch(tin, scan_pos, 0));
+    }
   }
   shared_max[smi] = max_elements;
   barrier();
@@ -69,11 +72,13 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
     max_elements = max(max_elements, shared_max[group_i]);
   }
 
-  scan_pos[reduce_dim] = tid.x;
   vec4 denominators = vec4(0);
-  for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
-       i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
-    denominators += exp(texelFetch(tin, scan_pos, 0) - max_elements);
+  if (in_bounds) {
+    scan_pos[reduce_dim] = tid.x;
+    for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
+         i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
+      denominators += exp(texelFetch(tin, scan_pos, 0) - max_elements);
+    }
   }
   shared_sum[smi] = denominators;
   barrier();
@@ -88,7 +93,8 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
       scan_pos[packed_dim] == (safe_idx(out_meta.limits, packed_dim) - 1);
 
   scan_pos[reduce_dim] = tid.x;
-  for (int i = tid.x; i < safe_idx(in_meta.sizes, reduce_dim);
+  for (int i = in_bounds ? tid.x : safe_idx(in_meta.sizes, reduce_dim);
+       i < safe_idx(in_meta.sizes, reduce_dim);
        i += NWORKERS, scan_pos[reduce_dim] += NWORKERS) {
     const vec4 numerators = op1(texelFetch(tin, scan_pos, 0) - max_elements);
     const vec4 safe_denom = max(denominators, vec4(1e-37));
@@ -120,7 +126,7 @@ void softmax_nonpacked_dim(const ivec2 tid, ivec3 scan_pos) {
  * elements in texels (which occur when the size of the packed dim is not a
  * multiple of 4) so that they do not influence the output of reduction.
  */
-void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
+void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos, const bool in_bounds) {
   const int smi = tid_to_smi(tid);
   int group_i;
 
@@ -129,11 +135,11 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
 
   scan_pos[reduce_dim] = tid.x;
   vec4 max_elements = vec4(-3.402823e+38);
-  for (int i = tid.x * 4; i < reduce_len;
+  for (int i = in_bounds ? tid.x * 4 : reduce_len; i < reduce_len;
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
     max_elements = max(max_elements, texelFetch(tin, scan_pos, 0));
   }
-  if (scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1 && nspill > 0) {
+  if (in_bounds && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1 && nspill > 0) {
     const vec4 intex = texelFetch(tin, scan_pos, 0);
     for (int i = 0; i < nspill; ++i) {
       max_elements.x = max(intex[i], max_elements.x);
@@ -153,11 +159,11 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
 
   scan_pos[reduce_dim] = tid.x;
   vec4 denominators = vec4(0);
-  for (int i = tid.x * 4; i < reduce_len;
+  for (int i = in_bounds ? tid.x * 4 : reduce_len; i < reduce_len;
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
     denominators += exp(texelFetch(tin, scan_pos, 0) - max_element);
   }
-  if (nspill > 0 && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1) {
+  if (in_bounds && nspill > 0 && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1) {
     const vec4 intex = texelFetch(tin, scan_pos, 0);
     for (int i = 0; i < nspill; ++i) {
       denominators.x += exp(intex[i] - max_element);
@@ -177,12 +183,12 @@ void softmax_packed_dim(const ivec2 tid, ivec3 scan_pos) {
   const float safe_denominator = max(denominator, 1e-37);
 
   scan_pos[reduce_dim] = tid.x;
-  for (int i = tid.x * 4; i < reduce_len;
+  for (int i = in_bounds ? tid.x * 4 : reduce_len; i < reduce_len;
        i += NWORKERS * 4, scan_pos[reduce_dim] += NWORKERS) {
     const vec4 numerators = op1(texelFetch(tin, scan_pos, 0) - max_element);
     imageStore(tout, scan_pos, op2(numerators, safe_denominator));
   }
-  if (nspill > 0 && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1) {
+  if (in_bounds && nspill > 0 && scan_pos[reduce_dim] == safe_idx(out_meta.limits, reduce_dim) - 1) {
     const vec4 numerator = op1(texelFetch(tin, scan_pos, 0) - max_element);
     vec4 outtex = op2(numerator, safe_denominator);
     [[unroll]] for (int i = nspill; i < 4; ++i) {
@@ -200,13 +206,14 @@ void main() {
       gl_LocalInvocationID[reduce_dim],
       gl_LocalInvocationID[group_dim]);
 
-  if (any(greaterThanEqual(scan_pos, out_meta.limits))) {
-    return;
-  }
+  // Do not return early here. The routines below contain barrier() calls, and
+  // returning would leave them in non-uniform control flow, which is undefined
+  // and hangs the GPU on some drivers. Carry the bounds check instead.
+  const bool in_bounds = !any(greaterThanEqual(scan_pos, out_meta.limits));
 
   if (reduce_dim != packed_dim) {
-    softmax_nonpacked_dim(tid, scan_pos);
+    softmax_nonpacked_dim(tid, scan_pos, in_bounds);
   } else {
-    softmax_packed_dim(tid, scan_pos);
+    softmax_packed_dim(tid, scan_pos, in_bounds);
   }
 }

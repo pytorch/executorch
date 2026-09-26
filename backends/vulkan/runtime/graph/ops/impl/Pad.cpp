@@ -71,8 +71,8 @@ void add_constant_pad_nd_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter buffers
       {graph.meta_ubo(out),

@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -16,6 +15,7 @@
 
 #include "MLXCache.h" // AttendSpec, MLXCache
 #include "MLXExecutor.h" // resolve_dtype
+#include "MLXPool.h" // Pool
 
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
@@ -25,97 +25,6 @@ namespace backends {
 namespace mlx {
 
 namespace cache = ::executorch::extension::llm::cache;
-
-// Per-layer K or V store, SDPA-major [1, H, slots, D] (cells on axis 2). The
-// planner hands down physical runs (it has already applied any ring modulo), so
-// the pool is layout-agnostic: flat and ring differ only in how many slots the
-// layer asks for and how many runs a step produces.
-class Pool {
- public:
-  // initial_slots above max_slots is clamped, not rejected: the config default
-  // exceeds the cap of any smaller cache, so this is the normal path.
-  Pool(int initial_slots, int max_slots, int H, int D, ::mlx::core::Dtype dtype)
-      : dtype_(dtype),
-        max_slots_(max_slots),
-        buf_(::mlx::core::zeros(
-            ::mlx::core::Shape{1, H, std::min(initial_slots, max_slots), D},
-            dtype)) {}
-
-  // Place `update` at the run's physical start, casting to the storage dtype if
-  // it differs.
-  void write(const cache::Run& run, const Tensor& update, StreamOrDevice s) {
-    const int H = static_cast<int>(buf_.shape(1));
-    const int D = static_cast<int>(buf_.shape(3));
-    if (run.start < 0 || run.start + run.len > max_slots_) {
-      throw std::runtime_error("Pool::write: run out of bounds");
-    }
-    if (static_cast<int>(update.shape(2)) != run.len) {
-      throw std::runtime_error("Pool::write: update length != run length");
-    }
-    if (static_cast<int>(update.shape(1)) != H ||
-        static_cast<int>(update.shape(3)) != D) {
-      throw std::runtime_error("Pool::write: K/V heads/dim mismatch");
-    }
-    maybe_grow(run.start + run.len, s);
-    const Tensor u = update.dtype() == dtype_
-        ? update
-        : ::mlx::core::astype(update, dtype_, s);
-    buf_ = ::mlx::core::slice_update(
-        buf_,
-        u,
-        ::mlx::core::Shape{0, 0, run.start, 0},
-        ::mlx::core::Shape{1, H, run.start + run.len, D},
-        s);
-  }
-
-  // The run's cells, [start, start+len). Ring reads start mid-pool, so the run
-  // start matters here as much as it does for a write.
-  Tensor read(const cache::Run& run, StreamOrDevice s) const {
-    const int H = static_cast<int>(buf_.shape(1));
-    const int D = static_cast<int>(buf_.shape(3));
-    if (run.start < 0 || run.start + run.len > slots()) {
-      throw std::runtime_error("Pool::read: run out of bounds");
-    }
-    return ::mlx::core::slice(
-        buf_,
-        ::mlx::core::Shape{0, 0, run.start, 0},
-        ::mlx::core::Shape{1, H, run.start + run.len, D},
-        ::mlx::core::Shape{1, 1, 1, 1},
-        s);
-  }
-
-  // Slots currently allocated; grows toward max_slots on demand.
-  int slots() const {
-    return static_cast<int>(buf_.shape(2));
-  }
-
- private:
-  // Make room for `needed` slots, growing only if the pool is short: double
-  // until it fits, never past max_slots_. Cells keep their index, so growth is
-  // a zero-pad on the cell axis.
-  void maybe_grow(int needed, StreamOrDevice s) {
-    const int cur = slots();
-    if (needed <= cur) {
-      return;
-    }
-    int next = std::max(cur, 1); // an empty pool has nothing to double
-    while (next < needed) {
-      next *= 2;
-    }
-    // The last doubling can overshoot; write() already bounds `needed` by
-    // max_slots_, so clamping here cannot undershoot it.
-    next = std::min(next, max_slots_);
-    const int H = static_cast<int>(buf_.shape(1));
-    const int D = static_cast<int>(buf_.shape(3));
-    Tensor pad =
-        ::mlx::core::zeros(::mlx::core::Shape{1, H, next - cur, D}, dtype_);
-    buf_ = ::mlx::core::concatenate(std::vector<Tensor>{buf_, pad}, 2, s);
-  }
-
-  ::mlx::core::Dtype dtype_;
-  int max_slots_;
-  Tensor buf_;
-};
 
 // Bool mask [1, 1, T, S] for T queries over a span of S keys, where each query
 // attends at most `window` keys ending at itself. The span is right-aligned
@@ -146,17 +55,16 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
 // holds and whether a step's runs wrap.
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
-  explicit MLXSequenceCache(const cache::CacheConfig& cfg)
-      : cache::SequenceCache(checked(cfg)) {
+  MLXSequenceCache(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg)
+      : cache::SequenceCache(checked(geometry, cfg), cfg) {
     const ::mlx::core::Dtype dt =
         resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
-    kpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    vpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    window_.reserve(static_cast<size_t>(cfg.n_layers));
-    for (int l = 0; l < cfg.n_layers; ++l) {
-      // layers size 1 = one config broadcast to every layer, else per-layer.
-      const cache::LayerConfig& lc =
-          cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+    kpool_.reserve(geometry.layers.size());
+    vpool_.reserve(geometry.layers.size());
+    window_.reserve(geometry.layers.size());
+    for (const cache::LayerGeometry& lc : geometry.layers) {
       const bool ring = lc.policy.kind == cache::LayerPolicy::Kind::Ring;
       window_.push_back(ring ? lc.policy.window : 0);
       // Flat retains all history, so its pool may reach the full cap and starts
@@ -170,18 +78,41 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     }
   }
 
+  // A fork at an earlier position. Flat layers take a pool holding just the
+  // prefix; ring layers share the source's, whose wrapped slot mapping must
+  // not change. Precondition: other.can_rewind(upto), which seq_clone checks.
+  MLXSequenceCache(
+      const MLXSequenceCache& other,
+      int upto,
+      ::mlx::core::Stream s)
+      : cache::SequenceCache(other), window_(other.window_) {
+    if (upto <= 0 || !rewind(upto)) {
+      throw std::runtime_error("fork: position is not one this can rewind to");
+    }
+    kpool_.reserve(other.kpool_.size());
+    vpool_.reserve(other.vpool_.size());
+    for (size_t l = 0; l < window_.size(); ++l) {
+      const bool flat = window_[l] == 0;
+      kpool_.push_back(
+          flat ? other.kpool_[l].clone_prefix(upto, s) : other.kpool_[l]);
+      vpool_.push_back(
+          flat ? other.vpool_[l].clone_prefix(upto, s) : other.vpool_[l]);
+    }
+  }
+
   AttendSpec update_and_fetch(
       int layer,
-      int position,
+      const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
-      StreamOrDevice s) override {
+      StreamOrDevice s) {
     if (layer < 0 || layer >= static_cast<int>(kpool_.size())) {
       throw std::out_of_range("update_and_fetch: layer out of range");
     }
     const int T = static_cast<int>(k.shape(2)); // BHSD: seq axis is 2
 
-    std::optional<cache::SeqStepPlan> p = this->plan(layer, position, T);
+    std::optional<cache::SeqStepPlan> p =
+        this->plan(layer, run_start(positions, T), T);
     if (!p) {
       throw std::runtime_error(
           "update_and_fetch: step exceeds capacity or invalid layer");
@@ -215,7 +146,45 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
   }
 
+  Tensor attend(
+      int layer,
+      const std::vector<int32_t>& positions,
+      const Tensor& q,
+      const Tensor& k,
+      const Tensor& v,
+      float scale,
+      StreamOrDevice s) override {
+    return ::executorch::backends::mlx::attend(
+        update_and_fetch(layer, positions, k, v, s), q, scale, s);
+  }
+
+ protected:
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::SequenceCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
+  }
+
  private:
+  // A sequence cache holds one run of one sequence, so the step is described by
+  // where it starts; the remaining positions carry no information beyond
+  // confirming that. A step this cache cannot represent is refused rather than
+  // silently stored at the wrong positions.
+  static int run_start(const std::vector<int32_t>& positions, int T) {
+    if (static_cast<int>(positions.size()) != T) {
+      throw std::runtime_error(
+          "update_and_fetch: one position per key/value token expected");
+    }
+    for (int i = 1; i < T; ++i) {
+      if (positions[i] != positions[0] + i) {
+        throw std::runtime_error(
+            "update_and_fetch: sequence cache needs a contiguous run");
+      }
+    }
+    return positions[0];
+  }
+
   // Scatter `update` across the step's runs. Runs are in logical order, so
   // consecutive slices of `update` map to consecutive runs. A flat step is one
   // run; a ring step splits in two when it wraps the pool.
@@ -226,7 +195,7 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
       const Tensor& update,
       StreamOrDevice s) {
     if (n == 1) {
-      pool.write(runs[0], update, s);
+      pool.write(runs[0].start, runs[0].len, update, s);
       return;
     }
     const int H = static_cast<int>(update.shape(1));
@@ -234,7 +203,8 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     int off = 0;
     for (int i = 0; i < n; ++i) {
       pool.write(
-          runs[i],
+          runs[i].start,
+          runs[i].len,
           ::mlx::core::slice(
               update,
               ::mlx::core::Shape{0, 0, off, 0},
@@ -250,24 +220,26 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
   static Tensor
   read_runs(const Pool& pool, const cache::Run* runs, int n, StreamOrDevice s) {
     if (n == 1) {
-      return pool.read(runs[0], s);
+      return pool.read(runs[0].start, runs[0].len, s);
     }
     std::vector<Tensor> parts;
     parts.reserve(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
-      parts.push_back(pool.read(runs[i], s));
+      parts.push_back(pool.read(runs[i].start, runs[i].len, s));
     }
     return ::mlx::core::concatenate(parts, 2, s);
   }
 
   // Enforce the neutral contract as an exception, the failure mode this layer
   // already uses. Runs as the base initializer's argument because
-  // SequenceCache's own ctor indexes `layers` before this class's body does.
-  static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
-    if (!cache::valid(cfg)) {
-      throw std::runtime_error("MLXSequenceCache: invalid CacheConfig");
+  // SequenceCache's constructor reads the geometry before this body runs.
+  static const cache::CacheGeometry& checked(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg) {
+    if (!cache::valid(geometry, cfg)) {
+      throw std::runtime_error("MLXSequenceCache: invalid geometry or config");
     }
-    return cfg;
+    return geometry;
   }
 
   std::vector<Pool> kpool_;

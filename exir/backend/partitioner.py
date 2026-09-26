@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -112,3 +113,27 @@ class Partitioner(ABC):
             in the list returned by ops_to_not_decompose.
         """
         return ([], None)
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Transform an ATen program before default decompositions run.
+
+        EXIR invokes this hook automatically from
+        ``to_edge_transform_and_lower``. Backend partitioners may override it
+        to apply transformations that must run before decomposition. Callers
+        should use ``to_edge_transform_and_lower`` instead of invoking this
+        method directly.
+
+        When multiple partitioners are used for a method, their transforms run
+        sequentially in the order supplied to ``to_edge_transform_and_lower``.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program to
+                transform.
+
+        Returns:
+            ExportedProgram: The transformed ATen-dialect program.
+
+        """
+        return exported_program

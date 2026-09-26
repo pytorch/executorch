@@ -26,6 +26,7 @@ set(_json_include
 # gflags
 set(gflags_DIR ${EXECUTORCH_ROOT}/cmake-out/third-party/gflags)
 find_package(gflags REQUIRED)
+find_package(Threads REQUIRED)
 
 # executorch
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../../..)
@@ -157,7 +158,9 @@ endif()
 target_include_directories(
   muse_glimmer_worker PUBLIC ${_common_include_directories} ${_json_include}
 )
-target_link_libraries(muse_glimmer_worker PUBLIC ${link_libraries})
+target_link_libraries(
+  muse_glimmer_worker PUBLIC ${link_libraries} Threads::Threads
+)
 
 if(EXECUTORCH_BUILD_CUDA
    AND NOT APPLE

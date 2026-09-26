@@ -24,6 +24,12 @@ OPS_AFTER_PASSES = {
     "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
 }
 
+RANK5_OPS_AFTER_PASSES = {
+    "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+    "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
+    "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
+}
+
 
 class CortexMPermute(torch.nn.Module):
     ops_before_transforms = OPS_BEFORE_PASSES
@@ -94,6 +100,19 @@ def test_dialect_transpose(test_case, cortex_m_target):
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
+        qtol=1,
+    )
+
+
+def test_dialect_rank5_permute_stays_portable(cortex_m_target):
+    tester = CortexMTester(
+        CortexMPermute((0, 2, 1, 4, 3)),
+        (ramp_tensor(-1.0, 1.0, (1, 2, 3, 4, 5)),),
+        target_config=cortex_m_target,
+    )
+    tester.test_dialect(
+        OPS_BEFORE_PASSES,
+        RANK5_OPS_AFTER_PASSES,
         qtol=1,
     )
 

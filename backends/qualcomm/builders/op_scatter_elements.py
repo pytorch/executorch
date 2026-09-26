@@ -3,7 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict
+from typing import Dict, Optional
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
@@ -22,16 +22,65 @@ from .qnn_constants import OpScatterElements, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class ScatterElements(NodeVisitor):
-    target = ["aten.scatter.src", "aten.scatter.value"]
+    target = [
+        "aten.scatter.src",
+        "aten.scatter.value",
+        "aten.scatter_add.default",
+        "aten.scatter_reduce.two",
+    ]
+
+    # aten reduce string -> QNN reduction mode. "mean" / "amax" / "amin"
+    # are intentionally absent: QNN ScatterElements cannot express them.
+    reduce_str_to_reduction = {
+        "sum": OpScatterElements.Reduction.ADD,
+        "prod": OpScatterElements.Reduction.MUL,
+    }
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
+
+    def _get_reduction(
+        self, node: torch.fx.Node
+    ) -> Optional[OpScatterElements.Reduction]:
+        """
+        Resolve the QNN reduction mode for this node, or None if the node
+        cannot be represented by QNN ScatterElements (caller falls back to CPU).
+        """
+        op_name = node.target.__name__
+
+        if op_name == "aten.scatter_add.default":
+            return OpScatterElements.Reduction.ADD
+
+        if op_name == "aten.scatter_reduce.two":
+            # include_self is keyword-only in aten.scatter_reduce.two
+            include_self = node.kwargs.get("include_self", True)
+            if not include_self:
+                # QNN always accumulates onto the existing values of 'self'
+                return None
+
+            reduce_str = (
+                node.args[4] if len(node.args) > 4 else node.kwargs.get("reduce")
+            )
+            return self.reduce_str_to_reduction.get(reduce_str)
+
+        # aten.scatter.src: plain overwrite
+        return OpScatterElements.Reduction.NONE
 
     def define_node(
         self,
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
+        reduction = self._get_reduction(node)
+        if reduction is None:
+            # unsupported reduce mode or include_self=False -> fall back to CPU
+            return None
+
+        # NOTE: QNN HTP only supports reduction != NONE in quantized mode. We
+        # intentionally do not gate on that here: backend capability is resolved
+        # by IsNodeSupportedByBackend during partitioning, so this builder stays
+        # backend-agnostic and picks up capability changes across SDK versions
+        # automatically. The fp case is covered in the rework tests.
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
@@ -128,7 +177,7 @@ class ScatterElements(NodeVisitor):
         scatter_op.AddScalarParam(
             OpScatterElements.param_reduction,
             PyQnnManager.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {QCOM_DATA: np.uint32(OpScatterElements.Reduction.NONE)},
+            {QCOM_DATA: np.uint32(reduction)},
         )
 
         return scatter_op

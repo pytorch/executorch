@@ -17,7 +17,10 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.arm.tosa.backend import TOSABackend
-from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.mapping import (
+    TOSA_CONTROL_FLOW_SOURCE_NODE_META,
+    TosaSpecialDtype,
+)
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -386,6 +389,10 @@ def test_fuse_constant_args_preserves_unused_control_flow_inputs() -> None:
         "x",
     ]
     assert placeholders[1].meta["is_input"] is True
+    cond_inputs = cast(list[torch.fx.Node], cond_node.args[-1])
+    # Regularization must retain the exact parent operand, including when this
+    # unused branch input is preserved for control-flow signature consistency.
+    assert placeholders[1].meta[TOSA_CONTROL_FLOW_SOURCE_NODE_META] is cond_inputs[0]
     assert len(placeholders[1].users) == 0
 
 

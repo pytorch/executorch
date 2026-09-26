@@ -155,6 +155,53 @@ TEST_F(AOTITorchItemBoolSlimTest, NullReturnValue) {
   EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
 }
 
+TEST_F(AOTITorchItemBoolSlimTest, ConvertsFromLong) {
+  // Generated code reads a value through whichever entry point matches the type
+  // it wants back, not the type the tensor holds.
+  std::vector<int64_t> sizes = {1};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Long),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(tensor, nullptr);
+  *static_cast<int64_t*>(tensor->data_ptr()) = 1;
+
+  bool result = false;
+  EXPECT_EQ(aoti_torch_item_bool(tensor, &result), Error::Ok);
+  EXPECT_TRUE(result);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, BoolReadAsInt64) {
+  Tensor* tensor = createScalarBoolTensor(
+      true, static_cast<int32_t>(slim_c10::DeviceType::CPU), 0);
+  ASSERT_NE(tensor, nullptr);
+
+  int64_t result = -1;
+  EXPECT_EQ(aoti_torch_item_int64(tensor, &result), Error::Ok);
+  EXPECT_EQ(result, 1);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
+TEST_F(AOTITorchItemBoolSlimTest, RejectsValueThatDoesNotFit) {
+  std::vector<int64_t> sizes = {1};
+  Tensor* tensor = createTestTensor(
+      sizes,
+      static_cast<int32_t>(slim_c10::ScalarType::Long),
+      static_cast<int32_t>(slim_c10::DeviceType::CPU),
+      0);
+  ASSERT_NE(tensor, nullptr);
+  *static_cast<int64_t*>(tensor->data_ptr()) = 300;
+
+  uint8_t result = 0;
+  EXPECT_EQ(aoti_torch_item_uint8(tensor, &result), Error::InvalidArgument);
+
+  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
+}
+
 TEST_F(AOTITorchItemBoolSlimTest, MultiElementTensor) {
   std::vector<int64_t> sizes = {2, 3};
   Tensor* tensor = createTestTensor(
@@ -164,40 +211,6 @@ TEST_F(AOTITorchItemBoolSlimTest, MultiElementTensor) {
       0);
   ASSERT_NE(tensor, nullptr);
   EXPECT_GT(tensor->numel(), 1);
-
-  bool result = false;
-  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
-
-  EXPECT_EQ(error, Error::InvalidArgument);
-
-  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
-}
-
-TEST_F(AOTITorchItemBoolSlimTest, WrongDtype_Float) {
-  std::vector<int64_t> sizes = {1};
-  Tensor* tensor = createTestTensor(
-      sizes,
-      static_cast<int32_t>(slim_c10::ScalarType::Float),
-      static_cast<int32_t>(slim_c10::DeviceType::CPU),
-      0);
-  ASSERT_NE(tensor, nullptr);
-
-  bool result = false;
-  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
-
-  EXPECT_EQ(error, Error::InvalidArgument);
-
-  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
-}
-
-TEST_F(AOTITorchItemBoolSlimTest, WrongDtype_Long) {
-  std::vector<int64_t> sizes = {1};
-  Tensor* tensor = createTestTensor(
-      sizes,
-      static_cast<int32_t>(slim_c10::ScalarType::Long),
-      static_cast<int32_t>(slim_c10::DeviceType::CPU),
-      0);
-  ASSERT_NE(tensor, nullptr);
 
   bool result = false;
   AOTITorchError error = aoti_torch_item_bool(tensor, &result);
@@ -262,27 +275,6 @@ TEST_F(AOTITorchItemBoolSlimTest, MultiElementTensor_CUDA) {
       0);
   ASSERT_NE(tensor, nullptr);
   EXPECT_TRUE(tensor->is_cuda());
-
-  bool result = false;
-  AOTITorchError error = aoti_torch_item_bool(tensor, &result);
-
-  EXPECT_EQ(error, Error::InvalidArgument);
-
-  EXPECT_EQ(aoti_torch_delete_tensor_object(tensor), Error::Ok);
-}
-
-TEST_F(AOTITorchItemBoolSlimTest, WrongDtype_Float_CUDA) {
-  if (!isCudaAvailable()) {
-    GTEST_SKIP() << "CUDA not available";
-  }
-
-  std::vector<int64_t> sizes = {1};
-  Tensor* tensor = createTestTensor(
-      sizes,
-      static_cast<int32_t>(slim_c10::ScalarType::Float),
-      static_cast<int32_t>(slim_c10::DeviceType::CUDA),
-      0);
-  ASSERT_NE(tensor, nullptr);
 
   bool result = false;
   AOTITorchError error = aoti_torch_item_bool(tensor, &result);

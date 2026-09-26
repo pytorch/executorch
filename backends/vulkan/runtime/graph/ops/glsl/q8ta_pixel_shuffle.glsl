@@ -39,6 +39,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 
@@ -90,7 +92,7 @@ void main() {
   // (along the packed dim) at one (n, oh, ow) spatial position.
   const int C_words = div_up_4(C_out);
   const int total_words = N * C_words * H_out * W_out;
-  const int thread_idx = int(gl_GlobalInvocationID.x);
+  const int thread_idx = int(linear_idx_from_gid());
   if (thread_idx >= total_words) {
     return;
   }

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -90,6 +91,40 @@ class SequentialLSTMModel(torch.nn.Module):
             (torch.randn(1, 2, 12), torch.randn(1, 2, 12)),
             (torch.randn(1, 2, 8), torch.randn(1, 2, 8)),
         )
+
+
+class LSTMCellModel(torch.nn.Module):
+    def __init__(self, bias: bool = True) -> None:
+        super().__init__()
+        self.lstm_cell = torch.nn.LSTMCell(10, 12, bias=bias)
+        self.linear = torch.nn.Linear(12, 1)
+
+    def forward(
+        self, x: torch.Tensor, state: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        h, c = self.lstm_cell(x, (state[0], state[1]))
+        return torch.sigmoid(self.linear(h)), torch.stack([h, c])
+
+    def get_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return torch.randn(2, 10), torch.randn(2, 2, 12)
+
+
+class UnbatchedLSTMCellModel(LSTMCellModel):
+    def get_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return torch.randn(10), torch.randn(2, 12)
+
+
+class IndexedLSTMCellModel(torch.nn.Module):
+    def __init__(self, index: int) -> None:
+        super().__init__()
+        self.lstm_cell = torch.nn.LSTMCell(10, 12)
+        self.index = index
+
+    def forward(self, x: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+        return self.lstm_cell(x, (state[0], state[1]))[self.index]
+
+    def get_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return torch.randn(2, 10), torch.randn(2, 2, 12)
 
 
 def _run_fp_test(module):
@@ -188,8 +223,57 @@ def test_decompose_lstm_tosa_INT_multilayer():
     _run_int_test(LSTMModel(num_layers=2))
 
 
+def test_decompose_lstm_cell_tosa_INT() -> None:
+    _run_int_test(LSTMCellModel())
+
+
 def test_decompose_lstm_pass_handles_chained_lstms() -> None:
     module = SequentialLSTMModel()
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeLstmPass],
+    )
+    pipeline.run()
+
+
+def test_decompose_lstm_pass_handles_lstm_cell() -> None:
+    module = LSTMCellModel()
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeLstmPass],
+    )
+    pipeline.run()
+
+
+def test_decompose_lstm_pass_handles_lstm_cell_no_bias() -> None:
+    module = LSTMCellModel(bias=False)
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeLstmPass],
+    )
+    pipeline.run()
+
+
+def test_decompose_lstm_pass_handles_unbatched_lstm_cell() -> None:
+    module = UnbatchedLSTMCellModel()
+    pipeline = PassPipeline(
+        module,
+        module.get_inputs(),
+        quantize=True,
+        pass_list=[DecomposeLstmPass],
+    )
+    pipeline.run()
+
+
+@pytest.mark.parametrize("index", [-2, -1])
+def test_decompose_lstm_pass_handles_negative_output_index(index: int) -> None:
+    module = IndexedLSTMCellModel(index)
     pipeline = PassPipeline(
         module,
         module.get_inputs(),

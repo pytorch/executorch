@@ -66,7 +66,17 @@ function build_android() {
   ANDROID_ABI=arm64-v8a
   ANDROID_PLATFORM=android-28 # Trace requires over android-23
 
+  local host_flatcc=${X86_64_BUILD_DIR}/third-party/flatcc_ep/bin/flatcc
+  local flatcc_args=()
+  if [[ -x ${host_flatcc} ]]; then
+    flatcc_args=(-DFLATCC_EXECUTABLE=${host_flatcc})
+  else
+    echo "Warning: ${host_flatcc} not found. Build the x86_64 target first" \
+         "('-b x86_64' or '-b all') if executor_runner fails to link libflatccrt.a."
+  fi
+
   cmake \
+        "${flatcc_args[@]}" \
         -DCMAKE_INSTALL_PREFIX=${ANDROID_BUILD_DIR} \
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
         -DANDROID_NDK=${ANDROID_NDK} \

@@ -646,6 +646,12 @@ table CumsumNode {
     inclusive: bool = true;
 }
 
+table CummaxNode {
+    x: Tid (required);
+    out: Tid (required);
+    axis: int32;
+}
+
 table StackNode {
     tensors: [Tid] (required);
     out: Tid (required);
@@ -841,6 +847,11 @@ table AbsNode {
 }
 
 table NegNode {
+    x: Tid (required);
+    out: Tid (required);
+}
+
+table TruncNode {
     x: Tid (required);
     out: Tid (required);
 }
@@ -1051,6 +1062,12 @@ table MetalKernelNode {
     init_value: float = null;
 }
 
+table FlipNode {
+    x: Tid (required);
+    out: Tid (required);
+    axes: [int32] (required);
+}
+
 // =============================================================================
 // Union of all op types
 // =============================================================================
@@ -1191,7 +1208,10 @@ union OpNode {
     BitwiseXorNode,
     IfNode,
     RandomBitsNode,
-    UpdateAndAttendNode
+    UpdateAndAttendNode,
+    TruncNode,
+    FlipNode,
+    CummaxNode
     // BC: Add new op nodes here (append only)
 }
 

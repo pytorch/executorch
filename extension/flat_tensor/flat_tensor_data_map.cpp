@@ -296,11 +296,11 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   // so a corrupt offset would otherwise let version()/named_data()/segments()
   // dereference memory outside the buffer.
   //
-  // Minimum size: root offset (uoffset_t) + file identifier, i.e. the
-  // flatbuffer header. The identifier check above already implies at least this
-  // many bytes, but check explicitly so the bound below cannot underflow.
-  constexpr size_t kMinBufferSize =
-      sizeof(flatbuffers::uoffset_t) + flatbuffers::kFileIdentifierLength;
+  // Minimum size: root offset + file identifier, i.e. the flatbuffer header
+  // before the FlatTensor header begins. The identifier check above already
+  // implies at least this many bytes, but check explicitly so the bound below
+  // cannot underflow.
+  constexpr size_t kMinBufferSize = FlatTensorHeader::kHeaderOffset;
   ET_CHECK_OR_RETURN_ERROR(
       flat_tensor_data->size() >= kMinBufferSize,
       InvalidExternalData,

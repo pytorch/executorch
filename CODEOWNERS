@@ -4,7 +4,6 @@
 # file are not required for merges.
 
 /backends/apple @shoumikhin
-/backends/apple/mps @DenisVieriu97
 /backends/arm @digantdesai
 /backends/cadence
 /backends/cortex_m @rascani

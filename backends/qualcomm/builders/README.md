@@ -503,6 +503,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.as_strided` | `DecomposeAsStrided` |
 | `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
 | `aten.atanh` | `DecomposeHyperbolicVariants` |
@@ -514,6 +515,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
+| `aten.empty.memory_format`, `aten.empty_strided` | `DecomposeEmpty` |
 | `aten.special_expm1` | `DecomposeExpM1` |
 | `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.floor_divide` | `DecomposeFloorDivide` |

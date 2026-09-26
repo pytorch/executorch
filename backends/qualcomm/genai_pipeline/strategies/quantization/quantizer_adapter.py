@@ -33,17 +33,27 @@ class QuantizerAdapter(Protocol):
 
     def make_quantizer(
         self,
-        quant_dtype: Any,
-        backend: Any,
-        soc_model: Any,
+        quant_dtype: Any = None,
+        backend: Any = None,
+        soc_model: Any = None,
+        quant_recipe: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Create a QNN quantizer with the given configuration.
 
+        Every argument defaults to ``None`` so that callers can omit any of them
+        and let the implementation -- or the API it wraps -- supply the default.
+        In particular an omitted ``quant_dtype`` must not be forwarded, so the
+        underlying ``make_quantizer`` default applies rather than being shadowed.
+
         Args:
             quant_dtype: Quantization data type (e.g., QuantDtype.use_8a8w).
+                ``None`` selects the implementation's default.
             backend: QNN backend type (HTP, GPU, LPAI).
             soc_model: Target SoC chipset.
+            quant_recipe: Optional quantization recipe. Applied to the
+                constructed quantizer (``QnnQuantizer.set_recipe``) rather than
+                passed to ``make_quantizer``, which takes no such argument.
             **kwargs: Additional quantizer options (per_channel, observers, etc.).
 
         Returns:

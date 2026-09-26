@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 from torch._export.utils import (
@@ -15,6 +15,25 @@ from torch._export.utils import (
     is_lifted_tensor_constant,
     is_param,
 )
+
+
+def get_attr_from_target(graph_module: torch.fx.GraphModule, target: str) -> Any:
+    """Resolve a possibly dotted get_attr target (e.g. ``linear.weight``)."""
+    attr: Any = graph_module
+    for target_atom in target.split("."):
+        attr = getattr(attr, target_atom)
+    return attr
+
+
+def set_attr_from_target(
+    graph_module: torch.fx.GraphModule, target: str, replacement: Any
+) -> None:
+    """Assign to a possibly dotted get_attr target (e.g. ``linear.weight``)."""
+    attr: Any = graph_module
+    target_list = target.split(".")
+    for target_atom in target_list[:-1]:
+        attr = getattr(attr, target_atom)
+    setattr(attr, target_list[-1], replacement)
 
 
 def is_parameter(
@@ -98,19 +117,27 @@ def is_mutable_buffer_input(
         return fqn in edge_program.graph_signature.buffers_to_mutate.values()
 
 
-def is_graph_output(node: torch.fx.Node) -> bool:
+def is_graph_output(node: torch.fx.Node, output_index: Optional[int] = None) -> bool:
     """
     Check if the given tensor is used as a graph output
 
     Args:
-        tensor: EdgeIR Tensor that is being checked for graph input
+        node: EdgeIR Tensor that is being checked for graph output
+        output_index: for a multi-output node, restrict the check to this
+            output. Without it a single escaping output would mark every
+            output of the node as a graph output, publishing values that
+            nothing consumes.
     """
     for user in node.users.keys():
-        # getitem node is skipped, check the op_skip_ops.py
-        if user.op == "output" or (
-            user.target.__name__ == "getitem" and is_graph_output(user)
-        ):
+        if user.op == "output":
             return True
+        # getitem node is skipped, check the op_skip_ops.py
+        # call_module targets are plain strings and have no __name__
+        if getattr(user.target, "__name__", "") == "getitem":
+            if output_index is not None and user.args[1] != output_index:
+                continue
+            if is_graph_output(user):
+                return True
     return False
 
 
@@ -125,7 +152,7 @@ def is_mutable_buffer_output(
     return (
         any(
             user.op == "output"
-            or user.target.__name__ == "getitem"
+            or getattr(user.target, "__name__", "") == "getitem"
             and is_graph_output(user)
             for user in tensor.users.keys()
         )

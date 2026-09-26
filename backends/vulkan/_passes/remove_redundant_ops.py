@@ -36,6 +36,12 @@ class RemoveRedundantOpsTransform(ExportPass):
         exir_ops.edge.aten.expand_copy.default,
         # copy.default(self, src): no-op when src dtype/shape matches self.
         exir_ops.edge.aten.copy.default,
+        # view_copy.default: a view onto the same shape. These survive into the
+        # partition and dispatch a shader that reads every texel and writes it
+        # back unchanged. Only same-shape views are safe to drop here: a view
+        # that changes the rank must keep its node, because the ops downstream
+        # read their argument's shape.
+        exir_ops.edge.aten.view_copy.default,
     }
 
     # For these ops the meaningful input is args[1] (src), not args[0] (self).

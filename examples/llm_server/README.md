@@ -32,7 +32,7 @@ decoding `temperature = 0` they are accepted but have no effect, and an omitted
 `seed` uses the worker's unset/random value), Hermes tool calling by default
 (`<tool_call>...</tool_call>` JSON, complete calls only; model-specific launchers
 may select the Qwen XML format) with `tool_choice="none"`,
-structured API errors, and best-effort cancellation. One worker process with
+structured API errors, and bounded request cancellation. One worker process with
 serialized execution; a worker can host isolated sessions on one weight load when its engine reports
 capacity > 1 (with warm append-only resume across turns). KV/prefix state lives inside the
 worker/session, not the control plane. Unsupported params (including
@@ -95,6 +95,10 @@ Supported contract for pi:
 
 Reliability guidance:
 
+- On POSIX, workers that advertise cancellation stop disconnected requests at a
+  token boundary. If cooperative stop does not finish within the grace period,
+  the server terminates the worker, reports `/health` as unavailable, and
+  requires a supervisor restart rather than silently reloading model weights.
 - Use the model's real HF `chat_template` (`--hf-tokenizer`) for tool use, kept
   aligned with the exported tokenizer/model.
 - If tool calls come back as plain text, confirm the model is emitting the

@@ -9,99 +9,45 @@
       "replacements": ["fgets"]
     },
     {
-      "names": ["memcpy"],
-      "replacements": ["memcpy_s"]
+      "names": ["atof"],
+      "replacements": ["strtod"]
     },
     {
-      "names": ["wmemcpy"],
-      "replacements": ["wmemcpy_s"]
+      "names": ["atoi", "atol", "atoll"],
+      "replacements": ["strtol", "strtoll", "strtoul", "strtoull"]
     },
     {
-      "names": ["memmove"],
-      "replacements": ["memmove_s"]
+      "names": ["rewind"],
+      "replacements": ["See SEI CERT MSC24-C: https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/recommendations/miscellaneous-msc/msc24-c/"]
     },
     {
-      "names": ["wmemmove"],
-      "replacements": ["wmemmove_s"]
+      "names": ["setbuf"],
+      "replacements": ["setvbuf"]
     },
     {
       "names": ["readdir_r"],
       "replacements": ["readdir"]
     },
     {
-      "names": ["scanf", "wscanf", "_tscanf", "sscanf", "swscanf", "_stscanf"],
-      "replacements": ["fgets"]
-    },
-    {
       "names": [
         "strcat",
-        "wcscat",
-        "_tcscat",
-        "_mbscat",
-        "StrCat",
-        "lstrcat",
-        "lStrCatBuff",
-        "_tccat",
-        "_mbccat",
-        "_ftcscat",
-        "strncat",
-        "wcsncat",
-        "_tcsncat",
-        "_mbsncat",
-        "_mbsnbcat",
-        "StrCatN",
-        "StrNCat",
-        "lstrncat",
-        "lstrcatn"
+        "wcscat"
       ],
-      "replacements": ["strcat_s", "strncat_s"]
+      "replacements": ["See SEI CERT STR31-C: https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/rules/characters-and-strings-str/str31-c/"]
     },
     {
       "names": [
         "strcpy",
-        "wcscpy",
-        "_tcscpy",
-        "_mbscpy",
-        "StrCpy",
-        "lstrcpy",
-        "_tccpy",
-        "_mbccpy",
-        "_ftcscpy",
-        "strncpy",
-        "wcsncpy",
-        "_tcsncpy",
-        "_mbsncpy",
-        "_mbsnbcpy",
-        "StrCpyN",
-        "StrNCpy",
-        "lstrcpyn"
+        "wcscpy"
       ],
-      "replacements": ["strcpy_s", "strncpy_s"]
-    },
-    {
-      "names": ["strlen"],
-      "replacements": ["strnlen_s"]
-    },
-    {
-      "names": ["wcslen"],
-      "replacements": ["wcsnlen_s"]
-    },
-    {
-      "names": ["strtok", "_tcstok", "wcstok", "_mbstok"],
-      "replacements": ["strtok_s"]
+      "replacements": ["See SEI CERT STR31-C: https://cmu-sei.github.io/secure-coding-standards/sei-cert-c-coding-standard/rules/characters-and-strings-str/str31-c/"]
     },
     {
       "names": [
-        "wsprintf",
         "sprintf",
-        "swprintf",
-        "_stprintf",
-        "wvsprintf",
-        "vsprintf",
-        "_vstprintf",
-        "vswprintf"
+        "vsprintf"
       ],
-      "replacements": ["snprintf", "snprintf_s"]
+      "replacements": ["snprintf", "vsnprintf"]
     }
   ]
 }

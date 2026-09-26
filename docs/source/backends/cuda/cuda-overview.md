@@ -140,13 +140,13 @@ exec_program = et_program.to_executorch(
             skip_d2h_for_method_outputs=True,
         ),
         enable_non_cpu_memory_planning=True,
-        # Required alongside the skips. Memory planning reserves a buffer for graph inputs and
-        # outputs by default, and the runtime fills a planned input by copying the caller's
-        # memory into that buffer, which reintroduces the copy you just asked to skip. On device
-        # memory that copy is a host memcpy into a device pointer, which is undefined.
-        memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=False, alloc_graph_output=False
-        ),
+        # Required alongside the skips. Memory planning reserves a buffer for graph inputs by
+        # default, and the runtime fills a planned input by copying the caller's memory into that
+        # buffer, which reintroduces the copy you just asked to skip. On device memory that copy is
+        # a host memcpy into a device pointer, which is undefined.
+        # Outputs stay planned, so the runtime allocates them on the device and hands back a
+        # pointer to its own buffer. See the note below for when to unplan them instead.
+        memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
     )
 )
 ```
@@ -169,11 +169,25 @@ out works, and the snippet above sets it explicitly only to make the requirement
 it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
 during device-aware memory planning.
 
-**Both flags also need unplanned graph inputs and outputs**, via
-`MemoryPlanningPass(alloc_graph_input=False, alloc_graph_output=False)` as shown above. Without
-it the program still reserves its own buffer and the runtime copies into it, so the copy comes
-back at run time. On device memory that copy is a host memcpy into a device pointer, which is
-undefined, so the program crashes rather than returning a wrong answer.
+**Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
+program reserves its own input buffer and the runtime copies the caller's memory into it, so the
+copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,
+which is undefined, so the program crashes rather than returning a wrong answer.
+
+**Outputs have two valid shapes, and which one you want depends on the language.**
+
+Leave outputs planned, which is the default, when the caller cannot supply device memory itself.
+The planned buffer is allocated on the device because `enable_non_cpu_memory_planning` is on, and
+`skip_d2h_for_method_outputs` means nothing copies it back, so the result stays on the device and
+the caller receives a pointer to the runtime's own buffer. That buffer belongs to the method and is
+reused by the next execution, so read or copy the result before running again. This is the shape
+every Python caller wants, and it is what the exporters in this repository use, for example
+`examples/models/gemma4_31b/export.py`.
+
+Set `alloc_graph_output=False` only when the caller supplies the output memory itself, which today
+means a C++ caller handing the runtime a device tensor through `Module::set_output`. The Python
+bindings allocate host memory for an unplanned output, so a device resident method exported this
+way cannot run from Python.
 
 **Per-method selection is on the outer config, not on the flags.** Pass a dict of
 `PropagateDeviceConfig` keyed by method name:
@@ -199,8 +213,24 @@ exported without them expects device tensors. Passing the wrong kind is a caller
 something the runtime corrects, so the two are not interchangeable at run time.
 
 **From C++ it is the same contract.** With the copies skipped, the input has to be a tensor
-the delegate will accept as device resident. `clone_tensor_ptr_to` allocates on the device
-and copies the data across:
+the delegate will accept as device resident. There are two ways to build one, and which is
+right depends on where the data already is.
+
+If the data is already in device memory, wrap the pointer with `from_blob` and name the
+device right after the scalar type. Nothing is copied:
+
+```cpp
+auto input = from_blob(device_data, {rows, columns}, ScalarType::Float, DeviceType::CUDA);
+auto result = module.forward(input);
+```
+
+This is the path to use when the producer of the data is another GPU kernel, a camera or
+video decoder that writes to the GPU, or an earlier model whose output you kept on device.
+`from_blob` does not allocate or migrate anything, so the pointer has to be genuinely valid
+on the device you name, and it has to outlive the tensor.
+
+If the data starts on the host, `clone_tensor_ptr_to` allocates on the device and copies it
+across, which costs one transfer:
 
 ```cpp
 auto host_input = make_tensor_ptr({rows, columns}, std::move(data));
@@ -208,8 +238,10 @@ auto input = clone_tensor_ptr_to(host_input, DeviceType::CUDA);
 auto result = module.forward(input);
 ```
 
-`from_blob` is not enough on its own. It has no device parameter, so the tensor it returns
-is tagged CPU whatever the pointer points at, and the delegate rejects it.
+The device argument defaults to `DeviceType::CPU` in the overloads that do not take a custom
+deleter, so a plain `from_blob(host_ptr, sizes, type)` still means host memory. The deleter
+overloads require the device to be named. Leaving the device at CPU while handing over a
+device pointer produces a CPU-tagged tensor that the delegate rejects.
 
 **How the delegate decides a tensor is device resident.** Two checks, in this order. First
 the tensor's own `device_type` has to be `CUDA`, which is metadata set by whoever built the

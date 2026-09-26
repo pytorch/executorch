@@ -40,6 +40,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "block_config", "0")}
@@ -52,7 +54,7 @@ define_store_int8x4_buffer_fns(t_out)
 
 void main() {
   // Buffer storage: use linear dispatch
-  const uint contig_block_idx = gl_GlobalInvocationID.x;
+  const uint contig_block_idx = linear_idx_from_gid();
   TensorIndex4D tidx = contiguous_block_idx_to_tensor4d_idx_with_block_config(
       out_meta, contig_block_idx, block_config);
 

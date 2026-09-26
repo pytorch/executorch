@@ -25,13 +25,17 @@ import logging
 import time
 
 import torch
-
 from executorch.backends.mlx.examples.llm.runtime_meta import (
     apply_chat_template,
     chunked_prefill,
     get_eos_token_ids,
     load_text_processor,
+    read_const_int,
     read_model_limits,
+)
+from executorch.extension.llm.export.model_metadata import (
+    LOGITS_TO_KEEP_MODE_METHOD,
+    LOGITS_TO_KEEP_MODES,
 )
 from executorch.runtime import Runtime, Verification
 
@@ -40,11 +44,12 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-def _get_max_input_seq_len(program) -> int:
-    """Inspect the .pte program metadata to determine the max input_ids seq len.
+def _forward_input_seq_len(program) -> int:
+    """The forward's traced token-input width -- what set_inputs will accept.
 
-    Fallback for .pte files exported before get_prefill_chunk_size existed.
-    Returns the static seq-len dimension of the first input tensor (input_ids).
+    1 for a static token-by-token export (e.g. optimum's static cache), or the
+    dynamic upper bound for a chunked-prefill export. This is authoritative:
+    feeding more tokens than this per step fails set_inputs.
     """
     meta = program.metadata("forward")
     input_ids_info = meta.input_tensor_meta(0)
@@ -67,9 +72,31 @@ def run_inference(
     et_runtime = Runtime.get()
     program = et_runtime.load_program(pte_path, verification=Verification.Minimal)
 
-    max_ctx_len, prefill_chunk_size = read_model_limits(program)
-    if prefill_chunk_size is None:
-        prefill_chunk_size = _get_max_input_seq_len(program)
+    # This pybindings runner only feeds tokens and positions. A model exported
+    # with --logits-to-keep selected takes a third runtime selector input, so
+    # its forward cannot be invoked here; use the C++ runner (mlx_run_llm_hf).
+    if (
+        read_const_int(program, LOGITS_TO_KEEP_MODE_METHOD)
+        == LOGITS_TO_KEEP_MODES["selected"]
+    ):
+        raise ValueError(
+            "This .pte was exported with --logits-to-keep selected, which needs "
+            "a runtime-supplied logits selector input that run_llm_hf.py does "
+            "not provide. Run it with the C++ runner mlx_run_llm_hf, or "
+            "re-export with --logits-to-keep full or last."
+        )
+
+    max_ctx_len, declared_max_seq_len = read_model_limits(program)
+    # The forward only accepts up to its traced token width, so clamp the
+    # declared step to it: optimum's static export takes 1 token/forward while
+    # its get_max_seq_len is the context length, and feeding more crashes
+    # set_inputs. A chunked-prefill export reports the two as equal.
+    input_seq_len = _forward_input_seq_len(program)
+    prefill_chunk_size = (
+        min(declared_max_seq_len, input_seq_len)
+        if declared_max_seq_len is not None
+        else input_seq_len
+    )
     logger.info(
         f"Model limits: max_ctx_len={max_ctx_len}, "
         f"prefill_chunk_size={prefill_chunk_size}"

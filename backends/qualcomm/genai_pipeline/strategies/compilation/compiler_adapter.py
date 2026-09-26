@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable, Tuple
 
 
 @dataclass
@@ -28,8 +28,10 @@ class CompilationResult:
 class CompilerAdapter(Protocol):
     """Protocol for compilation operations.
 
-    Wraps external compilation APIs (ExportSession, to_edge_transform_and_lower_to_qnn)
-    behind an injectable interface for testability.
+    Wraps ``to_edge_transform_and_lower_to_qnn`` behind an injectable interface
+    for testability. The parameter list of ``compile_model`` deliberately
+    mirrors that function so that no required lowering input has to travel as a
+    string-keyed option.
 
     .. note::
         ``compile_model`` lowers a **single graph**, mirroring the underlying
@@ -47,23 +49,43 @@ class CompilerAdapter(Protocol):
     def compile_model(
         self,
         model: Any,
+        example_inputs: Tuple[Any, ...],
         compile_specs: Any,
         artifact_dir: Path,
         file_name: str,
         soc_model: Any,
         backend_type: Any,
+        constant_methods: Optional[Dict[str, Any]] = None,
+        dep_table: Optional[Dict] = None,
+        passes_job: Optional[Any] = None,
         extra_options: Optional[Dict[str, Any]] = None,
     ) -> CompilationResult:
         """Compile the model to on-device .pte artifacts.
 
+        The parameter list mirrors ``to_edge_transform_and_lower_to_qnn``: every
+        argument that lowering genuinely needs is explicit, and
+        ``extra_options`` is reserved for optional tuning knobs. Passing a
+        required input as a string-keyed option is deliberately avoided -- it
+        hides the contract and fails at runtime rather than at the call site.
+
         Args:
             model: The model to compile (nn.Module or quantized model).
+            example_inputs: Positional example inputs for ``torch.export``,
+                sourced from the model itself.
             compile_specs: QNN compiler specifications for backend delegation.
             artifact_dir: Directory to store compiled artifacts.
             file_name: Base name for the output .pte file.
             soc_model: Target SoC chipset.
             backend_type: QNN backend type (HTP, GPU, LPAI).
-            extra_options: Additional compilation options.
+            constant_methods: Methods returning constants in eager mode. For a
+                decoder this carries the quantization attributes written during
+                quantization, so it is only complete after that stage.
+            dep_table: Per-graph pass dependency table.
+            passes_job: Per-graph pass configuration.
+            extra_options: Optional tuning knobs (``skip_node_id_set``,
+                ``skip_node_op_set``, ``skip_mutable_buffer``,
+                ``convert_linear_to_conv2d``, ``generate_etrecord``,
+                ``executorch_backend_config``).
 
         Returns:
             CompilationResult with artifact paths and optional etrecord. May hold

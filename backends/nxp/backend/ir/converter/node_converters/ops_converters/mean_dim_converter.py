@@ -41,7 +41,7 @@ class MeanDimConverter(NodeConverter):
         is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
 
         if is_alone_in_partition and keepdim and all(input_shape[d] == 1 for d in dim):
-            # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
+            # The operator is a no-op, so the Neutron Compiler will skip it. If it's the only node in the
             #  partition, the graph would end up empty.
             return False
 

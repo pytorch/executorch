@@ -105,6 +105,9 @@ constexpr const char* kEmbedTextMethod = "embed_text";
 constexpr const char* kMuseGlimmerVisionEncoderMethod = "vision_encoder";
 constexpr const char* kDraftForwardMethod = "draft_forward";
 constexpr const char* kDraftPrefillMethod = "draft_prefill";
+constexpr const char* kDFlashSampleTokensMethod = "dflash_sample_tokens";
+constexpr const char* kDFlashVerifySpeculativeMethod =
+    "dflash_verify_speculative";
 constexpr const char* kDFlashBlockSize = "get_block_size";
 constexpr const char* kDFlashMaskTokenId = "get_mask_token_id";
 constexpr const char* kDFlashTargetLayers = "get_n_target_layers";
@@ -117,7 +120,6 @@ constexpr const char* kDFlashMinDraftPrefillChunk =
     "get_min_draft_prefill_chunk";
 constexpr const char* kDFlashMaxDraftPrefillChunk =
     "get_max_draft_prefill_chunk";
-constexpr const char* kActivationDtype = "get_activation_dtype";
 constexpr const char* kVisionHiddenSize = "get_vision_hidden_size";
 constexpr const char* kMaxVisionPatches = "get_max_vision_patches";
 constexpr int64_t kVisionDownsampleArea = 4;
@@ -297,9 +299,7 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       /*share_memory_arenas=*/share_memory_arenas);
 
 #ifdef EXECUTORCH_BUILD_CUDA
-  executorch::runtime::BackendOptions<3> cuda_opts;
-  ET_CHECK_OK_OR_RETURN_ERROR(
-      cuda_opts.set_option("use_shared_cuda_stream", true));
+  executorch::runtime::BackendOptions<2> cuda_opts;
   ET_CHECK_OK_OR_RETURN_ERROR(
       cuda_opts.set_option("weight_sharing_across_methods", true));
   if (config.enable_cuda_graph) {
@@ -358,6 +358,10 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
           kDraftPrefillMethod, nullptr, nullptr, load_options));
     }
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+        kDFlashSampleTokensMethod, nullptr, nullptr, load_options));
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+        kDFlashVerifySpeculativeMethod, nullptr, nullptr, load_options));
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
         kTargetForwardFromEmbeddingsMethod, nullptr, nullptr, load_options));
