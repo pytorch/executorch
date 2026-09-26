@@ -277,9 +277,8 @@ TEST_F(MetalStridedViewTest, HandWrittenKernelMayNotWriteAStridedView) {
 }
 
 // A view the packed copy cannot gather is not recorded: an empty one (the
-// gather divides by every size), one with negative strides, one spanning more
-// than 2^32 elements or one with more than 16 dims. So a strided view that is
-// recorded can always be packed.
+// gather divides by every size), one with negative strides or one with more
+// than 16 dims.
 TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
   AOTITensorHandle base = nullptr;
   AOTITensorHandle view = nullptr;
@@ -288,9 +287,7 @@ TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
   EXPECT_FALSE(metal_record_strided_view(view, {0, 2}, {4, 1}));
   EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {-4, 1}));
   EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {4}));
-  // Nor one spanning more elements than the gather indexes, or with more dims
-  // than it takes.
-  EXPECT_FALSE(metal_record_strided_view(view, {4, 2}, {int64_t{1} << 31, 1}));
+  // Nor one with more dims than the gather takes.
   EXPECT_FALSE(metal_record_strided_view(
       view, std::vector<int64_t>(17, 1), std::vector<int64_t>(17, 1)));
   EXPECT_FALSE(metal_is_strided_view(view));
@@ -305,6 +302,75 @@ TEST_F(MetalStridedViewTest, ViewsTheGatherCannotPackAreNotRecorded) {
           base, 2, sizes, strides, /*storage_offset=*/12, &backwards),
       Error::Ok);
   EXPECT_EQ(backwards, nullptr);
+}
+
+// The gather indexes the memory a view spans in 64 bits: a chunk of logits
+// whose rows reach past 2^32 elements into their buffer is still a view it
+// can pack.
+TEST_F(MetalStridedViewTest, ViewsSpanningMoreThan32BitsAreRecorded) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  metal_forget_strided_view(view);
+  EXPECT_TRUE(metal_record_strided_view(view, {4, 2}, {int64_t{1} << 33, 1}));
+  EXPECT_TRUE(metal_is_strided_view(view));
+}
+
+// Packs a view reaching past 2^32 elements into its buffer. It needs a 6.4 GB
+// buffer, so it only runs when asked for
+// (--gtest_also_run_disabled_tests).
+TEST_F(MetalStridedViewTest, DISABLED_PackingAViewSpanningMoreThan32Bits) {
+  constexpr int32_t kUint8 = 0;
+  constexpr int64_t kRow = (int64_t{1} << 31) - 1;
+  const int64_t base_sizes[2] = {3, kRow};
+  const int64_t base_strides[2] = {kRow, 1};
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          2, base_sizes, base_strides, kUint8, kDeviceMps, 0, &base),
+      Error::Ok);
+  auto* data = static_cast<uint8_t*>(base->mutable_data_ptr());
+  // Every other byte of the first two in each row: holes, so not packed.
+  const int64_t view_sizes[2] = {3, 2};
+  const int64_t view_strides[2] = {kRow, 3};
+  for (int64_t r = 0; r < 3; r++) {
+    for (int64_t c = 0; c < 2; c++) {
+      data[r * kRow + c * 3] = static_cast<uint8_t>(10 * r + c + 1);
+    }
+  }
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, view_sizes, view_strides, /*storage_offset=*/0, &view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_strided_view(view));
+  const int64_t out_strides[2] = {2, 1};
+  AOTITensorHandle out = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          2, view_sizes, out_strides, kUint8, kDeviceMps, 0, &out),
+      Error::Ok);
+  ASSERT_EQ(aoti_torch_copy_(out, view, /*non_blocking=*/0), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const uint8_t*>(out->const_data_ptr());
+  EXPECT_EQ(
+      std::vector<uint8_t>(got, got + 6),
+      (std::vector<uint8_t>{1, 2, 11, 12, 21, 22}));
+}
+
+// A copy into memory the view spans is detected, whatever order the GPU would
+// run a direct gather in.
+TEST_F(MetalStridedViewTest, DestinationOverlappingTheViewIsDetected) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndRightHalf(&base, &view);
+  auto* view_data = static_cast<const uint8_t*>(view->const_data_ptr());
+  const size_t nbytes = view->nbytes();
+  EXPECT_TRUE(metal_strided_view_overlaps(*view, view_data, nbytes));
+  EXPECT_TRUE(metal_strided_view_overlaps(*view, view_data - 4, 8));
+  std::vector<uint8_t> elsewhere(nbytes);
+  EXPECT_FALSE(metal_strided_view_overlaps(*view, elsewhere.data(), nbytes));
+  EXPECT_FALSE(metal_strided_view_overlaps(*base, view_data, nbytes));
 }
 
 TEST_F(MetalStridedViewTest, CopiedHandleIsAStridedViewToo) {

@@ -16,6 +16,7 @@
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <algorithm>
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -272,6 +273,25 @@ id<MTLBuffer> metal_packed_copy_of_strided_view(
     return ETMetalKernelFunction::encodePackedCopyOfStridedView(encoder, tensor);
 }
 
+bool metal_strided_view_overlaps(
+    const executorch::runtime::etensor::Tensor& tensor,
+    const void* dst,
+    size_t nbytes) {
+    auto view = strided_views.find(&tensor);
+    if (view == strided_views.end()) {
+        return false;
+    }
+    size_t extent = 0;
+    for (size_t d = 0; d < view->second.sizes.size(); d++) {
+        extent += static_cast<size_t>(view->second.sizes[d] - 1) *
+            static_cast<size_t>(view->second.strides[d]);
+    }
+    const auto* src_begin = static_cast<const uint8_t*>(tensor.const_data_ptr());
+    const auto* src_end = src_begin + (extent + 1) * tensor.element_size();
+    const auto* dst_begin = static_cast<const uint8_t*>(dst);
+    return dst_begin < src_end && src_begin < dst_begin + nbytes;
+}
+
 bool metal_copy_strided_view(
     const executorch::runtime::etensor::Tensor& tensor,
     void* dst) {
@@ -300,17 +320,7 @@ bool metal_copy_strided_view(
             }
             // Gathered straight into `dst`, unless it overlaps the view: one
             // gather would then read elements another thread already wrote.
-            size_t extent = 0;
-            for (size_t d = 0; d < view->second.sizes.size(); d++) {
-                if (view->second.sizes[d] > 0) {
-                    extent += static_cast<size_t>(view->second.sizes[d] - 1) *
-                        static_cast<size_t>(view->second.strides[d]);
-                }
-            }
-            const auto* src_begin = static_cast<const uint8_t*>(tensor.const_data_ptr());
-            const auto* src_end = src_begin + (extent + 1) * tensor.element_size();
-            const auto* dst_begin = static_cast<const uint8_t*>(dst);
-            if (dst_begin + nbytes <= src_begin || src_end <= dst_begin) {
+            if (!metal_strided_view_overlaps(tensor, dst, nbytes)) {
                 return ETMetalKernelFunction::encodePackedCopyOfStridedView(
                            encoder, tensor, dst_buffer, dst_offset) != nil;
             }
@@ -1049,8 +1059,24 @@ ETMetalKernelFunction::~ETMetalKernelFunction() {
     }
 }
 
+namespace {
+// The slots the packed copy of a strided view binds (encodePackedCopyOfStridedView).
+constexpr unsigned kGatherSrcIndex = 28;
+constexpr unsigned kGatherDstIndex = 29;
+constexpr unsigned kGatherParamsIndex = 30;
+
+// Only these slots can be overwritten while a kernel is set up, so only these
+// are recorded to be put back.
+bool gather_slot(unsigned idx) {
+    return idx >= kGatherSrcIndex && idx <= kGatherParamsIndex;
+}
+} // namespace
+
 void ETMetalKernelFunction::bindBuffer(unsigned idx, id<MTLBuffer> buffer, size_t offset) {
     [encoder_ setBuffer:buffer offset:offset atIndex:idx];
+    if (!gather_slot(idx)) {
+        return;
+    }
     if (bindings_.size() <= idx) {
         bindings_.resize(idx + 1);
     }
@@ -1065,6 +1091,9 @@ void ETMetalKernelFunction::bindBuffer(unsigned idx, id<MTLBuffer> buffer, size_
 
 void ETMetalKernelFunction::bindBytes(unsigned idx, const void* data, size_t size) {
     [encoder_ setBytes:data length:size atIndex:idx];
+    if (!gather_slot(idx)) {
+        return;
+    }
     if (bindings_.size() <= idx) {
         bindings_.resize(idx + 1);
     }
@@ -1128,23 +1157,19 @@ constexpr uint32_t kGatherMaxDims = 16;
 bool metal_can_pack_strided_view(
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& strides) {
-    // The gather divides by every size, indexes with 32-bit unsigned element
-    // counts and strides, and takes at most kGatherMaxDims dims.
+    // The gather divides by every size, steps forward only, and takes at most
+    // kGatherMaxDims dims. How many elements it can copy at once is checked
+    // when it runs: a view only generated kernels use never needs it.
     if (sizes.size() != strides.size() || sizes.size() > kGatherMaxDims) {
         return false;
     }
-    uint64_t numel = 1;
     uint64_t extent = 0;
     for (size_t d = 0; d < sizes.size(); d++) {
-        if (sizes[d] <= 0 || strides[d] < 0 ||
-            __builtin_mul_overflow(numel, static_cast<uint64_t>(sizes[d]), &numel) ||
-            numel > UINT32_MAX) {
-            return false;
-        }
         uint64_t step = 0;
-        if (__builtin_mul_overflow(
+        if (sizes[d] <= 0 || strides[d] < 0 ||
+            __builtin_mul_overflow(
                 static_cast<uint64_t>(sizes[d] - 1), static_cast<uint64_t>(strides[d]), &step) ||
-            __builtin_add_overflow(extent, step, &extent) || extent > UINT32_MAX) {
+            __builtin_add_overflow(extent, step, &extent)) {
             return false;
         }
     }
@@ -1152,15 +1177,15 @@ bool metal_can_pack_strided_view(
 }
 
 namespace {
-constexpr unsigned kGatherSrcIndex = 28;
-constexpr unsigned kGatherDstIndex = 29;
-constexpr unsigned kGatherParamsIndex = 30;
-
+// Element counts fit 32 bits (the grid has one thread per element); where the
+// view reaches in its buffer may not.
 struct GatherParams {
     uint32_t ndim;
     uint32_t sizes[kGatherMaxDims];
-    uint32_t strides[kGatherMaxDims];
+    uint64_t strides[kGatherMaxDims];
 };
+static_assert(offsetof(GatherParams, strides) == 72 && sizeof(GatherParams) == 200,
+              "GatherParams must match the shader's layout");
 
 const char* kGatherShaderSource = R"(
 #include <metal_stdlib>
@@ -1169,7 +1194,7 @@ using namespace metal;
 struct GatherParams {
     uint ndim;
     uint sizes[16];
-    uint strides[16];
+    ulong strides[16];
 };
 
 template <typename T>
@@ -1179,10 +1204,10 @@ kernel void gather_strided(
     constant GatherParams& p [[buffer(30)]],
     uint gid [[thread_position_in_grid]]) {
     uint remaining = gid;
-    uint offset = 0;
+    ulong offset = 0;
     for (uint i = 0; i < p.ndim; ++i) {
         const uint d = p.ndim - 1 - i;
-        offset += (remaining % p.sizes[d]) * p.strides[d];
+        offset += ulong(remaining % p.sizes[d]) * p.strides[d];
         remaining /= p.sizes[d];
     }
     dst[gid] = src[offset];
@@ -1239,20 +1264,13 @@ MTLBuffer_t ETMetalKernelFunction::encodePackedCopyOfStridedView(
         dst_offset = 0;
     }
 
+    // Recorded views are packable (metal_can_pack_strided_view), and with
+    // numel within 32 bits so is every size.
     GatherParams params = {};
     params.ndim = static_cast<uint32_t>(view.sizes.size());
-    uint64_t extent = 0;
     for (size_t d = 0; d < view.sizes.size(); d++) {
         params.sizes[d] = static_cast<uint32_t>(view.sizes[d]);
-        params.strides[d] = static_cast<uint32_t>(view.strides[d]);
-        if (view.sizes[d] > 0) {
-            extent += static_cast<uint64_t>(view.sizes[d] - 1) * static_cast<uint64_t>(view.strides[d]);
-        }
-    }
-    if (extent > UINT32_MAX) {
-        ET_LOG(Error, "encodePackedCopyOfStridedView: view spans %llu elements, more than the gather can index",
-               (unsigned long long)extent);
-        return nil;
+        params.strides[d] = static_cast<uint64_t>(view.strides[d]);
     }
 
     auto gather = gather_kernel(element_size);
