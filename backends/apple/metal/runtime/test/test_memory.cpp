@@ -16,6 +16,7 @@
 
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
+#include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/platform.h>
@@ -804,44 +805,22 @@ TEST_F(MetalGraphViewTest, MaterializingBlobInsideMetalBufferWaits) {
   EXPECT_EQ(std::vector<float>(got, got + 2), (std::vector<float>{2, 4}));
 }
 
-// A blob of plain CPU memory made before a region covers it is not registered
-// in that region (see aoti_torch_create_tensor_from_blob_v2). The GPU still
-// writes it through the region's buffer, so materializing a view of it waits.
-TEST_F(MetalGraphViewTest, MaterializingMemoryInsideAnotherRegionWaits) {
+// A region over memory the runtime did not allocate grows with its views. It
+// is refused where it would take in a tensor that lies there without being
+// registered in it, e.g. a blob made before the region: that tensor would be
+// bound by copy, unordered with work through the region.
+TEST_F(MetalGraphViewTest, RegionOverAnotherTensorIsRefused) {
   std::vector<float> memory(12, 0.0f);
   AOTITensorHandle inner = nullptr;
   ASSERT_EQ(createFromBlob(memory.data() + 5, &inner), Error::Ok);
   AOTITensorHandle outer = nullptr;
   ASSERT_EQ(createFromBlob(memory.data(), &outer), Error::Ok);
-  AOTITensorHandle written = nullptr;
-  ASSERT_EQ(
+  AOTITensorHandle view = nullptr;
+  EXPECT_NE(
       aoti_torch__reinterpret_tensor(
-          outer,
-          2,
-          kMatrixSizes,
-          kMatrixStrides,
-          /*storage_offset=*/4,
-          &written),
+          outer, 2, kMatrixSizes, kMatrixStrides, /*storage_offset=*/4, &view),
       Error::Ok);
-  ASSERT_FALSE(metal_is_view(memory.data() + 5));
-  AOTITensorHandle input = nullptr;
-  createMatrix(kDeviceMps, &input);
-  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
-  for (int i = 0; i < 4; i++) {
-    input_data[i] = static_cast<float>(i + 1);
-  }
-  queueCopy(*input, *written, 4);
-
-  // Elements 5 and 7 of `memory`: not densely packed, so copied on the CPU.
-  const int64_t size = 2;
-  const int64_t stride = 2;
-  AOTITensorHandle read = nullptr;
-  ASSERT_EQ(
-      aoti_torch__reinterpret_tensor(
-          inner, 1, &size, &stride, /*storage_offset=*/0, &read),
-      Error::Ok);
-  const auto* got = static_cast<const float*>(read->const_data_ptr());
-  EXPECT_EQ(std::vector<float>(got, got + 2), (std::vector<float>{2, 4}));
+  EXPECT_EQ(view, nullptr);
 }
 
 // A tensor made from a blob at an offset into a Metal buffer is bound into
@@ -1007,14 +986,11 @@ TEST_F(MetalGraphViewTest, OverlappingCpuRegionsAreRefused) {
       aoti_torch__reinterpret_tensor(
           inner, 1, &size, &kStride, /*storage_offset=*/1, &inner_view),
       Error::Ok);
+  // A blob over the region's start that is not inside it is refused
+  // already.
   AOTITensorHandle outer = nullptr;
-  ASSERT_EQ(createFromBlob(memory.data() + 2, &outer), Error::Ok);
-  AOTITensorHandle outer_view = nullptr;
-  EXPECT_NE(
-      aoti_torch__reinterpret_tensor(
-          outer, 1, &size, &kStride, /*storage_offset=*/1, &outer_view),
-      Error::Ok);
-  EXPECT_EQ(outer_view, nullptr);
+  EXPECT_NE(createFromBlob(memory.data() + 2, &outer), Error::Ok);
+  EXPECT_EQ(outer, nullptr);
 }
 
 // A blob and a view can sit at one address. Each handle gives back only the
@@ -1043,22 +1019,26 @@ TEST_F(MetalGraphViewTest, BlobAndViewAtOneAddressKeepTheirCounts) {
   EXPECT_FALSE(metal_is_view(memory + 4));
 }
 
-// The same for a blob in CPU memory the GPU does not reach, at the address a
-// view of a region later takes: the blob has no registration to give back.
-TEST_F(MetalGraphViewTest, UnregisteredBlobLeavesAViewAtItsAddressAlone) {
+// The same in a CPU region: a blob made inside it and a view at the blob's
+// address each give back only their own registration.
+TEST_F(MetalGraphViewTest, BlobAndViewInARegionKeepTheirCounts) {
   std::vector<float> memory(12, 0.0f);
   AOTITensorHandle outer = nullptr;
   ASSERT_EQ(createFromBlob(memory.data(), &outer), Error::Ok);
+  const int64_t size = 2;
+  AOTITensorHandle first = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          outer, 1, &size, &kStride, /*storage_offset=*/6, &first),
+      Error::Ok);
   AOTITensorHandle blob = nullptr;
   ASSERT_EQ(createFromBlob(memory.data() + 2, &blob), Error::Ok);
-  ASSERT_FALSE(metal_is_view(memory.data() + 2));
-  const int64_t size = 2;
+  ASSERT_TRUE(metal_is_view(memory.data() + 2));
   AOTITensorHandle view = nullptr;
   ASSERT_EQ(
       aoti_torch__reinterpret_tensor(
           outer, 1, &size, &kStride, /*storage_offset=*/2, &view),
       Error::Ok);
-  ASSERT_TRUE(metal_is_view(memory.data() + 2));
 
   ASSERT_EQ(aoti_torch_delete_tensor_object(blob), Error::Ok);
   EXPECT_TRUE(metal_is_view(memory.data() + 2));
@@ -1082,18 +1062,22 @@ TEST_F(MetalGraphViewTest, BlobPastTheEndOfItsBufferIsRefused) {
   EXPECT_FALSE(metal_is_view(memory + 2));
 }
 
-// A blob inside a buffer that lies inside another one, as a constant's buffer
-// lies in the buffer of all constants, is bound into the inner one: the one the
-// tensor at the inner buffer's own address is bound to.
-TEST_F(MetalGraphViewTest, BlobInsideNestedBuffersTakesTheInnerOne) {
-  const int64_t base_size = 16;
-  AOTITensorHandle base = nullptr;
+// A blob inside a constant is bound into that constant's own buffer, the one
+// the constant's tensor is bound to, not into the buffer of all constants that
+// holds it.
+TEST_F(MetalGraphViewTest, BlobInsideAConstantTakesThatConstantsBuffer) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 16 * sizeof(float)), Error::Ok);
+  std::vector<float> data(8, 1.0f);
   ASSERT_EQ(
-      aoti_torch_empty_strided(
-          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      aoti_torch_mps_memcpy(
+          constants,
+          /*constant_offset=*/4 * sizeof(float),
+          /*bytes_read=*/0,
+          /*data_size=*/8 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
       Error::Ok);
-  auto* memory = static_cast<float*>(base->mutable_data_ptr());
-  ASSERT_TRUE(metal_buffer_nocopy(memory + 4, 8 * sizeof(float), true));
+  auto* memory = static_cast<float*>(constants);
   AOTITensorHandle blob = nullptr;
   ASSERT_EQ(createFromBlob(memory + 6, &blob), Error::Ok);
   void* found = nullptr;
@@ -1102,6 +1086,53 @@ TEST_F(MetalGraphViewTest, BlobInsideNestedBuffersTakesTheInnerOne) {
   ASSERT_TRUE(metal_find_memory(memory + 6, &found, &cpu, &found_nbytes));
   EXPECT_EQ(found, memory + 4);
   EXPECT_FALSE(cpu);
+}
+
+// AOTInductor loads constants one at a time: it copies one into the constants
+// buffer, wraps it in a tensor, and then copies the next. The tensor over the
+// first constant does not make the buffer a tensor's memory.
+TEST_F(MetalGraphViewTest, ConstantsLoadOneAfterAnother) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> first = {1, 2, 3, 4};
+  std::vector<float> second = {5, 6, 7, 8};
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          /*constant_offset=*/0,
+          /*bytes_read=*/0,
+          /*data_size=*/4 * sizeof(float),
+          reinterpret_cast<uint8_t*>(first.data())),
+      Error::Ok);
+  auto* memory = static_cast<float*>(constants);
+  AOTITensorHandle first_tensor = nullptr;
+  ASSERT_EQ(createFromBlob(memory, &first_tensor), Error::Ok);
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          /*constant_offset=*/4 * sizeof(float),
+          /*bytes_read=*/0,
+          /*data_size=*/4 * sizeof(float),
+          reinterpret_cast<uint8_t*>(second.data())),
+      Error::Ok);
+  AOTITensorHandle second_tensor = nullptr;
+  ASSERT_EQ(createFromBlob(memory + 4, &second_tensor), Error::Ok);
+  const auto* got = static_cast<const float*>(second_tensor->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), second);
+}
+
+// Only constants lie in a buffer inside another one. Mapping any other buffer
+// over memory already bound would make two buffers Metal does not order.
+TEST_F(MetalGraphViewTest, NoCopyBufferOverBoundMemoryIsRefused) {
+  const int64_t base_size = 16;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  auto* memory = static_cast<float*>(base->mutable_data_ptr());
+  EXPECT_FALSE(metal_buffer_nocopy(memory + 4, 8 * sizeof(float), true));
+  EXPECT_FALSE(metal_is_device_pointer(memory + 4));
 }
 
 // A blob inside a Metal allocation keeps it alive, as a view of it does.
@@ -1159,14 +1190,19 @@ TEST_F(MetalGraphViewTest, MaterializingSourceRunningIntoARegionWaits) {
 }
 
 // Deleting a view first leaves a blob at the same address tracked: the address
-// counts every handle at it, registered as a view or not.
+// counts every handle at it.
 TEST_F(MetalGraphViewTest, ViewDeletedBeforeABlobAtItsAddressKeepsItTracked) {
   std::vector<float> memory(12, 0.0f);
   AOTITensorHandle outer = nullptr;
   ASSERT_EQ(createFromBlob(memory.data(), &outer), Error::Ok);
+  const int64_t size = 2;
+  AOTITensorHandle first = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          outer, 1, &size, &kStride, /*storage_offset=*/6, &first),
+      Error::Ok);
   AOTITensorHandle blob = nullptr;
   ASSERT_EQ(createFromBlob(memory.data() + 2, &blob), Error::Ok);
-  const int64_t size = 2;
   AOTITensorHandle view = nullptr;
   ASSERT_EQ(
       aoti_torch__reinterpret_tensor(
@@ -1178,6 +1214,945 @@ TEST_F(MetalGraphViewTest, ViewDeletedBeforeABlobAtItsAddressKeepsItTracked) {
   EXPECT_NE(createFromBlob(memory.data() + 2, &again), Error::Ok);
   EXPECT_EQ(aoti_torch_delete_tensor_object(blob), Error::Ok);
   EXPECT_EQ(createFromBlob(memory.data() + 2, &again), Error::Ok);
+}
+
+// A tensor's strides are those of a dense tensor in some dim order: other
+// strides, such as a view with holes or a stride of 0, are an error rather
+// than an abort in make_tensor_ptr.
+TEST_F(MetalGraphViewTest, StridesOfNoDenseTensorAreRefused) {
+  std::vector<float> memory(12, 0.0f);
+  AOTITensorHandle holes = nullptr;
+  EXPECT_NE(createStridedBlob(memory.data(), {2}, {3}, &holes), Error::Ok);
+  EXPECT_EQ(holes, nullptr);
+  AOTITensorHandle repeated = nullptr;
+  EXPECT_NE(createStridedBlob(memory.data(), {4}, {0}, &repeated), Error::Ok);
+  EXPECT_EQ(repeated, nullptr);
+  AOTITensorHandle column_major = nullptr;
+  EXPECT_EQ(
+      createStridedBlob(memory.data(), {2, 3}, {1, 2}, &column_major),
+      Error::Ok);
+
+  const int64_t size = 2;
+  const int64_t stride = 3;
+  AOTITensorHandle allocated = nullptr;
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          1, &size, &stride, kFloat32, kDeviceMps, 0, &allocated),
+      Error::Ok);
+  EXPECT_EQ(allocated, nullptr);
+}
+
+// A tensor with no elements has no layout: any strides do.
+TEST_F(MetalGraphViewTest, EmptyTensorsTakeAnyStrides) {
+  std::vector<float> memory(12, 0.0f);
+  AOTITensorHandle blob = nullptr;
+  EXPECT_EQ(
+      createStridedBlob(memory.data(), {4, 0}, {10, 1}, &blob), Error::Ok);
+  const int64_t sizes[4] = {2, 0, 3, 4};
+  const int64_t strides[4] = {12, 1, 4, 1};
+  AOTITensorHandle allocated = nullptr;
+  EXPECT_EQ(
+      aoti_torch_empty_strided(
+          4, sizes, strides, kFloat32, kDeviceMps, 0, &allocated),
+      Error::Ok);
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  const int64_t view_sizes[2] = {4, 0};
+  const int64_t view_strides[2] = {10, 1};
+  AOTITensorHandle view = nullptr;
+  EXPECT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 2, view_sizes, view_strides, /*storage_offset=*/5, &view),
+      Error::Ok);
+}
+
+// A view whose dims overlap, which no strides of a tensor can describe, is
+// materialized like one with holes.
+TEST_F(MetalGraphViewTest, ViewWithOverlappingDimsIsMaterialized) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* memory = static_cast<float*>(base->mutable_data_ptr());
+  for (int i = 0; i < 12; i++) {
+    memory[i] = static_cast<float>(i);
+  }
+  const int64_t sizes[3] = {2, 2, 3};
+  const int64_t strides[3] = {5, 4, 1};
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 3, sizes, strides, /*storage_offset=*/0, &view),
+      Error::Ok);
+  const auto* got = static_cast<const float*>(view->const_data_ptr());
+  EXPECT_EQ(got[3], 4.0f);
+  EXPECT_EQ(got[6], 5.0f);
+  EXPECT_EQ(got[11], 11.0f);
+}
+
+// A view lies inside the memory of the tensor it is made from.
+TEST_F(MetalGraphViewTest, ViewOutsideItsMemoryIsRefused) {
+  const int64_t base_size = 8;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  const int64_t four = 4;
+  const int64_t two = 2;
+  AOTITensorHandle past = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &four, &kStride, /*storage_offset=*/6, &past),
+      Error::Ok);
+  EXPECT_EQ(past, nullptr);
+  AOTITensorHandle before = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &two, &kStride, /*storage_offset=*/-1, &before),
+      Error::Ok);
+  EXPECT_EQ(before, nullptr);
+
+  const int64_t cpu_size = 12;
+  AOTITensorHandle cpu = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &cpu_size, &kStride, kFloat32, kDeviceCpu, 0, &cpu),
+      Error::Ok);
+  AOTITensorHandle cpu_past = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          cpu, 1, &four, &kStride, /*storage_offset=*/10, &cpu_past),
+      Error::Ok);
+}
+
+// A view of a view can start where the allocation starts. It is then another
+// handle to the allocation, and the counts still balance.
+TEST_F(MetalGraphViewTest, ViewBackAtTheAllocationStartIsTheAllocation) {
+  const int64_t base_size = 8;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  void* memory = base->mutable_data_ptr();
+  const int64_t four = 4;
+  AOTITensorHandle half = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &four, &kStride, /*storage_offset=*/4, &half),
+      Error::Ok);
+  AOTITensorHandle back = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          half, 1, &four, &kStride, /*storage_offset=*/-4, &back),
+      Error::Ok);
+  ASSERT_EQ(back->mutable_data_ptr(), memory);
+  EXPECT_FALSE(metal_is_view(memory));
+
+  ASSERT_EQ(aoti_torch_delete_tensor_object(base), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(half), Error::Ok);
+  EXPECT_TRUE(metal_is_device_pointer(memory));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(back), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(memory));
+}
+
+// A negative size is refused with an error, before anything is allocated.
+TEST_F(MetalGraphViewTest, NegativeSizesAreRefused) {
+  const int64_t size = -4;
+  AOTITensorHandle allocated = nullptr;
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          1, &size, &kStride, kFloat32, kDeviceMps, 0, &allocated),
+      Error::Ok);
+  EXPECT_EQ(allocated, nullptr);
+  std::vector<float> memory(4, 0.0f);
+  AOTITensorHandle blob = nullptr;
+  EXPECT_NE(
+      createStridedBlob(memory.data(), {-1, 0}, {1, 1}, &blob), Error::Ok);
+  EXPECT_EQ(blob, nullptr);
+
+  const int64_t base_size = 32;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  const int64_t sizes[2] = {-2, -3};
+  const int64_t strides[2] = {3, 1};
+  AOTITensorHandle view = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          base, 2, sizes, strides, /*storage_offset=*/13, &view),
+      Error::Ok);
+  EXPECT_EQ(view, nullptr);
+}
+
+// A region's buffer starts at the region, so a view that starts below it is
+// refused rather than bound at an offset before the buffer.
+TEST_F(MetalGraphViewTest, ViewBelowItsCpuRegionIsRefused) {
+  std::vector<float> memory(16, 0.0f);
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 4, &blob), Error::Ok);
+  const int64_t four = 4;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          blob, 1, &four, &kStride, /*storage_offset=*/4, &view),
+      Error::Ok);
+  AOTITensorHandle below = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          view, 1, &four, &kStride, /*storage_offset=*/-5, &below),
+      Error::Ok);
+  EXPECT_EQ(below, nullptr);
+}
+
+// Constants get buffers of their own only inside a constants buffer, never
+// inside a tensor's memory.
+TEST_F(MetalGraphViewTest, ConstantsAreNotCopiedIntoATensor) {
+  const int64_t base_size = 16;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  std::vector<float> data(4, 1.0f);
+  EXPECT_NE(
+      aoti_torch_mps_memcpy(
+          base->mutable_data_ptr(),
+          /*constant_offset=*/4 * sizeof(float),
+          /*bytes_read=*/0,
+          /*data_size=*/4 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(
+      static_cast<float*>(base->mutable_data_ptr()) + 4));
+}
+
+// Freeing a constants buffer takes its constants' buffers with it.
+TEST_F(MetalGraphViewTest, FreeingConstantsTakesTheirBuffers) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 16 * sizeof(float)), Error::Ok);
+  std::vector<float> data(8, 1.0f);
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          /*constant_offset=*/4 * sizeof(float),
+          /*bytes_read=*/0,
+          /*data_size=*/8 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  auto* memory = static_cast<float*>(constants);
+  ASSERT_TRUE(metal_is_device_pointer(memory + 4));
+  ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(memory + 4));
+}
+
+// With negative strides the packed copy reads below the view's start: it
+// waits for GPU writes there too.
+TEST_F(MetalGraphViewTest, MaterializingBackwardsIntoARegionWaits) {
+  std::vector<float> memory(12, 0.0f);
+  AOTITensorHandle region_blob = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 4, &region_blob), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle written = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          region_blob, 1, &two, &kStride, /*storage_offset=*/1, &written),
+      Error::Ok);
+  AOTITensorHandle after = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 8, &after), Error::Ok);
+  ASSERT_FALSE(metal_is_device_pointer(memory.data() + 8));
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  auto* input_data = static_cast<float*>(input->mutable_data_ptr());
+  for (int i = 0; i < 4; i++) {
+    input_data[i] = static_cast<float>(i + 1);
+  }
+  queueCopy(*input, *written, 2);
+
+  // Elements 8, 6 and 4 of `memory`.
+  const int64_t three = 3;
+  const int64_t back = -2;
+  AOTITensorHandle read = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          after, 1, &three, &back, /*storage_offset=*/0, &read),
+      Error::Ok);
+  const auto* got = static_cast<const float*>(read->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 3), (std::vector<float>{0, 2, 0}));
+}
+
+// Sizes and extents that do not fit in 64 bits are refused, not wrapped.
+TEST_F(MetalGraphViewTest, OverflowingSizesAreRefused) {
+  // 2^64 elements: the count wraps to 0. The strides are the ones int32
+  // dense strides wrap to, so only the count gives it away.
+  const int64_t huge[4] = {65536, 65536, 65536, 65536};
+  const int64_t wrapped_strides[4] = {0, 0, 65536, 1};
+  AOTITensorHandle allocated = nullptr;
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          4, huge, wrapped_strides, kFloat32, kDeviceMps, 0, &allocated),
+      Error::Ok);
+  EXPECT_EQ(allocated, nullptr);
+  // The same for a blob: int64 elements whose count fits and whose size in
+  // bytes wraps, with strides that fit.
+  std::vector<float> memory(1, 0.0f);
+  const int64_t blob_sizes[2] = {2147483647, 1073741825};
+  const int64_t blob_strides[2] = {1073741825, 1};
+  AOTITensorHandle blob = nullptr;
+  EXPECT_NE(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data(),
+          2,
+          blob_sizes,
+          blob_strides,
+          0,
+          /*int64=*/4,
+          kDeviceMps,
+          0,
+          &blob,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
+  EXPECT_EQ(blob, nullptr);
+  // About 2^62 int64 elements: the count and the strides fit, the size in
+  // bytes wraps.
+  const int64_t large[2] = {2147483647, 2147483647};
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          2, large, nullptr, /*int64=*/4, kDeviceMps, 0, &allocated),
+      Error::Ok);
+  EXPECT_EQ(allocated, nullptr);
+
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  const int64_t sizes[2] = {2147483647, 2147483647};
+  const int64_t strides[2] = {2147483647, 2147483647};
+  AOTITensorHandle view = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          base, 2, sizes, strides, /*storage_offset=*/0, &view),
+      Error::Ok);
+  EXPECT_EQ(view, nullptr);
+}
+
+// Constants are only copied into a buffer of aoti_torch_mps_malloc's that no
+// tensor uses, and only where they fit.
+TEST_F(MetalGraphViewTest, ConstantsOnlyGoIntoAConstantsBuffer) {
+  AOTITensorHandle base = nullptr;
+  AOTITensorHandle view = nullptr;
+  createBaseAndView(&base, &view);
+  std::vector<float> data(4, 1.0f);
+  auto copy = [&](void* buffer, size_t offset, size_t size) {
+    return aoti_torch_mps_memcpy(
+        buffer, offset, 0, size, reinterpret_cast<uint8_t*>(data.data()));
+  };
+  EXPECT_NE(copy(view->mutable_data_ptr(), 4, 8), Error::Ok);
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 4 * sizeof(float)), Error::Ok);
+  EXPECT_NE(copy(constants, 8, 16), Error::Ok);
+  EXPECT_NE(copy(static_cast<float*>(constants) + 1, 4, 4), Error::Ok);
+  EXPECT_EQ(copy(constants, 8, 8), Error::Ok);
+}
+
+// An empty tensor copies as nothing, rather than failing.
+TEST_F(MetalGraphViewTest, EmptyTensorsCanBeCopied) {
+  const int64_t size = 0;
+  AOTITensorHandle host = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &size, &kStride, kFloat32, kDeviceCpu, 0, &host),
+      Error::Ok);
+  AOTITensorHandle device = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &size, &kStride, kFloat32, kDeviceMps, 0, &device),
+      Error::Ok);
+  EXPECT_EQ(aoti_torch_copy_(device, host, 0), Error::Ok);
+  EXPECT_EQ(aoti_torch_copy_(host, device, 0), Error::Ok);
+}
+
+// A blob that is not inside memory the runtime binds must not reach into
+// any: it would be bound by copy, unordered with work on that memory.
+TEST_F(MetalGraphViewTest, BlobReachingIntoAnAllocationIsRefused) {
+  const int64_t base_size = 12;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, &base),
+      Error::Ok);
+  auto* memory = static_cast<float*>(base->mutable_data_ptr());
+  // Starts just before the allocation and reaches into it.
+  AOTITensorHandle blob = nullptr;
+  EXPECT_NE(createFromBlob(memory - 2, &blob), Error::Ok);
+  EXPECT_EQ(blob, nullptr);
+}
+
+// A region is refused where it would take in a tensor that starts before it
+// and runs into it.
+TEST_F(MetalGraphViewTest, RegionOverATensorBeforeItIsRefused) {
+  std::vector<float> memory(16, 0.0f);
+  AOTITensorHandle before = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data(), &before), Error::Ok);
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 2, &blob), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          blob, 1, &two, &kStride, /*storage_offset=*/1, &view),
+      Error::Ok);
+  EXPECT_EQ(view, nullptr);
+}
+
+// A blob made inside a region grows it only where no other tensor lies.
+TEST_F(MetalGraphViewTest, BlobGrowingARegionOverATensorIsRefused) {
+  std::vector<float> memory(64, 0.0f);
+  AOTITensorHandle first = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data(), &first), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          first, 1, &two, &kStride, /*storage_offset=*/1, &view),
+      Error::Ok);
+  AOTITensorHandle later = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data() + 8, &later), Error::Ok);
+  AOTITensorHandle growing = nullptr;
+  EXPECT_NE(
+      createStridedBlob(memory.data() + 2, {32}, {1}, &growing), Error::Ok);
+  EXPECT_EQ(growing, nullptr);
+}
+
+// ... or over memory a Metal buffer covers.
+TEST_F(MetalGraphViewTest, RegionOverAMetalBufferIsRefused) {
+  std::vector<float> memory(12, 0.0f);
+  ASSERT_TRUE(metal_buffer_nocopy(memory.data() + 4, 4 * sizeof(float), true));
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data(), &blob), Error::Ok);
+  const int64_t size = 4;
+  AOTITensorHandle view = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          blob, 1, &size, &kStride, /*storage_offset=*/2, &view),
+      Error::Ok);
+}
+
+// A view of the constant at the start of the constants buffer stays inside
+// that constant: the next one starts where its own buffer does.
+TEST_F(MetalGraphViewTest, ViewOfTheFirstConstantStaysInsideIt) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> data(4, 1.0f);
+  for (size_t offset : {size_t{0}, 4 * sizeof(float)}) {
+    ASSERT_EQ(
+        aoti_torch_mps_memcpy(
+            constants,
+            offset,
+            0,
+            4 * sizeof(float),
+            reinterpret_cast<uint8_t*>(data.data())),
+        Error::Ok);
+  }
+  AOTITensorHandle first = nullptr;
+  ASSERT_EQ(createFromBlob(constants, &first), Error::Ok);
+  const int64_t two = 2;
+  const int64_t four = 4;
+  AOTITensorHandle inside = nullptr;
+  EXPECT_EQ(
+      aoti_torch__reinterpret_tensor(
+          first, 1, &two, &kStride, /*storage_offset=*/2, &inside),
+      Error::Ok);
+  AOTITensorHandle across = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          first, 1, &four, &kStride, /*storage_offset=*/2, &across),
+      Error::Ok);
+}
+
+// Copying a constant again waits for queued work that still reads it.
+TEST_F(MetalGraphViewTest, ReloadingAConstantWaitsForItsReaders) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> old_data = {1, 2, 3, 4};
+  std::vector<float> new_data = {9, 9, 9, 9};
+  auto load = [&](std::vector<float>& data) {
+    return aoti_torch_mps_memcpy(
+        constants,
+        4 * sizeof(float),
+        0,
+        4 * sizeof(float),
+        reinterpret_cast<uint8_t*>(data.data()));
+  };
+  ASSERT_EQ(load(old_data), Error::Ok);
+  AOTITensorHandle constant = nullptr;
+  ASSERT_EQ(
+      createFromBlob(static_cast<float*>(constants) + 4, &constant), Error::Ok);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  queueCopy(*constant, *out, 4);
+  ASSERT_EQ(load(new_data), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), old_data);
+}
+
+// Freeing a constants buffer forgets the views registered in it, and an empty
+// constant maps no buffer.
+TEST_F(MetalGraphViewTest, FreeingConstantsForgetsTheirViews) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> data(4, 1.0f);
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          4 * sizeof(float),
+          0,
+          4 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  auto* memory = static_cast<float*>(constants);
+  AOTITensorHandle constant = nullptr;
+  ASSERT_EQ(createFromBlob(memory + 4, &constant), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          constant, 1, &two, &kStride, /*storage_offset=*/1, &view),
+      Error::Ok);
+  ASSERT_TRUE(metal_is_view(memory + 5));
+  EXPECT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          6 * sizeof(float),
+          0,
+          0,
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  EXPECT_FALSE(metal_is_device_pointer(memory + 6));
+
+  ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+  EXPECT_FALSE(metal_is_view(memory + 5));
+}
+
+// Arguments no tensor can have are refused at the entry of each shim.
+TEST_F(MetalGraphViewTest, ShimsRefuseArgumentsNoTensorCanHave) {
+  const int64_t size = 4;
+  const int64_t big = int64_t{1} << 32;
+  const int64_t wide_stride = int64_t{1} << 31;
+  AOTITensorHandle made = nullptr;
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          -1, &size, &kStride, kFloat32, kDeviceMps, 0, &made),
+      Error::Ok);
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          1, nullptr, nullptr, kFloat32, kDeviceMps, 0, &made),
+      Error::Ok);
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          1, &size, &kStride, kFloat32, kDeviceMps, 0, nullptr),
+      Error::Ok);
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          1, &big, &kStride, kFloat32, kDeviceCpu, 0, &made),
+      Error::Ok);
+  EXPECT_NE(
+      aoti_torch_empty_strided(
+          1, &size, &wide_stride, kFloat32, kDeviceMps, 0, &made),
+      Error::Ok);
+  EXPECT_EQ(made, nullptr);
+
+  std::vector<float> memory(4, 0.0f);
+  AOTITensorHandle blob = nullptr;
+  EXPECT_NE(createStridedBlob(memory.data(), {big}, {1}, &blob), Error::Ok);
+  // A stride that does not fit, on a dim that steps.
+  EXPECT_NE(
+      createStridedBlob(memory.data(), {2, 2}, {wide_stride, 1}, &blob),
+      Error::Ok);
+  // An offset whose size in bytes wraps to 0, back at the blob itself.
+  const int64_t two = 2;
+  AOTITensorHandle plain = nullptr;
+  ASSERT_EQ(createFromBlob(memory.data(), &plain), Error::Ok);
+  AOTITensorHandle wrapped = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          plain,
+          1,
+          &two,
+          &kStride,
+          /*storage_offset=*/int64_t{1} << 62,
+          &wrapped),
+      Error::Ok);
+  EXPECT_EQ(wrapped, nullptr);
+  EXPECT_NE(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data(),
+          1,
+          &size,
+          &kStride,
+          /*storage_offset=*/INT64_MAX,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &blob,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
+  EXPECT_EQ(blob, nullptr);
+
+  const int64_t base_size = 8;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  AOTITensorHandle view = nullptr;
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(base, 1, &big, &kStride, 0, &view),
+      Error::Ok);
+  EXPECT_NE(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &size, &kStride, INT64_MAX, &view),
+      Error::Ok);
+  EXPECT_EQ(view, nullptr);
+}
+
+// Tensors of different ranks copy as their bytes when both are dense in
+// row-major order, and are refused otherwise rather than read past their dims.
+TEST_F(MetalGraphViewTest, CopyAcrossRanks) {
+  const int64_t host_sizes[3] = {4, 1, 5};
+  const int64_t host_strides[3] = {5, 5, 1};
+  AOTITensorHandle host = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          3, host_sizes, host_strides, kFloat32, kDeviceCpu, 0, &host),
+      Error::Ok);
+  auto* host_data = static_cast<float*>(host->mutable_data_ptr());
+  for (int i = 0; i < 20; i++) {
+    host_data[i] = static_cast<float>(i);
+  }
+  const int64_t device_sizes[2] = {4, 5};
+  const int64_t device_strides[2] = {5, 1};
+  AOTITensorHandle device = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          2, device_sizes, device_strides, kFloat32, kDeviceMps, 0, &device),
+      Error::Ok);
+  ASSERT_EQ(aoti_torch_copy_(device, host, 0), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(device->const_data_ptr());
+  EXPECT_EQ(got[7], 7.0f);
+
+  const int64_t transposed_sizes[2] = {5, 4};
+  const int64_t transposed_strides[2] = {1, 5};
+  AOTITensorHandle transposed = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          2,
+          transposed_sizes,
+          transposed_strides,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &transposed),
+      Error::Ok);
+  EXPECT_NE(aoti_torch_copy_(transposed, host, 0), Error::Ok);
+}
+
+// An empty view at an offset into a buffer goes through a graph: it needs no
+// buffer of its own there.
+TEST_F(MetalGraphViewTest, EmptyViewsAtOffsetsGoThroughAGraph) {
+  const int64_t base_size = 16;
+  AOTITensorHandle base = nullptr;
+  ASSERT_EQ(
+      aoti_torch_empty_strided(
+          1, &base_size, &kStride, kFloat32, kDeviceMps, 0, &base),
+      Error::Ok);
+  const int64_t four = 4;
+  AOTITensorHandle half = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          base, 1, &four, &kStride, /*storage_offset=*/8, &half),
+      Error::Ok);
+  const int64_t left_sizes[2] = {2, 0};
+  const int64_t left_strides[2] = {1, 1};
+  AOTITensorHandle left = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          half, 2, left_sizes, left_strides, /*storage_offset=*/0, &left),
+      Error::Ok);
+  const int64_t right_sizes[2] = {0, 2};
+  const int64_t right_strides[2] = {2, 1};
+  AOTITensorHandle right = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          half, 2, right_sizes, right_strides, /*storage_offset=*/0, &right),
+      Error::Ok);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  EXPECT_EQ(aoti_torch_mps_mm_out(out, left, right), Error::Ok);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+}
+
+// A CPU region no queued work has bound goes without a wait; one that work
+// bound since the stream last waited waits first.
+TEST_F(MetalGraphViewTest, FreeingACpuRegionWaitsOnlyIfItWasBound) {
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  const int64_t base_size = 12;
+  auto make = [&](AOTITensorHandle* base, AOTITensorHandle* view) {
+    ASSERT_EQ(
+        aoti_torch_empty_strided(
+            1, &base_size, &kStride, kFloat32, kDeviceCpu, 0, base),
+        Error::Ok);
+    ASSERT_EQ(
+        aoti_torch__reinterpret_tensor(
+            *base, 2, kMatrixSizes, kMatrixStrides, /*storage_offset=*/4, view),
+        Error::Ok);
+  };
+
+  AOTITensorHandle unbound = nullptr;
+  AOTITensorHandle unbound_view = nullptr;
+  make(&unbound, &unbound_view);
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  queueCopy(*input, *out, 4);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(unbound_view), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(unbound), Error::Ok);
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+
+  AOTITensorHandle bound = nullptr;
+  AOTITensorHandle bound_view = nullptr;
+  make(&bound, &bound_view);
+  queueCopy(*input, *bound_view, 4);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(bound_view), Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(bound), Error::Ok);
+  EXPECT_TRUE(getCurrentMetalStream()->isEmpty());
+}
+
+// Tearing everything down waits for queued work first, e.g. after a failed
+// run: the memory of tensors and constants goes with it.
+TEST_F(MetalGraphViewTest, CleanupWaitsForQueuedWork) {
+  AOTITensorHandle input = nullptr;
+  createMatrix(kDeviceMps, &input);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  queueCopy(*input, *out, 4);
+  cleanup_memory();
+  EXPECT_TRUE(getCurrentMetalStream()->isEmpty());
+}
+
+// A blob at the start of a Metal buffer must fit in it, and computed
+// contiguous strides must fit a tensor's too.
+TEST_F(MetalGraphViewTest, BlobsMustFitWhereTheyStart) {
+  void* buffer = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&buffer, 4 * sizeof(float)), Error::Ok);
+  AOTITensorHandle blob = nullptr;
+  EXPECT_NE(createStridedBlob(buffer, {8}, {1}, &blob), Error::Ok);
+  EXPECT_EQ(blob, nullptr);
+  EXPECT_EQ(createStridedBlob(buffer, {4}, {1}, &blob), Error::Ok);
+
+  std::vector<float> memory(4, 0.0f);
+  const int64_t sizes[3] = {3, 1073741824, 2};
+  AOTITensorHandle wide = nullptr;
+  EXPECT_NE(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data(),
+          3,
+          sizes,
+          /*strides_ptr=*/nullptr,
+          0,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &wide,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
+  EXPECT_EQ(wide, nullptr);
+}
+
+// A blob at the start of a CPU region whose own tensor is gone joins the
+// region, growing it where nothing else lies, instead of being left out.
+TEST_F(MetalGraphViewTest, BlobAtARegionStartJoinsIt) {
+  std::vector<float> memory(16, 0.0f);
+  AOTITensorHandle outer = nullptr;
+  ASSERT_EQ(createStridedBlob(memory.data(), {2}, {1}, &outer), Error::Ok);
+  const int64_t two = 2;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(
+          outer, 1, &two, &kStride, /*storage_offset=*/2, &view),
+      Error::Ok);
+  ASSERT_EQ(aoti_torch_delete_tensor_object(outer), Error::Ok);
+
+  AOTITensorHandle blob = nullptr;
+  ASSERT_EQ(createStridedBlob(memory.data(), {12}, {1}, &blob), Error::Ok);
+  EXPECT_TRUE(metal_is_view(memory.data()));
+  void* found = nullptr;
+  size_t found_nbytes = 0;
+  bool cpu = false;
+  ASSERT_TRUE(metal_find_memory(memory.data(), &found, &cpu, &found_nbytes));
+  EXPECT_GE(found_nbytes, 12 * sizeof(float));
+  ASSERT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_TRUE(metal_is_view(memory.data()));
+}
+
+// A blob inside the first constant stays inside it, as views of it do.
+TEST_F(MetalGraphViewTest, BlobInsideTheFirstConstantStaysInsideIt) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 8 * sizeof(float)), Error::Ok);
+  std::vector<float> data(4, 1.0f);
+  for (size_t offset : {size_t{0}, 4 * sizeof(float)}) {
+    ASSERT_EQ(
+        aoti_torch_mps_memcpy(
+            constants,
+            offset,
+            0,
+            4 * sizeof(float),
+            reinterpret_cast<uint8_t*>(data.data())),
+        Error::Ok);
+  }
+  auto* memory = static_cast<float*>(constants);
+  AOTITensorHandle blob = nullptr;
+  EXPECT_NE(createStridedBlob(memory, {8}, {1}, &blob), Error::Ok);
+  EXPECT_NE(createStridedBlob(memory + 2, {4}, {1}, &blob), Error::Ok);
+  EXPECT_EQ(blob, nullptr);
+  EXPECT_EQ(createStridedBlob(memory + 2, {2}, {1}, &blob), Error::Ok);
+}
+
+// A constant of size 0 has no memory: AOTInductor wraps a null pointer for
+// it. Such a tensor, views of it and copies of its handle work, and hold
+// nothing; only a tensor with no elements can have a null pointer.
+TEST_F(MetalGraphViewTest, EmptyTensorsWithoutMemory) {
+  // Two of them, as a model with two empty constants makes.
+  AOTITensorHandle empty = nullptr;
+  ASSERT_EQ(createStridedBlob(nullptr, {0, 4}, {4, 1}, &empty), Error::Ok);
+  AOTITensorHandle other = nullptr;
+  ASSERT_EQ(createStridedBlob(nullptr, {0}, {1}, &other), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(other), Error::Ok);
+  const int64_t size = 0;
+  AOTITensorHandle view = nullptr;
+  ASSERT_EQ(
+      aoti_torch__reinterpret_tensor(empty, 1, &size, &kStride, 0, &view),
+      Error::Ok);
+  AOTITensorHandle copy = nullptr;
+  ASSERT_EQ(aoti_torch_new_tensor_handle(empty, &copy), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(view), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(copy), Error::Ok);
+  EXPECT_EQ(aoti_torch_delete_tensor_object(empty), Error::Ok);
+
+  AOTITensorHandle not_empty = nullptr;
+  EXPECT_NE(createStridedBlob(nullptr, {2}, {1}, &not_empty), Error::Ok);
+  EXPECT_EQ(not_empty, nullptr);
+}
+
+// A tensor of 2^31 elements or more is fine as long as its strides fit, e.g.
+// logits over a long sequence. Only the outermost dim's size is not a
+// stride.
+TEST_F(MetalGraphViewTest, TensorsOfMoreThan2To31Elements) {
+  const int64_t sizes[2] = {8192, 262144};
+  const int64_t strides[2] = {262144, 1};
+  std::vector<float> memory(1, 0.0f);
+  AOTITensorHandle big = nullptr;
+  EXPECT_EQ(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data(),
+          2,
+          sizes,
+          strides,
+          0,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &big,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
+}
+
+// A dim of size 1 never steps, so its stride need not fit: logits of one long
+// sequence, [1, T, V] with T * V >= 2^31, are made by viewing the [T, V]
+// result with the stride T * V for the batch dim, or allocated without
+// strides.
+TEST_F(MetalGraphViewTest, LogitsOfOneLongSequence) {
+  std::vector<float> memory(1, 0.0f);
+  const int64_t sizes[3] = {1, 8192, 262144};
+  const int64_t strides[3] = {int64_t{8192} * 262144, 262144, 1};
+  AOTITensorHandle given = nullptr;
+  EXPECT_EQ(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data(),
+          3,
+          sizes,
+          strides,
+          0,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &given,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
+  AOTITensorHandle computed = nullptr;
+  EXPECT_EQ(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data() + 1,
+          3,
+          sizes,
+          nullptr,
+          0,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &computed,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
+  AOTITensorHandle view = nullptr;
+  EXPECT_EQ(
+      aoti_torch__reinterpret_tensor(given, 3, sizes, strides, 0, &view),
+      Error::Ok);
+  // T * V = 2^32 + 2^20: truncated to int32, the unused stride would look
+  // like the largest one, and the batch dim like the outermost.
+  const int64_t wrapping_sizes[3] = {1, 16388, 262144};
+  const int64_t wrapping_strides[3] = {int64_t{16388} * 262144, 262144, 1};
+  AOTITensorHandle wrapping = nullptr;
+  EXPECT_EQ(
+      aoti_torch_create_tensor_from_blob_v2(
+          memory.data() + 2,
+          3,
+          wrapping_sizes,
+          wrapping_strides,
+          0,
+          kFloat32,
+          kDeviceMps,
+          0,
+          &wrapping,
+          0,
+          nullptr,
+          0),
+      Error::Ok);
 }
 
 // An empty blob inside a CPU allocation joins the allocation's region too, so a

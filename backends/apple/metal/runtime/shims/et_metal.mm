@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
+#include <unordered_set>
 #include <list>
 #include <map>
 #include <optional>
@@ -107,6 +108,10 @@ struct CpuRegion {
     // of it do, and `views` counts their handles.
     bool owned;
     int32_t views;
+    // The stream, and how many waits it had completed, when queued work last
+    // bound this buffer (metal_resolve_buffer); unset if none has.
+    ETMetalStream* bound_on = nullptr;
+    uint64_t bound_at = 0;
 };
 std::unordered_map<void*, CpuRegion> cpu_regions;
 
@@ -164,7 +169,21 @@ bool find_memory(void* ptr, void** base, bool* cpu) {
 }
 } // namespace
 
-bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
+// Records that queued work is about to use the region's buffer.
+static void note_bound(CpuRegion& region) {
+    region.bound_on = getCurrentMetalStream();
+    region.bound_at = region.bound_on->completedWaits();
+}
+
+// Whether work using the region's buffer may still be queued: it was bound
+// since its stream last waited, or on another stream.
+static bool may_be_in_use(const CpuRegion& region) {
+    ETMetalStream* stream = getCurrentMetalStream();
+    return region.bound_on != nullptr &&
+        (region.bound_on != stream || region.bound_at == stream->completedWaits());
+}
+
+static bool resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset, bool bind) {
     void* base = ptr;
     auto view = ptr_to_view.find(ptr);
     if (view != ptr_to_view.end()) {
@@ -173,6 +192,9 @@ bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
             auto region = cpu_regions.find(base);
             if (region == cpu_regions.end()) {
                 return false;
+            }
+            if (bind) {
+                note_bound(region->second);
             }
             *buffer = region->second.buffer;
             *offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(base);
@@ -187,6 +209,9 @@ bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
         if (region == cpu_regions.end()) {
             return false;
         }
+        if (bind) {
+            note_bound(region->second);
+        }
         *buffer = region->second.buffer;
         *offset = 0;
         return true;
@@ -194,6 +219,10 @@ bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
     *buffer = it->second;
     *offset = static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(base);
     return true;
+}
+
+bool metal_resolve_buffer(void* ptr, id<MTLBuffer>* buffer, size_t* offset) {
+    return resolve_buffer(ptr, buffer, offset, /*bind=*/true);
 }
 
 bool metal_find_memory(void* ptr, void** base, bool* cpu, size_t* nbytes) {
@@ -427,7 +456,43 @@ void metal_deallocate_buffer(void* ptr) {
     }
 }
 
+namespace {
+// Buffers that constants were copied into, each holding a buffer of its own
+// for every constant (aoti_torch_mps_memcpy).
+// For each, where the first of its constants with a buffer of its own starts.
+std::unordered_map<void*, size_t> constants_buffers;
+} // namespace
+
+void metal_record_constants_buffer(void* ptr, size_t offset) {
+    auto inserted = constants_buffers.emplace(ptr, offset);
+    if (!inserted.second && offset < inserted.first->second) {
+        inserted.first->second = offset;
+    }
+}
+
+bool metal_forget_constants_buffer(void* ptr) {
+    return constants_buffers.erase(ptr) != 0;
+}
+
+size_t metal_constant_extent(void* base, size_t nbytes) {
+    auto it = constants_buffers.find(base);
+    return it == constants_buffers.end() ? nbytes : std::min(nbytes, it->second);
+}
+
+void metal_forget_views_within(void* ptr, size_t nbytes) {
+    const auto* begin = static_cast<const uint8_t*>(ptr);
+    for (auto it = ptr_to_view.begin(); it != ptr_to_view.end();) {
+        const auto* base = static_cast<const uint8_t*>(it->second.base);
+        if (!it->second.cpu && begin <= base && base < begin + nbytes) {
+            it = ptr_to_view.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void metal_cleanup_resources() {
+    constants_buffers.clear();
     for (auto& pair : ptr_to_mtl_buffer) {
         [pair.second release];
     }
@@ -441,6 +506,12 @@ void metal_cleanup_resources() {
 }
 
 bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
+    // A second buffer over memory another one covers would not be ordered
+    // with it.
+    if (metal_overlaps_gpu_memory(ptr, nbytes)) {
+        ET_LOG(Error, "metal_buffer_nocopy: %zu bytes at %p overlap memory already bound", nbytes, ptr);
+        return false;
+    }
     id<MTLDevice> device = get_metal_device();
     id<MTLBuffer> subBuffer = [device newBufferWithBytesNoCopy:ptr
                                                         length:nbytes
@@ -453,6 +524,8 @@ bool metal_buffer_nocopy(void* ptr, size_t nbytes, bool map_ptr_to_buffer) {
 
     if (map_ptr_to_buffer) {
         ptr_to_mtl_buffer[ptr] = subBuffer;  // Map contents to buffer
+    } else {
+        [subBuffer release];
     }
 
     return true;
@@ -503,16 +576,29 @@ bool metal_register_cpu_view(
         ET_LOG(Error, "metal_register_cpu_view: %p is already a view of other memory", view_ptr);
         return false;
     }
+    // A region's buffer starts at the region: a view below it cannot be bound.
+    if (static_cast<uint8_t*>(view_ptr) < static_cast<uint8_t*>(region)) {
+        ET_LOG(Error, "metal_register_cpu_view: %p lies before the region at %p", view_ptr, region);
+        return false;
+    }
 
     const size_t needed = std::max(
         region_nbytes,
         static_cast<size_t>(static_cast<uint8_t*>(view_ptr) - static_cast<uint8_t*>(region)) + view_nbytes);
     auto it = cpu_regions.find(region);
     if (it == cpu_regions.end() || [it->second.buffer length] < needed) {
-        // Two regions over the same bytes would be two buffers Metal does not
-        // order. That takes memory viewed through two different tensors, such
-        // as a blob inside another one viewed first, which is not supported.
+        // Two buffers over the same bytes would not be ordered by Metal. That
+        // takes memory viewed through two different tensors, such as a blob
+        // inside another one viewed first, which is not supported.
         const auto* begin = static_cast<const uint8_t*>(region);
+        for (const auto& other : ptr_to_mtl_buffer) {
+            const auto* start = static_cast<const uint8_t*>(other.first);
+            if (begin < start + [other.second length] && start < begin + needed) {
+                ET_LOG(Error, "metal_register_cpu_view: %zu bytes at %p overlap the Metal buffer at %p",
+                       needed, region, other.first);
+                return false;
+            }
+        }
         for (const auto& other : cpu_regions) {
             const auto* start = static_cast<const uint8_t*>(other.first);
             if (other.first != region && begin < start + [other.second.buffer length] &&
@@ -536,8 +622,11 @@ bool metal_register_cpu_view(
         } else {
             // Only for memory whose extent was not known up front. Work already
             // queued uses the old buffer, which Metal does not relate to the new
-            // one over the same memory, so it has to be done first.
-            getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+            // one over the same memory, so it has to be done first (on the
+            // current stream: see getCurrentMetalStream).
+            if (may_be_in_use(it->second)) {
+                getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+            }
             [it->second.buffer release];
             it->second.buffer = buffer;
         }
@@ -580,8 +669,11 @@ bool metal_release_cpu_region(void* region) {
         return false;
     }
     // Queued work may still use the memory through this buffer, which does
-    // not own the memory: it has to be done before the memory goes.
-    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+    // not own the memory: it has to be done before the memory goes (on the
+    // current stream: see getCurrentMetalStream).
+    if (may_be_in_use(it->second)) {
+        getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+    }
     [it->second.buffer release];
     cpu_regions.erase(it);
     return true;
@@ -609,7 +701,7 @@ bool metal_unregister_view(void* view_ptr) {
 bool metal_is_device_pointer(void* ptr) {
     id<MTLBuffer> buffer = nil;
     size_t offset = 0;
-    return metal_resolve_buffer(ptr, &buffer, &offset);
+    return resolve_buffer(ptr, &buffer, &offset, /*bind=*/false);
 }
 
 bool metal_overlaps_gpu_memory(const void* ptr, size_t nbytes) {
@@ -632,7 +724,10 @@ bool metal_overlaps_gpu_memory(const void* ptr, size_t nbytes) {
 }
 
 int metal_copy_memory(void* dst, const void* src, size_t nbytes, bool src_is_device, bool dst_is_device) {
-    if (!src || !dst || nbytes == 0) {
+    if (nbytes == 0) {
+        return 0;  // An empty tensor: nothing to copy.
+    }
+    if (!src || !dst) {
         ET_LOG(Error, "Metal copy: Invalid parameters");
         return -1;
     }

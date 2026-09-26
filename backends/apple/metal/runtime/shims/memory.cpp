@@ -11,6 +11,7 @@
 #include <executorch/backends/apple/metal/runtime/shims/memory.h>
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/log.h>
 #include <algorithm>
 #include <cstdint> // Ensure we have int64_t, int32_t definitions
@@ -64,10 +65,165 @@ std::unordered_map<void*, size_t> cpu_allocation_bytes;
 
 namespace {
 
+// The first and one past the last byte a view with these sizes and strides
+// touches, relative to its start, in `*lowest` and `*end`. Returns false if
+// they do not fit in 64 bits.
+bool view_byte_span(
+    const std::vector<aten::SizesType>& sizes,
+    const std::vector<aten::StridesType>& strides,
+    size_t element_size,
+    int64_t* lowest,
+    int64_t* end) {
+  int64_t low = 0;
+  int64_t high = 0;
+  for (size_t i = 0; i < sizes.size(); i++) {
+    const int64_t span = static_cast<int64_t>(sizes[i] - 1) * strides[i];
+    if (__builtin_add_overflow(
+            span < 0 ? low : high, span, span < 0 ? &low : &high)) {
+      return false;
+    }
+  }
+  const auto size = static_cast<int64_t>(element_size);
+  return !__builtin_mul_overflow(low, size, lowest) &&
+      !__builtin_add_overflow(high, int64_t{1}, &high) &&
+      !__builtin_mul_overflow(high, size, end);
+}
+
+// Whether sizes and strides as AOTInductor passes them (int64) fit the int32
+// ones a tensor holds here, sizes being non-negative. `strides` may be null.
+bool fits_tensor(int64_t ndim, const int64_t* sizes, const int64_t* strides) {
+  // A dim of size 1 never steps, so its stride does not have to fit.
+  for (int64_t i = 0; i < ndim; i++) {
+    if (sizes[i] < 0 || sizes[i] > INT32_MAX ||
+        (strides != nullptr && sizes[i] > 1 &&
+         (strides[i] < INT32_MIN || strides[i] > INT32_MAX))) {
+      return false;
+    }
+  }
+  // Without strides, the contiguous ones are computed and must fit too.
+  int64_t stride = 1;
+  for (int64_t i = ndim - 1; strides == nullptr && i >= 0; i--) {
+    if (sizes[i] > 1 && stride > INT32_MAX) {
+      return false;
+    }
+    if (sizes[i] != 0 && __builtin_mul_overflow(stride, sizes[i], &stride)) {
+      stride = INT64_MAX;
+    }
+  }
+  return true;
+}
+
+// A tensor's strides: the ones given, or the contiguous ones. The stride of a
+// dim of size 1 that does not fit int32 is never used, and is 1 instead, which
+// keeps that dim innermost; a truncated one could make it look outermost.
+// Call after fits_tensor.
+std::vector<aten::StridesType>
+tensor_strides(int64_t ndim, const int64_t* sizes, const int64_t* strides) {
+  std::vector<aten::StridesType> result(ndim);
+  int64_t contiguous = 1;
+  for (int64_t i = ndim - 1; i >= 0; i--) {
+    const int64_t stride = strides != nullptr ? strides[i] : contiguous;
+    result[i] = stride < INT32_MIN || stride > INT32_MAX
+        ? 1
+        : static_cast<aten::StridesType>(stride);
+    if (sizes[i] != 0 &&
+        __builtin_mul_overflow(contiguous, sizes[i], &contiguous)) {
+      contiguous = INT64_MAX;
+    }
+  }
+  return result;
+}
+
+// `data` moved by `storage_offset` elements, or false if that overflows.
+bool offset_pointer(
+    void* data,
+    int64_t storage_offset,
+    size_t element_size,
+    void** adjusted) {
+  int64_t offset_bytes = 0;
+  uintptr_t address = 0;
+  if (__builtin_mul_overflow(
+          storage_offset, static_cast<int64_t>(element_size), &offset_bytes) ||
+      __builtin_add_overflow(
+          reinterpret_cast<uintptr_t>(data), offset_bytes, &address)) {
+    return false;
+  }
+  *adjusted = reinterpret_cast<void*>(address);
+  return true;
+}
+
+// The number of elements of a tensor with these sizes, or false if it does
+// not fit in 64 bits.
+bool checked_numel(const int64_t* sizes, int64_t ndim, int64_t* numel) {
+  *numel = 1;
+  for (int64_t i = 0; i < ndim; i++) {
+    if (__builtin_mul_overflow(*numel, sizes[i], numel)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Whether a region over memory the runtime did not allocate, starting at
+// `region` and covering at least `region_nbytes` and the `view_nbytes` at
+// `view`, may take in what it would newly cover. Such a region grows with its
+// views, so it must not take in a CPU allocation of the runtime's, or a
+// tensor that lies there without being registered in it: that tensor would be
+// bound by copy, unordered with work through the region.
+bool region_can_cover(
+    void* region,
+    size_t region_nbytes,
+    void* view,
+    size_t view_nbytes) {
+  void* base = nullptr;
+  bool cpu = false;
+  size_t existing = 0;
+  if (!metal_find_memory(region, &base, &cpu, &existing) || base != region) {
+    existing = 0;
+  }
+  const auto* begin = static_cast<const uint8_t*>(region);
+  const auto* end = std::max(
+      begin + std::max(existing, region_nbytes),
+      static_cast<const uint8_t*>(view) + view_nbytes);
+  if (end <= begin + existing) {
+    return true;
+  }
+  for (const auto& allocation : cpu_allocation_bytes) {
+    const auto* start = static_cast<const uint8_t*>(allocation.first);
+    if (start < end && begin < start + allocation.second) {
+      return false;
+    }
+  }
+  for (const auto& entry : tensors) {
+    void* data = entry.first->mutable_data_ptr();
+    const auto* start = static_cast<const uint8_t*>(data);
+    void* data_region = nullptr;
+    if (start < end && begin < start + entry.first->nbytes() &&
+        data != region &&
+        !(metal_cpu_view_region(data, &data_region) && data_region == region)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Records one more handle at `ptr`, memory the runtime does not own.
 void add_not_own_handle(void* ptr) {
   memory_to_n_tensor[ptr] = NOT_OWN;
   not_own_handles[ptr] += 1;
+}
+
+// Whether any of the `nbytes` at `ptr` lie in a CPU allocation of the
+// runtime's.
+bool overlaps_cpu_allocation(const void* ptr, size_t nbytes) {
+  const auto* begin = static_cast<const uint8_t*>(ptr);
+  for (const auto& allocation : cpu_allocation_bytes) {
+    const auto* start = static_cast<const uint8_t*>(allocation.first);
+    if (start < begin + nbytes && begin < start + allocation.second) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // The runtime's own CPU allocation that `ptr` lies in, or null.
@@ -108,33 +264,113 @@ void hold_allocation(Tensor* handle, void* data_ptr, void* owner) {
   }
 }
 
-// Wraps `data` in a tensor whose strides are the ones given. from_blob() does
-// not keep the strides it is handed: it sorts them into a dim order and derives
-// the strides again from that. A dimension of size 1 has the same stride as the
-// dimension outside it, and the sort leaves such a tie in index order, so
-// channels-last strides {63, 1, 9, 1} of a {2, 1, 7, 9} tensor come back as
-// {63, 9, 9, 1}. The memory is the same, but the layout is no longer
+// The dim order of a tensor with these strides, in `*dim_order`. from_blob()
+// does not keep the strides it is handed: it sorts them into a dim order and
+// derives the strides again from that. A dimension of size 1 has the same
+// stride as the dimension outside it, and the sort leaves such a tie in index
+// order, so channels-last strides {63, 1, 9, 1} of a {2, 1, 7, 9} tensor come
+// back as {63, 9, 9, 1}. The memory is the same, but the layout is no longer
 // recognizable, and the convolution needs it to pick its output layout. Putting
 // the size-1 dimension last among equal strides gives back the original ones.
+// Returns false for negative sizes, and for strides that are not those of a
+// dense tensor in that order, such as a view with holes, overlapping dims or
+// a stride of 0:
+// make_tensor_ptr aborts on them. A tensor with no elements has no layout, so
+// any strides do; `*dense` gets the strides make_tensor_ptr accepts for it.
+bool dense_dim_order(
+    const std::vector<aten::SizesType>& sizes,
+    const std::vector<aten::StridesType>& strides,
+    std::vector<aten::DimOrderType>* dim_order,
+    std::vector<aten::StridesType>* dense) {
+  if (std::any_of(
+          sizes.begin(), sizes.end(), [](auto size) { return size < 0; })) {
+    return false;
+  }
+  dim_order->resize(sizes.size());
+  std::iota(dim_order->begin(), dim_order->end(), 0);
+  std::stable_sort(
+      dim_order->begin(), dim_order->end(), [&](size_t a, size_t b) {
+        if (strides[a] != strides[b]) {
+          return strides[a] > strides[b];
+        }
+        return sizes[a] != 1 && sizes[b] == 1;
+      });
+  // dim_order_to_stride multiplies the int32 sizes of all but the outermost
+  // dim: their product, the outermost stride, must fit.
+  int32_t product = 1;
+  for (size_t i = 1; i < dim_order->size(); i++) {
+    const auto size = sizes[(*dim_order)[i]];
+    if (size != 0 && __builtin_mul_overflow(product, size, &product)) {
+      return false;
+    }
+  }
+  dense->resize(sizes.size());
+  if (executorch::runtime::dim_order_to_stride(
+          sizes.data(), dim_order->data(), sizes.size(), dense->data()) !=
+      executorch::runtime::Error::Ok) {
+    return false;
+  }
+  if (std::find(sizes.begin(), sizes.end(), 0) != sizes.end()) {
+    return true;
+  }
+  for (size_t i = 0; i < sizes.size(); i++) {
+    if (sizes[i] != 1 && strides[i] != (*dense)[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Wraps `data` in a tensor whose strides are the ones given, keeping them
+// (see dense_dim_order), apart from those of size-1 dims, which make_tensor_ptr
+// sets itself. Returns null for strides a tensor cannot have.
 std::shared_ptr<Tensor> make_strided_tensor(
     void* data,
     std::vector<aten::SizesType> sizes,
     std::vector<aten::StridesType> strides,
     aten::ScalarType scalar_type) {
-  std::vector<aten::DimOrderType> dim_order(sizes.size());
-  std::iota(dim_order.begin(), dim_order.end(), 0);
-  std::stable_sort(dim_order.begin(), dim_order.end(), [&](size_t a, size_t b) {
-    if (strides[a] != strides[b]) {
-      return strides[a] > strides[b];
-    }
-    return sizes[a] != 1 && sizes[b] == 1;
-  });
+  std::vector<aten::DimOrderType> dim_order;
+  std::vector<aten::StridesType> dense;
+  if (!dense_dim_order(sizes, strides, &dim_order, &dense)) {
+    ET_LOG(Error, "The strides of a tensor must be those of a dense one");
+    return nullptr;
+  }
+  if (std::find(sizes.begin(), sizes.end(), 0) != sizes.end()) {
+    strides = std::move(dense);
+  }
   return executorch::extension::for_blob(data, std::move(sizes), scalar_type)
       .dim_order(std::move(dim_order))
       .strides(std::move(strides))
       .make_tensor_ptr();
 }
 
+// An empty tensor with no memory, e.g. AOTInductor's handle for a constant
+// of size 0, whose data pointer is null. It points nowhere and is tracked in
+// nothing but `tensors`.
+AOTITorchError make_memoryless_tensor(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    AOTITensorHandle* ret_new_tensor) {
+  int64_t numel = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      ndim >= 0 && !(sizes_ptr == nullptr && ndim > 0) &&
+          fits_tensor(ndim, sizes_ptr, strides_ptr) &&
+          checked_numel(sizes_ptr, ndim, &numel) && numel == 0,
+      InvalidArgument,
+      "Only a tensor with no elements can have a null data pointer");
+  auto tensor = make_strided_tensor(
+      nullptr,
+      convert_sizes_to_vector(ndim, sizes_ptr),
+      tensor_strides(ndim, sizes_ptr, strides_ptr),
+      dtype_to_scalar_type(dtype));
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr, InvalidArgument, "Failed to create empty tensor");
+  tensors[tensor.get()] = tensor;
+  *ret_new_tensor = tensor.get();
+  return Error::Ok;
+}
 } // namespace
 
 extern "C" {
@@ -160,10 +396,6 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   (void)opaque_metadata_size;
 
   // Validate input parameters first
-  ET_CHECK_OR_RETURN_ERROR(
-      data != nullptr,
-      InvalidArgument,
-      "aoti_torch_create_tensor_from_blob_v2 failed: data pointer is null");
 
   ET_CHECK_OR_RETURN_ERROR(
       !(sizes_ptr == nullptr && ndim > 0),
@@ -176,10 +408,23 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
       "aoti_torch_create_tensor_from_blob_v2 failed: ret_new_tensor is null");
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
+  if (data == nullptr) {
+    return make_memoryless_tensor(
+        ndim, sizes_ptr, strides_ptr, dtype, ret_new_tensor);
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      ndim >= 0 && fits_tensor(ndim, sizes_ptr, strides_ptr),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2: sizes and strides must fit a "
+      "tensor");
 
   // Handle storage offset by adjusting the data pointer
-  void* adjusted_data = static_cast<char*>(data) +
-      (storage_offset * dtype_to_element_size(dtype));
+  void* adjusted_data = nullptr;
+  ET_CHECK_OR_RETURN_ERROR(
+      offset_pointer(
+          data, storage_offset, dtype_to_element_size(dtype), &adjusted_data),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2: storage_offset overflows");
 
   ET_LOG(
       Debug,
@@ -193,7 +438,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   auto sizes = convert_sizes_to_vector(ndim, sizes_ptr);
 
   // ETensor strides
-  auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+  auto strides = tensor_strides(ndim, sizes_ptr, strides_ptr);
 
   // Log if the tensor is contiguous
   if (is_contiguous_tensor(sizes, strides)) {
@@ -231,11 +476,47 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // blobs over CPU memory.
   // The tensor is dense (make_tensor_ptr checks its strides), so its bytes
   // are all it covers.
-  const size_t nbytes = tensor->nbytes();
+  int64_t numel = 0;
+  int64_t checked_nbytes = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      checked_numel(sizes_ptr, ndim, &numel) &&
+          !__builtin_mul_overflow(
+              numel,
+              static_cast<int64_t>(dtype_to_element_size(dtype)),
+              &checked_nbytes),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2: the size in bytes overflows");
+  const auto nbytes = static_cast<size_t>(checked_nbytes);
   const auto* blob_end = static_cast<const uint8_t*>(adjusted_data) + nbytes;
   bool registered = false;
   void* owner = nullptr;
-  if (!metal_is_device_pointer(adjusted_data)) {
+  void* key = nullptr;
+  bool key_cpu = false;
+  size_t key_nbytes = 0;
+  if (metal_is_device_pointer(adjusted_data)) {
+    // At the start of a buffer, e.g. a constant's: it must fit. At the start
+    // of a CPU region, which no tensor tracks any more, it joins the region.
+    const bool found =
+        metal_find_memory(adjusted_data, &key, &key_cpu, &key_nbytes) &&
+        key == adjusted_data;
+    if (found && key_cpu) {
+      ET_CHECK_OR_RETURN_ERROR(
+          region_can_cover(key, 0, adjusted_data, nbytes) &&
+              metal_register_cpu_view(
+                  adjusted_data, nbytes, key, 0, /*owned=*/false),
+          InvalidArgument,
+          "Failed to register blob %p in the CPU region there",
+          adjusted_data);
+      registered = true;
+    } else {
+      ET_CHECK_OR_RETURN_ERROR(
+          !found || nbytes <= metal_constant_extent(key, key_nbytes),
+          InvalidArgument,
+          "Blob of %zu bytes at %p does not fit the Metal buffer there",
+          nbytes,
+          adjusted_data);
+    }
+  } else {
     size_t allocation_nbytes = 0;
     void* allocation =
         cpu_allocation_containing(adjusted_data, &allocation_nbytes);
@@ -262,21 +543,25 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     } else if (metal_find_memory(adjusted_data, &base, &cpu, &base_nbytes)) {
       if (cpu) {
         ET_CHECK_OR_RETURN_ERROR(
-            metal_register_cpu_view(
-                adjusted_data, nbytes, base, 0, /*owned=*/false),
+            region_can_cover(base, 0, adjusted_data, nbytes) &&
+                metal_register_cpu_view(
+                    adjusted_data, nbytes, base, 0, /*owned=*/false),
             InvalidArgument,
             "Failed to register blob %p in the CPU region at %p",
             adjusted_data,
             base);
       } else {
         ET_CHECK_OR_RETURN_ERROR(
-            blob_end <= static_cast<const uint8_t*>(base) + base_nbytes &&
+            blob_end <= static_cast<const uint8_t*>(base) +
+                        metal_constant_extent(base, base_nbytes) &&
                 metal_register_view(adjusted_data, base),
             InvalidArgument,
             "Blob of %zu bytes at %p does not fit the Metal buffer at %p",
             nbytes,
             adjusted_data,
             base);
+        // Only constants lie in a buffer inside another one, and neither of
+        // those is owned: an owned `base` is the whole allocation.
         auto base_memory = memory_to_n_tensor.find(base);
         if (base_memory != memory_to_n_tensor.end() &&
             base_memory->second != NOT_OWN) {
@@ -284,6 +569,17 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
         }
       }
       registered = true;
+    } else {
+      // Not inside memory the runtime binds, so it must not reach into any:
+      // it would be bound by copy, unordered with work on that memory.
+      ET_CHECK_OR_RETURN_ERROR(
+          nbytes == 0 ||
+              (!overlaps_cpu_allocation(adjusted_data, nbytes) &&
+               !metal_overlaps_gpu_memory(adjusted_data, nbytes)),
+          InvalidArgument,
+          "Blob of %zu bytes at %p reaches into memory the runtime binds",
+          nbytes,
+          adjusted_data);
     }
   }
   hold_allocation(tensor.get(), adjusted_data, owner);
@@ -313,12 +609,21 @@ AOTITorchError aoti_torch_empty_strided(
     AOTITensorHandle* ret_new_tensor) {
   ET_LOG(Debug, "aoti_torch_empty_strided: entered");
 
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr && ndim >= 0 &&
+          !(sizes_ptr == nullptr && ndim > 0) &&
+          fits_tensor(ndim, sizes_ptr, strides_ptr),
+      InvalidArgument,
+      "aoti_torch_empty_strided: invalid arguments, or sizes and strides that "
+      "do not fit a tensor");
+
   // This requires us to reserve device memory and put it into a ETensor
   void* ptr;
   int64_t numel = 1;
-  for (int i = 0; i < ndim; i++) {
-    numel *= sizes_ptr[i];
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      checked_numel(sizes_ptr, ndim, &numel),
+      InvalidArgument,
+      "aoti_torch_empty_strided: the number of elements overflows");
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
@@ -328,7 +633,28 @@ AOTITorchError aoti_torch_empty_strided(
       InvalidArgument,
       "Invalid element size for dtype: %d",
       dtype);
-  int64_t nbytes = numel * element_size;
+  // An empty tensor still gets memory: neither allocator hands out 0 bytes.
+  int64_t nbytes = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      !__builtin_mul_overflow(
+          numel, static_cast<int64_t>(element_size), &nbytes),
+      InvalidArgument,
+      "aoti_torch_empty_strided: the size in bytes overflows");
+  nbytes = std::max<int64_t>(nbytes, 1);
+
+  // ETensor sizes
+  auto sizes = convert_sizes_to_vector(ndim, sizes_ptr);
+
+  // ETensor strides
+  auto strides = tensor_strides(ndim, sizes_ptr, strides_ptr);
+
+  // Checked before anything is allocated: a tensor cannot have other strides.
+  std::vector<aten::DimOrderType> dim_order;
+  std::vector<aten::StridesType> dense;
+  ET_CHECK_OR_RETURN_ERROR(
+      dense_dim_order(sizes, strides, &dim_order, &dense),
+      InvalidArgument,
+      "aoti_torch_empty_strided: strides are not those of a dense tensor");
 
   int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
   if (device_type == mps_device_type) {
@@ -357,12 +683,6 @@ AOTITorchError aoti_torch_empty_strided(
         "Need to implement empty_strided for non-CUDA non-CPU device type %d",
         device_type);
   }
-
-  // ETensor sizes
-  auto sizes = convert_sizes_to_vector(ndim, sizes_ptr);
-
-  // ETensor strides
-  auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
 
   // Log if the tensor is contiguous
   if (is_contiguous_tensor(sizes, strides)) {
@@ -435,6 +755,11 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
 
   const auto& tensor_ptr = it->second;
   void* data_ptr = tensor_ptr->mutable_data_ptr();
+  if (data_ptr == nullptr) {
+    // A tensor with no memory (make_memoryless_tensor).
+    tensors.erase(it);
+    return Error::Ok;
+  }
 
   auto memory_it = memory_to_n_tensor.find(data_ptr);
   ET_CHECK_OR_RETURN_ERROR(
@@ -547,8 +872,12 @@ AOTITorchError aoti_torch_copy_(
 
   // Check if tensors have the same schema (sizes, strides, dtype) for fast path
   // TODO: This should be improved to catch cases like (4, 1, 5) -> (4, 5)
-  bool same_schema = true;
-  for (int i = 0; i < self->dim(); i++) {
+  // With different ranks the dims do not line up; the same bytes are only
+  // meant if both are dense in row-major order.
+  bool same_schema = self->dim() == src->dim() ||
+      (is_row_major_dense(*self) && is_row_major_dense(*src));
+  for (int i = 0; same_schema && self->dim() == src->dim() && i < self->dim();
+       i++) {
     // A dimension of size 1 in both does not change where the elements are.
     if (self_sizes[i] == 1 && src_sizes[i] == 1) {
       continue;
@@ -582,8 +911,8 @@ AOTITorchError aoti_torch_copy_(
   return Error::Ok;
 }
 
-// Check if a strided view is densely packed (no holes in memory).
-// A densely packed tensor's storage extent equals its numel.
+// Check if a strided view is densely packed: no holes in memory, and no two
+// elements at one address.
 static bool is_packed_strides(
     const std::vector<aten::SizesType>& sizes,
     const std::vector<aten::StridesType>& strides) {
@@ -599,20 +928,18 @@ static bool is_packed_strides(
   if (numel <= 1)
     return true;
 
-  // Compute storage extent: max offset + 1
-  int64_t max_offset = 0;
-  for (int64_t i = 0; i < ndim; i++) {
-    if (sizes[i] > 1) {
-      max_offset += static_cast<int64_t>(sizes[i] - 1) * strides[i];
-    }
-  }
-  return (max_offset + 1) == numel;
+  // Dense in some dim order: no holes, and no two elements at one address.
+  std::vector<aten::DimOrderType> dim_order;
+  std::vector<aten::StridesType> dense;
+  return dense_dim_order(sizes, strides, &dim_order, &dense);
 }
 
 // Materialize a non-packed strided view into a new contiguous Metal buffer.
-// Copies elements from source using strided access. The caller must free the
-// returned buffer. On failure returns nullptr.
+// Copies elements from source using strided access. `in_metal_buffer` says the
+// source is known to lie in one, which spares looking it up. The caller must
+// free the returned buffer. On failure returns nullptr.
 static void* materialize_packed(
+    bool in_metal_buffer,
     void* src,
     const std::vector<aten::SizesType>& sizes,
     const std::vector<aten::StridesType>& strides,
@@ -624,26 +951,34 @@ static void* materialize_packed(
   }
 
   bool dst_may_be_in_use = false;
-  void* dst = metal_allocate_buffer_tracking_use(
-      numel * element_size, &dst_may_be_in_use);
+  int64_t dst_nbytes = 0;
+  if (__builtin_mul_overflow(
+          numel, static_cast<int64_t>(element_size), &dst_nbytes)) {
+    return nullptr;
+  }
+  void* dst =
+      metal_allocate_buffer_tracking_use(dst_nbytes, &dst_may_be_in_use);
   if (!dst)
     return nullptr;
 
   // The copy is made on the CPU, so queued GPU work on either side has to be
-  // done first: writes to the source, if it lies in memory the GPU can write
+  // done first (on the current stream: see getCurrentMetalStream): writes to
+  // the source, if it lies in memory the GPU can write
   // (other CPU memory is only ever bound by copy, see
   // ETMetalKernelFunction::setArg), and uses of `dst`, if its buffer was
   // recycled before the stream last waited.
-  int64_t extent = 1;
-  for (int64_t i = 0; i < ndim; i++) {
-    if (sizes[i] > 1) {
-      extent += static_cast<int64_t>(sizes[i] - 1) * strides[i];
-    }
+  int64_t lowest = 0;
+  int64_t end = 0;
+  if (!view_byte_span(sizes, strides, element_size, &lowest, &end)) {
+    metal_deallocate_buffer(dst);
+    return nullptr;
   }
   auto* stream = getCurrentMetalStream();
   if (stream &&
-      (dst_may_be_in_use ||
-       metal_overlaps_gpu_memory(src, extent * element_size))) {
+      (dst_may_be_in_use || in_metal_buffer ||
+       metal_overlaps_gpu_memory(
+           static_cast<char*>(src) + lowest,
+           static_cast<size_t>(end - lowest)))) {
     stream->synchronize(SyncType::COMMIT_AND_WAIT);
   }
 
@@ -727,10 +1062,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Get the original data pointer from the source tensor
   void* data_ptr = self->mutable_data_ptr();
-  ET_CHECK_OR_RETURN_ERROR(
-      data_ptr != nullptr,
-      InvalidArgument,
-      "Source tensor has null data pointer");
+  if (data_ptr == nullptr) {
+    // A view of a tensor with no memory has no elements either.
+    return make_memoryless_tensor(
+        ndim, sizes_ptr, strides_ptr, dtype, ret_new_tensor);
+  }
 
   // Check if the given memory is in the map, if not return error
   auto memory_it = memory_to_n_tensor.find(data_ptr);
@@ -740,20 +1076,38 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       "Memory address %p is not being tracked by reference counting system",
       data_ptr);
 
+  ET_CHECK_OR_RETURN_ERROR(
+      ndim >= 0 && !(sizes_ptr == nullptr && ndim > 0) &&
+          fits_tensor(ndim, sizes_ptr, strides_ptr),
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: sizes and strides must fit a tensor");
+
   // Handle storage offset by adjusting the data pointer
   size_t element_size = dtype_to_element_size(dtype);
-  void* adjusted_data =
-      static_cast<char*>(data_ptr) + (storage_offset * element_size);
+  void* adjusted_data = nullptr;
+  ET_CHECK_OR_RETURN_ERROR(
+      offset_pointer(data_ptr, storage_offset, element_size, &adjusted_data),
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: storage_offset overflows");
 
   // Convert sizes using utility function from utils.h
   std::vector<aten::SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
+
+  ET_CHECK_OR_RETURN_ERROR(
+      std::all_of(
+          sizes.begin(), sizes.end(), [](auto size) { return size >= 0; }),
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor: sizes must not be negative");
 
   // An empty view reads nothing. Its offset can put it at the very end of its
   // buffer, which may be where the next allocation starts; point it at the
   // start of its parent instead, so that it is not taken for a view there.
   int64_t view_numel = 1;
   for (auto size : sizes) {
-    view_numel *= size;
+    ET_CHECK_OR_RETURN_ERROR(
+        !__builtin_mul_overflow(view_numel, int64_t{size}, &view_numel),
+        InvalidArgument,
+        "aoti_torch__reinterpret_tensor: the number of elements overflows");
   }
   if (view_numel == 0) {
     adjusted_data = data_ptr;
@@ -761,7 +1115,47 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Convert strides using utility function from utils.h
   std::vector<aten::StridesType> strides =
-      convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+      tensor_strides(ndim, sizes_ptr, strides_ptr);
+
+  // A view lies inside the memory `self` lies in, as far as it is known: a
+  // CPU allocation of the runtime's or a Metal buffer. Past it is other
+  // memory, e.g. the next allocation, which the view would be registered in.
+  if (view_numel > 0) {
+    int64_t lowest = 0;
+    int64_t end = 0;
+    ET_CHECK_OR_RETURN_ERROR(
+        view_byte_span(sizes, strides, element_size, &lowest, &end),
+        InvalidArgument,
+        "aoti_torch__reinterpret_tensor: the view's extent overflows");
+    const auto* first = static_cast<const uint8_t*>(adjusted_data) + lowest;
+    const auto* last = static_cast<const uint8_t*>(adjusted_data) + end;
+    const uint8_t* begin = nullptr;
+    size_t nbytes = 0;
+    void* allocation = owning_allocation(self, data_ptr);
+    auto cpu_allocation = allocation != nullptr
+        ? cpu_allocation_bytes.find(allocation)
+        : cpu_allocation_bytes.end();
+    void* base = nullptr;
+    bool cpu = false;
+    if (cpu_allocation != cpu_allocation_bytes.end()) {
+      begin = static_cast<const uint8_t*>(allocation);
+      nbytes = cpu_allocation->second;
+    } else if (
+        metal_is_device_pointer(data_ptr) && !metal_is_cpu_memory(data_ptr) &&
+        metal_find_memory(data_ptr, &base, &cpu, &nbytes)) {
+      // A constant's memory ends where the next constant's starts.
+      begin = static_cast<const uint8_t*>(base);
+      nbytes = metal_constant_extent(base, nbytes);
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        begin == nullptr || (begin <= first && last <= begin + nbytes),
+        InvalidArgument,
+        "aoti_torch__reinterpret_tensor: view at storage_offset=%lld lies "
+        "outside the %zu bytes of the memory at %p",
+        storage_offset,
+        nbytes,
+        begin);
+  }
 
   // If the view is not densely packed (e.g. chunk/split creating holes),
   // materialize it into a new contiguous buffer.
@@ -774,8 +1168,18 @@ AOTITorchError aoti_torch__reinterpret_tensor(
         Debug,
         "aoti_torch__reinterpret_tensor: non-packed strides, "
         "materializing to packed buffer");
-    tensor_data =
-        materialize_packed(adjusted_data, sizes, strides, element_size);
+    // The packed copy gets contiguous strides, which must fit a tensor's.
+    ET_CHECK_OR_RETURN_ERROR(
+        fits_tensor(ndim, sizes_ptr, nullptr),
+        InvalidArgument,
+        "aoti_torch__reinterpret_tensor: a packed copy of the view would "
+        "have strides that do not fit a tensor");
+    tensor_data = materialize_packed(
+        metal_is_device_pointer(data_ptr),
+        adjusted_data,
+        sizes,
+        strides,
+        element_size);
     ET_CHECK_OR_RETURN_ERROR(
         tensor_data != nullptr,
         MemoryAllocationFailed,
@@ -783,18 +1187,15 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     owns_buffer = true;
 
     // Compute contiguous strides for the packed buffer
-    strides.resize(ndim);
-    if (ndim > 0) {
-      strides[ndim - 1] = 1;
-      for (int64_t i = ndim - 2; i >= 0; i--) {
-        strides[i] = strides[i + 1] * sizes[i + 1];
-      }
-    }
+    strides = tensor_strides(ndim, sizes_ptr, nullptr);
   }
 
   std::shared_ptr<Tensor> tensor = make_strided_tensor(
       tensor_data, sizes, strides, dtype_to_scalar_type(dtype));
 
+  if (tensor == nullptr && owns_buffer) {
+    metal_deallocate_buffer(tensor_data);
+  }
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr,
       InvalidArgument,
@@ -804,7 +1205,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     // The materialized buffer is a new allocation owned by this tensor
     memory_to_n_tensor[tensor_data] = 1;
   } else {
-    if (adjusted_data != data_ptr) {
+    // A view that starts where an allocation starts is that allocation.
+    auto at_address = memory_to_n_tensor.find(adjusted_data);
+    const bool at_allocation =
+        at_address != memory_to_n_tensor.end() && at_address->second != NOT_OWN;
+    if (adjusted_data != data_ptr && !at_allocation) {
       ET_LOG(
           Debug,
           "aoti_torch__reinterpret_tensor: Adjusted original_data=%p, "
@@ -843,6 +1248,14 @@ AOTITorchError aoti_torch__reinterpret_tensor(
           region_nbytes = self->nbytes();
         }
         ET_CHECK_OR_RETURN_ERROR(
+            owned ||
+                region_can_cover(
+                    region, region_nbytes, adjusted_data, tensor->nbytes()),
+            InvalidArgument,
+            "aoti_torch__reinterpret_tensor: a view of the memory at %p would "
+            "take in memory another tensor lies in",
+            region);
+        ET_CHECK_OR_RETURN_ERROR(
             metal_register_cpu_view(
                 adjusted_data, tensor->nbytes(), region, region_nbytes, owned),
             Internal,
@@ -853,18 +1266,22 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       add_not_own_handle(adjusted_data);
       registered = true;
     } else {
-      // Another handle at the address of `self`. If `self` is a view, deleting
-      // either handle must leave the view registered for the other one.
-      registered = metal_retain_view(data_ptr);
-      if (memory_to_n_tensor.find(data_ptr)->second == NOT_OWN) {
-        add_not_own_handle(data_ptr);
+      // Another handle at the address of `self`, or at the start of the
+      // allocation it lies in. If that address is a view, deleting either
+      // handle must leave it registered for the other one.
+      registered = metal_retain_view(adjusted_data);
+      if (!at_allocation) {
+        add_not_own_handle(adjusted_data);
       }
     }
 
     // The new handle keeps the allocation it lives in alive, including when
-    // `self` is itself a view.
+    // `self` is itself a view. A view at an allocation's start is a handle to
+    // that allocation, whatever `self` is.
     hold_allocation(
-        tensor.get(), adjusted_data, owning_allocation(self, data_ptr));
+        tensor.get(),
+        adjusted_data,
+        at_allocation ? adjusted_data : owning_allocation(self, data_ptr));
   }
 
   // Only now that nothing can fail: a handle whose registration failed must
@@ -925,10 +1342,11 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
   // Get the original data pointer from the source tensor
   void* data_ptr = orig_handle->mutable_data_ptr();
-  ET_CHECK_OR_RETURN_ERROR(
-      data_ptr != nullptr,
-      InvalidArgument,
-      "Source tensor has null data pointer");
+  if (data_ptr == nullptr) {
+    // Another handle to a tensor with no memory.
+    return make_memoryless_tensor(
+        ndim, sizes_ptr, strides_ptr, dtype, new_handle);
+  }
 
   // Check if the given memory is in the map
   auto memory_it = memory_to_n_tensor.find(data_ptr);
@@ -940,7 +1358,7 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
   // Convert sizes and strides to vectors
   auto sizes = convert_sizes_to_vector(ndim, sizes_ptr);
-  auto strides = convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
+  auto strides = tensor_strides(ndim, sizes_ptr, strides_ptr);
 
   // Create new tensor that shares the same memory as the original
   // This is similar to PyTorch's Tensor copy constructor - creates a new
@@ -980,6 +1398,13 @@ AOTITorchError aoti_torch_new_tensor_handle(
 
 // Cleanup function for clearing global state
 void cleanup_memory() {
+  // Work may still be queued, e.g. after a failed run, and the memory of
+  // tensors and constants is about to go.
+  auto* stream = getCurrentMetalStream();
+  if (stream != nullptr) {
+    stream->synchronize(SyncType::COMMIT_AND_WAIT);
+  }
+
   // Use aoti_torch_delete_tensor_object to properly delete each tensor.
   // Collect keys first since deletion modifies the map.
   std::vector<Tensor*> tensor_ptrs;

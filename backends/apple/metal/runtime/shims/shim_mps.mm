@@ -13,6 +13,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/backends/apple/metal/runtime/shims/shim_mps.h>
 #include <executorch/backends/apple/metal/runtime/shims/et_metal.h>
+#include <executorch/backends/apple/metal/runtime/shims/memory.h>
 #include <functional>
 #include <unordered_map>
 
@@ -383,6 +384,27 @@ AOTITorchError aoti_torch_mps_free(void* ptr) {
             auto it = ptr_to_mtl_buffer.find(ptr);
             if (it != ptr_to_mtl_buffer.end()) {
                 id<MTLBuffer> metal_buffer = it->second;
+                // The buffers of the constants copied into it go with it: a
+                // later allocation at those addresses must not be bound
+                // through them.
+                auto* begin = static_cast<uint8_t*>(ptr);
+                auto* end = metal_forget_constants_buffer(ptr) ? begin + [metal_buffer length] : begin;
+                if (begin != end) {
+                    // Queued work may read the constants through their own
+                    // buffers, which do not own the memory.
+                    getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+                    metal_forget_views_within(begin, end - begin);
+                }
+                for (auto nested = ptr_to_mtl_buffer.begin(); begin != end && nested != ptr_to_mtl_buffer.end();) {
+                    auto* key = static_cast<uint8_t*>(nested->first);
+                    if (key > begin && key < end) {
+                        [nested->second release];
+                        nested = ptr_to_mtl_buffer.erase(nested);
+                    } else {
+                        ++nested;
+                    }
+                }
+                it = ptr_to_mtl_buffer.find(ptr);
                 [metal_buffer release];
                 ptr_to_mtl_buffer.erase(it);
                 ET_LOG(Debug, "aoti_torch_mps_free: Freed Metal buffer for contents %p", ptr);
@@ -420,6 +442,29 @@ AOTITorchError aoti_torch_mps_memcpy(
             // FIX: buffer is now the contents pointer, not the buffer object
             auto buffer_pointer = static_cast<uint8_t*>(buffer);
 
+            // Constants get buffers of their own inside this one, so it must be
+            // a buffer of aoti_torch_mps_malloc's that is not a tensor's own
+            // memory: a tensor's handles are bound through its own buffer, and
+            // Metal does not order the two. Constants' own handles are fine:
+            // AOTInductor wraps each constant in a tensor before it copies the
+            // next one. The constant must fit in the buffer.
+            auto whole = ptr_to_mtl_buffer.find(buffer);
+            auto tensor = memory_to_n_tensor.find(buffer);
+            if (whole == ptr_to_mtl_buffer.end() ||
+                (tensor != memory_to_n_tensor.end() && tensor->second > 0) ||
+                metal_is_view(buffer) ||
+                data_size > [whole->second length] ||
+                constant_offset > [whole->second length] - data_size) {
+                ET_LOG(Error, "aoti_torch_mps_memcpy: %p is not a constants buffer that fits %zu bytes at offset %zu",
+                       buffer, data_size, constant_offset);
+                return Error::InvalidArgument;
+            }
+
+            if (data_size == 0) {
+                return Error::Ok;  // An empty constant: nothing to copy or bind.
+            }
+            // Queued work may still read the constant being replaced.
+            getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
             memcpy(buffer_pointer + constant_offset, constants_start + bytes_read, data_size);
 
             id<MTLDevice> device = get_metal_device();
@@ -432,8 +477,20 @@ AOTITorchError aoti_torch_mps_memcpy(
                                                                options:MTLResourceCPUCacheModeWriteCombined | MTLResourceStorageModeShared
                                                            deallocator:nil];
 
+            if (constant_offset != 0 && subBuffer == nil) {
+                ET_LOG(Error, "aoti_torch_mps_memcpy: failed to wrap the constant at offset %zu", constant_offset);
+                return Error::Internal;
+            }
             if (constant_offset != 0) {
-                ptr_to_mtl_buffer[buffer_pointer + constant_offset] = subBuffer;  // Map contents to buffer
+                auto& mapped = ptr_to_mtl_buffer[buffer_pointer + constant_offset];
+                if (mapped != nil) {
+                    [mapped release];
+                }
+                mapped = subBuffer;  // Map contents to buffer
+                metal_record_constants_buffer(buffer, constant_offset);
+            } else {
+                // The constant at the start is bound through the buffer itself.
+                [subBuffer release];
             }
 
             ET_LOG(Debug, "aoti_torch_mps_memcpy: Copied %zu bytes from offset %zu to buffer offset %zu",

@@ -27,7 +27,9 @@ id<MTLBuffer> get_mtl_buffer(
     ET_LOG(Error, "%s: %s tensor not found in Metal buffer mapping", op_name, tensor_name);
     throw std::runtime_error(std::string(tensor_name) + " tensor not found in Metal buffer mapping");
   }
-  if (offset == 0) {
+  // An empty tensor reads and writes nothing, so it needs no buffer of its
+  // own at its offset, and Metal makes none of length 0.
+  if (offset == 0 || tensor->nbytes() == 0) {
     return buffer;
   }
 
