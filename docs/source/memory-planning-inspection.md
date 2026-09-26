@@ -16,6 +16,10 @@ generate_memory_trace(
 * `prog` is an instance of [`ExecuTorchProgramManager`](export-to-executorch-api-reference.rst#executorch.exir.ExecutorchProgramManager), returned by [to_executorch()](export-to-executorch-api-reference.rst#executorch.exir.EdgeProgramManager.to_executorch).
 * Set `enable_memory_offsets` to `True` to show the location of each tensor on the memory space.
 
+Scratch buffers a delegate declared are planned like any other intermediate and
+appear in the trace attributed to the `executorch_call_delegate` node that asked
+for them, so arena growth from a delegate is not left unexplained.
+
 ## Chrome Trace
 Open a Chrome browser tab and navigate to <chrome://tracing/>. Upload the generated `.json` to view.
 Example of a [MobileNet V2](https://pytorch.org/vision/main/models/mobilenetv2.html) model:
