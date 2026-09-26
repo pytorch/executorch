@@ -761,6 +761,13 @@ def get_native_layer_norm_inputs():
             ((S1, S2), [S2], (S2), (S2), 0.001),
             ((M, M1, M2), [M2], (M2), (M2), 0.001),
             ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
+            # Either affine parameter may be absent: nn.LayerNorm(bias=False)
+            # has no bias, and F.layer_norm called with neither (kokoro's
+            # AdaLayerNorm applies its own scale and shift afterwards) has
+            # neither.
+            ((M, M1, M2), [M2], (M2), None, 0.001),
+            ((M, M1, M2), [M2], None, (M2), 0.001),
+            ((M, M1, M2), [M2], None, None, 0.001),
         ]
     )
     test_suite.layouts = [

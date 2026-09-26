@@ -63,7 +63,7 @@ class MLXSequenceCacheTest : public ::testing::Test {
 // Prefill: T=4 at position 0 -> Causal (lower-right aligned).
 TEST_F(MLXSequenceCacheTest, PrefillIsCausal) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -83,7 +83,7 @@ TEST_F(MLXSequenceCacheTest, PrefillIsCausal) {
 // window is the full assembled history (prefill ++ the new token).
 TEST_F(MLXSequenceCacheTest, DecodeReadsFullHistory) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -107,7 +107,7 @@ TEST_F(MLXSequenceCacheTest, DecodeReadsFullHistory) {
 // A step past capacity is rejected (plan returns nullopt).
 TEST_F(MLXSequenceCacheTest, StepPastCapacityThrows) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -122,7 +122,7 @@ TEST_F(MLXSequenceCacheTest, StepPastCapacityThrows) {
 // address, so it is refused rather than stored at the wrong positions.
 TEST_F(MLXSequenceCacheTest, NonContiguousOrMiscountedPositionsThrow) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -146,7 +146,7 @@ TEST_F(MLXSequenceCacheTest, NonContiguousOrMiscountedPositionsThrow) {
 // so the read-back K/V are exactly the fp16 of the input.
 TEST_F(MLXSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
   using namespace ::mlx::core;
-  MLXSequenceCache c16(flat_config(
+  auto c16 = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -178,22 +178,22 @@ TEST_F(MLXSequenceCacheTest, PoolHonorsRunStart) {
 }
 
 // A partial per-layer list is rejected instead of indexing past the end.
-TEST_F(MLXSequenceCacheTest, PartialLayerListThrows) {
-  cache::CacheConfig cfg = flat_config(
+TEST_F(MLXSequenceCacheTest, EmptyGeometryThrows) {
+  CacheArgs args = flat_config(
       /*capacity=*/32,
       /*n_layers=*/4,
       H,
       D,
       static_cast<int>(ScalarType::Half));
-  cfg.layers.push_back(cfg.layers.front()); // size 2, neither 1 nor n_layers
-  EXPECT_ANY_THROW(MLXSequenceCache{cfg});
+  args.geometry.layers.clear();
+  EXPECT_ANY_THROW(MLXSequenceCache(args.geometry, args.config));
 }
 
 // A step past the allocated slots grows the pool instead of failing, and the
 // result is the same window a fully-allocated pool would have returned.
 TEST_F(MLXSequenceCacheTest, GrowsPastInitialCapacity) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -214,7 +214,7 @@ TEST_F(MLXSequenceCacheTest, GrowsPastInitialCapacity) {
 // boundary must still read back the full history.
 TEST_F(MLXSequenceCacheTest, GrowthPreservesExistingCells) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -256,10 +256,148 @@ TEST_F(MLXSequenceCacheTest, PoolDoublesAndClampsToMaxSlots) {
   EXPECT_EQ(r.slots(), 4);
 }
 
+TEST_F(MLXSequenceCacheTest, PoolClonePrefixCompactsAGrownPool) {
+  using namespace ::mlx::core;
+  Pool source(/*initial_slots=*/4, /*max_slots=*/64, H, D, float16);
+  array values = randn(40, float16);
+  source.write(0, 40, values, s);
+  ASSERT_EQ(source.slots(), 64); // 4 doubled until it fit 40
+
+  Pool clone = source.clone_prefix(8, s);
+  EXPECT_EQ(clone.slots(), 8);
+  EXPECT_TRUE(allclose(
+      clone.read(0, 8, s),
+      slice(values, Shape{0, 0, 0, 0}, Shape{1, H, 8, D}, s),
+      0.0f));
+}
+
+// A pool no larger than a fresh one is shared: the copy would buy nothing and
+// the fork would double straight back out of it.
+TEST_F(MLXSequenceCacheTest, PoolClonePrefixSharesWhenItWouldNotShrink) {
+  using namespace ::mlx::core;
+  Pool source(/*initial_slots=*/16, /*max_slots=*/32, H, D, float16);
+  source.write(0, 8, randn(8, float16), s);
+  ASSERT_EQ(source.slots(), 16);
+
+  EXPECT_EQ(source.clone_prefix(3, s).slots(), 16);
+}
+
+// gemma4 alternates flat and ring layers. A clone compacts the flat pools and
+// leaves the ring ones, and the ring is what bounds how far back it may fork.
+TEST_F(MLXSequenceCacheTest, CloneOfAMixedModelIsBoundedByItsRingLayer) {
+  using namespace ::mlx::core;
+  const int kHalf = static_cast<int>(ScalarType::Half);
+  CacheArgs cfg = flat_config(
+      /*capacity=*/64, /*n_layers=*/2, H, D, kHalf, /*initial_capacity=*/4);
+  cfg.geometry.layers[1].policy =
+      cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, /*window=*/4};
+  cfg.config.max_write = 4;
+
+  auto c = make_cache<MLXSequenceCache>(cfg);
+  auto oracle = make_cache<MLXSequenceCache>(cfg);
+  std::vector<array> ks, vs;
+  for (int32_t p = 0; p < 10; ++p) {
+    ks.push_back(randn(1, float16));
+    vs.push_back(randn(1, float16));
+    c.update_and_fetch(0, {p}, ks[p], vs[p], s);
+    c.update_and_fetch(1, {p}, ks[p], vs[p], s);
+    if (p < 6) {
+      oracle.update_and_fetch(0, {p}, ks[p], vs[p], s);
+      oracle.update_and_fetch(1, {p}, ks[p], vs[p], s);
+    }
+  }
+
+  // The flat layer holds every position, but the ring retains only down to
+  // written - max_write, and the most restrictive layer decides.
+  EXPECT_FALSE(c.can_rewind(5));
+  ASSERT_TRUE(c.can_rewind(6));
+  MLXSequenceCache fork(c, 6, ::mlx::core::to_stream(s));
+  EXPECT_EQ(fork.length(), 6);
+
+  // Both layers keep decoding correctly: the flat one out of its compacted
+  // pool, the ring one over slots that still hold the donor's later positions
+  // until it overwrites them.
+  for (int32_t p = 6; p < 10; ++p) {
+    array k = randn(1, float16), v = randn(1, float16);
+    for (int layer = 0; layer < 2; ++layer) {
+      AttendSpec got = fork.update_and_fetch(layer, {p}, k, v, s);
+      AttendSpec want = oracle.update_and_fetch(layer, {p}, k, v, s);
+      EXPECT_TRUE(allclose(got.K, want.K, 0.0f))
+          << "layer " << layer << " @" << p;
+      EXPECT_TRUE(allclose(got.V, want.V, 0.0f))
+          << "layer " << layer << " @" << p;
+    }
+  }
+}
+
+// A compacted fork keeps growing: its pool doubles from the smaller size the
+// clone gave it, and the history it copied survives that.
+TEST_F(MLXSequenceCacheTest, CompactedForkGrowsPastItsClonedSize) {
+  using namespace ::mlx::core;
+  auto c = make_cache<MLXSequenceCache>(flat_config(
+      /*capacity=*/64,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half),
+      /*initial_capacity=*/4));
+  auto oracle = make_cache<MLXSequenceCache>(flat_config(
+      /*capacity=*/64,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half),
+      /*initial_capacity=*/4));
+  std::vector<array> ks, vs;
+  for (int32_t p = 0; p < 40; ++p) {
+    ks.push_back(randn(1, float16));
+    vs.push_back(randn(1, float16));
+    c.update_and_fetch(0, {p}, ks[p], vs[p], s);
+    if (p < 6) {
+      oracle.update_and_fetch(0, {p}, ks[p], vs[p], s);
+    }
+  }
+
+  ASSERT_TRUE(c.can_rewind(6));
+  MLXSequenceCache fork(c, 6, ::mlx::core::to_stream(s));
+  // Well past the 6 slots the clone compacted to, so the pool doubles again.
+  for (int32_t p = 6; p < 30; ++p) {
+    array k = randn(1, float16), v = randn(1, float16);
+    AttendSpec got = fork.update_and_fetch(0, {p}, k, v, s);
+    AttendSpec want = oracle.update_and_fetch(0, {p}, k, v, s);
+    EXPECT_EQ(got.K.shape(2), p + 1);
+    EXPECT_TRUE(allclose(got.K, want.K, 0.0f)) << "position " << p;
+  }
+}
+
+// The fork constructor takes a position the source can rewind to. Anything
+// else is refused loudly rather than producing a fork reading slots it does
+// not own.
+TEST_F(MLXSequenceCacheTest, ForkRejectsPositionsItCannotRewindTo) {
+  using namespace ::mlx::core;
+  auto c = make_cache<MLXSequenceCache>(ring_config(
+      /*capacity=*/64,
+      /*window=*/4,
+      /*max_write=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half)));
+  for (int32_t p = 0; p < 10; ++p) {
+    array k = randn(1, float16);
+    c.update_and_fetch(0, {p}, k, k, s);
+  }
+
+  const ::mlx::core::Stream stream = ::mlx::core::to_stream(s);
+  EXPECT_ANY_THROW(MLXSequenceCache(c, 8, stream)); // below the ring floor
+  EXPECT_ANY_THROW(MLXSequenceCache(c, 11, stream)); // never reached
+  EXPECT_ANY_THROW(MLXSequenceCache(c, 0, stream)); // nothing to fork
+  EXPECT_NO_THROW(MLXSequenceCache(c, 9, stream)); // exactly the floor
+}
+
 // A pool that starts empty is allowed, and grows on the first write.
 TEST_F(MLXSequenceCacheTest, ZeroInitialCapacityGrowsOnFirstWrite) {
   using namespace ::mlx::core;
-  MLXSequenceCache c(flat_config(
+  auto c = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -304,7 +442,7 @@ TEST_F(MLXSequenceCacheTest, WindowCausalMaskIsABand) {
 TEST_F(MLXSequenceCacheTest, RingDecodeEvictsOldestAndNeedsNoMask) {
   using namespace ::mlx::core;
   const int W = 4;
-  MLXSequenceCache c(ring_config(
+  auto c = make_cache<MLXSequenceCache>(ring_config(
       /*capacity=*/64,
       /*window=*/W,
       /*max_write=*/1,
@@ -333,7 +471,7 @@ TEST_F(MLXSequenceCacheTest, RingDecodeEvictsOldestAndNeedsNoMask) {
 // applies its fused mask and no tensor is built. A flat layer always does.
 TEST_F(MLXSequenceCacheTest, WindowWiderThanSpanStaysCausal) {
   using namespace ::mlx::core;
-  MLXSequenceCache ring(ring_config(
+  auto ring = make_cache<MLXSequenceCache>(ring_config(
       /*capacity=*/64,
       /*window=*/4,
       /*max_write=*/2,
@@ -345,7 +483,7 @@ TEST_F(MLXSequenceCacheTest, WindowWiderThanSpanStaysCausal) {
   EXPECT_EQ(rspec.kind, AttendSpec::Mask::Causal);
   EXPECT_FALSE(rspec.mask.has_value());
 
-  MLXSequenceCache flat(flat_config(
+  auto flat = make_cache<MLXSequenceCache>(flat_config(
       /*capacity=*/64,
       /*n_layers=*/1,
       H,
@@ -361,7 +499,7 @@ TEST_F(MLXSequenceCacheTest, RingStepWrapsAndRejoinsInOrder) {
   using namespace ::mlx::core;
   const int W = 4;
   const int MW = 2;
-  MLXSequenceCache c(ring_config(
+  auto c = make_cache<MLXSequenceCache>(ring_config(
       /*capacity=*/64,
       /*window=*/W,
       /*max_write=*/MW,
@@ -406,14 +544,14 @@ TEST_F(MLXSequenceCacheTest, RingStepWrapsAndRejoinsInOrder) {
 // A negative initial_capacity is rejected rather than reaching MLX as a
 // negative dimension.
 TEST_F(MLXSequenceCacheTest, NegativeInitialCapacityThrows) {
-  cache::CacheConfig cfg = flat_config(
+  CacheArgs args = flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
       D,
       static_cast<int>(ScalarType::Half),
       /*initial_capacity=*/-1);
-  EXPECT_ANY_THROW(MLXSequenceCache{cfg});
+  EXPECT_ANY_THROW(MLXSequenceCache(args.geometry, args.config));
 }
 
 } // namespace

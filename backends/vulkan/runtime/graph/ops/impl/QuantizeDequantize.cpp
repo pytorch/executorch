@@ -61,33 +61,6 @@ GlobalWorkGrid quantize_and_pack_4h4w_gwg(
       kTiledWorkGrid);
 }
 
-vkapi::ShaderInfo pick_quantize_and_pack_4h4w_with_group_sums_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const ValueRef packed_int_input = args.at(0).refs.at(0);
-  const ValueRef fp_input = args.at(1).refs.at(0);
-  const ValueRef packed_input_zps = args.at(1).refs.at(2);
-  const ValueRef group_size = resize_args.at(0);
-
-  const int64_t group_size_val = graph->extract_scalar<int64_t>(group_size);
-
-  std::string shader_name = "quantize_and_pack_4h4w_with_group_sums";
-  if (group_size_val >= 128) {
-    shader_name += "_o2w32";
-  } else {
-    shader_name += "_o4w16";
-  }
-
-  add_storage_type_suffix(
-      shader_name, graph->storage_type_of(packed_int_input));
-  add_storage_type_suffix(shader_name, graph->storage_type_of(fp_input));
-  add_dtype_suffix(shader_name, graph->dtype_of(fp_input));
-  add_zp_dtype_mode_suffix(shader_name, graph->dtype_of(packed_input_zps));
-
-  return VK_KERNEL_FROM_STR(shader_name);
-}
-
 GlobalWorkGrid pick_quantize_and_pack_4h4w_with_group_sums_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -199,9 +172,20 @@ void add_quantize_and_pack_4h4w_with_group_sums_node(
   const int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
   const int32_t blocks_per_group = utils::div_up(group_size_val, int32_t(4));
 
+  std::string shader_name = "quantize_and_pack_4h4w_with_group_sums";
+  if (group_size_val >= 128) {
+    shader_name += "_o2w32";
+  } else {
+    shader_name += "_o4w16";
+  }
+  add_storage_type_suffix(shader_name, graph.storage_type_of(packed_int_input));
+  add_storage_type_suffix(shader_name, graph.storage_type_of(fp_input));
+  add_dtype_suffix(shader_name, graph.dtype_of(fp_input));
+  add_zp_dtype_mode_suffix(shader_name, graph.dtype_of(packed_input_zps));
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      pick_quantize_and_pack_4h4w_with_group_sums_shader,
+      VK_KERNEL_FROM_STR(shader_name),
       pick_quantize_and_pack_4h4w_with_group_sums_gwg,
       pick_required_lwg,
       // Inputs and Outputs

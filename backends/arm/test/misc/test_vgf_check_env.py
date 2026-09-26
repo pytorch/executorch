@@ -33,6 +33,7 @@ def _fail(name: str = "bad") -> check_env.VgfEnvironmentCheck:
 
 
 def test_aot_environment_uses_only_aot_checks(monkeypatch):
+    monkeypatch.setattr(check_env, "_check_python_version", lambda: _pass("python"))
     monkeypatch.setattr(check_env, "_check_tosa_serializer", lambda: _pass("tosa"))
     monkeypatch.setattr(check_env, "_check_model_converter", lambda: _pass("converter"))
     monkeypatch.setattr(
@@ -44,6 +45,7 @@ def test_aot_environment_uses_only_aot_checks(monkeypatch):
     assert report.mode == "aot"
     assert report.ok
     assert [check.name for check in report.checks] == [
+        "python",
         "tosa",
         "converter",
         "lib-dir",
@@ -122,6 +124,22 @@ def test_is_vgf_runtime_available(monkeypatch):
     assert check_env.is_vgf_runtime_available()
 
 
+def test_python_version_check_passes_for_3_12():
+    result = check_env._check_python_version((3, 12))
+
+    assert result.status == check_env.STATUS_OK
+    assert "3.12" in result.detail
+
+
+def test_python_version_check_warns_below_3_12():
+    result = check_env._check_python_version((3, 10))
+
+    assert result.status == check_env.STATUS_WARN
+    assert "3.10" in result.detail
+    assert result.action is not None
+    assert "3.12" in result.action
+
+
 def test_model_converter_check_fails_when_missing(monkeypatch):
     monkeypatch.setattr(model_converter, "find_model_converter_binary", lambda: None)
 
@@ -138,7 +156,7 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "if '--version' in sys.argv:\n"
-        "    print('model-converter 0.9.0')\n"
+        "    print('model-converter 0.10.0')\n"
         "    raise SystemExit(0)\n"
         "raise SystemExit(1)\n",
     )
@@ -150,7 +168,51 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
 
     assert result.status == check_env.STATUS_OK
     assert str(converter) in result.detail
+    assert "0.10.0" in result.detail
+
+
+def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
+    converter = _make_executable(
+        tmp_path / "model-converter",
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('model-converter 0.9.0')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    monkeypatch.setattr(
+        model_converter, "find_model_converter_binary", lambda: str(converter)
+    )
+
+    result = check_env._check_model_converter()
+
+    assert result.status == check_env.STATUS_FAIL
     assert "0.9.0" in result.detail
+    assert "0.10.0" in result.detail
+    assert result.action is not None
+
+
+def test_model_converter_check_fails_when_version_is_unparseable(monkeypatch, tmp_path):
+    converter = _make_executable(
+        tmp_path / "model-converter",
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('model-converter unknown-build-deadbee')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    monkeypatch.setattr(
+        model_converter, "find_model_converter_binary", lambda: str(converter)
+    )
+
+    result = check_env._check_model_converter()
+
+    assert result.status == check_env.STATUS_FAIL
+    assert "could not be parsed" in result.detail
+    assert result.action is not None
+    assert "0.10.0" in result.action
 
 
 def test_get_model_converter_version_text(monkeypatch, tmp_path):
@@ -547,6 +609,8 @@ def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
     monkeypatch,
     tmp_path,
 ):
+    minimum_version = model_converter.MIN_MODEL_CONVERTER_VERSION
+
     converter = _make_executable(
         tmp_path / "model-converter",
         "#!/usr/bin/env python3\n"
@@ -554,7 +618,7 @@ def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
         "import sys\n"
         "\n"
         "if '--version' in sys.argv:\n"
-        "    print('model-converter integration-test')\n"
+        f"    print('model-converter {minimum_version}')\n"
         "    raise SystemExit(0)\n"
         "\n"
         "out_index = sys.argv.index('-o') + 1\n"

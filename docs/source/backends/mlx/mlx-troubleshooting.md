@@ -92,13 +92,18 @@ python -m executorch.backends.mlx.pte_inspector model.pte --extract-delegate mlx
 
 ### Metal compiler not found
 
-**Error:** `xcrun -sdk macosx --find metal` fails.
+**Error:** `xcrun -sdk macosx metal --version` fails.
 
-**Solution:** Install the full Xcode application (not just Command Line Tools). The Metal compiler ships with Xcode. If Xcode is installed but not selected:
+**Solution:** Install the full Xcode application (not just Command Line Tools),
+select it as the active developer directory, and download the separately
+installed Metal Toolchain component:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+xcodebuild -downloadComponent MetalToolchain
 ```
+
+Then rerun `xcrun -sdk macosx metal --version` to verify the compiler.
 
 ### `MLXPartitioner must be used with to_edge_transform_and_lower()`
 

@@ -68,7 +68,7 @@ depend on the selected WebGPU adapter.
 
 ## Development Requirements
 
-- CMake 3.19 or later.
+- CMake 3.24 or later.
 - A Python environment with ExecuTorch installed for model export.
 - Dawn's CMake package for native builds.
 - Emscripten for browser builds.

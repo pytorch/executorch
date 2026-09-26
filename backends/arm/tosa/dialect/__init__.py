@@ -9,6 +9,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     avg_pool2d,
     avg_pool2d_adaptive,
     binary_elementwise,
+    comparison,
     conv2d,
     conv2d_block_scaled,
     conv3d,

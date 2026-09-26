@@ -71,6 +71,12 @@ slice_or_select_overloadpkt = {
     exir_ops.edge.aten.select_copy,
 }
 
+supported_quantize_ops_overloadpkt = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel,
+    exir_ops.edge.cadence.quantize_per_tensor,
+}
+
 
 class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
     """
@@ -141,8 +147,8 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             get_overload_packet(x.target) in slice_or_select_overloadpkt
             for x in trivial_quantized_ops
         ):
-            # Profitability metric: the sum of all the output slices must be at
-            # least half the input node slice.
+            # Profitability metric: the sum of all the output slices must be
+            # more than half the input node size.
             slice_sizes = [
                 prod(list(y))
                 for x in trivial_quantized_ops
@@ -150,7 +156,7 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
             ]
             node_shape = get_shape(self.graph_module, node)
             node_size = prod(list(node_shape)) if node_shape is not None else 0
-            if node_size > 2 * sum(slice_sizes):
+            if node_size >= 2 * sum(slice_sizes):
                 descendent_quant_ops.clear()
 
         return descendent_quant_ops
@@ -520,46 +526,43 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         ):
             return False
 
+        quantized_branches = []
+        for user in users:
+            slice_users = list(user.users)
+            quantized_branches.append(
+                bool(slice_users)
+                and all(
+                    slice_user.op == "call_function"
+                    and get_overload_packet(slice_user.target)
+                    in supported_quantize_ops_overloadpkt
+                    for slice_user in slice_users
+                )
+            )
+
+        # Preserve the existing fallback for forks whose branches all requantize.
+        if all(quantized_branches):
+            return True
+
         dequant_shape = get_shape(self.graph_module, dequant_node)
-        slice_shapes = [
-            shape
-            for user in users
-            if (shape := get_shape(self.graph_module, user))
-            and (
-                # skip slices that are the size of the sliced tensor itself.
-                # They should technically get removed in the later passes as nop.
-                shape is None
-                or dequant_shape is None
-                or prod(list(shape)) != prod(list(dequant_shape))
-            )
-        ]
+        if dequant_shape is None:
+            return False
 
-        if dequant_shape is not None and all(
-            shape is not None for shape in slice_shapes
-        ):
-            dequant_bytes = num_bytes_from_shape_and_dtype(dequant_shape, torch.float32)
-            slice_bytes = sum(
-                [
-                    num_bytes_from_shape_and_dtype(shape, torch.float32)
-                    for shape in slice_shapes
-                ]
+        dequant_bytes = num_bytes_from_shape_and_dtype(dequant_shape, torch.float32)
+        surviving_dequant_bytes = 0
+        for user, quantized_branch in zip(users, quantized_branches):
+            if quantized_branch:
+                continue
+            slice_shape = get_shape(self.graph_module, user)
+            if slice_shape is None:
+                return False
+            # Nop slices are removed later and do not add another materialized copy.
+            if prod(list(slice_shape)) == prod(list(dequant_shape)):
+                continue
+            surviving_dequant_bytes += num_bytes_from_shape_and_dtype(
+                slice_shape, torch.float32
             )
-            if slice_bytes <= dequant_bytes:
-                return True
 
-        # If the users of each slice op is quantize op, then we can postpone
-        # dequantize, and convert slice -> dequantize -> quantize to
-        # slice -> requantize.
-        users = [x for y in users for x in y.users if x.op != "output"]
-        return all(
-            get_overload_packet(x.target)
-            in {
-                exir_ops.edge.quantized_decomposed.quantize_per_tensor,
-                exir_ops.edge.quantized_decomposed.quantize_per_channel,
-                exir_ops.edge.cadence.quantize_per_tensor,
-            }
-            for x in users
-        )
+        return surviving_dequant_bytes <= dequant_bytes
 
     def postpone_dequantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         # Different supported dequant ops have their own default variants
@@ -598,7 +601,8 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
             graph.erase_node(node)
             modified = True
 
-        graph_module.recompile()
+        if modified:
+            graph_module.recompile()
         return modified
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -1176,20 +1180,30 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         - add.Tensor: binary with broadcast — slices non-broadcasting inputs
         - mul.Tensor: binary with broadcast — slices non-broadcasting inputs
 
+    Callers can provide per-target filters for additional legality constraints.
     Handles any slice dim and any step size.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        additional_unary_targets: Optional[list[EdgeOpOverload]] = None,
+        additional_binary_targets: Optional[list[EdgeOpOverload]] = None,
+        target_filters: Optional[
+            dict[EdgeOpOverload, Callable[[torch.fx.Node], bool]]
+        ] = None,
+    ) -> None:
         super().__init__()
-        elementwise_targets = [
+        unary_targets = [
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.cadence.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             exir_ops.edge.cadence.dequantize_per_tensor.default,
+            *(additional_unary_targets or []),
         ]
         binary_targets = [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Tensor,
+            *(additional_binary_targets or []),
         ]
         self._dispatch: dict[
             EdgeOpOverload,
@@ -1198,7 +1212,8 @@ class PropagateSlice(RemoveOrReplacePassInterface):
                 Callable[[torch.fx.Node, torch.fx.Node], bool],
             ],
         ] = {}
-        for t in elementwise_targets:
+        self._target_filters = target_filters or {}
+        for t in unary_targets:
             self._dispatch[t] = (
                 self._should_swap_elementwise,
                 self._swap_elementwise_slice,
@@ -1224,7 +1239,8 @@ class PropagateSlice(RemoveOrReplacePassInterface):
     def _swap_elementwise_slice(
         self, op_node: torch.fx.Node, slice_node: torch.fx.Node
     ) -> bool:
-        op_input = get_arg(op_node, "input", torch.fx.Node)
+        op_input = op_node.args[0]
+        assert isinstance(op_input, torch.fx.Node)
         graph = slice_node.graph
 
         slice_dim = get_arg(slice_node, "dim", int)
@@ -1290,17 +1306,28 @@ class PropagateSlice(RemoveOrReplacePassInterface):
         slice_step = get_arg(slice_node, "step", int)
 
         output_shape = op_node.meta["val"].shape
+        output_dim = slice_dim % len(output_shape)
 
         new_args = list(op_node.args)
         with graph.inserting_before(op_node):
             for i, inp in enumerate([lhs, rhs]):
-                if inp.meta["val"].shape[slice_dim] == output_shape[slice_dim]:
+                input_shape = inp.meta["val"].shape
+                # Broadcasting aligns operand dimensions to the right of the output.
+                input_dim = output_dim - (len(output_shape) - len(input_shape))
+                if (
+                    input_dim >= 0
+                    and input_shape[input_dim] == output_shape[output_dim]
+                ):
                     new_slice = graph.call_function(
                         exir_ops.edge.aten.slice_copy.Tensor,
-                        args=(inp, slice_dim, slice_start, slice_end, slice_step),
+                        args=(inp, input_dim, slice_start, slice_end, slice_step),
                     )
                     new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
-                        inp.meta["val"], slice_dim, slice_start, slice_end, slice_step
+                        inp.meta["val"],
+                        input_dim,
+                        slice_start,
+                        slice_end,
+                        slice_step,
                     )
                     new_args[i] = new_slice
 
@@ -1335,6 +1362,9 @@ class PropagateSlice(RemoveOrReplacePassInterface):
 
         entry = self._dispatch.get(parent.target)
         if entry is None:
+            return False
+        target_filter = self._target_filters.get(parent.target)
+        if target_filter is not None and not target_filter(parent):
             return False
 
         should_swap, do_swap = entry

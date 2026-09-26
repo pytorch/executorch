@@ -464,3 +464,21 @@ TEST_F(OpCatOutTest, DynamicShapeUnbound) {
   op_cat_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpCatOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor y = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros_channels_last({1, 6, 2, 2});
+  std::vector<Tensor> inputs = {x, y};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cat_out(TensorList(inputs.data(), inputs.size()), 1, out));
+}

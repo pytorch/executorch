@@ -1,0 +1,39 @@
+Keep Steel integral constants compatible with older Metal frontends.
+
+MLX supports macOS 14 and selects Metal language 3.1 there. The Metal 4.1
+address-space fix uses metal::remove_addrspace_t, but that trait is unavailable
+in the Xcode 15.4 Metal standard library. Because integral_constant.h is embedded
+in runtime-JIT sources, this prevents kernels from compiling on that supported
+toolchain.
+
+Use remove_addrspace_t on Metal 4.1+, where explicit thread qualifiers make it
+necessary and the trait is available. For older language versions, preserve the
+previous decltype behavior with an identity alias.
+
+Upstream candidate; carried locally until MLX includes the compatibility fix.
+
+diff --git a/mlx/backend/metal/kernels/steel/utils/integral_constant.h b/mlx/backend/metal/kernels/steel/utils/integral_constant.h
+index 2f153f48..97022416 100644
+--- a/mlx/backend/metal/kernels/steel/utils/integral_constant.h
++++ b/mlx/backend/metal/kernels/steel/utils/integral_constant.h
+@@ -47,11 +47,19 @@ using Int = integral_constant<int, val>;
+ // Binary Operators on Integral constants
+ ///////////////////////////////////////////////////////////////////////////////
+ 
++#if __METAL_VERSION__ >= 410
++template <typename T>
++using remove_addrspace_t = metal::remove_addrspace_t<T>;
++#else
++template <typename T>
++using remove_addrspace_t = T;
++#endif
++
+ #define integral_const_binop(__op__, __operator__)          \
+   template <typename T, T tv, typename U, U uv>             \
+   METAL_FUNC constexpr auto __operator__(                   \
+       integral_constant<T, tv>, integral_constant<U, uv>) { \
+     constexpr auto res = tv __op__ uv;                      \
+-    using res_t = metal::remove_addrspace_t<decltype(res)>; \
++    using res_t = remove_addrspace_t<decltype(res)>;        \
+     return integral_constant<res_t, res>{};                 \
+   }

@@ -165,6 +165,7 @@ install_enn_backend() {
   echo "NDK will be installed/used at: ${ANDROID_NDK_ROOT}"
 
   bash backends/samsung/build.sh --build all
+  bash examples/samsung/build.sh
 
   export EXECUTORCH_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   export PYTHONPATH="${PYTHONPATH:-}:${EXECUTORCH_ROOT}/.."

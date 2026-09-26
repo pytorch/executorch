@@ -331,9 +331,11 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
 ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
-    const ValueRef qmat2_data) {
+    const ValueRef qmat2_data,
+    const bool use_unsigned_dot) {
   VK_CHECK_COND(
       weight_quant_config.nbits == 8 || weight_quant_config.nbits == 4);
+  VK_CHECK_COND(!use_unsigned_dot || weight_quant_config.nbits == 8);
 
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
   const int64_t ndim = graph.dim_of(qmat2_data);
@@ -410,10 +412,13 @@ ValueRef prepack_quantized_linear_weight(
   if (output_width > max_extent * 4 || output_height > max_extent) {
     storage_type = utils::kBuffer;
   }
-
-  std::string kernel_name = weight_quant_config.nbits == 4
-      ? "pack_q4_linear_weight"
-      : "pack_q8_linear_weight";
+  std::string kernel_name;
+  if (weight_quant_config.nbits == 4) {
+    kernel_name = "pack_q4_linear_weight";
+  } else {
+    kernel_name = use_unsigned_dot ? "pack_q8_linear_weight_unsigned"
+                                   : "pack_q8_linear_weight";
+  }
   add_storage_type_suffix(kernel_name, storage_type);
 
   // Check prepack cache before creating a new prepack node. This avoids
@@ -939,6 +944,40 @@ void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output);
 }
 
+// aten._weight_int8pack_mm is what the AOT weight-only int8 fusion
+// (FuseQuantizedOpsTransform) emits. It carries the same operands as
+// et_vk.linear_q8csw minus the bias, so it runs through the same
+// implementation.
+void weight_int8pack_mm(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int32_t idx = 0;
+  const ValueRef fp_input = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef output = args.at(idx++);
+
+  const int64_t K = graph.size_at<int64_t>(-1, fp_input);
+
+  QuantizationConfig input_quant_config(32, kNoQuantization, {});
+  QuantizationConfig weight_quant_config(8, kPerChannel, {K});
+
+  quantized_linear_impl(
+      graph,
+      input_quant_config,
+      weight_quant_config,
+      fp_input,
+      kDummyValueRef, // input scale
+      kDummyValueRef, // input zp
+      weight_data,
+      kDummyValueRef, // weight sums
+      weight_scales_data,
+      kDummyValueRef, // weight zeros
+      kDummyValueRef, // group size
+      kDummyValueRef, // bias
+      output);
+}
+
 void linear_dq8ca_q4gsw(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
@@ -977,6 +1016,7 @@ void linear_dq8ca_q4gsw(
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8ta_q8csw.default, linear_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
+  VK_REGISTER_OP(aten._weight_int8pack_mm.default, weight_int8pack_mm);
   VK_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw);
 }
 

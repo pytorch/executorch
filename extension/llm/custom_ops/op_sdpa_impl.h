@@ -62,6 +62,22 @@ struct MaybeQuantizedMatrixData {
         dtype(dtype_) {}
 };
 
+void dequantize_per_channel_optimized(
+    const int8_t* in_data,
+    const float* scales_data,
+    const int8_t* zero_points_data,
+    float* out_data,
+    int64_t quant_min,
+    int64_t quant_max,
+    size_t outer_size,
+    size_t in_outer_stride,
+    size_t out_outer_stride,
+    size_t num_channels,
+    size_t in_channel_stride,
+    size_t out_channel_stride,
+    size_t channel_size,
+    size_t qparams_stride);
+
 template <typename accum_t>
 void _q_at_k_gemm(
     const int64_t q_m,
@@ -81,6 +97,55 @@ void _q_at_k_gemm(
       "q and k must be int8, float, half, or bfloat16");
   if (q_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (widen_scratch != nullptr) {
+        accum_t* k_f32 = widen_scratch;
+        accum_t* q_f32 = widen_scratch + k_n * qk_k;
+        dequantize_per_channel_optimized(
+            static_cast<const int8_t*>(k_data.data),
+            k_data.scales,
+            k_data.zero_points,
+            k_f32,
+            -128,
+            127,
+            1,
+            0,
+            0,
+            k_n,
+            k_stride_n,
+            qk_k,
+            qk_k,
+            k_data.scales_stride);
+        dequantize_per_channel_optimized(
+            static_cast<const int8_t*>(q_data.data),
+            q_data.scales,
+            q_data.zero_points,
+            q_f32,
+            -128,
+            127,
+            1,
+            0,
+            0,
+            q_m,
+            q_stride_m,
+            qk_k,
+            qk_k,
+            q_data.scales_stride);
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::Transpose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            k_n,
+            q_m,
+            qk_k,
+            static_cast<accum_t>(1),
+            k_f32,
+            qk_k,
+            q_f32,
+            qk_k,
+            static_cast<accum_t>(0),
+            qk_data,
+            k_n);
+        return;
+      }
       int a_stride_m_tmp, b_stride_n_tmp;
       auto kernel = torchao::kernels::cpu::quantized_matmul::
           get_int8_a_int8_b_channelwise_qmatmul(
@@ -890,6 +955,12 @@ void cpu_flash_attention(
   int64_t qSplitSize = q_split_size > qSize ? qSize : q_split_size;
   int64_t kvSplitSize = kv_split_size > kvSize ? kvSize : kv_split_size;
   int64_t qSlice = (qSize - 1) / qSplitSize + 1;
+  const auto can_use_kleidiai_bfloat16_prefill = [&](int64_t q_block_size) {
+    return seq_dim == SeqDim::TWO && qSize > 1 &&
+        std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+        ::executorch::cpublas::gemm_uses_kleidiai_bfloat16(
+               ::executorch::cpublas::TransposeType::NoTranspose, q_block_size);
+  };
 #ifdef ET_USE_THREADPOOL
   int64_t num_thread =
       ::executorch::extension::threadpool::get_threadpool()->get_thread_count();
@@ -940,16 +1011,27 @@ void cpu_flash_attention(
   // Scratch for widening q@K.T to fp32 (see _q_at_k_gemm): one K block plus one
   // q block. qBlockSize cannot exceed qSplitSize, so include the runtime bounds
   // that determine whether any block can use the widened path.
-  const bool widen_qk =
-      std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
-      ::executorch::cpublas::gemm_uses_blas() &&
-      headSize <= kMaxHeadSizeForWidenedQK &&
-      qSplitSize >= kMinQBlockForWidenedQK;
+  const auto can_widen_qk = [&](int64_t q_block_size) {
+    return !can_use_kleidiai_bfloat16_prefill(q_block_size) &&
+        std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+        ::executorch::cpublas::gemm_uses_blas() &&
+        headSize <= kMaxHeadSizeForWidenedQK &&
+        q_block_size >= kMinQBlockForWidenedQK;
+  };
+  const bool widen_reduced_qk =
+      can_widen_qk(qSplitSize) || can_widen_qk(qSize % qSplitSize);
+#if defined(__APPLE__)
+  const bool dequantize_qk = is_quantized_sdpa &&
+      ::executorch::cpublas::gemm_uses_blas() && qSplitSize > 4;
+#else
+  const bool dequantize_qk = false;
+#endif
+  const bool use_qk_conversion_scratch = widen_reduced_qk || dequantize_qk;
   int64_t size_per_thread_widen =
-      widen_qk ? (kvSplitSize + qSplitSize) * headSize : 0;
+      use_qk_conversion_scratch ? (kvSplitSize + qSplitSize) * headSize : 0;
   std::unique_ptr<char[]> allocated_buf_widen;
   accum_t* widen_buf = nullptr;
-  if (widen_qk) {
+  if (use_qk_conversion_scratch) {
     int64_t size_widen_bytes =
         size_per_thread_widen * num_thread * sizeof(accum_t);
     Result<void*> scratch_widen = ctx.allocate_temp(size_widen_bytes, 64);
@@ -1010,6 +1092,9 @@ void cpu_flash_attention(
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
       int64_t qBlockSize = std::min(qSplitSize, qSize - m);
+      const bool use_kleidiai_bfloat16_prefill =
+          can_use_kleidiai_bfloat16_prefill(qBlockSize);
+      const bool widen_qk_block = can_widen_qk(qBlockSize);
       // Initialize max and sum
       fill_stub(
           qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
@@ -1045,11 +1130,17 @@ void cpu_flash_attention(
           is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       int64_t m_start_pos = m + start_pos;
       auto j_kv = j / num_reps;
-      fill_stub(dst_data, static_cast<accum_t>(0), qSplitSize * headSize);
+      fill_stub(dst_data, static_cast<accum_t>(0), qBlockSize * headSize);
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
-        int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
+        // Only the first num_keys columns are causally attendable; the rest
+        // would be masked to -inf and contribute exactly zero, so clamping
+        // here skips their gemm, softmax and v-multiply. This matters for the
+        // leading query blocks of a prefill, where num_keys is much smaller
+        // than the key-cache extent. Not bit-exact: shortening the reduction
+        // moves the vector-lane partition, so the accumulation order changes.
+        int64_t kvBlockSize = std::min(kvSplitSize, num_keys - n);
         // Calculate scale * q @ k.T
-        fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
+        fill_stub(qk_data, static_cast<accum_t>(0), qBlockSize * kvBlockSize);
 
         const void* q_sub_matrix_data_ptr;
         const void* k_sub_matrix_data_ptr;
@@ -1103,116 +1194,73 @@ void cpu_flash_attention(
             k_sub_matrix_data,
             kStrideN,
             qk_data,
-            (widen_qk && qBlockSize >= kMinQBlockForWidenedQK) ? widen_ptr
-                                                               : nullptr);
+            (widen_qk_block || (dequantize_qk && qBlockSize > 4)) ? widen_ptr
+                                                                  : nullptr);
 
-        // There are 4 cases that is_causal has to cover to fill
-        // not-attendable-position with -inf
-        /* 1. Everything is attended to. This happens when m_start_pos > n +
-        kvSplitSize e.g m_pos [8:15] and n_pos [0:7]. Since you must attend to
-        all previous tokens matrix is full
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           2. Everything is not attended to. However only some tokens at the
-        beginning dont attend to everything. This happens when m_start_pos <= n
-        + kvSplitSize but m_start_pos + qBlockSize > n + kvSplitSize m_start_pos
-        = 8 qBlockSize = 8 n = 4 kvSplitSize = 8 For example m_pos [8:15] but
-        n_pos is [4:11]
-        + + + + + - - -
-        + + + + + + - -
-        + + + + + + + -
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-        + + + + + + + +
-           3. In this case only last few tokens have something to attend to.
-        This happens when m_start_pos < n and m_start_pos + qBlockSize >= n and
-        m_start_pos + qBlockSize <= n + kvSplitSize m_start_pos = 8 qBlockSize =
-        8 n = 13 kvSplitSize = 8 For example m_pos [8:15] but n_pos is [13:20]
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        - - - - - - - -
-        + - - - - - - -
-        + + - - - - - -
-        + + + - - - - -
-           4. In this no tokens attend to anything, but we dont really have to
-        take care of this case because the loop for (int64_t n = 0; n <
-        num_keys; n += kvSplitSize) will exit before that.
-        */
-        if (is_causal && m_start_pos <= n + kvSplitSize) {
-          // For this fn to work k_split_size > q_split_size
-          for (int32_t row = 0;
-               row < qBlockSize && (m_start_pos + row < n + (kvSplitSize - 1));
-               ++row) {
-            // When last_col is 0, it means that the entire row is not attended
-            // to because m_pos is smaller than n_pos. So everything in n is for
-            // future.
-            int64_t last_col =
-                n > (m_start_pos + row) ? 0 : row + m_start_pos + 1 - n;
-            accum_t* row_ptr = qk_data + row * kvBlockSize;
-            fill_stub(
-                row_ptr + last_col,
-                -std::numeric_limits<accum_t>::infinity(),
-                kvBlockSize - last_col);
+        // Update coefficients with scaling, attention mask, and softmax.
+        accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
+        for (int64_t row = 0; row < qBlockSize; ++row) {
+          accum_t* const qk_row = qk_data + row * kvBlockSize;
+          // The outer loop excludes fully masked KV blocks. In the final
+          // block, each query row may still have a different causal prefix;
+          // num_valid is relative to this block's starting key position.
+          const int64_t num_valid = is_causal
+              ? std::min(
+                    std::max<int64_t>(m_start_pos + row + 1 - n, 0),
+                    kvBlockSize)
+              : kvBlockSize;
+          if (num_valid == 0) {
+            fill_stub(qk_row, static_cast<accum_t>(0), kvBlockSize);
+            continue;
           }
-        }
-        // Update attention weights with attention mask
-        // And apply scaling factor
-        // qk <- qk * scaling + attn_mask
-        if (has_attn_mask) {
-          for (int64_t row = 0; row < qBlockSize; ++row) {
+          if (has_attn_mask) {
             vec::map2<accum_t>(
                 [scaling_factor](Vec x, Vec y) {
                   return x * Vec(scaling_factor) + y;
                 },
-                qk_data + row * kvBlockSize,
-                qk_data + row * kvBlockSize,
+                qk_row,
+                qk_row,
                 mask_data + i * mStrideB + j * mStrideH + (m + row) * mStrideM +
                     n,
-                kvBlockSize);
-          }
-        }
-        // Update coefficients with Softmax
-        accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
-        for (int64_t row = 0; row < qBlockSize; ++row) {
-          if (has_attn_mask) {
+                num_valid);
             // max per row
             tmp_max = vec::reduce_all<accum_t>(
                 [](Vec& x, Vec& y) { return vec::maximum(x, y); },
-                qk_data + row * kvBlockSize,
-                kvBlockSize);
+                qk_row,
+                num_valid);
           } else {
             // apply scaling factor and max per row in fusion
             _mul_reduce_max_fusion_kernel(
-                qk_data + row * kvBlockSize,
-                scaling_factor,
-                kvBlockSize,
-                qk_data + row * kvBlockSize,
-                tmp_max);
+                qk_row, scaling_factor, num_valid, qk_row, tmp_max);
           }
           tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
           if (tmp_max == -std::numeric_limits<accum_t>::infinity()) {
             // to avoid `nan = exp2f(-inf - (-inf))`
-            fill_stub(
-                qk_data + row * kvBlockSize,
-                static_cast<accum_t>(0),
-                kvBlockSize);
+            fill_stub(qk_row, static_cast<accum_t>(0), kvBlockSize);
           } else {
             // qk <- exp(qk - max) and sum per row
             tmp_sum = tmp_max;
+            // Match _exp_reduce_sum_fusion_kernel's VectorizedN<accum_t, 2>
+            // chunks to preserve the full block's vector/scalar boundary.
+            // Rounding to a single Vec can move valid keys into the scalar
+            // tail, changing exponentiation and summation rounding.
+            constexpr int64_t softmax_vec_size = Vec::size() * 2;
+            const int64_t softmax_size = std::min(
+                (num_valid + softmax_vec_size - 1) / softmax_vec_size *
+                    softmax_vec_size,
+                kvBlockSize);
+            fill_stub(
+                qk_row + num_valid,
+                -std::numeric_limits<accum_t>::infinity(),
+                softmax_size - num_valid);
             _exp_reduce_sum_fusion_kernel(
-                qk_data + row * kvBlockSize,
-                kvBlockSize,
-                qk_data + row * kvBlockSize,
-                tmp_sum);
+                qk_row, softmax_size, qk_row, tmp_sum);
+            if (num_valid < kvBlockSize) {
+              fill_stub(
+                  qk_row + num_valid,
+                  static_cast<accum_t>(0),
+                  kvBlockSize - num_valid);
+            }
             // exp_tmp <- exp(max[row] - max)
             exp_tmp = std::exp(qk_max_data[row] - tmp_max);
             // sum[row] <- sum + exp_tmp * sum[row]
@@ -1261,7 +1309,8 @@ void cpu_flash_attention(
         // them in accum_t, widen V and let BLAS multiply -- also one rounding
         // step fewer. Below it the widening stops amortizing.
         constexpr int64_t kMinQBlockForWidenedAV = 64;
-        const bool widen_v = is_reduced_type && !is_quantized_sdpa &&
+        const bool widen_v = !use_kleidiai_bfloat16_prefill &&
+            is_reduced_type && !is_quantized_sdpa &&
             std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
             qBlockSize >= kMinQBlockForWidenedAV;
         const bool use_fp32_qk_weights = is_reduced_type &&

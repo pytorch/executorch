@@ -14,7 +14,7 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.29)
+cmake_minimum_required(VERSION 3.26)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -139,3 +139,12 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+if(BUILD_TESTING)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_metal_memory SOURCES runtime/test/test_memory.cpp EXTRA_LIBS
+    metal_backend
+  )
+endif()

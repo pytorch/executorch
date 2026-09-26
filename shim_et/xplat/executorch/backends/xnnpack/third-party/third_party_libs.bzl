@@ -1,5 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+_XNNPACK_LATEST = "fbsource//third-party/XNNPACK:XNNPACK"
+
 # Dictionary mappping third-party library name to the correct OSS/Internal target dependencies.
 # the values of the dictionary are lists where the first element is the internal dep and the
 # second element is the OSS dep
@@ -17,4 +19,8 @@ def third_party_dep(name):
     if name not in _THIRD_PARTY_LIBS:
         fail("Cannot find third party library " + name + ", please register it in THIRD_PARTY_LIBS first!")
 
-    return _THIRD_PARTY_LIBS[name][1] if runtime.is_oss else _THIRD_PARTY_LIBS[name][0]
+    if runtime.is_oss:
+        return _THIRD_PARTY_LIBS[name][1]
+    if name == "XNNPACK" and native.read_config("executorch", "use_latest_xnnpack", "false") == "true":
+        return _XNNPACK_LATEST
+    return _THIRD_PARTY_LIBS[name][0]

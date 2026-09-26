@@ -297,6 +297,7 @@ int main() {
   write_probabilities(output_path, probabilities);
 #endif
 
+  ET_LOG(Info, "Model executed successfully.");
   ET_LOG(Info, "\04");
   return 0;
 }

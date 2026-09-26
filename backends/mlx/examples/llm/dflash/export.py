@@ -15,7 +15,6 @@ import argparse
 from pathlib import Path
 
 import torch
-
 from executorch.backends.mlx.examples.llm.dflash.adapters import get_adapter
 from executorch.backends.mlx.examples.llm.dflash.model import (
     DFlashDraftModel,
@@ -151,7 +150,6 @@ def main():
     block_dim = Dim("block_len", min=2, max=block_size)
 
     import torch.fx.experimental._config as fx_config
-
     from executorch.backends.mlx.examples.llm.dflash.cache import DFlashDraftKVCache
 
     class DFlashCachedDraftModel(torch.nn.Module):
@@ -195,6 +193,7 @@ def main():
 
     from executorch.backends.mlx.examples.llm.export_llm_hf import (
         build_hf_exported_program,
+        model_constant_methods,
     )
 
     print(
@@ -202,7 +201,7 @@ def main():
         f"and quant {qlinear}/{qembedding} g={qlinear_group_size}/{qembedding_group_size} "
         f"max_ctx_len {max_ctx_len} prefill_chunk_size {prefill_chunk_size}..."
     )
-    target_exported, prefill_chunk_size = build_hf_exported_program(
+    target_exported, prefill_chunk_size, vocab_size = build_hf_exported_program(
         model_id=args.target_model,
         revision=None,
         max_ctx_len=max_ctx_len,
@@ -226,8 +225,13 @@ def main():
     from executorch.exir.passes import MemoryPlanningPass
 
     constant_methods = {
-        "get_max_ctx_len": max_ctx_len,
-        "get_prefill_chunk_size": prefill_chunk_size,
+        **model_constant_methods(
+            max_context_len=max_ctx_len,
+            logits_to_keep="full",
+            activation_dtype=args.dtype,
+            vocab_size=vocab_size,
+            max_seq_len=prefill_chunk_size,
+        ),
         "get_max_block_len": block_size,
         "get_mask_token_id": draft_config.mask_token_id,
     }

@@ -32,13 +32,22 @@ DOCGEN_OUTPUTS=(
     "docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md"
 )
 
-VGF_OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_vgf_op_support.py"
+OP_SUPPORT_SCRIPT="backends/arm/scripts/docgen/generate_op_support.py"
 VGF_OP_SUPPORT_OUTPUT="docs/source/backends/arm-vgf/VGF_op_support.md"
+U55_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U55_op_support.md"
+U85_OP_SUPPORT_OUTPUT="docs/source/backends/arm-ethos-u/U85_op_support.md"
 
 RUN_DOCGEN=0
 
 is_docgen_trigger_file() {
     local file_path="$1"
+    local output_path
+    for output_path in "${DOCGEN_OUTPUTS[@]}"; do
+        if [[ "$file_path" == "$output_path" ]]; then
+            return 0
+        fi
+    done
+
     case "${file_path}" in
         backends/arm/common/arm_compile_spec.py|\
         backends/arm/ethosu/*.py|\
@@ -55,51 +64,67 @@ is_docgen_trigger_file() {
 }
 
 run_docgen_check() {
+    local docgen_status=0
+
     echo -e "${INFO} Running Arm docgen"
-    python backends/arm/scripts/docgen/docgen.py
-    if [[ $? -ne 0 ]]; then
+    if ! python backends/arm/scripts/docgen/docgen.py; then
         echo -e "${ERROR} Failed to run Arm docgen"
-        FAILED=1
-        return
+        return 1
     fi
 
-    if ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}"; then
+    local untracked_outputs
+    untracked_outputs=$(git ls-files --others -- "${DOCGEN_OUTPUTS[@]}")
+    if ! git diff --quiet HEAD -- "${DOCGEN_OUTPUTS[@]}" || \
+        [[ -n "$untracked_outputs" ]]; then
         echo -e "${ERROR} Arm docgen updated generated documentation." >&2
         echo -e "${INFO} Review and commit the regenerated docs before pushing."
         git diff HEAD -- "${DOCGEN_OUTPUTS[@]}"
-        FAILED=1
+        if [[ -n "$untracked_outputs" ]]; then
+            echo -e "${INFO} Untracked generated documentation:"
+            echo "$untracked_outputs"
+        fi
+        docgen_status=1
     else
         echo -e "${SUCCESS} Arm docgen OK"
     fi
+    return "$docgen_status"
 }
 
-run_vgf_op_support_checks() {
-    echo -e "${INFO} Generating VGF operator support documentation"
+run_op_support_checks() {
+    local backend="$1"
+    local backend_name="$2"
+    local output="$3"
+    local coverage_output
+    local FAILED=0
 
-    if ! python "$VGF_OP_SUPPORT_SCRIPT"; then
-        echo -e "${ERROR} Failed to generate VGF operator support documentation"
+    echo -e "${INFO} Generating ${backend_name} operator support documentation"
+
+    if ! python "$OP_SUPPORT_SCRIPT" --backend "$backend"; then
+        echo -e "${ERROR} Failed to generate ${backend_name} operator support documentation"
         FAILED=1
-    elif ! git diff --quiet HEAD -- "$VGF_OP_SUPPORT_OUTPUT"; then
-        echo -e "${ERROR} VGF operator support documentation is out of date." >&2
+    elif ! git diff --quiet HEAD -- "$output"; then
+        echo -e "${ERROR} ${backend_name} operator support documentation is out of date." >&2
         echo -e "${INFO} Review and commit the regenerated operator support list before pushing."
-        git diff HEAD -- "$VGF_OP_SUPPORT_OUTPUT"
+        git diff HEAD -- "$output"
         FAILED=1
     else
-        echo -e "${SUCCESS} VGF operator support documentation OK"
+        echo -e "${SUCCESS} ${backend_name} operator support documentation OK"
     fi
 
-    echo -e "${INFO} Checking VGF operator support coverage"
+    echo -e "${INFO} Checking ${backend_name} operator support coverage"
 
-    if ! python "$VGF_OP_SUPPORT_SCRIPT" --check; then
-        echo -e "${ERROR} VGF operator support coverage check failed" >&2
+    if ! coverage_output=$(python "$OP_SUPPORT_SCRIPT" --backend "$backend" --check 2>&1); then
+        echo "$coverage_output" >&2
+        echo -e "${ERROR} ${backend_name} operator support coverage check failed" >&2
         FAILED=1
     else
-        echo -e "${SUCCESS} VGF operator support coverage OK"
+        echo -e "${SUCCESS} ${backend_name} operator support coverage OK"
     fi
+    return "$FAILED"
 }
 
-run_public_api_validator() {
-    if ! backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh; then
+wait_public_api_validator() {
+    if ! wait "${manifest_pid}"; then
         echo -e "${ERROR} Arm public API manifest validation failed"
         FAILED=1
     fi
@@ -118,7 +143,7 @@ VERBS="Add|Fix|Update|Refactor|Improve|Remove|Change|Implement|Create|Modify|"\
 "Profile|Recalculate|Reconstruct|Redefine|Redesign|Reevaluate|Relocate|Remap|"\
 "Render|Reposition|Request|Revert|Sanitize|Specify|Strengthen|Stub|Substitute|"\
 "Tag|Tweak|Unify|Unlock|Unset|Use|Validate|Verify|Rename|Relax|Format|Don't|"\
-"Consolidate|Review"
+"Consolidate|Review|Run|Parallelize"
 
 # Remote branch
 REMOTE=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
@@ -152,6 +177,12 @@ if [ -z "$COMMITS" ]; then
     exit 0
 fi
 
+check_output_dir=$(mktemp -d) || exit 1
+trap 'rm -rf "${check_output_dir}"' EXIT
+backends/arm/scripts/public_api_manifest/validate_all_public_api_manifests.sh \
+    > "${check_output_dir}/manifest" 2>&1 &
+manifest_pid=$!
+
 for COMMIT in ${COMMITS}; do
     if [ -n "$REMOTE" ] && git merge-base --is-ancestor "$COMMIT" "$REMOTE"; then
         echo -e "${INFO} Skipping commit ${COMMIT} (already on $REMOTE)"
@@ -175,7 +206,7 @@ for COMMIT in ${COMMITS}; do
     fi
 
     commit_files=$(git diff-tree --no-commit-id --name-only \
-        --diff-filter=ACMR ${COMMIT} -r)
+        --diff-filter=ACDMR ${COMMIT} -r)
     if [[ $RUN_DOCGEN -eq 0 ]]; then
         for committed_file in $commit_files; do
             if is_docgen_trigger_file "${committed_file}"; then
@@ -340,14 +371,36 @@ for COMMIT in ${COMMITS}; do
     echo "" # Newline to visually separate commit processing
 done
 
+docgen_pid=""
 if [[ $RUN_DOCGEN -eq 1 ]]; then
-    run_docgen_check
+    run_docgen_check > "${check_output_dir}/docgen" 2>&1 &
+    docgen_pid=$!
 else
     echo -e "${INFO} Skipping Arm docgen (no public API inputs changed)"
 fi
 
-run_vgf_op_support_checks
-run_public_api_validator
+run_op_support_checks "u55" "Ethos-U55" "$U55_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/u55" 2>&1 &
+u55_pid=$!
+run_op_support_checks "u85" "Ethos-U85" "$U85_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/u85" 2>&1 &
+u85_pid=$!
+run_op_support_checks "vgf" "VGF" "$VGF_OP_SUPPORT_OUTPUT" \
+    > "${check_output_dir}/vgf" 2>&1 &
+vgf_pid=$!
+
+if [[ -n "$docgen_pid" ]]; then
+    wait "$docgen_pid" || FAILED=1
+    cat "${check_output_dir}/docgen"
+fi
+wait "$u55_pid" || FAILED=1
+cat "${check_output_dir}/u55"
+wait "$u85_pid" || FAILED=1
+cat "${check_output_dir}/u85"
+wait "$vgf_pid" || FAILED=1
+cat "${check_output_dir}/vgf"
+wait_public_api_validator
+cat "${check_output_dir}/manifest"
 
 if [[ $FAILED ]]; then
     echo -e "${INFO} Fix your commit message errors with"\

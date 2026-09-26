@@ -9,6 +9,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <map>
@@ -17,6 +18,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <thread>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
@@ -51,6 +53,9 @@ class FakeExecutor : public Executor {
   };
 
   bool initialize() override {
+    if (initialize_delay.count() > 0) {
+      std::this_thread::sleep_for(initialize_delay);
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     ++initialize_calls_;
     return !fail_initialize;
@@ -132,17 +137,19 @@ class FakeExecutor : public Executor {
   int capacity = 8;
   // Refuse to come up, so the runner should admit no work at all.
   bool fail_initialize = false;
+  // Stand in for real setup, so its cost is large enough to assert on.
+  std::chrono::milliseconds initialize_delay{0};
   // Batch index from which execute() starts failing. Negative never fails.
   int fail_batches_from = -1;
   // Once a session has produced emit_before_stop tokens, every later one is
   // stop_token. Counted per session across the whole run, so a stop can be
-  // placed part way into a multi-token decode. A negative stop_token disables
-  // this.
-  Token stop_token = -1;
+  // placed part way into a multi-token decode. Unset disables this; a sentinel
+  // cannot, since Token is unsigned here and every value is a valid token.
+  std::optional<Token> stop_token;
   int emit_before_stop = 0;
-  // Tokens a decode step produces. 1 is a plain executor; more simulates a
-  // speculative one answering with the run it accepted plus the model's own
-  // next token. Prefill always produces one whatever this is.
+  // Tokens an output-producing step returns. Values above 1 simulate a
+  // speculative executor answering with an accepted run plus the next token.
+  std::size_t tokens_per_prefill = 1;
   std::size_t tokens_per_decode = 1;
   // Malformed answers. An Output carries only the tokens an input produced, so
   // the only ways to break the contract are to produce none, or to answer for
@@ -240,7 +247,8 @@ class FakeExecutor : public Executor {
   // Task::is_decode. Good enough for a fake: the runner only ever feeds one
   // token to continue.
   std::vector<Token> produce(const Input& input) {
-    const std::size_t n = input.size == 1 ? tokens_per_decode : 1;
+    const std::size_t n =
+        input.size == 1 ? tokens_per_decode : tokens_per_prefill;
     std::vector<Token> produced;
     produced.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
@@ -251,8 +259,8 @@ class FakeExecutor : public Executor {
 
   Token next_token(SessionId session) {
     const int n = ++produced_[session];
-    if (stop_token >= 0 && n > emit_before_stop) {
-      return stop_token;
+    if (stop_token && n > emit_before_stop) {
+      return *stop_token;
     }
     auto it = sampling_.find(session);
     if (it == sampling_.end()) {

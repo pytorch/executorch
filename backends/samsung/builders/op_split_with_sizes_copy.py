@@ -23,7 +23,7 @@ class SplitVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -39,6 +39,10 @@ class SplitVisitor(NodeVisitor):
             )
             all_output_tensors.append(output_id)
 
+        for user in node.users.keys():
+            if user.target.__name__ == "getitem" and len(user.args) > 1:
+                vals_to_ids[user] = all_output_tensors[user.args[1]]
+
         axis = node.args[2] if len(node.args) > 2 else 0
 
         params = {}
@@ -46,3 +50,5 @@ class SplitVisitor(NodeVisitor):
         params["point"] = node.args[1]
 
         enn_graph.define_op(node.name, "SPLIT", [input_id], all_output_tensors, params)
+
+        return True

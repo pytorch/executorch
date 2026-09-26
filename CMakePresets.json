@@ -91,6 +91,28 @@
       }
     },
     {
+      "name": "apple-framework-resources",
+      "hidden": true,
+      "cacheVariables": {
+        "EXECUTORCH_MLX_SWIFTPM_RESOURCES": "ON"
+      }
+    },
+    {
+      "name": "apple-framework-macos",
+      "displayName": "Build ExecuTorch frameworks for macOS",
+      "inherits": ["macos", "apple-framework-resources"]
+    },
+    {
+      "name": "apple-framework-ios",
+      "displayName": "Build ExecuTorch frameworks for iOS",
+      "inherits": ["ios", "apple-framework-resources"]
+    },
+    {
+      "name": "apple-framework-ios-simulator",
+      "displayName": "Build ExecuTorch frameworks for iOS Simulator",
+      "inherits": ["ios-simulator", "apple-framework-resources"]
+    },
+    {
       "name": "linux",
       "displayName": "Build ExecuTorch for Linux",
       "inherits": ["common"],

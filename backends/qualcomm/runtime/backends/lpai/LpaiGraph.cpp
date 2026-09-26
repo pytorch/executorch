@@ -126,7 +126,7 @@ Error LpaiGraph::AfterRetrieveGraph(const std::string& graph_name) {
 
 Error LpaiGraph::AfterCreateGraph(const std::string& graph_name) {
   std::vector<QnnGraph_CustomConfig_t> graph_custom_config;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 29)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 29)
   QnnLpaiGraph_CustomConfig_t* p_custom_config = nullptr;
 
   p_custom_config = AllocGraphCustomConfig();

@@ -30,6 +30,17 @@ class Conv1dToConv2d(ExportPass):
             weight_node.name
         ):
             self.edge_program.constants[tensor_name] = torch.unsqueeze(weight_3d, -1)
+        elif tensor_name := self.edge_program.graph_signature.inputs_to_buffers.get(
+            weight_node.name
+        ):
+            if tensor_name in self.edge_program.graph_signature.non_persistent_buffers:
+                self.edge_program.constants[tensor_name] = torch.unsqueeze(
+                    weight_3d, -1
+                )
+            else:
+                self.edge_program.state_dict[tensor_name] = torch.unsqueeze(
+                    weight_3d, -1
+                )
         else:
             RuntimeError("Weight of 1d conv should be constant tensor or Parameter obj")
         weight_node.meta["val"] = weight_node.meta["val"].data.unsqueeze(dim=-1)

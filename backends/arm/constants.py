@@ -48,5 +48,7 @@ ODHWI_INVERSE_ORDER: Final = (0, 4, 1, 2, 3)
 HWCM_ORDER: Final = (2, 3, 0, 1)
 
 MAX_RANK: Final = 6
+MAX_U55_INDEX_TENSOR_ELEMENTS: Final = 64
 
 DISALLOW_TFA_META_KEY: Final = "_arm_disallow_tfa"
+ARM_DYNAMIC_W8A8_LINEAR_META_KEY: Final = "_arm_dynamic_w8a8_linear"

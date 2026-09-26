@@ -288,7 +288,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out-android .
 
-cmake --build cmake-out-android -j16 --target install --config Release
+cmake --build cmake-out-android -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 **1.2 Build llama runner for android**
@@ -307,7 +307,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 
-cmake --build cmake-out-android/examples/models/llama -j16 --config Release
+cmake --build cmake-out-android/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 **2. Run on Android via adb shell**
@@ -339,7 +339,7 @@ Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examp
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require an arm64 machine, either an Arm-based Mac or an Arm64 Linux machine, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
 ```
 EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
 ```
@@ -400,7 +400,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --config Release --target install
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release --target install
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
@@ -410,7 +410,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_BUILD_TYPE=Release \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+cmake --build cmake-out/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 Finally run your model (similar to step 3.3 above):
@@ -561,15 +561,14 @@ registered in `executorch.extension.llm.custom_ops.custom_ops`.
 
 The runtime kernel ships in `extension/llm/custom_ops/op_moe.cpp`. It
 always compiles with a portable reference fallback (unpack + dequant +
-`cpublas::gemm`) that works on any platform. `ENABLE_QUANTIZED_MOE_FFN`
-is an **optimization gate**, not a correctness requirement — when
-defined, the kernel uses torchao's fused `linear_operator` (NEON
-i8mm/dotprod on aarch64) instead of the reference path.
+`cpublas::gemm`) that works on any platform. The optimized build option
+uses torchao's fused `linear_operator` (NEON i8mm/dotprod on aarch64)
+instead of the reference path.
 
 In CMake, opt in to the optimized path with:
 
 ```cmake
--DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON
+-DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED=ON
 ```
 
 In Buck, `_get_quantized_moe_deps()` in `targets.bzl` wires:

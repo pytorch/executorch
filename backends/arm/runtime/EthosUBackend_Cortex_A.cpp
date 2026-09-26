@@ -49,6 +49,11 @@ struct LinuxDriverOptions {
 
 struct PlatformState {
   LinuxDriverOptions options;
+  std::shared_ptr<EthosU::Network> network;
+  std::shared_ptr<EthosU::Buffer> constant_buffer;
+  std::shared_ptr<EthosU::Buffer> intermediate_buffer;
+  std::vector<std::shared_ptr<EthosU::Buffer>> ifm_buffers;
+  std::vector<std::shared_ptr<EthosU::Buffer>> ofm_buffers;
 };
 
 namespace {
@@ -181,35 +186,9 @@ Error invoke_linux_driver(
     const std::vector<char*>& output_ptrs,
     const std::vector<size_t>& input_copy_sizes,
     const std::vector<size_t>& output_copy_sizes,
-    const LinuxDriverOptions& options) {
-  if (handles.outputs == nullptr) {
-    ET_LOG(Error, "Ethos-U backend missing output metadata");
-    return Error::InvalidProgram;
-  }
+    const PlatformState& state) {
+  const LinuxDriverOptions& options = state.options;
   try {
-    EthosU::Device& device = get_linux_device_cache().get(options.device_path);
-    auto network = std::make_shared<EthosU::Network>(
-        device,
-        reinterpret_cast<const unsigned char*>(handles.cmd_data),
-        handles.cmd_data_size);
-
-    std::shared_ptr<EthosU::Buffer> constant_buffer =
-        std::make_shared<EthosU::Buffer>();
-    if (handles.weight_data_size > 0) {
-      auto constant_buffers = device.createBuffers({handles.weight_data_size});
-      constant_buffer = constant_buffers.front();
-      constant_buffer->write(
-          const_cast<char*>(handles.weight_data), handles.weight_data_size);
-    }
-
-    std::shared_ptr<EthosU::Buffer> intermediate_buffer =
-        std::make_shared<EthosU::Buffer>();
-    if (handles.scratch_data_size > 0) {
-      auto scratch_buffers = device.createBuffers({handles.scratch_data_size});
-      intermediate_buffer = scratch_buffers.front();
-    }
-
-    std::vector<std::shared_ptr<EthosU::Buffer>> ifm_buffers;
     if (handles.inputs != nullptr && handles.inputs->count > 0) {
       if (input_copy_sizes.size() !=
           static_cast<size_t>(handles.inputs->count)) {
@@ -228,7 +207,6 @@ Error invoke_linux_driver(
             input_copy_sizes.size());
         return Error::InvalidState;
       }
-      ifm_buffers = device.createBuffers(input_copy_sizes);
       for (int i = 0; i < handles.inputs->count; ++i) {
         const size_t copy_size = input_copy_sizes[i];
         if (copy_size == 0) {
@@ -239,7 +217,7 @@ Error invoke_linux_driver(
           ET_LOG(Error, "Missing input buffer for index %d", i);
           return Error::InvalidState;
         }
-        ifm_buffers[i]->write(const_cast<char*>(src), copy_size);
+        state.ifm_buffers[i]->write(const_cast<char*>(src), copy_size);
       }
     }
 
@@ -260,16 +238,14 @@ Error invoke_linux_driver(
           output_copy_sizes.size());
       return Error::InvalidState;
     }
-    auto ofm_buffers = device.createBuffers(output_copy_sizes);
-
     auto inference = std::make_unique<EthosU::Inference>(
-        network,
-        ifm_buffers.begin(),
-        ifm_buffers.end(),
-        ofm_buffers.begin(),
-        ofm_buffers.end(),
-        intermediate_buffer,
-        constant_buffer,
+        state.network,
+        state.ifm_buffers.begin(),
+        state.ifm_buffers.end(),
+        state.ofm_buffers.begin(),
+        state.ofm_buffers.end(),
+        state.intermediate_buffer,
+        state.constant_buffer,
         options.pmu_events,
         options.enable_cycle_counter);
 
@@ -311,10 +287,68 @@ Error invoke_linux_driver(
         ET_LOG(Error, "Missing output buffer for index %d", i);
         return Error::InvalidState;
       }
-      ofm_buffers[i]->read(dst, copy_size);
+      state.ofm_buffers[i]->read(dst, copy_size);
     }
   } catch (const std::exception& e) {
     ET_LOG(Error, "Ethos-U Linux driver invocation failed: %s", e.what());
+    return Error::InvalidState;
+  }
+
+  return Error::Ok;
+}
+
+// Get the byte size of an IO tensor from its Vela descriptor.
+size_t vela_io_bytes(const VelaIO& io) {
+  size_t count = 1;
+  for (int i = 0; i < shapeDim; i++) {
+    count *= static_cast<size_t>(io.shape[i]);
+  }
+  return count * static_cast<size_t>(io.elem_size);
+}
+
+// Created once in platform_init(), reused by every invoke_linux_driver().
+Error create_driver_objects(const VelaHandles& handles, PlatformState* state) {
+  if (handles.outputs == nullptr) {
+    ET_LOG(Error, "Ethos-U backend missing output metadata");
+    return Error::InvalidProgram;
+  }
+  const LinuxDriverOptions& options = state->options;
+  try {
+    EthosU::Device& device = get_linux_device_cache().get(options.device_path);
+    state->network = std::make_shared<EthosU::Network>(
+        device,
+        reinterpret_cast<const unsigned char*>(handles.cmd_data),
+        handles.cmd_data_size);
+
+    state->constant_buffer = std::make_shared<EthosU::Buffer>();
+    if (handles.weight_data_size > 0) {
+      auto constant_buffers = device.createBuffers({handles.weight_data_size});
+      state->constant_buffer = constant_buffers.front();
+      state->constant_buffer->write(
+          const_cast<char*>(handles.weight_data), handles.weight_data_size);
+    }
+
+    state->intermediate_buffer = std::make_shared<EthosU::Buffer>();
+    if (handles.scratch_data_size > 0) {
+      auto scratch_buffers = device.createBuffers({handles.scratch_data_size});
+      state->intermediate_buffer = scratch_buffers.front();
+    }
+
+    if (handles.inputs != nullptr && handles.inputs->count > 0) {
+      std::vector<size_t> ifm_sizes;
+      for (int i = 0; i < handles.inputs->count; ++i) {
+        ifm_sizes.push_back(vela_io_bytes(handles.inputs->io[i]));
+      }
+      state->ifm_buffers = device.createBuffers(ifm_sizes);
+    }
+
+    std::vector<size_t> ofm_sizes;
+    for (int i = 0; i < handles.outputs->count; ++i) {
+      ofm_sizes.push_back(vela_io_bytes(handles.outputs->io[i]));
+    }
+    state->ofm_buffers = device.createBuffers(ofm_sizes);
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "Ethos-U Linux driver setup failed: %s", e.what());
     return Error::InvalidState;
   }
 
@@ -324,16 +358,23 @@ Error invoke_linux_driver(
 
 // Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
 // cppcheck-suppress unusedFunction
-PlatformState* platform_init(
+Error platform_init(
     ArrayRef<CompileSpec> specs,
-    MemoryAllocator* allocator) {
+    MemoryAllocator* allocator,
+    ExecutionHandle* handle) {
   (void)allocator;
   PlatformState* state = new (std::nothrow) PlatformState();
   if (state == nullptr) {
-    return nullptr;
+    return Error::MemoryAllocationFailed;
   }
   state->options = parse_linux_options(specs);
-  return state;
+  const Error status = create_driver_objects(handle->handles, state);
+  if (status != Error::Ok) {
+    delete state;
+    return status;
+  }
+  handle->platform_state = state;
+  return Error::Ok;
 }
 
 // Used by EthosUBackend.cpp through EthosUBackend_Internal.h.
@@ -401,7 +442,7 @@ Error platform_execute(
       linux_output_ptrs,
       input_copy_sizes,
       output_io_bytes,
-      state->options);
+      *state);
   if (status != Error::Ok) {
     return status;
   }

@@ -59,6 +59,24 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "model_metadata",
+    srcs = [
+        "model_metadata.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:scalar_type",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "int4",
     srcs = [
         "int4.py",

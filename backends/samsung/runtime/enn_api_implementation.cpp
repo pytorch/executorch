@@ -33,31 +33,35 @@ void* loadApiFunction(void* handle, const char* name, bool optional) {
   return fn;
 }
 
-std::mutex EnnApi::instance_mutex_;
-
 EnnApi* EnnApi::getEnnApiInstance() {
-  std::lock_guard<std::mutex> lgd(instance_mutex_);
   static EnnApi enn_api;
-  if (!enn_api.getInitialize()) {
-    auto status = enn_api.loadApiLib();
-    if (status == Error::Ok) {
-      ENN_LOG_INFO("Loading ENN API library Completed.")
-      enn_api.initialize_ = true;
-    } else {
-      ENN_LOG_ERROR("Failed to load enn api library. %s", dlerror());
-    }
-  }
   return &enn_api;
 }
 
+EnnApi::EnnApi() {
+  auto status = loadApiLib();
+  if (status != Error::Ok) {
+    ET_LOG(Error, "Failed to load enn api library. %s", dlerror());
+    return;
+  }
+  auto ret = EnnInitialize();
+  if (ret != ENN_RET_SUCCESS) {
+    ET_LOG(Error, "EnnInitialize failed: %d", static_cast<int>(ret));
+    unloadApiLib();
+    return;
+  }
+  ET_LOG(Info, "Loading ENN API library Completed.");
+  initialize_ = true;
+}
+
 EnnApi::~EnnApi() {
-  std::lock_guard<std::mutex> lgd(instance_mutex_);
-  if (getInitialize()) {
+  if (initialize_) {
+    EnnDeinitialize();
     unloadApiLib();
   }
 }
 
-bool EnnApi::getInitialize() const {
+bool EnnApi::isInitialized() const {
   return initialize_;
 }
 
@@ -87,13 +91,18 @@ Error EnnApi::loadApiLib() {
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnBufferCommit, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnGetBuffersInfo, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnReleaseBuffers, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnCreateBuffer, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnReleaseBuffer, this);
+  ENN_LOAD_API_FUNC(
+      libenn_public_api_, EnnGetFileDescriptorFromEnnBuffer, this);
+  ENN_LOAD_API_FUNC(libenn_public_api_, EnnOpenModelFromFd, this);
 
   return Error::Ok;
 }
 
 Error EnnApi::unloadApiLib() {
   if (dlclose(libenn_public_api_) != 0) {
-    ENN_LOG_ERROR("Failed to close ENN API library. %s", dlerror());
+    ET_LOG(Error, "Failed to close ENN API library. %s", dlerror());
     return Error::Internal;
   }
   libenn_public_api_ = nullptr;

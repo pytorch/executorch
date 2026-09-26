@@ -59,6 +59,9 @@ from executorch.exir.passes.debug_handle_generator_pass import (
     DebugHandleGeneratorPass,
     generate_missing_debug_handles,
 )
+from executorch.exir.passes.fold_redundant_qdq_pass import (
+    FoldRedundantDequantizeQuantizePass,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -2113,6 +2116,91 @@ class TestPasses(unittest.TestCase):
             )
         )
 
+    def test_fold_redundant_dq_q_pass(self) -> None:
+        graph = torch.fx.Graph()
+        quantized_input = graph.placeholder("quantized_input")
+        qparams = (0.25, 3, -128, 127, torch.int8)
+        dequantize = graph.call_function(
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(quantized_input, *qparams),
+        )
+        quantize = graph.call_function(
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            args=(dequantize, *qparams),
+        )
+        graph.output(quantize)
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        inputs = torch.arange(-128, 128, dtype=torch.int8)
+        expected = graph_module(inputs)
+
+        result = FoldRedundantDequantizeQuantizePass()(graph_module)
+
+        self.assertTrue(result.modified)
+        remaining_nodes = list(result.graph_module.graph.nodes)
+        self.assertEqual(
+            [node.op for node in remaining_nodes], ["placeholder", "output"]
+        )
+        self.assertEqual(remaining_nodes[-1].args, (quantized_input,))
+        torch.testing.assert_close(result.graph_module(inputs), expected)
+        self.assertFalse(FoldRedundantDequantizeQuantizePass()(graph_module).modified)
+
+    def test_to_edge_quantized_dropout(self) -> None:
+        class QuantizedDropout(torch.nn.Module):
+            def __init__(self, dtype, per_channel):
+                super().__init__()
+                self.dtype = dtype
+                self.per_channel = per_channel
+                self.qmin = torch.iinfo(dtype).min
+                self.qmax = torch.iinfo(dtype).max
+                self.register_buffer("scales", torch.tensor([0.125, 0.25]))
+                self.register_buffer("zero_points", torch.tensor([3, 3]))
+
+            def forward(self, x):
+                if self.per_channel:
+                    q = torch.ops.quantized_decomposed.quantize_per_channel.default
+                    dq = torch.ops.quantized_decomposed.dequantize_per_channel.default
+                    params = (
+                        self.scales,
+                        self.zero_points,
+                        0,
+                        self.qmin,
+                        self.qmax,
+                        self.dtype,
+                    )
+                else:
+                    q = torch.ops.quantized_decomposed.quantize_per_tensor.default
+                    dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
+                    params = (0.25, 3, self.qmin, self.qmax, self.dtype)
+                x = dq(q(x, *params), *params)
+                x = torch.nn.functional.dropout(x, p=0.5, training=False)
+                return dq(q(x, *params), *params)
+
+        inputs = (torch.randn(2, 16),)
+        for lower, dtype, per_channel in itertools.product(
+            (to_edge, to_edge_transform_and_lower),
+            (torch.int8, torch.uint8, torch.int16, torch.int32),
+            (False, True),
+        ):
+            with self.subTest(
+                lower=lower.__name__, dtype=dtype, per_channel=per_channel
+            ):
+                model = QuantizedDropout(dtype, per_channel)
+                ep = export(model, inputs, strict=True)
+                self.assertTrue(
+                    any(
+                        n.target == torch.ops.aten.dropout.default
+                        for n in ep.graph.nodes
+                    )
+                )
+                edge = lower(ep).exported_program()
+                targets = [str(n.target) for n in edge.graph.nodes]
+                self.assertEqual(sum(".quantize_per_" in t for t in targets), 1)
+                self.assertEqual(sum(".dequantize_per_" in t for t in targets), 1)
+                self.assertFalse(any("dropout" in t for t in targets))
+                torch.testing.assert_close(
+                    edge.module()(*inputs), model(*inputs), rtol=0, atol=0
+                )
+
     def test_dq_q_no_op_pass(self) -> None:
         class TestDqQ(torch.nn.Module):
             def __init__(self):
@@ -2129,20 +2217,23 @@ class TestPasses(unittest.TestCase):
 
         model = TestDqQ()
         m_eager = model.eval()
-        ep = torch.export.export(m_eager, (torch.randn(9, 8),), strict=True)
+        inputs = (torch.randint(-128, 128, (9, 8), dtype=torch.int8),)
+        ep = torch.export.export(m_eager, inputs, strict=True)
         edge = to_edge(ep)
-        # Check that the dq and q nodes are not touched by the RemoveNoopPass.
-        self.assertTrue(
+        self.assertFalse(
             any(
                 "dequantize" in str(node.target)
                 for node in edge.exported_program().graph_module.graph.nodes
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             any(
                 "quantize" in str(node.target)
                 for node in edge.exported_program().graph_module.graph.nodes
             )
+        )
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), m_eager(*inputs)
         )
 
     def test_dq_q_different_qparams(self) -> None:
@@ -2162,7 +2253,8 @@ class TestPasses(unittest.TestCase):
 
         model = TestDqQDifferentQParam()
         m_eager = model.eval()
-        ep = torch.export.export(m_eager, (torch.randn(9, 8),), strict=True)
+        inputs = (torch.randint(-128, 128, (9, 8), dtype=torch.int8),)
+        ep = torch.export.export(m_eager, inputs, strict=True)
         edge = to_edge(ep)
         print(edge.exported_program().graph_module.graph)
         # Check that the dq and q nodes are not touched by the RemoveNoopPass.
@@ -2475,6 +2567,31 @@ class TestPasses(unittest.TestCase):
         # 1 constant: a (= self.w @ self.cst)
         self.assertEqual(1, len(pass_result.constants))
 
+    def test_constant_prop_pass_skips_nondeterministic_ops(self) -> None:
+        """
+        Ops that draw from the RNG take no tensor inputs, so they look constant
+        to the pass. They have to stay in the graph: folding one would freeze a
+        single random draw into the program.
+        """
+
+        class RandomAdd(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + torch.rand(4)
+
+        x = torch.zeros(4)
+        edge = to_edge(export(RandomAdd(), (x,), strict=True))
+        new_ep = constant_prop_pass(edge.exported_program())
+
+        rand_nodes = [
+            node
+            for node in new_ep.graph.nodes
+            if node.target == exir_ops.edge.aten.rand.default
+        ]
+        self.assertEqual(len(rand_nodes), 1)
+        self.assertEqual(len(new_ep.constants), 0)
+        module = new_ep.module()
+        self.assertFalse(torch.equal(module(x), module(x)))
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
@@ -2740,6 +2857,42 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
 
         self.assertTrue(found_clone, "Should find a _clone_dim_order node in the graph")
 
+    def test_clone_non_contiguous_constant_is_normalized(self) -> None:
+        """
+        Verify that clone() normalizes a lifted constant with a dim order
+        that torch.memory_format cannot represent.
+        """
+
+        class CloneConstantModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.anchors = torch.arange(10).reshape(5, 2).T.unsqueeze(0).float()
+
+            def forward(self, x):
+                return self.anchors.clone() + x
+
+        model = CloneConstantModel()
+        self.assertEqual(tuple(model.anchors.dim_order()), (2, 0, 1))
+        inputs = (torch.randn(1, 2, 5),)
+        ep = torch.export.export(model, inputs)
+
+        # lifted constant          Edge constant         clone rewrite
+        # [2, 0, 1] --normalize--> [0, 1, 2] ----------> [0, 1, 2]
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+        edge_program = edge.exported_program()
+
+        anchors = edge_program.constants["anchors"]
+        self.assertTrue(anchors.is_contiguous())
+
+        # Find the clone rewrite and verify its normalized dim order.
+        clone_nodes = [
+            node
+            for node in edge_program.graph_module.graph.nodes
+            if node.op == "call_function" and "_clone_dim_order" in str(node.target)
+        ]
+        self.assertEqual(len(clone_nodes), 1)
+        self.assertEqual(tuple(clone_nodes[0].meta["val"].dim_order()), (0, 1, 2))
+
     def test_clone_contiguous_format_kwarg_stays_contiguous(self) -> None:
         """
         Regression guard: explicit contiguous_format should produce contiguous dim_order.
@@ -2842,6 +2995,64 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
                 break
 
         self.assertTrue(found_copy, "Should find a _to_dim_order_copy node")
+
+    def test_to_copy_non_contiguous_buffer_is_normalized(self) -> None:
+        """
+        Verify that folded anchor layouts are normalized for both buffer
+        storage modes without mutating the source ExportedProgram.
+        """
+
+        class ToCopyBufferModel(torch.nn.Module):
+            def __init__(self, persistent: bool) -> None:
+                super().__init__()
+                # Reproduce a folded detection-anchor layout that
+                # torch.memory_format cannot represent.
+                anchors = torch.arange(10).reshape(5, 2).T.unsqueeze(0).float()
+                self.register_buffer("anchors", anchors, persistent=persistent)
+
+            def forward(self, x):
+                return self.anchors.to(dtype=x.dtype) + x
+
+        # Test both persistent=True and False
+        #                  storage
+        # persistent=True  state_dict --\
+        #                                +--> to_edge --> Edge [0, 1, 2]
+        # persistent=False constants ---/          |
+        #                                          `--> source [2, 0, 1]
+        for persistent in (True, False):
+            with self.subTest(persistent=persistent):
+                model = ToCopyBufferModel(persistent)
+                self.assertEqual(tuple(model.anchors.dim_order()), (2, 0, 1))
+                inputs = (torch.randn(1, 2, 5, dtype=torch.float16),)
+                ep = torch.export.export(model, inputs)
+                source_anchors = dict(ep.named_buffers())["anchors"]
+
+                edge = to_edge(
+                    ep, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+                )
+                edge_program = edge.exported_program()
+
+                # Lowering operates on a derived program. The caller-owned buffer
+                # must keep both its identity and unsupported source layout.
+                source_anchors_after = dict(ep.named_buffers())["anchors"]
+                self.assertIs(source_anchors_after, source_anchors)
+                self.assertEqual(tuple(source_anchors_after.dim_order()), (2, 0, 1))
+
+                # Both storage modes must produce the same normalized Edge buffer.
+                anchors = dict(edge_program.named_buffers())["anchors"]
+                self.assertTrue(anchors.is_contiguous())
+
+                # The preserve-format copy must use the normalized Edge layout.
+                copy_nodes = [
+                    node
+                    for node in edge_program.graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and "_to_dim_order_copy" in str(node.target)
+                ]
+                self.assertEqual(len(copy_nodes), 1)
+                self.assertEqual(
+                    tuple(copy_nodes[0].meta["val"].dim_order()), (0, 1, 2)
+                )
 
 
 class TestCSEPass(unittest.TestCase):

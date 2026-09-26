@@ -117,7 +117,7 @@ class MobileBertFinetune:
 
         return data_loader
 
-    def get_finetune_mobilebert(self, artifacts_dir):
+    def get_finetune_mobilebert(self, artifacts_dir, batch_size=64):
         # Pretrained bert's output ranges in a large scale. It is challenge for enn backend to support directly.
         # Please finetune mobilebert on specific tasks, make sure that bert's output and hidden states are friendly
         # to resource-constraint device.
@@ -138,7 +138,7 @@ class MobileBertFinetune:
         labels_set = train_data.label.unique()
 
         train_data_loader = self.build_loader_from_dataset(
-            train_data, batch_size=64, usage="train"
+            train_data, batch_size=batch_size, usage="train"
         )
 
         val_url = "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/test.tsv"
@@ -147,7 +147,7 @@ class MobileBertFinetune:
             BytesIO(content), delimiter="\t", header=None, names=["text", "label"]
         )
         val_data_loader = self.build_loader_from_dataset(
-            val_data, batch_size=64, usage="val"
+            val_data, batch_size=batch_size, usage="val"
         )
 
         artifacts_dir = artifacts_dir if artifacts_dir is not None else "./mobilebert"

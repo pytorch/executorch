@@ -8,7 +8,7 @@
 set -euxo pipefail
 
 MODES=()
-PRESETS=("ios" "ios-simulator" "macos")
+PRESETS=("apple-framework-ios" "apple-framework-ios-simulator" "apple-framework-macos")
 # To support backwards compatibility, we want to retain the same output directory.
 PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 
@@ -105,6 +105,10 @@ libextension_threadpool.a,\
 libpthreadpool.a,\
 :"
 
+FRAMEWORK_KLEIDIAI="kleidiai:\
+libkleidiai.a,\
+:"
+
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
 libcoreml_util.a,\
 libcoreml_inmemoryfs.a,\
@@ -119,7 +123,6 @@ libextension_llm_cache.a,\
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
-libkleidiai.a,\
 libxnnpack_backend.a,\
 libxnnpack-microkernels-prod.a,\
 :"
@@ -421,6 +424,9 @@ for mode in "${MODES[@]}"; do
   append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_EXTENSION_ETDUMP_APPLE" "$FRAMEWORK_EXECUTORCH_DUMP" "$mode"
   append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
+  if [[ -f "${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[0]}/${mode}/libkleidiai.a" ]]; then
+    append_framework_flag "" "$FRAMEWORK_KLEIDIAI" "$mode"
+  fi
   append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_MLX" "$FRAMEWORK_BACKEND_MLX" "$mode"
   append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"

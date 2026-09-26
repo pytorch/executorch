@@ -9,6 +9,7 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+#define ADD_UNSIGNED_OFFSET ${ADD_UNSIGNED_OFFSET}
 
 ${define_active_storage_type(STORAGE)}
 
@@ -69,7 +70,11 @@ void main() {
           weight_vals[col] = (t_int8_weight[word_idx >> 2][word_idx & 3] >> (byte_pos * 8)) & 0xFF;
         }
       }
-      packed_block[row] = pack_into_int32(weight_vals);
+      int packed = pack_into_int32(weight_vals);
+#if ADD_UNSIGNED_OFFSET == 1
+      packed = int(uint(packed) ^ 0x80808080u);
+#endif
+      packed_block[row] = packed;
     }
     buf_idx += oc_stride;
   }

@@ -321,15 +321,21 @@ function(arm_runner_configure_ethos_u_platform)
     )
   endif()
 
-  arm_ethos_u_default_fetch("${ARG_SDK_PATH}" _fetch_ethos_u_default)
+  arm_ethos_u_default_fetch(
+    "${ARG_SDK_PATH}" _fetch_ethos_u_default SYSTEM_CONFIG
+    "${ARG_SYSTEM_CONFIG}"
+  )
   option(FETCH_ETHOS_U_CONTENT "Fetch Ethos-U dependencies"
          ${_fetch_ethos_u_default}
   )
   arm_ensure_ethos_u_content(
     "${ARG_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+    SYSTEM_CONFIG "${ARG_SYSTEM_CONFIG}"
   )
-  add_corstone_subdirectory(${ARG_SYSTEM_CONFIG} ${ARG_SDK_PATH})
-  configure_timing_adapters(${ARG_SYSTEM_CONFIG} ${ARG_MEMORY_MODE})
+  add_corstone_subdirectory(
+    "${ARG_SYSTEM_CONFIG}" "${ARG_SDK_PATH}" "${ARG_MEMORY_MODE}"
+  )
+  configure_timing_adapters("${ARG_SYSTEM_CONFIG}" "${ARG_MEMORY_MODE}")
   foreach(_platform_variable TARGET_BOARD ETHOSU_MODEL ETHOSU_ARENA)
     if(DEFINED ${_platform_variable})
       set(${_platform_variable}

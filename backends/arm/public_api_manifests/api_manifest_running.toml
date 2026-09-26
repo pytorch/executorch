@@ -18,7 +18,7 @@ signature = "EthosUBackend.preprocess(edge_program: torch.export.exported_progra
 
 [python.EthosUCompileSpec]
 kind = "class"
-signature = "EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None)"
+signature = "EthosUCompileSpec(target: str, system_config: str | None = None, memory_mode: str | None = None, extra_flags: list[str] | None = None, config_ini: str | None = 'Arm/vela.ini', external_block_placements: executorch.backends.arm.ethosu.compile_spec.VelaExternalBlockPlacements | None = None, max_scratch_size: int | None = None)"
 
 [python.EthosUCompileSpec.DebugMode]
 kind = "enum"
@@ -59,6 +59,10 @@ signature = "EthosUPartitioner.partition(self, exported_program: torch.export.ex
 [python.EthosUPartitioner.register_custom_partition_op]
 kind = "function"
 signature = "EthosUPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
+
+[python.EthosUPartitioner.transform_for_pre_decomposition]
+kind = "function"
+signature = "EthosUPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram"
 
 [python.EthosUQuantizer]
 kind = "class"
@@ -179,6 +183,10 @@ signature = "VgfPartitioner.partition(self, exported_program: torch.export.expor
 [python.VgfPartitioner.register_custom_partition_op]
 kind = "function"
 signature = "VgfPartitioner.register_custom_partition_op(self, op: torch._ops.OpOverload) -> None"
+
+[python.VgfPartitioner.transform_for_pre_decomposition]
+kind = "function"
+signature = "VgfPartitioner.transform_for_pre_decomposition(self, exported_program: torch.export.exported_program.ExportedProgram) -> torch.export.exported_program.ExportedProgram"
 
 [python.VgfQuantizer]
 kind = "class"

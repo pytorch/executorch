@@ -26,6 +26,8 @@ PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
 RESCALE_TARGET = exir_ops.backend.tosa.RESCALE.default
 MUL_TARGET = exir_ops.edge.aten.mul.Tensor
 ADD_TARGET = exir_ops.edge.aten.add.Tensor
+SUB_TARGET = exir_ops.edge.aten.sub.Tensor
+VIEW_TARGET = exir_ops.edge.aten.view_copy.default
 ERF_TARGET = exir_ops.edge.aten.erf.default
 
 
@@ -148,6 +150,149 @@ def test_remove_permutes_around_rescale_tosa_INT() -> None:
     assert result.modified
     assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
     assert _count_nodes(result.graph_module, RESCALE_TARGET) == 1
+
+
+def test_terminal_sink_view_broadcast_is_optimized_tosa_INT() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.randn(1, 4, 1, 1)
+    direct = graph.placeholder("direct")
+    direct.meta["val"] = torch.randn(1, 8, 4)
+
+    permute = graph.create_node("call_function", PERMUTE_TARGET, args=(x, [0, 2, 3, 1]))
+    permute.meta["val"] = torch.randn(1, 1, 1, 4)
+    mul = graph.create_node("call_function", MUL_TARGET, args=(permute, permute))
+    mul.meta["val"] = torch.randn(1, 1, 1, 4)
+    sink = graph.create_node("call_function", VIEW_TARGET, args=(mul, [1, 1, 4]))
+    sink.meta["val"] = torch.randn(1, 1, 4)
+    rescale = graph.create_node(
+        "call_function",
+        RESCALE_TARGET,
+        args=(sink, torch.int8, [1.0], 0, 0),
+    )
+    rescale.meta["val"] = torch.randn(1, 1, 4)
+    sub = graph.create_node("call_function", SUB_TARGET, args=(direct, rescale))
+    sub.meta["val"] = torch.randn(1, 8, 4)
+    graph.output(sub)
+
+    graph_module = torch.fx.GraphModule({}, graph)
+    with TosaLoweringContext(TOSA_INT_SPEC):
+        result = RemovePermutesAroundElementwiseTosaOps(_fake_exported_program()).call(
+            graph_module
+        )
+
+    assert result.modified
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
+    assert sub.args == (direct, rescale)
+
+
+def test_remove_permutes_around_singleton_view_and_gate_region_tosa_INT() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.randn(1, 8, 4)
+    gate_source = graph.placeholder("gate_source")
+    gate_source.meta["val"] = torch.randn(1, 1, 1, 4)
+    skip = graph.placeholder("skip")
+    skip.meta["val"] = torch.randn(1, 8, 4)
+
+    layout_in = graph.create_node("call_function", PERMUTE_TARGET, args=(x, [0, 2, 1]))
+    layout_in.meta["val"] = torch.randn(1, 4, 8)
+    clamp = graph.create_node(
+        "call_function", exir_ops.edge.aten.clamp.default, args=(layout_in, 0, None)
+    )
+    clamp.meta["val"] = torch.randn(1, 4, 8)
+
+    pool_view = graph.create_node(
+        "call_function", VIEW_TARGET, args=(clamp, [1, 4, 8, 1])
+    )
+    pool_view.meta["val"] = torch.randn(1, 4, 8, 1)
+    pool_layout = graph.create_node(
+        "call_function", PERMUTE_TARGET, args=(pool_view, [0, 2, 3, 1])
+    )
+    pool_layout.meta["val"] = torch.randn(1, 8, 1, 4)
+
+    gate = graph.create_node(
+        "call_function", VIEW_TARGET, args=(gate_source, [1, 4, 1])
+    )
+    gate.meta["val"] = torch.randn(1, 4, 1)
+    gated = graph.create_node("call_function", MUL_TARGET, args=(clamp, gate))
+    gated.meta["val"] = torch.randn(1, 4, 8)
+
+    skip_layout = graph.create_node(
+        "call_function", PERMUTE_TARGET, args=(skip, [0, 2, 1])
+    )
+    skip_layout.meta["val"] = torch.randn(1, 4, 8)
+    residual = graph.create_node("call_function", ADD_TARGET, args=(gated, skip_layout))
+    residual.meta["val"] = torch.randn(1, 4, 8)
+    layout_out = graph.create_node(
+        "call_function", PERMUTE_TARGET, args=(residual, [0, 2, 1])
+    )
+    layout_out.meta["val"] = torch.randn(1, 8, 4)
+    graph.output((pool_layout, layout_out))
+
+    graph_module = torch.fx.GraphModule({}, graph)
+    inputs = (
+        torch.randn(1, 8, 4),
+        torch.randn(1, 1, 1, 4),
+        torch.randn(1, 8, 4),
+    )
+    expected = graph_module(*inputs)
+
+    with TosaLoweringContext(TOSA_INT_SPEC):
+        result = RemovePermutesAroundElementwiseTosaOps(_fake_exported_program()).call(
+            graph_module
+        )
+
+    assert result.modified
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
+    assert pool_view.args[1] == [1, 8, 1, 4]
+    assert gate.args[1] == [1, 1, 4]
+    actual = result.graph_module(*inputs)
+    torch.testing.assert_close(actual, expected)
+
+
+def test_remove_permutes_around_amax_reduction_region_tosa_INT() -> None:
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.randn(1, 8, 4)
+
+    layout_in = graph.create_node("call_function", PERMUTE_TARGET, args=(x, [0, 2, 1]))
+    layout_in.meta["val"] = torch.randn(1, 4, 8)
+    clamp = graph.create_node(
+        "call_function", exir_ops.edge.aten.clamp.default, args=(layout_in, 0, None)
+    )
+    clamp.meta["val"] = torch.randn(1, 4, 8)
+
+    conv_layout = graph.create_node(
+        "call_function", PERMUTE_TARGET, args=(clamp, [0, 2, 1])
+    )
+    conv_layout.meta["val"] = torch.randn(1, 8, 4)
+    maximum = graph.create_node(
+        "call_function", exir_ops.edge.aten.amax.default, args=(clamp, 2, True)
+    )
+    maximum.meta["val"] = torch.randn(1, 4, 1)
+    centered = graph.create_node("call_function", SUB_TARGET, args=(clamp, maximum))
+    centered.meta["val"] = torch.randn(1, 4, 8)
+    stats_layout = graph.create_node(
+        "call_function", PERMUTE_TARGET, args=(centered, [0, 2, 1])
+    )
+    stats_layout.meta["val"] = torch.randn(1, 8, 4)
+    graph.output((conv_layout, stats_layout))
+
+    graph_module = torch.fx.GraphModule({}, graph)
+    inputs = (torch.randn(1, 8, 4),)
+    expected = graph_module(*inputs)
+
+    with TosaLoweringContext(TOSA_INT_SPEC):
+        result = RemovePermutesAroundElementwiseTosaOps(_fake_exported_program()).call(
+            graph_module
+        )
+
+    assert result.modified
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
+    assert maximum.args[1] == 1
+    actual = result.graph_module(*inputs)
+    torch.testing.assert_close(actual, expected)
 
 
 def test_remove_permutes_around_gelu_with_folded_scalar_constants_tosa_FP() -> None:

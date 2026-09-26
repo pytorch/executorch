@@ -99,6 +99,7 @@ PORTABLE_KERNELS_SRCS = [
     "kernels/portable/cpu/op_bitwise_or.cpp",
     "kernels/portable/cpu/op_bitwise_xor.cpp",
     "kernels/portable/cpu/op_bmm.cpp",
+    "kernels/portable/cpu/op_bucketize.cpp",
     "kernels/portable/cpu/op_cat.cpp",
     "kernels/portable/cpu/op_cdist_forward.cpp",
     "kernels/portable/cpu/op_ceil.cpp",
@@ -278,6 +279,7 @@ OPTIMIZED_KERNELS_SRCS = [
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
     "kernels/optimized/cpu/op_sum.cpp",
+    "kernels/optimized/cpu/op_to_copy.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -297,6 +299,7 @@ QUANTIZED_KERNELS_SRCS = [
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
+    "kernels/optimized/blas/KleidiBlas.cpp",
 ]
 
 OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
@@ -320,6 +323,7 @@ OPTIMIZED_NATIVE_CPU_OPS_SRCS = [
     "kernels/optimized/cpu/op_mul.cpp",
     "kernels/optimized/cpu/op_native_layer_norm.cpp",
     "kernels/optimized/cpu/op_sub.cpp",
+    "kernels/optimized/cpu/op_to_copy.cpp",
     "kernels/optimized/cpu/op_where.cpp",
 ]
 
@@ -383,6 +387,7 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 

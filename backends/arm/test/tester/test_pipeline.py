@@ -435,6 +435,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
        symmetric_io_quantization: Whether to use symmetric I/O quantization.
        per_channel_quantization: Whether to use per-channel quantization.
+       is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
        use_to_edge_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
        tosa_debug_mode: Optional debug mode for TOSA compilation.
@@ -475,6 +476,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         tosa_extensions: Optional[List[str]] = None,
         epsilon: float = 2**-16,
         fold_quantize: bool = True,
+        is_qat: bool = False,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -492,16 +494,22 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         # choose 16A8W quantization config when int16 extension is requested
         if "int16" in tosa_extensions:
             quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization, epsilon=epsilon
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
+                epsilon=epsilon,
             )
         else:
             quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
             )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(
-            quantizer, quantization_config, fold_quantize=fold_quantize
+            quantizer,
+            quantization_config,
+            is_qat=is_qat,
+            fold_quantize=fold_quantize,
         )
 
         super().__init__(
@@ -1217,6 +1225,7 @@ class VgfPipeline(BasePipeline, Generic[T]):
        run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
 
        vgf_compiler_flags: Optional compiler flags.
+       is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
 
        tosa_version: A string for identifying the TOSA version.
        tosa_spec: Optional override for the TOSA specification.
@@ -1255,7 +1264,11 @@ class VgfPipeline(BasePipeline, Generic[T]):
         fold_quantize: bool = True,
         preserve_io_quantization: bool = False,
         n_expected_delegates: int = 1,
+        is_qat: bool = False,
     ):
+        if is_qat and not quantize:
+            raise ValueError("QAT requires quantize=True.")
+
         if tosa_spec is None:
             if tosa_version is None:
                 tosa_version = str(VgfCompileSpec().tosa_spec)
@@ -1301,12 +1314,16 @@ class VgfPipeline(BasePipeline, Generic[T]):
         if quantize:
             quantizer = VgfQuantizer(compile_spec)
             quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
             )
             if symmetric_io_quantization:
                 quantizer.set_io(quantization_config)
             quant_stage = Quantize(
-                quantizer, quantization_config, fold_quantize=fold_quantize
+                quantizer,
+                quantization_config,
+                is_qat=is_qat,
+                fold_quantize=fold_quantize,
             )
 
             self.add_stage(self.tester.quantize, quant_stage, pos=0)

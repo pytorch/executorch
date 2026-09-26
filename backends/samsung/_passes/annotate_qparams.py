@@ -41,6 +41,7 @@ class AnnotateQparamsPass(ExportPass):
         exir_ops.edge.aten.concat.default,
         exir_ops.edge.aten.cat.default,
         exir_ops.edge.aten.expand_copy.default,
+        exir_ops.edge.aten.split_with_sizes_copy.default,
     }
 
     def __init__(self, edge_program: ExportedProgram):
@@ -185,27 +186,66 @@ class AnnotateQparamsPass(ExportPass):
                 # Currently, don't add quant info for d_qd node here.
                 continue
             elif source_node.target == operator.getitem:
+                source_node.meta["quantize_attrs"] = quant_attrs
                 source_node = source_node.args[0]
 
             source_node.meta["quantize_attrs"] = quant_attrs
             self._annotate_requantize(source_node)
             self._propagate_quant_params(source_node)
 
+    def _annotate_in_quantize_attrs(self, graph_module: GraphModule):
+        # Collects quantize_attrs attributes along with their input index into a list, and stores them
+        # in the current node's meta["in_quantize_attrs"]. This information is used later in
+        # customized_constant_prop.py.
+        for node in graph_module.graph.nodes:
+            in_quantize_attrs = []
+            for idx, input_node in enumerate(node.all_input_nodes):
+                # Check if input is a Dequant node
+                if input_node.target not in QuantConstants.DEQUANT_OPS_KEY_MAP:
+                    continue
+                # Check if Dequant's input is a Quant node
+                if input_node.args[0].target in QuantConstants.QUANT_OPS_KEY_MAP:
+                    quant_node = input_node.args[0]
+                    quant_input_node = quant_node.args[0]
+                    if "quantize_attrs" in quant_input_node.meta:
+                        in_quantize_attrs.append(
+                            (idx, quant_input_node.meta["quantize_attrs"])
+                        )
+                else:
+                    # Const -> Dequant, get quantize_attrs from const node
+                    if "quantize_attrs" in input_node.args[0].meta:
+                        in_quantize_attrs.append(
+                            (idx, input_node.args[0].meta["quantize_attrs"])
+                        )
+            if in_quantize_attrs:
+                node.meta["in_quantize_attrs"] = in_quantize_attrs
+
     def _annotate_decomposed_mm(self, graph_module: GraphModule):
-        for source_list in get_source_partitions(graph_module.graph, ["matmul"]).get(
-            "matmul", {}
-        ):
-            final_view = source_list.output_nodes[0]
-            if not (quantize_attrs := final_view.meta.get("quantize_attrs")):
-                continue
-            for node in source_list.nodes:
-                if node.target == exir_ops.edge.aten.bmm.default:
-                    node.meta["quantize_attrs"] = quantize_attrs
-                    break
+        partitions = get_source_partitions(
+            graph_module.graph,
+            [
+                "matmul",
+                torch.ops.aten.matmul.default,
+                operator.matmul,
+                torch.matmul,
+                torch.bmm,
+            ],
+        )
+
+        for _, src_partitions in partitions.items():
+            for src_partition in src_partitions:
+                final_view = src_partition.output_nodes[0]
+                if not (quantize_attrs := final_view.meta.get("quantize_attrs")):
+                    continue
+                for node in src_partition.nodes:
+                    if node.target == exir_ops.edge.aten.bmm.default:
+                        node.meta["quantize_attrs"] = quantize_attrs
+                        break
 
     def call(self, graph_module: GraphModule):
         self._annotate(graph_module)
         self._annotate_decomposed_mm(graph_module)
+        self._annotate_in_quantize_attrs(graph_module)
         graph_module.recompile()
         return PassResult(graph_module, True)
 

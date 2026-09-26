@@ -11,15 +11,16 @@ import torch.nn.functional as F
 from executorch.extension.llm.cache.reference_cache import (
     attend,
     AttendSpec,
+    BatchedSequenceReferenceCache,
     CacheConfig,
     CacheSizing,
     CellReferenceCache,
-    ContiguousReferenceCache,
     flatten_step,
     LayerKind,
     LayerPolicy,
     MaskKind,
     MAX_SEQS,
+    SequenceReferenceCache,
 )
 from executorch.extension.llm.cache.update_and_attend import REGISTRY, update_and_attend
 
@@ -175,7 +176,7 @@ class UpdateAndAttendTest(unittest.TestCase):
             (CacheSizing.STATIC, seq_len),
         ]:
             with self.subTest(sizing=sizing):
-                cache = ContiguousReferenceCache(self._config(sizing, cap))
+                cache = SequenceReferenceCache(self._config(sizing, cap))
                 REGISTRY.install(self.cache_key, cache)
                 with REGISTRY.active(self.cache_key):
                     out = ep.module()(x, _positions(0, seq_len), torch.arange(seq_len))
@@ -195,7 +196,7 @@ class UpdateAndAttendTest(unittest.TestCase):
             (CacheSizing.STATIC, total),
         ]:
             with self.subTest(sizing=sizing):
-                cache = ContiguousReferenceCache(self._config(sizing, cap))
+                cache = SequenceReferenceCache(self._config(sizing, cap))
                 REGISTRY.install(self.cache_key, cache)
                 with REGISTRY.active(self.cache_key):
                     ep_prefill.module()(
@@ -221,7 +222,7 @@ class UpdateAndAttendTest(unittest.TestCase):
         ref = self.model.reference_forward(x, torch.arange(total))
 
         ep = self._export(chunk)
-        cache = ContiguousReferenceCache(self._config(CacheSizing.DYNAMIC, total))
+        cache = SequenceReferenceCache(self._config(CacheSizing.DYNAMIC, total))
         REGISTRY.install(self.cache_key, cache)
         with REGISTRY.active(self.cache_key):
             for start in range(0, total, chunk):
@@ -236,12 +237,34 @@ class UpdateAndAttendTest(unittest.TestCase):
 
     def test_static_overflow_raises(self):
         ep = self._export(seq_len=5)
-        cache = ContiguousReferenceCache(self._config(CacheSizing.STATIC, capacity=3))
+        cache = SequenceReferenceCache(self._config(CacheSizing.STATIC, capacity=3))
         REGISTRY.install(self.cache_key, cache)
         with self.assertRaises(RuntimeError), REGISTRY.active(self.cache_key):
             ep.module()(
                 torch.randn(1, 5, self.hidden), _positions(0, 5), torch.arange(5)
             )
+
+    def test_the_specs_must_cover_every_query_token(self):
+        # Each spec's queries are placed by the running total of the ones
+        # before it, so a cache that miscounts would attend the wrong slice
+        # rather than fail. Only this check separates the two.
+        class Miscounting:
+            def __init__(self, q_len):
+                self.q_len = q_len
+
+            def update_and_fetch(self, layer_id, k, v, position):
+                return [AttendSpec(k=k, v=v, kind=MaskKind.NONE, q_len=self.q_len)]
+
+        q = torch.randn(1, self.n_heads, 3, self.head_dim)
+        kv = torch.randn(1, self.n_kv_heads, 3, self.head_dim)
+        for q_len in (2, 4):  # answering too few, and claiming too many
+            with self.subTest(q_len=q_len):
+                REGISTRY.install(self.cache_key, Miscounting(q_len))
+                with self.assertRaisesRegex(ValueError, "of 3 query tokens"):
+                    with REGISTRY.active(self.cache_key):
+                        update_and_attend(
+                            q, kv, kv, _positions(0, 3), 0, 0.125, torch.float32
+                        )
 
     def test_output_shape_uses_value_head_dim(self):
         # The output's last dim comes from v, which may differ from q's head dim
@@ -261,6 +284,291 @@ class UpdateAndAttendTest(unittest.TestCase):
             and n.target is torch.ops.kvcache.update_and_attend.default
         )
         self.assertEqual(tuple(node.meta["val"].shape), (1, 4, 3, 5))
+
+
+class BatchedSequenceCacheTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(0)
+        self.n_layers, self.hidden = 2, 16
+        self.n_heads, self.n_kv_heads, self.head_dim = 4, 2, 8
+        self.model = TinyAttentionModel(
+            self.n_layers,
+            self.hidden,
+            self.n_heads,
+            self.n_kv_heads,
+            self.head_dim,
+            40,
+        ).eval()
+        self.cache_key = "batched-sequences"
+
+    def tearDown(self):
+        REGISTRY.uninstall(self.cache_key)
+
+    def _cache(self, capacity=16, layers=None):
+        cache = BatchedSequenceReferenceCache(
+            CacheConfig(
+                n_layers=self.n_layers,
+                n_kv_heads=self.n_kv_heads,
+                head_dim=self.head_dim,
+                capacity=capacity,
+                layers=[LayerPolicy.flat()] if layers is None else layers,
+            )
+        )
+        REGISTRY.install(self.cache_key, cache)
+        return cache
+
+    def _step(self, cache, x, positions, seq_ids):
+        cache.declare_step(seq_ids)
+        with REGISTRY.active(self.cache_key):
+            return self.model(x, positions, torch.arange(x.shape[1]))
+
+    def _attention_inputs(self, length):
+        return (
+            torch.randn(1, self.n_heads, length, self.head_dim),
+            torch.randn(1, self.n_kv_heads, length, self.head_dim),
+            torch.randn(1, self.n_kv_heads, length, self.head_dim),
+            _positions(0, length),
+        )
+
+    def _attend(self, cache, inputs, layer_id=0):
+        # What the op does: fetch one spec per span, attend each over the query
+        # tokens it answers, rejoin.
+        q, k, v, positions = inputs
+        specs = cache.update_and_fetch(layer_id, k, v, positions)
+        outputs, start = [], 0
+        for spec in specs:
+            end = start + spec.q_len
+            outputs.append(
+                attend(
+                    q[:, :, start:end, :],
+                    spec,
+                    self.head_dim**-0.5,
+                    torch.float32,
+                )
+            )
+            start = end
+        return outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=2)
+
+    def test_single_span_matches_single_sequence(self):
+        x = torch.randn(1, 5, self.hidden)
+        out = self._step(self._cache(), x, _positions(0, 5), [3] * 5)
+        torch.testing.assert_close(
+            out,
+            self.model.reference_forward(x, torch.arange(5)),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_multiple_sequence_spans_match_separate_runs(self):
+        a = torch.randn(1, 4, self.hidden)
+        b = torch.randn(1, 3, self.hidden)
+        tokens, positions, seq_ids, _ = flatten_step({2: (a, 0), 7: (b, 0)})
+
+        out = self._step(self._cache(), tokens, positions, seq_ids)
+
+        torch.testing.assert_close(
+            out[:, :4],
+            self.model.reference_forward(a, torch.arange(4)),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+        torch.testing.assert_close(
+            out[:, 4:],
+            self.model.reference_forward(b, torch.arange(3)),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_repeated_sequence_spans_preserve_input_order(self):
+        a = torch.randn(1, 3, self.hidden)
+        b = torch.randn(1, 1, self.hidden)
+        tokens = torch.cat([a[:, :2], b, a[:, 2:]], dim=1)
+        positions = torch.tensor([[0], [1], [0], [2]], dtype=torch.long)
+        out = self._step(self._cache(), tokens, positions, [2, 2, 7, 2])
+
+        a_out = self.model.reference_forward(a, torch.arange(3))
+        b_out = self.model.reference_forward(b, torch.arange(1))
+        torch.testing.assert_close(out[:, [0, 1, 3]], a_out, atol=1e-4, rtol=1e-4)
+        torch.testing.assert_close(out[:, 2:3], b_out, atol=1e-4, rtol=1e-4)
+
+    def test_decode_continues_each_private_sequence(self):
+        a = torch.randn(1, 4, self.hidden)
+        b = torch.randn(1, 3, self.hidden)
+        cache = self._cache()
+
+        tokens, positions, seq_ids, _ = flatten_step(
+            {2: (a[:, :3], 0), 7: (b[:, :2], 0)}
+        )
+        self._step(cache, tokens, positions, seq_ids)
+
+        tokens, positions, seq_ids, _ = flatten_step(
+            {2: (a[:, 3:], 3), 7: (b[:, 2:], 2)}
+        )
+        out = self._step(cache, tokens, positions, seq_ids)
+
+        torch.testing.assert_close(
+            out[:, 0],
+            self.model.reference_forward(a, torch.arange(4))[:, -1],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+        torch.testing.assert_close(
+            out[:, 1],
+            self.model.reference_forward(b, torch.arange(3))[:, -1],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_a_span_must_continue_its_own_sequence(self):
+        # A private history appends at its length, so a wrong position would
+        # still land contiguously. Only this check separates the two.
+        cache = self._cache()
+        q, k, v, _ = self._attention_inputs(2)
+        cache.declare_step([5, 5])
+
+        with self.assertRaisesRegex(ValueError, r"declares \[1, 2\], not \[0, 1\]"):
+            self._attend(cache, (q, k, v, _positions(1, 2)))
+        self.assertEqual(cache.pos(5), 0)  # a refusal writes nothing
+
+        # Ascending is not enough; a span is a consecutive run.
+        gapped = torch.tensor([[0], [2]], dtype=torch.long)
+        with self.assertRaisesRegex(ValueError, r"declares \[0, 2\], not \[0, 1\]"):
+            self._attend(cache, (q, k, v, gapped))
+        self.assertEqual(cache.pos(5), 0)
+
+        # The declaration still stands, so the same layer can be retried.
+        self._attend(cache, (q, k, v, _positions(0, 2)))
+        self.assertEqual(cache.pos(5), 2)
+
+    def test_a_sequence_spanned_twice_continues_across_both(self):
+        cache = self._cache()
+        q, k, v, _ = self._attention_inputs(3)
+
+        # Tokens 0 and 2 are seq 4, token 1 is seq 9; seq 4's second span picks
+        # up where its first left off rather than at its prior length.
+        cache.declare_step([4, 9, 4])
+        self._attend(cache, (q, k, v, torch.tensor([[0], [0], [1]])))
+        self.assertEqual(cache.pos(4), 2)
+        self.assertEqual(cache.pos(9), 1)
+
+        # The bad position is in the last span, so a per-span check would have
+        # written the first two before refusing.
+        cache.declare_step([4, 9, 4])
+        with self.assertRaisesRegex(ValueError, r"holds 3 .*declares \[4\], not \[3\]"):
+            self._attend(cache, (q, k, v, torch.tensor([[2], [1], [4]])))
+        self.assertEqual(cache.pos(4), 2)
+        self.assertEqual(cache.pos(9), 1)
+
+    def test_requires_one_declared_step_per_forward(self):
+        cache = self._cache()
+        inputs = self._attention_inputs(1)
+
+        with self.assertRaisesRegex(RuntimeError, "no step declared"):
+            self._attend(cache, inputs)
+
+        cache.declare_step([2])
+        self._attend(cache, inputs)
+        with self.assertRaisesRegex(RuntimeError, "served twice"):
+            self._attend(cache, inputs)
+
+    def test_declaration_and_sequence_verbs_validate_ids(self):
+        cache = self._cache()
+        with self.assertRaisesRegex(ValueError, "at least one token"):
+            cache.declare_step([])
+
+        for call in (
+            lambda: cache.declare_step([-1]),
+            lambda: cache.seq_rm(-1),
+            lambda: cache.pos(-1),
+        ):
+            with self.subTest(call=call), self.assertRaises(ValueError):
+                call()
+
+        # Private histories are dict entries, so nothing caps the id.
+        cache.declare_step([9999])
+        self.assertEqual(cache.pos(9999), 0)
+
+    def test_capacity_is_the_pool_total_and_refusal_changes_nothing(self):
+        cache = self._cache(capacity=4)
+        with self.assertRaisesRegex(RuntimeError, "exceeds capacity"):
+            cache.declare_step([2] * 5)
+        self.assertEqual(cache.pos(2), 0)
+
+        # Two sequences share the budget rather than each getting one.
+        a = torch.randn(1, 2, self.hidden)
+        b = torch.randn(1, 2, self.hidden)
+        tokens, positions, seq_ids, _ = flatten_step({2: (a, 0), 7: (b, 0)})
+        self._step(cache, tokens, positions, seq_ids)
+        self.assertEqual(cache.pos(2), 2)
+        self.assertEqual(cache.pos(7), 2)
+
+        # Either sequence is now blocked by what the other holds.
+        with self.assertRaisesRegex(RuntimeError, "exceeds capacity"):
+            cache.declare_step([2])
+        self.assertEqual(cache.pos(2), 2)
+        self.assertEqual(cache.pos(7), 2)
+
+    def test_forward_width_must_match_tensors_and_declaration(self):
+        one = self._attention_inputs(1)
+        two = self._attention_inputs(2)
+        cases = (
+            ("position", [2], (one[0], one[1], one[2], two[3]), "same token count"),
+            ("q/k", [2, 2], (two[0], one[1], one[2], two[3]), "same token count"),
+            ("k/v", [2], (one[0], one[1], two[2], one[3]), "same token count"),
+            ("declaration", [2, 2], one, "must match declare_step"),
+        )
+        for name, seq_ids, inputs, message in cases:
+            with self.subTest(name=name):
+                cache = self._cache()
+                cache.declare_step(seq_ids)
+                with self.assertRaisesRegex(ValueError, message):
+                    self._attend(cache, inputs)
+
+    def test_sequence_removal_invalidates_a_declared_step(self):
+        cache = self._cache()
+        cache.declare_step([2])
+        cache.seq_rm(2)
+
+        self.assertEqual(cache.pos(2), 0)
+        with self.assertRaisesRegex(RuntimeError, "no step declared"):
+            self._attend(cache, self._attention_inputs(1))
+
+    def test_rewind_truncates_and_seq_rm_drops_the_sequence(self):
+        cache = self._cache()
+        self._step(cache, torch.randn(1, 4, self.hidden), _positions(0, 4), [1] * 4)
+        self._step(cache, torch.randn(1, 2, self.hidden), _positions(0, 2), [6] * 2)
+
+        cache.rewind(1, 2)  # keep positions 0..1
+        self.assertEqual(cache.pos(1), 2)
+        self.assertEqual(cache.pos(6), 2)  # its neighbour is untouched
+
+        cache.seq_rm(1)  # the whole sequence
+        self.assertEqual(cache.pos(1), 0)
+        self.assertEqual(cache.pos(6), 2)
+
+    def test_rewinding_then_continuing_matches_an_unbroken_run(self):
+        x = torch.randn(1, 5, self.hidden)
+        ref = self.model.reference_forward(x, torch.arange(5))
+
+        cache = self._cache()
+        self._step(cache, x[:, :4], _positions(0, 4), [3] * 4)
+        cache.rewind(3, 2)  # discard positions 2..3
+        out = self._step(cache, x[:, 2:], _positions(2, 3), [3] * 3)
+
+        torch.testing.assert_close(out, ref[:, 2:], atol=1e-4, rtol=1e-4)
+
+    def test_rewind_refuses_to_grow_or_pass_a_window(self):
+        cache = self._cache(layers=[LayerPolicy.ring(2)])
+        self._step(cache, torch.randn(1, 5, self.hidden), _positions(0, 5), [0] * 5)
+
+        with self.assertRaisesRegex(ValueError, "the history holds 5"):
+            cache.rewind(0, 6)
+        # A windowed layer keeps only its last two positions, so 3 is the floor
+        # even though this reference still holds the older ones.
+        with self.assertRaisesRegex(ValueError, "retains only from 3"):
+            cache.rewind(0, 1)
+        cache.rewind(0, 3)
+        self.assertEqual(cache.pos(0), 3)
 
 
 class CellCacheTest(unittest.TestCase):
@@ -288,7 +596,11 @@ class CellCacheTest(unittest.TestCase):
         REGISTRY.uninstall(self.cache_key)
 
     def _cache(
-        self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC, layers=None, n_layers=None
+        self,
+        capacity=CAPACITY,
+        sizing=CacheSizing.DYNAMIC,
+        layers=None,
+        n_layers=None,
     ):
         cache = CellReferenceCache(
             CacheConfig(
@@ -305,7 +617,7 @@ class CellCacheTest(unittest.TestCase):
 
     def _step(self, cache, x, positions, seqs):
         """One forward carrying `x`, whose tokens have these positions/seqs."""
-        cache.begin_step(seqs)
+        cache.declare_step(seqs)
         pos = torch.tensor(positions, dtype=torch.long).unsqueeze(-1)
         with REGISTRY.active(self.cache_key):
             return self.model(x, pos, torch.arange(x.shape[1]))
@@ -325,7 +637,7 @@ class CellCacheTest(unittest.TestCase):
 
         # {seq_id: (tokens, start_pos)} -> the step's parallel arrays
         tokens, positions, seq_ids, _ = flatten_step({0: (a, 0), 1: (b, 0)})
-        cache.begin_step(seq_ids)
+        cache.declare_step(seq_ids)
         with REGISTRY.active(self.cache_key):
             # every row, not one per sequence: each token is compared below
             out = self.model(tokens, positions, torch.arange(tokens.shape[1]))
@@ -352,14 +664,14 @@ class CellCacheTest(unittest.TestCase):
         tokens, positions, seq_ids, logits_indices = flatten_step(
             {0: (a[:, :3], 0), 1: (b[:, :2], 0)}
         )
-        cache.begin_step(seq_ids)
+        cache.declare_step(seq_ids)
         with REGISTRY.active(self.cache_key):
             self.model(tokens, positions, logits_indices)
 
         tokens, positions, seq_ids, logits_indices = flatten_step(
             {0: (a[:, 3:], 3), 1: (b[:, 2:], 2)}
         )
-        cache.begin_step(seq_ids)
+        cache.declare_step(seq_ids)
         with REGISTRY.active(self.cache_key):
             out = self.model(tokens, positions, logits_indices)
 
@@ -384,7 +696,7 @@ class CellCacheTest(unittest.TestCase):
         free_before = cache.free_cells()
         cache.seq_cp(0, 1)
         self.assertEqual(cache.free_cells(), free_before)  # no cell, no byte copied
-        self.assertEqual(cache.seq_len(1), 4)
+        self.assertEqual(cache.pos(1), 4)
 
         out = self._step(cache, tail, [4], [1])  # the branch continues the trunk
         torch.testing.assert_close(
@@ -402,8 +714,8 @@ class CellCacheTest(unittest.TestCase):
         cache.seq_cp(0, 1)
 
         cache.seq_rm(0)
-        self.assertEqual(cache.seq_len(0), 0)
-        self.assertEqual(cache.seq_len(1), 3)  # the fork still owns them
+        self.assertEqual(cache.pos(0), 0)
+        self.assertEqual(cache.pos(1), 3)  # the fork still owns them
         self.assertEqual(cache.free_cells(), self.CAPACITY - 3)
 
         cache.seq_rm(1)
@@ -426,37 +738,58 @@ class CellCacheTest(unittest.TestCase):
         self._step(cache, torch.randn(1, 4, self.hidden), [0, 1, 2, 3], [0] * 4)
 
         cache.seq_cp(0, 1, upto=2)
-        self.assertEqual(cache.seq_len(0), 4)
-        self.assertEqual(cache.seq_len(1), 2)  # only positions 0 and 1
+        self.assertEqual(cache.pos(0), 4)
+        self.assertEqual(cache.pos(1), 2)  # only positions 0 and 1
         self.assertEqual(cache.free_cells(), self.CAPACITY - 4)  # still no copy
+
+    def test_a_span_is_a_consecutive_run(self):
+        cache = self._cache()
+        self._step(cache, torch.randn(1, 2, self.hidden), [0, 1], [0] * 2)
+
+        # Ascending is not enough, within a span as well as across steps, and
+        # nothing is claimed by a refusal.
+        for positions, message in (([3], "continues at 2"), ([2, 4], "continues at 3")):
+            with self.subTest(positions=positions):
+                with self.assertRaisesRegex(ValueError, message):
+                    self._step(
+                        cache,
+                        torch.randn(1, len(positions), self.hidden),
+                        positions,
+                        [0] * len(positions),
+                    )
+                self.assertEqual(cache.pos(0), 2)
+                self.assertEqual(cache.free_cells(), self.CAPACITY - 2)
+
+        self._step(cache, torch.randn(1, 2, self.hidden), [2, 3], [0] * 2)
+        self.assertEqual(cache.pos(0), 4)
 
     def test_freeing_the_tail_shrinks_the_read_window(self):
         cache = self._cache()
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
-        cache.begin_step([0] * 4)
-        k, _, _ = cache.update_and_fetch(0, kv, kv, _positions(0, 4))
-        self.assertEqual(k.shape[2], 4)  # four cells held, so a window of four
+        cache.declare_step([0] * 4)
+        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 4))[0]
+        self.assertEqual(spec.k.shape[2], 4)  # four cells held, so a window of four
 
         cache.seq_rm(0)  # frees all four, so used_end walks back to 0
         self.assertEqual(cache.free_cells(), self.CAPACITY)
 
         # one token reclaims cell 0, so the window is its own single cell
         kv = torch.randn(1, self.n_kv_heads, 1, self.head_dim)
-        cache.begin_step([1])
-        k, _, spec = cache.update_and_fetch(0, kv, kv, torch.tensor([[0]]))
-        self.assertEqual(k.shape[2], 1)  # the window length is 1, not the old 4
+        cache.declare_step([1])
+        spec = cache.update_and_fetch(0, kv, kv, torch.tensor([[0]]))[0]
+        self.assertEqual(spec.k.shape[2], 1)  # the window length is 1, not the old 4
         self.assertEqual(spec.mask.shape[-1], 1)
 
-    def test_seq_rm_over_a_range_frees_only_that_window(self):
+    def test_rewind_frees_only_the_tail(self):
         cache = self._cache()
         self._step(cache, torch.randn(1, 5, self.hidden), [0, 1, 2, 3, 4], [0] * 5)
 
-        cache.seq_rm(0, 0, 2)  # sliding window: drop the oldest two
-        self.assertEqual(cache.seq_len(0), 3)
-        self.assertEqual(cache.free_cells(), self.CAPACITY - 3)
+        cache.rewind(0, 4)  # backtrack: drop position 4 onwards
+        self.assertEqual(cache.pos(0), 4)
+        self.assertEqual(cache.free_cells(), self.CAPACITY - 4)
 
-        cache.seq_rm(0, 4)  # backtrack: drop position 4 onwards
-        self.assertEqual(cache.seq_len(0), 2)
+        cache.rewind(0, 2)
+        self.assertEqual(cache.pos(0), 2)
         self.assertEqual(cache.free_cells(), self.CAPACITY - 2)
 
     def test_every_verb_range_checks_the_seq_id(self):
@@ -464,12 +797,12 @@ class CellCacheTest(unittest.TestCase):
         # much later as an overflow while building the mask.
         cache = self._cache()
         for call in (
-            lambda: cache.begin_step([MAX_SEQS]),
+            lambda: cache.declare_step([MAX_SEQS]),
             lambda: cache.seq_cp(0, MAX_SEQS),
             lambda: cache.seq_cp(MAX_SEQS, 0),
             lambda: cache.seq_rm(MAX_SEQS),
-            lambda: cache.seq_len(MAX_SEQS),
-            lambda: cache.seq_len(-1),
+            lambda: cache.pos(MAX_SEQS),
+            lambda: cache.pos(-1),
         ):
             with self.assertRaises(ValueError):
                 call()
@@ -491,8 +824,8 @@ class CellCacheTest(unittest.TestCase):
     def test_window_narrows_each_query_without_crossing_sequences(self):
         cache = self._cache(layers=[LayerPolicy.ring(2)])
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
-        cache.begin_step([0] * 4)
-        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 4))[2]
+        cache.declare_step([0] * 4)
+        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 4))[0]
 
         # offsets[i][j] = j - i, so <= 0 is causal and > -2 keeps the newest
         # two: a band whose row 2 drops key 0, which plain causal would keep.
@@ -501,9 +834,9 @@ class CellCacheTest(unittest.TestCase):
 
         # a second sequence is bounded the same way, and still sees none of
         # the first's cells even though they are inside its window
-        cache.begin_step([1, 1])
+        cache.declare_step([1, 1])
         kv = torch.randn(1, self.n_kv_heads, 2, self.head_dim)
-        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 2))[2]
+        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 2))[0]
         expected = torch.zeros(2, 6, dtype=torch.bool)
         expected[0, 4] = expected[1, 4] = expected[1, 5] = True
         torch.testing.assert_close(spec.mask, expected)
@@ -513,10 +846,10 @@ class CellCacheTest(unittest.TestCase):
         # per policy, not per layer, so a mixed model costs one extra mask.
         cache = self._cache(layers=[LayerPolicy.flat(), LayerPolicy.ring(2)])
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
-        cache.begin_step([0] * 4)
+        cache.declare_step([0] * 4)
         pos = _positions(0, 4)
-        flat = cache.update_and_fetch(0, kv, kv, pos)[2].mask
-        windowed = cache.update_and_fetch(1, kv, kv, pos)[2].mask
+        flat = cache.update_and_fetch(0, kv, kv, pos)[0].mask
+        windowed = cache.update_and_fetch(1, kv, kv, pos)[0].mask
 
         offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)
         torch.testing.assert_close(flat, offsets <= 0)
@@ -530,11 +863,11 @@ class CellCacheTest(unittest.TestCase):
             n_layers=3,
         )
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
-        cache.begin_step([0] * 4)
+        cache.declare_step([0] * 4)
         pos = _positions(0, 4)
-        flat = cache.update_and_fetch(0, kv, kv, pos)[2].mask
-        first = cache.update_and_fetch(1, kv, kv, pos)[2].mask
-        second = cache.update_and_fetch(2, kv, kv, pos)[2].mask
+        flat = cache.update_and_fetch(0, kv, kv, pos)[0].mask
+        first = cache.update_and_fetch(1, kv, kv, pos)[0].mask
+        second = cache.update_and_fetch(2, kv, kv, pos)[0].mask
 
         self.assertIs(first, second)
         self.assertIsNot(flat, first)
@@ -543,22 +876,25 @@ class CellCacheTest(unittest.TestCase):
         window = 2
         cache = self._cache(layers=[LayerPolicy.ring(window)])
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
-        cache.begin_step([0] * 4)
+        cache.declare_step([0] * 4)
         cache.update_and_fetch(0, kv, kv, _positions(0, 4))
 
-        cache.begin_step([0])
+        cache.declare_step([0])
         kv = torch.randn(1, self.n_kv_heads, 1, self.head_dim)
-        k, v, spec = cache.update_and_fetch(0, kv, kv, _positions(4, 1))
+        spec = cache.update_and_fetch(0, kv, kv, _positions(4, 1))[0]
 
         q = torch.randn(1, self.n_heads, 1, self.head_dim)
         scale = self.head_dim**-0.5
         torch.testing.assert_close(
-            attend(q, k, v, spec, scale, torch.float32),
+            attend(q, spec, scale, torch.float32),
             attend(  # the last `window` cells of its sequence, unmasked
                 q,
-                k[:, :, -window:, :],
-                v[:, :, -window:, :],
-                AttendSpec(kind=MaskKind.NONE),
+                AttendSpec(
+                    k=spec.k[:, :, -window:, :],
+                    v=spec.v[:, :, -window:, :],
+                    kind=MaskKind.NONE,
+                    q_len=1,
+                ),
                 scale,
                 torch.float32,
             ),
@@ -566,9 +902,9 @@ class CellCacheTest(unittest.TestCase):
 
     def test_admission_fails_before_the_forward(self):
         cache = self._cache(capacity=4)
-        self.assertFalse(cache.can_extend(5))
+        self.assertEqual(cache.free_cells(), 4)
         with self.assertRaises(RuntimeError):
-            cache.begin_step([0] * 5)
+            cache.declare_step([0] * 5)
 
     def test_step_protocol_is_enforced(self):
         cache = self._cache()
@@ -576,17 +912,17 @@ class CellCacheTest(unittest.TestCase):
         pos = torch.tensor([[0]])
 
         with self.assertRaises(ValueError):  # a step with no tokens
-            cache.begin_step([])
+            cache.declare_step([])
 
-        cache.begin_step([0, 0])  # declares two tokens, forward carries one
+        cache.declare_step([0, 0])  # declares two tokens, forward carries one
         with self.assertRaises(ValueError):
             cache.update_and_fetch(0, kv, kv, pos)
         with self.assertRaises(RuntimeError):  # the failed attempt still cleared it
             cache.update_and_fetch(0, kv, kv, torch.tensor([[0], [1]]))
 
-        cache.begin_step([0])
+        cache.declare_step([0])
         cache.update_and_fetch(0, kv, kv, pos)
-        with self.assertRaises(RuntimeError):  # a second step, no begin_step
+        with self.assertRaises(RuntimeError):  # a second step, no declare_step
             cache.update_and_fetch(0, kv, kv, pos)
 
     def test_growth_keeps_cell_indices_and_bytes(self):
@@ -595,18 +931,19 @@ class CellCacheTest(unittest.TestCase):
         # move history without anything noticing.
         cache = self._cache()
         first = torch.randn(1, self.n_kv_heads, 2, self.head_dim)
-        cache.begin_step([0, 0])
-        k, _, _ = cache.update_and_fetch(0, first, first, torch.tensor([[0], [1]]))
-        self.assertEqual(k.shape[2], 2)  # a short session reserves a short pool
+        cache.declare_step([0, 0])
+        spec = cache.update_and_fetch(0, first, first, torch.tensor([[0], [1]]))[0]
+        self.assertEqual(spec.k.shape[2], 2)  # a short session reserves a short pool
 
         rest = torch.randn(1, self.n_kv_heads, 6, self.head_dim)
-        cache.begin_step([0] * 6)
-        k, v, _ = cache.update_and_fetch(
+        cache.declare_step([0] * 6)
+        spec = cache.update_and_fetch(
             0, rest, rest, torch.tensor([[p] for p in range(2, 8)])
-        )
-        self.assertEqual(k.shape[2], 8)
-        torch.testing.assert_close(k[:, :, :2, :], first)  # cells 0,1 unmoved
-        torch.testing.assert_close(v[:, :, 2:, :], rest)
+        )[0]
+        self.assertEqual(spec.k.shape[2], 8)
+        # cells 0,1 unmoved
+        torch.testing.assert_close(spec.k[:, :, :2, :], first)
+        torch.testing.assert_close(spec.v[:, :, 2:, :], rest)
 
     def test_sizings_agree(self):
         x = torch.randn(1, 5, self.hidden)
@@ -616,14 +953,14 @@ class CellCacheTest(unittest.TestCase):
         ]
         torch.testing.assert_close(out[0], out[1])
 
-    def test_a_verb_does_not_hide_a_missing_begin_step(self):
+    def test_a_verb_does_not_hide_a_missing_declare_step(self):
         # A sequence verb drops the memoized plan, which must not be mistaken
         # for the start of a step -- that would silently reuse the previous
         # step's sequence assignment for the new tokens.
         cache = self._cache()
         kv = torch.randn(1, self.n_kv_heads, 2, self.head_dim)
         pos = torch.tensor([[0], [0]])
-        cache.begin_step([0, 1])
+        cache.declare_step([0, 1])
         cache.update_and_fetch(0, kv, kv, pos)
 
         cache.seq_rm(2)  # any verb; a no-op here beyond dropping the plan
@@ -633,18 +970,18 @@ class CellCacheTest(unittest.TestCase):
             cache.update_and_fetch(1, kv, kv, pos)
 
 
-class ContiguousSpecTest(unittest.TestCase):
+class SequenceSpecTest(unittest.TestCase):
     # Which mask semantic the cache declares for each shape of step.
 
     def setUp(self):
         torch.manual_seed(0)
-        self.cache = ContiguousReferenceCache(
+        self.cache = SequenceReferenceCache(
             CacheConfig(n_layers=1, n_kv_heads=2, head_dim=4, capacity=8)
         )
 
     def _update(self, start, q_len):
         kv = torch.randn(1, 2, q_len, 4)
-        return self.cache.update_and_fetch(0, kv, kv, _positions(start, q_len))[2]
+        return self.cache.update_and_fetch(0, kv, kv, _positions(start, q_len))[0]
 
     def test_decode_is_unmasked(self):
         self.assertEqual(self._update(0, 1).kind, MaskKind.NONE)
@@ -674,7 +1011,7 @@ class WindowedSpecTest(unittest.TestCase):
         self.scale = self.DIM**-0.5
 
     def _cache(self, policy, sizing=CacheSizing.DYNAMIC):
-        return ContiguousReferenceCache(
+        return SequenceReferenceCache(
             CacheConfig(
                 n_layers=1,
                 n_kv_heads=self.HEADS,
@@ -689,50 +1026,51 @@ class WindowedSpecTest(unittest.TestCase):
         kv = torch.randn(1, self.HEADS, n, self.DIM)
         return cache.update_and_fetch(0, kv, kv, _positions(start, n))
 
-    def _attend(self, q, k, v, spec):
-        return attend(q, k, v, spec, self.scale, torch.float32)
+    def _attend(self, q, spec):
+        return attend(q, spec, self.scale, torch.float32)
+
+    def _unmasked(self, q, k, v):
+        # The same queries over a hand-picked window, for the spec to match.
+        spec = AttendSpec(k=k, v=v, kind=MaskKind.NONE, q_len=q.shape[-2])
+        return attend(q, spec, self.scale, torch.float32)
 
     def test_decode_attends_only_the_window(self):
         window = 3
         cache = self._cache(LayerPolicy.ring(window))
         self._update(cache, 5, 0)
-        k, v, spec = self._update(cache, 1, 5)
+        spec = self._update(cache, 1, 5)[0]
 
         q = torch.randn(1, self.HEADS, 1, self.DIM)
         torch.testing.assert_close(
-            self._attend(q, k, v, spec),
-            self._attend(  # the last `window` cells, unmasked
-                q,
-                k[:, :, -window:, :],
-                v[:, :, -window:, :],
-                AttendSpec(kind=MaskKind.NONE),
+            self._attend(q, spec),
+            self._unmasked(  # the last `window` cells, unmasked
+                q, spec.k[:, :, -window:, :], spec.v[:, :, -window:, :]
             ),
         )
 
     def test_each_prefill_query_attends_its_own_window(self):
         window = 2
         cache = self._cache(LayerPolicy.ring(window))
-        k, v, spec = self._update(cache, 4, 0)
+        spec = self._update(cache, 4, 0)[0]
         self.assertEqual(spec.kind, MaskKind.EXPLICIT)
 
         q = torch.randn(1, self.HEADS, 4, self.DIM)
-        out = self._attend(q, k, v, spec)
+        out = self._attend(q, spec)
         for i in range(4):  # query at position i sees (i - window, i]
             lo = max(0, i - window + 1)
             torch.testing.assert_close(
                 out[:, :, i : i + 1, :],
-                self._attend(
+                self._unmasked(
                     q[:, :, i : i + 1, :],
-                    k[:, :, lo : i + 1, :],
-                    v[:, :, lo : i + 1, :],
-                    AttendSpec(kind=MaskKind.NONE),
+                    spec.k[:, :, lo : i + 1, :],
+                    spec.v[:, :, lo : i + 1, :],
                 ),
             )
 
     def test_layers_can_window_independently(self):
         # gemma-style: only some layers are windowed, so one step yields two
         # different semantics from the same cache.
-        cache = ContiguousReferenceCache(
+        cache = SequenceReferenceCache(
             CacheConfig(
                 n_layers=2,
                 n_kv_heads=self.HEADS,
@@ -743,8 +1081,8 @@ class WindowedSpecTest(unittest.TestCase):
         )
         kv = torch.randn(1, self.HEADS, 4, self.DIM)
         pos = _positions(0, 4)
-        flat = cache.update_and_fetch(0, kv, kv, pos)[2]
-        windowed = cache.update_and_fetch(1, kv, kv, pos)[2]
+        flat = cache.update_and_fetch(0, kv, kv, pos)[0]
+        windowed = cache.update_and_fetch(1, kv, kv, pos)[0]
 
         self.assertEqual(flat.kind, MaskKind.CAUSAL)
         self.assertEqual(windowed.kind, MaskKind.EXPLICIT)
@@ -757,7 +1095,7 @@ class WindowedSpecTest(unittest.TestCase):
         window = 2
         cache = self._cache(LayerPolicy.ring(window))
         self._update(cache, 4, 0)
-        _, _, spec = self._update(cache, 3, 4)
+        spec = self._update(cache, 3, 4)[0]
 
         self.assertEqual(spec.kind, MaskKind.EXPLICIT)
         q_len, total = 3, 7
@@ -773,8 +1111,8 @@ class WindowedSpecTest(unittest.TestCase):
         # later the band appears.
         window = 4
         cache = self._cache(LayerPolicy.ring(window))
-        self.assertEqual(self._update(cache, window, 0)[2].kind, MaskKind.CAUSAL)
-        self.assertEqual(self._update(cache, 1, window)[2].kind, MaskKind.EXPLICIT)
+        self.assertEqual(self._update(cache, window, 0)[0].kind, MaskKind.CAUSAL)
+        self.assertEqual(self._update(cache, 1, window)[0].kind, MaskKind.EXPLICIT)
 
     def test_static_sizing_windows_like_dynamic(self):
         # STATIC writes into a preallocated buffer and slices it; the window is
@@ -782,13 +1120,13 @@ class WindowedSpecTest(unittest.TestCase):
         window = 2
         torch.manual_seed(0)
         static = self._cache(LayerPolicy.ring(window), sizing=CacheSizing.STATIC)
-        sk, sv, s_spec = self._update(static, 4, 0)
+        s_spec = self._update(static, 4, 0)[0]
         torch.manual_seed(0)
         dynamic = self._cache(LayerPolicy.ring(window))
-        dk, dv, d_spec = self._update(dynamic, 4, 0)
+        d_spec = self._update(dynamic, 4, 0)[0]
 
-        torch.testing.assert_close(sk, dk)
-        torch.testing.assert_close(sv, dv)
+        torch.testing.assert_close(s_spec.k, d_spec.k)
+        torch.testing.assert_close(s_spec.v, d_spec.v)
         self.assertEqual(s_spec.kind, d_spec.kind)
         torch.testing.assert_close(s_spec.mask, d_spec.mask)
 
@@ -796,8 +1134,8 @@ class WindowedSpecTest(unittest.TestCase):
         # Nothing to bound from below, so the window must not force a mask.
         for policy in (LayerPolicy.flat(), LayerPolicy.ring(64)):
             cache = self._cache(policy)
-            self.assertEqual(self._update(cache, 4, 0)[2].kind, MaskKind.CAUSAL)
-            self.assertEqual(self._update(cache, 1, 4)[2].kind, MaskKind.NONE)
+            self.assertEqual(self._update(cache, 4, 0)[0].kind, MaskKind.CAUSAL)
+            self.assertEqual(self._update(cache, 1, 4)[0].kind, MaskKind.NONE)
 
 
 class AttendExplicitTest(unittest.TestCase):
@@ -812,16 +1150,21 @@ class AttendExplicitTest(unittest.TestCase):
         self.v = torch.randn(1, 2, self.total, self.head_dim)
         self.scale = self.head_dim**-0.5
 
-    def _attend(self, spec, k=None, v=None):
-        k = self.k if k is None else k
-        v = self.v if v is None else v
-        return attend(self.q, k, v, spec, self.scale, torch.float32)
+    def _attend(self, kind, mask=None, k=None, v=None):
+        spec = AttendSpec(
+            k=self.k if k is None else k,
+            v=self.v if v is None else v,
+            kind=kind,
+            q_len=self.q_len,
+            mask=mask,
+        )
+        return attend(self.q, spec, self.scale, torch.float32)
 
     def test_causal_rejects_a_non_square_window(self):
         # torch's is_causal is upper-left, so it cannot serve a continuation;
         # a cache must declare EXPLICIT there rather than CAUSAL.
         with self.assertRaises(ValueError):
-            self._attend(AttendSpec(kind=MaskKind.CAUSAL))
+            self._attend(MaskKind.CAUSAL)
 
     def test_explicit_attends_the_true_cells(self):
         # Polarity: masking to cells {0, 2} must equal attending over just those
@@ -830,11 +1173,11 @@ class AttendExplicitTest(unittest.TestCase):
         mask = torch.zeros(self.q_len, self.total, dtype=torch.bool)
         mask[:, keep] = True
         torch.testing.assert_close(
-            self._attend(AttendSpec(kind=MaskKind.EXPLICIT, mask=mask)),
+            self._attend(MaskKind.EXPLICIT, mask=mask),
             self._attend(
-                AttendSpec(kind=MaskKind.NONE),
-                self.k.index_select(2, keep),
-                self.v.index_select(2, keep),
+                MaskKind.NONE,
+                k=self.k.index_select(2, keep),
+                v=self.v.index_select(2, keep),
             ),
         )
 

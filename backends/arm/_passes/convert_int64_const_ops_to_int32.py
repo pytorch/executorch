@@ -45,6 +45,8 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
+        converted = 0
+        skipped = 0
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
@@ -61,21 +63,23 @@ class ConvertInt64ConstOpsToInt32Pass(ArmPass):
 
             min_val, max_val = torch.min(data), torch.max(data)
             if INT32_MIN <= min_val and max_val <= INT32_MAX:
-                logger.warning(
-                    f"Casting {node.name} from torch.int64 to torch.int32"
-                    f" defined in {node.meta.get('stack_trace','[no stack trace found]')}"
-                )
                 node.update_kwarg("dtype", torch.int32)
                 modified = True
+                converted += 1
             else:
-                logger.warning(
-                    f"[{node.name}] has values: min={min_val}, max={max_val}, which exceeds int32 range "
-                    f"([{INT32_MIN}, {INT32_MAX}]); not converting dtype to int32."
-                )
+                skipped += 1
 
         if modified:
             graph_module.graph.eliminate_dead_code()
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
+
+        if converted or skipped:
+            logger.warning(
+                "ConvertInt64ConstOpsToInt32Pass: cast %d constant operator(s) "
+                "to int32 and skipped %d outside the int32 range.",
+                converted,
+                skipped,
+            )
 
         return PassResult(graph_module, modified)

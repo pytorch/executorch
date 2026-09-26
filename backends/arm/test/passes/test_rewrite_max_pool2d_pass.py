@@ -6,6 +6,9 @@
 from typing import cast, Dict, Protocol, Tuple
 
 import torch
+from executorch.backends.arm._passes.decompose_maxpool2d_with_dilation_pass import (
+    DecomposeMaxPool2dPass,
+)
 from executorch.backends.arm._passes.remove_getitem_pass import RemoveGetItemPass
 from executorch.backends.arm._passes.rewrite_max_pool2d_pass import RewriteMaxPool2dPass
 from executorch.backends.arm.test import common
@@ -77,6 +80,7 @@ modules: Dict[str, ModuleWithInputs] = {
     "max_pool2d_with_stride": MaxPool2dWithStride(),
     "max_pool2d_without_stride": MaxPool2dWithoutStride(),
     "max_pool2d_list_kernel": MaxPool2dListKernel(),
+    "max_pool2d_empty_stride": MaxPool2dWithEmptyStride(),
 }
 
 
@@ -92,7 +96,7 @@ def test_rewrite_max_pool2d_tosa(module: ModuleWithInputs) -> None:
         ops_after_pass={
             "executorch_exir_dialects_backend__ops_tosa_MAX_POOL2D_default": 1,
         },
-        pass_list=[RemoveGetItemPass, RewriteMaxPool2dPass],
+        pass_list=[RemoveGetItemPass, DecomposeMaxPool2dPass, RewriteMaxPool2dPass],
     )
     pipeline.run()
 

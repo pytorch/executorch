@@ -110,7 +110,7 @@ exit cleanly; closing stdin also exits with status zero.
 ## Platform and model limits
 
 - This workflow requires an Apple silicon Mac, macOS, Xcode command-line
-  tools, CMake 3.24 or newer, and an ExecuTorch Python environment with the MLX
+  tools, CMake 3.26 or newer, and an ExecuTorch Python environment with the MLX
   backend and custom operations available. The native runner supports only
   arm64 Darwin and uses MLX GPU delegation with FP16 activations.
 - Exported programs use dynamic sequence lengths, five flow-matching steps,

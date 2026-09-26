@@ -11,6 +11,10 @@
 ${define_required_extensions("buffer", DTYPE)}
 
 #define USE_INT8_DOT_PRODUCT_EXT ${USE_INT8_DOT_PRODUCT_EXT}
+#define USE_UNSIGNED_DOT_PRODUCT ${USE_UNSIGNED_DOT_PRODUCT}
+
+$if WEIGHT_STORAGE == "buffer":
+  #define WEIGHT_BUFFER
 
 #extension GL_EXT_control_flow_attributes : require
 $if USE_INT8_DOT_PRODUCT_EXT == 1:
@@ -43,7 +47,7 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_packed_int8_output", "int", "buffer", is_scalar_array=True)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", "buffer", is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", "texture2d", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
@@ -59,6 +63,7 @@ layout(push_constant) uniform restrict Block {
   int output_zp;
   int K4_per_group;
   int OC4_per_group;
+  int stream_row_offset;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -69,6 +74,9 @@ ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 // Layout specialization constants
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
+// Row-tile input (im2col scratch) vs batched activation input. Uniform per
+// dispatch; declared last so existing constant ids are unchanged.
+${layout_declare_spec_const(C, "int", "use_flat_tile", "0")}
 
 int compute_outp_buffer_idx(
     const int w_block_idx,
@@ -103,9 +111,29 @@ void main() {
   const int W4 = div_up_4(int(outp.sizes[0][0]));
   const int H = int(outp.sizes[0][1]);
   const int OC4 = div_up_4(int(outp.sizes[0][2]));
-  const int hn = int(gl_GlobalInvocationID.z);
-  const int n = hn / H;
-  const int oh = hn % H;
+  const int local_row_idx = int(gl_GlobalInvocationID.z);
+  int n;
+  int oh;
+  int input_n;
+  int input_h;
+  if (use_flat_tile == 1) {
+    if (local_row_idx >= int(inp.sizes[0][1])) {
+      return;
+    }
+    const int global_row_idx = stream_row_offset + local_row_idx;
+    if (global_row_idx >= int(outp.sizes[0][3]) * H) {
+      return;
+    }
+    n = global_row_idx / H;
+    oh = global_row_idx % H;
+    input_n = 0;
+    input_h = local_row_idx;
+  } else {
+    n = local_row_idx / H;
+    oh = local_row_idx % H;
+    input_n = n;
+    input_h = oh;
+  }
 
   // Bounds check in block space
   if (ow_block_idx >= W4 ||
@@ -126,10 +154,19 @@ void main() {
   const int inp_n_stride = int(inp.strides[0][3]);
 
   // Initialize int32 accumulator
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+  uvec4 out_accum[TILE_M][TILE_N4];
+  uvec4 input_sums = uvec4(0u);
+#else
   ivec4 out_accum[TILE_M][TILE_N4];
+#endif
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+      out_accum[m][n4] = uvec4(0u);
+#else
       out_accum[m][n4] = ivec4(0);
+#endif
     }
   }
 
@@ -139,8 +176,8 @@ void main() {
   // Compute initial input tile index with group offset
   // For grouped im2col, each group's K range starts at group_idx * K4_per_group
   // For non-grouped (groups=1), group_idx is always 0 so offset is 0
-  int input_idx = n * inp_n_stride
-                + oh * inp_h_stride
+  int input_idx = input_n * inp_n_stride
+                + input_h * inp_h_stride
                 + ow_block_idx * inp_w_stride
                 + group_idx * K4_per_group;
 
@@ -149,26 +186,52 @@ void main() {
     // Load the packed int8 input tile for the current width and K sub-block.
     // Each int contains 4 packed int8s (one per width position in the tile)
     ivec4 int8_input_tile = t_packed_int8_input[input_idx];
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+    const uvec4 uint8_input_tile =
+        uvec4(int8_input_tile) ^ uvec4(0x80808080u);
+#endif
 
     // Load the int8 weight tile for the current K and output-channel sub-block.
     ivec4 int8_weight_tile[TILE_N4];
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+#ifdef WEIGHT_BUFFER
+      int8_weight_tile[n4] = t_packed_int8_weight[
+          k4 * OC4 + oc_block_idx + n4];
+#else
       int8_weight_tile[n4] = texelFetch(
           t_packed_int8_weight,
           ivec2(oc_block_idx + n4, k4),
           0);
+#endif
     }
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+    uvec4 uint8_weight_tile[TILE_N4];
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      uint8_weight_tile[n4] = uvec4(int8_weight_tile[n4]);
+    }
+#endif
 
     // Accumulate using int8 dot product
     // Input tile indexed as input[m] where m is the width index within tile
     // Weight tile indexed as weight[n4][n4i] where n4i is the channel index within block
     [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+      input_sums[m] = dotPacked4x8AccSatEXT(
+          uint8_input_tile[m], 0x01010101u, input_sums[m]);
+#endif
       [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
         [[unroll]] for (int n4i = 0; n4i < 4; ++n4i) {
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+          out_accum[m][n4][n4i] = dotPacked4x8AccSatEXT(
+              uint8_input_tile[m],
+              uint8_weight_tile[n4][n4i],
+              out_accum[m][n4][n4i]);
+#else
           out_accum[m][n4][n4i] = dotPacked4x8AccSat(
               int8_input_tile[m],
               int8_weight_tile[n4][n4i],
               out_accum[m][n4][n4i]);
+#endif
         }
       }
     }
@@ -188,6 +251,14 @@ void main() {
     weight_sums[n4] = ivec4(t_weight_sums[oc_block_idx + n4]);
   }
 
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+  ivec4 unsigned_weight_correction[TILE_N4];
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    unsigned_weight_correction[n4] =
+        (128 + input_zp) * weight_sums[n4];
+  }
+#endif
+
   // Initialize int8 output tile
   ivec4 int8_out_tile[TILE_M4][TILE_N4];
   [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
@@ -197,7 +268,9 @@ void main() {
   }
 
   // Compute int8 output tile from int32 accumulator
+#if USE_UNSIGNED_DOT_PRODUCT == 0
   ivec4 input_zp_vec = ivec4(-input_zp);
+#endif
 
   if (apply_bias > 0) {
     // Load bias tile
@@ -211,8 +284,14 @@ void main() {
         [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
           const int m = mul_4(m4) + m4i;
           // Compute floating point output values
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+          ivec4 accum_adjusted = ivec4(out_accum[m][n4])
+              - ivec4(int(input_sums[m]) * 128)
+              - unsigned_weight_correction[n4];
+#else
           ivec4 accum_adjusted =
               input_zp_vec * weight_sums[n4] + out_accum[m][n4];
+#endif
           vec4 float_out_texel =
               fma(vec4(accum_adjusted),
                   vec4(weight_scales[n4]) * input_scale,
@@ -236,8 +315,14 @@ void main() {
         [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
           const int m = mul_4(m4) + m4i;
           // Compute floating point output values
+#if USE_UNSIGNED_DOT_PRODUCT == 1
+          ivec4 accum_adjusted = ivec4(out_accum[m][n4])
+              - ivec4(int(input_sums[m]) * 128)
+              - unsigned_weight_correction[n4];
+#else
           ivec4 accum_adjusted =
               input_zp_vec * weight_sums[n4] + out_accum[m][n4];
+#endif
           vec4 float_out_texel =
               vec4(accum_adjusted) * vec4(weight_scales[n4] * input_scale);
           // Apply ReLU if enabled

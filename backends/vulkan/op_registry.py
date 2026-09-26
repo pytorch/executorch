@@ -1412,6 +1412,7 @@ def register_index_select():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
     )
 
 
@@ -1435,58 +1436,56 @@ def register_where():
 # =============================================================================
 
 
+def _index_tensor_shapes(node: torch.fx.Node):
+    """Return self, index, and axis for the supported form, else None."""
+    self_arg = node.args[0]
+    indices = node.args[1]
+
+    if not isinstance(self_arg, torch.fx.Node):
+        return None
+    self_val = self_arg.meta.get("val", None)
+    if self_val is None or not isinstance(indices, (list, tuple)):
+        return None
+
+    non_none = [(dim, index) for dim, index in enumerate(indices) if index is not None]
+    if len(non_none) != 1:
+        return None
+    index_dim, index_arg = non_none[0]
+    if index_dim >= len(self_val.size()) or not isinstance(index_arg, torch.fx.Node):
+        return None
+    index_val = index_arg.meta.get("val", None)
+    if index_val is None:
+        return None
+
+    return self_val, index_val, index_dim
+
+
+def _check_index_tensor_node(node: torch.fx.Node) -> bool:
+    shapes = _index_tensor_shapes(node)
+    if shapes is None:
+        return False
+    _, index_val, _ = shapes
+    # The gather is expressed as "one index position per output slice", so
+    # the index must be 1-D. `self` may be any rank.
+    return len(index_val.size()) == 1
+
+
+def _pick_index_tensor_storage(node: torch.fx.Node):
+    shapes = _index_tensor_shapes(node)
+    # Only the buffer shader handles a higher-rank `self`.
+    if shapes is not None and len(shapes[0].size()) > 1:
+        return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
+    return utils.ANY_STORAGE, utils.ANY_STORAGE
+
+
 @update_features(exir_ops.edge.aten.index.Tensor)
 def register_index_tensor():
-    def _index_tensor_shapes(node: torch.fx.Node):
-        """(self_val, index_val) for the supported single-index form, else None."""
-        self_arg = node.args[0]
-        indices = node.args[1]
-
-        if not isinstance(self_arg, torch.fx.Node):
-            return None
-        self_val = self_arg.meta.get("val", None)
-        if self_val is None:
-            return None
-
-        # Only support exactly one non-None index tensor, applied to dim 0.
-        if not isinstance(indices, (list, tuple)):
-            return None
-        non_none = [idx for idx in indices if idx is not None]
-        if len(non_none) != 1 or indices[0] is None:
-            return None
-        index_arg = non_none[0]
-        if not isinstance(index_arg, torch.fx.Node):
-            return None
-        index_val = index_arg.meta.get("val", None)
-        if index_val is None:
-            return None
-
-        return self_val, index_val
-
-    def check_index_tensor_node(node: torch.fx.Node) -> bool:
-        shapes = _index_tensor_shapes(node)
-        if shapes is None:
-            return False
-        _, index_val = shapes
-        # The gather is expressed as "one index position per output slice", so
-        # the index must be 1-D. `self` may be any rank: the buffer shader
-        # copies self's trailing dims through unchanged.
-        return len(index_val.size()) == 1
-
-    def pick_index_tensor_storage(node: torch.fx.Node):
-        shapes = _index_tensor_shapes(node)
-        # Only the buffer shader handles a higher-rank `self`; the texture
-        # variant still assumes the 1-D form (it reads self[idx, 0, 0, 0]).
-        if shapes is not None and len(shapes[0].size()) > 1:
-            return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
-        return utils.ANY_STORAGE, utils.ANY_STORAGE
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_index_tensor_node,
-        pick_io_storage_fn=pick_index_tensor_storage,
+        are_node_inputs_supported_fn=_check_index_tensor_node,
+        pick_io_storage_fn=_pick_index_tensor_storage,
     )
 
 
@@ -1500,6 +1499,7 @@ def register_arange():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
+        supports_resize=True,
     )
 
 
@@ -1508,12 +1508,34 @@ def register_arange():
 # =============================================================================
 
 
+def _check_pad_is_static(node: torch.fx.Node) -> bool:
+    """Only support constant_pad_nd when the pad amounts are static.
+
+    A symbolic pad list is serialized as a VALUELIST rather than an INTLIST, and
+    Pad.cpp reads it with get_int_list(), which throws "Expected value to have
+    type IntList, got VALUELIST instead".
+
+    Supporting it properly is more than swapping in
+    extract_int_or_symint_list(), the way Split.cpp, View.cpp and Expand.cpp
+    read their symbolic lists: add_constant_pad_nd_node() folds the amounts into
+    a per-dim offset and bakes that into a params buffer at BUILD time, so the
+    dispatch would still use stale offsets even if the list were read
+    symbolically. The buffer has to be refreshed on resize first. Decline the
+    node until then.
+    """
+    pad = node.args[1]
+    if not isinstance(pad, (list, tuple)):
+        return False
+    return all(isinstance(p, int) for p in pad)
+
+
 @update_features(exir_ops.edge.aten.constant_pad_nd.default)
 def register_constant_pad_nd():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_pad_is_static,
     )
 
 
@@ -1735,6 +1757,22 @@ def register_embedding_q4gsw():
 # =============================================================================
 
 
+def _check_batch_norm_is_4d(node: torch.fx.Node) -> bool:
+    """Only support batch norm on a 4d input.
+
+    add_native_batch_norm_node() asserts
+    VK_CHECK_COND(in_sizes.size() == 4, "BatchNorm only support 4d tensor") on
+    both the input and the output, so partitioning a batch norm whose input is
+    not 4d yields a .pte that lowers cleanly and then aborts at execute time.
+    Any conv1d model reaches here with rank-3 activations.
+    """
+    input_node = node.args[0]
+    if not isinstance(input_node, torch.fx.Node):
+        return False
+    val = input_node.meta.get("val")
+    return val is not None and val.dim() == 4
+
+
 @update_features(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
 def register_native_batch_norm_legit_no_training():
     return OpFeatures(
@@ -1742,6 +1780,7 @@ def register_native_batch_norm_legit_no_training():
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
+        are_node_inputs_supported_fn=_check_batch_norm_is_4d,
     )
 
 

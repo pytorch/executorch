@@ -146,6 +146,10 @@ def get_propagated_const_tensor_dict(
             node.op != "call_function"
             or node.target is memory.alloc
             or node.target in all_skip_targets
+            # Ops with side effects (RNG draws, mutation) have to run at
+            # runtime. `aten.rand` has no tensor inputs, so without this check
+            # it would be folded into a single frozen draw.
+            or node.is_impure()
         ):
             continue
 

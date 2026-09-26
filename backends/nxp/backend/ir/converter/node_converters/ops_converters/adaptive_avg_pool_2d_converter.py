@@ -6,6 +6,7 @@
 import executorch.backends.nxp.backend.ir.lib.tflite.Padding as tflPadding
 import torch
 
+from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion import common
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
@@ -45,6 +46,10 @@ class AdaptiveAvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        # The input must be 4D.
+        if input_rank(node, 0) != 4:
+            return False
+
         input_size = node.args[0].meta["val"].shape
         output_size = node.args[1]
 

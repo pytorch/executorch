@@ -17,6 +17,8 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/AdapterCapabilityOverrides.h>
+
 #include <array>
 
 namespace vkcompute {
@@ -78,6 +80,8 @@ class Adapter final {
     VkQueue handle;
   };
 
+  friend class ScopedAdapterCapabilityOverride;
+
  private:
   // Use a mutex to manage queue usage info since
   // it can be accessed from multiple threads
@@ -102,6 +106,9 @@ class Adapter final {
   // Miscellaneous
   bool linear_tiling_3d_enabled_;
   bool owns_device_;
+  // Test-only capability overrides; empty unless a ScopedCapabilityOverride
+  // is live.
+  AdapterCapabilityOverrides capability_overrides_;
 
  public:
   // Physical Device metadata
@@ -231,13 +238,50 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
-  inline bool supports_int8_dot_product() {
+  inline bool supports_int8_dot_product() const {
+    if (capability_overrides_.int8_dot_product.has_value()) {
+      return *capability_overrides_.int8_dot_product;
+    }
 #ifdef ETVK_FORCE_NO_EXTENSIONS
     return false;
 #endif
 #ifdef VK_KHR_shader_integer_dot_product
     return physical_device_.shader_int_dot_product_features
                .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_signed_packed4x8_dot() const {
+    if (capability_overrides_.signed_packed4x8_dot.has_value()) {
+      return *capability_overrides_.signed_packed4x8_dot;
+    }
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool accelerates_unsigned_packed4x8_dot() const {
+    if (capability_overrides_.unsigned_packed4x8_dot.has_value()) {
+      return *capability_overrides_.unsigned_packed4x8_dot;
+    }
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return supports_int8_dot_product() &&
+        physical_device_.shader_int_dot_product_properties
+            .integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated ==
+        VK_TRUE;
 #else
     return false;
 #endif /* VK_KHR_shader_integer_dot_product */

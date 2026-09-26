@@ -7,6 +7,7 @@
 from typing import Callable, Sequence
 
 import torch
+from executorch.backends.samsung._passes.enn_pass_manager import EnnPassManager
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.quantizer import Quantizer
 
@@ -27,6 +28,9 @@ class EnnQuantizer(Quantizer):
     def setup_precision(self, quant_dtype: Precision) -> None:
         assert quant_dtype in Precision, f"No support for Precision {quant_dtype}."
         self._precision = quant_dtype
+
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        return EnnPassManager().transform_for_annotation_pass(model)
 
     def setup_quant_params(
         self, quant_dtype: Precision, is_per_channel=True, is_qat=False

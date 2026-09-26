@@ -6,6 +6,8 @@ This backend is in **beta**. It has been validated with a set of small models (e
 
 The Arm&reg; Cortex&reg;-M backend accelerates quantized model execution on Arm Cortex-M CPUs using [CMSIS-NN](https://arm-software.github.io/CMSIS-NN/latest/) optimized kernels. Unlike delegate-based backends, it operates as an operator library: quantized subgraphs are replaced with CMSIS-NN accelerated kernels during the pass-lowering stage, while unsupported operators fall back to portable fp32 kernels.
 
+The default AOT flow uses channels-last inputs and the existing dim-order representation. The experimental explicit-layout flow uses ordinary contiguous inputs, represents NCHW/NHWC conversions as graph operators, and selects the experimental `cortex_m::*_nhwc` kernels. Enable it with `--cortex-m-explicit-layout`. Layout modes are selected independently of the Cortex-M CPU target and never mix operator families.
+
 ## Target Support
 
 The backend targets Arm Cortex-M CPUs via CMSIS-NN, which provides optimized kernel implementations for three instruction set variants:
@@ -98,9 +100,12 @@ quantized = convert_pt2e(prepared)
 quantized_exported_program = torch.export.export(quantized, (example_input,))
 ```
 
+Calibration observes logical tensor values, so calibration inputs do not need
+to use the same memory format as the export example.
+
 ### 2. Lower to edge and apply Cortex-M passes
 
-Lower to the edge dialect with the backend's `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
+Lower to the edge dialect with the backend's `EdgeCompileConfig`, then apply `CortexMPassManager` through `EdgeProgramManager.transform()` to replace quantized subgraphs with CMSIS-NN operator implementations:
 
 ```python
 from executorch.exir import ExecutorchBackendConfig, to_edge
@@ -117,9 +122,11 @@ config = cortex_m_edge_compile_config()
 
 edge_program_manager = to_edge(quantized_exported_program, compile_config=config)
 
-pass_manager = CortexMPassManager(edge_program_manager.exported_program())
-edge_program_manager._edge_programs["forward"] = pass_manager.transform()
+edge_program_manager = edge_program_manager.transform(CortexMPassManager())
 ```
+
+Alternatively, pass `transform_passes=CortexMPassManager()` to
+`to_edge_transform_and_lower()` with the same compile configuration.
 
 ### 3. Serialize to .pte
 

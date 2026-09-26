@@ -6,7 +6,10 @@
 from itertools import product
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_first_fake_tensor,
+    is_strictly_positive_tensor_node,
+)
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_annotator import (
     _conv_ops,
@@ -66,6 +69,34 @@ class ArithmeticFloatInputsCheck(PatternCheck):
                     return False
 
         return True
+
+
+class PowTensorTensorPositiveBaseCheck(ArithmeticFloatInputsCheck):
+    """Allow Tensor/Tensor pow only when the base is proven strictly positive.
+
+    The INT lowering rewrites pow(x, y) as exp(y * log(x)). That rewrite must
+    not be selected merely because calibration/example inputs happen to be
+    positive: the constraint has to be visible in the exported graph.
+
+    """
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        if not super().check_pattern(pattern):
+            return False
+
+        if len(pattern) != 1:
+            return False
+
+        pow_node = pattern[0]
+        if len(pow_node.args) < 2:
+            return False
+
+        base_node = pow_node.args[0]
+        if not isinstance(base_node, torch.fx.Node):
+            return False
+
+        return is_strictly_positive_tensor_node(base_node)
 
 
 class CastCheck(PatternCheck):

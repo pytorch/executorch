@@ -34,12 +34,7 @@ from executorch.backends.mlx.builder.op_helpers import (
 from executorch.backends.mlx.builder.op_registry import PatternHandler, REGISTRY
 from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.builder.slot_manager import Slot
-from executorch.backends.mlx.pattern_utils import (
-    has_single_user,
-    match_target,
-    OpStep,
-    walk_back,
-)
+from executorch.backends.mlx.pattern_utils import has_single_user, match_target
 from executorch.backends.mlx.serialization.mlx_graph_schema import (
     AddIntNode,
     AddNode,
@@ -49,7 +44,6 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     ModIntNode,
     MultiplyNode,
     QuantizedMatmulNode,
-    SdpaNode,
     SliceNode,
     SliceUpdateNode,
     SubtractIntNode,
@@ -455,158 +449,6 @@ class ETKVCacheUpdateHandler(PatternHandler):
                 stop=P.to_int_or_vid(overflow_slot),
             )
         )
-
-
-@REGISTRY.register_pattern(name="SDPA")
-class SDPAHandler(PatternHandler):
-    """
-    Pattern for Scaled Dot Product Attention with optional GQA.
-
-    Matches: scaled_dot_product_attention
-    Optionally with repeat_interleave for grouped query attention.
-    """
-
-    def __init__(
-        self,
-        head: Node,
-        body: List[Node],
-        q_node: Node,
-        k_node: Node,
-        v_node: Node,
-    ):
-        super().__init__(head, body)
-        self.q_node = q_node
-        self.k_node = k_node
-        self.v_node = v_node
-
-    @classmethod
-    def _parse_sdpa_args_and_kwargs(cls, sdpa_node: Node):
-        q, k, v = sdpa_node.args[0:3]
-        attn_mask = sdpa_node.args[3] if len(sdpa_node.args) > 3 else None
-        dropout_p = sdpa_node.args[4] if len(sdpa_node.args) > 4 else 0.0
-        is_causal = sdpa_node.args[5] if len(sdpa_node.args) > 5 else False
-        enable_gqa = sdpa_node.args[6] if len(sdpa_node.args) > 6 else False
-        scale = sdpa_node.kwargs.get("scale", None)
-        return q, k, v, attn_mask, dropout_p, is_causal, scale, enable_gqa
-
-    @classmethod
-    def _try_unwrap_repeat_kv(cls, node: Node) -> Optional[Tuple[Node, List[Node]]]:
-        """Try to unwrap a HuggingFace repeat_kv pattern.
-
-        HuggingFace's repeat_kv expands KV heads for grouped query attention:
-            hidden_states[:, :, None, :, :].expand(B, n_kv, n_rep, T, D)
-            .clone().reshape(B, n_heads, T, D)
-
-        In Edge IR this becomes:
-            unsqueeze_copy(x, 2) → expand_copy → clone → view_copy
-
-        Returns:
-            (base_node, body_nodes) if pattern matches, else None.
-            base_node is the original [B, n_kv, T, D] tensor.
-            body_nodes are the intermediate nodes to absorb.
-        """
-        result = walk_back(
-            node,
-            [
-                OpStep(op=torch.ops.aten.view.default, nargs=2),
-                OpStep(op=torch.ops.aten.clone.default, optional=True),
-                OpStep(op=torch.ops.aten.expand.default, nargs=2),
-                OpStep(op=torch.ops.aten.unsqueeze.default, nargs=2),
-            ],
-        )
-        if result is None:
-            return None
-
-        base, entries = result
-        _view, _clone, _expand, unsqueeze = entries
-
-        # unsqueeze must be on dim=2
-        if unsqueeze.args[1] != 2:
-            return None
-
-        body = [e for e in entries if e is not None]
-        return base, body
-
-    @classmethod
-    def maybe_create(cls, ep: ExportedProgram, head: Node) -> Optional["SDPAHandler"]:
-        sdpa_node = head
-        if not match_target(
-            sdpa_node, torch.ops.aten.scaled_dot_product_attention.default
-        ):
-            return None
-
-        q, k, v, _, _, _, _, _ = cls._parse_sdpa_args_and_kwargs(sdpa_node)
-
-        # Detect grouped kv attention pattern with repeat_interleave before SDPA
-        is_grouped_kv = False
-        k_base = k
-        v_base = v
-        body: List[Node] = []
-        if (
-            match_target(k, torch.ops.aten.repeat_interleave.self_int)
-            and has_single_user(k)
-            and (len(k.args) == 3)
-            and (len(k.kwargs) == 0)
-            and match_target(v, torch.ops.aten.repeat_interleave.self_int)
-            and has_single_user(v)
-            and (len(v.args) == 3)
-            and (len(v.kwargs) == 0)
-        ):
-            k_unrepeated, k_reps, k_dim = k.args
-            v_unrepeated, v_reps, v_dim = v.args
-
-            if (k_dim == 1 and v_dim == 1) and (k_reps == v_reps):
-                is_grouped_kv = True
-                k_base = k_unrepeated
-                v_base = v_unrepeated
-                body = [k, v]
-
-        # Detect HuggingFace repeat_kv pattern:
-        # unsqueeze(dim=2) → expand → clone → view
-        if not is_grouped_kv:
-            k_unwrap = cls._try_unwrap_repeat_kv(k)
-            v_unwrap = cls._try_unwrap_repeat_kv(v)
-            if k_unwrap is not None and v_unwrap is not None:
-                k_base, k_body = k_unwrap
-                v_base, v_body = v_unwrap
-                is_grouped_kv = True
-                body = k_body + v_body
-
-        head = sdpa_node
-        if not is_grouped_kv:
-            body = []
-        return SDPAHandler(head, body, q_node=q, k_node=k_base, v_node=v_base)
-
-    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
-        assert n == self.head
-        q, k, v, attn_mask, dropout_p, is_causal, scale, enable_gqa = (
-            SDPAHandler._parse_sdpa_args_and_kwargs(n)
-        )
-        head_dim = q.meta["val"].shape[-1]
-        if scale is None:
-            scale = head_dim**-0.5
-
-        q = self.q_node
-        k = self.k_node
-        v = self.v_node
-
-        assert dropout_p == 0.0, "SDPA with dropout is not supported"
-
-        q, k, v, attn_mask = P.slot_map([q, k, v, attn_mask])
-        out = P.make_or_get_slot(n)
-
-        P.emit(
-            SdpaNode(
-                q=P.slot_to_tid(q),
-                k=P.slot_to_tid(k),
-                v=P.slot_to_tid(v),
-                out=P.slot_to_tid(out),
-                scale=scale,
-                mask=P.slot_to_tid(attn_mask) if attn_mask else None,
-                causal=is_causal,
-            )
-        )
-        return out
 
 
 @REGISTRY.register_pattern(name="NVFP4_QUANTIZED_EMBEDDING")

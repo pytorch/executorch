@@ -52,6 +52,10 @@ class CortexMAvgPool2d(torch.nn.Module):
 
 # Prepare test cases: simple 2x2 pool on 4x4, and 3x3 stride 1 on 3x3
 test_cases = {
+    "avgpool_no_padding_included": McuTestCase(
+        CortexMAvgPool2d(kernel_size=2, stride=2, count_include_pad=True),
+        (ramp_tensor(-5, 5, (1, 2, 4, 4)).to(memory_format=torch.channels_last),),
+    ),
     "avgpool_2x2": McuTestCase(
         CortexMAvgPool2d(kernel_size=2, stride=2), (ramp_tensor(0, 15, (1, 1, 4, 4)),)
     ),
@@ -115,7 +119,7 @@ def test_dialect_avg_pool2d(test_case, cortex_m_target):
         test_case.model, test_case.example_inputs, target_config=cortex_m_target
     )
     ops_after = dict(test_case.model.ops_after_transforms)
-    if test_case.model.pool.count_include_pad:
+    if test_case.model.pool.count_include_pad and test_case.model.pool.padding != 0:
         ops_after["executorch_exir_dialects_edge__ops_cortex_m_pad_default"] = 1
     tester.test_dialect(
         test_case.model.ops_before_transforms,
@@ -174,12 +178,19 @@ def test_dialect_avg_pool2d_fallback(test_case, cortex_m_target):
     tester = CortexMTester(
         test_case.model, test_case.example_inputs, target_config=cortex_m_target
     )
+    ops_before = dict(test_case.model.ops_before_transforms)
+    ops_before.update(
+        {
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 1,
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1,
+        }
+    )
     tester.test_dialect(
-        test_case.model.ops_before_transforms,
+        ops_before,
         {
             "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default": 1,
-            "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
-            "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
+            "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
+            "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
         },
         qtol=1,
     )

@@ -29,6 +29,18 @@ def require_same_dtype(input1: torch.Tensor, input2: torch.Tensor, op: str) -> N
         )
 
 
+def binary_meta(
+    input1: torch.Tensor,
+    input2: torch.Tensor,
+    op: str,
+    *,
+    output_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    require_same_dtype(input1, input2, op)
+    output_shape = broadcast_shape(input1, input2, op)
+    return torch.empty(output_shape, dtype=output_dtype or input1.dtype)
+
+
 def validate_nan_mode(nan_mode: str, op: str) -> None:
     if nan_mode not in _VALID_NAN_MODES:
         raise TosaValueError(

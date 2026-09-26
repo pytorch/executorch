@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -308,6 +307,56 @@ class GatedDeltaRuleTest(OpTestCase):
             self.batch_size, self.seq_len, self.num_heads, dtype=self.dtype
         ).sigmoid()
         return (q, k, v, g, beta)
+
+
+class GatedDeltaRuleLocalStateModel(nn.Module):
+    def __init__(self, outputs: str, use_custom_kernel: bool):
+        super().__init__()
+        self.outputs = outputs
+        self.use_custom_kernel = use_custom_kernel
+
+    def forward(self, q, k, v, g, beta):
+        state = q.new_zeros(q.shape[0], v.shape[2], v.shape[3], q.shape[3])
+        out = torch.ops.mlx.gated_delta_rule(
+            q, k, v, g, beta, state, use_custom_kernel=self.use_custom_kernel
+        )
+        if self.outputs == "state":
+            return state
+        if self.outputs == "output":
+            return out
+        return out, state
+
+
+class GatedDeltaRuleLocalStateTest(GatedDeltaRuleTest):
+    def __init__(self, outputs: str, use_custom_kernel: bool, dtype: torch.dtype):
+        super().__init__(
+            batch_size=2,
+            seq_len=5,
+            num_heads=2,
+            head_dim=32,
+            value_dim=16,
+            dtype=dtype,
+            rtol=0.01 if dtype == torch.bfloat16 else 1e-4,
+            atol=0.01 if dtype == torch.bfloat16 else 1e-4,
+            use_custom_kernel=use_custom_kernel,
+        )
+        self.outputs = outputs
+        self.name += f"_local_{outputs}"
+        self.expected_node_counts = {
+            "MetalKernelNode" if use_custom_kernel else "ScanNode": 1
+        }
+
+    def create_model(self):
+        return GatedDeltaRuleLocalStateModel(self.outputs, self.use_custom_kernel)
+
+    @classmethod
+    def get_test_configs(cls):
+        return [
+            cls(outputs, kernel, dtype)
+            for outputs in ("output", "state", "both")
+            for kernel in (False, True)
+            for dtype in (torch.float32, torch.bfloat16)
+        ]
 
 
 class GatedDeltaRuleDynamicSeqTest(OpTestCase):
@@ -935,6 +984,7 @@ if __name__ == "__main__":  # noqa: C901
 
     configs = (
         GatedDeltaRuleTest.get_test_configs()
+        + GatedDeltaRuleLocalStateTest.get_test_configs()
         + GatedDeltaRuleDynamicSeqTest.get_test_configs()
         + GatedDeltaRuleGQATest.get_test_configs()
         + GatedDeltaRuleFloatCastTest.get_test_configs()

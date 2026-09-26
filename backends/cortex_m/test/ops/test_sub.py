@@ -81,14 +81,14 @@ class CortexMFloatAlphaSub(torch.nn.Module):
 
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1,
-        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 3,
-        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2,
     }
     ops_after_transforms = {
         "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 0,
         "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 3,
-        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 3,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
+        "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 2,
     }
 
     def forward(self, x, y):

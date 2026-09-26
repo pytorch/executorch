@@ -119,6 +119,29 @@ class Pool {
     return buf_ ? static_cast<int>(buf_->shape(2)) : 0;
   }
 
+  // A pool holding the leading `length` slots, lazily copied.
+  Pool clone_prefix(int length, StreamOrDevice s) const {
+    if (length < 0 || length > slots()) {
+      throw std::runtime_error("Pool::clone_prefix: length out of bounds");
+    }
+
+    const int target = std::min(std::max(length, initial_slots_), max_slots_);
+    if (!buf_ || target >= slots()) {
+      return *this;
+    }
+
+    Pool clone(initial_slots_, max_slots_, H_, D_, dtype_);
+
+    clone.buf_ = ::mlx::core::copy(
+        ::mlx::core::slice(
+            *buf_,
+            ::mlx::core::Shape{0, 0, 0, 0},
+            ::mlx::core::Shape{1, H_, target, D_},
+            s),
+        s);
+    return clone;
+  }
+
  private:
   // Make room for `needed` slots, allocating on first use and thereafter
   // growing only if the pool is short: double until it fits, never past

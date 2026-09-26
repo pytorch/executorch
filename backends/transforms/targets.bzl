@@ -44,6 +44,82 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "fuse_gqa_with_sdpa",
+        srcs = ["fuse_gqa_with_sdpa.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_fuse_gqa_with_sdpa",
+        srcs = ["test/test_fuse_gqa_with_sdpa.py"],
+        deps = [
+            ":fuse_gqa_with_sdpa",
+            ":normalize_sdpa_input_rank",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "fuse_rms_norm",
+        srcs = ["fuse_rms_norm.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:_program_utils",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/edge:lib",
+            "//executorch/exir/passes:constant_prop_pass",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_fuse_rms_norm",
+        srcs = ["test/test_fuse_rms_norm.py"],
+        deps = [
+            ":fuse_rms_norm",
+            ":utils",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:pass_manager",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/passes:remove_graph_asserts_pass",
+        ],
+    )
+
+    runtime.python_library(
+        name = "normalize_sdpa_input_rank",
+        srcs = ["normalize_sdpa_input_rank.py"],
+        visibility = ["//executorch/backends/..."],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_normalize_sdpa_input_rank",
+        srcs = ["test/test_normalize_sdpa_input_rank.py"],
+        deps = [
+            ":normalize_sdpa_input_rank",
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_batch_norm_with_conv",
         srcs = ["fuse_batch_norm_with_conv.py"],
         visibility = [
@@ -522,6 +598,30 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "merge_split_concat_chain",
+        srcs = ["merge_split_concat_chain.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            ":permute_pass_utils",
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_merge_split_concat_chain",
+        srcs = ["test/test_merge_split_concat_chain.py"],
+        deps = [
+            ":merge_split_concat_chain",
+            "//caffe2:torch",
+            "//executorch/backends/test:graph_builder",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "fuse_cascaded_transpose_or_permute_ops",
         srcs = ["fuse_cascaded_transpose_or_permute_ops.py"],
         visibility = [
@@ -714,5 +814,34 @@ def define_common_targets():
             "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
             ":enforce_contiguous_dim_order",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_channels_last_input_clones",
+        srcs = ["replace_channels_last_input_clones.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_channels_last_input_clones",
+        srcs = [
+            "test/test_replace_channels_last_input_clones.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":channels_last_ops",
+            ":enforce_contiguous_dim_order",
+            ":replace_channels_last_input_clones",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
