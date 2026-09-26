@@ -41,7 +41,7 @@ Currently we use Cmake as the build system to link the `my_ops::mul3.out` kernel
 
 ## Selective build
 
-Note that we have defined a custom op for both `my_ops::mul3.out` and `my_ops::mul4.out` in `custom_ops.yaml`. To reduce binary size, we can choose to only register the operators used in the model. This is done by passing in a list of operators to the `gen_oplist` custom rule, for example: `--root_ops="my_ops::mul4.out"`.
+Note that we have defined a custom op for both `my_ops::mul3.out` and `my_ops::mul4.out` in `custom_ops.yaml`. To reduce binary size, we can choose to only register the operators used in the model. This is done by passing in a list of operators to the `gen_oplist` custom rule, for example: `--select_ops_list="my_ops::mul4.out"`.
 
 We then let the custom ops library depend on this target, to only register the ops we want.
 

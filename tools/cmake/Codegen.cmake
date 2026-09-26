@@ -13,7 +13,7 @@
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_selected_ops)
-  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS
+  set(arg_names LIB_NAME OPS_SCHEMA_YAML SELECT_OPS_LIST INCLUDE_ALL_OPS
                 OPS_FROM_MODEL DTYPE_SELECTIVE_BUILD
   )
   cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
@@ -21,7 +21,7 @@ function(gen_selected_ops)
   message(STATUS "Generating selected operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
-  message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
+  message(STATUS "  SELECT_OPS_LIST: ${GEN_SELECT_OPS_LIST}")
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
   message(STATUS "  OPS_FROM_MODEL: ${GEN_OPS_FROM_MODEL}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
@@ -52,8 +52,8 @@ function(gen_selected_ops)
          --ops_schema_yaml_path="${GEN_OPS_SCHEMA_YAML}"
     )
   endif()
-  if(GEN_ROOT_OPS)
-    list(APPEND _gen_oplist_command --root_ops="${GEN_ROOT_OPS}")
+  if(GEN_SELECT_OPS_LIST)
+    list(APPEND _gen_oplist_command --select_ops_list="${GEN_SELECT_OPS_LIST}")
   endif()
   if(GEN_INCLUDE_ALL_OPS)
     list(APPEND _gen_oplist_command --include_all_operators)
