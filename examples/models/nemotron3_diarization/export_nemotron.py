@@ -72,6 +72,8 @@ class Encode(nn.Module):
     def forward(self, embeddings, lengths):
         positions = torch.arange(embeddings.shape[1], device=embeddings.device)
         mask = (positions[None, :] < lengths[:, None])[:, None, None, :]
+        # CUDA SDPA requires the full query dimension in the mask.
+        mask = mask.expand(-1, -1, embeddings.shape[1], -1)
         encoded = self.model(
             inputs_embeds=embeddings.to(self.dtype), attention_mask=mask
         )
@@ -169,12 +171,34 @@ def export_model(
         from executorch.backends.mlx.partitioner import MLXPartitioner
         from executorch.backends.mlx.passes import get_default_passes
 
-        partitioners = [MLXPartitioner()]
+        partitioners = {name: [MLXPartitioner()] for name in ("pre_encode", "encode")}
         passes = get_default_passes()
     elif backend == "xnnpack":
-        partitioners = [XnnpackPartitioner(enable_bf16=dtype == torch.bfloat16)]
+        partitioners = {
+            name: [XnnpackPartitioner(enable_bf16=dtype == torch.bfloat16)]
+            for name in ("pre_encode", "encode")
+        }
+    elif backend == "cuda":
+        from executorch.backends.cuda.cuda_backend import CudaBackend
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        # The custom Triton SDPA kernel supports BF16 only.
+        triton_mode = b"ON" if dtype == torch.bfloat16 else b"OFF"
+        partitioners = {
+            name: [
+                CudaPartitioner(
+                    [
+                        CudaBackend.generate_method_name_compile_spec(name),
+                        CompileSpec("triton_kernel_mode", triton_mode),
+                    ]
+                )
+            ]
+            for name in ("pre_encode", "encode")
+        }
     else:
         raise ValueError(f"Unknown backend: {backend}")
+    partitioners["preprocessor"] = [XnnpackPartitioner()]
 
     model = Nemotron3DiarizationForAudioFrameClassification.from_pretrained(
         model_id, revision=revision, dtype=dtype
@@ -185,11 +209,7 @@ def export_model(
     programs, metadata = capture_model(model, processor.feature_extractor)
     edge = to_edge_transform_and_lower(
         programs,
-        partitioner={
-            "preprocessor": [XnnpackPartitioner()],
-            "pre_encode": partitioners,
-            "encode": partitioners,
-        },
+        partitioner=partitioners,
         transform_passes={
             "preprocessor": [],
             "pre_encode": passes,
@@ -212,6 +232,9 @@ def export_model(
     with path.open("wb") as output:
         program.write_to_file(output)
     print(f"Saved {path} ({path.stat().st_size / 2**20:.1f} MiB)")
+    if backend == "cuda":
+        program.write_tensor_data_to_file(str(output_dir))
+        print(f"Saved {output_dir / 'aoti_cuda_blob.ptd'}")
     return path
 
 
@@ -223,7 +246,7 @@ def main():
         help="Hugging Face model ID or local Transformers checkpoint directory",
     )
     parser.add_argument("--revision", help="Hugging Face model revision")
-    parser.add_argument("--backend", choices=("mlx", "xnnpack"), default="mlx")
+    parser.add_argument("--backend", choices=("mlx", "xnnpack", "cuda"), default="mlx")
     parser.add_argument("--output-dir", type=Path, default=Path("nemotron_exports"))
     parser.add_argument(
         "--dtype",

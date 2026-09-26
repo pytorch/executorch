@@ -27,6 +27,7 @@ DEFINE_string(
     model_path,
     "nemotron_exports/nemotron3_diarization.pte",
     "Exported model");
+DEFINE_string(data_path, "", "External CUDA data file (aoti_cuda_blob.ptd)");
 DEFINE_string(audio_path, "", "Mono 16 kHz WAV file (PCM16 or float32)");
 DEFINE_string(preset, "offline", "offline, low, very_low, or ultra_low");
 DEFINE_int32(feed_samples, 4096, "Samples per streaming feed");
@@ -58,7 +59,8 @@ int main(int argc, char** argv) {
 #endif
     nemotron3::Runner runner(
         FLAGS_model_path,
-        nemotron3::StreamingConfig::from_preset(FLAGS_preset));
+        nemotron3::StreamingConfig::from_preset(FLAGS_preset),
+        FLAGS_data_path);
     auto header = executorch::extension::llm::load_wav_header(FLAGS_audio_path);
     if (!header || header->NumOfChan != 1 ||
         header->SamplesPerSec != runner.sample_rate()) {

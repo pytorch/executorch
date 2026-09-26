@@ -19,7 +19,7 @@
 # - whisper:  Speech recognition model (CPU, CUDA, Metal)
 # - parakeet: Speech recognition model (CPU, CUDA, Metal, MLX)
 # - sortformer: Speaker diarization model (CPU, CUDA)
-# - nemotron3-diarization: Speaker diarization model (MLX, XNNPACK)
+# - nemotron3-diarization: Speaker diarization model (MLX, XNNPACK, CUDA)
 # - supertonic: Text-to-speech model (MLX)
 # - silero_vad: Voice activity detection model (CPU)
 # - llama:    Text generation model (CPU)
@@ -124,6 +124,7 @@ help:
 	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
 	@echo "  nemotron3-diarization-mlx - Build Nemotron 3 Diarization runner with MLX backend"
 	@echo "  nemotron3-diarization-cpu - Build Nemotron 3 Diarization runner with XNNPACK backend"
+	@echo "  nemotron3-diarization-cuda - Build Nemotron 3 Diarization runner with CUDA backend"
 	@echo "  supertonic-mlx      - Build Supertonic runner with MLX backend"
 	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
 	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
@@ -298,6 +299,11 @@ nemotron3-diarization-mlx:
 nemotron3-diarization-cpu:
 	cmake --workflow --preset llm-release
 	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-cpu
+
+.PHONY: nemotron3-diarization-cuda
+nemotron3-diarization-cuda:
+	cmake --workflow --preset llm-release-cuda
+	cd examples/models/nemotron3_diarization && cmake --workflow --preset nemotron3-diarization-cuda
 
 sortformer-cuda:
 	@echo "==> Building and installing ExecuTorch with CUDA..."
