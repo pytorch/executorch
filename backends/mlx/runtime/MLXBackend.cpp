@@ -68,7 +68,7 @@ namespace {
 array tensor_to_mlx(
     const ETTensor& t,
     const std::optional<TensorMeta>& expected_meta = std::nullopt) {
-  if (!executorch::runtime::tensor_is_contiguous(t)) {
+  if (t.numel() != 0 && !executorch::runtime::tensor_is_contiguous(t)) {
     throw std::runtime_error("tensor_to_mlx: input tensor is not contiguous");
   }
 
@@ -95,6 +95,11 @@ array tensor_to_mlx(
           std::to_string(dim_size) + " exceeds int range");
     }
     shape.push_back(static_cast<int>(dim_size));
+  }
+
+  // Empty inputs have no storage to wrap, but retain their shape and dtype.
+  if (t.numel() == 0) {
+    return ::mlx::core::zeros(shape, dtype);
   }
 
   // SAFETY: MLX reads this data during async_eval() Metal command encoding,
