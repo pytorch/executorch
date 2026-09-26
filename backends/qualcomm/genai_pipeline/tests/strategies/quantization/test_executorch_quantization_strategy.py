@@ -25,6 +25,8 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.quantiz
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
     make_test_context,
+    TEST_BACKEND_TYPE,
+    TEST_SOC_CHIPSET,
 )
 
 
@@ -56,8 +58,8 @@ def _make_mock_adapter():
 def _make_valid_input_config(**overrides):
     """Create a valid QuantizationInputConfig with defaults."""
     defaults = {
-        "soc_model": MagicMock(name="SM8750"),
-        "backend_type": MagicMock(name="kHtpBackend"),
+        "soc_model": TEST_SOC_CHIPSET,
+        "backend_type": TEST_BACKEND_TYPE,
         "model_module": MagicMock(name="test_model"),
         "example_inputs": (MagicMock(name="example_input"),),
         "calibration_data": [(MagicMock(),)],

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from executorch.devtools.etrecord import ETRecord
@@ -19,11 +19,14 @@ class CompilationOutputConfig:
     """Output produced by the compilation stage.
 
     Attributes:
-        artifact_paths: Paths to the compiled artifacts (.pte files).
-            List to support multi-split models where compilation produces
-            multiple .pte files (e.g., prefill + decode).
+        artifact_paths: Compiled artifacts (.pte files), keyed by artifact name
+            (see ``artifact_keys``). A model may produce several: a text decoder
+            always, plus a token embedding and modality encoders when
+            multimodal. Keyed rather than ordered because the inference stage
+            addresses them individually and the set present varies by model.
+            Absent artifacts are omitted rather than mapped to ``None``.
         etrecord: Optional ETRecord for debugging. ExecuTorch engine only.
     """
 
-    artifact_paths: Optional[List[Path]] = None
+    artifact_paths: Optional[Dict[str, Path]] = None
     etrecord: Optional["ETRecord"] = None
