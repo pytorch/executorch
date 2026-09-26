@@ -9,6 +9,7 @@ troubleshooting, and frequently asked questions.
 
 getting-started
 using-executorch-export
+using-complex-qat-flows-with-recipe-based-lowering
 using-executorch-android
 using-executorch-ios
 using-executorch-cpp
