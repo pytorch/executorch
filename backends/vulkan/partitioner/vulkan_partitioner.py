@@ -52,7 +52,6 @@ ops_not_to_decompose = [
     # due to constant tensor loading issues in the decomposed graph.
     torch.ops.aten.hardsigmoid.default,
     torch.ops.aten.hardswish.default,
-    torch.ops.aten.hardshrink.default,
     torch.ops.aten.upsample_nearest2d.vec,
     torch.ops.aten.pixel_shuffle.default,
 ]
