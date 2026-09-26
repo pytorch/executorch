@@ -1710,6 +1710,34 @@ TEST_F(MetalGraphViewTest, ReloadingAConstantWaitsForItsReaders) {
   EXPECT_EQ(std::vector<float>(got, got + 4), old_data);
 }
 
+// Freeing a constants buffer holding only the constant at its start does not
+// wait: queued work reads that constant through the buffer itself, which owns
+// its memory and which the command buffer keeps alive until the work is done.
+// Only the constants' own buffers, which do not own their memory, need a wait.
+TEST_F(MetalGraphViewTest, FreeingTheFirstConstantKeepsItForItsReaders) {
+  void* constants = nullptr;
+  ASSERT_EQ(aoti_torch_mps_malloc(&constants, 4 * sizeof(float)), Error::Ok);
+  std::vector<float> data = {1, 2, 3, 4};
+  ASSERT_EQ(
+      aoti_torch_mps_memcpy(
+          constants,
+          /*constant_offset=*/0,
+          /*bytes_read=*/0,
+          /*data_size=*/4 * sizeof(float),
+          reinterpret_cast<uint8_t*>(data.data())),
+      Error::Ok);
+  AOTITensorHandle constant = nullptr;
+  ASSERT_EQ(createFromBlob(constants, &constant), Error::Ok);
+  AOTITensorHandle out = nullptr;
+  createMatrix(kDeviceMps, &out);
+  queueCopy(*constant, *out, 4);
+  ASSERT_EQ(aoti_torch_mps_free(constants), Error::Ok);
+  EXPECT_FALSE(getCurrentMetalStream()->isEmpty());
+  getCurrentMetalStream()->synchronize(SyncType::COMMIT_AND_WAIT);
+  const auto* got = static_cast<const float*>(out->const_data_ptr());
+  EXPECT_EQ(std::vector<float>(got, got + 4), data);
+}
+
 // Freeing a constants buffer forgets the views registered in it, and an empty
 // constant maps no buffer.
 TEST_F(MetalGraphViewTest, FreeingConstantsForgetsTheirViews) {
