@@ -7,6 +7,7 @@
 import hashlib
 import io
 import logging
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -784,3 +785,121 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 atol=1e-5,
             )
         )
+
+    def _assert_lowered_matches_eager(self, model, example_inputs):
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        expected = model(*example_inputs)
+        expected = (expected,) if isinstance(expected, torch.Tensor) else expected
+        for actual, want in zip(executorch_module.forward(example_inputs), expected):
+            self.assertTrue(torch.allclose(actual, want, rtol=1e-5, atol=1e-5))
+
+    def test_pre_decomposition_folding_handles_multi_output_ops(self):
+        """
+        A multi-output op in the weight expression, a packed weight split or
+        chunked into per-projection weights, folds with every output, also
+        when one output is used outside a GEMM: the outputs are materialized,
+        one tensor each, and the op goes.
+        """
+
+        class SplitQKV(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.qkv = torch.nn.Parameter(torch.randn(12, 4))
+
+            def forward(self, x):
+                q, k, v = torch.split(self.qkv, 4)
+                return F.linear(x, q) + F.linear(x, k), v.sum()
+
+        class ChunkGateUp(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gate_up = torch.nn.Parameter(torch.randn(8, 4))
+
+            def forward(self, x):
+                gate, up = self.gate_up.chunk(2)
+                return F.linear(x, gate) * up.sum()
+
+        class UnbindHeads(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.heads = torch.nn.Parameter(torch.randn(2, 4, 4))
+
+            def forward(self, x):
+                a, b = self.heads.unbind(0)
+                return F.linear(x, a) + b[0]
+
+        class MaxDim(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.stack = torch.nn.Parameter(torch.randn(4, 4, 3))
+
+            def forward(self, x):
+                values, indices = self.stack.max(dim=2)
+                return F.linear(x, values), indices
+
+        example_inputs = (torch.randn(2, 4),)
+        for model, source, target, outputs in (
+            (SplitQKV(), "qkv", torch.ops.aten.split.Tensor, 3),
+            (ChunkGateUp(), "gate_up", torch.ops.aten.chunk.default, 2),
+            (UnbindHeads(), "heads", torch.ops.aten.unbind.int, 2),
+            (MaxDim(), "stack", torch.ops.aten.max.dim, 2),
+        ):
+            exported = export(model.eval(), example_inputs)
+            targets = [
+                n.target for n in exported.graph.nodes if n.op == "call_function"
+            ]
+            self.assertIn(target, targets, source)
+            folded = XnnpackPartitioner().transform_for_pre_decomposition(exported)
+            targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+            self.assertNotIn(target, targets, source)
+            parameters = list(folded.graph_signature.inputs_to_parameters.values())
+            self.assertNotIn(source, parameters)
+            self.assertEqual(
+                sum(
+                    bool(re.match(rf"^{source}_prop_[0-9a-f]{{8}}$", p))
+                    for p in parameters
+                ),
+                outputs,
+                (source, parameters),
+            )
+            self._assert_lowered_matches_eager(model, example_inputs)
+
+    def test_pre_decomposition_folding_keeps_a_scalar_item_used_outside_the_fold(self):
+        """
+        A scalar used both in the weight expression and outside it: the
+        weight folds, and the op stays for the outside use with the parameter
+        it reads.
+        """
+
+        class ItemInsideAndOutside(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(4, 4))
+                self.scale = torch.nn.Parameter(torch.tensor(2.0))
+
+            def forward(self, x):
+                scale = self.scale.item()
+                return F.linear(x * scale, self.weight * scale)
+
+        model = ItemInsideAndOutside().eval()
+        example_inputs = (torch.randn(2, 4),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+        self.assertEqual(
+            targets,
+            [
+                torch.ops.aten.item.default,
+                torch.ops.aten.mul.Tensor,
+                torch.ops.aten.linear.default,
+            ],
+        )
+        parameters = list(folded.graph_signature.inputs_to_parameters.values())
+        self.assertEqual(parameters[0], "scale")
+        self.assertRegex(parameters[1], r"^weight_prop_[0-9a-f]{8}$")
+        self._assert_lowered_matches_eager(model, example_inputs)

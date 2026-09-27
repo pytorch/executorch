@@ -7,6 +7,7 @@
 import inspect
 import itertools
 import logging
+import operator
 from typing import Callable, List, Optional, Type, Union
 
 import torch
@@ -31,6 +32,7 @@ from executorch.exir.passes.constant_prop_pass import (
     is_const,
 )
 from torch.fx.passes.infra.partitioner import Partition
+from torch.utils import _pytree as pytree
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -264,7 +266,9 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         Returns the groups of nodes to fold: each computed weight or bias
         whose inputs are all constant, with the nodes it is computed from
         and the placeholders it reads. Folds that share a node or a source
-        are in one group.
+        are in one group. A multi-output op in the fold, a split or a chunk
+        of a packed weight, brings every output with it: the pass
+        materializes the outputs, one tensor each, never the op.
         """
         constant_only = self._constant_only(exported_program)
         groups = DSJ()
@@ -275,13 +279,19 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
             while stack:
                 node = stack.pop()
                 groups.union(node, seed)
-                for input_node in node.all_input_nodes:
-                    if input_node not in seen:
-                        seen.add(input_node)
-                        if input_node.op != "placeholder":
-                            stack.append(input_node)
-                        else:
-                            groups.union(input_node, seed)
+                neighbours = list(node.all_input_nodes)
+                if not isinstance(node.meta.get("val"), torch.Tensor):
+                    neighbours += [
+                        user for user in node.users if user.target is operator.getitem
+                    ]
+                for neighbour in neighbours:
+                    if neighbour in seen:
+                        continue
+                    seen.add(neighbour)
+                    if neighbour.op != "placeholder":
+                        stack.append(neighbour)
+                    else:
+                        groups.union(neighbour, seed)
         return groups.gen_groups()
 
     def _nodes_to_fold(self, exported_program: ExportedProgram) -> set[torch.fx.Node]:
@@ -295,28 +305,62 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         """
         groups = self._fold_groups(exported_program)
         folds = {node for group in groups for node in group if node.op != "placeholder"}
+        position = {node: i for i, node in enumerate(exported_program.graph.nodes)}
         nodes_to_fold: set[torch.fx.Node] = set()
         for group in groups:
+            members = sorted(
+                (node for node in group if node in folds),
+                key=position.get,
+                reverse=True,
+            )
+            # A value that is not a tensor, the float of aten.item, never
+            # becomes a placeholder. When a consumer outside the fold needs
+            # it the pass keeps the op, and the tensors it is computed from
+            # are materialized instead of erased.
+            kept: set[torch.fx.Node] = set()
+            for node in members:
+                if not self._tensors(node) and self._used_outside(node, folds, kept):
+                    kept.add(node)
             materialized = [
                 node
-                for node in group
-                if node in folds and any(user not in folds for user in node.users)
+                for node in members
+                if node not in kept and self._used_outside(node, folds, kept)
             ]
+            if not all(
+                isinstance(node.meta.get("val"), torch.Tensor) for node in materialized
+            ):
+                continue
             erased = [
                 node
                 for node in group
-                if node not in folds and all(user in folds for user in node.users)
+                if node not in folds and not self._used_outside(node, folds, kept)
             ]
             added = sum(self._nbytes(node) for node in materialized)
             removed = sum(self._nbytes(node) for node in erased)
             if added <= removed:
-                nodes_to_fold.update(node for node in group if node in folds)
+                nodes_to_fold.update(members)
         return nodes_to_fold
 
     @staticmethod
-    def _nbytes(node: torch.fx.Node) -> int:
-        val = node.meta["val"]
-        return val.numel() * val.element_size()
+    def _used_outside(
+        node: torch.fx.Node, folds: set[torch.fx.Node], kept: set[torch.fx.Node]
+    ) -> bool:
+        """Whether a user of `node` stays in the graph after the fold."""
+        return any(user not in folds or user in kept for user in node.users)
+
+    @staticmethod
+    def _tensors(node: torch.fx.Node) -> List[torch.Tensor]:
+        return [
+            leaf
+            for leaf in pytree.tree_leaves(node.meta.get("val"))
+            if isinstance(leaf, torch.Tensor)
+        ]
+
+    @classmethod
+    def _nbytes(cls, node: torch.fx.Node) -> int:
+        return sum(
+            tensor.numel() * tensor.element_size() for tensor in cls._tensors(node)
+        )
 
     def partition(self, exported_program):
         """
