@@ -745,10 +745,11 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 )
             )
 
-    def test_pre_decomposition_folding_keeps_scalar_item(self):
+    def test_pre_decomposition_folding_folds_through_a_scalar_item(self):
         """
-        aten.item yields a Python float that its consumer takes directly, so
-        there is no tensor to lift. The op stays and the export goes through.
+        aten.item yields a Python float that its consumer takes directly.
+        There is no tensor to lift for it, but the weight computed from it
+        folds all the same, and the op goes with the fold.
         """
 
         class ScaleByItem(torch.nn.Module):
@@ -756,14 +757,20 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 super().__init__()
                 self.weight = torch.nn.Parameter(torch.randn(3, 4))
                 self.scale = torch.nn.Parameter(torch.tensor(2.0))
-                self.register_buffer("offset", torch.tensor(1.0))
 
             def forward(self, x):
-                weight = self.weight * self.scale.item() + self.offset.item()
-                return torch.nn.functional.linear(x, weight)
+                return torch.nn.functional.linear(x, self.weight * self.scale.item())
 
         model = ScaleByItem().eval()
         example_inputs = (torch.randn(2, 4),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
+        self.assertEqual(targets, [torch.ops.aten.linear.default])
+        (weight,) = folded.graph_signature.inputs_to_parameters.values()
+        self.assertRegex(weight, r"^weight_prop_[0-9a-f]{8}$")
+
         edge = to_edge_transform_and_lower(
             export(model, example_inputs), partitioner=[XnnpackPartitioner()]
         )
