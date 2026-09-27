@@ -137,7 +137,7 @@ target_link_libraries(dflash_runner PUBLIC ${link_libraries})
 
 add_executable(sampling_test tests/sampling_test.cpp)
 target_include_directories(sampling_test PUBLIC ${_common_include_directories})
-target_link_libraries(sampling_test PUBLIC extension_tensor executorch)
+target_link_libraries(sampling_test PUBLIC extension_tensor prim_ops_lib)
 
 add_executable(dflash_timing_test tests/dflash_timing_test.cpp)
 target_include_directories(
