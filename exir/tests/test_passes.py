@@ -2698,31 +2698,68 @@ class TestPasses(unittest.TestCase):
         module = new_ep.module()
         self.assertFalse(torch.equal(module(x), module(x)))
 
-    def test_constant_prop_pass_keeps_non_tensor_results(self) -> None:
+    def test_constant_prop_pass_folds_through_a_scalar(self) -> None:
         """
-        aten.item yields a Python float. Before decomposition its consumer
-        takes that float directly, so there is no tensor to lift: the op and
-        its consumer have to stay in the graph.
+        A Python scalar in the middle of a constant chain, the float of
+        aten.item, is not a tensor to lift, but its consumers fold with it:
+        `b * w.max().item()` comes out as one constant, and neither the op
+        nor the parameters stay in the graph.
+        """
+
+        class ScaleByMaxItem(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.b = torch.nn.Parameter(torch.randn(4))
+                self.w = torch.nn.Parameter(torch.randn(4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.b * self.w.max().item()
+
+        x = torch.randn(4)
+        ep = to_edge(export(ScaleByMaxItem(), (x,), strict=True)).exported_program()
+        expected = ep.module()(x)
+        new_ep = constant_prop_pass(ep)
+
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertEqual(targets, [exir_ops.edge.aten.add.Tensor])
+        self.assertEqual(list(new_ep.constants), ["_prop_tensor_constant0"])
+        self.assertEqual(list(new_ep.graph_signature.inputs_to_parameters), [])
+        self.assertTrue(torch.equal(new_ep.module()(x), expected))
+
+    def test_constant_prop_pass_keeps_a_scalar_op_used_outside_the_fold(self) -> None:
+        """
+        A scalar cannot become a placeholder. When a consumer outside the
+        fold takes it, the op stays in the graph with the parameter it reads,
+        while the consumers inside the fold are still folded.
         """
 
         class ScaleByItem(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
+                self.weight = torch.nn.Parameter(torch.ones(4))
                 self.scale = torch.nn.Parameter(torch.tensor(2.0))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x * self.scale.item()
+                scale = self.scale.item()
+                return x * scale + self.weight * scale
 
         x = torch.ones(4)
         new_ep = constant_prop_pass(export(ScaleByItem(), (x,), strict=True))
 
         targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
-        self.assertIn(torch.ops.aten.item.default, targets)
-        self.assertEqual(len(new_ep.constants), 0)
+        self.assertEqual(
+            targets,
+            [
+                torch.ops.aten.item.default,
+                torch.ops.aten.mul.Tensor,
+                torch.ops.aten.add.Tensor,
+            ],
+        )
+        self.assertEqual(list(new_ep.constants), ["_prop_tensor_constant0"])
         self.assertEqual(
             list(new_ep.graph_signature.inputs_to_parameters.values()), ["scale"]
         )
-        self.assertTrue(torch.equal(new_ep.module()(x), x * 2))
+        self.assertTrue(torch.equal(new_ep.module()(x), x * 2 + 2))
 
     def test_constant_prop_pass_fold_buffers_false(self) -> None:
         """

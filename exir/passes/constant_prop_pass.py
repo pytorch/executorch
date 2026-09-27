@@ -196,19 +196,17 @@ def get_propagated_const_tensor_dict(
             ):
                 prop_constant_tensor = prop_constant_tensor.contiguous()
 
-        # Only a tensor can become a constant placeholder. A Python scalar,
-        # such as the float from aten.item before decomposition, stays an op
-        # and its consumers are not folded.
-        leaves = pytree.tree_leaves(prop_constant_tensor)
-        if not leaves or not all(isinstance(leaf, torch.Tensor) for leaf in leaves):
-            continue
         # Before decomposition a view op such as aten.t returns a view of the
         # parameter, and a view keeps requires_grad even under no_grad. A
         # later retrace clones such a constant outside no_grad, which leaves
         # a non-leaf tensor that cannot be deep-copied. Detach so the
-        # constant is a plain leaf.
+        # constant is a plain leaf. A result that is not a tensor, such as
+        # the Python float of aten.item, is recorded as it is: its consumers
+        # fold with it, and create_constant_nodes_and_return_specs keeps the
+        # op itself when a consumer outside the fold still needs the value.
         const_node_to_tensor[node] = pytree.tree_map(
-            lambda leaf: leaf.detach(), prop_constant_tensor
+            lambda leaf: leaf.detach() if isinstance(leaf, torch.Tensor) else leaf,
+            prop_constant_tensor,
         )
 
     return const_node_to_tensor
@@ -556,14 +554,24 @@ def create_constant_nodes_and_return_specs(
 
     folds: list[_Fold] = []
     taken: set[str] = set()
+    # Constant nodes that stay ops: only a tensor can become a placeholder.
+    kept: set[torch.fx.Node] = set()
     # Iterate over nodes in reverse order.
     for node, prop_constant_tensor in reversed(const_node_to_tensor.items()):
-        if all(x in const_node_to_tensor for x in node.users):
+        if all(x in const_node_to_tensor and x not in kept for x in node.users):
             # All users of this constant node are also constant, so we don't need to create a new constant node.
             erase_constant_node(exported_program, node)
             continue
 
         if node.op == "placeholder":
+            continue
+
+        if not isinstance(prop_constant_tensor, torch.Tensor):
+            # A Python scalar, the float of aten.item, or the tuple of a
+            # multi-output op cannot be a placeholder. The consumers that
+            # fold have folded by now; the op stays for the others, and the
+            # nodes it is computed from stay with it.
+            kept.add(node)
             continue
 
         fold = replace_with_constant_node(
