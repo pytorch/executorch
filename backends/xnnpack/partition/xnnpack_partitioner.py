@@ -148,7 +148,13 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         # them to the optimizer through the gradient and parameter outputs.
         if exported_program.graph_signature.backward_signature is not None:
             return exported_program
-        if not self._computed_gemm_weights(exported_program):
+        # Decide on the graph as it is. A program with nothing to fold, such
+        # as a quantized model whose weights arrive through a dequantize or a
+        # linear whose weight is an input, leaves the hook without the
+        # retrace below. The one shape this misses is a weight built with an
+        # in-place op, which is impure here and pure only once
+        # functionalized: it stays an op.
+        if not self._nodes_to_fold(exported_program):
             return exported_program
 
         # The program is not functionalized yet at this point: a KV-cache
