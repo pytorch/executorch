@@ -53,7 +53,7 @@ from executorch.exir.passes import (
     ReplaceSymSizeOpPass,
     ToOutVarPass,
 )
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.passes.constant_prop_pass import _expression, constant_prop_pass
 from executorch.exir.passes.cse_pass import CSEPass
 from executorch.exir.passes.debug_handle_generator_pass import (
     DebugHandleGeneratorPass,
@@ -2895,6 +2895,63 @@ class TestPasses(unittest.TestCase):
         self.assertNotEqual(names["a"], names["c"])
         for name in names.values():
             self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+
+    def test_constant_prop_pass_describes_each_producer_once(self) -> None:
+        """
+        The expression that names a folded value describes every producer
+        once, so it grows with the number of producers, not with the number
+        of paths through them: a chain of squarings, where each level uses
+        its input twice, stays short. It is built without recursion, so a
+        deep chain does not reach the recursion limit.
+        """
+
+        class Squaring(torch.nn.Module):
+            def __init__(self, depth: int) -> None:
+                super().__init__()
+                self.depth = depth
+                self.w = torch.nn.Parameter(torch.full((4, 4), 0.5))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                w = self.w
+                for _ in range(self.depth):
+                    w = w * w
+                return x @ w
+
+        class Chain(torch.nn.Module):
+            def __init__(self, depth: int) -> None:
+                super().__init__()
+                self.depth = depth
+                self.w = torch.nn.Parameter(torch.zeros(4, 4))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                w = self.w
+                for _ in range(self.depth):
+                    w = w + 1.0
+                return x @ w
+
+        def weight_expression(ep):
+            (matmul,) = ep.graph.find_nodes(
+                op="call_function", target=torch.ops.aten.matmul.default
+            )
+            return _expression(ep, matmul.args[1])
+
+        x = torch.randn(2, 4)
+        expressions = [
+            weight_expression(export(Squaring(16), (x,), strict=True)) for _ in range(2)
+        ]
+        self.assertEqual(expressions[0], expressions[1])
+        self.assertLess(len(expressions[0]), 100 * 16)
+        self.assertLess(
+            len(weight_expression(export(Chain(600), (x,), strict=True))), 100 * 600
+        )
+
+        for module in (Squaring(16), Chain(600)):
+            ep = export(module, (x,), strict=True)
+            expected = ep.module()(x)
+            new_ep = constant_prop_pass(ep, register_like_source=True)
+            (name,) = new_ep.graph_signature.inputs_to_parameters.values()
+            self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+            self.assertTrue(torch.equal(new_ep.module()(x), expected))
 
     def test_constant_prop_pass_registers_folds_in_graph_order(self) -> None:
         """

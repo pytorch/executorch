@@ -264,11 +264,17 @@ def _expression(exported_program: ExportedProgram, node: torch.fx.Node) -> str:
     """
     Returns a string that identifies the expression `node` computes.
 
-    Placeholders appear by their fully qualified name and every other node by
-    its target and arguments, so that the same expression over the same
-    parameters gives the same string in every method and export, whatever
-    the node names are.
+    Every producer of `node` is described once, as a numbered definition
+    that names its target and its arguments; an argument that is a producer
+    appears by its number and a placeholder by its fully qualified name. The
+    same expression over the same parameters gives the same string in every
+    method and export, whatever the node names are, and the string grows
+    with the number of producers rather than with the number of paths
+    through them. The walk is iterative, so a deep chain does not reach the
+    recursion limit.
     """
+    index: dict[torch.fx.Node, int] = {}
+    definitions: list[str] = []
 
     def describe(arg):
         if not isinstance(arg, torch.fx.Node):
@@ -276,10 +282,25 @@ def _expression(exported_program: ExportedProgram, node: torch.fx.Node) -> str:
         if arg.op == "placeholder":
             fqn, _ = _source_spec(exported_program, arg)
             return fqn if fqn is not None else arg.name
-        return _expression(exported_program, arg)
+        return f"%{index[arg]}"
 
-    target = getattr(node.target, "__name__", None) or repr(node.target)
-    return f"{target}{map_aggregate((node.args, node.kwargs), describe)!r}"
+    # Post-order over the producers: a node is defined after its inputs.
+    stack: list[tuple[torch.fx.Node, bool]] = [(node, False)]
+    while stack:
+        current, inputs_done = stack.pop()
+        if current in index:
+            continue
+        if not inputs_done:
+            stack.append((current, True))
+            for input_node in reversed(current.all_input_nodes):
+                if input_node.op != "placeholder" and input_node not in index:
+                    stack.append((input_node, False))
+            continue
+        target = getattr(current.target, "__name__", None) or repr(current.target)
+        arguments = map_aggregate((current.args, current.kwargs), describe)
+        index[current] = len(definitions)
+        definitions.append(f"%{index[current]}={target}{arguments!r}")
+    return ";".join(definitions)
 
 
 def _folded_name(
