@@ -29,7 +29,7 @@ from executorch.exir.passes.external_constants_pass import (
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch.export import export
+from torch.export import export, ExportedProgram
 from torch.export.experimental import _export_forward_backward
 
 
@@ -405,7 +405,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         class Shared(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.register_buffer("state", torch.zeros(4))
+                self.register_buffer("state", torch.zeros(4, 4))
 
         class Write(torch.nn.Module):
             def __init__(self, shared):
@@ -422,12 +422,17 @@ class TestXnnpackPartitioner(unittest.TestCase):
                 self.shared = shared
 
             def forward(self, x):
-                return x + self.shared.state.sum()
+                return x @ self.shared.state.t()
 
         shared = Shared()
-        x = torch.ones(4)
+        x = torch.ones(4, 4)
+        read_program = export(Read(shared), (x,))
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(read_program),
+            read_program,
+        )
         edge = to_edge_transform_and_lower(
-            {"write": export(Write(shared), (x,)), "read": export(Read(shared), (x,))},
+            {"write": export(Write(shared), (x,)), "read": read_program},
             partitioner={
                 "write": [XnnpackPartitioner()],
                 "read": [XnnpackPartitioner()],
@@ -903,3 +908,65 @@ class TestXnnpackPartitioner(unittest.TestCase):
         self.assertEqual(parameters[0], "scale")
         self.assertRegex(parameters[1], r"^weight_prop_[0-9a-f]{8}$")
         self._assert_lowered_matches_eager(model, example_inputs)
+
+    def test_pre_decomposition_folding_retraces_only_with_a_fold(self):
+        """
+        The hook decides on the program as it is and functionalizes only
+        when a weight will fold. A quantized linear, whose weight arrives
+        through a dequantize, a linear whose weight is an input and a matmul
+        of two activations leave the hook with the program they came with.
+        """
+        from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+            get_symmetric_quantization_config,
+            XNNPACKQuantizer,
+        )
+        from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+        class UserWeight(torch.nn.Module):
+            def forward(self, x, w):
+                return F.linear(x, w)
+
+        class ActivationMatmul(torch.nn.Module):
+            def forward(self, x, y):
+                return x @ y
+
+        model = self.SimpleModel().eval()
+        example_inputs = (torch.randn(2, 10),)
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
+        prepared = prepare_pt2e(export(model, example_inputs).module(), quantizer)
+        prepared(*example_inputs)
+        quantized = convert_pt2e(prepared)
+
+        partitioner = XnnpackPartitioner()
+        for module, inputs in (
+            (quantized, example_inputs),
+            (UserWeight(), (torch.randn(2, 4), torch.randn(3, 4))),
+            (ActivationMatmul(), (torch.randn(2, 4), torch.randn(4, 3))),
+        ):
+            exported = export(module, inputs)
+            with mock.patch.object(
+                ExportedProgram, "run_decompositions", autospec=True
+            ) as run_decompositions:
+                self.assertIs(
+                    partitioner.transform_for_pre_decomposition(exported), exported
+                )
+            run_decompositions.assert_not_called()
+
+        class WeightNormConv(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.utils.parametrizations.weight_norm(
+                    torch.nn.Conv1d(4, 4, 3)
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        exported = export(WeightNormConv().eval(), (torch.randn(1, 4, 8),))
+        folded = partitioner.transform_for_pre_decomposition(exported)
+        self.assertIsNot(folded, exported)
+        self.assertRegex(
+            list(folded.graph_signature.inputs_to_parameters.values())[-1],
+            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{8}$",
+        )
