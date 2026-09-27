@@ -415,7 +415,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
       "${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm/python"
     )
   else()
-    target_link_libraries(PyQnnManagerAdaptor PRIVATE executorch)
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE prim_ops_lib)
   endif()
 
   pybind11_extension(PyQnnManagerAdaptor)

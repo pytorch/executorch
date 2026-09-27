@@ -106,7 +106,7 @@ elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
 endif()
 
 add_library(custom_kernels ${kernel_sources})
-target_link_libraries(custom_kernels PRIVATE executorch)
+target_link_libraries(custom_kernels PRIVATE prim_ops_lib)
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
 gen_operators_lib(

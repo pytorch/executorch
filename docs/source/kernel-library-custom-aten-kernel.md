@@ -170,7 +170,7 @@ gen_selected_ops("" "${SELECT_OPS_LIST}" "")
 generate_bindings_for_kernels(FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml)
 
 # Prepare a C++ library called "generated_lib" with _kernel_lib being the portable library, executorch is a dependency of it.
-gen_operators_lib("generated_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch)
+gen_operators_lib("generated_lib" KERNEL_LIBS ${_kernel_lib} DEPS prim_ops_lib)
 
 # Link "generated_lib" into the application:
 target_link_libraries(executorch_binary generated_lib)
@@ -276,7 +276,7 @@ add_library(custom_op_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/custom_op.cpp)
 target_include_directory(custom_op_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # Link ExecuTorch library
-target_link_libraries(custom_op_lib PUBLIC executorch)
+target_link_libraries(custom_op_lib PUBLIC prim_ops_lib)
 
 # Define a binary target
 add_executable(custom_op_runner PUBLIC main.cpp)
