@@ -1,3 +1,7 @@
+<p align="center">
+  <b>English</b> · <a href="README.zh.md">简体中文</a>
+</p>
+
 <div align="center">
   <img src="docs/source/_static/img/et-logo.png" alt="ExecuTorch logo mark" width="200">
   <h1>ExecuTorch</h1>
