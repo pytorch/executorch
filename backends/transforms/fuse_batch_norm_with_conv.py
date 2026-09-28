@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+from typing import Optional, Tuple
 
 import torch
 
@@ -86,7 +87,7 @@ class FuseBatchNormWithConvPass(ExportPass):
 
             # Compute the updated weight and bias after fusing conv op
             # with batchnorm op.
-            fused_weight, fused_bias = fuse_conv_bn_weights(
+            fused_weight, fused_bias = self._fuse_conv_bn_weights(
                 conv_weight,
                 conv_bias,
                 running_mean,
@@ -94,6 +95,8 @@ class FuseBatchNormWithConvPass(ExportPass):
                 eps,
                 bn_weight,
                 bn_bias,
+                transposed=bool(conv.args[6]),
+                groups=conv.args[8],
             )
 
             # Modify the graph by updating the weight and bias of conv op
@@ -127,6 +130,62 @@ class FuseBatchNormWithConvPass(ExportPass):
         graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, True)
+
+    @staticmethod
+    def _fuse_conv_bn_weights(
+        conv_weight: torch.Tensor,
+        conv_bias: Optional[torch.Tensor],
+        running_mean: torch.Tensor,
+        running_var: torch.Tensor,
+        eps: float,
+        bn_weight: Optional[torch.Tensor],
+        bn_bias: Optional[torch.Tensor],
+        transposed: bool,
+        groups: int,
+    ) -> Tuple[torch.nn.Parameter, torch.nn.Parameter]:
+        """
+        A transposed conv weight is [in, out/groups, *kernel], so its output
+        channels sit on dim 1, split into one block per group along dim 0.
+        Regroup it to [in/groups, out, *kernel] so dim 1 holds every output
+        channel, fold with transpose=True, then restore the original layout.
+        """
+        if not transposed or groups == 1:
+            return fuse_conv_bn_weights(
+                conv_weight,
+                conv_bias,
+                running_mean,
+                running_var,
+                eps,
+                bn_weight,
+                bn_bias,
+                transpose=transposed,
+            )
+
+        in_channels, out_per_group, *kernel = conv_weight.shape
+        grouped_shape = (groups, in_channels // groups, out_per_group, *kernel)
+        regrouped = (
+            conv_weight.reshape(grouped_shape)
+            .transpose(0, 1)
+            .reshape(in_channels // groups, groups * out_per_group, *kernel)
+        )
+        fused_weight, fused_bias = fuse_conv_bn_weights(
+            regrouped,
+            conv_bias,
+            running_mean,
+            running_var,
+            eps,
+            bn_weight,
+            bn_bias,
+            transpose=True,
+        )
+        fused_weight = torch.nn.Parameter(
+            fused_weight.detach()
+            .reshape(in_channels // groups, groups, out_per_group, *kernel)
+            .transpose(0, 1)
+            .reshape(conv_weight.shape),
+            fused_weight.requires_grad,
+        )
+        return fused_weight, fused_bias
 
     @staticmethod
     def can_fuse(
