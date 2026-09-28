@@ -90,4 +90,5 @@ jobs:
           gh pr create \
             --title "Bump PyTorch pin to nightly ${NIGHTLY}" \
             --body "${PR_BODY}" \
-            --label "ci/pytorch-pin-bump"
+            --label "ci/pytorch-pin-bump" \
+            --label "ciflow/cuda"

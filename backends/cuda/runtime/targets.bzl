@@ -139,7 +139,11 @@ def define_common_targets(is_fbcode = False):
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
-        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        preprocessor_flags = [
+            "-DCUDA_AVAILABLE=1",
+            # Always built with the LLM extension's cache here.
+            "-DEXECUTORCH_CUDA_OFFGRAPH_KV_CACHE",
+        ],
         visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/backends/aoti:delegate_handle",
