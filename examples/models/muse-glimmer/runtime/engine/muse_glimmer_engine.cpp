@@ -105,6 +105,9 @@ constexpr const char* kEmbedTextMethod = "embed_text";
 constexpr const char* kMuseGlimmerVisionEncoderMethod = "vision_encoder";
 constexpr const char* kDraftForwardMethod = "draft_forward";
 constexpr const char* kDraftPrefillMethod = "draft_prefill";
+constexpr const char* kDFlashSampleTokensMethod = "dflash_sample_tokens";
+constexpr const char* kDFlashVerifySpeculativeMethod =
+    "dflash_verify_speculative";
 constexpr const char* kDFlashBlockSize = "get_block_size";
 constexpr const char* kDFlashMaskTokenId = "get_mask_token_id";
 constexpr const char* kDFlashTargetLayers = "get_n_target_layers";
@@ -355,6 +358,10 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
           kDraftPrefillMethod, nullptr, nullptr, load_options));
     }
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+        kDFlashSampleTokensMethod, nullptr, nullptr, load_options));
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+        kDFlashVerifySpeculativeMethod, nullptr, nullptr, load_options));
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
         kTargetForwardFromEmbeddingsMethod, nullptr, nullptr, load_options));

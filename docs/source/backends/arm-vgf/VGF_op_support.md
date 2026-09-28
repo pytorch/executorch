@@ -87,7 +87,7 @@ Total supported PyTorch APIs: **157**.
 | `torch.masked_fill` / `torch.Tensor.masked_fill` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.matmul` / `@` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.max` | FP | `FP32`, `FP16`, `BF16` | - |
-| `torch.max_pool1d` | FP | `FP32` | - |
+| `torch.max_pool1d` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.max_pool2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.maximum` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.mean` | FP, INT | `FP32`, `INT8` | 8x8 |
@@ -113,7 +113,7 @@ Total supported PyTorch APIs: **157**.
 | `torch.nn.LeakyReLU` / `torch.nn.functional.leaky_relu` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.Linear` / `torch.nn.functional.linear` | FP, INT | `FP32`, `INT8`, `INT4` | 8x8, 8x4 |
 | `torch.nn.LogSoftmax` / `torch.nn.functional.log_softmax` | FP, INT | `FP32`, `INT8` | 8x8 |
-| `torch.nn.MaxPool2d` / `torch.nn.functional.max_pool2d` | FP | `FP32` | - |
+| `torch.nn.MaxPool2d` / `torch.nn.functional.max_pool2d` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.SELU` / `torch.nn.functional.selu` | FP | `FP32` | - |
 | `torch.nn.SiLU` / `torch.nn.functional.silu` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.Softmax` / `torch.nn.functional.softmax` | FP, INT | `FP32`, `INT8` | 8x8 |

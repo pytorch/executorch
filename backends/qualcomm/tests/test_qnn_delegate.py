@@ -23,6 +23,8 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.debugger.utils import (
+    _HEXTIMATE_SUPPORTED_SOCS,
+    _MIN_SDK_FOR_HEXTIMATE,
     estimate_htp_profile_result,
     generate_htp_profile_result,
 )
@@ -583,6 +585,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+                self.assert_batch_norm_folded(module, sample_input)
 
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
@@ -2927,6 +2930,7 @@ class TestQNNFloatingPointModel(TestQNN):
         module = Conv2dBnHardtanhMean()  # noqa: F405
         sample_input = (torch.randn(1, 1, 6, 6),)
         self.lower_module_and_test_output(module, sample_input)
+        self.assert_batch_norm_folded(module, sample_input)
 
     def test_qnn_backend_conv2d_cat(self):
         module = Conv2dCat()  # noqa: F405
@@ -8856,6 +8860,10 @@ class TestQNNQuantizedUtils(TestQNN):
                     with open(a.qhas_json, "r") as f:
                         self.assertIn("data", json.load(f))
 
+    @unittest.skipIf(
+        is_qnn_sdk_version_less_than(_MIN_SDK_FOR_HEXTIMATE),
+        f"Hextimate requires QNN SDK >= {_MIN_SDK_FOR_HEXTIMATE}.",
+    )
     def test_qnn_backend_generate_hextimate(self):
         if not self.enable_x86_64:
             self.skipTest(
@@ -8863,6 +8871,7 @@ class TestQNNQuantizedUtils(TestQNN):
             )
         if get_backend_type(self.backend) == QnnExecuTorchBackendType.kLpaiBackend:
             self.skipTest("LPAI does not support hextimate generation.")
+        hextimate_soc = _HEXTIMATE_SUPPORTED_SOCS[0]
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
@@ -8872,7 +8881,7 @@ class TestQNNQuantizedUtils(TestQNN):
         # required — hextimate profiling is attached by the QNN CLI at
         # context-binary-generation time.
         compiler_spec = generate_qnn_executorch_compiler_spec(
-            soc_model=self.chipset_table[TestQNN.soc_model],
+            soc_model=hextimate_soc,
             backend_options=backend_options,
             online_prepare=True,
         )
@@ -8887,7 +8896,7 @@ class TestQNNQuantizedUtils(TestQNN):
 
             artifacts = estimate_htp_profile_result(
                 artifact_dir=tmp_dir,
-                soc_id=self.chipset_table[self.soc_model],
+                soc_id=hextimate_soc,
                 pte_path=pte_path,
             )
             for a in artifacts:
