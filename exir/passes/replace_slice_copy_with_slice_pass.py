@@ -86,9 +86,7 @@ def _is_static_slice_argument(value: Any) -> bool:
     return value is None or isinstance(value, int)
 
 
-def _compute_slice_byte_offset(
-    base: TensorSpec, dim: int, start: Optional[int]
-) -> int:
+def _compute_slice_byte_offset(base: TensorSpec, dim: int, start: Optional[int]) -> int:
     start_int = _slice_start_as_int(start)
     if start_int < 0:
         raise ValueError("memory.slice does not support negative slice starts.")
