@@ -63,24 +63,26 @@ class PreEncode(nn.Module):
 class Encode(nn.Module):
     """Adapt the stateless Transformers network to the native streaming ABI."""
 
-    def __init__(self, model):
+    def __init__(self, model, *, expand_attention_mask=False):
         super().__init__()
         self.model = model.model
         self.classifier = model.classifier
         self.dtype = model.dtype
+        self.expand_attention_mask = expand_attention_mask
 
     def forward(self, embeddings, lengths):
         positions = torch.arange(embeddings.shape[1], device=embeddings.device)
         mask = (positions[None, :] < lengths[:, None])[:, None, None, :]
-        # CUDA SDPA requires the full query dimension in the mask.
-        mask = mask.expand(-1, -1, embeddings.shape[1], -1)
+        if self.expand_attention_mask:
+            # CUDA SDPA requires the full query dimension in the mask.
+            mask = mask.expand(-1, -1, embeddings.shape[1], -1)
         encoded = self.model(
             inputs_embeds=embeddings.to(self.dtype), attention_mask=mask
         )
         return self.classifier(encoded.last_hidden_state).sigmoid().float()
 
 
-def capture_model(model, feature_extractor):
+def capture_model(model, feature_extractor, *, expand_attention_mask=False):
     """Capture backend-independent programs; streaming state stays in the runner."""
     audio = model.config.audio_config
     head = model.config.head_config
@@ -147,7 +149,7 @@ def capture_model(model, feature_extractor):
                 strict=False,
             ),
             "encode": export(
-                Encode(model),
+                Encode(model, expand_attention_mask=expand_attention_mask),
                 (
                     torch.zeros(1, 128, audio.hidden_size),
                     torch.tensor([128], dtype=torch.int64),
@@ -206,7 +208,11 @@ def export_model(
     processor = Nemotron3DiarizationProcessor.from_pretrained(
         model_id, revision=revision
     )
-    programs, metadata = capture_model(model, processor.feature_extractor)
+    programs, metadata = capture_model(
+        model,
+        processor.feature_extractor,
+        expand_attention_mask=backend == "cuda",
+    )
     edge = to_edge_transform_and_lower(
         programs,
         partitioner=partitioners,
