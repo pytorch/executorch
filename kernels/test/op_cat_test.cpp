@@ -427,6 +427,36 @@ TEST_F(OpCatOutTest, CatDimSizeOverflowDies) {
       op_cat_out(
           ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
+
+TEST_F(OpCatOutTest, CatDimSizeOverflowBeforeAddition) {
+  // On 32-bit targets, adding these sizes before checking wraps the sum to 1.
+  Tensor::SizesType sizes_a[1] = {
+      std::numeric_limits<Tensor::SizesType>::max()};
+  Tensor::SizesType sizes_b[1] = {
+      std::numeric_limits<Tensor::SizesType>::max()};
+  Tensor::SizesType sizes_c[1] = {3};
+  Tensor::DimOrderType dim_order[1] = {0};
+  Tensor::StridesType strides[1] = {1};
+
+  torch::executor::TensorImpl impl_a(
+      ScalarType::Byte, 1, sizes_a, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_b(
+      ScalarType::Byte, 1, sizes_b, nullptr, dim_order, strides);
+  torch::executor::TensorImpl impl_c(
+      ScalarType::Byte, 1, sizes_c, nullptr, dim_order, strides);
+  Tensor a(&impl_a);
+  Tensor b(&impl_b);
+  Tensor c(&impl_c);
+  std::vector<Tensor> inputs = {a, b, c};
+
+  Tensor::SizesType out_sizes[executorch::runtime::kTensorDimensionLimit];
+  size_t out_ndim = 0;
+  EXPECT_FALSE(torch::executor::get_cat_out_target_size(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()),
+      /*dim=*/0,
+      out_sizes,
+      &out_ndim));
+}
 #endif
 
 /* %python

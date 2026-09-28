@@ -140,6 +140,13 @@ bool get_cat_out_target_size(
   size_t cat_dim_size = 0;
   for (const auto i : c10::irange(tensors.size())) {
     if (tensors[i].numel() > 0) {
+      ET_CHECK_OR_RETURN_FALSE(
+          static_cast<size_t>(tensors[i].size(dim)) <=
+              static_cast<size_t>(
+                  std::numeric_limits<executorch::aten::SizesType>::max()) -
+                  cat_dim_size,
+          "Concatenated size along dim %" PRId64 " overflows SizesType",
+          dim);
       cat_dim_size += tensors[i].size(dim);
     }
     if (tensors[i].dim() != 1 || tensors[i].numel() != 0) {
@@ -153,13 +160,6 @@ bool get_cat_out_target_size(
     if (static_cast<int64_t>(d) != dim) {
       out_sizes[d] = tensors[ref_i].size(d);
     } else {
-      ET_CHECK_OR_RETURN_FALSE(
-          cat_dim_size <=
-              static_cast<size_t>(
-                  std::numeric_limits<executorch::aten::SizesType>::max()),
-          "Concatenated size %zu along dim %" PRId64 " overflows SizesType",
-          cat_dim_size,
-          dim);
       out_sizes[d] = static_cast<executorch::aten::SizesType>(cat_dim_size);
     }
   }
