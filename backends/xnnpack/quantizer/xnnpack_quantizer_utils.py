@@ -789,6 +789,9 @@ def _annotate_add_relu(  # noqa: C901
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
+        if _is_input_non_float_tensor(add_node):
+            continue
+
         input_act_qspec = get_input_act_qspec(quantization_config)
         output_act_qspec = get_output_act_qspec(quantization_config)
 
@@ -843,6 +846,9 @@ def _annotate_add(
             continue
 
         if filter_fn and any(not filter_fn(n) for n in partition):
+            continue
+
+        if _is_input_non_float_tensor(add_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
@@ -913,6 +919,9 @@ def _annotate_mul_relu(  # noqa: C901
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
+        if _is_input_non_float_tensor(mul_node):
+            continue
+
         input_act_qspec = get_input_act_qspec(quantization_config)
         output_act_qspec = get_output_act_qspec(quantization_config)
 
@@ -967,6 +976,9 @@ def _annotate_mul(
             continue
 
         if filter_fn and any(not filter_fn(n) for n in partition):
+            continue
+
+        if _is_input_non_float_tensor(mul_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)

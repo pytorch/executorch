@@ -1160,6 +1160,7 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
             (torch.bool, True, False),
             (torch.int32, 1, 0.5),
             (torch.float32, 1.0, 2),
+            (torch.float32, 1.0, 1 + 2j),
             (torch.complex64, 1j, 1 + 2j),
         ]
         for op, (dtype, value, scalar), shape, configured in itertools.product(
@@ -1177,6 +1178,15 @@ class TestXNNPACKQuantizer(PT2EQuantizationTestCase):
                 m = export(model, example_inputs, strict=True).module()
                 m = prepare_pt2e(m, quantizer)
                 torch.testing.assert_close(m(*example_inputs), expected, rtol=0, atol=0)
+                if (
+                    configured
+                    and dtype == torch.float32
+                    and isinstance(scalar, complex)
+                ):
+                    m = convert_pt2e(m)
+                    torch.testing.assert_close(
+                        m(*example_inputs), expected, rtol=0, atol=0
+                    )
 
     def test_cat_same_node(self):
         """Ensure that concatenating the same node does not cause any unexpected behavior"""
