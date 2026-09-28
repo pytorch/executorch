@@ -126,8 +126,9 @@ class TestPreparingBackend final : public BackendInterface {
       BackendInitContext&,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec>) const override {
-    if (processed == nullptr || processed->size() != 1 ||
-        static_cast<const uint8_t*>(processed->data())[0] != 1) {
+    if (processed == nullptr || processed->size() != 2 ||
+        static_cast<const uint8_t*>(processed->data())[0] != 1 ||
+        static_cast<const uint8_t*>(processed->data())[1] != 0xa0) {
       return Error::DelegateInvalidCompatibility;
     }
     ++init_calls;
@@ -150,6 +151,23 @@ class TestPreparingBackend final : public BackendInterface {
         break;
       }
       methods.emplace_back(input->method_name);
+      if (replace_processed) {
+        auto* bytes = static_cast<uint8_t*>(context.allocate(2));
+        if (bytes == nullptr) {
+          return Error::MemoryAllocationFailed;
+        }
+        bytes[0] = input->processed.empty() ? 0 : input->processed[0];
+        bytes[1] = 0xa0;
+        static const std::array<uint8_t, 2> external_bytes{{1, 0xa0}};
+        const Span<const uint8_t> output_bytes = use_external_processed_output
+            ? Span<const uint8_t>(external_bytes.data(), external_bytes.size())
+            : Span<const uint8_t>(bytes, 2);
+        const Error error = output.write_processed_data(
+            BackendData{output_bytes, std::nullopt});
+        if (error != Error::Ok) {
+          return error;
+        }
+      }
     }
 
     return write_named_data(context, output);
@@ -163,14 +181,18 @@ class TestPreparingBackend final : public BackendInterface {
   mutable std::vector<std::string> methods;
   mutable bool supported{true};
   mutable size_t init_calls{0};
-  mutable bool use_external_output{false};
+  mutable bool replace_processed{true};
+  mutable bool use_external_processed_output{false};
+  mutable bool use_external_named_output{false};
   mutable std::optional<size_t> requested_alignment;
 
   void reset() const {
     methods.clear();
     supported = true;
     init_calls = 0;
-    use_external_output = false;
+    replace_processed = true;
+    use_external_processed_output = false;
+    use_external_named_output = false;
     requested_alignment.reset();
   }
 
@@ -208,7 +230,7 @@ class TestPreparingBackend final : public BackendInterface {
         bias_key,
         BackendData{Span<const uint8_t>(packed + 3, 1), std::nullopt}};
     static const std::array<uint8_t, 3> external_bytes{{3, 4, 5}};
-    const Span<const uint8_t> weight_bytes = use_external_output
+    const Span<const uint8_t> weight_bytes = use_external_named_output
         ? Span<const uint8_t>(external_bytes.data(), external_bytes.size())
         : Span<const uint8_t>(packed, 3);
     new (&values[1]) NamedBackendData{
@@ -363,7 +385,7 @@ executorch::runtime::ExtendedHeader parse_pte_header(
   return header.ok() ? *header : executorch::runtime::ExtendedHeader{};
 }
 
-TEST(InitializeAndSaveBackendDataTest, RewritesOnlyNamedDataInPte) {
+TEST(InitializeAndSaveBackendDataTest, RewritesProcessedAndNamedDataInPte) {
   executorch::runtime::runtime_init();
   ASSERT_EQ(ensure_test_backend_registered(), Error::Ok);
   auto& backend = test_backend();
@@ -402,7 +424,7 @@ TEST(InitializeAndSaveBackendDataTest, RewritesOnlyNamedDataInPte) {
   EXPECT_EQ(program->named_data()->Get(0)->segment_index(), 1U);
   EXPECT_EQ(program->named_data()->Get(1)->segment_index(), 2U);
   EXPECT_EQ(program->segments()->Get(0)->offset(), 0U);
-  EXPECT_EQ(program->segments()->Get(0)->size(), 1U);
+  EXPECT_EQ(program->segments()->Get(0)->size(), 2U);
   EXPECT_EQ(program->segments()->Get(1)->size(), 3U);
   EXPECT_EQ(program->segments()->Get(2)->size(), 1U);
   EXPECT_GT(
@@ -411,7 +433,8 @@ TEST(InitializeAndSaveBackendDataTest, RewritesOnlyNamedDataInPte) {
   const size_t processed_offset =
       output_header.segment_base_offset + program->segments()->Get(0)->offset();
   EXPECT_EQ(output[processed_offset], 1U);
-  FreeableBuffer processed(output.data() + processed_offset, 1, nullptr);
+  EXPECT_EQ(output[processed_offset + 1], 0xa0U);
+  FreeableBuffer processed(output.data() + processed_offset, 2, nullptr);
   BackendInitContext init_context(&allocator, nullptr, "prefill");
   EXPECT_TRUE(
       backend.init(init_context, &processed, ArrayRef<CompileSpec>()).ok());
@@ -425,12 +448,38 @@ TEST(InitializeAndSaveBackendDataTest, RewritesOnlyNamedDataInPte) {
       (std::vector<uint8_t>{3, 4, 5}));
 }
 
+TEST(InitializeAndSaveBackendDataTest, PreservesUnreplacedProcessedData) {
+  executorch::runtime::runtime_init();
+  ASSERT_EQ(ensure_test_backend_registered(), Error::Ok);
+  auto& backend = test_backend();
+  backend.reset();
+  backend.replace_processed = false;
+
+  auto original = make_test_pte(true);
+  std::vector<uint8_t> output;
+  std::array<uint8_t, 4096> temp{};
+  executorch::runtime::MemoryAllocator allocator(temp.size(), temp.data());
+
+  ASSERT_EQ(
+      initialize_and_save_backend_data(
+          std::make_unique<VectorDataLoader>(original),
+          std::make_unique<BufferDataWriter>(&output),
+          &allocator),
+      Error::Ok);
+  const auto header = parse_pte_header(output);
+  const auto* program = executorch_flatbuffer::GetProgram(output.data());
+  ASSERT_EQ(program->segments()->Get(0)->size(), 1U);
+  const size_t offset =
+      header.segment_base_offset + program->segments()->Get(0)->offset();
+  EXPECT_EQ(output[offset], 1U);
+}
+
 TEST(InitializeAndSaveBackendDataTest, RejectsOutputOutsideTempAllocator) {
   executorch::runtime::runtime_init();
   ASSERT_EQ(ensure_test_backend_registered(), Error::Ok);
   auto& backend = test_backend();
   backend.reset();
-  backend.use_external_output = true;
+  backend.use_external_named_output = true;
 
   auto original = make_test_pte(true);
   std::vector<uint8_t> output;
