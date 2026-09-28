@@ -2006,12 +2006,13 @@ def get_native_batch_norm_inputs():
 def get_gelu_inputs():
     test_suite = VkTestSuite(
         [
-            ((M1), "tanh"),
-            ((M1, M2), "tanh"),
-            ((S1, M1, M2), "tanh"),
-            ((S1, S2, S2, M2), "tanh"),
+            (shape, approximate)
+            for shape in ((M1,), (M1, M2), (S1, M1, M2), (S1, S2, S2, M2))
+            for approximate in ("none", "tanh")
         ]
     )
+    test_suite.data_range = (-6, 6)
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     return test_suite
 
 

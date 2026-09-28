@@ -1683,6 +1683,7 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
         python -m unittest backends/vulkan/test/test_vulkan_graph_builder.py
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
   test-coreml-bc-macos:
     needs: [changed-files, run-decision]
