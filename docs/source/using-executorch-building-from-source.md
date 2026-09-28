@@ -276,8 +276,6 @@ cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 
 The `-j` value above applies only when invoking `cmake --build` directly. The workflow presets (`cmake --workflow --preset llm-release`) and the `Makefile` runner targets that wrap them (`make llama-cpu`, `make whisper-cpu`, and so on) build with unbounded parallelism, so the number of concurrent compiler processes is limited by the build graph rather than by core count.
 
-This matters in `kernels/portable/`, where the operator kernels are templated over every supported dtype. The most expensive of them peak around 400 MiB of resident memory per compiler process, so the risk comes from how many run concurrently rather than from any single one. On a machine with limited RAM, an unbounded build can exhaust memory and trigger the kernel OOM killer, which may terminate unrelated processes such as your editor or terminal.
-
 Set `CMAKE_BUILD_PARALLEL_LEVEL` to cap the job count. It takes precedence over the parallelism configured by a preset, so it works for every build entry point:
 
 ```bash
@@ -287,8 +285,6 @@ export CMAKE_BUILD_PARALLEL_LEVEL=2
 
 make llama-cpu
 ```
-
-Builds are incremental, so a build that was interrupted by the OOM killer resumes from the objects it already produced.
 
 <hr/>
 
