@@ -49,4 +49,17 @@ runtime::Error initialize_and_save_backend_data(
     runtime::MemoryAllocator* delegate_temp_allocator,
     runtime::EventTracer* event_tracer = nullptr);
 
+/**
+ * Initializes backend data and persists named-data replacements in a PTE and
+ * one optional PTD. The PTD loader and writer must either both be non-null or
+ * both be null.
+ */
+runtime::Error initialize_and_save_backend_data(
+    std::unique_ptr<runtime::DataLoader> pte_loader,
+    std::unique_ptr<DataWriter> pte_writer,
+    std::unique_ptr<runtime::DataLoader> ptd_loader,
+    std::unique_ptr<DataWriter> ptd_writer,
+    runtime::MemoryAllocator* delegate_temp_allocator,
+    runtime::EventTracer* event_tracer = nullptr);
+
 } // namespace executorch::extension

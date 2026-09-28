@@ -18,6 +18,9 @@ def define_common_targets():
         deps = [
             "//executorch/extension/backend_data:buffer_data_writer",
             "//executorch/extension/backend_data:initialize_and_save",
+            "//executorch/extension/flat_tensor:flat_tensor_data_map",
+            "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
+            "//executorch/extension/flat_tensor/serialize:generated_headers",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/executor:program",
             "//executorch/schema:extended_header",

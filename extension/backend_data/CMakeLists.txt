@@ -13,7 +13,7 @@ add_library(
 target_link_libraries(
   extension_backend_data
   PUBLIC executorch_core
-  PRIVATE program_schema
+  PRIVATE extension_flat_tensor program_schema
 )
 target_include_directories(
   extension_backend_data PUBLIC ${_common_include_directories}

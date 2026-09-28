@@ -15,6 +15,7 @@ def define_common_targets():
             "$(exe {})".format(runtime.external_dep_location("flatc")),
             "--cpp",
             "--cpp-std c++11",
+            "--gen-mutable",
             "--scoped-enums",
             "-o ${OUT}",
             "${SRCS}",
