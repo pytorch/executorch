@@ -89,7 +89,7 @@ def ring_attention_mask(
     ``buf_size`` is a constant.
 
     Note the ``ring_pos >= 0`` term: before the ring wraps it marks every slot
-    at or past ``total_written`` dead, which is what lets ``ring_step`` pass
+    at or past ``total_written`` dead, which is what lets ``offgraph_step`` pass
     that same bound to sdpa without dropping a live slot.
 
     Same rule as ``_build_masks`` in the in-graph model
@@ -97,6 +97,7 @@ def ring_attention_mask(
     since off-graph sizes the ring by ring_physical_capacity() rather than
     twice the window.
     """
+    position = position.reshape(-1)
     total_written = position[-1] + 1
     j = torch.arange(buf_size, dtype=position.dtype, device=position.device)
     ring_pos = j + ((total_written - 1 - j) // buf_size) * buf_size
@@ -105,57 +106,55 @@ def ring_attention_mask(
     return live.unsqueeze(0).unsqueeze(0)
 
 
-def flat_step(
+def _write(storage: torch.Tensor, slots: torch.Tensor, kv: torch.Tensor) -> None:
+    # Index the contiguous BSHD buffer directly. Writing through a BHSD
+    # transpose of it makes Inductor copy the whole declared buffer out and
+    # back every step, which also reaches past what the runtime allocated.
+    storage.index_copy_(1, slots, kv.transpose(1, 2))
+
+
+def offgraph_step(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
     position: torch.Tensor,
     k_storage: torch.Tensor,
     v_storage: torch.Tensor,
-    scale: float,
-) -> torch.Tensor:
-    """Append this step's K/V at their logical positions, then attend."""
-    k_storage.index_copy_(2, position, k)
-    v_storage.index_copy_(2, position, v)
-    # A GPU scalar, so the bound still tracks the sequence under CUDA-graph
-    # replay; the buffer's shape stays static.
-    kv_len = position[-1] + 1
-    return torch.ops.triton.sdpa(
-        q, k_storage, v_storage, None, 0.0, True, scale, True, kv_len
-    )
-
-
-def ring_step(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    position: torch.Tensor,
-    k_storage: torch.Tensor,
-    v_storage: torch.Tensor,
-    mask: torch.Tensor,
     scale: float,
     buf_size: int,
+    mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Write into wrapped slots, then attend over the ring behind ``mask``.
+    """Write this step's K/V into their slots, then attend.
 
-    The mask is passed in rather than built here because every ring layer in a
-    step wants the same one: it depends only on ``position``, so building it
-    per layer would materialize an identical (1,1,T_q,buf_size) tensor once per
-    layer. The in-graph model shares one the same way.
+    One step for both policies. A flat layer is a ring that never wraps: its
+    ``buf_size`` is the full capacity, so ``position % buf_size`` is the
+    position, and it passes no mask, so sdpa applies bottom-right causal from
+    ``kv_len`` on device without materializing one. A ring layer passes the
+    ``ring_attention_mask`` every ring layer of the step shares.
+
+    ``k``/``v`` are BHSD; the storage is BSHD (see ``LowerOffGraphKVPass``).
     """
-    k_storage.index_copy_(2, position % buf_size, k)
-    v_storage.index_copy_(2, position % buf_size, v)
-    # Same bound flat_step passes, and safe on a ring for the reason the mask
-    # already relies on: before the ring wraps, ``position % buf_size`` is the
-    # identity, and ring_attention_mask marks every slot at or past
-    # ``total_written`` dead via its ``ring_pos >= 0`` guard -- so bounding the
-    # sweep here cannot drop a live slot. Once wrapped, total_written exceeds
-    # the buffer and sdpa clamps the bound to it, restoring the full sweep.
-    # Without it the call misses the decode split-K dispatch and every ring
-    # layer falls onto the general, prefill-shaped kernel.
+    position = position.reshape(-1)
+    slots = position % buf_size
+    _write(k_storage, slots, k)
+    _write(v_storage, slots, v)
+    # A GPU scalar, so the bound still tracks the sequence under CUDA-graph
+    # replay while shapes stay static. It is also safe on a ring: before the
+    # ring wraps, ring_attention_mask marks every slot at or past
+    # ``total_written`` dead via its ``ring_pos >= 0`` guard, and once it wraps
+    # sdpa clamps the bound to the buffer, restoring the full sweep. Without it
+    # the call misses sdpa's decode split-K dispatch.
     kv_len = position[-1] + 1
     return torch.ops.triton.sdpa(
-        q, k_storage, v_storage, mask, 0.0, False, scale, True, kv_len
+        q,
+        k_storage.transpose(1, 2),
+        v_storage.transpose(1, 2),
+        mask,
+        0.0,
+        mask is None,
+        scale,
+        True,
+        kv_len,
     )
 
 
@@ -173,16 +172,20 @@ def _mask_fn(buf_size: int, window: int):
     return fn
 
 
-def _ring_fn(scale: float, buf_size: int):
-    def fn(q, k, v, position, k_storage, v_storage, mask):
-        return ring_step(q, k, v, position, k_storage, v_storage, mask, scale, buf_size)
+def _step_fn(scale: float, buf_size: int, masked: bool):
+    if masked:
 
-    return fn
+        def fn(q, k, v, position, k_storage, v_storage, mask):
+            return offgraph_step(
+                q, k, v, position, k_storage, v_storage, scale, buf_size, mask
+            )
 
+    else:
 
-def _flat_fn(scale: float):
-    def fn(q, k, v, position, k_storage, v_storage):
-        return flat_step(q, k, v, position, k_storage, v_storage, scale)
+        def fn(q, k, v, position, k_storage, v_storage):
+            return offgraph_step(
+                q, k, v, position, k_storage, v_storage, scale, buf_size
+            )
 
     return fn
 
@@ -221,16 +224,18 @@ class LowerOffGraphKVPass:
                 f"off-graph KV cache currently requires bfloat16, got {kv.dtype}"
             )
         capacity = self._layer_capacity(layer)
-        # A declared 4-D shape rather than a flat blob: index_copy_ and sdpa
-        # both address through these strides, so the runtime's allocation has
-        # to match the declaration or both will run off the end of it.
-        shape = (kv.shape[0], kv.shape[1], capacity, kv.shape[3])
+        # Declared at the maximum capacity, sequence-major (BSHD). Every access
+        # is bounded by kv_len along the sequence dim, and with the sequence
+        # outermost no other stride depends on capacity, so the runtime may
+        # back this with an allocation holding only the rows written so far
+        # and grow it. A BHSD declaration would put head h at h * capacity,
+        # past any smaller allocation.
+        shape = (kv.shape[0], capacity, kv.shape[1], kv.shape[3])
         prefix = f"{OFFGRAPH_KV_FQN_PREFIX}layer_{layer_id}"
-        names = (f"{prefix}_k", f"{prefix}_v", f"{prefix}_capacity")
+        names = (f"{prefix}_k", f"{prefix}_v")
         values = (
             self._compile_storage(shape, kv.dtype, kv.device),
             self._compile_storage(shape, kv.dtype, kv.device),
-            torch.tensor([capacity], dtype=torch.int64, device=kv.device),
         )
         result = []
         first_node = next(iter(graph.nodes))
@@ -314,24 +319,19 @@ class LowerOffGraphKVPass:
 
             inputs = list(node.args[0:4])  # q, k, v, position
             scale = node.args[5]
-            k_storage, v_storage, _capacity = self._storage_nodes(
-                exported_program, node, layer
-            )
+            k_storage, v_storage = self._storage_nodes(exported_program, node, layer)
             call_args = (*inputs, k_storage, v_storage)
             example_args = tuple(n.meta["val"] for n in call_args)
 
-            if layer["policy"] == "ring":
-                buf_size = self._layer_capacity(layer)
-                window = layer["window"]
+            buf_size = self._layer_capacity(layer)
+            masked = layer["policy"] == "ring"
+            if masked:
                 mask = self._ring_mask(
-                    graph_module.graph, inputs[3], buf_size, window, node
+                    graph_module.graph, inputs[3], buf_size, layer["window"], node
                 )
                 call_args = (*call_args, mask)
                 example_args = (*example_args, mask.meta["val"])
-                fn = _ring_fn(scale, buf_size)
-
-            else:
-                fn = _flat_fn(scale)
+            fn = _step_fn(scale, buf_size, masked)
 
             new_node = self._inline(
                 graph_module.graph, fn, example_args, call_args, node

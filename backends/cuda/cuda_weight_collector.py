@@ -431,7 +431,6 @@ class CudaWeightCollector:
             required_nbytes = _required_view_nbytes(
                 fqn, sizes, strides, storage_offset, tensor.element_size()
             )
-            if not
             if not is_offgraph_kv and required_nbytes > storage_nbytes:
                 raise RuntimeError(
                     f"AOTI view {fqn!r} requires {required_nbytes} bytes from a "

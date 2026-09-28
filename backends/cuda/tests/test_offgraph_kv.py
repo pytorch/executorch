@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import unittest
 
 import torch
@@ -11,11 +12,15 @@ import torch
 # The very functions the lowering pass traces and splices into the graph, so a
 # passing test cannot agree with a decomposition the pass does not emit.
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
-    flat_step,
+    LowerOffGraphKVPass,
+    OFFGRAPH_KV_FQN_PREFIX,
+    offgraph_step,
+    parse_offgraph_kv_manifest,
     ring_attention_mask,
     ring_physical_capacity,
-    ring_step,
 )
+from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.extension.llm.cache.reference_cache import (
     CacheConfig,
     LayerPolicy,
@@ -85,9 +90,8 @@ class _Oracle:
 
 
 def _storage(capacity: int) -> tuple[torch.Tensor, torch.Tensor]:
-    # Declared at full capacity: index_copy_ and sdpa both address through
-    # these strides, which is what the runtime allocation has to match.
-    shape = (1, N_KV_HEADS, capacity, HEAD_DIM)
+    # BSHD, as LowerOffGraphKVPass declares it.
+    shape = (1, capacity, N_KV_HEADS, HEAD_DIM)
     return (
         torch.zeros(shape, device="cuda", dtype=torch.bfloat16),
         torch.zeros(shape, device="cuda", dtype=torch.bfloat16),
@@ -129,7 +133,9 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         # sequence while the buffer's declared shape stays at capacity.
         for start, length in ((0, 24), (24, 1), (25, 1), (26, 8)):
             q, k, v, position = _inputs(start, length)
-            out = flat_step(q, k, v, position, k_storage, v_storage, SCALE)
+            out = offgraph_step(
+                q, k, v, position, k_storage, v_storage, SCALE, capacity
+            )
             self._assert_matches(out, oracle, q, k, v, position)
 
     def test_flat_write_lands_at_logical_position(self) -> None:
@@ -137,13 +143,58 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         k_storage, v_storage = _storage(64)
         q, k, v, position = _inputs(8, 8)
 
-        flat_step(q, k, v, position, k_storage, v_storage, SCALE)
+        offgraph_step(q, k, v, position, k_storage, v_storage, SCALE, 64)
 
-        self.assertTrue(torch.equal(k_storage[:, :, 8:16], k))
-        self.assertTrue(torch.equal(v_storage[:, :, 8:16], v))
-        # Untouched slots stay untouched -- the declared stride is the full
-        # capacity, so a stride mistake would scatter the write.
-        self.assertFalse(k_storage[:, :, 16:].any())
+        self.assertTrue(torch.equal(k_storage[:, 8:16], k.transpose(1, 2)))
+        self.assertTrue(torch.equal(v_storage[:, 8:16], v.transpose(1, 2)))
+        # Untouched slots stay untouched, so a stride mistake that scattered
+        # the write would show up here.
+        self.assertFalse(k_storage[:, 16:].any())
+        self.assertFalse(k_storage[:, :8].any())
+
+    def test_flat_accepts_the_neutral_op_position_shape(self) -> None:
+        # kvcache::update_and_attend documents position as [q_len, n_dims].
+        torch.manual_seed(6)
+        k_storage, v_storage = _storage(64)
+        oracle = _Oracle(64)
+        self.addCleanup(oracle.close)
+        q, k, v, position = _inputs(0, 5)
+
+        out = offgraph_step(
+            q, k, v, position.reshape(-1, 1), k_storage, v_storage, SCALE, 64
+        )
+
+        self._assert_matches(out, oracle, q, k, v, position)
+
+    def test_flat_runs_over_an_allocation_smaller_than_declared(self) -> None:
+        # The runtime binds the full declared shape over a buffer that only
+        # holds the rows grown so far. Every access must stay inside that
+        # buffer: poison the region past it and require it untouched, and the
+        # attention to still match.
+        torch.manual_seed(7)
+        declared, allocated = 4096, 512
+        row = N_KV_HEADS * HEAD_DIM
+        k_buf = torch.full(
+            (declared * row,), float("nan"), device="cuda", dtype=torch.bfloat16
+        )
+        v_buf = torch.full_like(k_buf, float("nan"))
+        k_buf[: allocated * row].zero_()
+        v_buf[: allocated * row].zero_()
+        k_storage = k_buf.view(1, declared, N_KV_HEADS, HEAD_DIM)
+        v_storage = v_buf.view(1, declared, N_KV_HEADS, HEAD_DIM)
+        oracle = _Oracle(declared)
+        self.addCleanup(oracle.close)
+
+        # Crosses sdpa's split-K threshold, then decodes.
+        for start, length in ((0, 300), (300, 1), (301, 1), (302, 64)):
+            q, k, v, position = _inputs(start, length)
+            out = offgraph_step(
+                q, k, v, position, k_storage, v_storage, SCALE, declared
+            )
+            self._assert_matches(out, oracle, q, k, v, position)
+
+        self.assertTrue(torch.isnan(k_buf[allocated * row :]).all())
+        self.assertTrue(torch.isnan(v_buf[allocated * row :]).all())
 
     def test_flat_decode_over_large_buffer_matches_oracle(self) -> None:
         # Past _SPLITK_LKV_THRESHOLD a decode with kv_len routes through the
@@ -155,11 +206,11 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         self.addCleanup(oracle.close)
 
         q, k, v, position = _inputs(0, 257)
-        flat_step(q, k, v, position, k_storage, v_storage, SCALE)
+        offgraph_step(q, k, v, position, k_storage, v_storage, SCALE, capacity)
         oracle.step(q, k, v, position)
 
         q, k, v, position = _inputs(257, 1)
-        out = flat_step(q, k, v, position, k_storage, v_storage, SCALE)
+        out = offgraph_step(q, k, v, position, k_storage, v_storage, SCALE, capacity)
         self._assert_matches(out, oracle, q, k, v, position)
 
     def _run_ring(self, window: int, max_write: int, steps) -> None:
@@ -172,8 +223,8 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         for start, length in steps:
             q, k, v, position = _inputs(start, length)
             mask = ring_attention_mask(position, buf_size, window)
-            out = ring_step(
-                q, k, v, position, k_storage, v_storage, mask, SCALE, buf_size
+            out = offgraph_step(
+                q, k, v, position, k_storage, v_storage, SCALE, buf_size, mask
             )
             self._assert_matches(out, oracle, q, k, v, position)
 
@@ -216,3 +267,111 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         for row, query_pos in enumerate((8, 9)):
             expected = [0 <= query_pos - p < window for p in held]  # causal + sliding
             self.assertEqual(mask[0, 0, row].tolist(), expected)
+
+
+class _FlatAndRing(torch.nn.Module):
+    def forward(self, q, k, v, position):
+        flat = torch.ops.kvcache.update_and_attend(
+            q, k, v, position, 0, SCALE, torch.bfloat16
+        )
+        ring = torch.ops.kvcache.update_and_attend(
+            q, k, v, position, 1, SCALE, torch.bfloat16
+        )
+        return flat + ring
+
+
+class LowerOffGraphKVPassTest(unittest.TestCase):
+    """The pass itself, on an exported program, rather than its building blocks."""
+
+    CAPACITY = 64
+    MAX_WRITE = 8
+    WINDOW = 4
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _skip_if_no_cuda()
+
+    def _lowered(self):
+        q, k, v, position = _inputs(0, self.MAX_WRITE)
+        t = torch.export.Dim("t", min=1, max=self.MAX_WRITE)
+        program = torch.export.export(
+            _FlatAndRing(),
+            (q, k, v, position.reshape(-1, 1)),
+            dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
+            strict=False,
+        )
+        edge = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+        manifest = parse_offgraph_kv_manifest(
+            json.dumps(
+                {
+                    "version": 1,
+                    "maximum_capacity": self.CAPACITY,
+                    "max_write": self.MAX_WRITE,
+                    "layers": [
+                        {"layer_id": 0, "policy": "flat"},
+                        {"layer_id": 1, "policy": "ring", "window": self.WINDOW},
+                    ],
+                }
+            ).encode()
+        )
+        return LowerOffGraphKVPass(manifest)(edge)
+
+    def test_replaces_the_neutral_op_with_sequence_major_storage(self) -> None:
+        lowered = self._lowered()
+        graph = lowered.graph_module.graph
+        target = exir_ops.edge.kvcache.update_and_attend.default
+
+        self.assertFalse(any(n.target == target for n in graph.nodes))
+        storage = {
+            n.name: tuple(n.meta["val"].shape)
+            for n in graph.nodes
+            if n.op == "placeholder" and n.name.startswith(OFFGRAPH_KV_FQN_PREFIX)
+        }
+        ring = ring_physical_capacity(self.WINDOW, self.MAX_WRITE)
+        flat_shape = (1, self.CAPACITY, N_KV_HEADS, HEAD_DIM)
+        ring_shape = (1, ring, N_KV_HEADS, HEAD_DIM)
+        # No capacity constant: nothing in the decomposed graph reads one.
+        self.assertEqual(
+            storage,
+            {
+                f"{OFFGRAPH_KV_FQN_PREFIX}layer_0_k": flat_shape,
+                f"{OFFGRAPH_KV_FQN_PREFIX}layer_0_v": flat_shape,
+                f"{OFFGRAPH_KV_FQN_PREFIX}layer_1_k": ring_shape,
+                f"{OFFGRAPH_KV_FQN_PREFIX}layer_1_v": ring_shape,
+            },
+        )
+        # Payloads stay out of the artifact; the runtime supplies storage.
+        for name in storage:
+            self.assertEqual(lowered.constants[name].untyped_storage().nbytes(), 0)
+        # One step serves both layers: the flat one attends with sdpa's
+        # device-side causal and no mask tensor, the ring one behind its mask.
+        sdpa_calls = [
+            n for n in graph.nodes if n.target == torch.ops.triton.sdpa.default
+        ]
+        self.assertEqual(
+            sorted((n.args[3] is None, n.args[5]) for n in sdpa_calls),
+            [(False, False), (True, True)],
+        )
+
+    def test_lowered_program_matches_the_neutral_op(self) -> None:
+        torch.manual_seed(8)
+        lowered = self._lowered()
+        for name, value in list(lowered.constants.items()):
+            if name.startswith(OFFGRAPH_KV_FQN_PREFIX):
+                lowered.constants[name] = torch.zeros(
+                    value.shape, device="cuda", dtype=value.dtype
+                )
+        module = lowered.module()
+        flat = _Oracle(self.CAPACITY)
+        ring = _Oracle(self.CAPACITY, window=self.WINDOW)
+        self.addCleanup(flat.close)
+        self.addCleanup(ring.close)
+
+        # Prefill, decodes, then a chunk that wraps the ring.
+        for start, length in ((0, 8), (8, 1), (9, 1), (10, 6)):
+            q, k, v, position = _inputs(start, length)
+            out = module(q, k, v, position.reshape(-1, 1))
+            expected = flat.step(q, k, v, position) + ring.step(q, k, v, position)
+            self.assertLess(_max_abs_diff(out, expected), 2e-2)
