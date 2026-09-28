@@ -1876,6 +1876,86 @@ class TestPasses(unittest.TestCase):
         # No more slice copy.
         self.assertEqual(count_slice(new_ep.graph_module), 0)
 
+    def test_constant_prop_pass_for_memory_format_slice_scatter(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = torch.nn.Parameter(torch.arange(9, dtype=torch.float32))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                zeros = torch.full_like(
+                    self.bias[3:6],
+                    0,
+                    memory_format=torch.preserve_format,
+                )
+                return x + torch.slice_scatter(
+                    self.bias,
+                    zeros,
+                    dim=0,
+                    start=3,
+                    end=6,
+                )
+
+        model = M().eval()
+        inputs = (torch.randn(9),)
+        expected = model(*inputs)
+        edge = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        exported_program = edge.exported_program()
+        original_ops = collect_ops(exported_program.graph_module)
+        self.assertIn(exir_ops.edge.aten.full_like.default, original_ops)
+        self.assertIn(exir_ops.edge.aten.slice_scatter.default, original_ops)
+
+        new_ep = constant_prop_pass(exported_program)
+
+        propagated_ops = collect_ops(new_ep.graph_module)
+        self.assertNotIn(exir_ops.edge.aten.full_like.default, propagated_ops)
+        self.assertNotIn(exir_ops.edge.aten.slice_scatter.default, propagated_ops)
+        torch.testing.assert_close(new_ep.module()(*inputs), expected)
+
+    def test_constant_prop_pass_preserves_memory_format(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                value = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
+                self.value = torch.nn.Parameter(value)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.value.clone(memory_format=torch.preserve_format)
+
+        model = M().eval()
+        inputs = (torch.randn(2, 3, 4, 5),)
+        expected = model(*inputs)
+        edge = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        exported_program = edge.exported_program()
+        self.assertIn(
+            exir_ops.edge.aten.clone.default,
+            collect_ops(exported_program.graph_module),
+        )
+
+        new_ep = constant_prop_pass(exported_program)
+
+        self.assertNotIn(
+            exir_ops.edge.aten.clone.default,
+            collect_ops(new_ep.graph_module),
+        )
+        folded_constants = [
+            value
+            for name, value in new_ep.constants.items()
+            if name.startswith("_prop_tensor_constant")
+            and value.shape == model.value.shape
+        ]
+        self.assertEqual(len(folded_constants), 1)
+        self.assertTrue(
+            folded_constants[0].is_contiguous(memory_format=torch.channels_last)
+        )
+        torch.testing.assert_close(new_ep.module()(*inputs), expected)
+
     def test_constant_prop_pass_no_propagate(self) -> None:
         def count_placeholder(gm: torch.fx.GraphModule) -> int:
             return sum((node.op == "placeholder") for node in gm.graph.nodes)
