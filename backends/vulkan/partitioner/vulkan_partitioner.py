@@ -87,6 +87,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist
+        self._node_support: Dict[torch.fx.Node, bool] = {}
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -198,10 +199,27 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def is_node_supported(
         self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
     ) -> bool:
-        r = self._is_node_supported(node)
-        return r
+        return self._is_node_supported(node)
 
-    def _is_node_supported(self, node: torch.fx.Node) -> bool:  # noqa: C901
+    def _is_node_supported(self, node: torch.fx.Node) -> bool:
+        if node not in self._node_support:
+            self._node_support[node] = self._check_node_support(node)
+        return self._node_support[node]
+
+    def _check_node_support(self, node: torch.fx.Node) -> bool:  # noqa: C901
+        if any(
+            isinstance(arg.meta.get("val"), (torch.SymFloat, torch.SymBool))
+            for arg in [node, *node.all_input_nodes]
+        ):
+            self.log_skip(node, "symbolic float or bool values are not supported")
+            return False
+
+        if utils.is_symint_node(node) and any(
+            not self._is_node_supported(user) for user in node.users
+        ):
+            self.log_skip(node, "symbolic scalar has an unsupported consumer")
+            return False
+
         # Check if tensor node dtype is supported by vulkan
         if utils.is_tensor_node(node) and not utils.io_dtypes_are_supported(node):
             self.log_skip(node, "dtype not supported")
