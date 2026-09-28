@@ -20,8 +20,10 @@ class InferenceInputConfig:
 
     Attributes:
         soc_model: The target SoC (e.g., QcomChipset.SM8750). Required.
-        artifact_paths: Paths to compiled model artifacts (.pte files).
-            List to support multi-split models (e.g., prefill + decode).
+        artifact_paths: Compiled model artifacts (.pte files), keyed by artifact
+            name (see ``artifact_keys``), as produced by the compilation stage.
+            The on-device runner passes each to a different argument, so they
+            are addressed by name rather than by position.
         tokenizer: The tokenizer instance for encoding/decoding.
         runtime_tokenizer_path: Path to runtime tokenizer for on-device use.
         prompt: The user prompt(s) for text generation.
@@ -29,7 +31,7 @@ class InferenceInputConfig:
     """
 
     soc_model: "QcomChipset"
-    artifact_paths: Optional[List[Path]] = None
+    artifact_paths: Optional[Dict[str, Path]] = None
     tokenizer: Any = None
     runtime_tokenizer_path: Optional[Path] = None
     prompt: Optional[List[str]] = None
