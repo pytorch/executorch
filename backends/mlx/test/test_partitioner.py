@@ -82,6 +82,74 @@ def _run(model, inputs, transform_passes=None):
     return counts, delegates, (out - ref).abs().max().item()
 
 
+class TestMLXPartitionerConstantInputs(unittest.TestCase):
+    class OptionalInput(nn.Module):
+        def forward(self, x, optional, y):
+            return x + y
+
+    def test_unused_constants_preserve_signature(self):
+        for value in (None, True, 3, 1.5, "unused"):
+            with self.subTest(value=value):
+                ep = export(
+                    self.OptionalInput(),
+                    (torch.randn(4), value, torch.randn(4)),
+                    strict=False,
+                )
+                signature = str(ep.graph_signature)
+                placeholder = next(n for n in ep.graph.nodes if n.name == "optional")
+                self.assertFalse(placeholder.users)
+
+                builder = MLXProgramBuilder(ep)
+                builder.check_support_only()
+                self.assertTrue(
+                    all(info.supported for info in builder.node_info.values())
+                )
+                built = MLXProgramBuilder(ep).build()
+                self.assertEqual(built.num_input_tensors, 2)
+                self.assertEqual(len(built.input_map), 2)
+                self.assertEqual(str(ep.graph_signature), signature)
+
+    def test_unused_constants_lower_and_execute(self):
+        # The Python runtime does not accept string inputs; cover those above.
+        for value in (None, True, 3, 1.5):
+            with self.subTest(value=value):
+                _, delegates, error = _run(
+                    self.OptionalInput(),
+                    (torch.randn(4), value, torch.randn(4)),
+                )
+                self.assertGreater(delegates, 0)
+                self.assertLess(error, 1e-6)
+
+    def test_string_constant_lowers(self):
+        program = _lower(
+            self.OptionalInput(),
+            (torch.randn(4), "unused", torch.randn(4)),
+        )
+        self.assertGreater(_delegate_count(program), 0)
+
+    def test_consumed_constant_still_raises(self):
+        ep = export(
+            self.OptionalInput(),
+            (torch.randn(4), 3, torch.randn(4)),
+            strict=False,
+        )
+        placeholder = next(n for n in ep.graph.nodes if n.name == "optional")
+        add = next(n for n in ep.graph.nodes if n.op == "call_function")
+        add.target = torch.ops.aten.add.Scalar
+        add.args = (add.args[0], placeholder)
+        ep.graph_module.recompile()
+        ep.validate()
+
+        for check_only in (True, False):
+            with self.subTest(check_only=check_only):
+                builder = MLXProgramBuilder(ep)
+                with self.assertRaisesRegex(NotImplementedError, "ConstantArgument"):
+                    if check_only:
+                        builder.check_support_only()
+                    else:
+                        builder.build()
+
+
 class Sdpa(nn.Module):
     def __init__(self, is_causal: bool = False):
         super().__init__()

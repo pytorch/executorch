@@ -30,6 +30,14 @@ namespace cuda {
 
 class CudaKVCache;
 
+// Where a method's inputs carry the number of tokens a step writes: an index
+// into execute()'s inputs and a dimension of that tensor. Declared by the
+// export side as the "offgraph_kv_step_width" compile spec, "input_index:dim".
+struct OffGraphKVStepWidth {
+  int input{0};
+  int dim{0};
+};
+
 using AOTInductorModelContainerGetConstantDtypeFunc =
     aoti::AOTIRuntimeError (*)(
         aoti::AOTInductorModelContainerHandle container_handle,
@@ -98,7 +106,6 @@ enum class CudaGraphPhase {
 // All CUDA graph related state grouped into a single struct.
 struct CudaGraphState {
   CudaGraphPhase phase = CudaGraphPhase::Disabled;
-  int warmup_steps = 0;
   int warmup_remaining = 0;
 
   // Captured graph and executable instance
@@ -119,18 +126,9 @@ struct CudaGraphState {
     release();
   }
 
-  void enable(int steps) {
-    phase = CudaGraphPhase::Warmup;
-    warmup_steps = steps;
-    warmup_remaining = steps;
-  }
-
-  void reset_for_recapture() {
-    const int steps = warmup_steps;
-    release();
-    enable(steps);
-  }
-
+  // Frees the captured graph and the static inputs pinned for it. Output
+  // buffers are owned by the AOTI runtime (allocated during graph capture via
+  // the caching allocator), so only their records are dropped.
   void release() {
     if (graph_exec) {
       (void)cudaGraphExecDestroy(graph_exec);
@@ -140,8 +138,6 @@ struct CudaGraphState {
       (void)cudaGraphDestroy(graph);
       graph = nullptr;
     }
-    // Only free input buffers — output buffers are owned by the AOTI runtime
-    // (allocated during graph capture via the caching allocator).
     for (auto* ptr : static_input_ptrs) {
       if (ptr)
         (void)cudaFree(ptr);
@@ -152,6 +148,14 @@ struct CudaGraphState {
     static_output_nbytes.clear();
   }
 
+  // Drops the captured graph so the next call captures a new one, for when
+  // memory the graph baked in has moved. No warmup: the kernels are loaded.
+  void recapture() {
+    release();
+    phase = CudaGraphPhase::Warmup;
+    warmup_remaining = 0;
+  }
+
   // Non-copyable: prevent double-free of CUDA resources
   CudaGraphState(const CudaGraphState&) = delete;
   CudaGraphState& operator=(const CudaGraphState&) = delete;
@@ -159,7 +163,6 @@ struct CudaGraphState {
   // Movable
   CudaGraphState(CudaGraphState&& other) noexcept
       : phase(other.phase),
-        warmup_steps(other.warmup_steps),
         warmup_remaining(other.warmup_remaining),
         graph(other.graph),
         graph_exec(other.graph_exec),
@@ -176,7 +179,6 @@ struct CudaGraphState {
       release();
 
       phase = other.phase;
-      warmup_steps = other.warmup_steps;
       warmup_remaining = other.warmup_remaining;
       graph = other.graph;
       graph_exec = other.graph_exec;
@@ -193,12 +195,7 @@ struct CudaGraphState {
 };
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
-//
-// Forward-declared rather than included: cuda_kv_cache.h includes this header
-// to name CudaDelegateHandle, so including it back would be circular.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
-  aoti::AOTInductorModelContainerRunFunc run_single_threaded{nullptr};
-
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
@@ -228,17 +225,15 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   //
   // The shared_ptr is the handle's own claim on the cache, so the cache
   // outlives the delegate even if the runner drops its guard first; the raw
-  // pointer is the backend face of that same object.
+  // pointer is the backend face of that same object. Forward-declared rather
+  // than included: cuda_kv_cache.h includes this header.
   std::shared_ptr<::executorch::extension::llm::cache::Cache> kv_cache_shared;
   CudaKVCache* kv_cache{nullptr};
 
-  // Where this method's inputs carry the number of tokens a step writes, as an
-  // index into execute()'s args and a dimension of that tensor. Declared by the
-  // export side, which knows the signature; the compiled program cannot report
-  // it, because lowering replaced the cache op with kernels over pre-bound
-  // memory. Negative until a step-width spec is seen.
-  int kv_step_width_input{-1};
-  int kv_step_width_dim{0};
+  // Where this method's inputs carry the step width. The compiled program
+  // cannot report it, because lowering replaced the cache op with kernels over
+  // pre-bound memory.
+  OffGraphKVStepWidth kv_step_width;
 };
 
 } // namespace cuda
