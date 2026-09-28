@@ -49,6 +49,7 @@ shared vec4 shared_vecs[MAX_NTHREADS];
 
 #include "indexing_utils.h"
 #include "indexing.glslh"
+#include "convert.glslh"
 
 int tid_to_smi(const ivec2 tid) {
   return tid.x + tid.y * NWORKERS;
@@ -84,7 +85,26 @@ int tid_to_smi(const ivec2 tid) {
 #define UPDATE_ACCUM(accum, new_val) ${UPDATE_ACCUM}
 // Useful for operators such as mean which want to perform a final calculation
 // with the accumulator.
-#define POSTPROCESS(accum) ${POSTPROCESS}
+$if DTYPE == "half":
+  #define POSTPROCESS(accum) round_to_half_rte(${POSTPROCESS})
+$else:
+  #define POSTPROCESS(accum) ${POSTPROCESS}
+
+float max_propagate_nan(float a, float b) {
+  return isnan(a) ? a : (isnan(b) ? b : max(a, b));
+}
+
+vec4 max_propagate_nan(vec4 a, vec4 b) {
+  return mix(mix(max(a, b), b, isnan(b)), a, isnan(a));
+}
+
+float min_propagate_nan(float a, float b) {
+  return isnan(a) ? a : (isnan(b) ? b : min(a, b));
+}
+
+vec4 min_propagate_nan(vec4 a, vec4 b) {
+  return mix(mix(min(a, b), b, isnan(b)), a, isnan(a));
+}
 
 /*
  * Computes reduction where the reduction dim is orthogonal to the packed dim.

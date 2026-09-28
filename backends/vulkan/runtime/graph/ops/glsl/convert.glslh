@@ -13,16 +13,41 @@
 
 #ifdef T
 
-#if T == float16_t
-
-#define convert_to_T(x) T(clamp(x, -65504, 65504));
-
-#else
-
 #define convert_to_T(x) T(x);
 
-#endif // T == float16_t
-
 #endif // T
+
+float round_to_half_rte(float value) {
+  const uint bits = floatBitsToUint(value);
+  const uint exponent = (bits >> 23u) & 0xffu;
+  if (exponent == 0xffu) {
+    return value;
+  }
+
+  uint result = 0u;
+  if (exponent >= 143u) {
+    result = 0x7c00u;
+  } else if (exponent >= 102u) {
+    const bool normal = exponent >= 113u;
+    const uint significand = (bits & 0x7fffffu) | (normal ? 0u : 0x800000u);
+    const uint shift = normal ? 13u : 126u - exponent;
+    result = (normal ? (exponent - 112u) << 10u : 0u) + (significand >> shift);
+    const uint remainder = significand & ((1u << shift) - 1u);
+    const uint halfway = 1u << (shift - 1u);
+    result += uint(remainder > halfway || (remainder == halfway && (result & 1u) != 0u));
+  }
+
+  // packHalf2x16 does not guarantee round-to-nearest-even on every driver.
+  result |= (bits >> 16u) & 0x8000u;
+  return unpackHalf2x16(result).x;
+}
+
+vec4 round_to_half_rte(vec4 value) {
+  return vec4(
+      round_to_half_rte(value.x),
+      round_to_half_rte(value.y),
+      round_to_half_rte(value.z),
+      round_to_half_rte(value.w));
+}
 
 #endif // CONVERT_GLSLH

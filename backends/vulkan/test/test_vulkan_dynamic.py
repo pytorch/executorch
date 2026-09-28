@@ -161,6 +161,78 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), storage=storage)
                         self._run(edge, model, [(x,)], atol=5e-6, rtol=5e-6)
 
+    def test_buffer_reduction_range(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        for op in (torch.sum, torch.mean, torch.amax):
+            with self.subTest(op=op):
+                width, value = (20000, 4) if op == torch.sum else (8, 80000)
+                x = torch.tensor([value, -value], dtype=torch.float32)[:, None].repeat(
+                    1, width
+                )
+                model = Reduce(op)
+                edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
+                self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_reduction_special_values(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        for dtype in (torch.float32, torch.float16):
+            x = torch.tensor(
+                [
+                    [40000] * 9,
+                    [-40000] * 9,
+                    [1, torch.nan, 2, 3, torch.nan, 4, 5, 6, 7],
+                ],
+                dtype=dtype,
+            )
+            for op in (torch.sum, torch.mean, torch.amax, torch.amin):
+                for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                    with self.subTest(dtype=dtype, op=op, storage=storage):
+                        model = Reduce(op)
+                        edge = self._lower(model, (x,), storage=storage)
+                        self._run(edge, model, [(x,)], atol=0, rtol=0, equal_nan=True)
+
+        x = torch.tensor([4, -4], dtype=torch.float16)[:, None].repeat(1, 70000)
+        model = Reduce(torch.mean)
+        edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
+        self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_argreduce_first_nan(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        for dtype in (torch.float32, torch.float16):
+            x = torch.tensor(
+                [
+                    [1, torch.nan, 2, torch.nan, 3, 4, 5],
+                    [1, 2, 3, 4, 5, torch.nan, torch.nan],
+                ],
+                dtype=dtype,
+            )
+            for op in (torch.argmax, torch.argmin):
+                with self.subTest(dtype=dtype, op=op):
+                    model = Reduce(op)
+                    edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
+                    self._run(edge, model, [(x,)], atol=0, rtol=0)
+
 
 if __name__ == "__main__":
     unittest.main()
