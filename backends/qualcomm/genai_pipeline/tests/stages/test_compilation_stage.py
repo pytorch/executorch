@@ -22,7 +22,7 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.compilat
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
     make_test_context,
-    TEST_PTE_PATH,
+    TEST_ARTIFACT_PATHS,
 )
 
 
@@ -36,7 +36,7 @@ class TestCompilationStage(unittest.TestCase):
     def test_invoke_delegates_to_strategy(self):
         mock_strategy = MagicMock(spec=CompilationStrategy)
         mock_strategy.invoke.return_value = CompilationOutputConfig(
-            artifact_paths=[TEST_PTE_PATH]
+            artifact_paths=TEST_ARTIFACT_PATHS
         )
         stage = CompilationStage(mock_strategy)
         context = make_test_context()

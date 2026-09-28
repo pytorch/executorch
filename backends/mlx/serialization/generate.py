@@ -1023,6 +1023,8 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
 
 # for_each_tid emitters: invoke cb(Tid) for each Tid-bearing field. Field kinds
 # that carry no Tid (vid, int_or_vid, scalars, strings, int lists) emit nothing.
+# A new Tid-bearing kind MUST be handled here: compute_temp_last_use decides
+# when a slot is freed from this walk, so a missed field frees a live tensor.
 def _emit_cpp_for_each_tid(kind: str, name: str) -> List[str]:
     """Emit for_each_tid callback lines for a field kind ([] if it has no Tid)."""
     if kind == "tid":
