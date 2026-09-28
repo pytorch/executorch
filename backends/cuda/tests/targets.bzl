@@ -61,6 +61,8 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//caffe2:torch",
             "//executorch/backends/cuda:cuda_passes",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
             # The oracle is the neutral op itself, not a reference rebuilt here.
             "//executorch/extension/llm/cache:cache",
         ],

@@ -108,6 +108,9 @@ constexpr const char* kEmbedTextMethod = "embed_text";
 constexpr const char* kMuseGlimmerVisionEncoderMethod = "vision_encoder";
 constexpr const char* kDraftForwardMethod = "draft_forward";
 constexpr const char* kDraftPrefillMethod = "draft_prefill";
+constexpr const char* kDFlashSampleTokensMethod = "dflash_sample_tokens";
+constexpr const char* kDFlashVerifySpeculativeMethod =
+    "dflash_verify_speculative";
 constexpr const char* kDFlashBlockSize = "get_block_size";
 constexpr const char* kDFlashMaskTokenId = "get_mask_token_id";
 constexpr const char* kDFlashTargetLayers = "get_n_target_layers";
@@ -373,6 +376,10 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
           kDraftPrefillMethod, nullptr, nullptr, load_options));
     }
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+        kDFlashSampleTokensMethod, nullptr, nullptr, load_options));
+    ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
+        kDFlashVerifySpeculativeMethod, nullptr, nullptr, load_options));
 #endif
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method(
         kTargetForwardFromEmbeddingsMethod, nullptr, nullptr, load_options));
@@ -1084,8 +1091,6 @@ class MuseGlimmerSession : public LLMSession,
       const PreparedMuseGlimmerImage* image,
       int64_t* next_image_row) {
     std::lock_guard<std::mutex> guard(*exec_mutex_);
-#ifdef EXECUTORCH_BUILD_CUDA
-#endif
     auto execute_contract = [&]() -> Result<std::vector<EValue>> {
       auto embed_outputs = module_->execute(kEmbedTextMethod, {inputs[0]});
       ET_CHECK_OK_OR_RETURN_ERROR(embed_outputs.error());
@@ -1149,8 +1154,6 @@ class MuseGlimmerSession : public LLMSession,
         ? mutable_state_->with_active_session(session_token_, execute_contract)
         : execute_contract();
     ET_CHECK_OK_OR_RETURN_ERROR(res.error());
-#ifdef EXECUTORCH_BUILD_CUDA
-#endif
     const auto& out_tensor = res.get()[0].toTensor();
     auto sampled = read_sampled_token(out_tensor, temperature, use_sampling_);
     ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
@@ -1494,8 +1497,6 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       offgraph_guard;
   ::executorch::extension::llm::cache::SequenceControl* offgraph_control =
       nullptr;
-#endif
-#ifdef EXECUTORCH_BUILD_CUDA
   if (method_names.count(kNumCaches) != 0) {
     ET_CHECK_OR_RETURN_ERROR(
         !config.enable_cuda_graph,

@@ -453,6 +453,7 @@ class MLXProgramBuilder:
 
     def _make_io_slots(self):  # noqa: C901
         from torch.export.graph_signature import (
+            ConstantArgument,
             InputKind,
             OutputKind,
             SymIntArgument,
@@ -464,6 +465,11 @@ class MLXProgramBuilder:
         user_inputs = []
         user_outputs = []
         mutable_buffers = []
+        unused_placeholders = {
+            node.name
+            for node in self.ep.graph.nodes
+            if node.op == "placeholder" and not node.users
+        }
 
         for ospec in self.ep.graph_signature.output_specs:
             kind = ospec.kind
@@ -506,6 +512,10 @@ class MLXProgramBuilder:
                     raise NotImplementedError(
                         f"Support for input {arg} is not implemented"
                     )
+            elif isinstance(arg, ConstantArgument) and name in unused_placeholders:
+                # Export can retain specialized arguments (including None) in the
+                # signature even though the graph does not consume them.
+                continue
             else:
                 raise NotImplementedError(f"Support for input {arg} is not implemented")
 

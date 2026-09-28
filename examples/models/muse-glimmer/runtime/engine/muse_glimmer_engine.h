@@ -212,13 +212,9 @@ class ET_EXPERIMENTAL MuseGlimmerEngine : public LLMEngine {
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state_;
 #ifdef EXECUTORCH_BUILD_CUDA
   // The installed off-graph KV cache, or nothing for an in-graph model. The
-  // shared_ptr owns it, the guard keeps it discoverable under its registry key
-  // for as long as methods may load, and the two raw pointers are its faces:
-  // one to step the cache, one to reset it.
-  // The installed off-graph KV cache, held as the neutral type. Stepping it
-  // needs a backend face, but that lookup lives in the .cpp so the runner's
-  // header stays free of CUDA cache types; SequenceControl is what the runner
-  // itself speaks.
+  // guard owns it and keeps it discoverable under its registry key for as long
+  // as methods may load; the CUDA delegate steps it. The engine only resets
+  // it, through the neutral SequenceControl face.
   std::unique_ptr<::executorch::extension::llm::cache::InstallGuard>
       offgraph_guard_;
   ::executorch::extension::llm::cache::SequenceControl* offgraph_control_ =
