@@ -61,7 +61,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     "torch==2.14.0.dev20260810+cu134",
                     "torchvision==0.29.0.dev20260811+cu134",
                     "torchaudio==2.11.0.dev20260811+cu134",
-                    f"torchao==0.19.0.dev20260811+{ao_variant}",
+                    f"torchao==0.19.0.dev20260907+{ao_variant}",
                 }
                 for index, command in enumerate(commands):
                     required = (
@@ -101,7 +101,7 @@ class TestCu134Dependencies(unittest.TestCase):
                         cuda, machine
                     )
                     self.assertIn("torch==2.14.0", core)
-                    self.assertIn("torchao==0.18.0.dev20260729", core)
+                    self.assertIn("torchao==0.19.0.dev20260907", core)
                     self.assertIn("torchvision==0.29.0", domains)
                     self.assertIn("torchaudio==2.11.0", domains)
                     self.assertFalse(any("==" in arg for arg in local))
@@ -119,7 +119,7 @@ class TestCu134Dependencies(unittest.TestCase):
     def test_no_cuda_keeps_default_pins(self):
         core, _, domains, _ = self.install_commands(None)
         self.assertIn("torch==2.14.0", core)
-        self.assertIn("torchao==0.18.0.dev20260729", core)
+        self.assertIn("torchao==0.19.0.dev20260907", core)
         self.assertIn("torchvision==0.29.0", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 
@@ -239,13 +239,13 @@ class TestCu134Dependencies(unittest.TestCase):
                         any(arg.startswith("torchao==") for arg in command)
                     )
                 self.assertIn("torch==2.14.0.dev20260810+cu134", commands[-1])
-                self.assertIn("0.18.0+git03ca489", metadata.specifier)
+                self.assertIn("0.19.0+gitb7ac3aa", metadata.specifier)
 
     def test_wheel_torchao_bound_matches_selected_train(self):
         for cuda, expected in (
-            ((13, 4), "torchao>=0.19.0.dev20260811,<0.20"),
-            ((13, 2), "torchao>=0.18.0.dev20260729,<0.19"),
-            (None, "torchao>=0.18.0.dev20260729,<0.19"),
+            ((13, 4), "torchao>=0.19.0.dev20260907,<0.20"),
+            ((13, 2), "torchao>=0.19.0.dev20260907,<0.20"),
+            (None, "torchao>=0.19.0.dev20260907,<0.20"),
         ):
             self.utils.determine_torch_url.cache_clear()
             with (
