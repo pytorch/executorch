@@ -6,6 +6,7 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/../../../cmake-out/examples/models/nemotron3_diarization",
       "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "OFF",
         "EXECUTORCH_BUILD_MLX": "OFF",
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out",
@@ -29,6 +30,21 @@
       }
     },
     {
+      "name": "nemotron3-diarization-cuda",
+      "displayName": "Nemotron 3 Diarization runner (CUDA)",
+      "inherits": [
+        "nemotron3-diarization-base"
+      ],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_CUDA": "ON"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Windows"]
+      }
+    },
+    {
       "name": "nemotron3-diarization-cpu",
       "displayName": "Nemotron 3 Diarization runner (XNNPACK)",
       "inherits": [
@@ -37,6 +53,11 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "nemotron3-diarization-cuda",
+      "configurePreset": "nemotron3-diarization-cuda",
+      "configuration": "Release"
+    },
     {
       "name": "nemotron3-diarization-mlx",
       "configurePreset": "nemotron3-diarization-mlx",
@@ -49,6 +70,19 @@
     }
   ],
   "workflowPresets": [
+    {
+      "name": "nemotron3-diarization-cuda",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "nemotron3-diarization-cuda"
+        },
+        {
+          "type": "build",
+          "name": "nemotron3-diarization-cuda"
+        }
+      ]
+    },
     {
       "name": "nemotron3-diarization-mlx",
       "steps": [

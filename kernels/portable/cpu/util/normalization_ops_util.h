@@ -40,27 +40,27 @@ inline void layer_norm_scalar(
   const auto epsilon = static_cast<COMPUTE_T>(eps);
   // Independent accumulators allow vectorization without reassociating sums.
   constexpr size_t kLanes = 8;
+  // A fixed tail start avoids an Xtensa vectorizer crash on live-out indices.
+  const size_t vectorized_end = N - N % kLanes;
   for (size_t i = 0; i < M; ++i) {
     const CTYPE* x = input_data + i * N;
     CTYPE* y = out_data + i * N;
 
     std::array<COMPUTE_T, kLanes> sums{};
-    size_t j = 0;
-    for (; j + kLanes <= N; j += kLanes) {
+    for (size_t j = 0; j < vectorized_end; j += kLanes) {
       for (size_t lane = 0; lane < kLanes; ++lane) {
         sums[lane] += static_cast<COMPUTE_T>(x[j + lane]);
       }
     }
     COMPUTE_T sum = std::accumulate(sums.begin(), sums.end(), COMPUTE_T{0});
-    for (; j < N; ++j) {
+    for (size_t j = vectorized_end; j < N; ++j) {
       sum += static_cast<COMPUTE_T>(x[j]);
     }
     COMPUTE_T mean_value = sum / count;
 
     std::array<COMPUTE_T, kLanes> deviations{};
     std::array<COMPUTE_T, kLanes> squares{};
-    j = 0;
-    for (; j + kLanes <= N; j += kLanes) {
+    for (size_t j = 0; j < vectorized_end; j += kLanes) {
       for (size_t lane = 0; lane < kLanes; ++lane) {
         const COMPUTE_T d = static_cast<COMPUTE_T>(x[j + lane]) - mean_value;
         deviations[lane] += d;
@@ -71,7 +71,7 @@ inline void layer_norm_scalar(
         std::accumulate(deviations.begin(), deviations.end(), COMPUTE_T{0});
     COMPUTE_T sq_sum =
         std::accumulate(squares.begin(), squares.end(), COMPUTE_T{0});
-    for (; j < N; ++j) {
+    for (size_t j = vectorized_end; j < N; ++j) {
       const COMPUTE_T d = static_cast<COMPUTE_T>(x[j]) - mean_value;
       d_sum += d;
       sq_sum += d * d;
@@ -83,7 +83,7 @@ inline void layer_norm_scalar(
     const COMPUTE_T std = std::sqrt(variance + epsilon);
 
     // Calculate the elements of output
-    for (j = 0; j < N; ++j) {
+    for (size_t j = 0; j < N; ++j) {
       const COMPUTE_T w =
           weight_data ? static_cast<COMPUTE_T>(weight_data[j]) : COMPUTE_T{1};
       const COMPUTE_T b =
