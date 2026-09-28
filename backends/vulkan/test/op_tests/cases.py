@@ -892,10 +892,12 @@ def get_scalar_tensor_inputs():
     test_suite = VkTestSuite(
         [
             (42.0,),
+            (42,),
             (3.14,),
             (2.72,),
             (0.0,),
             (-1.0,),
+            (-7,),
             (100.0,),
         ]
     )

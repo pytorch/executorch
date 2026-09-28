@@ -19,6 +19,7 @@ ${define_explicit_type_extensions(SCALAR_VALUE_TYPE)}
 ${define_active_storage_type(STORAGE)}
 
 #include "indexing_utils.h"
+#include "convert.glslh"
 
 layout(std430) buffer;
 
@@ -52,6 +53,8 @@ void main() {
   }
 
   VEC4_T outtex = VEC4_T(scalar_value);
+  $if DTYPE == "half":
+    outtex = round_to_half_rte(outtex);
   write_texel(t_out, pos, outtex);
 }
 
