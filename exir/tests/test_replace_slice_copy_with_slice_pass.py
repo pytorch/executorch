@@ -193,9 +193,7 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
         """External input tensors have no memory-planned allocation to alias."""
         graph = torch.fx.Graph()
         x = graph.placeholder("x")
-        sliced = graph.call_function(
-            torch.ops.aten.slice_copy.Tensor, (x, 0, 1, 3)
-        )
+        sliced = graph.call_function(torch.ops.aten.slice_copy.Tensor, (x, 0, 1, 3))
         relu = graph.call_function(torch.ops.aten.relu.default, (sliced,))
         graph.output(relu)
         x.meta["val"] = torch.empty(4, 8)
