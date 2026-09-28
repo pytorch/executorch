@@ -78,6 +78,7 @@ def define_common_targets():
             # //executorch/runtime/executor/...
             "//executorch/codegen/tools/...",
             "//executorch/runtime/executor/...",
+            "//executorch/extension/backend_data/...",
             # Tests have a set up which uses raw flatbuffer.
             # TODO will refactor these setup steps into 
             # testing utils in runtime/executor/... path
@@ -97,6 +98,7 @@ def define_common_targets():
             "extended_header.h",
         ],
         visibility = [
+            "//executorch/extension/backend_data/...",
             "//executorch/runtime/executor/...",
             "//executorch/schema/test/...",
         ],

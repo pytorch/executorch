@@ -975,6 +975,17 @@ if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
   list(APPEND _executorch_extensions extension_flat_tensor)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_BACKEND_DATA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/backend_data)
+  install(
+    DIRECTORY extension/backend_data/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/backend_data
+    FILES_MATCHING
+    PATTERN "*.h"
+  )
+  list(APPEND _executorch_extensions extension_backend_data)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
   install(

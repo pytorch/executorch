@@ -10,6 +10,7 @@
 
 #include <cstring>
 
+#include <executorch/runtime/backend/backend_data.h>
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
 #include <executorch/runtime/backend/backend_option_context.h>
@@ -25,16 +26,6 @@
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
-
-struct SizedBuffer {
-  void* buffer;
-  size_t nbytes; // number of bytes of buffer
-};
-
-struct CompileSpec {
-  const char* key; // spec key
-  SizedBuffer value; // spec value
-};
 
 /**
  * An opaque handle managed by a backend. Typically points to a backend-private
@@ -142,6 +133,26 @@ class BackendInterface {
    *     `init()`.
    */
   virtual void destroy(ET_UNUSED DelegateHandle* handle) const {}
+
+  /**
+   * Optionally inspects delegate blobs and emits prepared named-data values for
+   * later program loads.
+   *
+   * The backend pulls inputs lazily from context. Storage referenced by output
+   * callbacks must come from the temporary allocator in context and is
+   * consumed synchronously by output. Existing backends inherit the default
+   * Error::NotSupported implementation.
+   *
+   * @param[in,out] context Model-wide inputs and temporary services.
+   * @param[in,out] output Synchronous destination for prepared named data.
+   * @retval Error::Ok if all supported inputs were inspected.
+   * @retval Error::NotSupported if this backend has no persistent form.
+   */
+  ET_NODISCARD virtual Error initialize_backend_data(
+      __ET_UNUSED BackendDataInitContext& context,
+      __ET_UNUSED BackendDataWriter& output) const {
+    return Error::NotSupported;
+  }
 };
 
 /**
@@ -219,11 +230,9 @@ namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using ::executorch::ET_RUNTIME_NAMESPACE::Backend;
-using ::executorch::ET_RUNTIME_NAMESPACE::CompileSpec;
 using ::executorch::ET_RUNTIME_NAMESPACE::DelegateHandle;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
 using ::executorch::ET_RUNTIME_NAMESPACE::register_backend;
-using ::executorch::ET_RUNTIME_NAMESPACE::SizedBuffer;
 using PyTorchBackendInterface =
     ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
 } // namespace executor

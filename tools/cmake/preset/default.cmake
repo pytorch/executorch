@@ -91,6 +91,10 @@ define_overridable_option(
   ON # Required by executor_runner
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_BACKEND_DATA
+  "Build the backend data initialization and persistence extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension" BOOL
   ON # Required by executor_runner
 )
