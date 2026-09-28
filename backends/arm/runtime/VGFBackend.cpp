@@ -65,6 +65,7 @@ using executorch::runtime::EventTracerEntry;
 #include <vgf/decoder.hpp>
 #include <vgf/vulkan_helpers.generated.hpp>
 
+#include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
 namespace executorch {
@@ -457,6 +458,35 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     is_initialized_ = true;
+
+#if defined(EXECUTORCH_VGF_IO_STATS) && EXECUTORCH_VGF_IO_STATS
+    // Selected device, queried once at initialization, not per
+    // execute.
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(vk_physical_device, &properties);
+    VgfDeviceInfo info{};
+    info.valid = true;
+    info.vendor_id = properties.vendorID;
+    info.device_id = properties.deviceID;
+    info.api_version = properties.apiVersion;
+    info.driver_version = properties.driverVersion;
+    std::memcpy(
+        info.device_name, properties.deviceName, sizeof(info.device_name));
+    if (vkGetPhysicalDeviceProperties2 != nullptr &&
+        properties.apiVersion >= VK_MAKE_VERSION(1, 2, 0)) {
+      VkPhysicalDeviceDriverProperties driver{};
+      driver.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+      VkPhysicalDeviceProperties2 properties2{};
+      properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+      properties2.pNext = &driver;
+      vkGetPhysicalDeviceProperties2(vk_physical_device, &properties2);
+      std::memcpy(
+          info.driver_name, driver.driverName, sizeof(info.driver_name));
+      std::memcpy(
+          info.driver_info, driver.driverInfo, sizeof(info.driver_info));
+    }
+    set_vgf_device_info(info);
+#endif
   }
 
   // Vulkan teardown belongs to destroy(), not static destruction: the
@@ -629,6 +659,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
+    VGF_STATS_EXECUTION(handle);
+
 #ifdef ET_EVENT_TRACER_ENABLED
     EventTracer* event_tracer = context.event_tracer();
 
@@ -695,7 +727,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "Failed to map Vulkan IO memory");
         return Error::Internal;
       }
-      memcpy(data, tensor->mutable_data_ptr(), io_size);
+      VGF_STATS_MEMCPY_IN(data, tensor->mutable_data_ptr(), io_size);
       repr->unmap_io(io);
     }
 
@@ -808,7 +840,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "Failed to map Vulkan IO memory");
         return Error::Internal;
       }
-      memcpy(tensor->mutable_data_ptr(), data, io_size);
+      VGF_STATS_MEMCPY_OUT(tensor->mutable_data_ptr(), data, io_size);
       repr->unmap_io(io);
     }
 
@@ -817,6 +849,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
 #endif
 
+    VGF_STATS_SUCCESS();
     return Error::Ok;
   }
 

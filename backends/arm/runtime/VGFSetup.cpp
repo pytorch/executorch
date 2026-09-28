@@ -10,6 +10,7 @@
  * appropriate vulkan structures.
  */
 
+#include <executorch/backends/arm/runtime/VGFExecutionStats.h>
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
 #include <executorch/runtime/platform/log.h>
@@ -4085,6 +4086,8 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
       return false;
     }
 
+    // Submit + fence wait only; reset is above.
+    VGF_STATS_TIME(submit_wait_ns);
     result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
     if (result != VK_SUCCESS) {
       ET_LOG(Error, "VGF/VkFence wait failed, error %d", result);
