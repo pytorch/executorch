@@ -19,10 +19,10 @@
 
 #include <executorch/backends/aoti/slim/c10/core/Device.h>
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
-#include <executorch/backends/aoti/slim/c10/cuda/Exception.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -38,20 +38,13 @@ using ::executorch::runtime::Error;
 struct Allocation {
   void* k{nullptr};
   void* v{nullptr};
-  void* capacity_device{nullptr};
-  int64_t capacity{0};
+  int64_t rows{0};
 };
 
 struct Descriptor {
-  enum class Kind { Key, Value, Capacity };
-
   std::string internal_name;
   int64_t layer_id{0};
-  Kind kind{Kind::Key};
-  std::vector<int64_t> sizes;
-  std::vector<int64_t> strides;
-  slimc10::ScalarType dtype{slimc10::ScalarType::BFloat16};
-  slimc10::Device device{slimc10::DeviceType::CUDA, 0};
+  bool is_value{false};
 };
 
 struct Bound {
@@ -93,10 +86,9 @@ bool storage_dtype_of(int kv_dtype, slimc10::ScalarType& out) {
 //
 // The neutral base owns the logical length, admission and rewind. This class
 // owns only bytes: the device allocations, their geometric growth, and the
-// AOTI descriptors that point the compiled program at them. Physical slot math
-// stays in the Triton kernels, because it has to run on device so a captured
-// CUDA graph replays against the current positions rather than the ones that
-// were live at capture.
+// AOTI bindings that point the compiled program at them. Physical slot math
+// stays in the compiled program, on device, so a captured CUDA graph replays
+// against the current positions rather than the ones live at capture.
 class CudaSequenceKVCache final : public cache::SequenceCache,
                                   public CudaKVCache {
  public:
@@ -117,13 +109,18 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   ~CudaSequenceKVCache() override {
     std::lock_guard<std::mutex> guard(mutex_);
     for (auto& allocation : allocations_) {
-      release_allocation(allocation.second);
+      release(allocation.second, stream_);
     }
-    (void)cudaStreamSynchronize(cudaStreamPerThread);
+    if (device_known_) {
+      (void)cudaStreamSynchronize(stream_);
+    }
+    if (last_step_done_ != nullptr) {
+      (void)cudaEventDestroy(last_step_done_);
+    }
   }
 
-  // cache::SequenceControl. Also rewinds the reported length so a reset
-  // session does not keep reporting the old one.
+  // cache::SequenceControl. Keeps the storage: a reset session reuses the
+  // grown allocations, so it neither regrows nor invalidates captured graphs.
   void clear() override {
     std::lock_guard<std::mutex> guard(mutex_);
     cache::SequenceCache::clear();
@@ -150,8 +147,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       error_ = error;
       return error;
     }
-    const bool serves = !descriptors_[handle].empty();
-    if (!serves) {
+    if (descriptors_[handle].empty()) {
       descriptors_.erase(handle);
       return false;
     }
@@ -170,13 +166,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     if (descriptors_.find(handle) == descriptors_.end()) {
       return Error::Ok; // a handle with no off-graph storage
     }
-    if (error_ != Error::Ok) {
-      return error_;
-    }
-    ET_CHECK_OR_RETURN_ERROR(
-        handle->cuda_graph_state.phase == CudaGraphPhase::Disabled,
-        NotSupported,
-        "offgraph_kv: CUDA graph is not supported");
+    ET_CHECK_OK_OR_RETURN_ERROR(error_);
     ET_CHECK_OR_RETURN_ERROR(
         !allocations_.empty(),
         InvalidState,
@@ -184,35 +174,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     return bind(handle);
   }
 
-  // Whole-model check, so it cannot run until every program has been
-  // loaded and registered. The first step is the earliest moment that is
-  // guaranteed, which is why the cache runs it itself instead of exposing it
-  // to a caller who would have to know when "everything is loaded" is true.
-  // Caller holds mutex_: this runs from prepare_step, and mutex_ is not
-  // recursive.
-  Error validate_locked() const {
-    if (error_ != Error::Ok) {
-      return error_;
-    }
-    for (size_t index = 0; index < geometry_.layers.size(); ++index) {
-      // Not "capacity": the decomposed graph has no consumer for it, and the
-      // runtime supplies its own value to programs that do carry the slot.
-      for (const char* suffix : {"k", "v"}) {
-        if (discovered_fqns_.find(fqn(static_cast<int64_t>(index), suffix)) ==
-            discovered_fqns_.end()) {
-          ET_LOG(
-              Error,
-              "offgraph_kv: missing AOTI storage for layer %zu (%s)",
-              index,
-              suffix);
-          return Error::InvalidProgram;
-        }
-      }
-    }
-    return handles_associated_ ? Error::Ok : Error::InvalidState;
-  }
-
-  Error prepare_step(int64_t write_length) override {
+  Error prepare_step(int64_t write_length, cudaStream_t stream) override {
     std::lock_guard<std::mutex> guard(mutex_);
     ET_CHECK_OR_RETURN_ERROR(
         write_length > 0, InvalidArgument, "write length must be positive");
@@ -240,16 +202,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
           position,
           index);
     }
+    ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
+    stream_ = stream;
     const int64_t required = position + write_length;
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        ensure_initial_allocations(cudaStreamPerThread));
+    ET_CHECK_OK_OR_RETURN_ERROR(ensure_initial_allocations(required, stream));
     if (required > metrics_.flat_capacity) {
-      const int64_t doubled = metrics_.flat_capacity * 2;
       const int64_t next = std::min<int64_t>(
           config_.capacity,
-          std::max(
-              required, std::max<int64_t>(config_.initial_capacity, doubled)));
-      ET_CHECK_OK_OR_RETURN_ERROR(grow_flat(next, cudaStreamPerThread));
+          std::max<int64_t>(required, metrics_.flat_capacity * 2));
+      ET_CHECK_OK_OR_RETURN_ERROR(grow_flat(next, stream));
     }
     return Error::Ok;
   }
@@ -264,7 +225,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
         step.has_value(), InvalidArgument, "offgraph_kv: uncommittable step");
     cache::SequenceCache::commit(*step);
     metrics_.logical_length = length();
-    return Error::Ok;
+    return mark_step_done();
   }
 
   OffGraphKVMetrics metrics() const override {
@@ -281,183 +242,224 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   }
 
  private:
-  size_t element_size() const {
-    return slimc10::elementSize(storage_dtype_);
-  }
-
-  size_t storage_bytes(const cache::LayerGeometry& layer, int64_t capacity)
-      const {
+  // Bytes in one sequence row of a layer: every head's vector at one position.
+  size_t row_bytes(const cache::LayerGeometry& layer) const {
     return static_cast<size_t>(layer.n_kv_heads) *
-        static_cast<size_t>(capacity) * static_cast<size_t>(layer.head_dim) *
-        element_size();
+        static_cast<size_t>(layer.head_dim) *
+        slimc10::elementSize(storage_dtype_);
   }
 
   // Slots a ring layer needs to serve one step of up to max_write tokens: the
   // step writes all of them before attending, and its earliest query still
   // reads back window - 1 positions. Same formula as cache::RingPolicy and as
-  // ring_physical_capacity() in triton/kernels/offgraph_kv.py.
+  // ring_physical_capacity() in backends/cuda/passes/lower_offgraph_kv.py.
   int64_t ring_capacity(const cache::LayerGeometry& layer) const {
-    const int max_write =
-        config_.max_write ? *config_.max_write : layer.policy.window;
-    return static_cast<int64_t>(layer.policy.window) + max_write - 1;
+    return static_cast<int64_t>(layer.policy.window) + *config_.max_write - 1;
+  }
+
+  // Rows the compiled program declares for a layer's storage.
+  int64_t declared_rows(const cache::LayerGeometry& layer) const {
+    return is_ring(layer) ? ring_capacity(layer) : config_.capacity;
+  }
+
+  // Whole-model check, so it cannot run until every program has been loaded
+  // and registered. The first step is the earliest moment that is guaranteed.
+  // Caller holds mutex_.
+  Error validate_locked() const {
+    for (size_t index = 0; index < geometry_.layers.size(); ++index) {
+      for (const char* suffix : {"k", "v"}) {
+        if (discovered_fqns_.count(fqn(static_cast<int64_t>(index), suffix)) ==
+            0) {
+          ET_LOG(
+              Error,
+              "offgraph_kv: missing AOTI storage for layer %zu (%s)",
+              index,
+              suffix);
+          return Error::InvalidProgram;
+        }
+      }
+    }
+    return handles_associated_ ? Error::Ok : Error::InvalidState;
   }
 
   Error allocate_layer(
-      int64_t layer_id,
       const cache::LayerGeometry& layer,
-      int64_t capacity,
-      cudaStream_t stream) {
-    Allocation allocation;
-    const size_t bytes = storage_bytes(layer, capacity);
+      int64_t rows,
+      cudaStream_t stream,
+      Allocation& out) {
+    const size_t bytes = row_bytes(layer) * static_cast<size_t>(rows);
     auto k = CudaAllocator::allocate_async(bytes, device_, stream);
     ET_CHECK_OK_OR_RETURN_ERROR(k.error());
-    allocation.k = k.get();
     auto v = CudaAllocator::allocate_async(bytes, device_, stream);
     if (!v.ok()) {
-      CudaAllocator::deallocate_async(allocation.k, device_, stream);
+      CudaAllocator::deallocate_async(k.get(), device_, stream);
       return v.error();
     }
-    allocation.v = v.get();
-    auto cap = CudaAllocator::allocate_async(sizeof(int64_t), device_, stream);
-    if (!cap.ok()) {
-      CudaAllocator::deallocate_async(allocation.k, device_, stream);
-      CudaAllocator::deallocate_async(allocation.v, device_, stream);
-      return cap.error();
-    }
-    allocation.capacity_device = cap.get();
-    allocation.capacity = capacity;
-    const cudaError_t copy_error = cudaMemcpyAsync(
-        allocation.capacity_device,
-        &allocation.capacity,
-        sizeof(int64_t),
-        cudaMemcpyHostToDevice,
-        stream);
-    if (copy_error != cudaSuccess) {
-      CudaAllocator::deallocate_async(allocation.k, device_, stream);
-      CudaAllocator::deallocate_async(allocation.v, device_, stream);
-      CudaAllocator::deallocate_async(
-          allocation.capacity_device, device_, stream);
-      ET_LOG(
-          Error,
-          "offgraph_kv: capacity initialization failed: %s",
-          cudaGetErrorString(copy_error));
-      return Error::Internal;
-    }
-    metrics_.allocated_bytes +=
-        static_cast<int64_t>(2 * bytes + sizeof(int64_t));
-    allocations_.emplace(layer_id, allocation);
+    out = Allocation{k.get(), v.get(), rows};
+    metrics_.allocated_bytes += static_cast<int64_t>(2 * bytes);
     return Error::Ok;
   }
 
-  Error ensure_initial_allocations(cudaStream_t stream) {
-    bool allocated = false;
-    for (size_t index = 0; index < geometry_.layers.size(); ++index) {
-      const int64_t layer_id = static_cast<int64_t>(index);
-      if (allocations_.find(layer_id) != allocations_.end()) {
-        continue;
-      }
-      const cache::LayerGeometry& layer = geometry_.layers[index];
-      // Flat layers take their full capacity up front. The decomposed graph
-      // reaches storage through strides fixed at export from the declared
-      // shape, so head h sits at h * maximum_capacity * head_dim. Allocating
-      // less than that puts every head after the first past the end.
-      const int64_t capacity =
-          is_ring(layer) ? ring_capacity(layer) : config_.capacity;
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          allocate_layer(layer_id, layer, capacity, stream));
-      allocated = true;
-    }
-    if (allocated) {
-      metrics_.flat_capacity = config_.capacity;
-      ET_LOG(
-          Info,
-          "offgraph_kv: initialized flat_capacity=%lld allocated_bytes=%lld",
-          static_cast<long long>(metrics_.flat_capacity),
-          static_cast<long long>(metrics_.allocated_bytes));
-    }
-    return Error::Ok;
-  }
-
-  void release_allocation(Allocation& allocation) {
+  void release(Allocation& allocation, cudaStream_t stream) {
     if (!device_known_) {
       return;
     }
-    CudaAllocator::deallocate_async(allocation.k, device_, cudaStreamPerThread);
-    CudaAllocator::deallocate_async(allocation.v, device_, cudaStreamPerThread);
-    CudaAllocator::deallocate_async(
-        allocation.capacity_device, device_, cudaStreamPerThread);
+    CudaAllocator::deallocate_async(allocation.k, device_, stream);
+    CudaAllocator::deallocate_async(allocation.v, device_, stream);
   }
 
-  Error grow_flat(int64_t new_capacity, cudaStream_t stream) {
-    const int64_t old_capacity = metrics_.flat_capacity;
+  // Releases an allocation made by allocate_layer and takes it off the books.
+  void discard(
+      const cache::LayerGeometry& layer,
+      Allocation& allocation,
+      cudaStream_t stream) {
+    metrics_.allocated_bytes -=
+        static_cast<int64_t>(2 * row_bytes(layer) * allocation.rows);
+    release(allocation, stream);
+  }
+
+  // The previous step may have run on another stream (a caller-selected one),
+  // and its kernels may still be writing the storage this step reads, or that
+  // a growth below copies and frees. Order this stream behind it.
+  Error follow_previous_step(cudaStream_t stream) {
+    if (last_step_done_ == nullptr || stream == stream_) {
+      return Error::Ok;
+    }
+    const cudaError_t error = cudaStreamWaitEvent(stream, last_step_done_, 0);
+    ET_CHECK_OR_RETURN_ERROR(
+        error == cudaSuccess,
+        Internal,
+        "offgraph_kv: cannot order the step stream behind the previous one: %s",
+        cudaGetErrorString(error));
+    return Error::Ok;
+  }
+
+  // Records where the committed step's work ends on its stream. Called once
+  // the delegate has enqueued all of it, so the event covers every kernel that
+  // touched the storage.
+  Error mark_step_done() {
+    if (last_step_done_ == nullptr) {
+      const cudaError_t error =
+          cudaEventCreateWithFlags(&last_step_done_, cudaEventDisableTiming);
+      ET_CHECK_OR_RETURN_ERROR(
+          error == cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot create the step event: %s",
+          cudaGetErrorString(error));
+    }
+    const cudaError_t error = cudaEventRecord(last_step_done_, stream_);
+    ET_CHECK_OR_RETURN_ERROR(
+        error == cudaSuccess,
+        Internal,
+        "offgraph_kv: cannot record the step event: %s",
+        cudaGetErrorString(error));
+    return Error::Ok;
+  }
+
+  // A first step wider than the initial capacity is allocated at its own
+  // width rather than allocated and immediately grown.
+  Error ensure_initial_allocations(int64_t required, cudaStream_t stream) {
+    if (!allocations_.empty()) {
+      return Error::Ok;
+    }
+    const int64_t flat_rows =
+        std::max<int64_t>(config_.initial_capacity, required);
+    // All or nothing: a failure frees what was allocated so far, and the next
+    // step may try again.
+    std::vector<Allocation> allocated;
+    allocated.reserve(geometry_.layers.size());
+    for (const cache::LayerGeometry& layer : geometry_.layers) {
+      const int64_t rows = is_ring(layer) ? ring_capacity(layer) : flat_rows;
+      Allocation allocation;
+      const Error error = allocate_layer(layer, rows, stream, allocation);
+      if (error != Error::Ok) {
+        for (size_t index = 0; index < allocated.size(); ++index) {
+          discard(geometry_.layers[index], allocated[index], stream);
+        }
+        return error;
+      }
+      allocated.push_back(allocation);
+    }
+    for (size_t index = 0; index < allocated.size(); ++index) {
+      allocations_.emplace(static_cast<int64_t>(index), allocated[index]);
+    }
+    metrics_.flat_capacity = flat_rows;
+    ET_LOG(
+        Info,
+        "offgraph_kv: initialized flat_capacity=%lld allocated_bytes=%lld",
+        static_cast<long long>(metrics_.flat_capacity),
+        static_cast<long long>(metrics_.allocated_bytes));
+    return Error::Ok;
+  }
+
+  // Reallocates every flat layer at new_rows and carries the rows already
+  // written across. BSHD storage makes that one contiguous prefix per buffer.
+  // Everything is ordered on `stream`, so the copy runs after the last step
+  // that wrote the old storage, the old storage is freed only after the copy,
+  // and the next step's kernels see the copied rows.
+  //
+  // Transactional: every replacement is allocated and filled before any old
+  // storage is released. A failure on any layer frees the replacements and
+  // leaves the cache exactly as it was -- storage, bindings, capacity -- so the
+  // step fails but the cache stays usable.
+  Error grow_flat(int64_t new_rows, cudaStream_t stream) {
+    const int64_t old_rows = metrics_.flat_capacity;
+    const int64_t live_rows = length();
+    std::vector<std::pair<size_t, Allocation>> replacements;
+    auto roll_back = [&]() {
+      for (auto& [index, replacement] : replacements) {
+        discard(geometry_.layers[index], replacement, stream);
+      }
+    };
     for (size_t index = 0; index < geometry_.layers.size(); ++index) {
       const cache::LayerGeometry& layer = geometry_.layers[index];
       if (is_ring(layer)) {
         continue;
       }
-      const int64_t layer_id = static_cast<int64_t>(index);
-      auto old_it = allocations_.find(layer_id);
-      ET_CHECK_OR_RETURN_ERROR(
-          old_it != allocations_.end(),
-          InvalidState,
-          "offgraph_kv: layer allocation is missing");
-      Allocation old = old_it->second;
-      allocations_.erase(old_it);
-      const Error allocation_error =
-          allocate_layer(layer_id, layer, new_capacity, stream);
-      if (allocation_error != Error::Ok) {
-        allocations_.emplace(layer_id, old);
-        return allocation_error;
+      Allocation replacement;
+      const Error error = allocate_layer(layer, new_rows, stream, replacement);
+      if (error != Error::Ok) {
+        roll_back();
+        return error;
       }
-      Allocation& replacement = allocations_.at(layer_id);
-      const size_t row_bytes = static_cast<size_t>(old.capacity) *
-          static_cast<size_t>(layer.head_dim) * element_size();
-      const size_t new_pitch = static_cast<size_t>(new_capacity) *
-          static_cast<size_t>(layer.head_dim) * element_size();
-      for (const auto pair :
-           {std::pair{replacement.k, old.k}, std::pair{replacement.v, old.v}}) {
-        const cudaError_t copy_error = cudaMemcpy2DAsync(
-            pair.first,
-            new_pitch,
-            pair.second,
-            row_bytes,
-            row_bytes,
-            static_cast<size_t>(layer.n_kv_heads),
-            cudaMemcpyDeviceToDevice,
-            stream);
+      replacements.emplace_back(index, replacement);
+    }
+    for (const auto& [index, replacement] : replacements) {
+      const Allocation& current = allocations_.at(static_cast<int64_t>(index));
+      const size_t live_bytes =
+          row_bytes(geometry_.layers[index]) * static_cast<size_t>(live_rows);
+      if (live_bytes == 0) {
+        continue;
+      }
+      for (const auto& [dst, src] :
+           {std::pair{replacement.k, current.k},
+            std::pair{replacement.v, current.v}}) {
+        const cudaError_t copy_error = cudaMemcpyAsync(
+            dst, src, live_bytes, cudaMemcpyDeviceToDevice, stream);
         if (copy_error != cudaSuccess) {
-          // allocations_ already points at the replacement, so returning here
-          // would strand `old`. Free it, and refuse further use: this layer now
-          // holds storage with unpopulated history while earlier layers have
-          // already grown, and no partial state is safe to decode against.
-          CudaAllocator::deallocate_async(old.k, device_, stream);
-          CudaAllocator::deallocate_async(old.v, device_, stream);
-          CudaAllocator::deallocate_async(old.capacity_device, device_, stream);
-          metrics_.allocated_bytes -= static_cast<int64_t>(
-              2 * storage_bytes(layer, old.capacity) + sizeof(int64_t));
           ET_LOG(
               Error,
               "offgraph_kv: growth copy failed: %s",
               cudaGetErrorString(copy_error));
-          error_ = Error::Internal;
-          return error_;
+          roll_back();
+          return Error::Internal;
         }
       }
-      metrics_.allocated_bytes -= static_cast<int64_t>(
-          2 * storage_bytes(layer, old.capacity) + sizeof(int64_t));
-      CudaAllocator::deallocate_async(old.k, device_, stream);
-      CudaAllocator::deallocate_async(old.v, device_, stream);
-      CudaAllocator::deallocate_async(old.capacity_device, device_, stream);
     }
-    metrics_.flat_capacity = new_capacity;
+    for (auto& [index, replacement] : replacements) {
+      Allocation& current = allocations_.at(static_cast<int64_t>(index));
+      discard(geometry_.layers[index], current, stream);
+      current = replacement;
+    }
+    metrics_.flat_capacity = new_rows;
     metrics_.growth_count++;
     bound_.clear();
     ET_LOG(
         Info,
         "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
         "growth_count=%lld",
-        static_cast<long long>(old_capacity),
-        static_cast<long long>(new_capacity),
+        static_cast<long long>(old_rows),
+        static_cast<long long>(new_rows),
         static_cast<long long>(metrics_.allocated_bytes),
         static_cast<long long>(metrics_.growth_count));
     return Error::Ok;
@@ -489,52 +491,21 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     auto& descriptors = descriptors_[handle];
     size_t found_layers = 0;
     for (size_t index = 0; index < geometry_.layers.size(); ++index) {
-      const cache::LayerGeometry& layer = geometry_.layers[index];
       const int64_t layer_id = static_cast<int64_t>(index);
-      const int64_t max_capacity =
-          is_ring(layer) ? ring_capacity(layer) : config_.capacity;
-      size_t found_storage = 0;
-      for (const auto& [suffix, kind] :
-           {std::pair{"k", Descriptor::Kind::Key},
-            std::pair{"v", Descriptor::Kind::Value}}) {
+      size_t found = 0;
+      for (const auto& [suffix, is_value] :
+           {std::pair{"k", false}, std::pair{"v", true}}) {
         const std::string name = fqn(layer_id, suffix);
-        const auto found = internal_names.find(name);
-        if (found == internal_names.end()) {
+        const auto it = internal_names.find(name);
+        if (it == internal_names.end()) {
           continue;
         }
-        ++found_storage;
-        descriptors.emplace(
-            name,
-            Descriptor{
-                found->second,
-                layer_id,
-                kind,
-                {layer.n_kv_heads * max_capacity * layer.head_dim},
-                {1},
-                storage_dtype_,
-                slimc10::Device(slimc10::DeviceType::CUDA, device_)});
+        ++found;
+        descriptors.push_back(Descriptor{it->second, layer_id, is_value});
         discovered_fqns_.insert(name);
       }
-      // k and v are the witness for the all-or-nothing check below. Capacity
-      // cannot be: the decomposed graph emits none, so counting it there would
-      // leave the check unable to fire.
-      if (found_storage == 2) {
+      if (found == 2) {
         ++found_layers;
-      }
-      const std::string capacity_name = fqn(layer_id, "capacity");
-      const auto found = internal_names.find(capacity_name);
-      if (found != internal_names.end()) {
-        descriptors.emplace(
-            capacity_name,
-            Descriptor{
-                found->second,
-                layer_id,
-                Descriptor::Kind::Capacity,
-                {1},
-                {1},
-                slimc10::ScalarType::Long,
-                slimc10::Device(slimc10::DeviceType::CUDA, device_)});
-        discovered_fqns_.insert(capacity_name);
       }
     }
     // A method either has no off-graph storage (embeddings, vision) or has all
@@ -550,53 +521,37 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     return Error::Ok;
   }
 
+  // Binds each storage constant with the shape the program declared (BSHD at
+  // the maximum rows) over the current allocation, which may hold fewer rows.
+  // That is safe because every access the program makes is bounded by kv_len
+  // along the sequence, and prepare_step() has grown the allocation past it.
   Error bind(CudaDelegateHandle* handle) {
-    auto existing = bound_.find(handle);
-    if (existing != bound_.end()) {
+    if (bound_.find(handle) != bound_.end()) {
       return Error::Ok;
     }
     Bound bound;
-    for (const auto& item : descriptors_[handle]) {
-      const Descriptor& descriptor = item.second;
-      auto allocation = allocations_.find(descriptor.layer_id);
+    for (const Descriptor& descriptor : descriptors_[handle]) {
+      const cache::LayerGeometry& layer =
+          geometry_.layers[static_cast<size_t>(descriptor.layer_id)];
+      const Allocation& allocation = allocations_.at(descriptor.layer_id);
+      const int64_t declared = declared_rows(layer);
       ET_CHECK_OR_RETURN_ERROR(
-          allocation != allocations_.end(),
-          InvalidState,
-          "offgraph_kv: allocation for layer %lld is missing",
-          static_cast<long long>(descriptor.layer_id));
-      void* pointer = descriptor.kind == Descriptor::Kind::Capacity
-          ? allocation->second.capacity_device
-          : (descriptor.kind == Descriptor::Kind::Key ? allocation->second.k
-                                                      : allocation->second.v);
-      // What this bind tells AOTI the buffer holds, versus what was actually
-      // allocated. build_descriptors() sizes the view from config_.capacity
-      // (flat) or ring_capacity() (ring), while the allocation is sized
-      // separately; nothing else forces the two to agree, and a view larger
-      // than its allocation is a silent out-of-bounds write that only surfaces
-      // later as corrupt attention output.
-      if (descriptor.kind != Descriptor::Kind::Capacity) {
-        const cache::LayerGeometry& layer =
-            geometry_.layers[static_cast<size_t>(descriptor.layer_id)];
-        const int64_t allocated_elements = static_cast<int64_t>(
-            layer.n_kv_heads * allocation->second.capacity * layer.head_dim);
-        ET_CHECK_OR_RETURN_ERROR(
-            descriptor.sizes.size() == 1 &&
-                descriptor.sizes[0] == allocated_elements,
-            InvalidProgram,
-            "offgraph_kv: layer %lld binds a %lld-element view onto a %lld-element allocation",
-            static_cast<long long>(descriptor.layer_id),
-            static_cast<long long>(
-                descriptor.sizes.empty() ? -1 : descriptor.sizes[0]),
-            static_cast<long long>(allocated_elements));
-      }
+          allocation.rows <= declared,
+          Internal,
+          "offgraph_kv: layer %lld holds %lld rows, more than the %lld declared",
+          static_cast<long long>(descriptor.layer_id),
+          static_cast<long long>(allocation.rows),
+          static_cast<long long>(declared));
+      const int64_t heads = layer.n_kv_heads;
+      const int64_t dim = layer.head_dim;
+      const int64_t sizes[] = {1, declared, heads, dim};
+      const int64_t strides[] = {declared * heads * dim, heads * dim, dim, 1};
       auto tensor = std::make_unique<SlimTensor>(from_blob(
-          pointer,
-          ::executorch::runtime::makeArrayRef(
-              descriptor.sizes.data(), descriptor.sizes.size()),
-          ::executorch::runtime::makeArrayRef(
-              descriptor.strides.data(), descriptor.strides.size()),
-          descriptor.dtype,
-          descriptor.device));
+          descriptor.is_value ? allocation.v : allocation.k,
+          ::executorch::runtime::makeArrayRef(sizes, 4),
+          ::executorch::runtime::makeArrayRef(strides, 4),
+          storage_dtype_,
+          slimc10::Device(slimc10::DeviceType::CUDA, device_)));
       bound.pairs.push_back(
           {descriptor.internal_name.c_str(),
            reinterpret_cast<aoti::AtenTensorHandle>(tensor.get())});
@@ -608,8 +563,8 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
               handle->container_handle,
               bound.pairs.data(),
               bound.pairs.size(),
-              false,
-              false));
+              /*use_inactive=*/false,
+              /*validate_full_update=*/false));
     }
     bound_.emplace(handle, std::move(bound));
     return Error::Ok;
@@ -628,13 +583,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   bool device_known_{false};
   bool handles_associated_{false};
   bool validated_{false};
+  // The stream of the latest step, and so of the latest use of the storage.
+  cudaStream_t stream_{cudaStreamPerThread};
+  // Recorded on stream_ when a step commits; a later step on another stream
+  // waits on it before touching the storage.
+  cudaEvent_t last_step_done_{nullptr};
   Error error_{Error::Ok};
   OffGraphKVMetrics metrics_;
   std::unordered_map<int64_t, Allocation> allocations_;
-  std::unordered_map<
-      CudaDelegateHandle*,
-      std::unordered_map<std::string, Descriptor>>
-      descriptors_;
+  std::unordered_map<CudaDelegateHandle*, std::vector<Descriptor>> descriptors_;
   std::unordered_map<CudaDelegateHandle*, Bound> bound_;
   std::unordered_set<std::string> discovered_fqns_;
 };
@@ -653,24 +610,77 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
     ET_LOG(Error, "offgraph_kv: invalid cache geometry or config");
     return nullptr;
   }
-  // A ring layer is sized window + max_write - 1, and the decomposed graph
-  // bakes that same expression in as a literal when it traces index_copy_.
-  // Letting max_write default to the window here would allocate short of
-  // what the graph addresses; the bind-time element check compares two
-  // runtime-derived sizes and so cannot see the disagreement.
+  // A ring layer is sized window + max_write - 1, and the lowered graph bakes
+  // that same expression in when it traces index_copy_. Defaulting max_write
+  // to the window here would allocate short of what the graph addresses.
   if (!cfg.max_write) {
     for (const cache::LayerGeometry& layer : geometry.layers) {
       if (is_ring(layer)) {
-        ET_LOG(
-            Error,
-            "offgraph_kv: ring layers require max_write; unset is supported "
-            "elsewhere but the decomposed graph bakes window + max_write - 1 "
-            "in at export, so defaulting it to the window under-allocates");
+        ET_LOG(Error, "offgraph_kv: ring layers require max_write");
         return nullptr;
       }
     }
   }
   return std::make_shared<CudaSequenceKVCache>(geometry, cfg, storage_dtype);
 }
+
+runtime::Error attach_offgraph_kv_cache(
+    CudaDelegateHandle& handle,
+    const char* cache_key,
+    const std::optional<OffGraphKVStepWidth>& step_width) {
+  handle.kv_cache_shared = cache::CacheRegistry::global().get(cache_key);
+  ET_CHECK_OR_RETURN_ERROR(
+      handle.kv_cache_shared != nullptr,
+      InvalidArgument,
+      "init: cache_key '%s' is not installed in the CacheRegistry",
+      cache_key);
+  handle.kv_cache = handle.kv_cache_shared->as<CudaKVCache>();
+  ET_CHECK_OR_RETURN_ERROR(
+      handle.kv_cache != nullptr,
+      InvalidArgument,
+      "init: cache under key '%s' is not a CUDA cache",
+      cache_key);
+  auto serves = handle.kv_cache->note_handle(&handle);
+  ET_CHECK_OK_OR_RETURN_ERROR(serves.error());
+  if (!serves.get()) {
+    // An embedding or vision pass: it carries no KV storage, so it has no use
+    // for the cache and must not be asked to step it.
+    handle.kv_cache = nullptr;
+    handle.kv_cache_shared.reset();
+    return runtime::Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      step_width.has_value(),
+      InvalidArgument,
+      "off-graph KV cache needs an %s compile spec",
+      kOffGraphKVStepWidthSpec);
+  handle.kv_step_width = *step_width;
+  return runtime::Error::Ok;
+}
+
+namespace {
+
+// Publish this backend's off-graph KV cache layouts. A runner asks the factory
+// for (backend_id, kind) and gets back a neutral Cache it can install, without
+// naming any CUDA type. Lives beside the cache so a build without the LLM
+// extension, which drops this file, registers nothing.
+const bool cuda_cache_builders_registered = [] {
+  const auto error = cache::CacheFactory::global().register_builder(
+      kCudaBackendId,
+      cache::kind::kSingle,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+        return make_cuda_sequence_kv_cache(geometry, cfg);
+      });
+  if (error != runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to register cache builder for %s:%s",
+        kCudaBackendId,
+        cache::kind::kSingle);
+  }
+  return true;
+}();
+
+} // namespace
 
 } // namespace executorch::backends::cuda

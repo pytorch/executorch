@@ -195,12 +195,6 @@ class ET_EXPERIMENTAL CudaBackend final
         res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
-    auto run_single_threaded =
-        get_function(so_handle, "AOTInductorModelContainerRunSingleThreaded");
-    handle->run_single_threaded = run_single_threaded.ok()
-        ? reinterpret_cast<AOTInductorModelContainerRunFunc>(
-              run_single_threaded.get())
-        : nullptr;
     LOAD_OPTIONAL_SYMBOL(
         get_num_constants, AOTInductorModelContainerGetNumConstants);
     LOAD_OPTIONAL_SYMBOL(
@@ -306,59 +300,19 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 
   // Once per loaded binary blob
-  // The number of tokens this step writes, read from the input the export side
-  // named. Shape metadata only -- never the tensor's contents, which live on
-  // device and would cost a synchronisation every step.
-  static Result<int64_t> offgraph_kv_step_width(
-      const cuda::CudaDelegateHandle* handle,
-      Span<EValue*> args,
-      size_t n_inputs) {
-    const int index = handle->kv_step_width_input;
-    ET_CHECK_OR_RETURN_ERROR(
-        index >= 0 && static_cast<size_t>(index) < n_inputs,
-        InvalidArgument,
-        "offgraph_kv: step-width input %d is out of range (%zu inputs)",
-        index,
-        n_inputs);
-    ET_CHECK_OR_RETURN_ERROR(
-        args[index]->isTensor(),
-        InvalidArgument,
-        "offgraph_kv: step-width input %d is not a tensor",
-        index);
-    const auto& tensor = args[index]->toTensor();
-    ET_CHECK_OR_RETURN_ERROR(
-        handle->kv_step_width_dim < tensor.dim(),
-        InvalidArgument,
-        "offgraph_kv: step-width dim %d is out of range for a %zd-D input",
-        handle->kv_step_width_dim,
-        tensor.dim());
-    const auto width = tensor.size(handle->kv_step_width_dim);
-    ET_CHECK_OR_RETURN_ERROR(
-        width > 0, InvalidArgument, "offgraph_kv: step width is %zd", width);
-    return static_cast<int64_t>(width);
-  }
-
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
     std::string method_name;
-    int kv_step_width_input = -1;
-    int kv_step_width_dim = 0;
+    std::optional<OffGraphKVStepWidth> kv_step_width;
     for (const CompileSpec& spec : compile_specs) {
-      if (std::strcmp(spec.key, "offgraph_kv_step_width") == 0) {
-        // "input_index:dim"
-        const std::string value(
-            static_cast<const char*>(spec.value.buffer), spec.value.nbytes);
-        const size_t colon = value.find(':');
-        ET_CHECK_OR_RETURN_ERROR(
-            colon != std::string::npos,
-            InvalidArgument,
-            "offgraph_kv_step_width must be \"input_index:dim\", got '%s'",
-            value.c_str());
-        kv_step_width_input = std::atoi(value.substr(0, colon).c_str());
-        kv_step_width_dim = std::atoi(value.substr(colon + 1).c_str());
+      if (std::strcmp(spec.key, kOffGraphKVStepWidthSpec) == 0) {
+        auto parsed = parse_offgraph_kv_step_width(std::string_view(
+            static_cast<const char*>(spec.value.buffer), spec.value.nbytes));
+        ET_CHECK_OK_OR_RETURN_ERROR(parsed.error());
+        kv_step_width = parsed.get();
       }
       if (std::strcmp(spec.key, "method_name") == 0) {
         method_name.assign(
@@ -506,36 +460,16 @@ class ET_EXPERIMENTAL CudaBackend final
     if (auto spec = context.get_runtime_spec<const char*>(
             ::executorch::extension::llm::cache::kCacheKeyOption);
         spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
-      const char* cache_key = spec.get();
-      handle->kv_cache_shared =
-          ::executorch::extension::llm::cache::CacheRegistry::global().get(
-              std::string(cache_key));
-      ET_CHECK_OR_RETURN_ERROR(
-          handle->kv_cache_shared != nullptr,
-          InvalidArgument,
-          "init: cache_key '%s' is not installed in the CacheRegistry",
-          cache_key);
-      handle->kv_cache = handle->kv_cache_shared->as<CudaKVCache>();
-      ET_CHECK_OR_RETURN_ERROR(
-          handle->kv_cache != nullptr,
-          InvalidArgument,
-          "init: cache under key '%s' is not a CUDA cache",
-          cache_key);
-      ET_ASSIGN_OR_RETURN(
-          serves_offgraph, handle->kv_cache->note_handle(handle));
-      if (!serves_offgraph) {
-        // An embedding or vision pass: it carries no KV storage, so it has no
-        // use for the cache and must not be asked to step it.
-        handle->kv_cache = nullptr;
-        handle->kv_cache_shared.reset();
-      } else {
-        ET_CHECK_OR_RETURN_ERROR(
-            kv_step_width_input >= 0,
-            InvalidArgument,
-            "off-graph KV cache needs an offgraph_kv_step_width compile spec");
-        handle->kv_step_width_input = kv_step_width_input;
-        handle->kv_step_width_dim = kv_step_width_dim;
-      }
+#if defined(EXECUTORCH_CUDA_OFFGRAPH_KV_CACHE)
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          attach_offgraph_kv_cache(*handle, spec.get(), kv_step_width));
+#else
+      ET_LOG(
+          Error,
+          "init: an off-graph KV cache was supplied, but this CUDA backend was "
+          "built without EXECUTORCH_BUILD_EXTENSION_LLM");
+      return Error::NotSupported;
+#endif
     }
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
@@ -568,11 +502,8 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Initialize CUDA graph state if enabled for this method.
     if (should_use_cuda_graph_for_method(method_name)) {
-      ET_CHECK_OR_RETURN_ERROR(
-          handle->run_single_threaded != nullptr,
-          NotSupported,
-          "CUDA graph requires AOTInductorModelContainerRunSingleThreaded");
-      handle->cuda_graph_state.enable(kCudaGraphWarmupSteps);
+      handle->cuda_graph_state.phase = CudaGraphPhase::Warmup;
+      handle->cuda_graph_state.warmup_remaining = kCudaGraphWarmupSteps;
       ET_LOG(
           Info,
           "CUDA graph enabled for method '%s' (warmup=%d)",
@@ -694,13 +625,16 @@ class ET_EXPERIMENTAL CudaBackend final
     // the step is driven from here rather than by the runner.
     int64_t kv_step_width = 0;
     if (handle->kv_cache != nullptr) {
-      // Assigned, not declared: ET_ASSIGN_OR_RETURN introduces its own name and
-      // would shadow the one the commit sites below read.
-      const auto step_width = offgraph_kv_step_width(handle, args, n_inputs);
+      const auto step_width = read_offgraph_kv_step_width(
+          handle->kv_step_width, Span<EValue*>(args.data(), n_inputs));
       ET_CHECK_OK_OR_RETURN_ERROR(step_width.error());
       kv_step_width = step_width.get();
+      // Growth is ordered on the stream this step runs on, which was just
+      // installed as current above.
+      const Result<cudaStream_t> step_stream = getCurrentCUDAStream(0);
+      ET_CHECK_OK_OR_RETURN_ERROR(step_stream.error());
       ET_CHECK_OK_OR_RETURN_ERROR(
-          handle->kv_cache->prepare_step(kv_step_width));
+          handle->kv_cache->prepare_step(kv_step_width, step_stream.get()));
       ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->rebind_for_execute(handle));
     }
     ET_CHECK_OK_OR_RETURN_ERROR(mutable_state_rebind_for_execute(handle));
@@ -965,17 +899,14 @@ class ET_EXPERIMENTAL CudaBackend final
       end_capture_guard.arm(cuda_stream);
     }
 
-    auto run = handle->cuda_graph_state.phase == CudaGraphPhase::Disabled
-        ? handle->run
-        : handle->run_single_threaded;
-    AOTIRuntimeError error =
-        run(handle->container_handle,
-            reinterpret_cast<Tensor**>(slim_inputs.data()),
-            n_inputs,
-            reinterpret_cast<Tensor**>(slim_outputs.data()),
-            n_outputs,
-            static_cast<void*>(cuda_stream),
-            nullptr);
+    AOTIRuntimeError error = handle->run(
+        handle->container_handle,
+        reinterpret_cast<Tensor**>(slim_inputs.data()),
+        n_inputs,
+        reinterpret_cast<Tensor**>(slim_outputs.data()),
+        n_outputs,
+        static_cast<void*>(cuda_stream),
+        nullptr);
     run_called = true;
 
     // Delete orphaned pre-created outputs that run() replaced.
@@ -1606,27 +1537,6 @@ auto cls = cuda::CudaBackend();
 executorch::runtime::Backend backend{cuda::kCudaBackendId, &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
-
-// Publish this backend's off-graph KV cache layouts. A runner asks the factory
-// for (backend_id, kind) and gets back a neutral Cache it can install, without
-// naming any CUDA type.
-const bool cuda_cache_builders_registered = [] {
-  namespace cache = ::executorch::extension::llm::cache;
-  const auto error = cache::CacheFactory::global().register_builder(
-      cuda::kCudaBackendId,
-      cache::kind::kSingle,
-      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
-        return cuda::make_cuda_sequence_kv_cache(geometry, cfg);
-      });
-  if (error != executorch::runtime::Error::Ok) {
-    ET_LOG(
-        Error,
-        "Failed to register cache builder for %s:%s",
-        cuda::kCudaBackendId,
-        cache::kind::kSingle);
-  }
-  return true;
-}();
 
 // Auto-register the CudaAllocator so that DeviceMemoryBuffer::create(CUDA)
 // works whenever the CUDA backend library is linked.
