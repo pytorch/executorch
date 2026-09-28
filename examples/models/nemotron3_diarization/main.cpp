@@ -47,6 +47,12 @@ int main(int argc, char** argv) {
       throw std::invalid_argument(
           "Provide --audio_path, positive --feed_samples, and --threshold in [0,1]");
     }
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (FLAGS_data_path.empty()) {
+      throw std::invalid_argument(
+          "Provide --data_path pointing to aoti_cuda_blob.ptd for CUDA");
+    }
+#endif
 #ifdef EXECUTORCH_BUILD_MLX
     if (FLAGS_mlx_cache_limit_mb < 0 || FLAGS_mlx_memory_limit_mb <= 0) {
       throw std::invalid_argument(

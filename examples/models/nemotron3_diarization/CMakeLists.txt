@@ -57,6 +57,11 @@ target_include_directories(
 target_link_libraries(
   nemotron3_diarization_runner PRIVATE nemotron3_diarization gflags
 )
+if(EXECUTORCH_BUILD_CUDA)
+  target_compile_definitions(
+    nemotron3_diarization_runner PRIVATE EXECUTORCH_BUILD_CUDA
+  )
+endif()
 if(EXECUTORCH_BUILD_MLX)
   if(NOT TARGET mlxdelegate OR NOT TARGET mlx)
     message(
