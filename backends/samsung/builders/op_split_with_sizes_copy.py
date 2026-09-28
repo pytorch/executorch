@@ -36,8 +36,8 @@ class SplitVisitor(NodeVisitor):
             for user in node.users.keys():
                 if user.target.__name__ == "getitem" and len(user.args) > 1:
                     copied_idx = user.args[1]
-                    copied_indices.append(copied_idx)
                     if copied_idx == output_idx:
+                        copied_indices.append(copied_idx)
                         output_id = self.define_tensor(user, enn_graph, vals_to_ids)
                         all_output_tensors.append(output_id)
 

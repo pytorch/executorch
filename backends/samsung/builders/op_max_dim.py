@@ -34,9 +34,12 @@ class MaxDimVisitor(NodeVisitor):
         users = list(node.users.keys())
         if (
             len(users) != 1
-            and users[0].target.__name__ == "getitem"
-            and users[0].args[1] != 0
+            or users[0].op != "call_function"
+            or users[0].target.__name__ != "getitem"
+            or users[0].args[1] != 0
         ):
+            # ENN's ReduceMax has no indices output, so reject rather than
+            # silently drop max.dim's second output when it is consumed.
             return False
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids, output_idx=0)

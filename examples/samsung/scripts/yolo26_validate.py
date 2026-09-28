@@ -25,10 +25,10 @@ Usage:
     export LD_LIBRARY_PATH=${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux
 
     # Export and validate on device:
-    python test_yolo26.py -c E9955 -m yolo26s -d /path/to/images --validate coco128.yaml 
+    python yolo26_validate.py -c E9965 -m yolo26s -d /path/to/images --validate coco128.yaml 
 
     # Quantized model with device validation:
-    python test_yolo26.py -c E9955 -m yolo26s -d /path/to/images -p A8W8 --validate coco128.yaml 
+    python yolo26_validate.py -c E9965 -m yolo26s -d /path/to/images -p A8W8 --validate coco128.yaml 
 
     A list of available datasets and instructions on how to use a custom dataset can be found at:
     https://docs.ultralytics.com/datasets/detect
@@ -46,7 +46,6 @@ import cv2
 import numpy as np
 import torch
 
-from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer import Precision
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
@@ -247,8 +246,7 @@ def main(args):
         pt_model, example_args, compile_specs=compile_specs
     )
 
-    edge = edge_prog.to_backend(EnnPartitioner(compile_specs))
-    exec_prog = edge.to_executorch(
+    exec_prog = edge_prog.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=True)
     )
 
@@ -312,9 +310,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--input_dims",
-        type=eval,
+        type=int,
+        nargs=2,
         default=[640, 640],
-        help="Input model dimensions as [height, width]. Default: [640, 640]",
+        help="Input model dimensions as height width. Default: 640 640",
     )
     parser.add_argument(
         "-d",
@@ -343,11 +342,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dump",
-        default=False,
-        const=True,
-        nargs="?",
+        action="store_true",
         help="Whether to dump input/output tensors. Default: False.",
-        type=bool,
     )
     parser.add_argument(
         "-a",

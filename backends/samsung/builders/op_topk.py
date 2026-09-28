@@ -53,7 +53,7 @@ class TopKVisitor(NodeVisitor):
         Returns ``(output_type, tensor_ids)`` where *output_type* is one
         of ``"value"``, ``"index"``, or ``"both"``.
         """
-        outputs: List[int] = []
+        output_ids: Dict[int, int] = {}
         output_type = "both"
         num_users = len(node.users)
 
@@ -61,20 +61,15 @@ class TopKVisitor(NodeVisitor):
             if user.target.__name__ != "getitem" or len(user.args) <= 1:
                 continue
             idx = user.args[1]
-            if idx == 0:
-                val_id = self.define_tensor(user, enn_graph, vals_to_ids)
-                vals_to_ids[user] = val_id
-                outputs.append(val_id)
-                if num_users == 1:
-                    output_type = "value"
-            elif idx == 1:
-                idx_id = self.define_tensor(user, enn_graph, vals_to_ids)
-                vals_to_ids[user] = idx_id
-                outputs.append(idx_id)
-                if num_users == 1:
-                    output_type = "index"
+            if idx not in (0, 1):
+                continue
+            output_ids[idx] = self.define_tensor(user, enn_graph, vals_to_ids)
+            vals_to_ids[user] = output_ids[idx]
+            if num_users == 1:
+                output_type = "value" if idx == 0 else "index"
 
-        return output_type, outputs
+        # Order by getitem index; node.users iteration order is unspecified.
+        return output_type, [output_ids[idx] for idx in sorted(output_ids)]
 
     def define_node(
         self,
