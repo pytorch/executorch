@@ -3000,6 +3000,38 @@ def sdpa_bitwise_mask_gen(mask: torch.Tensor, threshold: float) -> torch.Tensor:
         return packed.view(*original_shape[:-1], packed_last)
 
 
+@impl_tracked(m, "sdpa_bitwise_causal_mask_gen")
+def sdpa_bitwise_causal_mask_gen(
+    positions: torch.Tensor, key_length: int
+) -> torch.Tensor:
+    """Generate an LSB-first packed causal mask directly from token positions."""
+    assert positions.dtype in (
+        torch.int32,
+        torch.int64,
+    ), "Positions must use int32 or int64"
+    assert positions.dim() == 1, "Positions must be one-dimensional"
+    assert (
+        key_length > 0 and key_length % 8 == 0
+    ), "Key length must be positive and divisible by 8"
+    assert bool(torch.all(positions >= 0)), "Positions must be nonnegative"
+
+    visible_lengths = (
+        torch.clamp(positions.to(torch.int64), max=key_length - 1).unsqueeze(1) + 1
+    )
+    byte_starts = torch.arange(
+        0,
+        key_length,
+        8,
+        dtype=torch.int64,
+        device=positions.device,
+    ).unsqueeze(0)
+    visible_bits = torch.clamp(visible_lengths - byte_starts, min=0, max=8)
+    return torch.bitwise_and(
+        torch.bitwise_left_shift(torch.full_like(visible_bits, 0xFF), visible_bits),
+        0xFF,
+    ).to(torch.uint8)
+
+
 @impl_tracked(m, "slice_scatter_")
 def slice_scatter_impl(
     self: torch.Tensor,

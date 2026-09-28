@@ -526,6 +526,12 @@ lib.define("sdpa_bitwise_mask_gen(Tensor mask, float threshold) -> (Tensor out)"
 lib.define(
     "sdpa_bitwise_mask_gen.out(Tensor mask, float threshold, *, Tensor(a!) out) -> Tensor (a!)"
 )
+lib.define(
+    "sdpa_bitwise_causal_mask_gen(Tensor positions, int key_length) -> (Tensor out)"
+)
+lib.define(
+    "sdpa_bitwise_causal_mask_gen.out(Tensor positions, int key_length, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # Load/store with iDMA. These only exist before memory planning.
 # Post memory planning, we check that outputs/inputs for the load/store are in
@@ -3348,6 +3354,21 @@ def sdpa_bitwise_mask_gen_meta(
     assert last % 8 == 0, "last dimension must be a multiple of 8"
     mask_shape[-1] = last // 8  # pack 8 elements into 1 byte
     return mask.new_empty(mask_shape, dtype=torch.uint8)
+
+
+@register_fake("cadence::sdpa_bitwise_causal_mask_gen")
+def sdpa_bitwise_causal_mask_gen_meta(
+    positions: torch.Tensor,
+    key_length: int,
+) -> torch.Tensor:
+    torch._check(
+        positions.dtype in (torch.int32, torch.int64),
+        lambda: "expected int32 or int64 positions",
+    )
+    torch._check(positions.dim() == 1, lambda: "positions must be one-dimensional")
+    torch._check(key_length > 0, lambda: "key_length must be positive")
+    torch._check(key_length % 8 == 0, lambda: "key_length must be a multiple of 8")
+    return positions.new_empty((positions.numel(), key_length // 8), dtype=torch.uint8)
 
 
 @register_fake("cadence::quantized_w8a32_linear")
