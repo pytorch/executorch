@@ -24,9 +24,12 @@ from executorch.backends.transforms.fuse_duplicate_users_pass import (
 from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
     FuseIdenticalInputTransformsPass,
 )
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
+from torch.fx.node import map_arg
 
 
 @dataclass(frozen=True)
@@ -113,22 +116,10 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             graph_module = self._retrace(graph_module)
 
         while True:
-            iteration_modified = False
-            # A rewrite invalidates metadata along its path and downstream.
-            # Defer that region while still batching independent branches.
-            stale_nodes: set[torch.fx.Node] = set()
-            for node in list(graph_module.graph.nodes):
-                if node in stale_nodes:
-                    continue
-                if node.target in self._targets:
-                    if len(node.users) == 0:
-                        continue
-                    if self._propagate(node, stale_nodes):
-                        iteration_modified = True
+            iteration_modified = self._propagate_iteration(graph_module)
 
             if iteration_modified:
                 modified = True
-                graph_module = self._retrace(graph_module)
                 continue
 
             result = self.fuse_horizontal(graph_module)
@@ -147,36 +138,69 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         return PassResult(graph_module, modified)
 
-    @staticmethod
-    def _mark_downstream_nodes_stale(
-        node: torch.fx.Node, stale_nodes: set[torch.fx.Node]
-    ) -> None:
-        pending = [node]
-        while pending:
-            current = pending.pop()
-            if current in stale_nodes:
-                continue
-            stale_nodes.add(current)
-            pending.extend(current.users)
-
-    def _mark_stale_region(
+    def _propagate_iteration(
         self,
-        nodes: Iterable[torch.fx.Node],
-        stale_nodes: set[torch.fx.Node],
-    ) -> None:
-        for node in nodes:
-            self._mark_downstream_nodes_stale(node, stale_nodes)
+        graph_module: torch.fx.GraphModule,
+    ) -> bool:
+        modified = False
+        for node in self._propagation_order(graph_module):
+            if node.graph is None:
+                continue
+            if node.target not in self._targets or len(node.users) == 0:
+                continue
+            modified |= self._propagate(node)
+        return modified
+
+    def _propagation_order(
+        self, graph_module: torch.fx.GraphModule
+    ) -> Iterable[torch.fx.Node]:
+        return list(graph_module.graph.nodes)
 
     def _retrace(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         graph_module.graph.eliminate_dead_code()
         graph_module.graph.lint()
         return super().call(graph_module).graph_module
 
+    def _refresh_node_meta(self, node: torch.fx.Node) -> None:
+        if not node.all_input_nodes:
+            return
+        if node.target in {self._VIEW_TARGET, self._PERMUTE_TARGET}:
+            # Derive copy-op shapes from the input so existing SymInts retain
+            # their identity instead of being recreated by fake execution.
+            refresh_permute_view_meta(node)
+            return
+
+        args = map_arg(node.args, lambda input_node: input_node.meta["val"])
+        kwargs = map_arg(node.kwargs, lambda input_node: input_node.meta["val"])
+        fake_mode = next(
+            (
+                value.fake_mode
+                for input_node in node.all_input_nodes
+                if isinstance((value := input_node.meta.get("val")), FakeTensor)
+            ),
+            None,
+        )
+        if fake_mode is None:
+            fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
+            args = torch.utils._pytree.tree_map_only(
+                torch.Tensor, fake_mode.from_tensor, args
+            )
+            kwargs = torch.utils._pytree.tree_map_only(
+                torch.Tensor, fake_mode.from_tensor, kwargs
+            )
+        with fake_mode:
+            node.meta["val"] = node.target(*args, **kwargs)  # type: ignore[operator]
+
+    @abstractmethod
+    def _refresh_propagation_meta(
+        self, moving_node: torch.fx.Node, propagation_path: Sequence[torch.fx.Node]
+    ) -> None:
+        pass
+
     def _validated_next_nodes(
         self,
         node: torch.fx.Node,
         frontier: torch.fx.Node,
-        stale_nodes: set[torch.fx.Node],
     ) -> list[torch.fx.Node] | None:
         next_nodes = list(self._get_next_nodes(frontier))
         if not next_nodes:
@@ -184,9 +208,6 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                 "placeholder",
                 "output",
             ), f"{self.__class__.__name__} reached an endpoint node which is not a placeholder or output: {frontier}"
-            return None
-
-        if any(next_node in stale_nodes for next_node in next_nodes):
             return None
 
         if not self._can_cross_next_nodes(frontier, next_nodes):
@@ -217,17 +238,15 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         next_node.args = swapped_args[1]
         return True
 
-    def _propagate(self, node: torch.fx.Node, stale_nodes: set[torch.fx.Node]) -> bool:
-        """Propagate one node without consulting metadata invalidated this
-        scan.
-        """
+    def _propagate(self, node: torch.fx.Node) -> bool:
+        """Propagate one node and refresh metadata changed by the rewrite."""
 
         frontier = node
         previous_frontier = None
         propagation_path = [node]
         moved = False
         while True:
-            next_nodes = self._validated_next_nodes(node, frontier, stale_nodes)
+            next_nodes = self._validated_next_nodes(node, frontier)
             if next_nodes is None:
                 break
 
@@ -236,7 +255,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
                     node, frontier, previous_frontier, next_nodes
                 ):
                     break
-                self._mark_stale_region((*propagation_path, *next_nodes), stale_nodes)
+                self._refresh_propagation_meta(node, propagation_path)
                 return True
 
             next_node = next_nodes[0]
@@ -251,7 +270,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             # Perform the swap directly in this case and return.
             # Otherwise break and move the node before the concat
             if self._maybe_split_upwards_cat_fanout(node, next_node):
-                self._mark_stale_region((*propagation_path, next_node), stale_nodes)
+                self._refresh_propagation_meta(node, propagation_path)
                 return True
 
             # Unhandled case, stop propagation
@@ -262,7 +281,7 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
 
         assert previous_frontier is not None
         self._move_node(node, frontier, previous_frontier)
-        self._mark_stale_region(propagation_path, stale_nodes)
+        self._refresh_propagation_meta(node, propagation_path)
         return True
 
     def duplicate_user_fusion_exclusions(self) -> frozenset:
@@ -512,6 +531,15 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         """Moving up leaves the crossed node reading ``moving_node``'s output."""
         val = moving_node.meta.get("val")
         return getattr(val, "shape", None)
+
+    def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
+        # After moving up, dependencies run from the transform through the
+        # crossed nodes in reverse propagation order.
+        if moving_node.graph is not None:
+            self._refresh_node_meta(moving_node)
+        for node in reversed(propagation_path[1:]):
+            if node.graph is not None:
+                self._refresh_node_meta(node)
 
     def fuse_horizontal(self, graph_module):
         modified = False
@@ -814,6 +842,20 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         """Moving down leaves the crossed node reading ``moving_node``'s input."""
         val = cast(torch.fx.Node, moving_node.args[0]).meta.get("val")
         return getattr(val, "shape", None)
+
+    def _propagation_order(
+        self, graph_module: torch.fx.GraphModule
+    ) -> Iterable[torch.fx.Node]:
+        return reversed(list(graph_module.graph.nodes))
+
+    def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
+        # After moving down, dependencies run through the crossed nodes in
+        # propagation order and end at the transform.
+        for node in propagation_path[1:]:
+            if node.graph is not None:
+                self._refresh_node_meta(node)
+        if moving_node.graph is not None:
+            self._refresh_node_meta(moving_node)
 
     def fuse_horizontal(self, graph_module):
         modified = False

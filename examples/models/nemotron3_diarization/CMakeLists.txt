@@ -15,16 +15,11 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-if(NOT TARGET mlxdelegate
-   OR NOT TARGET mlx
-   OR NOT TARGET xnnpack_backend
-)
+if(NOT TARGET xnnpack_backend)
   message(
-    FATAL_ERROR
-      "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON and EXECUTORCH_BUILD_XNNPACK=ON"
+    FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_XNNPACK=ON"
   )
 endif()
-executorch_target_link_options_shared_lib(mlxdelegate)
 executorch_target_link_options_shared_lib(xnnpack_backend)
 
 add_library(nemotron3_diarization STATIC runner.cpp)
@@ -53,7 +48,18 @@ target_include_directories(
   PRIVATE ${EXECUTORCH_ROOT}/third-party/json/include
 )
 target_link_libraries(
-  nemotron3_diarization_runner PRIVATE nemotron3_diarization gflags mlxdelegate
-                                       mlx
+  nemotron3_diarization_runner PRIVATE nemotron3_diarization gflags
 )
-executorch_target_copy_mlx_metallib(nemotron3_diarization_runner)
+if(EXECUTORCH_BUILD_MLX)
+  if(NOT TARGET mlxdelegate OR NOT TARGET mlx)
+    message(
+      FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON"
+    )
+  endif()
+  executorch_target_link_options_shared_lib(mlxdelegate)
+  target_link_libraries(nemotron3_diarization_runner PRIVATE mlxdelegate mlx)
+  target_compile_definitions(
+    nemotron3_diarization_runner PRIVATE EXECUTORCH_BUILD_MLX
+  )
+  executorch_target_copy_mlx_metallib(nemotron3_diarization_runner)
+endif()

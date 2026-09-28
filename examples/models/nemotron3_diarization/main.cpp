@@ -15,8 +15,11 @@
 #include <stdexcept>
 
 #include <gflags/gflags.h>
-#include <mlx/memory.h>
 #include <nlohmann/json.hpp>
+
+#ifdef EXECUTORCH_BUILD_MLX
+#include <mlx/memory.h>
+#endif
 
 #include <executorch/extension/llm/runner/wav_loader.h>
 
@@ -28,25 +31,31 @@ DEFINE_string(audio_path, "", "Mono 16 kHz WAV file (PCM16 or float32)");
 DEFINE_string(preset, "offline", "offline, low, very_low, or ultra_low");
 DEFINE_int32(feed_samples, 4096, "Samples per streaming feed");
 DEFINE_double(threshold, 0.5, "Speaker activity threshold");
+#ifdef EXECUTORCH_BUILD_MLX
 DEFINE_int32(mlx_cache_limit_mb, 128, "Maximum unused MLX buffer cache in MiB");
 DEFINE_int32(mlx_memory_limit_mb, 4096, "MLX working memory guideline in MiB");
+#endif
 DEFINE_string(output, "", "Optional JSON output file");
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   try {
     if (FLAGS_audio_path.empty() || FLAGS_feed_samples <= 0 ||
-        FLAGS_mlx_cache_limit_mb < 0 || FLAGS_mlx_memory_limit_mb <= 0 ||
         !std::isfinite(FLAGS_threshold) || FLAGS_threshold < 0 ||
         FLAGS_threshold > 1) {
       throw std::invalid_argument(
-          "Provide --audio_path, positive --feed_samples and --mlx_memory_limit_mb, "
-          "nonnegative --mlx_cache_limit_mb, and --threshold in [0,1]");
+          "Provide --audio_path, positive --feed_samples, and --threshold in [0,1]");
+    }
+#ifdef EXECUTORCH_BUILD_MLX
+    if (FLAGS_mlx_cache_limit_mb < 0 || FLAGS_mlx_memory_limit_mb <= 0) {
+      throw std::invalid_argument(
+          "Provide nonnegative --mlx_cache_limit_mb and positive --mlx_memory_limit_mb");
     }
     mlx::core::set_cache_limit(
         static_cast<size_t>(FLAGS_mlx_cache_limit_mb) << 20);
     mlx::core::set_memory_limit(
         static_cast<size_t>(FLAGS_mlx_memory_limit_mb) << 20);
+#endif
     nemotron3::Runner runner(
         FLAGS_model_path,
         nemotron3::StreamingConfig::from_preset(FLAGS_preset));

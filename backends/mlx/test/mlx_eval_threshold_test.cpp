@@ -14,6 +14,10 @@
 // double-counted, that crossing the threshold actually materializes the live
 // tensors mid-chain, and that results are unchanged by any of it.
 //
+// A mid-chain value is observed through a second OUTPUT (`kProbe`) rather than
+// through a temp, because the interpreter drops a temp slot as soon as the
+// chain has no further use for it. Outputs are caller-visible and are kept.
+//
 // Must run on Apple Silicon: MLX needs the Metal backend.
 
 #include "MLXInterpreter.h"
@@ -31,7 +35,12 @@ namespace {
 
 constexpr uint32_t kIn = 0; // input tid
 constexpr uint32_t kOut = 1; // output tid
-constexpr uint32_t kTemp0 = 2; // first temp tid
+constexpr uint32_t kProbe = 2; // second output tid, used to observe a
+                               // mid-chain value after the run
+constexpr uint32_t kTemp0 = 3; // first temp tid
+
+// "no instruction writes to kProbe"
+constexpr uint32_t kNoProbe = std::numeric_limits<uint32_t>::max();
 
 Instruction make_add(uint32_t a, uint32_t b, uint32_t out) {
   Instruction instr;
@@ -44,13 +53,24 @@ Instruction make_add(uint32_t a, uint32_t b, uint32_t out) {
   return instr;
 }
 
-// A chain of `n` ADDs: in -> temp0 -> temp1 -> ... -> out.
-std::vector<Instruction> make_add_chain(uint32_t n) {
+// A chain of `n` ADDs: in -> temp0 -> temp1 -> ... -> out. Instruction
+// `probe_at` writes to kProbe instead of a temp, so its result outlives the
+// chain and a test can inspect it.
+std::vector<Instruction> make_add_chain(
+    uint32_t n,
+    uint32_t probe_at = kNoProbe) {
   std::vector<Instruction> chain;
   uint32_t prev = kIn;
   for (uint32_t i = 0; i < n; ++i) {
     const bool last = (i + 1 == n);
-    const uint32_t out = last ? kOut : (kTemp0 + i);
+    uint32_t out;
+    if (last) {
+      out = kOut;
+    } else if (i == probe_at) {
+      out = kProbe;
+    } else {
+      out = kTemp0 + i;
+    }
     chain.push_back(make_add(prev, prev, out));
     prev = out;
   }
@@ -58,12 +78,12 @@ std::vector<Instruction> make_add_chain(uint32_t n) {
 }
 
 // Program whose main chain is `n` ADDs and nothing else.
-MLXProgram make_flat_program(uint32_t n) {
+MLXProgram make_flat_program(uint32_t n, uint32_t probe_at = kNoProbe) {
   MLXProgram program;
   program.num_input_tensors = 1;
-  program.num_output_tensors = 1;
+  program.num_output_tensors = 2; // kOut and kProbe
   program.num_temp_tensors = n; // generous; unused slots stay nullopt
-  program.instruction_chains.push_back(make_add_chain(n));
+  program.instruction_chains.push_back(make_add_chain(n, probe_at));
   program.main_chain_idx = 0;
   return program;
 }
@@ -74,7 +94,7 @@ MLXProgram make_flat_program(uint32_t n) {
 MLXProgram make_if_program(uint32_t n) {
   MLXProgram program;
   program.num_input_tensors = 1;
-  program.num_output_tensors = 1;
+  program.num_output_tensors = 2; // kOut and kProbe
   program.num_temp_tensors = n;
 
   Instruction if_instr;
@@ -140,7 +160,7 @@ TEST(MLXEvalThreshold, DisabledDoesNoAccountingAtAll) {
 // accounted, and nothing is evaluated early.
 TEST(MLXEvalThreshold, EnabledAccountsEveryInstruction) {
   const uint32_t kN = 8;
-  MLXProgram program = make_flat_program(kN);
+  MLXProgram program = make_flat_program(kN, /*probe_at=*/3);
   ConstantData constants;
   MutableBufferData bufs;
   ExecutionState st;
@@ -153,10 +173,9 @@ TEST(MLXEvalThreshold, EnabledAccountsEveryInstruction) {
   Interpreter::reset_accounting_calls();
   interp.run(program, st);
   EXPECT_EQ(Interpreter::accounting_calls(), kN);
-  for (uint32_t i = 0; i < kN - 1; ++i) {
-    const array& temp = st.tensors[st.tensor_index(Tid{kTemp0 + i})].value();
-    EXPECT_FALSE(temp.is_available()) << "temp=" << i;
-  }
+  // Nothing was evaluated: neither the mid-chain value nor the output.
+  const array& probe = st.tensors[st.tensor_index(Tid{kProbe})].value();
+  EXPECT_FALSE(probe.is_available());
   const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
   EXPECT_FALSE(out.is_available());
 }
@@ -185,7 +204,8 @@ TEST(MLXEvalThreshold, NestedIfAccumulatesWithoutDoubleCounting) {
 TEST(MLXEvalThreshold, CrossingThresholdEvaluatesLiveTensors) {
   const int kFloats = 4096;
   const uint32_t kN = 9;
-  MLXProgram program = make_flat_program(kN);
+  // Probe the first ADD: any barrier at all must have materialized it.
+  MLXProgram program = make_flat_program(kN, /*probe_at=*/0);
   ConstantData constants;
   MutableBufferData bufs;
 
@@ -196,11 +216,9 @@ TEST(MLXEvalThreshold, CrossingThresholdEvaluatesLiveTensors) {
     Interpreter interp;
     interp.set_eval_threshold_bytes(2 * input_bytes(kFloats));
     interp.run(program, st);
-    // The eighth ADD triggers a barrier; the ninth stays below the threshold.
-    for (uint32_t i = 0; i < kN - 1; ++i) {
-      const array& temp = st.tensors[st.tensor_index(Tid{kTemp0 + i})].value();
-      EXPECT_TRUE(temp.is_available()) << "temp=" << i;
-    }
+    const array& probe = st.tensors[st.tensor_index(Tid{kProbe})].value();
+    EXPECT_TRUE(probe.is_available());
+    // The last ADD stays below the threshold, so the output is still lazy.
     const array& out = st.tensors[st.tensor_index(Tid{kOut})].value();
     EXPECT_FALSE(out.is_available());
   }
@@ -211,8 +229,8 @@ TEST(MLXEvalThreshold, CrossingThresholdEvaluatesLiveTensors) {
     bind_state(st, program, constants, bufs, kFloats);
     Interpreter interp;
     interp.run(program, st);
-    const array& first_temp = st.tensors[st.tensor_index(Tid{kTemp0})].value();
-    EXPECT_FALSE(first_temp.is_available());
+    const array& probe = st.tensors[st.tensor_index(Tid{kProbe})].value();
+    EXPECT_FALSE(probe.is_available());
   }
 }
 

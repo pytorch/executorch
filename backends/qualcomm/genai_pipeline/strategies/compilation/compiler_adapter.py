@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable, Tuple
+from typing import Any, Dict, Optional, Protocol, runtime_checkable, Tuple
+
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+)
 
 
 @dataclass
@@ -16,11 +20,16 @@ class CompilationResult:
     """Result of a compilation operation.
 
     Attributes:
-        artifact_paths: Paths to the compiled .pte artifacts.
+        artifact_paths: Compiled ``.pte`` artifacts, keyed by artifact name (see
+            ``artifact_keys``). Keyed rather than ordered because the consumer
+            needs to address artifacts individually -- the on-device runner
+            takes a decoder path, a token-embedding path and an encoder path as
+            separate arguments -- and because which artifacts exist varies by
+            model, so position carries no reliable meaning.
         etrecord: Optional ETRecord for debugging.
     """
 
-    artifact_paths: List[Path] = field(default_factory=list)
+    artifact_paths: Dict[str, Path] = field(default_factory=dict)
     etrecord: Optional[Any] = None
 
 
@@ -58,6 +67,7 @@ class CompilerAdapter(Protocol):
         constant_methods: Optional[Dict[str, Any]] = None,
         dep_table: Optional[Dict] = None,
         passes_job: Optional[Any] = None,
+        artifact_key: str = ARTIFACT_TEXT_DECODER,
         extra_options: Optional[Dict[str, Any]] = None,
     ) -> CompilationResult:
         """Compile the model to on-device .pte artifacts.
@@ -75,13 +85,23 @@ class CompilerAdapter(Protocol):
             compile_specs: QNN compiler specifications for backend delegation.
             artifact_dir: Directory to store compiled artifacts.
             file_name: Base name for the output .pte file.
-            soc_model: Target SoC chipset.
-            backend_type: QNN backend type (HTP, GPU, LPAI).
+            soc_model: Target SoC chipset. The target lowering actually uses is
+                the one carried in ``compile_specs``; implementations should
+                treat a disagreement as an error rather than silently preferring
+                one, since ops validated for one SoC and compiled for another
+                fail only on device.
+            backend_type: QNN backend type (HTP, GPU, LPAI). Carried in
+                ``compile_specs`` as well; see ``soc_model``.
             constant_methods: Methods returning constants in eager mode. For a
                 decoder this carries the quantization attributes written during
                 quantization, so it is only complete after that stage.
             dep_table: Per-graph pass dependency table.
             passes_job: Per-graph pass configuration.
+            artifact_key: Name to key the resulting artifact under (see
+                ``artifact_keys``). Supplied by the caller because a single-graph
+                adapter cannot tell a text decoder from a vision encoder -- both
+                arrive as ``model`` -- and the inference stage addresses
+                artifacts by name.
             extra_options: Optional tuning knobs (``skip_node_id_set``,
                 ``skip_node_op_set``, ``skip_mutable_buffer``,
                 ``convert_linear_to_conv2d``, ``generate_etrecord``,
