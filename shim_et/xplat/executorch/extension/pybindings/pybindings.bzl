@@ -63,6 +63,7 @@ def executorch_pybindings(
             "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
         headers = [
+            "//executorch/extension/pybindings:pybindings_dlpack.h",
             "//executorch/extension/pybindings:pybindings_executorch_result.h",
         ],
         types = types,

@@ -21,6 +21,17 @@ runtime = importlib.import_module("_C")
 TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
 
 
+class DLPackOnly:
+    def __init__(self, array: np.ndarray) -> None:
+        self.array = array
+
+    def __dlpack__(self, stream=None):
+        return self.array.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        return self.array.__dlpack_device__()
+
+
 class PybindingsNoAtenTest(unittest.TestCase):
     def test_import_does_not_load_torch(self) -> None:
         self.assertFalse(runtime._uses_aten)
@@ -87,6 +98,33 @@ class PybindingsNoAtenTest(unittest.TestCase):
 
         self.assertIsInstance(output, runtime.ExecuTorchResult)
 
+    def test_dlpack_input_and_output(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+
+        output = module(
+            (
+                DLPackOnly(np.array([1.0], dtype=np.float32)),
+                DLPackOnly(np.array([2.0], dtype=np.float32)),
+            )
+        )[0]
+
+        np.testing.assert_array_equal(np.from_dlpack(output), np.array([3.0]))
+
+    def test_mixed_dlpack_and_buffer_inputs_are_rejected(self) -> None:
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+
+        with self.assertRaisesRegex(TypeError, "cannot mix tensor input protocols"):
+            module(
+                (
+                    DLPackOnly(np.array([1.0], dtype=np.float32)),
+                    np.array([2.0], dtype=np.float32),
+                )
+            )
+
     @unittest.skipUnless(
         importlib.util.find_spec("torch") is not None, "torch is not installed"
     )
@@ -101,6 +139,7 @@ class PybindingsNoAtenTest(unittest.TestCase):
 
         self.assertIsInstance(output, torch.Tensor)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+        torch.testing.assert_close(torch.from_dlpack(output), torch.tensor([3.0]))
         with self.assertRaisesRegex(ValueError, "must be resolved"):
             module((torch._neg_view(torch.tensor([1.0])), torch.tensor([2.0])))
 

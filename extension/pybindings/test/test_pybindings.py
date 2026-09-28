@@ -35,6 +35,17 @@ from executorch.extension.pybindings.test.make_test import (
 from torch.export import export
 
 
+class DLPackOnly:
+    def __init__(self, array: np.ndarray) -> None:
+        self.array = array
+
+    def __dlpack__(self, stream=None):
+        return self.array.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        return self.array.__dlpack_device__()
+
+
 class PybindingsTest(unittest.TestCase):
     def setUp(self):
         # Will test both portable and aten
@@ -151,6 +162,16 @@ with ThreadPoolExecutor(max_workers=thread_count) as executor:
         method.execute()
 
         self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
+
+    def test_dlpack_inputs(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module.forward(
+            [DLPackOnly(value.numpy()) for value in inputs]
+        )[0]
+
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
@@ -935,7 +956,7 @@ with ThreadPoolExecutor(max_workers=thread_count) as executor:
         # Asserts the device is named as Python spells it, since an uppercased or
         # index-less name would not match what the caller passed.
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU tensors", message)
+        self.assertIn("only CPU and CUDA tensors", message)
 
     def test_method_accepts_a_cpu_input_after_the_device_check(self):
         # The rejection tests above pass for a change that throws on every input, so this
@@ -967,7 +988,7 @@ with ThreadPoolExecutor(max_workers=thread_count) as executor:
             method.set_inputs([inputs[0].to("meta"), inputs[1]])
         message = str(caught.exception)
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU tensors", message)
+        self.assertIn("only CPU and CUDA tensors", message)
 
     def test_program_loads_when_one_method_is_device_planned(self):
         # Linking the CUDA backend registers a CUDA allocator at static init, and the
