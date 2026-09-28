@@ -40,6 +40,7 @@ ${define_active_storage_type(STORAGE)}
 layout(std430) buffer;
 
 #include "indexing.glslh"
+#include "convert.glslh"
 
 $if IS_COMPARISON_OP:
   ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
@@ -56,6 +57,7 @@ layout(push_constant) uniform restrict Block {
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+layout(constant_id = 3) const bool input_is_half = false;
 
 #include "dispatch.glslh"
 
@@ -68,6 +70,10 @@ void main() {
     return;
   }
 
-  t_out[out_bufi] =
-      OUT_T(op(COMPUTE_T(t_in[out_bufi]), COMPUTE_T(scalar_value)));
+  COMPUTE_T value = COMPUTE_T(op(COMPUTE_T(t_in[out_bufi]), COMPUTE_T(scalar_value)));
+  $if not IS_COMPARISON_OP and DTYPE in ("float", "half"):
+    if (input_is_half) {
+      value = COMPUTE_T(round_to_half_rte(float(value)));
+    }
+  t_out[out_bufi] = OUT_T(value);
 }
