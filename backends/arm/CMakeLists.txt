@@ -239,6 +239,18 @@ if(EXECUTORCH_BUILD_VGF)
       set(LIBVGF_PATH "${_vgf_site_pure}")
     endif()
 
+    find_package(
+      VGF
+      CONFIG
+      REQUIRED
+      HINTS
+      "${LIBVGF_PATH}"
+      PATH_SUFFIXES
+      lib64/cmake/VGF
+      lib/cmake/VGF
+      NO_DEFAULT_PATH
+    )
+
     if(EXECUTORCH_BUILD_TESTS)
       add_executable(
         vgf_neural_statistics_test
@@ -268,15 +280,15 @@ if(EXECUTORCH_BUILD_VGF)
                COMMAND vgf_neural_statistics_test
       )
     endif()
-
-    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
   endif()
 
-  set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
-
-  add_library(vgf STATIC IMPORTED)
-  set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
-  target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
+  if(TARGET VGF::vgf)
+    add_library(vgf ALIAS VGF::vgf)
+  else()
+    add_library(vgf STATIC IMPORTED)
+    set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
+    target_include_directories(vgf INTERFACE "${LIBVGF_PATH}/include/")
+  endif()
 
   # Add backend delegate for VGF
   set(_vgf_backend_sources
