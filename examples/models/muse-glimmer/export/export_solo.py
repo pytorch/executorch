@@ -298,9 +298,7 @@ def _export_cuda(
     mutable_buffer_metadata = (
         None if offgraph_manifest else common.mutable_buffer_metadata(model)
     )
-    del model
-    if has_vision:
-        del vision_model
+    del model, vision_model
     gc.collect()
     torch.cuda.empty_cache()
 

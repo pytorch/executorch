@@ -597,14 +597,15 @@ def _offgraph_attention_forward(
         sin = torch.sin(freqs).unsqueeze(0).unsqueeze(0)
         xq, xk = apply_rotary_emb(xq, xk, cos, sin)
 
+    # The neutral op takes per-token positions as [q_len, n_dims].
     y = torch.ops.kvcache.update_and_attend(
         xq,
         xk,
         xv,
-        input_pos,
+        input_pos.reshape(-1, 1),
         self.layer_idx,
         self.attn_scale,
-        torch.bfloat16,
+        xq.dtype,
     )
     y = y.transpose(1, 2).contiguous()
     if self.use_o_gate and og is not None:

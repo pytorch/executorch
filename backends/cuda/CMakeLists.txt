@@ -16,9 +16,17 @@
 #
 cmake_minimum_required(VERSION 3.26)
 
-set(CMAKE_CXX_STANDARD 17)
+# The .cu shims include vendored c10's safe_numerics.h, whose MSVC-only branch
+# needs C++20 (see the top-level CMakeLists.txt). cxx_std_20 on executorch_core
+# does not reach nvcc, so the CUDA standard has to be raised here too.
+if(WIN32)
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD 20)
+else()
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -338,10 +346,13 @@ install(
 
 # CUDA backend implementation
 set(_aoti_cuda_backend_sources
-    runtime/cuda_backend.cpp runtime/cuda_kv_cache.cpp
-    runtime/cuda_mutable_state.cpp
+    runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
     runtime/cuda_weight_cache.cpp
 )
+# The off-graph KV cache builds on the LLM extension's neutral cache.
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp)
+endif()
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
   # symbols exported from aoti_cuda_shims.dll.
@@ -392,8 +403,14 @@ endif()
 target_link_libraries(
   aoti_cuda_backend
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
-         extension_cuda extension_llm_cache ${CMAKE_DL_LIBS}
+         extension_cuda ${CMAKE_DL_LIBS}
 )
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
+  target_compile_definitions(
+    aoti_cuda_backend PRIVATE EXECUTORCH_CUDA_OFFGRAPH_KV_CACHE
+  )
+endif()
 
 if(_cuda_is_msvc_toolchain)
   # cuda_backend.cpp uses SlimTensor CUDA utilities (e.g. getCurrentCUDAStream)
