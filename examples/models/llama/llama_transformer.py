@@ -227,13 +227,17 @@ class TransformerBlock(nn.Module):
             self.attention_norm = RMSNorm(
                 args.dim,
                 eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
+                add_unit_offset=(
+                    args.rms_norm_add_unit_offset or args.norm_zero_centered_gamma
+                ),
             )
         if self.mlp_type != "skip":
             self.ffn_norm = RMSNorm(
                 args.dim,
                 eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
+                add_unit_offset=(
+                    args.rms_norm_add_unit_offset or args.norm_zero_centered_gamma
+                ),
             )
 
         if args.use_residual_gate:
@@ -346,7 +350,13 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(
             params.dim,
             eps=params.norm_eps,
-            add_unit_offset=params.rms_norm_add_unit_offset,
+            add_unit_offset=(
+                params.rms_norm_add_unit_offset
+                or (
+                    params.norm_zero_centered_gamma
+                    and params.output_norm_gain_center_type != "zero"
+                )
+            ),
         )
         self.output = (
             nn.Linear(params.dim, params.vocab_size, bias=False)
