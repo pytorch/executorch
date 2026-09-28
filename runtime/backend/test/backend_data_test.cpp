@@ -66,6 +66,17 @@ class EmptyDataInitContext final : public BackendDataInitContext {
 
 class RecordingWriter final : public BackendDataWriter {
  public:
+  Error write_processed_data(const BackendData& data) override {
+    if (processed_count >= processed_values.size() || data.bytes.size() != 2) {
+      return Error::InvalidArgument;
+    }
+    std::memcpy(
+        processed_values[processed_count].data(), data.bytes.data(), 2);
+    processed_alignments[processed_count] = data.alignment.value_or(0);
+    ++processed_count;
+    return Error::Ok;
+  }
+
   Error write_named_data(Span<const NamedBackendData> data) override {
     if (data.size() != 2 || data[0].data.bytes.size() != 2 ||
         data[1].data.bytes.size() != 0) {
@@ -83,6 +94,9 @@ class RecordingWriter final : public BackendDataWriter {
   }
 
   size_t named_write_count{0};
+  size_t processed_count{0};
+  std::array<size_t, 2> processed_alignments{};
+  std::array<std::array<uint8_t, 2>, 2> processed_values{};
   bool named_keys_match{false};
   size_t named_alignment{0};
   std::array<uint8_t, 2> named_value{};
@@ -133,7 +147,20 @@ class PreparingBackend final : public TestBackendBase {
         break;
       }
 
-      (void)input_optional;
+      BackendDataInput input = std::move(input_optional.value());
+      auto* prepared = context.get_temp_allocator()->allocateList<uint8_t>(
+          input.processed.size());
+      if (prepared == nullptr) {
+        return Error::MemoryAllocationFailed;
+      }
+      for (size_t i = 0; i < input.processed.size(); ++i) {
+        prepared[i] = input.processed[i] + 1;
+      }
+      const Error error = output.write_processed_data(BackendData{
+          Span<const uint8_t>(prepared, input.processed.size()), 64});
+      if (error != Error::Ok) {
+        return error;
+      }
     }
 
     auto* packed = context.get_temp_allocator()->allocateList<uint8_t>(2);
@@ -180,6 +207,11 @@ TEST(BackendDataTest, BackendConsumesInputsLazilyAndEmitsLogicalOutputs) {
 
   ASSERT_EQ(backend.initialize_backend_data(context, writer), Error::Ok);
   EXPECT_EQ(context.yielded(), 2U);
+  EXPECT_EQ(writer.processed_count, 2U);
+  EXPECT_EQ(writer.processed_alignments, (std::array<size_t, 2>{64, 64}));
+  EXPECT_EQ(
+      writer.processed_values,
+      (std::array<std::array<uint8_t, 2>, 2>{{{2, 3}, {4, 5}}}));
   EXPECT_EQ(writer.named_write_count, 1U);
   EXPECT_TRUE(writer.named_keys_match);
   EXPECT_EQ(writer.named_alignment, 128U);

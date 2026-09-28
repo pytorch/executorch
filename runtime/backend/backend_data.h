@@ -149,6 +149,16 @@ class BackendDataWriter {
   virtual ~BackendDataWriter() = default;
 
   /**
+   * Replaces the current processed input before the context advances.
+   *
+   * At most one replacement may be submitted for an input. Omitting this call
+   * preserves the original bytes.
+   *
+   * @param[in] data Replacement bytes and alignment requirement.
+   */
+  ET_NODISCARD virtual Error write_processed_data(const BackendData& data) = 0;
+
+  /**
    * Replaces values for existing named-data keys.
    *
    * Entries may be submitted while any processed input is current or after

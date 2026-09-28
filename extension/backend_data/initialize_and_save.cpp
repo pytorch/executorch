@@ -84,6 +84,18 @@ struct InputRecord {
   std::vector<CompileSpec> compile_specs;
   std::string identity;
   bool yielded{false};
+  bool replaced{false};
+};
+
+struct CurrentInputState {
+  InputRecord* record{nullptr};
+  std::optional<FreeableBuffer> original;
+};
+
+class CurrentInputFinalizer {
+ public:
+  virtual ~CurrentInputFinalizer() = default;
+  virtual Error finalize_current_input() = 0;
 };
 
 bool is_power_of_two(size_t value) {
@@ -393,9 +405,12 @@ Error collect_nonreplaceable_segments(
     const SourceState& source,
     const std::vector<NamedLookup>& named_entries,
     const std::vector<std::unique_ptr<InputRecord>>& inputs,
+    std::set<size_t>* named_segments,
+    std::set<size_t>* delegate_segments,
     std::set<size_t>* nonreplaceable_segments) {
   std::map<size_t, size_t> named_counts;
   for (const auto& entry : named_entries) {
+    named_segments->insert(entry.segment_index);
     ++named_counts[entry.segment_index];
   }
   for (const auto& entry : named_counts) {
@@ -404,7 +419,7 @@ Error collect_nonreplaceable_segments(
     }
   }
   for (const auto& input : inputs) {
-    nonreplaceable_segments->insert(input->segment_index);
+    delegate_segments->insert(input->segment_index);
   }
   const auto* program =
       executorch_flatbuffer::GetProgram(source.metadata.data());
@@ -426,11 +441,6 @@ Error collect_nonreplaceable_segments(
         return Error::InvalidProgram;
       }
     }
-  }
-  // A zero offset can be omitted from the FlatBuffer. Keep the first segment
-  // fixed so a later named replacement cannot force an unrepresentable offset.
-  if (!source.segments.empty()) {
-    nonreplaceable_segments->insert(0);
   }
   return Error::Ok;
 }
@@ -533,13 +543,25 @@ class PreparationDataInitContext final : public BackendDataInitContext {
       std::vector<InputRecord*> inputs,
       runtime::MemoryAllocator* temp_allocator,
       runtime::EventTracer* event_tracer,
-      const NamedDataMap* named_data_map)
+      const NamedDataMap* named_data_map,
+      CurrentInputState* current,
+      CurrentInputFinalizer* finalizer)
       : BackendDataInitContext(temp_allocator, event_tracer, named_data_map),
         pte_(pte),
-        inputs_(std::move(inputs)) {}
+        inputs_(std::move(inputs)),
+        current_(current),
+        finalizer_(finalizer) {}
 
   Result<std::optional<BackendDataInput>> next_backend_data() override {
-    current_.reset();
+    if (error_ != Error::Ok) {
+      return error_;
+    }
+    error_ = finalizer_->finalize_current_input();
+    if (error_ != Error::Ok) {
+      return error_;
+    }
+    current_->original.reset();
+    current_->record = nullptr;
     get_temp_allocator()->reset();
     if (next_ == inputs_.size()) {
       return std::optional<BackendDataInput>{};
@@ -549,7 +571,8 @@ class PreparationDataInitContext final : public BackendDataInitContext {
     auto offset =
         checked_add(pte_->segment_base_offset, segment.original_offset);
     if (!offset.ok()) {
-      return offset.error();
+      error_ = offset.error();
+      return error_;
     }
     auto loaded = pte_->source.loader->load(
         *offset,
@@ -559,39 +582,88 @@ class PreparationDataInitContext final : public BackendDataInitContext {
             input.segment_index,
             input.backend_id.c_str()));
     if (!loaded.ok()) {
-      return loaded.error();
+      error_ = loaded.error();
+      return error_;
     }
-    current_.emplace(std::move(*loaded));
+    input.yielded = true;
+    current_->record = &input;
+    current_->original.emplace(std::move(*loaded));
     return std::optional<BackendDataInput>(BackendDataInput{
         input.method_name.c_str(),
         Span<const uint8_t>(
-            static_cast<const uint8_t*>(current_->data()), current_->size()),
+            static_cast<const uint8_t*>(current_->original->data()),
+            current_->original->size()),
         runtime::ArrayRef<CompileSpec>(
             input.compile_specs.data(), input.compile_specs.size())});
+  }
+
+  Error drain() {
+    while (true) {
+      auto next = next_backend_data();
+      if (!next.ok()) {
+        return next.error();
+      }
+      if (!next->has_value()) {
+        return Error::Ok;
+      }
+    }
+  }
+
+  Error error() const {
+    return error_;
   }
 
  private:
   SourceState* pte_;
   std::vector<InputRecord*> inputs_;
-  std::optional<FreeableBuffer> current_;
+  CurrentInputState* current_;
+  CurrentInputFinalizer* finalizer_;
   size_t next_{0};
+  Error error_{Error::Ok};
 };
 
-class PlanningBackendDataWriter final : public BackendDataWriter {
+class PlanningBackendDataWriter final : public BackendDataWriter,
+                                        public CurrentInputFinalizer {
  public:
   PlanningBackendDataWriter(
       SourceState* source,
       const std::vector<NamedLookup>* named_entries,
       const std::set<std::string>* external_tensor_keys,
+      const std::set<size_t>* named_segments,
+      const std::set<size_t>* delegate_segments,
       const std::set<size_t>* nonreplaceable_segments,
       std::set<size_t>* claimed_segments,
-      runtime::MemoryAllocator* temp_allocator)
+      runtime::MemoryAllocator* temp_allocator,
+      CurrentInputState* current)
       : source_(source),
         named_entries_(named_entries),
         external_tensor_keys_(external_tensor_keys),
+        named_segments_(named_segments),
+        delegate_segments_(delegate_segments),
         nonreplaceable_segments_(nonreplaceable_segments),
         claimed_segments_(claimed_segments),
-        temp_allocator_(temp_allocator) {}
+        temp_allocator_(temp_allocator),
+        current_(current) {}
+
+  Error write_processed_data(const BackendData& data) override {
+    if (error_ != Error::Ok) {
+      return error_;
+    }
+    if (current_->record == nullptr || !current_->record->yielded ||
+        current_->record->replaced || !valid_data(data) ||
+        named_segments_->count(current_->record->segment_index) != 0 ||
+        nonreplaceable_segments_->count(current_->record->segment_index) != 0) {
+      return fail(Error::InvalidArgument);
+    }
+    const Error error =
+        replace_segment(current_->record->segment_index, data);
+    if (error != Error::Ok) {
+      return fail(error);
+    }
+    current_->record->replaced = true;
+    wrote_output_ = true;
+    return Error::Ok;
+  }
 
   Error write_named_data(Span<const NamedBackendData> values) override {
     if (error_ != Error::Ok) {
@@ -622,7 +694,9 @@ class PlanningBackendDataWriter final : public BackendDataWriter {
           });
       if (found == named_entries_->end() ||
           claimed_segments_->count(found->segment_index) != 0 ||
+          delegate_segments_->count(found->segment_index) != 0 ||
           nonreplaceable_segments_->count(found->segment_index) != 0 ||
+          found->segment_index == 0 ||
           !target_segments.insert(found->segment_index).second) {
         return fail(Error::InvalidArgument);
       }
@@ -645,6 +719,22 @@ class PlanningBackendDataWriter final : public BackendDataWriter {
 
   Error error() const {
     return error_;
+  }
+
+  Error finalize_current_input() override {
+    if (error_ != Error::Ok || current_->record == nullptr ||
+        current_->record->replaced) {
+      return error_;
+    }
+    if (!current_->original.has_value()) {
+      return fail(Error::InvalidState);
+    }
+    SegmentState& segment = source_->segments[current_->record->segment_index];
+    const auto bytes = Span<const uint8_t>(
+        static_cast<const uint8_t*>(current_->original->data()),
+        current_->original->size());
+    const Error error = write_segment(segment, bytes, segment.alignment);
+    return error == Error::Ok ? Error::Ok : fail(error);
   }
 
  private:
@@ -671,6 +761,31 @@ class PlanningBackendDataWriter final : public BackendDataWriter {
     return std::memchr(value, '\0', remaining) != nullptr;
   }
 
+  Error write_segment(
+      SegmentState& segment,
+      Span<const uint8_t> bytes,
+      size_t alignment) {
+    auto aligned = align_up(source_->next_output_offset, alignment);
+    if (!aligned.ok()) {
+      return aligned.error();
+    }
+    auto end = checked_add(*aligned, bytes.size());
+    if (!end.ok()) {
+      return end.error();
+    }
+    const Error error = source_->source.writer->write(bytes, *aligned);
+    if (error != Error::Ok) {
+      return error;
+    }
+    segment.alignment = alignment;
+    segment.final_offset = *aligned - source_->segment_base_offset;
+    segment.final_size = bytes.size();
+    segment.written = true;
+    source_->next_output_offset = *end;
+    source_->modified = true;
+    return Error::Ok;
+  }
+
   Error replace_segment(size_t segment_index, const BackendData& data) {
     if (segment_index >= source_->segments.size() ||
         claimed_segments_->count(segment_index) != 0) {
@@ -681,25 +796,11 @@ class PlanningBackendDataWriter final : public BackendDataWriter {
     if (alignment < segment.alignment) {
       return Error::InvalidArgument;
     }
-    auto aligned = align_up(source_->next_output_offset, alignment);
-    if (!aligned.ok()) {
-      return aligned.error();
-    }
-    auto end = checked_add(*aligned, data.bytes.size());
-    if (!end.ok()) {
-      return end.error();
-    }
-    Error error = source_->source.writer->write(data.bytes, *aligned);
+    const Error error = write_segment(segment, data.bytes, alignment);
     if (error != Error::Ok) {
       return error;
     }
-    segment.alignment = alignment;
-    segment.final_offset = *aligned - source_->segment_base_offset;
-    segment.final_size = data.bytes.size();
     segment.replaced = true;
-    segment.written = true;
-    source_->next_output_offset = *end;
-    source_->modified = true;
     claimed_segments_->insert(segment_index);
     return Error::Ok;
   }
@@ -707,9 +808,12 @@ class PlanningBackendDataWriter final : public BackendDataWriter {
   SourceState* source_;
   const std::vector<NamedLookup>* named_entries_;
   const std::set<std::string>* external_tensor_keys_;
+  const std::set<size_t>* named_segments_;
+  const std::set<size_t>* delegate_segments_;
   const std::set<size_t>* nonreplaceable_segments_;
   std::set<size_t>* claimed_segments_;
   runtime::MemoryAllocator* temp_allocator_;
+  CurrentInputState* current_;
   bool wrote_output_{false};
   Error error_{Error::Ok};
 };
@@ -884,16 +988,31 @@ Error initialize_and_save_backend_data(
   if (error != Error::Ok) {
     return error;
   }
+  for (auto& entry : by_backend) {
+    std::sort(
+        entry.second.begin(),
+        entry.second.end(),
+        [](const InputRecord* lhs, const InputRecord* rhs) {
+          return lhs->segment_index < rhs->segment_index;
+        });
+  }
+  std::set<size_t> named_segments;
+  std::set<size_t> delegate_segments;
   std::set<size_t> nonreplaceable_segments;
   error = collect_nonreplaceable_segments(
-      source, named_entries, inputs, &nonreplaceable_segments);
+      source,
+      named_entries,
+      inputs,
+      &named_segments,
+      &delegate_segments,
+      &nonreplaceable_segments);
   if (error != Error::Ok) {
     return error;
   }
 
   // Preserve the first segment at relative offset zero. FlatBuffers may omit
   // that default-valued scalar, so moving it would not be representable.
-  if (!source.segments.empty()) {
+  if (!source.segments.empty() && delegate_segments.count(0) == 0) {
     error = copy_original_segment(source, source.segments[0]);
     if (error != Error::Ok) {
       discard_unpublished(source);
@@ -905,8 +1024,23 @@ Error initialize_and_save_backend_data(
   bool any_backend_output = false;
   {
     PreparationNamedDataMap named_data_map(&source, &named_entries);
+    std::vector<const decltype(by_backend)::value_type*> backend_order;
+    backend_order.reserve(by_backend.size());
     for (const auto& entry : by_backend) {
-      auto* backend = runtime::get_backend_class(entry.first.c_str());
+      backend_order.push_back(&entry);
+    }
+    std::stable_sort(
+        backend_order.begin(),
+        backend_order.end(),
+        [](const auto* lhs, const auto* rhs) {
+          const bool lhs_has_first = !lhs->second.empty() &&
+              lhs->second.front()->segment_index == 0;
+          const bool rhs_has_first = !rhs->second.empty() &&
+              rhs->second.front()->segment_index == 0;
+          return lhs_has_first && !rhs_has_first;
+        });
+    for (const auto* entry : backend_order) {
+      auto* backend = runtime::get_backend_class(entry->first.c_str());
       if (backend == nullptr) {
         discard_unpublished(source);
         return Error::NotFound;
@@ -915,20 +1049,30 @@ Error initialize_and_save_backend_data(
         continue;
       }
       delegate_temp_allocator->reset();
+      CurrentInputState current;
       PlanningBackendDataWriter output(
           &source,
           &named_entries,
           &external_tensor_keys,
+          &named_segments,
+          &delegate_segments,
           &nonreplaceable_segments,
           &claimed_segments,
-          delegate_temp_allocator);
+          delegate_temp_allocator,
+          &current);
       PreparationDataInitContext context(
           &source,
-          entry.second,
+          entry->second,
           delegate_temp_allocator,
           event_tracer,
-          named_entries.empty() ? nullptr : &named_data_map);
+          named_entries.empty() ? nullptr : &named_data_map,
+          &current,
+          &output);
       error = backend->initialize_backend_data(context, output);
+      if (context.error() != Error::Ok) {
+        discard_unpublished(source);
+        return context.error();
+      }
       if (output.error() != Error::Ok) {
         discard_unpublished(source);
         return output.error();
@@ -938,7 +1082,15 @@ Error initialize_and_save_backend_data(
         discard_unpublished(source);
         return error;
       }
+      if (skip) {
+        continue;
+      }
       any_backend_output = any_backend_output || output.wrote_output();
+      error = context.drain();
+      if (error != Error::Ok || output.error() != Error::Ok) {
+        discard_unpublished(source);
+        return error != Error::Ok ? error : output.error();
+      }
     }
   }
 

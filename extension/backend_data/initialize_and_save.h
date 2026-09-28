@@ -20,8 +20,8 @@
 namespace executorch::extension {
 
 /**
- * Initializes every participating backend once and persists its replacement
- * named data in a replacement PTE.
+ * Initializes every participating backend once and persists replacement
+ * processed blobs and named data in a replacement PTE.
  *
  * This is a one-shot destructive operation. It consumes every loader and
  * writer, requires exclusive access to the physical source, and destroys the
