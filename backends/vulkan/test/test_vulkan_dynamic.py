@@ -144,6 +144,27 @@ class TestVulkanDynamic(unittest.TestCase):
                             )
                         )
 
+    def test_partition_any_unsupported_inputs(self):
+        class AnyDim(torch.nn.Module):
+            def forward(self, x):
+                return torch.any(x, dim=0, keepdim=True)
+
+        for x in (
+            torch.tensor(True),
+            torch.tensor([0, 1], dtype=torch.int32),
+            torch.tensor([0, 1], dtype=torch.uint8),
+            torch.tensor([0.0, 1.0]),
+        ):
+            with self.subTest(shape=x.shape, dtype=x.dtype):
+                edge = to_edge_transform_and_lower(
+                    export(AnyDim(), (x,)),
+                    partitioner=[VulkanPartitioner({"require_dynamic_shapes": True})],
+                )
+                self.assertNotIn(
+                    torch.ops.higher_order.executorch_call_delegate,
+                    [node.target for node in edge.exported_program().graph.nodes],
+                )
+
     def test_dynamic_gelu(self):
         for approximate in ("none", "tanh"):
             for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
@@ -248,6 +269,41 @@ class TestVulkanDynamic(unittest.TestCase):
                     model, inputs[0], ({1: Dim("s", min=2, max=32)},), storage
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_dynamic_any_dim(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, dim, keepdim):
+                super().__init__()
+                self.dim = dim
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return torch.any(x, dim=self.dim, keepdim=self.keepdim)
+
+        for dim, keepdim in ((-1, True), (-1, False), (1, True)):
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(dim=dim, keepdim=keepdim, storage=storage):
+                    model = AnyDim(dim, keepdim)
+                    inputs = []
+                    for s in (16, 3, 31, 2, 16):
+                        x = torch.zeros(2, s, 5, dtype=torch.bool)
+                        if s != 3:
+                            x[0, s // 2, 1] = True
+                            x[1, -1, 3] = True
+                            x[1, 0, 4] = True
+                        inputs.append((x,))
+                    seq = Dim("s", min=2, max=32)
+                    unsupported = dim == 1 and storage == VkStorageType.BUFFER
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: seq},),
+                        storage,
+                        fully_delegated=not unsupported,
+                    )
+                    if unsupported:
+                        self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, inputs, atol=0, rtol=0)
 
     def test_dynamic_logical_not(self):
         class LogicalNot(torch.nn.Module):
@@ -683,7 +739,7 @@ class TestVulkanDynamic(unittest.TestCase):
             def forward(self, x):
                 return self.op(x, dim=self.dim, keepdim=True)
 
-        for op in (torch.sum, torch.mean, torch.amax):
+        for op in (torch.any, torch.sum, torch.mean, torch.amax):
             for batch, dim, supported in (
                 (1, 0, False),
                 (2, 0, False),
@@ -694,7 +750,11 @@ class TestVulkanDynamic(unittest.TestCase):
             ):
                 with self.subTest(op=op, batch=batch, dim=dim):
                     values = torch.arange(batch * 3 * 4 * 5).reshape(batch, 3, 4, 5)
-                    x = -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    x = (
+                        values % 7 == 0
+                        if op == torch.any
+                        else -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    )
                     model = Reduce(op, dim)
                     edge = self._lower(model, (x,), fully_delegated=supported)
                     if not supported:
