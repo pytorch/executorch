@@ -12,5 +12,5 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 et_cxx_test(
   extension_backend_data_test
   SOURCES file_data_writer_test.cpp initialize_and_save_test.cpp
-  EXTRA_LIBS extension_backend_data program_schema
+  EXTRA_LIBS extension_backend_data extension_flat_tensor program_schema
 )

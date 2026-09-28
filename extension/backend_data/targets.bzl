@@ -40,6 +40,9 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             ":data_writer",
+            "//executorch/extension/flat_tensor:flat_tensor_data_map",
+            "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
+            "//executorch/extension/flat_tensor/serialize:generated_headers",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/executor:program",
             "//executorch/schema:extended_header",

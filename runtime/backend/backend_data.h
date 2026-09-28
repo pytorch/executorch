@@ -126,7 +126,7 @@ class BackendDataInitContext {
     return event_tracer_;
   }
 
-  /** Returns the read-only named-data map for the PTE. */
+  /** Returns the combined read-only named-data map for the PTE and PTD. */
   const NamedDataMap* get_named_data_map() const {
     return named_data_map_;
   }
@@ -163,7 +163,9 @@ class BackendDataWriter {
    *
    * Entries may be submitted while any processed input is current or after
    * iteration ends. Keys cannot be added, removed, or renamed. An empty span
-   * replaces the existing value with a zero-sized value.
+   * replaces the existing value with a zero-sized value. Existing PTD tensor
+   * layout metadata is preserved; prepared opaque data must be read through
+   * NamedDataMap::get_data().
    *
    * @param[in] data Named replacement values to consume synchronously.
    */

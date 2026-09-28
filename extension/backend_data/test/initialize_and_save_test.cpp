@@ -21,6 +21,9 @@
 #include <gtest/gtest.h>
 
 #include <executorch/extension/backend_data/buffer_data_writer.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -30,6 +33,7 @@
 namespace {
 
 using executorch::extension::BufferDataWriter;
+using executorch::extension::FlatTensorDataMap;
 using executorch::extension::initialize_and_save_backend_data;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::BackendData;
@@ -51,6 +55,7 @@ using executorch::runtime::Span;
 
 constexpr char kBackendName[] = "InitializeAndSaveTestBackend";
 constexpr size_t kPteHeaderSize = 32;
+constexpr size_t kPtdHeaderSize = 64;
 
 enum class DelegateConflict { None, Backend, CompileSpec };
 
@@ -377,6 +382,46 @@ std::shared_ptr<std::vector<uint8_t>> make_old_header_pte() {
   return data;
 }
 
+std::shared_ptr<std::vector<uint8_t>> make_test_ptd() {
+  flatbuffers::FlatBufferBuilder builder;
+  std::vector<flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>
+      segments;
+  segments.push_back(flat_tensor_flatbuffer::CreateDataSegment(builder, 0, 1));
+  segments.push_back(flat_tensor_flatbuffer::CreateDataSegment(builder, 64, 2));
+  std::vector<flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>> named;
+  named.push_back(flat_tensor_flatbuffer::CreateNamedData(
+      builder, builder.CreateString("weight"), 1));
+  named.push_back(flat_tensor_flatbuffer::CreateNamedData(
+      builder, builder.CreateString("bias"), 0));
+  const auto root = flat_tensor_flatbuffer::CreateFlatTensor(
+      builder, 0, builder.CreateVector(segments), builder.CreateVector(named));
+  flat_tensor_flatbuffer::FinishFlatTensorBuffer(builder, root);
+
+  const size_t metadata_size = builder.GetSize() + kPtdHeaderSize;
+  const size_t segment_base = align_up(metadata_size, 128);
+  auto data = std::make_shared<std::vector<uint8_t>>(segment_base + 66, 0);
+  std::copy_n(builder.GetBufferPointer(), 8, data->data());
+  write_u32(*data, 0, read_u32(builder.GetBufferPointer()) + kPtdHeaderSize);
+  std::memcpy(
+      data->data() + 8, executorch::extension::FlatTensorHeader::kMagic, 4);
+  write_u32(
+      *data,
+      12,
+      executorch::extension::FlatTensorHeader::kHeaderExpectedLength);
+  write_u64(*data, 16, kPtdHeaderSize);
+  write_u64(*data, 24, builder.GetSize());
+  write_u64(*data, 32, segment_base);
+  write_u64(*data, 40, 66);
+  std::copy(
+      builder.GetBufferPointer() + 8,
+      builder.GetBufferPointer() + builder.GetSize(),
+      data->begin() + 8 + kPtdHeaderSize);
+  (*data)[segment_base] = 5;
+  (*data)[segment_base + 64] = 3;
+  (*data)[segment_base + 65] = 4;
+  return data;
+}
+
 executorch::runtime::ExtendedHeader parse_pte_header(
     const std::vector<uint8_t>& data) {
   auto header =
@@ -472,6 +517,68 @@ TEST(InitializeAndSaveBackendDataTest, PreservesUnreplacedProcessedData) {
   const size_t offset =
       header.segment_base_offset + program->segments()->Get(0)->offset();
   EXPECT_EQ(output[offset], 1U);
+}
+
+TEST(InitializeAndSaveBackendDataTest, RewritesNamedDataInPtd) {
+  executorch::runtime::runtime_init();
+  ASSERT_EQ(ensure_test_backend_registered(), Error::Ok);
+  test_backend().reset();
+
+  auto pte = make_test_pte(false);
+  auto ptd = make_test_ptd();
+  const auto original_ptd_header =
+      executorch::extension::FlatTensorHeader::Parse(ptd->data(), ptd->size());
+  ASSERT_TRUE(original_ptd_header.ok());
+  std::vector<uint8_t> pte_output;
+  std::vector<uint8_t> ptd_output;
+  std::array<uint8_t, 4096> temp{};
+  executorch::runtime::MemoryAllocator allocator(temp.size(), temp.data());
+
+  ASSERT_EQ(
+      initialize_and_save_backend_data(
+          std::make_unique<VectorDataLoader>(pte),
+          std::make_unique<BufferDataWriter>(&pte_output),
+          std::make_unique<VectorDataLoader>(ptd),
+          std::make_unique<BufferDataWriter>(&ptd_output),
+          &allocator),
+      Error::Ok);
+  ASSERT_FALSE(pte_output.empty());
+  ASSERT_FALSE(ptd_output.empty());
+
+  VectorDataLoader pte_loader(
+      std::make_shared<std::vector<uint8_t>>(pte_output));
+  EXPECT_TRUE(executorch::runtime::Program::load(&pte_loader).ok());
+  VectorDataLoader ptd_loader(
+      std::make_shared<std::vector<uint8_t>>(ptd_output));
+  auto ptd_map = FlatTensorDataMap::load(&ptd_loader);
+  ASSERT_TRUE(ptd_map.ok());
+  auto weight = ptd_map->get_data("weight");
+  auto bias = ptd_map->get_data("bias");
+  ASSERT_TRUE(weight.ok());
+  ASSERT_TRUE(bias.ok());
+  EXPECT_EQ(
+      std::vector<uint8_t>(
+          static_cast<const uint8_t*>(weight->data()),
+          static_cast<const uint8_t*>(weight->data()) + weight->size()),
+      (std::vector<uint8_t>{3, 4, 5}));
+  EXPECT_EQ(bias->size(), 1U);
+  EXPECT_EQ(*static_cast<const uint8_t*>(bias->data()), 5U);
+
+  const auto output_header = executorch::extension::FlatTensorHeader::Parse(
+      ptd_output.data(), ptd_output.size());
+  ASSERT_TRUE(output_header.ok());
+  EXPECT_EQ(
+      output_header->flatbuffer_offset + output_header->flatbuffer_size,
+      original_ptd_header->flatbuffer_offset +
+          original_ptd_header->flatbuffer_size);
+  const auto* flat_tensor =
+      flat_tensor_flatbuffer::GetFlatTensor(ptd_output.data());
+  ASSERT_EQ(flat_tensor->named_data()->size(), 2U);
+  EXPECT_STREQ(flat_tensor->named_data()->Get(0)->key()->c_str(), "weight");
+  EXPECT_STREQ(flat_tensor->named_data()->Get(1)->key()->c_str(), "bias");
+  EXPECT_GT(
+      flat_tensor->segments()->Get(1)->offset(),
+      flat_tensor->segments()->Get(0)->offset());
 }
 
 TEST(InitializeAndSaveBackendDataTest, RejectsOutputOutsideTempAllocator) {
@@ -570,6 +677,22 @@ TEST(InitializeAndSaveBackendDataTest, RejectsConflictingSharedDelegateData) {
         Error::NotSupported);
     EXPECT_TRUE(output.empty());
   }
+}
+
+TEST(InitializeAndSaveBackendDataTest, RequiresPtdLoaderWriterPair) {
+  auto original = make_test_pte(false);
+  std::vector<uint8_t> pte_output;
+  std::array<uint8_t, 128> temp{};
+  executorch::runtime::MemoryAllocator allocator(temp.size(), temp.data());
+
+  EXPECT_EQ(
+      initialize_and_save_backend_data(
+          std::make_unique<VectorDataLoader>(original),
+          std::make_unique<BufferDataWriter>(&pte_output),
+          std::make_unique<VectorDataLoader>(make_test_ptd()),
+          nullptr,
+          &allocator),
+      Error::InvalidArgument);
 }
 
 TEST(InitializeAndSaveBackendDataTest, UnsupportedBackendDoesNotPublish) {
