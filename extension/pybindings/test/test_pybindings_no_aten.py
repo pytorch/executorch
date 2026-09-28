@@ -26,13 +26,9 @@ class PybindingsNoAtenTest(unittest.TestCase):
         self.assertNotIn("torch", sys.modules)
         self.assertNotIn("executorch.exir", sys.modules)
 
-    def test_tensor_from_numpy_and_list(self) -> None:
-        array = np.arange(6, dtype=np.float32).reshape(2, 3)
-        np.testing.assert_array_equal(runtime.Tensor(array).numpy(), array)
-        np.testing.assert_array_equal(
-            runtime.Tensor([[1, 2], [3, 4]], dtype=np.int32).numpy(),
-            np.array([[1, 2], [3, 4]], dtype=np.int32),
-        )
+    def test_result_memory_is_not_constructible(self) -> None:
+        with self.assertRaises(TypeError):
+            runtime.ResultMemory()
 
     def test_executes_program_without_torch(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
@@ -40,13 +36,24 @@ class PybindingsNoAtenTest(unittest.TestCase):
         module = runtime._load_for_executorch_from_buffer(program_data)
 
         output = module(
-            (
-                runtime.Tensor([1.0], dtype=np.float32),
-                runtime.Tensor([2.0], dtype=np.float32),
-            )
+            (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
         )[0]
 
-        np.testing.assert_array_equal(output.numpy(), np.array([3.0]))
+        self.assertIsInstance(output, runtime.ResultMemory)
+        self.assertEqual(output.shape, (1,))
+        self.assertEqual(output.dtype, np.dtype("float32"))
+        np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+
+    def test_z_torch_tensor_uses_python_api(self) -> None:
+        import torch
+
+        with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+
+        output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
+
+        np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
 
     def test_process_has_no_aten_libraries(self) -> None:
         process_maps = Path("/proc/self/maps")
