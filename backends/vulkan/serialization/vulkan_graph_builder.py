@@ -231,13 +231,7 @@ class VkGraphBuilder:
         return new_id
 
     def get_or_create_scalar_value(self, scalar: _ScalarType) -> int:
-        scalar_key = scalar
-        # Since Python considers 1 and True to be "equivalent" (as well as 0 and False)
-        # to distinguish entries in the dictionary, if scalar is bool then convert it
-        # to a string representation to use as a key for the dictionary
-        if isinstance(scalar, bool):
-            scalar_key = str(scalar)
-
+        scalar_key = (type(scalar), repr(scalar))
         if scalar_key in self.const_scalar_to_value_ids:
             return self.const_scalar_to_value_ids[scalar_key]
 
