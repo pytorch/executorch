@@ -39,6 +39,17 @@ from executorch.extension.pybindings.test.make_test import (
 from torch.export import export
 
 
+class DLPackOnly:
+    def __init__(self, array) -> None:
+        self.array = array
+
+    def __dlpack__(self, stream=None):
+        return self.array.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self):
+        return self.array.__dlpack_device__()
+
+
 class PybindingsTest(unittest.TestCase):
     def setUp(self):
         # Will test both portable and aten
@@ -382,6 +393,130 @@ print("all calls finished")
 
         with self.assertRaises(RuntimeError):
             method.set_inputs([inputs[0], torch.ones(1)])
+
+    def test_dlpack_inputs(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor([DLPackOnly(value.numpy()) for value in inputs])[0]
+                torch.testing.assert_close(output, inputs[0] + inputs[1])
+
+    def test_dlpack_layout_must_match_exported_layout(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings validate the exported dimension order")
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                with self.assertRaisesRegex(ValueError, "stride"):
+                    executor(DLPackOnly(inputs[0].numpy().T))
+
+    def test_cuda_dlpack_producer_and_executorch_result(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings implement ExecuTorchResult outputs")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        from executorch.exir._serialize._program import PTEFile, serialize_pte_binary
+        from executorch.exir.schema import ExtraTensorInfo, Tensor
+
+        class Identity(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        value = torch.ones(2, 3, 4, 5).to(memory_format=torch.channels_last)
+        program = to_edge(export(Identity(), (value,))).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                )
+            )
+        )
+        schema = program.executorch_program
+        device_index = torch.cuda.device_count() - 1
+        for entry in schema.execution_plan[0].values:
+            if isinstance(entry.val, Tensor):
+                entry.val.extra_tensor_info = ExtraTensorInfo(
+                    device_type=DeviceType.CUDA, device_index=device_index
+                )
+        data = bytes(serialize_pte_binary(PTEFile(schema)))
+
+        # No delegate or device arena is needed for this identity. Both APIs
+        # must consume the generic producer rather than the Torch input path.
+        value = value.to(f"cuda:{device_index}")
+        module = self.load_fn(data)
+        method = self.load_prog_fn(data).load_method("forward")
+        for executor in (module, method):
+            for clone_outputs in (False, True):
+                with self.subTest(executor=type(executor), clone=clone_outputs):
+                    output = executor(DLPackOnly(value), clone_outputs=clone_outputs)[0]
+                    self.assertEqual(output.device, value.device)
+                    self.assertEqual(output.dtype, value.dtype)
+                    self.assertEqual(output.stride(), value.stride())
+                    torch.testing.assert_close(output, value)
+                    if clone_outputs:
+                        self.assertNotEqual(output.data_ptr(), value.data_ptr())
+                    else:
+                        self.assertEqual(output.data_ptr(), value.data_ptr())
+
+        script = """
+import sys
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+class DLPackOnly:
+    def __init__(self, tensor):
+        self.tensor = tensor
+    def __dlpack__(self, stream=None):
+        return self.tensor.__dlpack__(stream=stream)
+    def __dlpack_device__(self):
+        return self.tensor.__dlpack_device__()
+
+assert not runtime._uses_aten
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+device_index = int(sys.argv[2])
+value = torch.ones(2, 3, 4, 5, device=f"cuda:{device_index}").to(
+    memory_format=torch.channels_last
+)
+module = runtime._load_for_executorch_from_buffer(data)
+method = runtime._load_program_from_buffer(data).load_method("forward")
+for executor in (module, method):
+    output = executor(DLPackOnly(value), clone_outputs=False)[0]
+    assert isinstance(output, runtime.ExecuTorchResult)
+    assert output.__dlpack_device__() == (2, device_index)
+    tensor = torch.from_dlpack(output)
+    assert tensor.data_ptr() == value.data_ptr()
+    assert tensor.stride() == value.stride()
+    torch.testing.assert_close(tensor, value)
+    roundtrip = executor(output, clone_outputs=False)[0]
+    assert isinstance(roundtrip, runtime.ExecuTorchResult)
+    assert roundtrip.__dlpack_device__() == (2, device_index)
+    torch.testing.assert_close(torch.from_dlpack(roundtrip), value)
+print("CUDA DLPack roundtrip preserved device storage")
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "cuda_identity.pte")
+            with open(path, "wb") as source:
+                source.write(data)
+            environment = os.environ.copy()
+            environment["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+            completed = subprocess.run(
+                [sys.executable, "-c", script, path, str(device_index)],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("CUDA DLPack roundtrip preserved device storage", completed.stdout)
 
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())

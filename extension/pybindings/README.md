@@ -13,24 +13,32 @@ pip install . --no-build-isolation
 Portable bindings do not link against ATen or PyTorch. CPU inputs may be NumPy
 arrays or other dense objects implementing Python's buffer protocol. CPU and
 CUDA `torch.Tensor` inputs are inspected through their public Python attributes
-instead of being cast to `at::Tensor`; CUDA pointers retain their device index.
+instead of being cast to `at::Tensor`. DLPack producers, including CuPy, can
+provide CPU or CUDA allocations directly; their device indices are preserved.
+A call must use one tensor protocol consistently.
 
-Portable Torch inputs must have dense strides compatible with the exported
-method input's dimension order. This includes channels last and channels last
-3D layouts when the model was exported with those layouts. Strides on singleton
-dimensions are normalized to the exported layout without copying tensor data.
+Tensor inputs must have dense strides compatible with the exported method's
+dimension order. This includes channels last and channels last 3D layouts when
+the model was exported with those layouts. Singleton strides are normalized to
+the exported layout without copying tensor data. CUDA inputs require a method
+exported with CUDA inputs and `MemoryPlanningPass(alloc_graph_input=False)` so
+execution can share the caller's device allocation.
 
 When PyTorch is available, importing `portable_lib` imports it and portable
-bindings create output tensors through its public Python API. When it cannot be
-imported, the default output type is `ExecuTorchResult`. The extension itself does not link against ATen or PyTorch.
-CUDA outputs use a private DLPack capsule consumed by `torch.from_dlpack`, and
-`clone_outputs=True` copies them through Torch on their original CUDA device.
-The `executorch` output mode supports CPU buffers; CUDA outputs require the
-default Torch output mode.
+bindings return `torch.Tensor` outputs. When it cannot be imported, the default
+output type is `ExecuTorchResult`. Output conversion uses Python APIs and
+DLPack; the extension does not link against PyTorch.
+`clone_outputs=True` returns independent storage on the output's original
+device. With `clone_outputs=False`, results share runtime or input storage and
+later execution may overwrite that storage.
+
+Calls on a shared method or module are serialized. A sequence of separate
+`set_inputs`, `execute`, and `get_outputs` calls requires caller synchronization
+when each thread needs its own inputs and outputs.
 
 To select `ExecuTorchResult` outputs even when PyTorch is installed, set the
-environment variable before importing the bindings. The setting is fixed when the extension loads, so importing PyTorch
-later does not change the output type.
+environment variable before importing the bindings. The setting is fixed when
+the extension loads, so importing PyTorch later does not change the output type.
 
 ```python
 import os
@@ -39,13 +47,28 @@ os.environ["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
 from executorch.extension.pybindings import portable_lib
 ```
 
-`ExecuTorchResult` exposes shape, strides, dtype, and the Python buffer protocol
-so NumPy can read it without another copy. Explicitly setting the environment
-variable to `torch` requires PyTorch to import successfully. ATen-mode bindings continue to return native PyTorch tensors directly.
+`ExecuTorchResult` preserves shape, strides, dtype, and device. CPU results expose
+the Python buffer protocol so NumPy can read them without another copy. Without
+the environment setting, the bindings fall back to `ExecuTorchResult` if
+PyTorch cannot be imported. Explicitly selecting `torch` requires it to import
+successfully. ATen-mode bindings continue to return native PyTorch tensors
+directly.
 
 ```python
 output = module.forward([numpy_input])[0]
 result = np.asarray(output)
+```
+
+CPU and CUDA results implement `__dlpack__` and `__dlpack_device__`. CUDA results
+remain on CUDA and can be passed to another DLPack consumer or back into
+ExecuTorch without moving the data to the CPU.
+
+```python
+import cupy as cp
+
+cuda_input = cp.ones((1, 3, 224, 224), dtype=cp.float32)
+output = cuda_module.forward([cuda_input], clone_outputs=False)[0]
+cuda_output = cp.from_dlpack(output)
 ```
 
 # Link Backends
@@ -68,9 +91,8 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 ## Classes
 ### ExecuTorchModule
 - `plan_execute()`: Plan and execute.
-- `run_method()`: Run a method with either PyTorch tensors or objects that
-  implement Python's buffer protocol, such as NumPy arrays. A call must use a
-  single tensor protocol; PyTorch tensors and buffers cannot be mixed.
+- `run_method()`: Run a method with PyTorch tensors, Python buffer objects such
+  as NumPy arrays, or DLPack producers. A call must use one tensor protocol.
 - `forward()`: Forward. A single buffer may be passed directly; multiple
   inputs are passed as a flat sequence.
 - `has_etdump()`: Check if etdump is available.
@@ -80,6 +102,4 @@ CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
 This class is currently empty and serves as a placeholder for future methods and attributes.
 - `verify_result_with_bundled_expected_output(method_name: str, testset_idx: int, rtol: float = 1e-5, atol: float = 1e-8)`: Verify result with bundled expected output.
 ## Note
-Calls on a shared method or module are serialized. A sequence of separate
-`set_inputs`, `execute`, and `get_outputs` calls requires caller synchronization
-when each thread needs its own inputs and outputs.
+Runtime logs are forwarded to Python stderr.
