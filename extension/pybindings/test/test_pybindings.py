@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from io import StringIO
 
+import numpy as np
 import torch
 
 from executorch.exir import ExecutorchBackendConfig, to_edge
@@ -67,6 +68,37 @@ class PybindingsTest(unittest.TestCase):
         executorch_output = executorch_module.forward(inputs)[0]
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_numpy_buffer_inputs(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module.forward([value.numpy() for value in inputs])[0]
+
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_numpy_array_is_a_single_input(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[0]))
+
+    def test_mixed_tensor_protocols_are_rejected(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(TypeError, "cannot mix buffer and torch"):
+            executorch_module.forward([inputs[0], inputs[1].numpy()])
+
+    def test_non_dense_numpy_input_is_rejected(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        non_dense = np.zeros((4, 4), dtype=np.float32)[::2, ::2]
+
+        with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
+            executorch_module(non_dense)
 
     def test_multiple_entry(self):
         program, inputs = create_program(ModuleMulti())
