@@ -113,6 +113,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
+import torch
+
 try:
     from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
         ExecuTorchMethod,
@@ -145,6 +147,22 @@ class Method:
             A list of output values, typically torch.Tensor objects.
         """
         return self._method(inputs)
+
+    def set_output(self, tensor: torch.Tensor, index: int) -> None:
+        """Binds output ``index`` to ``tensor``'s storage for every later call.
+
+        The method then writes that output straight into ``tensor`` and returns
+        ``tensor`` itself, uncloned, instead of a copy of its own storage. Binding
+        the output that carries an input mutation to the input tensor it mutates
+        makes the mutation in place, with no copies. The output must not be
+        memory planned (export with ``alloc_graph_output=False``) and ``tensor``
+        must be contiguous and at least as large as the output.
+
+        Args:
+            tensor: The tensor that stores the output from now on.
+            index: The index of the output to bind.
+        """
+        self._method.set_output(tensor, index)
 
     @property
     def metadata(self) -> MethodMeta:

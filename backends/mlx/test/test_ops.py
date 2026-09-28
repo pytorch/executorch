@@ -4750,6 +4750,78 @@ class IndexUpdateTest(OpTestCase):
         return (indices, update)
 
 
+class IndexCopyInputModel(nn.Module):
+    """Model that performs index_copy on a tensor passed in as an input.
+
+    Unlike a buffer, a user input is not the delegate's to own: the MLX graph
+    returns the updated tensor and the method writes it back into the input.
+    """
+
+    def __init__(self, axis: int = 0):
+        super().__init__()
+        self.axis = axis
+
+    def forward(
+        self, data: torch.Tensor, indices: torch.Tensor, update: torch.Tensor
+    ) -> torch.Tensor:
+        data.index_copy_(self.axis, indices, update)
+        return data.sum(self.axis)
+
+
+@register_test
+class IndexCopyInputTest(OpTestCase):
+    """Test case for index_copy into a mutated user input (e.g. a static KV
+    cache passed to the method), lowered to a functional IndexCopyNode."""
+
+    name = "index_copy_input"
+    rtol = 1e-5
+    atol = 1e-5
+    expected_node_counts = {"IndexCopyNode": 1}
+
+    def __init__(
+        self,
+        buffer_size: int = 128,
+        feature_dim: int = 64,
+        num_indices: int = 8,
+        axis: int = 0,
+    ):
+        self.buffer_size = buffer_size
+        self.feature_dim = feature_dim
+        self.num_indices = num_indices
+        self.axis = axis
+        self.name = (
+            f"index_copy_input_axis{axis}_{buffer_size}x{feature_dim}_idx{num_indices}"
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["IndexCopyInputTest"]:
+        return [
+            cls(buffer_size=128, feature_dim=64, num_indices=8, axis=0),
+            cls(buffer_size=64, feature_dim=32, num_indices=8, axis=1),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return IndexCopyInputModel(axis=self.axis)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        shape = (
+            (self.buffer_size, self.feature_dim)
+            if self.axis == 0
+            else (self.feature_dim, self.buffer_size)
+        )
+        update_shape = list(shape)
+        update_shape[self.axis] = self.num_indices
+        indices = torch.randperm(self.buffer_size)[: self.num_indices].to(torch.int64)
+        return (torch.randn(shape), indices, torch.randn(update_shape))
+
+    def compute_expected_outputs(self, model, test_inputs):
+        # The method returns the mutated input first, then the model's own
+        # output. Mutate a copy, so the saved inputs stay as they were fed.
+        data, indices, update = test_inputs
+        data = data.clone()
+        return [data, model(data, indices, update)]
+
+
 class SplitWithSizesModel(nn.Module):
     """Model that splits a tensor into chunks with specified sizes."""
 

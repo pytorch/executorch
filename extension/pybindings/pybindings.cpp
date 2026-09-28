@@ -1284,12 +1284,14 @@ struct PyMethod final {
     input_tensors.reserve(inputs_size);
 #endif
 
+    fed_inputs_.clear();
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
       if (type_str == "<class 'torch.Tensor'>") {
         auto at_tensor = python_input.cast<at::Tensor>();
+        fed_inputs_.push_back(at_tensor);
 
 #ifdef USE_ATEN_LIB
         EValue evalue(at_tensor);
@@ -1377,11 +1379,61 @@ struct PyMethod final {
         static_cast<uint32_t>(set_inputs_status));
   }
 
+  // Writes output `index` straight into `tensor`'s storage from the next
+  // execute() on, instead of into storage this method allocates. The binding
+  // persists across calls and the tensor is kept alive until it is replaced.
+  // Binding an output to the input it mutates makes that write in place.
+  void set_output(at::Tensor tensor, size_t index) {
+    const auto num_outputs = method_->outputs_size();
+    if (index >= num_outputs) {
+      throw std::out_of_range(
+          "output index " + std::to_string(index) + " is out of range for " +
+          std::to_string(num_outputs) + " outputs");
+    }
+    if (!tensor.is_contiguous()) {
+      throw std::runtime_error(
+          "output " + std::to_string(index) + " must be bound to a contiguous tensor");
+    }
+    Error status = method_->set_output_data_ptr(
+        mutable_tensor_data_ptr_no_cow(tensor), tensor.nbytes(), index);
+    THROW_IF_ERROR(
+        status,
+        "set_output_data_ptr failed for output %zu with error 0x%" PRIx32,
+        index,
+        static_cast<uint32_t>(status));
+    bound_outputs_.resize(num_outputs);
+    bound_outputs_[index] = tensor;
+    // Storage allocated for this output before it was bound is never used again.
+    if (index < output_storages_.size()) {
+      output_storages_[index] = std::vector<uint8_t>();
+    }
+  }
+
   void execute() {
     const auto num_outputs = method_->outputs_size();
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
+    caller_outputs_.assign(num_outputs, std::nullopt);
     for (int i = 0; i < output_storages_.size(); ++i) {
+      // An output bound with set_output() is pointed at the caller's tensor
+      // again on every call: one that is also an input was just repointed at
+      // the tensor passed in by set_inputs().
+      if (is_bound_output(i)) {
+        auto& bound = bound_outputs_[i].value();
+        output_storage_spans[i] = Span<uint8_t>(
+            static_cast<uint8_t*>(mutable_tensor_data_ptr_no_cow(bound)),
+            bound.nbytes());
+        caller_outputs_[i] = bound;
+        continue;
+      }
+      // An unplanned output that is one of the inputs (the write-back of an
+      // input the method mutates) already points at the tensor fed for it.
+      // Giving it storage here would repoint that input too, so the method
+      // would read and write this storage instead of the caller's tensor.
+      if (auto fed = fed_input_aliased_by(i)) {
+        caller_outputs_[i] = fed;
+        continue;
+      }
       output_storage_spans[i] =
           Span<uint8_t>(output_storages_[i].data(), output_storages_[i].size());
     }
@@ -1418,7 +1470,25 @@ struct PyMethod final {
         static_cast<uint32_t>(get_outputs_status));
 
     // Retrieve outputs
-    return get_outputs_as_py_list(result, clone_outputs);
+    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
+    // An output bound with set_output(), or one that is a fed input, already
+    // lives in the caller's tensor, so it is returned as that tensor, never
+    // cloned. A dynamic output may have been resized smaller than that tensor,
+    // so view it at its written size.
+    for (size_t i = 0; i < caller_outputs_.size() && i < result.size(); ++i) {
+      if (!caller_outputs_[i].has_value() || !result[i].isTensor()) {
+        continue;
+      }
+      const auto& bound = caller_outputs_[i].value();
+      const auto& written = result[i].toTensor();
+      std::vector<int64_t> sizes(written.sizes().begin(), written.sizes().end());
+      if (bound.sizes().vec() == sizes) {
+        outputs[i] = py::cast(bound);
+      } else {
+        outputs[i] = py::cast(bound.view({-1}).narrow(0, 0, written.numel()).view(sizes));
+      }
+    }
+    return outputs;
   }
 
   py::list call(const py::sequence& inputs, bool clone_outputs = true) {
@@ -1464,6 +1534,45 @@ struct PyMethod final {
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
+  // Caller tensors bound as output storage with set_output(), by output index.
+  std::vector<std::optional<at::Tensor>> bound_outputs_;
+  // The tensors passed to the last set_inputs(), in order.
+  std::vector<at::Tensor> fed_inputs_;
+  // Per output of the last execute(), the caller tensor it lives in, if any.
+  std::vector<std::optional<at::Tensor>> caller_outputs_;
+  // Outputs found to be one of the method's inputs.
+  std::vector<bool> aliases_input_;
+
+  bool is_bound_output(size_t index) const {
+    return index < bound_outputs_.size() && bound_outputs_[index].has_value();
+  }
+
+  // The fed input whose memory unplanned output `index` points at, if any:
+  // the method returns a mutated input as that very input. That holds for
+  // every call once seen, so its unused storage is released then.
+  std::optional<at::Tensor> fed_input_aliased_by(size_t index) {
+    const bool known = index < aliases_input_.size() && aliases_input_[index];
+    if (!known &&
+        (index >= output_storages_.size() || output_storages_[index].empty())) {
+      return std::nullopt; // planned, or not a tensor
+    }
+    const auto& output = method_->get_output(index);
+    if (!output.isTensor()) {
+      return std::nullopt;
+    }
+    const void* data = output.toTensor().const_data_ptr();
+    for (const auto& fed : fed_inputs_) {
+      if (data != nullptr && fed.const_data_ptr() == data) {
+        if (!known) {
+          aliases_input_.resize(output_storages_.size(), false);
+          aliases_input_[index] = true;
+          output_storages_[index] = std::vector<uint8_t>();
+        }
+        return fed;
+      }
+    }
+    return std::nullopt;
+  }
 
   void allocate_output_storages() {
     const auto num_outputs = method_->outputs_size();
@@ -2012,6 +2121,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   py::class_<PyMethod>(m, "ExecuTorchMethod")
       .def("set_inputs", &PyMethod::set_inputs, py::arg("inputs"), call_guard)
       .def("execute", &PyMethod::execute, call_guard)
+      .def(
+          "set_output",
+          &PyMethod::set_output,
+          py::arg("tensor"),
+          py::arg("index"),
+          call_guard)
       .def(
           "get_outputs",
           &PyMethod::get_outputs,
