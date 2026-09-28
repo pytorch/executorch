@@ -8,6 +8,7 @@
 
 #include <array>
 #include <charconv>
+#include <cstdint>
 #include <string>
 
 namespace ptn {
@@ -29,6 +30,27 @@ inline std::string format_double(double value) {
     text += ".0";
   }
   return text;
+}
+
+// e.g. " q:affine block=[1,32] p4"; bit_width 0 means dense storage.
+template <typename BlockShape>
+std::string affine_quant_label(
+    const BlockShape& block_shape,
+    unsigned bit_width) {
+  std::string s = " q:affine block=[";
+  bool first = true;
+  for (const int64_t block : block_shape) {
+    if (!first) {
+      s += ",";
+    }
+    first = false;
+    s += std::to_string(block);
+  }
+  s += "]";
+  if (bit_width != 0) {
+    s += " p" + std::to_string(bit_width);
+  }
+  return s;
 }
 
 } // namespace ptn

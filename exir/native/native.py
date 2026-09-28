@@ -38,7 +38,6 @@ import torch
 from executorch.backends.native.preprocess import NativeDelegateInfo
 from executorch.backends.native.serialization.graph_serialize import (
     _same_tensor,
-    collect_data_keys,
     deserialize_program,
     merge_programs,
     validate_program,
@@ -310,15 +309,6 @@ def _validate_merged_program(
     # bindings before applying the cross-method/package-wide checks below.
     validate_program(program, set(constants))
     _check_shared_mutable_buffers(program)
-
-    # Catches any data key the validator does not cover, including quantization
-    # scale/zero-point keys carried by graph tensor metadata.
-    missing = sorted(collect_data_keys(program) - constants.keys())
-    if missing:
-        raise ValueError(
-            f"to_native: constant(s) referenced by the graph have no backing "
-            f"tensor: {missing}"
-        )
 
 
 def _normalize_programs(

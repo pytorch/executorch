@@ -77,34 +77,105 @@ class OutputValueKind(IntEnum):
 # Quantization. A tensor's quant scheme rides on its TensorMeta, so it applies to
 # graph I/O, intermediates, and constants uniformly. Absent means not quantized;
 # dtype stays the storage dtype and the scheme says how to interpret it. The scheme
-# set is append-only and grows over time.
+# set is intentionally small and provider-neutral.
+
+
+class QuantRoundingMode(IntEnum):
+    TO_NEAREST_EVEN = 0
+    AWAY_FROM_ZERO = 1
+    TOWARD_ZERO = 2
+    FLOOR = 3
+    CEIL = 4
 
 
 @dataclass
-class AffineGroup:
-    # Affine group-wise quant along the last axis. See native_graph.fbs for the full
-    # dequant and storage contract (unsigned qdata, quant_min offset, out-of-line
-    # scales, packed byte length).
-    scale_data_key: str
-    scale_dtype: ScalarType
+class InlineFloatQuantParam:
+    value: float
+    dtype: ScalarType
+
+
+@dataclass
+class InlineIntQuantParam:
+    value: int
+    dtype: ScalarType
+
+
+@dataclass
+class ExternalQuantParam:
+    data_key: str
+    dtype: ScalarType
+
+
+QuantParamValue = Union[
+    InlineFloatQuantParam,
+    InlineIntQuantParam,
+    ExternalQuantParam,
+]
+
+
+@dataclass
+class QuantParam:
+    value: "QuantParamValue"
+
+
+@dataclass
+class DenseQuantizedStorage:
+    pass
+
+
+class QuantBitOrder(IntEnum):
+    LSB_FIRST = 0
+    MSB_FIRST = 1
+
+
+class QuantSignedEncoding(IntEnum):
+    UNSIGNED = 0
+    TWOS_COMPLEMENT = 1
+    OFFSET = 2
+
+
+@dataclass
+class PackedBitsQuantizedStorage:
+    bit_width: int
+    bit_order: QuantBitOrder = QuantBitOrder.LSB_FIRST
+    signed_encoding: QuantSignedEncoding = QuantSignedEncoding.UNSIGNED
+    storage_offset: int = 0
+
+
+QuantizedStorageValue = Union[
+    DenseQuantizedStorage,
+    PackedBitsQuantizedStorage,
+]
+
+
+@dataclass
+class QuantizedStorage:
+    value: "QuantizedStorageValue"
+
+
+@dataclass
+class AffineQuantization:
+    # General blockwise affine quantization. TensorMeta.dtype remains the storage
+    # dtype; expressed_dtype is the dequantized logical dtype.
+    expressed_dtype: ScalarType
     quant_min: int
     quant_max: int
-    group_size: int = 0
-    zero_point_data_key: Optional[str] = None
-    zero_point_dtype: ScalarType = ScalarType.INT
+    block_shape: List[int]
+    scale: QuantParam
+    storage: QuantizedStorage
+    zero_point: Optional[QuantParam] = None
+    rounding: QuantRoundingMode = QuantRoundingMode.TO_NEAREST_EVEN
 
 
 @dataclass
-class PackedQuant:
-    # Opaque codec-defined packed layout (e.g. "gguf:q4k", "mxfp4", "nvfp4"). Block
-    # size, bit width, and scales are all implied by `codec`. See native_graph.fbs.
+class OpaqueQuantization:
+    # Codec-defined quantized layout (e.g. GGUF Q4_K, MXFP4, or NVFP4).
     codec: str
 
 
-# Append-only; keep in sync with the union in native_graph.fbs.
 QuantScheme = Union[
-    AffineGroup,
-    PackedQuant,
+    AffineQuantization,
+    OpaqueQuantization,
 ]
 
 
@@ -126,9 +197,8 @@ class Dim:
 
 @dataclass
 class TensorMeta:
-    # sizes is the logical shape, dtype the element type. When quant is set the tensor
-    # is packed (dtype BYTE) and the physical layout and byte length come from the
-    # quant scheme and its external constant blob, not prod(sizes).
+    # sizes is the logical shape and dtype the storage element type. Quantization may
+    # describe either dense typed storage or a packed/opaque physical representation.
     dtype: ScalarType
     sizes: List[Dim]
     # Memory layout as a permutation of dim indices, outermost first (contiguous is

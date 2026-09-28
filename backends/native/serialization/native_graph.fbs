@@ -9,12 +9,10 @@
 // tensor metadata lives in a side table. Constant tensor data is not stored here; it
 // is shipped separately in an external constant file, keyed by NamedTensorRef.data_key.
 //
-// BACKWARD COMPATIBILITY RULES:
-//   - New fields in tables: APPEND ONLY (add at the end, with a default value)
-//   - New union members:    APPEND ONLY (add at the end of the union)
-//   - New tables:           Safe to add freely
-//   - New enum values:      APPEND ONLY
-//   - NEVER remove, reorder, or change the type of existing fields/members
+// This format is experimental and currently provides no backward compatibility
+// guarantee. Producers and consumers must use the same schema version: bump
+// Program.version (SCHEMA_VERSION in graph_serialize.py and kSchemaVersion in
+// Program.cpp) on any incompatible change. The runtime rejects other versions.
 //
 // NAME SCOPING. Which namespace each name/reference field belongs to:
 //   (1) SSA value names: scoped to a SINGLE Graph body. The method's top-level
@@ -25,8 +23,8 @@
 //   (2) Method-level bindings into the METHOD's top-level Graph (never a subgraph):
 //       NamedTensorRef.name, MutableBufferSpec.name, OutputSpec.name.
 //   (3) Data keys / fqns, the program-wide external-constant / cross-method
-//       namespace: NamedTensorRef.data_key, AffineGroup.scale_data_key /
-//       zero_point_data_key, MutableBufferSpec.fqn.
+//       namespace: NamedTensorRef.data_key, ExternalQuantParam.data_key,
+//       MutableBufferSpec.fqn.
 //   Not value references: NamedArgument.name (operator-schema parameter name),
 //   GraphArg.name (submodule attr label, debug only), Method.name (program-level).
 //   OutputSpec.target is dual-namespace by kind: an fqn (3) for BUFFER_MUTATION,
@@ -103,45 +101,110 @@ enum OutputValueKind : byte {
 // A tensor's quant scheme rides on its TensorMeta, so it applies uniformly to graph
 // I/O, intermediates (tensor_values), and constants (NamedTensorRef.meta). Absent
 // means not quantized. dtype stays the storage dtype; the scheme says how to
-// interpret it. The scheme set is append-only.
+// interpret it.
 
-// Affine group-wise quant along the last (reduction) axis:
-//   value = scale * ((qdata + quant_min) - zero_point)
-// qdata is stored unsigned in [0, quant_max - quant_min], LSB-first when packed
-// sub-byte (two int4 nibbles per byte), so quant_min is also the unsigned-to-logical
-// storage offset (logical q = qdata + quant_min, e.g. -8 for int4). quant_min and
-// quant_max give the logical range, hence the bitwidth and signedness. group_size is
-// the block length along the last axis; 0 means per-channel (one group over the whole
-// axis). Scales (and, if asymmetric, zero-points) are shipped out-of-line via the
-// external constant file, keyed by data_key (empty zero_point_data_key means symmetric).
-// Their shapes derive from the weight shape and group_size, but their dtypes do not,
-// so they are recorded here. The dequant result dtype is the op output value's
-// TensorMeta.dtype, not part of this scheme. The qdata itself (the enclosing
-// TensorMeta) uses dtype=BYTE with logical sizes; its packed byte length follows from
-// the logical shape and bitwidth, not prod(sizes).
-table AffineGroup {
-    scale_data_key: string (required);
-    scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable
-    quant_min: int;
-    quant_max: int;
-    group_size: int;                // 0 means per-channel (one group over the last axis)
-    zero_point_data_key: string;    // empty means symmetric
-    zero_point_dtype: ScalarType;   // meaningful only when zero_point_data_key is set
+// General affine quantization. Numerical mapping and physical storage are separate:
+//   expressed_value = scale[block] * (q - zero_point[block])
+// The enclosing TensorMeta.dtype is the physical storage scalar type. expressed_dtype
+// is the dtype produced by dequantization. block_shape has one entry per logical
+// tensor dimension: 0 spans the whole dimension and a positive value is the fixed
+// block size. Thus all-zero is per-tensor, [1, 0, ...] is per-axis, and [1, 32]
+// describes 32-element groups in the second dimension. Partial final blocks are
+// allowed. Parameter tensor shapes are ceil(size[i] / resolved_block_size[i]).
+// zero_point may be integer or floating point (e.g. HQQ) but is always in the q
+// domain. A scheme with an expressed-domain offset, value = scale * (q - mid) +
+// offset (e.g. tinygemm), maps to zero_point = mid - offset / scale.
+
+enum QuantRoundingMode : byte {
+    TO_NEAREST_EVEN = 0,
+    AWAY_FROM_ZERO = 1,
+    TOWARD_ZERO = 2,
+    FLOOR = 3,
+    CEIL = 4,
 }
 
-// Opaque codec-defined packed layout (e.g. "gguf:q4k", "mxfp4", "nvfp4"). Block size,
-// bit width, and scales are all implied by codec. The enclosing TensorMeta uses
-// dtype=BYTE with logical sizes; the packed byte length is defined by codec and the
-// logical shape and carried by the external constant blob (NamedTensorRef.data_key),
-// never prod(sizes).
-table PackedQuant {
+table InlineFloatQuantParam {
+    value: double;
+    dtype: ScalarType;
+}
+
+table InlineIntQuantParam {
+    value: long;
+    dtype: ScalarType;
+}
+
+table ExternalQuantParam {
+    data_key: string (required);
+    dtype: ScalarType;
+}
+
+union QuantParamValue {
+    InlineFloatQuantParam,
+    InlineIntQuantParam,
+    ExternalQuantParam,
+}
+
+// Wrapper permits the zero-point parameter itself to be absent for symmetric
+// quantization while keeping the parameter's tagged value required semantically.
+table QuantParam {
+    value: QuantParamValue;
+}
+
+// Dense storage writes q directly using TensorMeta.dtype. Packed-bit storage writes
+// consecutive logical elements into bytes using bit_order. UNSIGNED and
+// TWOS_COMPLEMENT store q directly; OFFSET stores q - storage_offset. For example,
+// signed int4 encoded as unsigned nibbles uses OFFSET with storage_offset=-8.
+table DenseQuantizedStorage {}
+
+enum QuantBitOrder : byte {
+    LSB_FIRST = 0,
+    MSB_FIRST = 1,
+}
+
+enum QuantSignedEncoding : byte {
+    UNSIGNED = 0,
+    TWOS_COMPLEMENT = 1,
+    OFFSET = 2,
+}
+
+table PackedBitsQuantizedStorage {
+    bit_width: ubyte;
+    bit_order: QuantBitOrder = LSB_FIRST;
+    signed_encoding: QuantSignedEncoding = UNSIGNED;
+    storage_offset: long = 0;
+}
+
+union QuantizedStorageValue {
+    DenseQuantizedStorage,
+    PackedBitsQuantizedStorage,
+}
+
+table QuantizedStorage {
+    value: QuantizedStorageValue;
+}
+
+table AffineQuantization {
+    expressed_dtype: ScalarType;
+    quant_min: long;
+    quant_max: long;
+    block_shape: [long] (required);
+    scale: QuantParam (required);
+    zero_point: QuantParam;
+    rounding: QuantRoundingMode = TO_NEAREST_EVEN;
+    storage: QuantizedStorage (required);
+}
+
+// Opaque codec-defined quantized layout (e.g. "gguf:q4k", "mxfp4", "nvfp4").
+// Block size, packing, scales, and any other auxiliary values are implied by codec.
+// The enclosing TensorMeta uses dtype=BYTE with logical sizes; the physical byte
+// length is defined by codec and carried by NamedTensorRef.data_key, never prod(sizes).
+table OpaqueQuantization {
     codec: string (required);
 }
 
-// Append-only; new schemes go at the end.
 union QuantScheme {
-    AffineGroup,
-    PackedQuant,
+    AffineQuantization,
+    OpaqueQuantization,
 }
 
 // Wrapper so the scheme union can be an optional field on TensorMeta (an optional
@@ -162,9 +225,10 @@ table Dim {
     max: long = -1;
 }
 
-// sizes is the logical shape and dtype the element type. When quant is set the tensor
-// is stored packed: dtype is BYTE and the physical layout and byte length come from
-// the quant scheme and its external constant blob, not prod(sizes).
+// sizes is the logical shape and dtype the storage element type. A general affine
+// tensor may use dense typed storage or packed-bit storage. OpaqueQuantization uses
+// BYTE and defines its physical byte length through its codec and external constant
+// blob rather than prod(sizes).
 table TensorMeta {
     dtype: ScalarType;
     sizes: [Dim];
@@ -420,7 +484,7 @@ table Method {
 // (an external constant file keyed by data_key); each Method carries its own NamedTensorRef
 // bindings.
 table Program {
-    // Schema version for compatibility.
+    // Schema version; must match the runtime's exactly.
     version: string;
     methods: [Method] (required);
 }
