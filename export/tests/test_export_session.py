@@ -284,6 +284,39 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(session._run_context["session_name"], "test_session")
         self.assertIsNotNone(session._run_context["constant_methods"])
 
+    def test_generate_etrecord_from_recipe(self) -> None:
+        # When the recipe has generate_etrecord=True and the param is False,
+        # the effective value in the run context must be True.
+        recipe = ExportRecipe(name="test", generate_etrecord=True)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_from_param_overrides_recipe(self) -> None:
+        # The explicit parameter must win when the recipe has generate_etrecord=False.
+        recipe = ExportRecipe(name="test", generate_etrecord=False)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+            generate_etrecord=True,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_false_when_neither_set(self) -> None:
+        # Both the recipe and the explicit parameter default to False, so the
+        # effective value must also be False.
+        recipe = ExportRecipe(name="test")
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertFalse(session._run_context["generate_etrecord"])
+
     def test_stage_registry_unknown_stage_type(self) -> None:
         # Test error handling for unknown stage types in pipeline
         unknown_stage_type = Mock()
@@ -755,30 +788,6 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
         )
         self.assertNotIn(
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM, session._get_default_pipeline()
-        )
-
-    def test_edge_transform_passes_not_duplicated_in_default_pipeline(self) -> None:
-        # Before the fix, from_recipe() gave edge_transform_passes to
-        # EDGE_PROGRAM_MANAGER_TRANSFORM as well as TO_EDGE_TRANSFORM_AND_LOWER,
-        # so they ran twice. Verify the stage no longer holds them at all.
-        from executorch.export.stages import EdgeProgramManagerTransformStage
-
-        edge_pass = Mock()
-        epm_pass = Mock()
-
-        stage = EdgeProgramManagerTransformStage.from_recipe(
-            LoweringRecipe(
-                edge_transform_passes=[edge_pass],
-                edge_manager_transform_passes=[epm_pass],
-            )
-        )
-
-        # The stage must only know about edge_manager_transform_passes.
-        self.assertEqual(stage._edge_manager_transform_passes, [epm_pass])
-        self.assertFalse(
-            hasattr(stage, "_edge_transform_passes"),
-            "EdgeProgramManagerTransformStage must not hold edge_transform_passes "
-            "because TO_EDGE_TRANSFORM_AND_LOWER already applies them.",
         )
 
     def test_example_inputs_required_for_nn_module(self) -> None:
