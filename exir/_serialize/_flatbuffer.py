@@ -369,7 +369,12 @@ def _replace_non_finite_in_json(content: bytes) -> bytes:
     return json.dumps(convert(json.loads(content))).encode("utf-8")
 
 
-def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
+def _flatc_compile(
+    output_dir: str,
+    schema_path: str,
+    json_path: str,
+    flatc_additional_args: Optional[List[str]] = None,
+) -> None:
     """Serializes JSON data to a binary flatbuffer file.
 
     Args:
@@ -381,6 +386,7 @@ def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
             matches the schema. Rewritten in place if it contains non-finite
             floats; flatc derives the output filename from this path, so the
             data cannot be sanitized into a differently-named file.
+        flatc_additional_args: Additional options passed to flatc.
     """
     with open(json_path, "rb") as json_file:
         content = json_file.read()
@@ -392,6 +398,7 @@ def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
     _run_flatc(
         [
             "--binary",
+            *(flatc_additional_args or []),
             "-o",
             output_dir,
             schema_path,
