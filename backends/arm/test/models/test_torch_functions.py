@@ -94,14 +94,7 @@ input_t = tuple[torch.Tensor]
 test_parameters = {test[0]: test[1:] for test in module_tests}
 
 
-@parametrize(
-    "test_data",
-    test_parameters,
-    xfails={
-        "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
-        "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-    },
-)
+@parametrize("test_data", test_parameters)
 def test_torch_functions_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
@@ -119,15 +112,7 @@ def test_torch_functions_tosa_FP(test_data):
             raise e
 
 
-@parametrize(
-    "test_data",
-    test_parameters,
-    xfails={
-        "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
-        "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-    },
-    strict=True,
-)
+@parametrize("test_data", test_parameters)
 def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](

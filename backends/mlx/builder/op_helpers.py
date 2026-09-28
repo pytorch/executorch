@@ -187,6 +187,7 @@ def emit_shape(
     slot: Slot,
     *,
     end_dim: "Optional[int]" = None,
+    dim_offset: int = 0,
 ) -> "list[IntOrVid]":
     """Return the shape of ``node`` as a list of ``IntOrVid``.
 
@@ -197,11 +198,13 @@ def emit_shape(
     Args:
         P: program builder.
         node: FX node whose shape to walk (must have ``meta['val']``).
-        slot: slot corresponding to ``node`` (used as the
-            ``SymSize`` source for any dynamic dim).
+        slot: tensor slot used as the ``SymSize`` source for dynamic dims.
         end_dim: stop index (exclusive). ``None`` means the full ndim.
             Negative values index from the end (e.g. ``-1`` is "all
             leading dims, drop the last").
+        dim_offset: offset added to dynamic dimension indices when reading
+            ``slot``. Use when its runtime axes differ from the metadata axes;
+            static dimensions still use the metadata values.
 
     Returns:
         ``list[IntOrVid]`` of length ``end_dim`` (after normalization).
@@ -228,7 +231,7 @@ def emit_shape(
             P.emit(
                 SymSizeNode(
                     a=P.slot_to_tid(slot),
-                    dim=dim_idx,
+                    dim=dim_idx + dim_offset,
                     out=P.slot_to_vid(d_val),
                 )
             )

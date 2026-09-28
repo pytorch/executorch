@@ -4,15 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from functools import partial
-
 import pytest
 import torch
-from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-from executorch.backends.cortex_m.test.tester import CortexMTester
-from executorch.backends.test.harness.stages import Quantize, RunPasses, StageType
+from executorch.backends.cortex_m.test.tester import CortexMRunPasses, CortexMTester
+from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 
@@ -75,13 +72,9 @@ def _count(exported_program, target) -> int:
 def _run_explicit_layout_pass_manager(tester: CortexMTester) -> CortexMTester:
     target_config = CortexMTargetConfig(cpu=CortexM.M55)
     tester.run_passes(
-        RunPasses(
-            partial(
-                CortexMPassManager,
-                target_config=target_config,
-                use_explicit_layout=True,
-            ),  # type: ignore[arg-type]
-            CortexMPassManager.explicit_layout_pass_list,  # type: ignore[arg-type]
+        CortexMRunPasses(
+            target_config=target_config,
+            use_explicit_layout=True,
         )
     )
     return tester
@@ -216,5 +209,7 @@ def test_explicit_layout_rejects_unsupported_spatial_operator():
     with pytest.raises(Exception) as caught:
         _run_explicit_layout_passes(tester)
 
-    assert caught.value.__cause__ is not None
-    assert "NHWC-eligible" in str(caught.value.__cause__)
+    error = caught.value
+    while error.__cause__ is not None:
+        error = error.__cause__
+    assert "NHWC-eligible" in str(error)

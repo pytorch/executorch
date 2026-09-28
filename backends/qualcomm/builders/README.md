@@ -515,6 +515,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
+| `aten.empty.memory_format`, `aten.empty_strided` | `DecomposeEmpty` |
 | `aten.special_expm1` | `DecomposeExpM1` |
 | `aten.fill.Scalar` | `DecomposeFill` |
 | `aten.floor_divide` | `DecomposeFloorDivide` |

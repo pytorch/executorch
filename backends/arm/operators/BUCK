@@ -25,13 +25,29 @@ fbcode_target(
     srcs = ["operator_validation_utils.py"],
 )
 
+# Leaf target for the rescale helpers imported by _passes. Kept separate from
+# :ops because :ops depends on _passes:passes, which would be a dep cycle.
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "op_tosa_rescale",
+    srcs = ["op_tosa_rescale.py"],
+    deps = [
+        ":node_visitor",
+        ":operator_validation_utils",
+        "fbsource//third-party/tosa_tools:serializer",
+        "//caffe2:torch",
+        "//executorch/backends/arm/tosa:mapping",
+    ],
+)
+
 fbcode_target(
     _kind = runtime.python_library,
     name = "ops",
-    srcs = glob(["op_*.py", "ops_*.py"]),
+    srcs = glob(["op_*.py", "ops_*.py"], exclude = ["op_tosa_rescale.py"]),
     deps = [
         "fbsource//third-party/tosa_tools:tosa",
         ":node_visitor",
+        ":op_tosa_rescale",
         ":operator_validation_utils",
         "//executorch/backends/arm/tosa:constant_pool",
         "//executorch/backends/arm/tosa:mapping",

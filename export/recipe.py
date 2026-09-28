@@ -258,6 +258,7 @@ class _CombineAccumulator:
     pipeline_stages_values: list = field(default_factory=list)
     source_transform_in_place_values: list = field(default_factory=list)
     release_intermediate_artifacts_values: list = field(default_factory=list)
+    generate_etrecord_values: list = field(default_factory=list)
     backend_config: object = None
     pre_partitioning_callbacks: list = field(default_factory=list)
 
@@ -307,6 +308,8 @@ class ExportRecipe:
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
         strict: Set the strict flag in the torch export call.
+        generate_etrecord: When True, the export pipeline captures an ETRecord for
+                           use with the ExecuTorch devtools (profiling, debugging).
     """
 
     name: Optional[str] = None
@@ -326,6 +329,7 @@ class ExportRecipe:
     ] = None
     pre_trace_hooks: Optional[List[Callable[[str, torch.nn.Module], None]]] = None
     release_intermediate_artifacts: bool = False
+    generate_etrecord: bool = False
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
@@ -626,6 +630,7 @@ class ExportRecipe:
             acc.release_intermediate_artifacts_values.append(
                 recipe.release_intermediate_artifacts
             )
+            acc.generate_etrecord_values.append(recipe.generate_etrecord)
 
             # Use the executorch_backend_config from the first recipe that supplies one.
             if acc.backend_config is None and recipe.executorch_backend_config:
@@ -711,4 +716,6 @@ class ExportRecipe:
                 if acc.source_transform_in_place_values
                 else False
             ),
+            # OR semantics: generate ETRecord when at least one recipe requests it.
+            generate_etrecord=any(acc.generate_etrecord_values),
         )

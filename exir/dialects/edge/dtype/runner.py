@@ -63,7 +63,7 @@ class DtypeRunner:
             elif t.is_scalar_type() or t.is_tensor() or t.is_tensor_list():
                 return type_dtypes + self.tensor_dtypes
             else:
-                raise ValueError("Type {t.name} does not have dtype")
+                raise ValueError(f"Type {t.name} does not have dtype")
 
         return list(map(mapping, types))
 

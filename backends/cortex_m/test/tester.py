@@ -6,7 +6,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Optional
 
 import torch
@@ -28,6 +27,8 @@ from executorch.backends.test.harness.stages import (
     ToEdgeTransformAndLower,
     ToExecutorch,
 )
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
+from torch.export import ExportedProgram
 
 
 class CortexMQuantize(Quantize):
@@ -42,31 +43,36 @@ class CortexMToEdge(ToEdge):
 
 
 class CortexMRunPasses(RunPasses):
-    def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
-        target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
-        # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`.
-        # Pre-bind the target_config so it flows through that 2-arg call.
-        super().__init__(
-            partial(CortexMPassManager, target_config=target_config),  # type: ignore[arg-type]
-            CortexMPassManager.pass_list,  # type: ignore[arg-type]
+    def __init__(
+        self,
+        target_config: Optional[CortexMTargetConfig] = None,
+        use_explicit_layout: bool = False,
+    ):
+        super().__init__(CortexMPassManager)
+        self.pass_manager = CortexMPassManager(
+            target_config=target_config,
+            use_explicit_layout=use_explicit_layout,
         )
+
+    def run(self, artifact: EdgeProgramManager | ExportedProgram, inputs=None) -> None:
+        if isinstance(artifact, EdgeProgramManager):
+            self.edge_or_aten_program = artifact.transform(self.pass_manager)
+        else:
+            self.edge_or_aten_program = self.pass_manager(artifact).exported_program
 
 
 class CortexMToEdgeTransformAndLower(ToEdgeTransformAndLower):
-    """to_edge with no partitioner, then CortexMPassManager.
-
-    Cortex-M rewrites edge operators in place rather than delegating a subgraph,
-    so this is its equivalent of to_edge_transform_and_lower, which is the only
-    lowering entry point the shared backend test suite drives.
-    """
-
     def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
         super().__init__(edge_compile_config=cortex_m_edge_compile_config())
-        self._run_passes = CortexMRunPasses(target_config)
+        self.pass_manager = CortexMPassManager(target_config=target_config)
 
     def run(self, artifact, inputs=None, generate_etrecord: bool = False) -> None:
-        super().run(artifact, inputs, generate_etrecord=generate_etrecord)
-        self._run_passes.run(self.edge_dialect_program, inputs)  # type: ignore[arg-type]
+        self.edge_dialect_program = to_edge_transform_and_lower(
+            artifact,
+            compile_config=self.edge_compile_conf,
+            transform_passes=self.pass_manager,
+            generate_etrecord=generate_etrecord,
+        )
 
 
 class CortexMSerialize(Serialize):

@@ -356,6 +356,21 @@ def test_pow_tensor_tensor_u55_INT(
     pipeline.run()
 
 
+@common.parametrize("test_data", Pow_TensorTensor.test_data_quant)
+@common.XfailIfNoCorstone320
+def test_pow_tensor_tensor_u85_INT(
+    test_data: Pow_TensorTensor.input_t,
+):
+    pipeline = EthosU85PipelineINT[Pow_TensorTensor.input_t](
+        Pow_TensorTensorPositiveBase(),
+        test_data(),
+        POW_TENSOR_TENSOR_INT_ATEN_OPS,
+        POW_TENSOR_TENSOR_INT_EXIR_OPS,
+        qtol=4,
+    )
+    pipeline.run()
+
+
 def test_pow_tensor_tensor_int_rejects_base_lower_bound_quantized_to_zero():
     """A positive FP lower bound must stay positive after LOG input QDQ."""
     # abs(x) + 0.25 is structurally >= 0.25, but this calibration range makes

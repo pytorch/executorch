@@ -15,6 +15,7 @@ from executorch.backends.arm._passes import (
     InsertRescalePass,
     RemoveNoopPass,
     RewriteSlicePass,
+    SymbolicToTosaShapesPass,
 )
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
@@ -25,6 +26,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._export.utils import _get_shape_env_from_gm
 from torch.export import Dim, export, ExportedProgram
 from torch.fx import Graph, GraphModule, Node
 
@@ -363,7 +365,7 @@ def test_keep_full_slice_with_symbolic_shape():
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     ).exported_program()
     spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
-    with TosaLoweringContext(spec):
+    with TosaLoweringContext(spec, _get_shape_env_from_gm(edge_program.graph_module)):
         rewritten = RewriteSlicePass()(edge_program.graph_module).graph_module
 
     slice_nodes = [
@@ -372,7 +374,9 @@ def test_keep_full_slice_with_symbolic_shape():
         if node.target == exir_ops.backend.tosa.SLICE.default
     ]
     assert len(slice_nodes) == 1
-    assert isinstance(slice_nodes[0].args[2][0], torch.SymInt)
+    size = slice_nodes[0].args[2][0]
+    assert isinstance(size, Node)
+    assert size.meta["val"] == slice_nodes[0].meta["val"].shape[0]
 
     result = _run_remove_noop(rewritten)
 
@@ -598,3 +602,121 @@ def test_data_layout_noop_cleanup_pipeline_order():
     assert pass_types[post_tosa_cleanup + 2] is InsertRescalePass
     assert pass_types[post_tosa_cleanup + 3] is DeduplicateConstShapesPass
     assert pass_types[post_tosa_cleanup + 4] is EnsureUniqueOutputNodesPass
+
+
+@pytest.mark.parametrize(
+    "start, size",
+    [
+        ([0, 2], [2, 2]),
+        ([0, 0], [0, 3]),
+    ],
+)
+def test_tosa_slice_rejects_invalid_static_bounds(start, size):
+    spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+    with TosaLoweringContext(spec):
+        with pytest.raises(TosaValueError):
+            exir_ops.backend.tosa.SLICE.default(
+                torch.empty(2, 3, device="meta"), start, size
+            )
+
+
+def _rewrite_slice_with_dynamic_shapes(module, inputs, dynamic_shapes):
+    edge_program = to_edge(
+        export(module, inputs, dynamic_shapes=dynamic_shapes, strict=True),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+    spec = TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
+    with TosaLoweringContext(spec, _get_shape_env_from_gm(edge_program.graph_module)):
+        return RewriteSlicePass()(edge_program.graph_module).graph_module
+
+
+def test_rewrite_slice_clamps_dynamic_end_and_size():
+    class SlicePastEnd(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 0, 0, 10, 1)
+
+    rewritten = _rewrite_slice_with_dynamic_shapes(
+        SlicePastEnd(),
+        (torch.ones(4, 3),),
+        {"x": {0: torch.export.Dim("batch", min=1, max=8)}},
+    )
+
+    targets = [node.target for node in rewritten.graph.nodes]
+    slice_node = next(
+        node
+        for node in rewritten.graph.nodes
+        if node.target == exir_ops.backend.tosa.SLICE.default
+    )
+    size = slice_node.args[2][0]
+
+    assert min in targets
+    assert isinstance(size, Node)
+    assert size.target is max
+
+    spec = TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
+    with TosaLoweringContext(spec):
+        materialized = SymbolicToTosaShapesPass()(rewritten).graph_module
+    materialized_targets = [node.target for node in materialized.graph.nodes]
+
+    assert exir_ops.backend.tosa.MIN_SHAPE.default in materialized_targets
+
+
+def test_rewrite_slice_keeps_empty_static_dimension_empty():
+    class EmptyStaticSlice(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, -6, 1)
+
+    rewritten = _rewrite_slice_with_dynamic_shapes(
+        EmptyStaticSlice(),
+        (torch.ones(4, 5),),
+        {"x": {0: torch.export.Dim("batch", min=1, max=8)}},
+    )
+
+    slice_node = next(
+        node
+        for node in rewritten.graph.nodes
+        if node.target == exir_ops.edge.aten.slice_copy.Tensor
+    )
+
+    assert slice_node.args[1:] == (1, 0, -6)
+
+
+def test_rewrite_slice_keeps_slice_with_empty_unsliced_dimension():
+    class SliceSecondDimension(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, 3, 1)
+
+    rewritten = _rewrite_slice_with_dynamic_shapes(
+        SliceSecondDimension(),
+        (torch.ones(0, 5),),
+        None,
+    )
+
+    assert any(
+        node.target == exir_ops.edge.aten.slice_copy.Tensor
+        for node in rewritten.graph.nodes
+    )
+    assert all(
+        node.target != exir_ops.backend.tosa.SLICE.default
+        for node in rewritten.graph.nodes
+    )
+
+
+def test_rewrite_slice_keeps_symbolic_bound():
+    class SymbolicBoundSlice(torch.nn.Module):
+        def forward(self, x):
+            return torch.ops.aten.slice.Tensor(x, 1, 0, x.shape[0], 1)
+
+    rewritten = _rewrite_slice_with_dynamic_shapes(
+        SymbolicBoundSlice(),
+        (torch.ones(4, 5),),
+        {"x": {0: torch.export.Dim("batch", min=2, max=5)}},
+    )
+
+    slice_node = next(
+        node
+        for node in rewritten.graph.nodes
+        if node.target == exir_ops.edge.aten.slice_copy.Tensor
+    )
+
+    assert isinstance(slice_node.args[3], Node)

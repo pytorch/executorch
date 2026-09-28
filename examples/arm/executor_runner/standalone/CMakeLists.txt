@@ -59,6 +59,8 @@ if(EXISTS "${_executorch_preset_cmake}")
 endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+executorch_try_enabling_ccache()
+
 option(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES
        "Skip install() rules for standalone arm_executor_runner builds" ON
 )

@@ -850,3 +850,19 @@ class TestCombineRecipesQuantization(unittest.TestCase):
         )
         result = ExportRecipe.combine([r1, r2])
         self.assertEqual(result.quantization_recipe.pre_prepare_passes, [p])
+
+    def test_combine_generate_etrecord_or_semantics_true_false(self) -> None:
+        # Any recipe requesting ETRecord generation must make the combined recipe
+        # request it as well.
+        r1 = ExportRecipe(name="a", generate_etrecord=True)
+        r2 = ExportRecipe(name="b", generate_etrecord=False)
+        result = ExportRecipe.combine([r1, r2])
+        self.assertTrue(result.generate_etrecord)
+
+    def test_combine_generate_etrecord_false_when_none_set(self) -> None:
+        # When no recipe requests ETRecord generation the combined recipe must
+        # not request it either.
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertFalse(result.generate_etrecord)

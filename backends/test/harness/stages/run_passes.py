@@ -17,7 +17,9 @@ class RunPasses(Stage):
         self.pass_manager_cls = pass_manager_cls
         self.pass_list = pass_list
         self.pass_functions = pass_functions
-        self.edge_or_aten_program = None
+        self.edge_or_aten_program: Optional[
+            Union[EdgeProgramManager, ExportedProgram]
+        ] = None
 
     def stage_type(self) -> StageType:
         return StageType.RUN_PASSES

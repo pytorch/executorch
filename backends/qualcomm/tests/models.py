@@ -1205,6 +1205,40 @@ class Embedding(torch.nn.Module):
         return self.embedding(x)
 
 
+class EmptyMemoryFormat(torch.nn.Module):
+    def __init__(self, shape=None, dtype=None, memory_format=torch.contiguous_format):
+        super().__init__()
+        self.shape = shape
+        self.dtype = dtype
+        self.memory_format = memory_format
+
+    def forward(self, x):
+        empty = torch.empty(
+            x.shape if self.shape is None else self.shape,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+            memory_format=self.memory_format,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+
+class EmptyStrided(torch.nn.Module):
+    def __init__(self, shape, strides, dtype=None):
+        super().__init__()
+        self.shape = shape
+        self.strides = strides
+        self.dtype = dtype
+
+    def forward(self, x):
+        # empty_strided() returns uninitialized memory, so zeros_like is used to
+        # make the result deterministic and comparable against the eager reference
+        empty = torch.empty_strided(
+            self.shape,
+            self.strides,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+
 class Equal(torch.nn.Module):
     def __init__(self):
         super().__init__()

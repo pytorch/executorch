@@ -18,6 +18,13 @@ endif()
 
 if(EXECUTORCH_BUILD_ROCM)
   find_package(hip CONFIG REQUIRED)
+else()
+  # Found here rather than relied on from the parent scope. The Torch package
+  # found above defines this target only when Torch itself is a CUDA build, so
+  # the target was there by luck: a processor only Torch, or a platform where
+  # nothing else defines it, leaves the link below asking the linker for a file
+  # named after the target.
+  find_package(CUDAToolkit REQUIRED)
 endif()
 
 # SHARED on purpose: the caller-stream thread-local must have a single
@@ -44,11 +51,15 @@ if(EXECUTORCH_BUILD_ROCM)
 else()
   target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 endif()
-# device_guard.cpp logs, so this needs the ExecuTorch runtime. Taken through the
-# helper rather than as an ordinary dependency, because CMake would order the
-# static core ahead of the shared runtime and leave this library with its own
-# copy of the registries.
-executorch_target_link_shared_runtime(extension_cuda)
+# device_guard.cpp logs, so this needs the ExecuTorch runtime. Where one shared
+# runtime exists, the helper retains it, so a process has a single registry.
+# Where it does not, the helper does nothing, and this library carries the parts
+# of the static core it needs instead.
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_target_link_shared_runtime(extension_cuda)
+else()
+  target_link_libraries(extension_cuda PRIVATE executorch_core)
+endif()
 target_include_directories(extension_cuda PUBLIC ${_common_include_directories})
 target_compile_options(
   extension_cuda PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_common_compile_options}>"

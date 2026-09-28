@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,6 +18,32 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
+
+# Set ccache variables if the program exists.
+function(executorch_try_enabling_ccache)
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER
+        "${CCACHE_PROGRAM}"
+        PARENT_SCOPE
+    )
+    set(CMAKE_C_COMPILER_LAUNCHER
+        "${CCACHE_PROGRAM}"
+        PARENT_SCOPE
+    )
+    set(CCACHE_PROGRAM
+        "${CCACHE_PROGRAM}"
+        PARENT_SCOPE
+    )
+    message(STATUS "ccache found and enabled for faster builds")
+  else()
+    set(CCACHE_PROGRAM
+        "CCACHE_PROGRAM-NOTFOUND"
+        PARENT_SCOPE
+    )
+    message(STATUS "ccache not found, builds will not be cached")
+  endif()
+endfunction()
 
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
 # target_link_options is broken for this case, it only append the interface link

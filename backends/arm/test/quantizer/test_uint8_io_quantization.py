@@ -11,7 +11,10 @@ from executorch.backends.arm.quantizer import (
     TOSAQuantizer,
 )
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeline
+from executorch.backends.arm.test.tester.test_pipeline import (
+    QuantizationPipeline,
+    TosaPipelineINT,
+)
 from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
@@ -123,9 +126,13 @@ def test_io_boundary_shared_cluster_is_quantized():
     ), "clone node has no output_qspec — IO-boundary cluster stayed in float"
 
 
-def test_cat_does_not_bridge_shared_qspec_clusters():
-    """Regression: cat must not merge image IO and high-range activations into
-    one fallback shared-qspec observer clique.
+def test_cat_annotation_uint8_input():
+    """Depending on the location of the cat, we use different observers.
+
+    If we have uint8 inputs followed immediately by a cat, we observer each
+    uint8 input independently. If we have a cat further-on in the graph, outside
+    of the uint8 boundary, we annotate the cat with a SharedObserver as usual.
+
     """
     model = CatWithHighRangeBranch().eval()
     test_data = (torch.rand(1, 3, 8, 8), torch.rand(1, 3, 8, 8))
@@ -144,10 +151,24 @@ def test_cat_does_not_bridge_shared_qspec_clusters():
     img1_observer = next(iter(graph_nodes["img1"].users))
     clone_observer = next(iter(graph_nodes["clone"].users))
 
-    assert _get_observer_scale(prepared, img0_observer.target) < 0.01
-    assert _get_observer_scale(prepared, img1_observer.target) < 0.01
-    assert Q_ANNOTATION_KEY not in graph_nodes["cat_1"].meta
+    img0_scale = _get_observer_scale(prepared, img0_observer.target)
+    img1_scale = _get_observer_scale(prepared, img1_observer.target)
+    assert img0_scale < 0.01
+    assert img1_scale < 0.01
+    # For uint8 input, the two inputs are observerd independently, hence need to
+    # have different scales on the two input images.
+    assert img0_scale != img1_scale
     assert _get_observer_scale(prepared, clone_observer.target) > 0.05
+
+    second_cat = graph_nodes["cat_1"]
+    img_observer, high_range_observer = second_cat.args[0]
+
+    img_scale = _get_observer_scale(prepared, img_observer.target)
+    high_range_scale = _get_observer_scale(prepared, high_range_observer.target)
+    # For the second cat, we need to have the same scale on the inputs being concatenated
+    # because everything outside of the IO boundary is annotated as per the
+    # backends/arm/quantizer/quantization_annotator.py
+    assert img_scale == high_range_scale
 
 
 def test_internal_cat_still_shares_qspec_with_uint8_io():
@@ -175,3 +196,33 @@ def test_internal_cat_still_shares_qspec_with_uint8_io():
 
     assert Q_ANNOTATION_KEY in cat_node.meta
     assert cat_node.meta[Q_ANNOTATION_KEY].output_qspec is not None
+
+
+class SliceModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x[:, :3, :, :]
+        return self.conv(x)
+
+
+def test_uint8_slice_tosa() -> None:
+    """Make sure that the SLICE operator is delegated after
+    to_edge_transform_and_lower.
+    """
+    test_data = (torch.rand(1, 6, 768, 384),)
+    model = SliceModel().eval()
+    pipeline = TosaPipelineINT(
+        model,
+        test_data,
+        aten_op="torch.ops.aten.conv2d.default",
+        run_on_tosa_ref_model=False,
+    )
+    pipeline.quantizer.set_io(get_uint8_io_quantization_config())
+    pipeline.change_args(
+        "check_not.exir",
+        ["executorch_exir_dialects_edge__ops_aten_"],
+    )
+    pipeline.run()

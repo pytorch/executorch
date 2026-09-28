@@ -6,7 +6,7 @@ This page lists Ethos-U55-supported PyTorch APIs and the dtype and quantization 
 
 `8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
 
-Total supported PyTorch APIs: **101**.
+Total supported PyTorch APIs: **103**.
 
 | PyTorch API | Support profile | DType | Quantization mode |
 | --- | --- | --- | --- |
@@ -18,6 +18,7 @@ Total supported PyTorch APIs: **101**.
 | `torch.amax` | INT | `INT8` | 8x8 |
 | `torch.amin` | INT | `INT8` | 8x8 |
 | `torch.arange` | INT | `INT8` | 8x8 |
+| `torch.argmax` | INT | `INT8` | 8x8 |
 | `torch.as_strided_copy` | INT | `INT8` | 8x8 |
 | `torch.asin` | INT | `INT8` | 8x8 |
 | `torch.asinh` | INT | `INT8` | 8x8 |
@@ -101,6 +102,7 @@ Total supported PyTorch APIs: **101**.
 | `torch.t` / `torch.Tensor.t` | INT | `INT8` | 8x8 |
 | `torch.tan` | INT | `INT8` | 8x8 |
 | `torch.tanh` / `torch.nn.Tanh` | INT | `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.Tensor.__getitem__` / `tensor indexing` | INT | `INT8` | 8x8 |
 | `torch.Tensor.__getitem__` / `tensor slicing` | INT | `INT8`, `INT16` | 8x8, 16x8 |
 | `torch.Tensor.copy_` | INT | `INT8` | 8x8 |
 | `torch.Tensor.expand` | INT | `INT8` | 8x8 |

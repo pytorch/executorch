@@ -143,12 +143,14 @@ class CanonicalizeConv(ExportPass):
                     continue
 
                 input_node = node.args[ConvParamIdx.INPUT]
+                filter_node = node.args[ConvParamIdx.WEIGHT]
                 filter_placeholder_node = (
-                    # FP graph
-                    node.args[ConvParamIdx.WEIGHT]
-                    if node.args[ConvParamIdx.WEIGHT].op == "placeholder"
+                    # FP graph; a get_attr weight comes from an earlier pass
+                    # that rewrote it (e.g. FuseBatchNormWithConv)
+                    filter_node
+                    if filter_node.op in ("placeholder", "get_attr")
                     # QDQ graph
-                    else node.args[ConvParamIdx.WEIGHT].args[0]
+                    else filter_node.args[0]
                 )
                 filter_tensor = (
                     get_parameter(filter_placeholder_node, self.edge_program)

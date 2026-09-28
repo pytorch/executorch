@@ -413,6 +413,8 @@ def test_symbolic_to_tosa_shapes_runs_for_shape_marked_list_without_sym_size() -
         (operator.mul, exir_ops.backend.tosa.MUL_SHAPE.default),
         (operator.mod, exir_ops.backend.tosa.MOD_SHAPE.default),
         (operator.floordiv, exir_ops.backend.tosa.DIV_FLOOR_SHAPE.default),
+        (max, exir_ops.backend.tosa.MAX_SHAPE.default),
+        (min, exir_ops.backend.tosa.MIN_SHAPE.default),
     ],
 )
 def test_symbolic_to_tosa_shapes_maps_symbolic_arithmetic_ops(

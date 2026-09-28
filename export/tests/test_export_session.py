@@ -284,6 +284,39 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         self.assertEqual(session._run_context["session_name"], "test_session")
         self.assertIsNotNone(session._run_context["constant_methods"])
 
+    def test_generate_etrecord_from_recipe(self) -> None:
+        # When the recipe has generate_etrecord=True and the param is False,
+        # the effective value in the run context must be True.
+        recipe = ExportRecipe(name="test", generate_etrecord=True)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_from_param_overrides_recipe(self) -> None:
+        # The explicit parameter must win when the recipe has generate_etrecord=False.
+        recipe = ExportRecipe(name="test", generate_etrecord=False)
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+            generate_etrecord=True,
+        )
+        self.assertTrue(session._run_context["generate_etrecord"])
+
+    def test_generate_etrecord_false_when_neither_set(self) -> None:
+        # Both the recipe and the explicit parameter default to False, so the
+        # effective value must also be False.
+        recipe = ExportRecipe(name="test")
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        self.assertFalse(session._run_context["generate_etrecord"])
+
     def test_stage_registry_unknown_stage_type(self) -> None:
         # Test error handling for unknown stage types in pipeline
         unknown_stage_type = Mock()

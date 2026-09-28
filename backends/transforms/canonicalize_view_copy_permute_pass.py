@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Any, cast, Iterable, Sequence, Set, Type
 
 import torch
@@ -104,12 +105,17 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
         """Returns a list of linear chains of view/permutes in the graph."""
         chains: list[list[Node]] = []
 
-        view_permute_nodes = [
+        view_permute_nodes = deque(
             node for node in graph_module.graph.nodes if node.target in self._targets
-        ]
+        )
+        remaining = set(view_permute_nodes)
 
         while view_permute_nodes:
-            node = view_permute_nodes.pop(0)
+            node = view_permute_nodes.popleft()
+            if node not in remaining:
+                continue
+            remaining.remove(node)
+
             chain = [node]
             current = node
 
@@ -117,7 +123,11 @@ class CanonicalizeViewCopyPermutePass(ExportPass):
                 user = next(iter(current.users))
                 if user.target not in self._targets:
                     break
-                view_permute_nodes.remove(user)
+                if user not in remaining:
+                    raise RuntimeError(
+                        f"View/permute node {user.name} belongs to multiple chains"
+                    )
+                remaining.remove(user)
                 chain.append(user)
                 current = user
 

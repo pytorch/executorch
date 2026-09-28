@@ -1,0 +1,13 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Model Explorer adapters currently require Python >=3.10,<3.13. These are
+# installed in an isolated target directory by examples/arm/setup.sh because
+# their FlatBuffers requirement conflicts with the TOSA toolchain.
+
+numpy >= 2.0, < 2.2
+ai-edge-model-explorer == 0.1.28
+pte-adapter-model-explorer == 0.0.2
+tosa-adapter-model-explorer == 0.1.0

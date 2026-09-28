@@ -6,6 +6,10 @@
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
+if(EXECUTORCH_BUILD_NXP_NEUTRON_EXTERNAL_MEM)
+  add_compile_definitions(EXTERNAL_MEM)
+endif()
+
 set(_neutron_sources ${CMAKE_CURRENT_SOURCE_DIR}/runtime/NeutronBackend.cpp)
 
 add_library(executorch_delegate_neutron STATIC ${_neutron_sources})

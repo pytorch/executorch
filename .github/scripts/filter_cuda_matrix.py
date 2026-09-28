@@ -46,19 +46,24 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 # ExecuTorch wheel for the same CUDA version, and a missing version means that consumer has
 # nothing to depend on:
 #
-#   cu126   the floor, and what Jetson devices are limited to
-#   cu130   the generator's stable choice, and the default for accelerator consumers
+#   cu130   the floor, the generator's stable choice, and the default for accelerator consumers
 #   cu132   a current TensorRT build target
 #   cu134   the newest, which consumers building against the latest CUDA need
 #
 # Skip wholly absent trains so an upstream removal cannot block the remaining releases.
 # Offered trains must still cover every supported Python version.
 #
+# cu126 was the floor until PyTorch stopped offering it on the nightly channel. The generator
+# still offers it when a release is cut, so keeping it here would publish a train that no
+# nightly has built since, and a release is the wrong place to find out that it no longer
+# builds. A machine on CUDA 12.6 can still build from source, where the pinned torch comes
+# from a channel that carries 12.6.
+#
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
 # minor versions are compatible, so a cu132 wheel has been run end to end on a CUDA 13.0
 # device. The packaging properties are checked on every row regardless.
-SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132", "cu134"]
+SUPPORTED_CUDA_VERSIONS: List[str] = ["cu130", "cu132", "cu134"]
 
 # Python versions to publish, stated rather than derived for the same reason the CUDA
 # versions are. Deriving them from the rows that survived the filter made the release
@@ -81,11 +86,10 @@ PR_CUDA_VERSION: str = "cu130"
 # Jetson devices are their own row: a JetPack image, one Python version, and one CUDA
 # version. Kept empty on purpose today, so no Jetson row is emitted.
 #
-# The generic aarch64 CUDA 12.6 wheel does compile sm_87 device code for one embedded
-# module, so the wheel itself is not the blocker. What is: published PyTorch stopped
-# shipping sm_87 device code after 2.8.0, so a Jetson row today would produce a wheel
-# whose PyTorch dependency cannot execute on the device. Populate this when that
-# changes.
+# Published PyTorch stopped shipping sm_87 device code after 2.8.0, so a Jetson row today
+# would produce a wheel whose PyTorch dependency cannot execute on the device. The aarch64
+# CUDA 12.6 row, which was the one that compiled sm_87 device code for an embedded module,
+# is no longer published either. Populate this when both change.
 #
 # Because both lists are empty, asking for the JetPack rows can only produce an empty result.
 # No workflow asks, and the request is rejected up front with that reason rather than left to

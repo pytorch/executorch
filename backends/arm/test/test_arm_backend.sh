@@ -539,12 +539,13 @@ _test_smaller_stories_llama() {
     # Get path to source directory
     pytest \
     -c /dev/null \
+    --rootdir="${et_root_dir}" \
     "${PYTEST_RETRY_ARGS[@]}" \
     --verbose \
     --color=yes \
     --durations=0 \
     backends/arm/test/models/test_llama.py \
-    -k "${backend}" \
+    -k "test_llama_${backend}" \
     --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
 
     echo "${TEST_SUITE_NAME}: PASS"

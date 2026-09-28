@@ -117,5 +117,5 @@ class CortexMQuantizer(ComposableQuantizer):
         return None
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        pass_manager = CortexMPassManager(None)
+        pass_manager = CortexMPassManager()
         return pass_manager.transform_for_annotation(model)

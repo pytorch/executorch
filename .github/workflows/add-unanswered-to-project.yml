@@ -12,14 +12,24 @@ on:
     paths:
       - .github/workflows/add-unanswered-to-project.yml
 
+permissions: {}
+
 jobs:
   add_to_project:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate executorch-triage installation token
+        id: generate-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.EXECUTORCH_TRIAGE_CLIENT_ID }}
+          private-key: ${{ secrets.EXECUTORCH_TRIAGE_APP }}
+          owner: pytorch
+          repositories: executorch
       - name: Add open issues and open, non-draft PRs to org project and label external PRs (excluding certain authors and bots)
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.ET_EXT_CONTRIB }}
+          github-token: ${{ steps.generate-token.outputs.token }}
           script: |
             const projectId = "PVT_kwDOAUB9vs4A_PUL"; // PyTorch org project 136
             const owner = 'pytorch';
@@ -53,7 +63,7 @@ jobs:
               "MatthiasHertel80", "AlexTawseArm", "jmahbs", "morgolock", "Christoffer-JL", "ArmRyan", "xingguo01", "tgonzalezorlandoarm",
               "chizkiyahu", "sarah-blades", "itsMarco-G", "usamahz", "Rob-Hughes-Arm", "swha815", "FabulousSuperDude",
               "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", "jethroqti",
-              "chenweng-quic", "qti-horodnic", "qti-mmadhava", "quic-boyuc", "zhaoxul-qti",
+              "chenweng-quic", "qti-horodnic", "qti-mmadhava", "quic-boyuc", "zhaoxul-qti", "paul1106", "quic-xiyushi",
               "cymbalrush", "DenisVieriu97", "billmguo",
               "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "MartinPavella", "roman-janik-nxp", "novak-vaclav", "irtrukhina",
               "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", "ynimmaga", "daniil-lyakhov",

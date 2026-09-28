@@ -9,6 +9,7 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 #include <tuple>
+#include <type_traits>
 
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
@@ -29,7 +30,7 @@ void layer_norm(
     IntArrayRef normalized_shape,
     const optional<Tensor>& weight,
     const optional<Tensor>& bias,
-    CTYPE eps,
+    double eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
@@ -72,11 +73,10 @@ void layer_norm(
   const bool gamma_null = gamma_data == nullptr;
   const bool beta_null = beta_data == nullptr;
 
-  // For small normalized dimensions, fall back to the portable scalar
-  // implementation since SIMD vectorization setup/tail-handling overhead
-  // exceeds the benefit for small N.
+  // RowwiseMoments lacks reduced-precision vector loads. The scalar path also
+  // avoids SIMD setup/tail-handling overhead for small normalized dimensions.
   constexpr size_t kSmallNThreshold = 256;
-  if (N < kSmallNThreshold) {
+  if (N < kSmallNThreshold || !std::is_same_v<CTYPE, acc_t<CTYPE>>) {
     layer_norm_scalar<CTYPE>(
         input_data,
         gamma_data,
@@ -97,7 +97,8 @@ void layer_norm(
     acc_t<CTYPE> mean_val;
     acc_t<CTYPE> rstd_val;
     std::tie(mean_val, rstd_val) = RowwiseMoments(src_ptr, N);
-    rstd_val = CTYPE(1) / std::sqrt(rstd_val + eps);
+    rstd_val =
+        acc_t<CTYPE>(1) / std::sqrt(rstd_val + static_cast<acc_t<CTYPE>>(eps));
 
     const acc_t<CTYPE> scale = rstd_val;
     const acc_t<CTYPE> offset = -rstd_val * mean_val;

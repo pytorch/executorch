@@ -67,6 +67,20 @@ TEST_F(OpNarrowCopyOutTest, AllDtypesSupported) {
 #undef TEST_ENTRY
 }
 
+TEST_F(OpNarrowCopyOutTest, NegativeDimSupported) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor input = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+  Tensor out = tf.zeros({2, 2});
+  Tensor expected = tf.make({2, 2}, {2, 3, 5, 6});
+
+  Tensor ret =
+      op_narrow_copy_out(input, /*dim=*/-1, /*start=*/1, /*length=*/2, out);
+
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, expected);
+}
+
 TEST_F(OpNarrowCopyOutTest, EmptyInputSupported) {
   TensorFactory<ScalarType::Int> tf;
 

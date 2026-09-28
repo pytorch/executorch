@@ -215,6 +215,7 @@ jobs:
           "kernels_optimized"
           "kernels_quantized"
           "kernels_torchao"
+          "kleidiai"
           "threadpool"
         )
 
