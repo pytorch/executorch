@@ -242,15 +242,7 @@ if(EXECUTORCH_BUILD_SHARED)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
-# Enable ccache if available
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  message(STATUS "ccache found and enabled for faster builds")
-else()
-  message(STATUS "ccache not found, builds will not be cached")
-endif()
+executorch_try_enabling_ccache()
 announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -840,6 +832,9 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
+endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL
    OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
@@ -1095,6 +1090,32 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
+  # pip decides where the wheel lands, so the wheel's copy of this file locates
+  # everything relative to its own location.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    set(_executorch_pc_definitions "-DC10_USING_CUSTOM_GENERATED_MACROS")
+    if(EXECUTORCH_ENABLE_EVENT_TRACER)
+      string(APPEND _executorch_pc_definitions " -DET_EVENT_TRACER_ENABLED")
+    endif()
+    # Matches the CMake package, which adds both to the runtime whenever the
+    # thread pool ships. Without the definition, parallel_for runs serially.
+    set(_executorch_pc_libs "-lexecutorch")
+    if(TARGET extension_threadpool)
+      string(APPEND _executorch_pc_definitions " -DET_USE_THREADPOOL")
+      string(APPEND _executorch_pc_libs " -lexecutorch_threadpool")
+    endif()
+    # Separate arguments, because Meson only keeps a dependency's rpath at
+    # install when the argument starts with -Wl,-rpath.
+    if(APPLE)
+      set(_executorch_pc_rpath "-Wl,-rpath,\${libdir}")
+    else()
+      set(_executorch_pc_rpath "-Wl,--enable-new-dtags -Wl,-rpath,\${libdir}")
+    endif()
+    configure_file(
+      tools/cmake/executorch-wheel.pc.in
+      ${CMAKE_CURRENT_BINARY_DIR}/executorch-wheel.pc @ONLY
+    )
+  endif()
 endif()
 
 # The macro changes the layout of the tracer scope objects, so a consumer
