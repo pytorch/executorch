@@ -16,3 +16,11 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:graph_utils",
         ],
     )
+
+    runtime.cxx_test(
+        name = "memory_planning_test",
+        srcs = ["test_memory_planning.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/graph:memory_planning",
+        ],
+    )
