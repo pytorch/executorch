@@ -156,7 +156,9 @@ table QuantSpec {
 
 // A tensor dimension as a range. Static: min == max. Dynamic: min < max, or max < 0
 // for unbounded. No symbols; the runtime uses concrete shapes at invocation and
-// plans memory from max.
+// plans memory from max. An input size is valid iff min <= size <= max. min is the
+// exported program's declared bound; torch.export traces a declared min of 0 or 1 as
+// 2, so the graph is only as correct at those sizes as torch.export makes it.
 table Dim {
     min: long;
     max: long = -1;
