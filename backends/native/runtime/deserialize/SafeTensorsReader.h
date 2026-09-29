@@ -64,7 +64,8 @@ class SafeTensorsReader {
     return names_;
   }
 
-  // Total payload bytes across all entries.
+  // Total payload bytes across all entries. Throws std::runtime_error if the
+  // sum is not representable as size_t.
   size_t total_bytes() const;
 };
 

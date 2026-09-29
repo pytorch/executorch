@@ -1,6 +1,13 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    runtime.cxx_library(
+        name = "checked_math",
+        srcs = [],
+        exported_headers = ["CheckedMath.h"],
+        visibility = ["//executorch/backends/native/runtime/deserialize/..."],
+    )
+
     # Borrowed byte-range view shared by the package readers (a std::span alias,
     # named so the borrow contract has somewhere to live).
     runtime.cxx_library(
@@ -48,7 +55,10 @@ def define_common_targets():
             ":byte_span",
             "//executorch/backends/native/runtime/graph:scalar_type",
         ],
-        deps = [":json"],
+        deps = [
+            ":checked_math",
+            ":json",
+        ],
         visibility = ["//executorch/backends/native/..."],
     )
     # The .ptn package: program flatbuffer plus its constants.
@@ -65,4 +75,12 @@ def define_common_targets():
         ],
         deps = [":json"],
         visibility = ["PUBLIC"],
+    )
+    runtime.cxx_test(
+        name = "reader_bounds_test",
+        srcs = ["test/ReaderBoundsTest.cpp"],
+        deps = [
+            ":safetensors_reader",
+            ":zip_reader",
+        ],
     )
