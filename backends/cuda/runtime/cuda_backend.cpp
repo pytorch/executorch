@@ -460,7 +460,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (auto spec = context.get_runtime_spec<const char*>(
             ::executorch::extension::llm::cache::kCacheKeyOption);
         spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
-#if defined(EXECUTORCH_CUDA_OFFGRAPH_KV_CACHE)
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
       ET_CHECK_OK_OR_RETURN_ERROR(
           attach_offgraph_kv_cache(*handle, spec.get(), kv_step_width));
 #else
