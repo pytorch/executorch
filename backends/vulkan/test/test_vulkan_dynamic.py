@@ -729,7 +729,18 @@ class TestVulkanDynamic(unittest.TestCase):
                 [-torch.inf, -10000, -4, -0.0, 0.0, 1, 10000, torch.inf, torch.nan],
                 dtype=dtype,
             ).repeat(3, 1)
-            for exponent in (-3, -0.5, 0, 0.5, 2, 3, torch.inf, -torch.inf):
+            for exponent in (
+                -3,
+                -0.5,
+                0,
+                0.5,
+                2,
+                2.0001,
+                3,
+                2049,
+                torch.inf,
+                -torch.inf,
+            ):
                 for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
                     with self.subTest(dtype=dtype, exponent=exponent, storage=storage):
                         model = Power(exponent)
