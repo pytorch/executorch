@@ -3,19 +3,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
-from pathlib import Path
 from typing import Tuple
 
 import pytest
 import torch
 from executorch.backends.arm.scripts.neural_graphics_test_data import (
-    iter_calibration_samples,
-    load_verification_inputs,
-    nss_test_calibration_path,
+    _NSS_INPUT_CHANNELS,
+    iter_nss_test_calibration_samples,
+    load_nss_verification_inputs,
 )
 
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.models.model_test_utils import (
+    PTQ_AND_QAT_DATA,
+    REAL_AND_RANDOM_DATA,
+    skip_if_frozen_release,
+)
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -33,18 +36,7 @@ from torch.export import Dim
 
 input_t = Tuple[torch.Tensor]  # Input x
 
-_RELEASE_REFS = (
-    os.environ.get("GITHUB_REF", ""),
-    os.environ.get("GITHUB_REF_NAME", ""),
-    os.environ.get("GITHUB_BASE_REF", ""),
-)
-_IS_FROZEN_RELEASE = any(
-    ref.removeprefix("refs/heads/").startswith("release/") for ref in _RELEASE_REFS
-)
-pytestmark = pytest.mark.skipif(
-    _IS_FROZEN_RELEASE,
-    reason="NSS tests depend on resources fetched from main.",
-)
+pytestmark = skip_if_frozen_release("NSS")
 
 _NSS_HEIGHT = 8 * Dim("_nss_height", min=16, max=68)
 _NSS_WIDTH = 8 * Dim("_nss_width", min=16, max=120)
@@ -80,36 +72,22 @@ def nss() -> AutoEncoderV1:
 
 
 def example_inputs():
-    return load_verification_inputs()
+    return load_nss_verification_inputs()
 
 
 def random_inputs():
-    return (torch.rand((1, 12, 544, 960)),)
+    return (torch.rand((1, _NSS_INPUT_CHANNELS, 544, 960)),)
 
 
-input_test_data = {
-    "real_data": True,
-    "random_data": False,
-}
-
-
-def _nss_calibration_path() -> Path:
-    path = nss_test_calibration_path()
-    if not path.exists():
-        raise RuntimeError(
-            "NSS calibration data is prepared by "
-            "backends/arm/scripts/install_models_for_test.sh."
-        )
-    return path
+input_test_data = REAL_AND_RANDOM_DATA
+is_qat_test_data = PTQ_AND_QAT_DATA
 
 
 def _set_nss_calibration_samples(pipeline):
-    quantize_stage = pipeline._stages[pipeline.find_pos("quantize")].args[0]
-    quantize_stage.dynamic_shapes = _NSS_QUANTIZATION_DYNAMIC_SHAPES
-    quantize_stage.calibration_samples = iter_calibration_samples(
-        _nss_calibration_path(), num_samples=3663
+    return pipeline.set_quantization_calibration(
+        iter_nss_test_calibration_samples(),
+        dynamic_shapes=_NSS_QUANTIZATION_DYNAMIC_SHAPES,
     )
-    return pipeline
 
 
 @common.parametrize("use_real_data", input_test_data)
@@ -126,17 +104,27 @@ def test_nss_tosa_FP(use_real_data):
     pipeline.run()
 
 
+@common.parametrize("is_qat", is_qat_test_data)
 @common.parametrize("use_real_data", input_test_data)
-def test_nss_tosa_INT(use_real_data):
-    pipeline_kwargs = (
-        {"frobenius_threshold": 0.32, "qtol": 12} if use_real_data else {"qtol": 7}
-    )
+def test_nss_tosa_INT(use_real_data, is_qat):
+    if is_qat:
+        pipeline_kwargs = {
+            # Frobenius norm & cosine theshold check disabled for QAT as smoke test has innacurate results and only checks flow functionality.
+            "frobenius_threshold": None,
+            "cosine_threshold": None,
+            "qtol": 12 if use_real_data else 8,
+        }
+    else:
+        pipeline_kwargs = (
+            {"frobenius_threshold": 0.32, "qtol": 12} if use_real_data else {"qtol": 7}
+        )
     pipeline = TosaPipelineINT[input_t](
         nss().eval(),
         example_inputs() if use_real_data else random_inputs(),
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        is_qat=is_qat,
         **pipeline_kwargs,
     )
     if use_real_data:
@@ -194,8 +182,9 @@ def test_nss_vgf_FP(use_real_data):
 
 
 @common.SkipIfNoModelConverter
+@common.parametrize("is_qat", is_qat_test_data)
 @common.parametrize("use_real_data", input_test_data)
-def test_nss_vgf_INT(use_real_data):
+def test_nss_vgf_INT(use_real_data, is_qat):
     pipeline = VgfPipeline[input_t](
         nss().eval(),
         example_inputs() if use_real_data else random_inputs(),
@@ -205,45 +194,11 @@ def test_nss_vgf_INT(use_real_data):
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
         quantize=True,
+        is_qat=is_qat,
         # Override tosa version to test INT-only path
         tosa_version="TOSA-1.0+INT",
-        qtol=12 if use_real_data else 7,
+        qtol=12 if use_real_data else (8 if is_qat else 7),
     )
     if use_real_data:
         _set_nss_calibration_samples(pipeline)
-    pipeline.run()
-
-
-def test_nss_qat_tosa_INT() -> None:
-    pipeline = TosaPipelineINT[input_t](
-        nss().eval(),
-        example_inputs(),
-        aten_op=[],
-        exir_op=[],
-        use_to_edge_transform_and_lower=True,
-        is_qat=True,
-        frobenius_threshold=None,
-        cosine_threshold=None,
-        qtol=12,
-    )
-    _set_nss_calibration_samples(pipeline)
-    pipeline.run()
-
-
-@common.SkipIfNoModelConverter
-def test_nss_qat_vgf_INT() -> None:
-    pipeline = VgfPipeline[input_t](
-        nss().eval(),
-        example_inputs(),
-        aten_op=[],
-        exir_op=[],
-        symmetric_io_quantization=True,
-        use_to_edge_transform_and_lower=True,
-        run_on_vulkan_runtime=True,
-        quantize=True,
-        is_qat=True,
-        tosa_version="TOSA-1.0+INT",
-        qtol=12,
-    )
-    _set_nss_calibration_samples(pipeline)
     pipeline.run()
