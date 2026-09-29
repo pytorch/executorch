@@ -19,7 +19,7 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(FILES types.h prompt_history.h serving_runtime.h
+install(FILES types.h prompt_history.h serving_runtime.h request_handle.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/serving
 )
 

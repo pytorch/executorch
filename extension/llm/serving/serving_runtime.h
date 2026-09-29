@@ -17,6 +17,7 @@
 
 #include <executorch/extension/llm/batching/executor.h>
 #include <executorch/extension/llm/batching/scheduler.h>
+#include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
 #include <executorch/runtime/platform/compiler.h>
 
@@ -29,9 +30,15 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
   // Reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
-  // Queued plus executing lifecycle operations, excluding completion
-  // callbacks. Must be non-zero.
+  // Queued plus executing lifecycle/generation-start operations, excluding
+  // completion callbacks. Must be non-zero.
   std::size_t max_pending_operations = 64;
+  // Requests retain an admission slot through terminal sink return.
+  std::size_t max_requests = 8;
+  // Buffered nonterminal events and total buffered tokens per request. A
+  // separate terminal slot is reserved, but its tokens share the token budget.
+  std::size_t max_events_per_request = 16;
+  std::size_t max_tokens_per_request = 256;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
@@ -44,8 +51,9 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Owns one Runner and its scheduler. The borrowed executor must outlive
   // shutdown/destruction and must not be driven by another Runner concurrently.
   // Initialization happens on the engine thread. A null scheduler or zero
-  // session/operation limit leaves an inert runtime: info().ready is false and
-  // lifecycle operations return InvalidArgument, without starting threads.
+  // session, operation, request, or event/token limit leaves an inert runtime:
+  // no threads start, info().ready is false, and operations return
+  // InvalidArgument.
   ServingRuntime(
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
@@ -74,32 +82,37 @@ class ET_EXPERIMENTAL ServingRuntime {
   std::future<LifecycleResult> open_session_async(std::string key);
 
   // Idempotent, including absent keys. Success releases the logical slot and
-  // requests Session closure through RAII, not synchronous physical cleanup.
+  // cancels its active request. Session closure is through RAII, not
+  // synchronous physical cleanup.
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
 
   // Cold replacement, retaining the key and logical slot throughout. Success
   // means reopening completed. Failure destroys the old state and leaves the
   // key unavailable, still reserving its slot until reset succeeds or close
-  // releases it. A missing key returns SessionNotFound. Never uses prefix
-  // reuse.
+  // releases it. A missing key returns SessionNotFound. Cancels the old
+  // request; stale completion cannot claim the replacement. No prefix reuse.
   void reset_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> reset_session_async(std::string key);
 
   // A synchronized snapshot. Ready means initialized and accepting operations,
-  // not that capacity is available. Active slots include opening, reopening,
-  // and unavailable keys, but not commands still waiting to reserve a slot.
+  // not that capacity is available. Active slots include ephemeral sessions,
+  // opening, reopening, and unavailable keys, but not commands still waiting
+  // to reserve a slot.
   ServingInfo info() const;
 
   // Idempotent, including concurrent callers. Stops admission, completes all
-  // accepted operations, and joins the control and Runner threads. Accepted
-  // callbacks have returned and their runtime-owned captures are released.
-  // No new work is accepted afterward. Call only from external threads, never
-  // engine or lifecycle callbacks. Destruction calls shutdown; as usual, object
-  // lifetime must be synchronized against callers still accessing the runtime.
+  // accepted operations/requests, and joins control, Runner, and delivery
+  // threads. Accepted callbacks have returned and their runtime-owned captures
+  // are released. No new work is accepted afterward. Call only from external
+  // threads, never engine/lifecycle callbacks, sinks, or commit hooks. Callbacks
+  // must do bounded, nonblocking work and return for shutdown to finish.
+  // Destruction calls shutdown; as usual, object lifetime must be synchronized
+  // against callers still accessing the runtime.
   void shutdown();
 
  private:
+  friend struct detail::GenerationBridge;
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
