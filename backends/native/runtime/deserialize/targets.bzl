@@ -5,7 +5,21 @@ def define_common_targets():
         name = "checked_math",
         srcs = [],
         exported_headers = ["CheckedMath.h"],
-        visibility = ["//executorch/backends/native/runtime/deserialize/..."],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_library(
+        name = "deserialize_error",
+        srcs = [],
+        exported_headers = ["DeserializeError.h"],
+        visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_library(
+        name = "limits",
+        srcs = [],
+        exported_headers = ["Limits.h"],
+        visibility = ["//executorch/backends/native/..."],
     )
 
     # Borrowed byte-range view shared by the package readers (a std::span alias,
@@ -23,6 +37,7 @@ def define_common_targets():
         srcs = ["OwnedBytes.cpp"],
         exported_headers = ["OwnedBytes.h"],
         exported_deps = [":byte_span"],
+        deps = [":deserialize_error"],
         visibility = ["//executorch/backends/native/..."],
     )
 
@@ -31,6 +46,10 @@ def define_common_targets():
         name = "json",
         srcs = [],
         exported_headers = ["Json.h"],
+        exported_deps = [
+            ":deserialize_error",
+            ":limits",
+        ],
         exported_external_deps = ["nlohmann_json"],
         visibility = ["//executorch/backends/native/..."],
     )
@@ -42,7 +61,11 @@ def define_common_targets():
         srcs = ["ZipReader.cpp"],
         exported_headers = ["ZipReader.h"],
         exported_deps = [":byte_span"],
-        deps = ["fbsource//third-party/libzip:zip"],
+        deps = [
+            "fbsource//third-party/libzip:zip",
+            ":deserialize_error",
+            ":limits",
+        ],
         visibility = ["//executorch/backends/native/..."],
     )
 
@@ -57,7 +80,9 @@ def define_common_targets():
         ],
         deps = [
             ":checked_math",
+            ":deserialize_error",
             ":json",
+            ":limits",
         ],
         visibility = ["//executorch/backends/native/..."],
     )
@@ -73,14 +98,27 @@ def define_common_targets():
             ":zip_reader",
             "//executorch/backends/native/runtime/graph:scalar_type",
         ],
-        deps = [":json"],
+        deps = [
+            ":deserialize_error",
+            ":json",
+            ":limits",
+        ],
         visibility = ["PUBLIC"],
     )
     runtime.cxx_test(
         name = "reader_bounds_test",
         srcs = ["test/ReaderBoundsTest.cpp"],
         deps = [
+            ":deserialize_error",
+            ":json",
+            ":limits",
             ":safetensors_reader",
             ":zip_reader",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "package_test_data",
+        exported_headers = ["test/PackageTestData.h"],
+        visibility = ["//executorch/backends/native/..."],
     )

@@ -58,6 +58,9 @@ def define_common_targets():
         ],
         deps = [
             ":native_graph_schema",
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
         ],
         visibility = ["PUBLIC"],
     )
