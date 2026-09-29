@@ -36,20 +36,17 @@ def define_common_targets():
         # @lint-ignore BUCKLINT: Avoid `link_whole=True`
         link_whole = True,
         visibility = ["PUBLIC"],
-        exported_deps = [
-            "//executorch/backends/native/runtime/engine:engine",
-            "//executorch/runtime/core:core",
-        ],
+        exported_deps = ["//executorch/runtime/core:core"],
         deps = [
             ":method_meta_bridge",
             "//executorch/backends/native/runtime:method_meta",
             "//executorch/backends/native/runtime:runtime",
             "//executorch/backends/native/runtime:validation",
-            "//executorch/backends/native/runtime/deserialize:checked_math",
             "//executorch/backends/native/runtime/deserialize:deserialize_error",
             "//executorch/backends/native/runtime/deserialize:limits",
             "//executorch/backends/native/runtime/deserialize:owned_bytes",
             "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/engine:engine",
             "//executorch/extension/module:ptn_module_internal",
             "//executorch/runtime/platform:platform",
         ],

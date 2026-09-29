@@ -8,8 +8,11 @@
 
 #include <memory>
 
-#include <executorch/backends/native/runtime/engine/Engine.h>
 #include <executorch/runtime/core/error.h>
+
+namespace ptn {
+class EngineHost;
+}
 
 namespace executorch::extension::native_module {
 namespace internal {
