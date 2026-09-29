@@ -22,6 +22,60 @@ namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
+bool has_required_metadata(const executorch_flatbuffer::ExecutionPlan& plan) {
+  const auto* values = plan.values();
+  const auto* inputs = plan.inputs();
+  const auto* outputs = plan.outputs();
+  const auto* delegates = plan.delegates();
+  if (plan.name() == nullptr || values == nullptr || inputs == nullptr ||
+      outputs == nullptr || delegates == nullptr) {
+    return false;
+  }
+
+  for (flatbuffers::uoffset_t i = 0; i < values->size(); ++i) {
+    const auto* value = values->Get(i);
+    if (value == nullptr) {
+      return false;
+    }
+    if (value->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
+      const auto* tensor = value->val_as_Tensor();
+      if (tensor == nullptr || tensor->sizes() == nullptr ||
+          tensor->dim_order() == nullptr) {
+        return false;
+      }
+    }
+  }
+
+  const auto indices_are_valid = [values](const auto* indices) {
+    for (flatbuffers::uoffset_t i = 0; i < indices->size(); ++i) {
+      const int32_t index = indices->Get(i);
+      if (index < 0 || static_cast<size_t>(index) >= values->size()) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!indices_are_valid(inputs) || !indices_are_valid(outputs)) {
+    return false;
+  }
+
+  for (flatbuffers::uoffset_t i = 0; i < delegates->size(); ++i) {
+    const auto* delegate = delegates->Get(i);
+    if (delegate == nullptr || delegate->id() == nullptr) {
+      return false;
+    }
+  }
+  const auto* buffer_devices = plan.non_const_buffer_device();
+  if (buffer_devices != nullptr) {
+    for (flatbuffers::uoffset_t i = 0; i < buffer_devices->size(); ++i) {
+      if (buffer_devices->Get(i) == nullptr) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 Result<Tag> get_tag(
     flatbuffers::Vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>::
         return_type serialization_value,
@@ -152,9 +206,25 @@ std::string_view TensorInfo::name() const {
 MethodMeta::MethodMeta(const executorch_flatbuffer::ExecutionPlan* s_plan)
     : s_plan_(s_plan) {}
 
-MethodMeta MethodMeta::from_validated_execution_plan(
-    const executorch_flatbuffer::ExecutionPlan& plan) {
-  return MethodMeta(&plan);
+/*static*/ Result<MethodMeta> MethodMeta::from_serialized_execution_plan(
+    const void* data,
+    size_t size) {
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr && size >= sizeof(flatbuffers::uoffset_t),
+      InvalidProgram,
+      "Serialized execution plan is null or too small");
+  flatbuffers::Verifier verifier(static_cast<const uint8_t*>(data), size);
+  ET_CHECK_OR_RETURN_ERROR(
+      verifier.VerifyBuffer<executorch_flatbuffer::ExecutionPlan>(nullptr),
+      InvalidProgram,
+      "Serialized execution plan failed FlatBuffer verification");
+  const auto* plan =
+      flatbuffers::GetRoot<executorch_flatbuffer::ExecutionPlan>(data);
+  ET_CHECK_OR_RETURN_ERROR(
+      plan != nullptr && has_required_metadata(*plan),
+      InvalidProgram,
+      "Serialized execution plan is missing required metadata");
+  return MethodMeta(plan);
 }
 
 const char* MethodMeta::name() const {

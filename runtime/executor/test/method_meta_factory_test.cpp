@@ -19,7 +19,9 @@
 namespace executorch::runtime {
 namespace {
 
-TEST(MethodMetaFactoryTest, FromValidatedExecutionPlan_PreservesView) {
+static_assert(sizeof(MethodMeta) == sizeof(void*));
+
+TEST(MethodMetaFactoryTest, FromSerializedExecutionPlan_PreservesView) {
   flatbuffers::FlatBufferBuilder builder;
   const auto name = builder.CreateString("native_forward");
   const auto values = builder.CreateVector(
@@ -40,20 +42,72 @@ TEST(MethodMetaFactoryTest, FromValidatedExecutionPlan_PreservesView) {
       /*operators=*/0,
       delegates);
   builder.Finish(plan);
-  const auto* serialized =
-      flatbuffers::GetRoot<executorch_flatbuffer::ExecutionPlan>(
-          builder.GetBufferPointer());
+  const auto meta = MethodMeta::from_serialized_execution_plan(
+      builder.GetBufferPointer(), builder.GetSize());
 
-  const MethodMeta meta =
-      MethodMeta::from_validated_execution_plan(*serialized);
+  ASSERT_TRUE(meta.ok());
+  EXPECT_STREQ(meta->name(), "native_forward");
+  EXPECT_EQ(meta->num_inputs(), 0);
+  EXPECT_EQ(meta->num_outputs(), 0);
+  EXPECT_EQ(meta->num_attributes(), 0);
+  EXPECT_EQ(meta->num_memory_planned_buffers(), 0);
+  EXPECT_EQ(meta->num_backends(), 0);
+  EXPECT_EQ(meta->num_instructions(), 0);
+}
 
-  EXPECT_STREQ(meta.name(), "native_forward");
-  EXPECT_EQ(meta.num_inputs(), 0);
-  EXPECT_EQ(meta.num_outputs(), 0);
-  EXPECT_EQ(meta.num_attributes(), 0);
-  EXPECT_EQ(meta.num_memory_planned_buffers(), 0);
-  EXPECT_EQ(meta.num_backends(), 0);
-  EXPECT_EQ(meta.num_instructions(), 0);
+TEST(MethodMetaFactoryTest, FromSerializedExecutionPlan_RejectsTruncation) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto plan = executorch_flatbuffer::CreateExecutionPlan(builder);
+  builder.Finish(plan);
+
+  const auto meta = MethodMeta::from_serialized_execution_plan(
+      builder.GetBufferPointer(), builder.GetSize() - 1);
+
+  EXPECT_EQ(meta.error(), Error::InvalidProgram);
+}
+
+TEST(MethodMetaFactoryTest, FromSerializedExecutionPlan_RejectsNull) {
+  const auto meta = MethodMeta::from_serialized_execution_plan(
+      /*data=*/nullptr, /*size=*/0);
+
+  EXPECT_EQ(meta.error(), Error::InvalidProgram);
+}
+
+TEST(
+    MethodMetaFactoryTest,
+    FromSerializedExecutionPlan_RejectsMissingRequiredMetadata) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder, builder.CreateString("native_forward"));
+  builder.Finish(plan);
+
+  const auto meta = MethodMeta::from_serialized_execution_plan(
+      builder.GetBufferPointer(), builder.GetSize());
+
+  EXPECT_EQ(meta.error(), Error::InvalidProgram);
+}
+
+TEST(MethodMetaFactoryTest, FromSerializedExecutionPlan_RejectsInvalidInput) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      builder.CreateString("native_forward"),
+      /*container_meta_type=*/0,
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{}),
+      builder.CreateVector(std::vector<int32_t>{0}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      /*chains=*/0,
+      /*operators=*/0,
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{}));
+  builder.Finish(plan);
+
+  const auto meta = MethodMeta::from_serialized_execution_plan(
+      builder.GetBufferPointer(), builder.GetSize());
+
+  EXPECT_EQ(meta.error(), Error::InvalidProgram);
 }
 
 } // namespace
