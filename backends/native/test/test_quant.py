@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 
 from executorch.backends.native.serialization import deserialize_program
+from executorch.backends.native.serialization.graph_serialize import _pack_signed_int4
 from executorch.backends.native.serialization.schema import PackedQuant, ScalarType
 from executorch.backends.native.test.utils import (
     _call_function_targets,
@@ -96,3 +97,20 @@ class FuseGGUFPassTest(unittest.TestCase):
         packed = self._packed_constants(program)
         self.assertEqual(len(packed), 1)
         self.assertEqual(packed[0].meta.quant.scheme.codec, "gguf:q4_k")
+
+
+class SignedInt4PackingTest(unittest.TestCase):
+    def test_packs_even_value_into_low_nibble(self):
+        weight = torch.tensor([[-8, -7, 6, 7]], dtype=torch.int8)
+
+        packed = _pack_signed_int4(weight)
+
+        torch.testing.assert_close(
+            packed, torch.tensor([[0x10, 0xFE]], dtype=torch.uint8)
+        )
+
+    def test_rejects_values_outside_signed_int4_range(self):
+        for value in (-9, 8):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, r"\[-8, 7\]"):
+                    _pack_signed_int4(torch.tensor([[value, 0]], dtype=torch.int8))
