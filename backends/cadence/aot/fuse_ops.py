@@ -839,7 +839,10 @@ class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
         assert isinstance(dequant_node.args[1], Number)
         assert isinstance(mul_node.args[1], Number)
         # pyre-ignore[58]: Unsupported operand *
-        new_deq_args[1] = dequant_node.args[1] * mul_node.args[1]
+        new_scale = dequant_node.args[1] * mul_node.args[1]
+        if new_scale <= 0:
+            return False
+        new_deq_args[1] = new_scale
 
         # Replace all uses of mul with the dequant node
         mul_node.replace_all_uses_with(dequant_node)
@@ -925,6 +928,8 @@ class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
         if mul_scalar == 0 or old_scale == 0:
             return False
         new_scale = float(old_scale) / float(mul_scalar)
+        if new_scale <= 0:
+            return False
 
         logging.debug(
             f"Fused {node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
@@ -984,7 +989,10 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
         assert isinstance(deq_node.args[1], Number)
         assert isinstance(mplier_node.args[1], Number)
         # pyre-ignore[58]: Unsupported operand *
-        new_deq_args[1] = deq_node.args[1] * mplier_node.args[1]
+        new_scale = deq_node.args[1] * mplier_node.args[1]
+        if new_scale <= 0:
+            return False
+        new_deq_args[1] = new_scale
 
         logging.debug(
             f"Fused {node} and {mplier_node} into {deq_node}. Updated scale from {deq_node.args[1]} to {new_deq_args[1]}"
