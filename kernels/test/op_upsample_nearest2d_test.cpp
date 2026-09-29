@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -255,6 +256,66 @@ TEST_F(OpUpsampleNearest2dTest, MultiBatchAndChannel) {
           6.1, 6.1, 6.2, 6.2, 7.1, 7.1, 7.2, 7.2, 7.1, 7.1, 7.2, 7.2,
       });
 
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpUpsampleNearest2dTest, HalfTwoXOddDimensionsAndMultiplePlanes) {
+  TensorFactory<ScalarType::Half> tf;
+  using Half = TensorFactory<ScalarType::Half>::ctype;
+
+  std::vector<Half> input_data;
+  for (int i = 1; i <= 18; ++i) {
+    input_data.emplace_back(i);
+  }
+  const auto input = tf.make({1, 2, 3, 3}, input_data);
+
+  std::vector<Half> expected_data;
+  for (int64_t plane = 0; plane < 2; ++plane) {
+    for (int64_t h = 0; h < 3; ++h) {
+      for (int64_t h_repeat = 0; h_repeat < 2; ++h_repeat) {
+        for (int64_t w = 0; w < 3; ++w) {
+          const Half value = input_data[plane * 9 + h * 3 + w];
+          expected_data.push_back(value);
+          expected_data.push_back(value);
+        }
+      }
+    }
+  }
+  const auto expected = tf.make({1, 2, 6, 6}, expected_data);
+
+  std::array<int64_t, 2> output_size = {6, 6};
+  auto output_size_out = tf.zeros({1, 2, 6, 6});
+  op_upsample_nearest2d_out(
+      input,
+      OptionalArrayRef<int64_t>({output_size.data(), output_size.size()}),
+      {},
+      output_size_out);
+  EXPECT_TENSOR_EQ(output_size_out, expected);
+
+  std::array<double, 2> scale_factors = {2.0, 2.0};
+  auto scale_factor_out = tf.zeros({1, 2, 6, 6});
+  op_upsample_nearest2d_out(
+      input,
+      {},
+      OptionalArrayRef<double>({scale_factors.data(), scale_factors.size()}),
+      scale_factor_out);
+  EXPECT_TENSOR_EQ(scale_factor_out, expected);
+}
+
+TEST_F(OpUpsampleNearest2dTest, HalfNonTwoXScaleWithTwoXOutputShape) {
+  TensorFactory<ScalarType::Half> tf;
+  const auto input = tf.make({1, 1, 2, 2}, {1, 2, 3, 4});
+  std::array<double, 2> scale_factors = {2.4, 2.4};
+  auto out = tf.zeros({1, 1, 4, 4});
+
+  op_upsample_nearest2d_out(
+      input,
+      {},
+      OptionalArrayRef<double>({scale_factors.data(), scale_factors.size()}),
+      out);
+
+  const auto expected =
+      tf.make({1, 1, 4, 4}, {1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 2, 3, 3, 3, 4});
   EXPECT_TENSOR_EQ(out, expected);
 }
 

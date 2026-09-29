@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -104,6 +105,25 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ANDROID_ABI STREQUAL
   target_link_libraries(
     optimized_kernels
     PRIVATE $<BUILD_LOCAL_INTERFACE:grid_sampler_2d_fp16_hw_impl>
+  )
+endif()
+
+# The nearest-2x fast path uses only baseline AArch64 Advanced SIMD. Keep
+# arm_neon.h and its implementation out of all other architecture builds.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64" OR ANDROID_ABI STREQUAL
+                                                     "arm64-v8a"
+)
+  add_library(
+    upsample_nearest2d_neon_impl OBJECT
+    ${EXECUTORCH_ROOT}/kernels/optimized/cpu/op_upsample_nearest2d_neon.cpp
+  )
+  target_compile_options(
+    upsample_nearest2d_neon_impl PRIVATE ${_common_compile_options}
+  )
+  target_link_libraries(upsample_nearest2d_neon_impl PRIVATE executorch_core)
+  target_link_libraries(
+    optimized_kernels
+    PRIVATE $<BUILD_LOCAL_INTERFACE:upsample_nearest2d_neon_impl>
   )
 endif()
 
