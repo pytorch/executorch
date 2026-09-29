@@ -12,6 +12,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/backends/native/runtime:runtime",
+            "//executorch/backends/native/runtime:validation",
             "//executorch/backends/native/runtime/deserialize:package",
         ],
         exported_deps = [
