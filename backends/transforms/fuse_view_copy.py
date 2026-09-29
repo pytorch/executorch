@@ -98,19 +98,15 @@ class FuseViewCopyTransform(ExportPass):
         return nodes
 
     def _topologically_valid_shape(
-        self, graph: torch.fx.Graph, view_node: torch.fx.Node, shape: Any
+        self,
+        view_node: torch.fx.Node,
+        shape: Any,
+        node_order: dict[torch.fx.Node, int],
     ) -> bool:
         shape_nodes = self._shape_nodes(shape)
-        if len(shape_nodes) == 0:
-            return True
-
-        seen_nodes: set[torch.fx.Node] = set()
-        for node in graph.nodes:
-            if node is view_node:
-                return shape_nodes.issubset(seen_nodes)
-            seen_nodes.add(node)
-
-        return False
+        return all(
+            node_order[shape_node] < node_order[view_node] for shape_node in shape_nodes
+        )
 
     def merge_view_copy_chains(
         self, graph: torch.fx.Graph
@@ -132,13 +128,14 @@ class FuseViewCopyTransform(ExportPass):
         """
         modified = False
         ops: list[EdgeOpOverload] = self.UNARY_ELEMENTWISE_OPS + [self.VIEW_OP]
+        node_order = {node: index for index, node in enumerate(graph.nodes)}
         for node in graph.find_nodes(op="call_function", target=self.VIEW_OP):
             view_nodes_to_remove = self._find_view_copy_chain(node, ops)
 
             # Fuse the longest prefix whose final shape is available at the
             # first view. A later shape producer must remain after that view.
             while view_nodes_to_remove and not self._topologically_valid_shape(
-                graph, node, view_nodes_to_remove[-1].args[1]
+                node, view_nodes_to_remove[-1].args[1], node_order
             ):
                 view_nodes_to_remove.pop()
 
