@@ -53,9 +53,9 @@ class Program {
   Program(const Program&) = delete;
   Program& operator=(const Program&) = delete;
 
-  // Parse and verify serialized native-graph bytes (a *.ptg buffer). Throws
-  // std::runtime_error on failure. Methods are materialized lazily (see
-  // get_method), not here.
+  // Parse and verify a PTG buffer. Parsed but unsupported major/minor versions
+  // throw UnsupportedVersionError; malformed version strings throw
+  // std::runtime_error. get_method() materializes and caches methods on demand.
   static Program load(const void* data, size_t size);
 
   const fbs::Program* flatbuffer() const {
