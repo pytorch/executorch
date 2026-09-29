@@ -51,54 +51,40 @@ the async-context-manager factory passed to `build_app` owns startup and awaited
 shutdown inside the ASGI lifespan. `SessionRuntime` retains admission and session
 ordering through actual wire completion, not merely a cancel acknowledgement.
 
-The following is a launch recipe, not a completed real-model smoke test. Replace
-all `/path/to` paths with absolute paths to matching local artifacts:
+The dedicated CLI always requires multiplexing and closes the worker on shutdown
+or post-spawn startup failure. It does not change the legacy generic or Muse
+launchers. Replace all `/path/to` paths with matching local artifacts; this
+example uses Llama 3 chat formatting:
 
-```python
-from contextlib import asynccontextmanager
-
-import uvicorn
-
-from executorch.examples.llm_server.python.chat_template import ChatTemplate
-from executorch.examples.llm_server.python.multiplexed_worker_client import (
-    spawn_multiplexed_worker,
-)
-from executorch.examples.llm_server.python.server import build_app
-from executorch.examples.llm_server.python.serving_chat import ServingChat
-from executorch.examples.llm_server.python.session_runtime import SessionRuntime
-
-template = ChatTemplate(hf_tokenizer_path="/path/to/model-assets")
-
-
-@asynccontextmanager
-async def serving_factory():
-    worker = await spawn_multiplexed_worker(
-        [
-            "/path/to/llm_worker",
-            "--pte=/path/to/model.pte",
-            "--tokenizer=/path/to/model-assets/tokenizer.json",
-            "--max_sessions=4",
-            "--max_session_tokens=1024",
-            "--max_decode_sequences=2",
-        ]
-    )
-    runtime = None
-    try:
-        runtime = SessionRuntime(worker)
-        yield ServingChat(runtime, template, "local-model", max_context=1024)
-    finally:
-        if runtime is None:
-            await worker.close()
-        else:
-            await runtime.aclose_worker()
-
-
-uvicorn.run(
-    build_app(None, "local-model", serving_factory=serving_factory),
-    host="127.0.0.1",
-    port=8000,
-)
+```bash
+python -m executorch.examples.llm_server.python.serve \
+  --worker-bin /path/to/llm_worker \
+  --model-path /path/to/model.pte \
+  --tokenizer-path /path/to/model-assets \
+  --model-id llama1b \
+  --max-context 1024 \
+  --max-sessions 32 \
+  --max-decode-sequences 16 \
+  --assistant-header $'<|start_header_id|>assistant<|end_header_id|>\n\n'
 ```
+
+Pass the HF tokenizer directory with its configuration, not an isolated JSON
+file: native EOS resolution needs that configuration for warm continuation.
+The launcher normalizes a supplied HF JSON file with sibling configuration to
+its directory. The HF template source defaults to this directory; use
+`--hf-tokenizer` to override it or when supplying another native tokenizer format.
+An exact `--assistant-header` preserves the model's generation boundary; the
+launcher probes it before spawning and warns if it does not match.
+
+`--max-context` sets the native session-token and HTTP context limits together.
+The launcher defaults are 16 logical sessions, 8 decode sequences per step, 64 in-flight
+requests, and no prefix cache. Override the latter two with
+`--max-inflight-requests` and `--prefix-cache-entries`. These limits are distinct:
+Python concurrency follows the worker's advertised request capacity, not its
+decode width or native delivery thread count. Request admission capacity is
+independent of the single native delivery thread. Prefix-cache rows are additional
+to logical session capacity.
+The default HTTP address is `127.0.0.1:8000`; `--host` and `--port` override it.
 
 The model must accept packed token/position inputs with per-token sequence IDs
 and full or selected logits. A leading tensor dimension of one does not imply
@@ -142,15 +128,16 @@ request IDs, creation-only prefix caching through the Python runtime, and
 unknown-versus-empty replay metadata. They do not prove a combined real-model
 forward.
 
-## Deferred Real-Model Smoke Test
+## Real-Model Checks
 
-No weights were downloaded or exported for this work. Real-model execution is
-explicitly deferred. One compatible export recipe to evaluate later is:
+The launcher uses existing local artifacts; it does not export or download model
+weights. One compatible Llama export recipe is:
 
 ```bash
 python -m executorch.backends.mlx.examples.llm.export_llm_hf \
-  --model-id unsloth/gemma-3-1b-it \
-  --output /path/to/gemma3_offgraph.pte \
+  --model-id unsloth/Llama-3.2-1B-Instruct \
+  --output /path/to/llama1b_offgraph.pte \
+  --dtype bf16 \
   --use-offgraph-cache \
   --max-ctx-len 1024 \
   --prefill-chunk-size 512 \

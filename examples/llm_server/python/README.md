@@ -35,7 +35,48 @@ Tokenizer: pass the model's tokenizer — `tokenizer.json` (HF, e.g. Qwen3) or
 warning it falls back to PCRE2 and still works (build with
 `-DSUPPORT_REGEX_LOOKAHEAD=ON` for the native regex path).
 
-## Run
+## Run the batching server
+
+The dedicated launcher requires the new multiplexed worker; it never falls back
+silently to a serialized legacy worker. For a compatible text-only MLX off-graph
+export and a built `llm_worker`:
+
+```bash
+python -m executorch.examples.llm_server.python.serve \
+    --worker-bin /path/to/llm_worker \
+    --model-path /path/to/model.pte \
+    --tokenizer-path /path/to/model-assets \
+    --model-id llama1b \
+    --max-context 1024 \
+    --max-sessions 32 \
+    --max-decode-sequences 16 \
+    --assistant-header $'<|start_header_id|>assistant<|end_header_id|>\n\n'
+```
+
+Use the model's HF tokenizer **directory**, including its tokenizer configuration,
+so native EOS detection matches the chat template. A supplied tokenizer JSON file
+with sibling configuration is normalized to that directory. Other native tokenizer
+files require an explicit `--hf-tokenizer` source. The HF template defaults to the
+native tokenizer directory; `--hf-tokenizer` overrides it. Approximate ChatML
+fallback is not enabled by this launcher.
+
+`--max-context` is required and sets both the HTTP limit and native session-token
+limit; choose a value supported by the export. Capacity defaults are
+`--max-sessions 16`, `--max-decode-sequences 8`, `--max-inflight-requests 64`, and
+`--prefix-cache-entries 0`. Logical sessions, packed decode width, and in-flight
+request capacity are independent limits. Python concurrency follows advertised
+request capacity, not the single native delivery thread. Python callbacks run on
+consuming threads, so slow callbacks remain isolated from other requests; native
+callbacks must do short, bounded, nonblocking work. Prefix snapshots require extra
+native capacity, which the worker provisions; ordinary continuation needs no prefix
+cache.
+The HTTP defaults are `--host 127.0.0.1 --port 8000`.
+
+The batching guide covers the native build, supported export contract, and
+integration checks. The existing generic launcher below and Muse-specific
+launcher are unchanged.
+
+## Run a legacy worker
 
 ```bash
 python -m executorch.examples.llm_server.python.server \
@@ -114,7 +155,8 @@ persistent per-conversation session:
   ```
   `compat.sendSessionAffinityHeaders` makes pi route each conversation to its own
   session (per-conversation isolation + warm resume); without it every request
-  uses the anonymous scratch session.
+  uses an independent temporary session on the batching worker, or the anonymous
+  scratch session on a legacy worker.
 
 ## Validate
 
@@ -185,6 +227,12 @@ the generic control plane never imports an example. Backend specifics
 
 ## Scope & caveats
 
+The dedicated batching launcher supports concurrent text requests on one shared
+runner, ordered persistent-session continuation, targeted in-band cancellation,
+and optional creation-only prefix reuse. It does not yet migrate Muse image or
+DFlash execution. The serialized-worker limitations below describe the legacy
+path, not the new batching worker.
+
 Deliberately narrow (reliability-first): Hermes/Qwen tool calling only;
 unsupported sampling params are rejected, not ignored. **One worker process,
 serialized execution** (one in-flight request; concurrent requests queue).
@@ -224,7 +272,7 @@ backend whose terminator is only a string stop would mark every turn dirty and n
 warm-resume; distinguishing resumable terminators from trim-stops in the protocol is
 future work.
 
-There is **no global (cross-session) prefix cache**; per-session append-only warm
+The legacy path has **no global (cross-session) prefix cache**; per-session append-only warm
 resume is worker-side (for engines that support it), and all KV/resident state
 lives inside the worker/session, never the Python control plane. Multiple workers,
 weight sharing across sessions on a backend that supports it, adaptive thinking,
