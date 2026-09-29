@@ -11,6 +11,7 @@
 #include <cstdint>
 
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/operators/weight_zero_point.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -66,13 +67,13 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
     const ::executorch::aten::Tensor& weight,
     const ::executorch::aten::Tensor& bias,
     int64_t src_zero_point,
-    const ::executorch::aten::Tensor& weight_zero_point_t,
+    const std::optional<::executorch::aten::Tensor>& weight_zero_point_t,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
     ::executorch::aten::Tensor& out) {
-  // Get the zero_point of weight.
-  int32_t weight_zero_point = weight_zero_point_t.const_data_ptr<int32_t>()[0];
+  const int32_t weight_zero_point =
+      resolve_weight_zero_point(weight_zero_point_t);
   quantized_linear_per_tensor_<T, WT>(
       src,
       weight,
@@ -181,13 +182,13 @@ inline __attribute__((always_inline)) void quantized_linear_(
     const ::executorch::aten::Tensor& weight,
     const ::executorch::aten::Tensor& bias,
     int64_t src_zero_point,
-    const ::executorch::aten::Tensor& weight_zero_point_t,
+    const std::optional<::executorch::aten::Tensor>& weight_zero_point_t,
     const ::executorch::aten::Tensor& out_multiplier,
     const ::executorch::aten::Tensor& out_shift,
     int64_t out_zero_point,
     ::executorch::aten::Tensor& out) {
-  // Get the zero_point of weight.
-  int32_t weight_zero_point = weight_zero_point_t.const_data_ptr<int32_t>()[0];
+  const int32_t weight_zero_point =
+      resolve_weight_zero_point(weight_zero_point_t);
   quantized_linear_<T, WT>(
       src,
       weight,

@@ -465,7 +465,7 @@ def quantized_linear_common(
     weight: torch.Tensor,
     bias: torch.Tensor,
     in_zero_point: int,
-    weight_zero_point: torch.Tensor | int,
+    weight_zero_point: torch.Tensor | int | None,
     out_multiplier: int | torch.Tensor,
     out_shift: int | torch.Tensor,
     out_zero_point: int,
@@ -500,6 +500,11 @@ def quantized_linear_common(
     per_channel = isinstance(out_multiplier, torch.Tensor) and (
         out_multiplier.numel() > 1
     )
+
+    # Absent means a symmetric weight, whose zero point is zero by definition;
+    # the AoT side omits the argument rather than emitting a constant of zeros.
+    if weight_zero_point is None:
+        weight_zero_point = 0
 
     if (
         per_channel
@@ -573,7 +578,7 @@ def quantized_linear_variant(
             weight: torch.Tensor,
             bias: torch.Tensor,
             in_zero_point: int,
-            weight_zero_point: torch.Tensor | int,
+            weight_zero_point: torch.Tensor | int | None,
             out_multiplier: torch.Tensor | int,
             out_shift: torch.Tensor | int,
             out_zero_point: int,
@@ -900,7 +905,7 @@ def quantized_conv_common(
     dilation: tuple[int, ...],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -929,7 +934,14 @@ def quantized_conv_common(
         - out_shift (int | Tensor): Unused
     """
     out_channels = weight.shape[0]
-    wzp = _broadcast_over_channels(weight_zero_point, weight.dim(), 0, out_channels)
+    # Absent means a symmetric weight, whose zero point is zero by definition;
+    # the AoT side omits the argument rather than emitting a constant of zeros.
+    wzp = _broadcast_over_channels(
+        0 if weight_zero_point is None else weight_zero_point,
+        weight.dim(),
+        0,
+        out_channels,
+    )
 
     if len(input_tensor.shape) == 3:
         acc = torch.nn.functional.conv1d(
@@ -980,7 +992,7 @@ def quantized_conv2d_nchw_per_tensor(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1036,7 +1048,7 @@ def quantized_conv1d_ncl_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1127,7 +1139,7 @@ def quantized_conv1d_nlc_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1224,7 +1236,7 @@ def quantized_depthwise_conv1d_ncl_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1278,7 +1290,7 @@ def quantized_depthwise_conv1d_nlc_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
@@ -1591,7 +1603,7 @@ def quantized_conv2d_nhwc_per_tensor(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int | torch.Tensor,
+    weight_zero_point: int | torch.Tensor | None,
     bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
