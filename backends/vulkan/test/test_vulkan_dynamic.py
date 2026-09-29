@@ -380,6 +380,24 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge, model, inputs, atol=0, rtol=0, check_signed_zero=True
                     )
 
+    def test_fp16_chained_mul_scalar(self):
+        class ChainedMul(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.aten.mul.Scalar(
+                    torch.ops.aten.mul.Scalar(x, 1.0006), 1000
+                )
+
+        model = ChainedMul()
+        x = torch.ones(3, 7, dtype=torch.float16)
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                edge = self._lower(model, (x,), storage=storage)
+                operators = [
+                    op.name for graph in _vulkan_graphs(edge) for op in graph.chain
+                ]
+                self.assertEqual(operators.count("aten.mul.Scalar"), 2)
+                self._run(edge, model, [(x,)], atol=0, rtol=0)
+
     def test_integer_scalar_range_fallback(self):
         class LargeScalar(torch.nn.Module):
             def __init__(self, kind, value):
@@ -762,7 +780,18 @@ class TestVulkanDynamic(unittest.TestCase):
                 [-torch.inf, -10000, -4, -0.0, 0.0, 1, 10000, torch.inf, torch.nan],
                 dtype=dtype,
             ).repeat(3, 1)
-            for exponent in (-3, -0.5, 0, 0.5, 2, 3, torch.inf, -torch.inf):
+            for exponent in (
+                -3,
+                -0.5,
+                0,
+                0.5,
+                2,
+                2.0001,
+                3,
+                2049,
+                torch.inf,
+                -torch.inf,
+            ):
                 for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
                     with self.subTest(dtype=dtype, exponent=exponent, storage=storage):
                         model = Power(exponent)
