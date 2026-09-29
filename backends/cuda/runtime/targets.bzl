@@ -142,7 +142,7 @@ def define_common_targets(is_fbcode = False):
         preprocessor_flags = [
             "-DCUDA_AVAILABLE=1",
             # Always built with the LLM extension's cache here.
-            "-DEXECUTORCH_CUDA_OFFGRAPH_KV_CACHE",
+            "-DEXECUTORCH_BUILD_EXTENSION_LLM",
         ],
         visibility = ["PUBLIC"],
         exported_deps = [

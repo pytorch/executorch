@@ -13,6 +13,8 @@ def define_common_targets():
         name = "package_test",
         srcs = ["test_package.cpp"],
         deps = [
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
             "//executorch/backends/native/runtime/deserialize:package",
             "fbsource//third-party/libzip:zip",
         ],
