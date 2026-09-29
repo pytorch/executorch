@@ -19,10 +19,11 @@ ${define_active_storage_type("texture3d")}
 layout(std430) buffer;
 
 #include "indexing.glslh"
+#include "convert.glslh"
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_ubo(B, "TextureMetadata", "outp")}
-${layout_declare_ubo(B, "float", "fill_value")}
+${layout_declare_ubo(B, accum_scalar_type(DTYPE), "fill_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -37,6 +38,8 @@ void main() {
   }
 
   VEC4_T outtex = VEC4_T(fill_value);
+  $if DTYPE == "half":
+    outtex = round_to_half_rte(outtex);
 
   TensorIndex4D tidx =
       texture_pos_to_tensor4d_idx_simple(outp, pos, out_layout);
