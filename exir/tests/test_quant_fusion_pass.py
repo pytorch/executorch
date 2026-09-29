@@ -183,9 +183,10 @@ class TestQuantFusionPass(unittest.TestCase):
         )
 
         m = m.to_executorch()
-        # The static dim-0 slice is now represented as a zero-copy memory alias.
+        # The slice aliases an input tensor, so it remains a slice_copy rather than
+        # a zero-copy memory alias.
         FileCheck().check("torch.ops.quantized_decomposed.add.out").check(
-            "executorch.exir.memory.slice"
+            "torch.ops.aten.slice_copy.Tensor_out"
         ).run(m.exported_program().graph_module.code)
 
     def test_cat(self) -> None:
