@@ -25,6 +25,7 @@ from executorch.exir.schema import DeviceType
 from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
+    ModuleAddBFloat16,
     ModuleAddConstReturn,
     ModuleAddEmpty,
     ModuleAddHalf,
@@ -518,6 +519,17 @@ print("CUDA DLPack roundtrip preserved device storage")
         )
         self.assertIn("CUDA DLPack roundtrip preserved device storage", completed.stdout)
 
+    def test_bfloat16_raw_buffer_inputs(self):
+        exported_program, inputs = create_program(ModuleAddBFloat16())
+        executorch_module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        raw_inputs = [value.view(torch.uint8).numpy().tobytes() for value in inputs]
+
+        for executor in (executorch_module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(raw_inputs)[0]
+                self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -526,12 +538,23 @@ print("CUDA DLPack roundtrip preserved device storage")
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[0]))
 
-    def test_mixed_tensor_protocols_are_rejected(self):
+    def test_mixed_tensor_protocols(self):
         exported_program, inputs = create_program(ModuleAdd())
         executorch_module = self.load_fn(exported_program.buffer)
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
 
-        with self.assertRaisesRegex(TypeError, "cannot mix buffer and torch"):
-            executorch_module.forward([inputs[0], inputs[1].numpy()])
+        for executor in (executorch_module, method):
+            for mixed_inputs in (
+                [inputs[0], inputs[1].numpy()],
+                [inputs[0], DLPackOnly(inputs[1].numpy())],
+                [inputs[0].numpy(), DLPackOnly(inputs[1].numpy())],
+            ):
+                with self.subTest(
+                    executor=type(executor),
+                    protocols=[type(value) for value in mixed_inputs],
+                ):
+                    output = executor(mixed_inputs)[0]
+                    self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
     def test_non_dense_numpy_input_is_rejected(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())

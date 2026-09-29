@@ -157,6 +157,11 @@ class PyExecuTorchResult final
 
   py::buffer_info buffer() {
     require_cpu_buffer();
+    // PEP 3118 has no bfloat16 format. Expose its physical bytes without
+    // advertising a different numeric dtype; DLPack preserves the real dtype.
+    if (scalar_type_ == executorch::aten::ScalarType::BFloat16) {
+      return flat_buffer();
+    }
     std::vector<py::ssize_t> shape(sizes_.begin(), sizes_.end());
     std::vector<py::ssize_t> byte_strides;
     const auto itemsize = executorch::runtime::elementSize(scalar_type_);

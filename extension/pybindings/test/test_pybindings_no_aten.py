@@ -243,18 +243,48 @@ else:
                 self.assertEqual(output.__dlpack_device__(), (1, 0))
                 np.testing.assert_array_equal(np.from_dlpack(output), np.array([3.0]))
 
-    def test_mixed_dlpack_and_buffer_inputs_are_rejected(self) -> None:
+    def test_bfloat16_raw_buffer_input_and_output(self) -> None:
+        with open(
+            os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE"], "rb"
+        ) as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
+        one = bytes((0x80, 0x3F)) * 4
+
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor((one, one))[0]
+                raw = memoryview(output)
+                self.assertEqual(raw.format, "B")
+                self.assertEqual(raw.shape, (8,))
+                self.assertEqual(raw.tobytes(), bytes((0x00, 0x40)) * 4)
+                self.assertEqual(output.shape, (2, 2))
+                self.assertEqual(output.__dlpack_device__(), (1, 0))
+                if importlib.util.find_spec("torch") is not None:
+                    import torch
+
+                    tensor = torch.from_dlpack(output)
+                    self.assertEqual(tensor.dtype, torch.bfloat16)
+                    torch.testing.assert_close(
+                        tensor, torch.full((2, 2), 2.0, dtype=torch.bfloat16)
+                    )
+
+    def test_mixed_dlpack_and_buffer_inputs(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
             program_data = program_file.read()
         module = runtime._load_for_executorch_from_buffer(program_data)
+        method = runtime._load_program_from_buffer(program_data).load_method("forward")
 
-        with self.assertRaisesRegex(TypeError, "cannot mix tensor input protocols"):
-            module(
-                (
-                    DLPackOnly(np.array([1.0], dtype=np.float32)),
-                    np.array([2.0], dtype=np.float32),
-                )
-            )
+        for executor in (module, method):
+            with self.subTest(executor=type(executor)):
+                output = executor(
+                    (
+                        DLPackOnly(np.array([1.0], dtype=np.float32)),
+                        np.array([2.0], dtype=np.float32),
+                    )
+                )[0]
+                np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
 
     @unittest.skipUnless(
         importlib.util.find_spec("torch") is not None, "torch is not installed"

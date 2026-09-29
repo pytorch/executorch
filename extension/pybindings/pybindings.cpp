@@ -214,36 +214,67 @@ void* mutable_tensor_data_ptr_no_cow(const at::Tensor& tensor) {
 /** Holds a Python buffer export and presents its metadata to ExecuTorch. */
 class BufferTensor final {
  public:
-  explicit BufferTensor(const py::handle& value)
+  BufferTensor(
+      const py::handle& value,
+      const MethodMeta& method_meta,
+      size_t input_index)
       : buffer_(py::reinterpret_borrow<py::buffer>(value)),
         info_(buffer_.request()) {
     if (info_.ndim < 0 ||
         static_cast<size_t>(info_.ndim) > runtime::kTensorDimensionLimit) {
       throw py::buffer_error("Buffer rank is too large for ExecuTorch");
     }
-    scalar_type_ = scalar_type_from_buffer(info_);
-    sizes_.reserve(info_.shape.size());
-    strides_.reserve(info_.strides.size());
-    for (const auto size : info_.shape) {
-      sizes_.push_back(checked_int(size, "dimension"));
-    }
-    for (const auto byte_stride : info_.strides) {
-      if (byte_stride < 0 || byte_stride % info_.itemsize != 0) {
+    const auto input_meta = method_meta.input_tensor_meta(input_index);
+    THROW_IF_ERROR(
+        input_meta.error(), "Input %zu is not a tensor input", input_index);
+    const bool raw_bfloat16 =
+        input_meta->scalar_type() == executorch::aten::ScalarType::BFloat16 &&
+        info_.ndim == 1 && has_format<uint8_t>(info_);
+    if (raw_bfloat16) {
+      if (info_.strides.size() != 1 || info_.strides[0] != 1) {
         throw py::buffer_error(
-            "ExecuTorch inputs require non-negative, element-aligned strides");
+            "Raw bfloat16 inputs require contiguous byte buffers");
       }
-      strides_.push_back(checked_int(byte_stride / info_.itemsize, "stride"));
+      if (static_cast<size_t>(info_.size) != input_meta->nbytes()) {
+        throw py::value_error(
+            "Raw bfloat16 input " + std::to_string(input_index) + " has " +
+            std::to_string(info_.size) + " bytes, but the method expects " +
+            std::to_string(input_meta->nbytes()));
+      }
+      scalar_type_ = executorch::aten::ScalarType::BFloat16;
+      sizes_.assign(input_meta->sizes().begin(), input_meta->sizes().end());
+      dim_order_.assign(
+          input_meta->dim_order().begin(), input_meta->dim_order().end());
+      strides_.resize(sizes_.size());
+      const auto status = runtime::dim_order_to_stride(
+          sizes_.data(), dim_order_.data(), sizes_.size(), strides_.data());
+      THROW_IF_ERROR(
+          status, "Invalid dimension order for input %zu", input_index);
+    } else {
+      scalar_type_ = scalar_type_from_buffer(info_);
+      sizes_.reserve(info_.shape.size());
+      strides_.reserve(info_.strides.size());
+      for (const auto size : info_.shape) {
+        sizes_.push_back(checked_int(size, "dimension"));
+      }
+      for (const auto byte_stride : info_.strides) {
+        if (byte_stride < 0 || byte_stride % info_.itemsize != 0) {
+          throw py::buffer_error(
+              "ExecuTorch inputs require non-negative, element-aligned strides");
+        }
+        strides_.push_back(checked_int(byte_stride / info_.itemsize, "stride"));
+      }
+      dim_order_.resize(sizes_.size());
+      std::iota(dim_order_.begin(), dim_order_.end(), 0);
+      std::stable_sort(
+          dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
+            return strides_[a] > strides_[b];
+          });
+      if (!has_empty_dimension()) {
+        validate_dense_layout();
+      }
     }
-    dim_order_.resize(sizes_.size());
-    std::iota(dim_order_.begin(), dim_order_.end(), 0);
-    std::stable_sort(
-        dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
-          return strides_[a] > strides_[b];
-        });
-    if (!has_empty_dimension()) {
-      validate_dense_layout();
-    }
-    if (info_.readonly && info_.size > 0) {
+    if ((info_.readonly || raw_bfloat16) && info_.size > 0) {
       owned_data_.resize(info_.size * info_.itemsize);
       std::memcpy(owned_data_.data(), info_.ptr, owned_data_.size());
       info_ = py::buffer_info(
@@ -1880,7 +1911,8 @@ struct PyModule final {
         cpp_inputs.emplace_back(dlpack_tensor_ptrs.back());
 #endif
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
+        buffer_inputs.push_back(
+            std::make_shared<BufferTensor>(python_input, method_meta, i));
         const auto& buffer = buffer_inputs.back();
         validate_buffer_input(method_meta, i, *buffer);
 #ifdef USE_ATEN_LIB
@@ -2580,7 +2612,8 @@ struct PyMethod final {
         cpp_inputs.emplace_back(dlpack_tensor_ptrs.back());
 #endif
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
+        buffer_inputs.push_back(std::make_shared<BufferTensor>(
+            python_input, storage_->method->method_meta(), i));
         const auto& buffer = buffer_inputs.back();
         validate_buffer_input(storage_->method->method_meta(), i, *buffer);
         const auto input_meta =
