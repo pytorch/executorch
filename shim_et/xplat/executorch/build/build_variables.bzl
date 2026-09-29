@@ -351,6 +351,7 @@ EXTENSION_MEMORY_ALLOCATOR_SRCS = [
 
 EXTENSION_MODULE_SRCS = [
     "extension/module/module.cpp",
+    "extension/module/ptn_module.cpp",
 ]
 
 EXTENSION_NAMED_DATA_MAP_SRCS = [
@@ -387,6 +388,7 @@ EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRC
 
 EXTENSION_TRAINING_SRCS = [
     "extension/training/module/training_module.cpp",
+    "extension/training/optimizer/adamw.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 

@@ -734,6 +734,14 @@ class EdgeProgramManagerTransformStage(Stage):
 
     def __init__(
         self,
+        edge_transform_passes: (
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
+        ) = None,
         edge_manager_transform_passes: (
             None
             | List[
@@ -751,6 +759,7 @@ class EdgeProgramManagerTransformStage(Stage):
                                            backends to control pass ordering and dependencies.
         """
         super().__init__()
+        self._edge_transform_passes = edge_transform_passes or []
         self._edge_manager_transform_passes = edge_manager_transform_passes or []
 
     @classmethod
@@ -761,6 +770,7 @@ class EdgeProgramManagerTransformStage(Stage):
             return cls()
 
         return cls(
+            edge_transform_passes=lowering_recipe.edge_transform_passes,
             edge_manager_transform_passes=lowering_recipe.edge_manager_transform_passes,
         )
 
@@ -793,9 +803,34 @@ class EdgeProgramManagerTransformStage(Stage):
                 f"Expected EdgeProgramManager but got {type(edge_program_manager)}"
             )
 
-        if not self._edge_manager_transform_passes:
+        if not self._edge_transform_passes and not self._edge_manager_transform_passes:
             self._artifact = artifact
             return
+
+        # Detect if any callable returns PassManager
+        pass_manager = None
+        transform_passes = defaultdict(list)
+        for method_name in edge_program_manager.methods:
+            # Resolve transform passes if it's a callable
+            ep = edge_program_manager.exported_program(method_name)
+            for pass_callable in self._edge_transform_passes or []:
+                if not callable(pass_callable):
+                    raise ValueError(
+                        "Transform passes must be a callable that resolves to passes"
+                    )
+                passes = pass_callable(method_name, ep)
+                if isinstance(passes, GraphModulePassManager):
+                    pass_manager = passes
+                    break
+                else:
+                    transform_passes[method_name].extend(passes)
+            if pass_manager:
+                break
+
+        # See EdgeTransformAndLowerStage.run.
+        final_passes = pass_manager or _drop_empty(transform_passes) or None
+        if final_passes is not None:
+            edge_program_manager = edge_program_manager.transform(final_passes)
 
         # Run edge manager transform passes
         for pass_callable in self._edge_manager_transform_passes:

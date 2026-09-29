@@ -18,6 +18,7 @@ cmake-ios-out/
 cmake-out*
 cmake-out-android/
 backends/webgpu/third-party/
+backends/arm/test/models/neural_graphics_data/
 build-android/
 build-x86/
 build-direct/

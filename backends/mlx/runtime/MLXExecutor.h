@@ -176,6 +176,13 @@ struct ExecutionState {
   uint32_t output_end{0};
   uint32_t mutable_buffer_end{0};
 
+  // Per chain, the index of the last instruction naming each temp slot, or
+  // kNoTempLastUse. An empty table opts that chain out of release. Computed
+  // once here rather than per run_chain, which would cost a walk of every
+  // chain on each execute() and each scan iteration.
+  static constexpr uint32_t kNoTempLastUse = 0xFFFFFFFFu;
+  std::vector<std::vector<uint32_t>> temp_last_use;
+
   void bind(
       const MLXProgram& prog,
       const ConstantData& const_data,
@@ -215,6 +222,66 @@ struct ExecutionState {
     input_end = static_cast<uint32_t>(ie);
     output_end = static_cast<uint32_t>(oe);
     mutable_buffer_end = static_cast<uint32_t>(me);
+
+    compute_temp_last_use(prog);
+  }
+
+  // A temp any OTHER chain names is never dropped: a branch or scan body is run
+  // through run_chain of its own, so a temp it writes for its caller, or a
+  // carry it only reads, would otherwise die at its last use inside the body.
+  // A chain holding a SCAN or IF opts out entirely, since for_each_tid does not
+  // walk nested chains.
+  void compute_temp_last_use(const MLXProgram& prog) {
+    const size_t num_chains = prog.instruction_chains.size();
+    temp_last_use.assign(num_chains, {});
+
+    // The one chain naming each temp slot, or kNoOwner / kShared.
+    constexpr uint32_t kNoOwner = 0xFFFFFFFFu;
+    constexpr uint32_t kShared = 0xFFFFFFFEu;
+    std::vector<uint32_t> owner(tensors.size(), kNoOwner);
+    for (size_t c = 0; c < num_chains; ++c) {
+      for (const auto& instr : prog.instruction_chains[c]) {
+        for_each_tid(instr, [&](Tid id) {
+          if (id.idx >= mutable_buffer_end) {
+            uint32_t& o = owner[tensor_index(id)];
+            if (o == kNoOwner) {
+              o = static_cast<uint32_t>(c);
+            } else if (o != c) {
+              o = kShared;
+            }
+          }
+        });
+      }
+    }
+
+    for (size_t c = 0; c < num_chains; ++c) {
+      const auto& chain = prog.instruction_chains[c];
+      bool nested = false;
+      for (const auto& instr : chain) {
+        if (instr.op == OpCode::SCAN || instr.op == OpCode::IF) {
+          nested = true;
+          break;
+        }
+      }
+      if (nested) {
+        continue;
+      }
+
+      std::vector<uint32_t> last_use(tensors.size(), kNoTempLastUse);
+      uint32_t idx = 0;
+      for (const auto& instr : chain) {
+        for_each_tid(instr, [&](Tid id) {
+          if (id.idx >= mutable_buffer_end) {
+            const uint32_t slot = tensor_index(id);
+            if (owner[slot] == c) {
+              last_use[slot] = idx;
+            }
+          }
+        });
+        ++idx;
+      }
+      temp_last_use[c] = std::move(last_use);
+    }
   }
 
   // Check if a tensor ID is a mutable buffer
