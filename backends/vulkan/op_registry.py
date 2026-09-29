@@ -646,7 +646,12 @@ def register_q8ta_pixel_shuffle():
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     ndim = utils.ndim_of(node.args[0])
     assert ndim is not None
-    dims_reduced = None
+    dims_reduced = (
+        []
+        if node.target
+        in (exir_ops.edge.aten.amax.default, exir_ops.edge.aten.amin.default)
+        else None
+    )
     if len(node.args) >= 2:
         dims_reduced = node.args[1]
 
@@ -690,7 +695,7 @@ def is_reduce_node_supported_by_per_row_impl(node: torch.fx.Node) -> bool:
 def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     dims_reduced = get_dims_reduced(node)
     # Only 1D and 2D reductions are supported at the moment.
-    if isinstance(dims_reduced, (list, tuple)) and len(dims_reduced) > 2:
+    if isinstance(dims_reduced, (list, tuple)) and not 1 <= len(dims_reduced) <= 2:
         return False
 
     keepdim = get_keepdim_setting(node)
@@ -698,10 +703,24 @@ def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     if isinstance(keepdim, bool) and not keepdim:
         return False
 
+    if utils.ndim_of(node.args[0]) == 4:
+        dims = [dims_reduced] if isinstance(dims_reduced, int) else dims_reduced
+        # Textures fold batch into channels; neither axis can be reduced across batches.
+        if 0 in dims or (
+            1 in dims and utils.upper_bound_size(node.args[0].meta["val"].shape[0]) != 1
+        ):
+            return False
+
     return True
 
 
 def is_reduce_node_supported(node: torch.fx.Node) -> bool:
+    if (
+        node.target in (exir_ops.edge.aten.sum.dim_IntList, exir_ops.edge.aten.mean.dim)
+        and (len(node.args) < 2 or node.args[1] is None)
+        and utils.ndim_of(node.args[0]) != 1
+    ):
+        return False
     return is_reduce_node_supported_by_per_row_impl(
         node
     ) or is_reduce_node_supported_by_general_impl(node)
