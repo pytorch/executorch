@@ -335,28 +335,179 @@ class TestCollapsePermutePass(unittest.TestCase):
 
 class TestCollapseDtypeConversionPass(unittest.TestCase):
 
-    def test_consecutive_casts_collapsed(self):
-        """_to_copy(f32→bf16→f16) → _to_copy(f32→f16)."""
+    def test_lossy_consecutive_casts_kept(self):
+        class M(nn.Module):
+            def __init__(self, intermediate, output):
+                super().__init__()
+                self.intermediate = intermediate
+                self.output = output
 
+            def forward(self, x):
+                return x.to(self.intermediate).to(self.output)
+
+        floats = torch.tensor([-1.003, -0.9, 0.9, 1.003], dtype=torch.float32)
+        cases = (
+            (floats, torch.int32, torch.float32),
+            (floats, torch.bool, torch.float32),
+            (floats, torch.bfloat16, torch.float16),
+            (floats, torch.float16, torch.float32),
+            (
+                torch.tensor([2**24 + 1, 2**24 + 3, -(2**24 + 1)]),
+                torch.float32,
+                torch.int64,
+            ),
+        )
+        target = exir_ops.edge.aten._to_copy.default
+        for x, intermediate, output in cases:
+            with self.subTest(source=x.dtype, intermediate=intermediate, output=output):
+                model = M(intermediate, output)
+                expected = model(x)
+                self.assertFalse(torch.equal(expected, x.to(output)))
+                gm = _to_edge_gm(model, (x,))
+                self.assertEqual(_count_ops(gm, target), 2)
+
+                result = CollapseDtypeConversionPass()(gm)
+
+                self.assertFalse(result.modified)
+                self.assertEqual(_count_ops(result.graph_module, target), 2)
+                result.graph_module.recompile()
+                torch.testing.assert_close(
+                    result.graph_module(x)[0], expected, rtol=0, atol=0
+                )
+
+    def test_lossless_widening_casts_collapsed(self):
+        class M(nn.Module):
+            def __init__(self, intermediate, output):
+                super().__init__()
+                self.intermediate = intermediate
+                self.output = output
+
+            def forward(self, x):
+                return x.to(self.intermediate).to(self.output)
+
+        cases = (
+            (torch.float16, torch.float32, torch.bfloat16),
+            (torch.bfloat16, torch.float32, torch.float16),
+            (torch.float16, torch.float64, torch.bfloat16),
+            (torch.bfloat16, torch.float64, torch.float16),
+            (torch.float32, torch.float64, torch.float16),
+        )
+        target = exir_ops.edge.aten._to_copy.default
+        for source, intermediate, output in cases:
+            with self.subTest(source=source, intermediate=intermediate):
+                x = torch.tensor([-1.003, -0.9, 0.9, 1.003], dtype=source)
+                model = M(intermediate, output)
+                gm = _to_edge_gm(model, (x,))
+                self.assertEqual(_count_ops(gm, target), 2)
+                source_node = _find_nodes(gm, target)[0].args[0]
+
+                result = CollapseDtypeConversionPass()(gm)
+
+                self.assertTrue(result.modified)
+                nodes = _find_nodes(result.graph_module, target)
+                self.assertEqual(len(nodes), 1)
+                self.assertIs(nodes[0].args[0], source_node)
+                self.assertEqual(nodes[0].kwargs["dtype"], output)
+                result.graph_module.recompile()
+                torch.testing.assert_close(
+                    result.graph_module(x)[0], model(x), rtol=0, atol=0
+                )
+
+    def test_boolean_to_float_casts_collapsed(self):
+        class M(nn.Module):
+            def __init__(self, intermediate, output):
+                super().__init__()
+                self.intermediate = intermediate
+                self.output = output
+
+            def forward(self, x):
+                return x.to(self.intermediate).to(self.output)
+
+        x = torch.tensor([False, True])
+        target = exir_ops.edge.aten._to_copy.default
+        for intermediate in (
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+            torch.float64,
+        ):
+            for output in (torch.float16, torch.float32, torch.int32):
+                if intermediate == output:
+                    continue
+                with self.subTest(intermediate=intermediate, output=output):
+                    model = M(intermediate, output)
+                    gm = _to_edge_gm(model, (x,))
+                    nodes = _find_nodes(gm, target)
+                    self.assertEqual(len(nodes), 2)
+                    source_node = nodes[0].args[0]
+
+                    result = CollapseDtypeConversionPass()(gm)
+
+                    self.assertTrue(result.modified)
+                    nodes = _find_nodes(result.graph_module, target)
+                    self.assertEqual(len(nodes), 1)
+                    self.assertIs(nodes[0].args[0], source_node)
+                    self.assertEqual(nodes[0].kwargs["dtype"], output)
+                    result.graph_module.recompile()
+                    torch.testing.assert_close(
+                        result.graph_module(x)[0], model(x), rtol=0, atol=0
+                    )
+
+    def test_missing_source_metadata_not_collapsed(self):
         class M(nn.Module):
             def forward(self, x):
-                return x.to(torch.bfloat16).to(torch.float16)
+                return x.to(torch.float32).to(torch.bfloat16)
 
-        gm = _to_edge_gm(M(), (torch.randn(4, 4),))
+        x = torch.tensor([1.003, -0.9], dtype=torch.float16)
+        gm = _to_edge_gm(M(), (x,))
         target = exir_ops.edge.aten._to_copy.default
-        before = _count_ops(gm, target)
-
-        if before < 2:
-            self.skipTest("Export optimized away double cast")
+        nodes = _find_nodes(gm, target)
+        self.assertEqual(len(nodes), 2)
+        del nodes[0].args[0].meta["val"]
 
         result = CollapseDtypeConversionPass()(gm)
 
-        self.assertTrue(result.modified)
-        self.assertEqual(_count_ops(result.graph_module, target), 1)
+        self.assertFalse(result.modified)
+        self.assertEqual(_count_ops(result.graph_module, target), 2)
+        torch.testing.assert_close(result.graph_module(x)[0], M()(x), rtol=0, atol=0)
 
-        # Remaining cast should be to float16
-        nodes = _find_nodes(result.graph_module, target)
-        self.assertEqual(nodes[0].kwargs.get("dtype"), torch.float16)
+    def test_multi_user_parent_not_collapsed(self):
+        class M(nn.Module):
+            def forward(self, x):
+                y = x.to(torch.float32)
+                return y, y.to(torch.bfloat16)
+
+        x = torch.tensor([1.003, -0.9], dtype=torch.float16)
+        gm = _to_edge_gm(M(), (x,))
+        target = exir_ops.edge.aten._to_copy.default
+        nodes = _find_nodes(gm, target)
+        self.assertEqual(len(nodes), 2)
+        self.assertEqual(len(nodes[0].users), 2)
+
+        result = CollapseDtypeConversionPass()(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(_count_ops(result.graph_module, target), 2)
+        torch.testing.assert_close(result.graph_module(x), M()(x), rtol=0, atol=0)
+
+    def test_non_pure_cast_not_collapsed(self):
+        class M(nn.Module):
+            def forward(self, x):
+                return x.to(torch.float32).to(torch.bfloat16)
+
+        target = exir_ops.edge.aten._to_copy.default
+        for cast_index in (0, 1):
+            with self.subTest(cast_index=cast_index):
+                gm = _to_edge_gm(M(), (torch.ones(2, dtype=torch.float16),))
+                nodes = _find_nodes(gm, target)
+                self.assertEqual(len(nodes), 2)
+                node = nodes[cast_index]
+                node.kwargs = dict(node.kwargs, memory_format=torch.contiguous_format)
+
+                result = CollapseDtypeConversionPass()(gm)
+
+                self.assertFalse(result.modified)
+                self.assertEqual(_count_ops(result.graph_module, target), 2)
 
     def test_single_cast_unchanged(self):
         class M(nn.Module):
@@ -422,24 +573,46 @@ class TestRemoveNoOpsPass(unittest.TestCase):
         self.assertTrue(result.modified)
         self.assertFalse(_has_op(result.graph_module, target))
 
-    def test_identity_dtype_cast_removed_after_collapse(self):
-        """Chain: f32→f16→f32 collapses to f32→f32, then RemoveNoOps removes it."""
-
+    def test_lossy_dtype_roundtrip_kept_after_collapse(self):
         class M(nn.Module):
             def forward(self, x):
                 return x.to(torch.float16).to(torch.float32)
 
-        gm = _to_edge_gm(M(), (torch.randn(4, 4),))
+        x = torch.tensor([-1.003, -0.9, 0.9, 1.003], dtype=torch.float32)
+        expected = M()(x)
+        self.assertFalse(torch.equal(expected, x))
+        gm = _to_edge_gm(M(), (x,))
         target = exir_ops.edge.aten._to_copy.default
+        self.assertEqual(_count_ops(gm, target), 2)
 
-        if _count_ops(gm, target) < 2:
-            self.skipTest("Export optimized away double cast")
+        collapsed = CollapseDtypeConversionPass()(gm)
+        result = RemoveNoOpsPass()(collapsed.graph_module)
 
-        CollapseDtypeConversionPass()(gm)
-        result = RemoveNoOpsPass()(gm)
+        self.assertFalse(collapsed.modified)
+        self.assertFalse(result.modified)
+        self.assertEqual(_count_ops(result.graph_module, target), 2)
+        result.graph_module.recompile()
+        torch.testing.assert_close(result.graph_module(x)[0], expected, rtol=0, atol=0)
+
+    def test_lossless_dtype_roundtrip_removed_after_collapse(self):
+        class M(nn.Module):
+            def forward(self, x):
+                return x.to(torch.float32).to(torch.float16)
+
+        x = torch.tensor([-1.003, -0.9, 0.9, 1.003], dtype=torch.float16)
+        gm = _to_edge_gm(M(), (x,))
+        target = exir_ops.edge.aten._to_copy.default
+        self.assertEqual(_count_ops(gm, target), 2)
+
+        collapsed = CollapseDtypeConversionPass()(gm)
+        self.assertTrue(collapsed.modified)
+        self.assertEqual(_count_ops(collapsed.graph_module, target), 1)
+        result = RemoveNoOpsPass()(collapsed.graph_module)
 
         self.assertTrue(result.modified)
         self.assertEqual(_count_ops(result.graph_module, target), 0)
+        result.graph_module.recompile()
+        torch.testing.assert_close(result.graph_module(x)[0], M()(x), rtol=0, atol=0)
 
     def test_to_copy_with_memory_format_not_removed(self):
         """_is_pure_dtype_cast rejects kwargs with non-None memory_format."""
@@ -644,6 +817,35 @@ class TestPassComposition(unittest.TestCase):
         result.graph.lint()
         torch.testing.assert_close(result.module()(*inputs), model(*inputs))
         MLXProgramBuilder(result).build()
+
+    def test_boolean_cache_reset_uses_one_cast(self):
+        class M(nn.Module):
+            def forward(self, input_pos):
+                reset = (input_pos[0] == 0).to(torch.bfloat16).to(torch.float32)
+                return 1.0 - reset
+
+        model = M()
+        result = (
+            _to_edge(model, (torch.tensor([0]),))
+            .transform(get_default_passes())
+            .exported_program()
+        )
+        result.graph.lint()
+        for position in (0, 7):
+            with self.subTest(position=position):
+                input_pos = torch.tensor([position])
+                torch.testing.assert_close(
+                    result.module()(input_pos), model(input_pos), rtol=0, atol=0
+                )
+        built = MLXProgramBuilder(result).build()
+        self.assertEqual(
+            sum(
+                type(instr.op).__name__ == "AsTypeNode"
+                for chain in built.instruction_chains
+                for instr in chain.instructions
+            ),
+            1,
+        )
 
     def test_correctness_after_all_passes(self):
         """Output values should be preserved after running all passes."""
