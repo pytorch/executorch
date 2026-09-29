@@ -128,9 +128,9 @@ class SignedInt4PackingTest(unittest.TestCase):
                     _pack_signed_int4(torch.tensor([[value, 0]], dtype=torch.int8))
 
 
-def _linear_weight(method):
-    [linear] = [n for n in method.graph.nodes if n.target and "aten.linear" in n.target]
-    [weight] = [a.arg.value for a in linear.inputs if a.name == "weight"]
+def _weight_of(method, op="aten.linear"):
+    [node] = [n for n in method.graph.nodes if n.target and op in n.target]
+    [weight] = [a.arg.value for a in node.inputs if a.name == "weight"]
     assert isinstance(weight, TensorArg)
     return weight.name
 
@@ -148,7 +148,7 @@ class TorchaoQ4LinearTest(unittest.TestCase):
         [weight] = [c for c in method.constants if c.meta.quant is not None]
         scheme = weight.meta.quant.scheme
         self.assertIsInstance(scheme, AffineGroup)
-        self.assertEqual(_linear_weight(method), weight.name)
+        self.assertEqual(_weight_of(method), weight.name)
         self.assertEqual(weight.meta.dtype, ScalarType.BYTE)
         self.assertEqual([d.max for d in weight.meta.sizes], [self.N, self.K])
         self.assertEqual(
@@ -183,6 +183,35 @@ class TorchaoQ4LinearTest(unittest.TestCase):
         targets = _call_function_targets(method.graph)
         self.assertFalse(any("quantize_affine" in t for t in targets))
         self._assert_linear_reads_packed_weight(method, constants)
+
+
+class TorchaoQ4EmbeddingTest(unittest.TestCase):
+    def test_embedding_reads_packed_weight(self):
+        rows, cols, group_size = 16, 64, 32
+        model = nn.Sequential(nn.Embedding(rows, cols))
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(
+                weight_dtype=torch.int4, granularity=PerGroup(group_size)
+            ),
+            filter_fn=lambda m, _: isinstance(m, nn.Embedding),
+        )
+        indices = torch.tensor([[1, 5, 7]])
+        manager = to_native(torch.export.export(model, (indices,)))
+        method = deserialize_program(manager._ptg).methods[0]
+
+        self.assertFalse(
+            any("dequantize_affine" in t for t in _call_function_targets(method.graph))
+        )
+        [weight] = [c for c in method.constants if c.meta.quant is not None]
+        scheme = weight.meta.quant.scheme
+        self.assertEqual(_weight_of(method, "aten.embedding"), weight.name)
+        self.assertEqual([d.max for d in weight.meta.sizes], [rows, cols])
+        self.assertEqual(
+            (scheme.quant_min, scheme.quant_max, scheme.group_size),
+            (-8, 7, group_size),
+        )
+        self.assertEqual(manager._constants[weight.data_key].numel(), rows * cols // 2)
 
 
 class _DequantizedLinear(nn.Module):

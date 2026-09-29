@@ -1054,15 +1054,18 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         node.meta["native_skip_serialize"] = True
 
 
-def _is_linear_weight_use(dequantize: torch.fx.Node, user: torch.fx.Node) -> bool:
+# The argument through which each op reads a foldable weight.
+_WEIGHT_ARG_INDEX = {"aten::linear": 1, "aten::embedding": 0}
+
+
+def _is_weight_use(dequantize: torch.fx.Node, user: torch.fx.Node) -> bool:
     op = _resolve_op_overload(user.target) if user.op == "call_function" else None
+    index = _WEIGHT_ARG_INDEX.get(op.name()) if op is not None else None
     return (
-        op is not None
-        and op.name() == "aten::linear"
-        and len(user.args) >= 2
-        and user.args[1] is dequantize
-        and user.args[0] is not dequantize
-        and dequantize not in user.args[2:]
+        index is not None
+        and len(user.args) > index
+        and user.args[index] is dequantize
+        and sum(arg is dequantize for arg in user.args) == 1
         and dequantize not in user.kwargs.values()
     )
 
@@ -1072,13 +1075,13 @@ def _mark_torchao_q4_weights(
 ) -> None:
     """Mark portable torchao q4 weights for packed PTN storage.
 
-    A weight dequantize read only as the weight of `aten.linear`, whose output
-    dtype matches its scales and whose operands are all lifted constants, is
-    folded: the linear reads the packed `AffineGroup` weight directly and the
-    dequantize is not serialized. A weight is packed only if every one of its
-    readers is such a dequantize with the same parameters. Any other dequantize
-    stays in the graph over the plain int8 weight, with torchao semantics.
-    Activation q/dq nodes are never folded.
+    A weight dequantize read only as the weight of `aten.linear` or
+    `aten.embedding`, whose output dtype matches its scales and whose operands
+    are all lifted constants, is folded: the op reads the packed `AffineGroup`
+    weight directly and the dequantize is not serialized. A weight is packed only
+    if every one of its readers is such a dequantize with the same parameters.
+    Any other dequantize stays in the graph over the plain int8 weight, with
+    torchao semantics. Activation q/dq nodes are never folded.
     """
     if lifted_constants is None:
         return
@@ -1132,7 +1135,7 @@ def _mark_torchao_q4_weights(
             {weight.name, scale.name, zero_point.name} <= lifted_constants
             and output.dtype == scale_value.dtype
             and node.users
-            and all(_is_linear_weight_use(node, user) for user in node.users)
+            and all(_is_weight_use(node, user) for user in node.users)
         ):
             folds.setdefault(weight, []).append((node, packed))
 
