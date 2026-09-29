@@ -140,13 +140,13 @@ exec_program = et_program.to_executorch(
             skip_d2h_for_method_outputs=True,
         ),
         enable_non_cpu_memory_planning=True,
-        # Required alongside the skips. Memory planning reserves a buffer for graph inputs and
-        # outputs by default, and the runtime fills a planned input by copying the caller's
-        # memory into that buffer, which reintroduces the copy you just asked to skip. On device
-        # memory that copy is a host memcpy into a device pointer, which is undefined.
-        memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=False, alloc_graph_output=False
-        ),
+        # Required alongside the skips. Memory planning reserves a buffer for graph inputs by
+        # default, and the runtime fills a planned input by copying the caller's memory into that
+        # buffer, which reintroduces the copy you just asked to skip. On device memory that copy is
+        # a host memcpy into a device pointer, which is undefined.
+        # Outputs stay planned, so the runtime allocates them on the device and hands back a
+        # pointer to its own buffer. See the note below for when to unplan them instead.
+        memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
     )
 )
 ```
@@ -169,11 +169,25 @@ out works, and the snippet above sets it explicitly only to make the requirement
 it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
 during device-aware memory planning.
 
-**Both flags also need unplanned graph inputs and outputs**, via
-`MemoryPlanningPass(alloc_graph_input=False, alloc_graph_output=False)` as shown above. Without
-it the program still reserves its own buffer and the runtime copies into it, so the copy comes
-back at run time. On device memory that copy is a host memcpy into a device pointer, which is
-undefined, so the program crashes rather than returning a wrong answer.
+**Inputs must be unplanned**, via `MemoryPlanningPass(alloc_graph_input=False)`. Without it the
+program reserves its own input buffer and the runtime copies the caller's memory into it, so the
+copy comes back at run time. On device memory that copy is a host memcpy into a device pointer,
+which is undefined, so the program crashes rather than returning a wrong answer.
+
+**Outputs have two valid shapes, and which one you want depends on the language.**
+
+Leave outputs planned, which is the default, when the caller cannot supply device memory itself.
+The planned buffer is allocated on the device because `enable_non_cpu_memory_planning` is on, and
+`skip_d2h_for_method_outputs` means nothing copies it back, so the result stays on the device and
+the caller receives a pointer to the runtime's own buffer. That buffer belongs to the method and is
+reused by the next execution, so read or copy the result before running again. This is the shape
+every Python caller wants, and it is what the exporters in this repository use, for example
+`examples/models/gemma4_31b/export.py`.
+
+Set `alloc_graph_output=False` only when the caller supplies the output memory itself, which today
+means a C++ caller handing the runtime a device tensor through `Module::set_output`. The Python
+bindings allocate host memory for an unplanned output, so a device resident method exported this
+way cannot run from Python.
 
 **Per-method selection is on the outer config, not on the flags.** Pass a dict of
 `PropagateDeviceConfig` keyed by method name:
