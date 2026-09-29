@@ -253,6 +253,19 @@ def _packed_tensor_meta(codec: str, sizes: tuple[int, ...]) -> TensorMeta:
     )
 
 
+def _pack_signed_int4(weight: torch.Tensor) -> torch.Tensor:
+    """Pack signed int4 values as PTN AffineGroup qdata, even elements low."""
+    if weight.dtype != torch.int8 or weight.ndim != 2:
+        raise ValueError("native q4 weights must be rank-2 int8 tensors before packing")
+    if weight.shape[1] % 2 != 0:
+        raise ValueError("native q4 weight inner dimension must be even")
+    if bool(torch.any((weight < -8) | (weight > 7)).item()):
+        raise ValueError("native q4 weight values must be in [-8, 7]")
+    # The uint8 cast wraps [-8, -1] to [248, 255], so + 8 wraps them to [0, 7].
+    shifted = weight.to(torch.uint8) + 8
+    return ((shifted[:, 1::2] << 4) | shifted[:, ::2]).contiguous()
+
+
 # ---------------------------------------------------------------------------
 # Argument dispatch.
 # ---------------------------------------------------------------------------
@@ -880,6 +893,13 @@ def _extract_constants_and_mutable_buffers(
     mutable_buffers: list[MutableBufferSpec] = []
     packed_quant = packed_quant or {}
 
+    fqn_by_name = {
+        getattr(getattr(ispec, "arg", None), "name", None): getattr(
+            ispec, "target", None
+        )
+        for ispec in getattr(graph_signature, "input_specs", []) or []
+    }
+
     for ispec in getattr(graph_signature, "input_specs", []) or []:
         if ispec.kind not in _INPUT_KIND_MAP:
             continue
@@ -899,11 +919,38 @@ def _extract_constants_and_mutable_buffers(
             continue
         tensor = tensor.contiguous()
         pq = packed_quant.get(name)
-        meta = (
-            _packed_tensor_meta(pq["codec"], pq["sizes"])
-            if pq is not None
-            else _tensor_meta(tensor)
-        )
+        # GGUF entries carry a codec; torchao q4 entries carry scale and
+        # zero-point names.
+        if pq is None:
+            meta = _tensor_meta(tensor)
+        elif "codec" in pq:
+            meta = _packed_tensor_meta(pq["codec"], pq["sizes"])
+        else:
+            scale_data_key = fqn_by_name.get(pq["scale_name"])
+            zero_point_data_key = fqn_by_name.get(pq["zero_point_name"])
+            if not isinstance(scale_data_key, str) or not isinstance(
+                zero_point_data_key, str
+            ):
+                raise ValueError(
+                    "native q4 weight quantization parameters must be lifted "
+                    "constants"
+                )
+            tensor = _pack_signed_int4(tensor)
+            meta = TensorMeta(
+                dtype=ScalarType.BYTE,
+                sizes=[_dim(s) for s in pq["sizes"]],
+                quant=QuantSpec(
+                    scheme=AffineGroup(
+                        scale_data_key=scale_data_key,
+                        scale_dtype=pq["scale_dtype"],
+                        zero_point_data_key=zero_point_data_key,
+                        zero_point_dtype=pq["zero_point_dtype"],
+                        quant_min=-8,
+                        quant_max=7,
+                        group_size=pq["group_size"],
+                    )
+                ),
+            )
         constant_refs.append(
             NamedTensorRef(
                 name=name,
@@ -1007,6 +1054,66 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         node.meta["native_skip_serialize"] = True
 
 
+def _mark_torchao_q4_weights(graph_module: torch.fx.GraphModule) -> None:
+    """Mark portable torchao q4 weights for packed PTN storage.
+
+    The q/dq nodes remain in the serialized graph. Native-VK recognizes and
+    fuses that portable pattern after loading, while the package avoids paying
+    one byte for every four-bit weight.
+    """
+    for node in graph_module.graph.nodes:
+        op = _resolve_op_overload(node.target) if node.op == "call_function" else None
+        if (
+            op is None
+            or op.name() != "torchao::dequantize_affine"
+            or len(node.args) < 7
+            # input_dtype, quant_min, quant_max
+            or node.args[4] != torch.int8
+            or node.args[5] != -8
+            or node.args[6] != 7
+        ):
+            continue
+        weight, block_size, scale, zero_point = node.args[:4]
+        output = node.meta.get("val")
+        if (
+            not isinstance(weight, torch.fx.Node)
+            or weight.op != "placeholder"
+            or not isinstance(scale, torch.fx.Node)
+            or scale.op != "placeholder"
+            or not isinstance(zero_point, torch.fx.Node)
+            or zero_point.op != "placeholder"
+            or not isinstance(block_size, (list, tuple))
+            or len(block_size) != 2
+            or block_size[0] != 1
+            or not isinstance(block_size[1], int)
+            or block_size[1] <= 0
+            or not isinstance(output, torch.Tensor)
+            or output.ndim != 2
+            or output.shape[1] % block_size[1] != 0
+        ):
+            continue
+        scale_value = scale.meta.get("val")
+        zero_point_value = zero_point.meta.get("val")
+        if not isinstance(scale_value, torch.Tensor) or not isinstance(
+            zero_point_value, torch.Tensor
+        ):
+            continue
+        packed = {
+            "sizes": tuple(int(s) for s in output.shape),
+            "scale_name": scale.name,
+            "scale_dtype": _scalar_type(scale_value.dtype),
+            "zero_point_name": zero_point.name,
+            "zero_point_dtype": _scalar_type(zero_point_value.dtype),
+            "group_size": block_size[1],
+        }
+        existing = weight.meta.get("native_packed_quant")
+        if existing is not None and existing != packed:
+            raise ValueError(
+                f"constant {weight.name!r} has incompatible q4 interpretations"
+            )
+        weight.meta["native_packed_quant"] = packed
+
+
 def _build_graph_body(
     graph_module: torch.fx.GraphModule,
     graph_signature: object | None,
@@ -1020,6 +1127,7 @@ def _build_graph_body(
     dict[str, torch.Tensor],
 ]:
     _fold_gguf_dequant(graph_module)
+    _mark_torchao_q4_weights(graph_module)
     subgraph_map = _subgraph_map(graph_module)
     nodes, val_by_name, output_names = _collect_fx_nodes(graph_module, subgraph_map)
 
@@ -1432,7 +1540,11 @@ def _validate_node(node: Node, defined: set[str], define: Any, check_ref: Any) -
         _define_node_outputs(node, define)
 
 
-def validate_graph(graph: Graph, defined_extra: set[str] | None = None) -> None:
+def validate_graph(
+    graph: Graph,
+    defined_extra: set[str] | None = None,
+    meta_extra: set[str] | None = None,
+) -> None:
     """Assert a (pure) graph body is structurally self-contained: every value
     reference resolves and every input/output has tensor metadata. Recurses into
     every ``GraphArg`` subgraph. Raises ``ValueError`` on the first inconsistency.
@@ -1472,7 +1584,7 @@ def validate_graph(graph: Graph, defined_extra: set[str] | None = None) -> None:
     for name in graph.outputs or []:
         check_ref(name, "output")
 
-    _check_io_meta(graph, meta_names)
+    _check_io_meta(graph, meta_names | (meta_extra or set()))
 
 
 def validate_method(
@@ -1491,7 +1603,12 @@ def validate_method(
     """
     defined_extra: set[str] = {c.name for c in (method.constants or [])}
     defined_extra.update(mb.name for mb in (method.mutable_buffers or []))
-    validate_graph(method.graph, defined_extra=defined_extra)
+    constant_meta = {c.name for c in (method.constants or [])}
+    validate_graph(
+        method.graph,
+        defined_extra=defined_extra,
+        meta_extra=constant_meta,
+    )
 
     meta_names = {tv.name for tv in (method.graph.tensor_values or [])}
     for mb in method.mutable_buffers or []:
