@@ -45,9 +45,22 @@ _SUPPORTED_NON_CORE_OPS = [
     # GGUF weight dequantize stays in the delegate; the serializer folds it into a
     # PackedQuant weight on the consuming op.
     torch.ops.torchao.dequantize_gguf.default,
+    torch.ops.torchao.choose_qparams_affine.default,
+    torch.ops.torchao.quantize_affine.default,
+    torch.ops.torchao.dequantize_affine.default,
     rope_op,
     torch.ops.aten.rms_norm.default,
 ]
+
+# A SymInt, and any op arg that references one, is an execution-time value. An
+# engine must use its current value on every execute, not the one seen at load,
+# or reject the graph at load.
+_SUPPORTED_SYMBOLIC_OPS = {
+    operator.add,
+    operator.floordiv,
+    operator.mul,
+    operator.sub,
+}
 
 # Maps a control-flow higher-order op to the arg indices of its branch submodule
 # get_attr nodes (cond's true and false fns).
@@ -100,6 +113,8 @@ class NativeSupportedOperators(OperatorSupportBase):
                 )
                 == 1
             )
+        if node.target in _SUPPORTED_SYMBOLIC_OPS:
+            return True
 
         from executorch.exir.dialects.edge._ops import EdgeOpOverload
 

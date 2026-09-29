@@ -81,7 +81,10 @@ class Value {
 
   // The empty dim_order_hint is what makes the tensor contiguous.
   Value(std::string name, ScalarType dtype, std::vector<int64_t> sizes)
-      : value_(TensorMeta{dtype, std::move(sizes), {}}),
+      : value_(TensorMeta{
+            .dtype = dtype,
+            .sizes = std::move(sizes),
+        }),
         name(std::move(name)) {}
 
   Value(std::string name, Scalar value)
