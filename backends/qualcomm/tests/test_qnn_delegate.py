@@ -585,6 +585,7 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+                self.assert_batch_norm_folded(module, sample_input)
 
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
@@ -2929,6 +2930,7 @@ class TestQNNFloatingPointModel(TestQNN):
         module = Conv2dBnHardtanhMean()  # noqa: F405
         sample_input = (torch.randn(1, 1, 6, 6),)
         self.lower_module_and_test_output(module, sample_input)
+        self.assert_batch_norm_folded(module, sample_input)
 
     def test_qnn_backend_conv2d_cat(self):
         module = Conv2dCat()  # noqa: F405

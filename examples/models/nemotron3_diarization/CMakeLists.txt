@@ -15,16 +15,11 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-if(NOT TARGET mlxdelegate
-   OR NOT TARGET mlx
-   OR NOT TARGET xnnpack_backend
-)
+if(NOT TARGET xnnpack_backend)
   message(
-    FATAL_ERROR
-      "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON and EXECUTORCH_BUILD_XNNPACK=ON"
+    FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_XNNPACK=ON"
   )
 endif()
-executorch_target_link_options_shared_lib(mlxdelegate)
 executorch_target_link_options_shared_lib(xnnpack_backend)
 
 add_library(nemotron3_diarization STATIC runner.cpp)
@@ -47,13 +42,45 @@ if(TARGET kleidiai)
   target_link_libraries(nemotron3_diarization PUBLIC kleidiai)
 endif()
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  target_link_libraries(nemotron3_diarization PUBLIC aoti_cuda_backend)
+  if(NOT MSVC)
+    executorch_target_link_options_shared_lib(aoti_cuda_backend)
+  endif()
+endif()
 add_executable(nemotron3_diarization_runner main.cpp)
 target_include_directories(
   nemotron3_diarization_runner
   PRIVATE ${EXECUTORCH_ROOT}/third-party/json/include
 )
 target_link_libraries(
-  nemotron3_diarization_runner PRIVATE nemotron3_diarization gflags mlxdelegate
-                                       mlx
+  nemotron3_diarization_runner PRIVATE nemotron3_diarization gflags
 )
-executorch_target_copy_mlx_metallib(nemotron3_diarization_runner)
+if(EXECUTORCH_BUILD_CUDA)
+  target_compile_definitions(
+    nemotron3_diarization_runner PRIVATE EXECUTORCH_BUILD_CUDA
+  )
+endif()
+if(EXECUTORCH_BUILD_MLX)
+  if(NOT TARGET mlxdelegate OR NOT TARGET mlx)
+    message(
+      FATAL_ERROR "Build and install ExecuTorch with EXECUTORCH_BUILD_MLX=ON"
+    )
+  endif()
+  executorch_target_link_options_shared_lib(mlxdelegate)
+  target_link_libraries(nemotron3_diarization_runner PRIVATE mlxdelegate mlx)
+  target_compile_definitions(
+    nemotron3_diarization_runner PRIVATE EXECUTORCH_BUILD_MLX
+  )
+  executorch_target_copy_mlx_metallib(nemotron3_diarization_runner)
+endif()
+if(MSVC AND EXECUTORCH_BUILD_CUDA)
+  add_custom_command(
+    TARGET nemotron3_diarization_runner
+    POST_BUILD
+    COMMAND
+      ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:aoti_cuda_shims>
+      $<TARGET_FILE_DIR:nemotron3_diarization_runner>
+  )
+endif()
