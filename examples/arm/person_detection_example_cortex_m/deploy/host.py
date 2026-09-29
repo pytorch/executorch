@@ -7,6 +7,7 @@
 
 import argparse
 import socket
+import time
 import warnings
 from pathlib import Path
 
@@ -91,17 +92,37 @@ def main() -> None:
         type=Path,
         default=DEPLOY_DIR / "fvp-results/profile.etdp",
     )
+    parser.add_argument(
+        "--once", action="store_true", help="exit after one inference or ETDump"
+    )
+    parser.add_argument(
+        "--expect-etdump", action="store_true", help="wait for an ETDump before exiting"
+    )
     args = parser.parse_args()
 
-    with socket.create_connection(parse_tcp(args.tcp), args.timeout) as connection:
+    # The FVP starts asynchronously; its TCP listener may not be ready yet.
+    deadline = time.monotonic() + args.timeout
+    connection: socket.socket | None = None
+    while connection is None:
+        try:
+            connection = socket.create_connection(parse_tcp(args.tcp), timeout=1)
+        except (ConnectionRefusedError, TimeoutError):
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Could not connect to {args.tcp}") from None
+            time.sleep(0.5)
+    with connection:
         connection.settimeout(None)
         while True:
             line = read_line(connection)
             if line.startswith(ETDUMP_PREFIX):
                 data = read_etdump(connection, line)
                 print_performance_report(data, args.etrecord, args.etdump_output)
+                if args.once:
+                    return
             else:
                 print(line.decode("utf-8", errors="replace"))
+                if args.once and not args.expect_etdump and b"Inference time:" in line:
+                    return
 
 
 if __name__ == "__main__":

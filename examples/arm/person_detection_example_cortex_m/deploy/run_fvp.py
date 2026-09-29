@@ -182,6 +182,7 @@ def main() -> None:
     parser.add_argument("--fvp", default="FVP_Corstone_SSE-300_Ethos-U55")
     parser.add_argument("--port", type=int, default=5000, help="diagnostic UART port")
     parser.add_argument("--vsi-port", type=int, default=6004)
+    parser.add_argument("--headless", action="store_true", help="disable the FVP LCD")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--camera", type=int, default=0, help="webcam index")
     source.add_argument("--input", type=Path, help="image or video file")
@@ -205,7 +206,7 @@ def main() -> None:
         "-C",
         "ethosu.extra_args=--fast",
         "-C",
-        "mps3_board.visualisation.disable-visualisation=0",
+        f"mps3_board.visualisation.disable-visualisation={int(args.headless)}",
         "-C",
         f"mps3_board.v_path={DEPLOY_DIR / 'vsi'}",
         "-C",
