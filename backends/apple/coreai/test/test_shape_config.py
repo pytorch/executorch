@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import unittest
 
 import torch
@@ -18,7 +19,10 @@ from executorch.backends.apple.coreai.partition.partitioner import (
 )
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
-from executorch.exir.lowered_backend_module import executorch_call_delegate
+from executorch.exir.lowered_backend_module import (
+    executorch_call_delegate,
+    LoweredBackendModule,
+)
 from executorch.exir.pass_base import PassResult
 
 
@@ -217,6 +221,26 @@ class InputEnumerationsLoweringTest(unittest.TestCase):
         )
         self.assertGreater(len(bytes(lowered.to_executorch().buffer)), 0)
 
+    def test_manifest_lists_each_specialized_function(self):
+        lowered = self._lower([{0: [4, 16]}])
+        (delegate,) = [
+            m
+            for m in lowered.exported_program().graph_module.children()
+            if isinstance(m, LoweredBackendModule)
+        ]
+        manifest = json.loads(delegate.processed_bytes)
+        self.assertNotIn("function", manifest)
+        self.assertFalse(manifest["runtime_supported"])
+        self.assertEqual(manifest["runtime_unsupported_reason"], "enumerated_shapes")
+        (input_name,) = manifest["input_names"]
+        functions = {f["name"]: f["input_shapes"] for f in manifest["functions"]}
+        self.assertEqual(len(functions), 2)
+        self.assertTrue(all(name.startswith("main_") for name in functions))
+        self.assertEqual(
+            sorted(shapes[input_name] for shapes in functions.values()),
+            [[4, 8], [16, 8]],
+        )
+
     def test_shapes_are_substituted_at_boundary(self):
         # Verify the ET-input enumeration propagates + substitutes into the
         # delegate boundary's symbolic shape (s31, 8) -> (4,8)/(16,8)/(32,8).
@@ -294,7 +318,9 @@ class MultiInputEnumerationsTest(unittest.TestCase):
         for key, shapes in entries.items():
             with self.subTest(key):
                 self.assertEqual(
-                    set(shapes), {"x", "y"}, f"{key} leaves an input unconstrained"
+                    set(shapes),
+                    {"input_0", "input_1"},
+                    f"{key} leaves an input unconstrained",
                 )
                 self.assertEqual(len({tuple(s) for s in shapes.values()}), 1)
 
@@ -329,7 +355,7 @@ class BoundaryCoverageTest(unittest.TestCase):
         for cfg in captured:
             for key, shapes in cfg.items():
                 with self.subTest(key):
-                    self.assertEqual(set(shapes), {"x", "y"})
+                    self.assertEqual(set(shapes), {"input_0", "input_1"})
 
 
 class SubgraphBoundaryTest(unittest.TestCase):
@@ -356,7 +382,12 @@ class SubgraphBoundaryTest(unittest.TestCase):
             len(captured), 2, "expected a graph break into exactly 2 delegates"
         )
         # Identify by content rather than order, which preprocess does not fix.
-        model_input = next(c for c in captured if "x" in next(iter(c.values())))
+        model_input = next(
+            c
+            for c in captured
+            if sorted(tuple(s) for v in c.values() for s in v.values())
+            == [(4, 8), (16, 8)]
+        )
         intermediate = next(c for c in captured if c is not model_input)
         return model_input, intermediate
 

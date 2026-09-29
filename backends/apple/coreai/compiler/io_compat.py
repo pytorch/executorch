@@ -13,7 +13,7 @@ assert_io_compatible` compares the two *before* compilation and fails loudly.
 """
 
 import logging
-from typing import Any, List, Sequence, Tuple
+from typing import AbstractSet, Any, List, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
@@ -43,16 +43,22 @@ _TORCH_TO_COREAI_ELT = {
 }
 
 
-def _coreai_io(program, entrypoint: str = MAIN_ENTRYPOINT):
+def _coreai_io(
+    program,
+    entrypoint: str = MAIN_ENTRYPOINT,
+    owned_state: AbstractSet[str] = frozenset(),
+):
     """Core AI graph I/O as lists of (element_type_str, shape_or_None).
 
     Ranked tensors -> (element_type_str, shape_tuple).  Any non-tensor coreai
     type is represented as (str(type), None) so the comparison can flag it,
     rather than assuming a tensor and crashing on ``.element_type`` / ``.shape``.
 
-    Mutated buffers the delegate owns are skipped: coreai-torch marks the state
-    argument with ``MutableBuffers.buffer_mutation`` naming its result, and
-    neither crosses the ExecuTorch boundary.
+    ``owned_state`` names the mutated buffers the delegate owns. coreai-torch
+    turns each into a state argument whose ``MutableBuffers.buffer_mutation``
+    names its result; neither crosses the ExecuTorch boundary, so both are
+    skipped. coreai-torch marks mutated user inputs the same way, but ExecuTorch
+    does pass those across, so they stay and fail the comparison.
     """
     from coreai._compiler.ir import RankedTensorType
 
@@ -66,15 +72,23 @@ def _coreai_io(program, entrypoint: str = MAIN_ENTRYPOINT):
 
     arg_attrs = list(graph.arg_attrs or [])
     res_attrs = list(graph.res_attrs or [])
+
+    def _owned(attrs) -> bool:
+        return (
+            "MutableBuffers.buffer_mutation" in attrs
+            and "coreai.name" in attrs
+            and attrs["coreai.name"].value in owned_state
+        )
+
     state_results = {
         attrs["MutableBuffers.buffer_mutation"].value
         for attrs in arg_attrs
-        if "MutableBuffers.buffer_mutation" in attrs
+        if _owned(attrs)
     }
     inputs = [
         _describe(t)
         for i, t in enumerate(func_type.inputs)
-        if i >= len(arg_attrs) or "MutableBuffers.buffer_mutation" not in arg_attrs[i]
+        if i >= len(arg_attrs) or not _owned(arg_attrs[i])
     ]
     outputs = [
         _describe(t)
@@ -180,9 +194,41 @@ def io_mismatches(
     return errors
 
 
-def assert_io_compatible(program, edge_program: ExportedProgram) -> None:
+def coreai_io_names(program) -> Tuple[List[str], List[str]]:
+    """Read names in graph argument/result order, never dictionary order."""
+    graph = program._get_graph(MAIN_ENTRYPOINT)
+    names = []
+    for kind, attrs, types in (
+        ("input", graph.arg_attrs, graph.function_type.value.inputs),
+        ("output", graph.res_attrs, graph.function_type.value.results),
+    ):
+        ordered = [a["coreai.name"].value for a in attrs if "coreai.name" in a]
+        if (
+            len(ordered) != len(types)
+            or any(not name for name in ordered)
+            or len(set(ordered)) != len(ordered)
+        ):
+            raise ValueError(f"Core AI {kind} names must be complete and unique")
+        names.append(ordered)
+    return names[0], names[1]
+
+
+def assert_io_compatible(
+    program,
+    edge_program: ExportedProgram,
+    *,
+    input_names: Optional[Sequence[str]] = None,
+    output_names: Optional[Sequence[str]] = None,
+) -> None:
     """Raise if the ``.aimodel`` boundary I/O is incompatible with ExecuTorch."""
-    coreai_in, coreai_out = _coreai_io(program)
+    signature = edge_program.graph_signature
+    mutated_buffers = set(signature.buffers_to_mutate.values())
+    owned_state = {
+        spec.arg.name
+        for spec in signature.input_specs
+        if spec.kind == InputKind.BUFFER and spec.target in mutated_buffers
+    }
+    coreai_in, coreai_out = _coreai_io(program, owned_state=owned_state)
     edge_in, edge_out = _edge_io(edge_program)
     logger.info(
         "Core AI delegate boundary I/O:\n"
@@ -198,6 +244,17 @@ def assert_io_compatible(program, edge_program: ExportedProgram) -> None:
     errors = io_mismatches(coreai_in, edge_in, "input") + io_mismatches(
         coreai_out, edge_out, "output"
     )
+    if input_names is not None or output_names is not None:
+        actual_inputs, actual_outputs = coreai_io_names(program)
+        for kind, actual, expected in (
+            ("input", actual_inputs, input_names),
+            ("output", actual_outputs, output_names),
+        ):
+            if expected is not None and actual != list(expected):
+                errors.append(
+                    f"{kind} names mismatch: .aimodel has {actual}, "
+                    f"ExecuTorch expects {list(expected)}"
+                )
     if errors:
         raise ValueError(
             "Core AI delegate boundary is incompatible with ExecuTorch:\n  "

@@ -215,9 +215,9 @@ class CoreAIPartitioner(Partitioner):
         #
         # aot_compile_config requests ahead-of-time ``xcrun coreai-build
         # compile`` in preprocess, emitting per-architecture ``.aimodelc``
-        # bundles instead of the portable ``.aimodel``. It is serialized as a
+        # bundles instead of the source ``.aimodel``. It is serialized as a
         # single JSON AOT_COMPILE_CONFIG spec (presence implies AOT).
-        # min_deployment_version is a general spec (it also sets the portable
+        # min_deployment_version is a general spec (it also sets the source
         # .aimodel's OS floor), so it is emitted separately.
         #
         # input_enumerations declares enumerated shapes on the ET model inputs

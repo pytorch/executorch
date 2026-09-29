@@ -20,11 +20,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, final, Iterator, List, Optional, Tuple
 
+from executorch.backends.apple.coreai.compiler.asset_manifest import (
+    collect_asset_metadata,
+)
 from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
     apply_enumerated_shapes,
 )
-from executorch.backends.apple.coreai.compiler.io_compat import assert_io_compatible
+from executorch.backends.apple.coreai.compiler.io_compat import (
+    _edge_io,
+    assert_io_compatible,
+    coreai_io_names,
+)
 from executorch.backends.apple.coreai.passes.replace_copy_ops import (
     ReplaceCopyOpsWithFunctionalPass,
 )
@@ -46,7 +53,7 @@ _ASSET_ALIGNMENT = 16
 # Build-time only: directory where sidecar bundles are written.  Read from the
 # environment (set it via :func:`coreai_sidecar_dir`) so no build-machine path
 # is ever serialized into the .pte.  The runtime load directory is a separate,
-# runtime-provided concern (default: the .pte's dir).
+# runtime-provided concern (the explicit absolute base_dir backend option).
 SIDECAR_DIR_ENV = "COREAI_SIDECAR_DIR"
 
 
@@ -79,14 +86,14 @@ class COMPILE_SPEC_KEYS(Enum):
     #    "architectures": [...],            # empty/absent => all supported
     #    "expect_frequent_reshapes": bool}
     # (min_deployment_version is a separate general spec that also applies to
-    # the portable .aimodel, so it is not part of this AOT-only blob.)
+    # the source .aimodel, so it is not part of this AOT-only blob.)
     AOT_COMPILE_CONFIG = "coreai_aot_compile_config"
 
 
 class AssetPackaging(str, Enum):
-    # Portable .aimodel embedded in the .pte via NamedDataStore.
+    # Source .aimodel embedded in the .pte via NamedDataStore.
     INLINE = "inline"
-    # Portable .aimodel written as a sidecar next to the .pte.
+    # Source .aimodel written as a sidecar next to the .pte.
     SIDECAR = "sidecar"
     # AOT-compiled per-arch .aimodelc bundles embedded in the .pte.
     AOT_COMPILED_INLINE = "aot_compiled_inline"
@@ -100,7 +107,7 @@ class AOTCompileConfig:
 
     Constructible in Python and (de)serializable to/from JSON so it can ride as
     the ``AOT_COMPILE_CONFIG`` compile spec. ``min_deployment_version`` is not
-    part of this object; it is a general spec (it also sets the portable
+    part of this object; it is a general spec (it also sets the source
     .aimodel's OS floor), so it is passed separately to the partitioner.
     """
 
@@ -229,8 +236,7 @@ def coreai_sidecar_dir(path: str) -> Iterator[None]:
 
 
 def _nds_key(model_hash: str, relative_path: str) -> str:
-    # Namespaced by content hash so identical assets dedup to one entry and the
-    # hash doubles as an on-device cache key.
+    # Keep bundle files separate across delegates while deduplicating named data.
     return f"coreai/{model_hash}/{relative_path}"
 
 
@@ -281,6 +287,10 @@ def _deliver(
     if sidecar_dir is None:
         return _embed_dir_inline(staging, model_hash, manifest)
 
+    if staging.is_symlink() or not staging.is_dir():
+        raise ValueError(
+            f"Core AI asset root must be a non-symlink directory: {staging}"
+        )
     dest = Path(sidecar_dir) / model_hash
     dest.parent.mkdir(parents=True, exist_ok=True)
     _reject_existing_asset_dir(dest)
@@ -291,6 +301,7 @@ def _deliver(
         pending.mkdir(parents=True)
         for bundle in sorted(staging.iterdir()):
             shutil.move(str(bundle), str(pending / bundle.name))
+        manifest.update(collect_asset_metadata(pending, manifest))
         pending.rename(dest)
     except BaseException:
         shutil.rmtree(pending, ignore_errors=True)
@@ -319,12 +330,22 @@ def _prepare_program_for_conversion(edge_program: ExportedProgram) -> ExportedPr
     return ep
 
 
-def _convert_to_aiprogram(edge_program: ExportedProgram):
+def _convert_to_aiprogram(
+    edge_program: ExportedProgram,
+    *,
+    input_names: Optional[List[str]] = None,
+    output_names: Optional[List[str]] = None,
+):
     from coreai_torch import TorchConverter
 
     aten_program = _prepare_program_for_conversion(edge_program)
     converter = TorchConverter()
-    converter.add_exported_program(aten_program)
+    converter.add_exported_program(
+        aten_program,
+        input_names=input_names,
+        output_names=output_names,
+        entrypoint_name=MAIN_ENTRYPOINT,
+    )
     return converter.to_coreai()
 
 
@@ -342,17 +363,18 @@ def _embed_dir_inline(
     any ``manifest_extra`` (packaging, archs, ...).
     """
     store = NamedDataStore()
-    files: List[str] = []
-    for path in sorted(root_dir.rglob("*")):
-        if path.is_file():
-            rel = path.relative_to(root_dir).as_posix()
-            files.append(rel)
-            store.add_named_data(
-                _nds_key(model_hash, rel),
-                path.read_bytes(),
-                alignment=_ASSET_ALIGNMENT,
-            )
-    manifest = {"files": files, **manifest_extra}
+
+    def register_payload(relative_path: str, payload: bytes) -> None:
+        store.add_named_data(
+            _nds_key(model_hash, relative_path), payload, alignment=_ASSET_ALIGNMENT
+        )
+
+    manifest = {
+        **manifest_extra,
+        **collect_asset_metadata(
+            root_dir, manifest_extra, register_payload=register_payload
+        ),
+    }
     return PreprocessResult(
         processed_bytes=json.dumps(manifest).encode("utf-8"),
         data_store_output=store.get_named_data_store_output(),
@@ -360,7 +382,7 @@ def _embed_dir_inline(
 
 
 def _os_version_text(min_os) -> Optional[str]:
-    """The floor actually baked into a portable asset, as ``major.minor``.
+    """The floor actually baked into a source asset, as ``major.minor``.
 
     ``save_asset`` takes an ``OSVersion``, which carries only a major version,
     so a spec of ``"27.5"`` yields a v27 asset. Deriving the manifest value
@@ -397,7 +419,7 @@ def _aot_compile_options(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
     """Normalized coreai-build opts from AOT_COMPILE_CONFIG + general specs.
 
     ``min_deployment_version`` is pulled from its own (general) spec, since it
-    also applies to the portable .aimodel.
+    also applies to the source .aimodel.
     """
     raw = _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.AOT_COMPILE_CONFIG)
     config = AOTCompileConfig.from_json(raw.decode()) if raw else AOTCompileConfig()
@@ -492,12 +514,21 @@ def _run_coreai_build(aimodel_path: Path, out_dir: Path, opts: Dict[str, Any]) -
 def _compiled_arch_bundles(out_dir: Path) -> List[Tuple[str, Path]]:
     """Return [(arch, bundle_dir), ...] for each ``model.<arch>.aimodelc``."""
     bundles = []
+    architectures = set()
     for path in sorted(out_dir.iterdir()):
-        if path.is_dir() and path.name.endswith(".aimodelc"):
-            name = path.name
-            # ``model.<arch>.aimodelc`` -> ``<arch>``
-            arch = name[len("model.") : -len(".aimodelc")]
-            bundles.append((arch, path))
+        if not path.is_dir():
+            continue
+        name = path.name
+        prefix, suffix = "model.", ".aimodelc"
+        if not name.startswith(prefix) or not name.endswith(suffix):
+            raise RuntimeError(f"invalid coreai-build bundle name: {name!r}")
+        arch = name[len(prefix) : -len(suffix)]
+        if not arch or arch in (".", "..") or "\\" in arch:
+            raise RuntimeError(f"invalid coreai-build bundle architecture: {name!r}")
+        if arch in architectures:
+            raise RuntimeError(f"duplicate coreai-build bundle architecture: {arch!r}")
+        architectures.add(arch)
+        bundles.append((arch, path))
     if not bundles:
         raise RuntimeError(f"coreai-build produced no .aimodelc bundles in {out_dir}")
     return bundles
@@ -523,7 +554,7 @@ class CoreAIBackend(BackendDetails):
 
     Delivery is chosen by compile specs, along two orthogonal axes:
 
-    * **Format**: the portable ``.aimodel`` (default), or AOT-compiled
+    * **Format**: the source ``.aimodel`` (default), or AOT-compiled
       per-architecture ``.aimodelc`` bundles (``aot_compile``, via
       ``xcrun coreai-build``; architecture selection is one / a list / all).
     * **Location**: embedded in the ``.pte`` via NamedDataStore (default), or a
@@ -531,7 +562,7 @@ class CoreAIBackend(BackendDetails):
 
     ``processed_bytes`` is always a small JSON manifest naming what/where; the
     bytes live in the NamedDataStore (inline) or on disk (sidecar).
-    Runtime execution is not wired up yet.
+    Stateless tensor assets carry ordered runtime bindings in every format.
     """
 
     @staticmethod
@@ -547,7 +578,7 @@ class CoreAIBackend(BackendDetails):
             _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.USES_SIDECAR) is not None
         )
 
-        # Sidecar delivery (portable or AOT) needs a build-time output dir.
+        # Sidecar delivery (source or AOT) needs a build-time output dir.
         sidecar_dir = None
         if uses_sidecar:
             sidecar_dir = os.environ.get(SIDECAR_DIR_ENV)
@@ -558,39 +589,82 @@ class CoreAIBackend(BackendDetails):
                     "build-time output directory (set it via coreai_sidecar_dir)"
                 )
 
-        program = _convert_to_aiprogram(edge_program)
+        signature = edge_program.graph_signature
+        stateful = bool(signature.buffers_to_mutate or signature.user_inputs_to_mutate)
+        input_names = output_names = None
+        if not stateful:
+            edge_inputs, edge_outputs = _edge_io(edge_program)
+            input_names = [f"input_{i}" for i in range(len(edge_inputs))]
+            output_names = [f"output_{i}" for i in range(len(edge_outputs))]
+            program = _convert_to_aiprogram(
+                edge_program, input_names=input_names, output_names=output_names
+            )
+        else:
+            program = _convert_to_aiprogram(edge_program)
         # Fail fast if the .aimodel boundary I/O won't match what ET feeds/reads.
-        assert_io_compatible(program, edge_program)
+        assert_io_compatible(
+            program, edge_program, input_names=input_names, output_names=output_names
+        )
+        # Read names while ``main`` exists; enumerated shapes replace it with
+        # ``main_<key>`` clones that keep the same names.
+        converter_input_names = input_names
+        input_names, output_names = coreai_io_names(program)
         raw_enum = _get_compile_spec(
             compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS
         )
+        specializations = None
         if raw_enum:
-            apply_enumerated_shapes(
-                program, edge_program, json.loads(raw_enum.decode())
+            specializations = apply_enumerated_shapes(
+                program,
+                edge_program,
+                json.loads(raw_enum.decode()),
+                input_names=converter_input_names,
             )
 
         # min-deployment-version is a single knob applied to whichever artifact
         # ships: for aot-compiled delivery the .aimodelc (via coreai-build
-        # --min-deployment-version), for portable delivery the .aimodel's floor
+        # --min-deployment-version), for source delivery the .aimodel's floor
         # (via save_asset(minimum_os=...)). In the aot-compiled path the temp
         # .aimodel is discarded, so it keeps the default floor (no
         # double-specification).
         if not uses_sidecar:
             _maybe_warn_sidecar_env_ignored()
+        bindings = {
+            "version": 2,
+            "input_names": input_names,
+            "output_names": output_names,
+        }
+        if specializations:
+            bindings["functions"] = [
+                {
+                    "name": f"{MAIN_ENTRYPOINT}_{key}",
+                    "input_shapes": {
+                        name: list(shape) for name, shape in shapes.items()
+                    },
+                }
+                for key, shapes in specializations.items()
+            ]
+            # The runtime binds a single function and cannot pick one by shape.
+            bindings["runtime_supported"] = False
+            bindings["runtime_unsupported_reason"] = "enumerated_shapes"
+        else:
+            bindings["function"] = MAIN_ENTRYPOINT
+        if stateful:
+            # Mutation arguments are SDK states, not ordinary runtime tensor I/O.
+            bindings["runtime_supported"] = False
+            bindings["runtime_unsupported_reason"] = "stateful"
         if aot_compiled:
             return CoreAIBackend._preprocess_aot_compiled(
-                program, _aot_compile_options(compile_specs), sidecar_dir
+                program, _aot_compile_options(compile_specs), sidecar_dir, bindings
             )
-        return CoreAIBackend._preprocess_portable(
-            program,
-            _min_os_version(compile_specs),
-            sidecar_dir,
+        return CoreAIBackend._preprocess_aimodel(
+            program, _min_os_version(compile_specs), sidecar_dir, bindings
         )
 
-    # Portable .aimodel delivery.
+    # Source .aimodel delivery.
     @staticmethod
-    def _preprocess_portable(
-        program, min_os, sidecar_dir: Optional[str]
+    def _preprocess_aimodel(
+        program, min_os, sidecar_dir: Optional[str], bindings: Dict[str, Any]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
             model_hash = _save_and_hash(program, Path(tmp) / "model.aimodel", min_os)
@@ -602,6 +676,7 @@ class CoreAIBackend(BackendDetails):
                     # relative path the runtime resolves against its base
                     "path": f"{model_hash}/model.aimodel",
                     "min_deployment_version": _os_version_text(min_os),
+                    **bindings,
                 },
                 sidecar_dir,
             )
@@ -609,7 +684,10 @@ class CoreAIBackend(BackendDetails):
     # AOT-compiled .aimodelc delivery (per architecture).
     @staticmethod
     def _preprocess_aot_compiled(
-        program, opts: Dict[str, Any], sidecar_dir: Optional[str]
+        program,
+        opts: Dict[str, Any],
+        sidecar_dir: Optional[str],
+        bindings: Dict[str, Any],
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
             model_hash, out = _compile_aot(program, opts, Path(tmp))
@@ -622,6 +700,7 @@ class CoreAIBackend(BackendDetails):
                     else AssetPackaging.AOT_COMPILED_INLINE
                 ),
                 {
+                    **bindings,
                     "platform": opts["platform"],
                     "min_deployment_version": opts["min_deployment_version"],
                     "archs": {

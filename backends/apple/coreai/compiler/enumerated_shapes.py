@@ -173,15 +173,21 @@ def apply_enumerated_shapes(
     program,
     edge_program: ExportedProgram,
     enumerations: Dict[str, Sequence[int]],
-) -> None:
+    *,
+    input_names: Optional[Sequence[str]] = None,
+) -> Optional[Dict[str, Dict[str, tuple]]]:
     """Attach enumerated shapes to the coreai program (all delivery modes).
 
     ``enumerations`` is ``{symbol_name: [value, ...]}`` (from
     :func:`resolve_input_enumerations`).  For each of this subgraph's user inputs
     we read its symbolic shape from ``edge_program`` and substitute every
     combination of the enumerated symbol values, then attach the resulting shapes
-    via ``set_static_shape_config``.  Inputs are matched to coreai graph inputs by
-    name (the converter names each coreai input after its edge placeholder).
+    via ``set_static_shape_config``. ``input_names`` maps user inputs in boundary
+    order to explicit converter names; absent it, FX placeholder names are used.
+
+    Returns the attached ``{key: {input_name: shape}}``, or ``None`` when nothing
+    was specialized. The SDK replaces ``main`` with one ``main_<key>`` graph per
+    key.
     """
     if not enumerations:
         return
@@ -191,6 +197,9 @@ def apply_enumerated_shapes(
     }
     user_inputs = list(edge_program.graph_signature.user_inputs)
     coreai_names = set(graph_input_names(program))
+    if input_names is not None and len(input_names) != len(user_inputs):
+        raise ValueError("input_names must have one name per boundary user input")
+    converted_names = input_names if input_names is not None else user_inputs
 
     # Every entry has to name every boundary input, since
     # set_static_shape_config treats a key as a whole-graph shape: an input left
@@ -198,17 +207,16 @@ def apply_enumerated_shapes(
     # (a batch dim, say) would not be held equal.
     boundary_inputs = []
     active_symbols = set()
-    for uname in user_inputs:
-        # Match edge user inputs to coreai graph inputs by name; skip anything
-        # that isn't a coreai tensor input (e.g. a taken-over constant).
-        if not isinstance(uname, str) or uname not in coreai_names:
+    for uname, converted_name in zip(user_inputs, converted_names):
+        # Skip anything that isn't a coreai tensor input.
+        if not isinstance(uname, str) or converted_name not in coreai_names:
             continue
         node = placeholders.get(uname)
         val = node.meta.get("val") if node is not None else None
         if not hasattr(val, "shape"):
             continue
         dims = list(val.shape)
-        boundary_inputs.append((uname, dims))
+        boundary_inputs.append((converted_name, dims))
         active_symbols |= _shape_symbols(dims) & set(enumerations)
 
     if not active_symbols:
@@ -242,3 +250,5 @@ def apply_enumerated_shapes(
             active,
         )
         program.set_static_shape_config(MAIN_ENTRYPOINT, shapes_config)
+        return shapes_config
+    return None

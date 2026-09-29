@@ -14,6 +14,7 @@
 """
 
 import unittest
+from unittest import mock
 
 import torch
 import torch.nn as nn
@@ -22,11 +23,93 @@ from executorch.backends.apple.coreai import (
     get_default_compile_config,
     get_default_passes,
 )
-from executorch.backends.apple.coreai.compiler.io_compat import io_mismatches
+from executorch.backends.apple.coreai.compiler.io_compat import (
+    assert_io_compatible,
+    coreai_io_names,
+    io_mismatches,
+)
+from executorch.backends.apple.coreai.compiler.preprocess import _convert_to_aiprogram
 from executorch.backends.apple.coreai.partition.partitioner import CoreAIPartitioner
-from executorch.exir import to_edge_transform_and_lower
+from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.lowered_backend_module import executorch_call_delegate
 from torch.export import Dim
+
+
+class OrderedNamesTest(unittest.TestCase):
+    def test_same_shaped_reordered_names_are_rejected(self):
+        class Arithmetic(nn.Module):
+            def forward(self, z, a):
+                return z - a, a - z
+
+        edge = to_edge(
+            torch.export.export(Arithmetic(), (torch.ones(2, 4), torch.zeros(2, 4)))
+        ).exported_program()
+        expected_in = ["input_0", "input_1"]
+        expected_out = ["output_0", "output_1"]
+        for kind in ("input", "output"):
+            with self.subTest(kind=kind):
+                program = _convert_to_aiprogram(
+                    edge,
+                    input_names=expected_in[::-1] if kind == "input" else expected_in,
+                    output_names=(
+                        expected_out[::-1] if kind == "output" else expected_out
+                    ),
+                )
+                with self.assertRaisesRegex(ValueError, f"{kind} names mismatch"):
+                    assert_io_compatible(
+                        program,
+                        edge,
+                        input_names=expected_in,
+                        output_names=expected_out,
+                    )
+
+    def test_names_remain_in_boundary_order_past_single_digits(self):
+        class ManyInputs(nn.Module):
+            def forward(self, *args):
+                return tuple(x - float(i) for i, x in enumerate(args))
+
+        edge = to_edge(
+            torch.export.export(ManyInputs(), tuple(torch.ones(2) for _ in range(12)))
+        ).exported_program()
+        inputs = [f"input_{i}" for i in range(12)]
+        outputs = [f"output_{i}" for i in range(12)]
+        program = _convert_to_aiprogram(edge, input_names=inputs, output_names=outputs)
+        self.assertEqual(coreai_io_names(program), (inputs, outputs))
+        assert_io_compatible(program, edge, input_names=inputs, output_names=outputs)
+
+    def test_missing_duplicate_and_empty_graph_names_are_rejected(self):
+        from types import SimpleNamespace
+
+        def named(value):
+            return {"coreai.name": SimpleNamespace(value=value)}
+
+        for attrs in (
+            [named("x")],
+            [named("x"), {}],
+            [named("x"), named("x")],
+            [named("x"), named("")],
+        ):
+            for kind in ("input", "output"):
+                with self.subTest(attrs=attrs, kind=kind):
+                    graph = SimpleNamespace(
+                        arg_attrs=(
+                            attrs if kind == "input" else [named("a"), named("b")]
+                        ),
+                        res_attrs=(
+                            attrs if kind == "output" else [named("c"), named("d")]
+                        ),
+                        function_type=SimpleNamespace(
+                            value=SimpleNamespace(
+                                inputs=[None, None], results=[None, None]
+                            )
+                        ),
+                    )
+                    program = mock.Mock()
+                    program._get_graph.return_value = graph
+                    with self.assertRaisesRegex(
+                        ValueError, f"{kind} names must be complete and unique"
+                    ):
+                        coreai_io_names(program)
 
 
 class _Sym:
@@ -243,7 +326,7 @@ class BoundaryLoweringTest(unittest.TestCase):
     # Produced (non-const-folded) int64 output.
     def test_produced_int64_output(self):
         # coreai narrows i64, so the i64-producing op stays outside the delegate
-        # (guard) and runs portable; the model still lowers and the int64 output
+        # (guard) and runs in ExecuTorch; the model still lowers and the int64 output
         # dtype is preserved.
         lowered = _lower(
             _ProducedInt64Out(),
@@ -272,15 +355,31 @@ class _MutatedBuffer(nn.Module):
         return x + self.count
 
 
-class MutableBufferBoundaryTest(unittest.TestCase):
-    """A mutated buffer crosses the boundary as an input as well as an output.
+class _MutatedInput(nn.Module):
+    """In-place mutation of a user input, which ExecuTorch owns."""
 
-    coreai gives it a graph argument and a result, so both sides of the
-    compatibility check have to count it.
+    def forward(self, x):
+        x.add_(1.0)
+        return x * 2.0
+
+
+class MutableBufferBoundaryTest(unittest.TestCase):
+    """Mutated buffers the delegate owns never cross the ExecuTorch boundary.
+
+    coreai-torch lowers every mutated input to Core AI state. For a buffer the
+    delegate took over that is internal, so both sides skip it; a mutated user
+    input is handed across by ExecuTorch, so the check must still reject it.
     """
 
     def test_mutated_buffer_lowers(self):
         _lower(_MutatedBuffer(), (torch.randn(2, 8),))
+
+    def test_mutated_user_input_is_rejected_as_state(self):
+        edge = to_edge(
+            torch.export.export(_MutatedInput(), (torch.randn(2, 8),))
+        ).exported_program()
+        with self.assertRaisesRegex(ValueError, "input 0: tensor/non-tensor mismatch"):
+            assert_io_compatible(_convert_to_aiprogram(edge), edge)
 
 
 if __name__ == "__main__":
