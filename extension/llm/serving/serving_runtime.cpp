@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/serving/detail/generation_bridge.h>
 #include <executorch/extension/llm/serving/detail/prompt_preparer.h>
@@ -47,6 +48,8 @@ struct TextRequest {
   batching::MetricsTime submitted = batching::MetricsClock::now();
   std::size_t start_position = 0;
   bool started = false;
+  bool clone_lane = false;
+  std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
 
   void emit(GenerationEvent event) {
     if (!sink) {
@@ -243,7 +246,8 @@ struct ServingRuntime::Impl {
             config.max_pending_operations > 0 && config.max_requests > 0 &&
             config.max_events_per_request > 0 &&
             config.max_tokens_per_request > 0),
-        tokenizer_(tokenizer) {
+        tokenizer_(tokenizer),
+        prefix_cache_(config.prefix_cache_capacity) {
     if (valid_config_) {
       runner_ =
           std::make_unique<batching::Runner>(executor, std::move(scheduler));
@@ -718,6 +722,48 @@ struct ServingRuntime::Impl {
     return std::nullopt;
   }
 
+  std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
+    if (!request->text || config_.prefix_cache_capacity == 0 ||
+        request->text->options.sampling.temperature != 0 || clone_lane_busy_) {
+      return std::nullopt;
+    }
+    clone_lane_busy_ = true;
+    request->text->clone_lane = true;
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      return prefix_cache_.lookup(request->text->prompt);
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      return std::nullopt;
+    }
+#endif
+  }
+
+  void finish_capture(const Request& request) {
+    if (!request->text || !request->text->clone_lane) {
+      return;
+    }
+    // Generation has already finished on the dispatcher. collect() combines
+    // clone wait and insertion; keep both on control, outside all request and
+    // admission locks. Settle even a cancelled source's queued clone before
+    // releasing the transient snapshot slot.
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      if (request->text->prefix_capture) {
+        request->text->prefix_capture->collect();
+      }
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // Optional cache maintenance must not change the generation outcome.
+    }
+#endif
+    request->text->prefix_capture.reset();
+    request->text->clone_lane = false;
+    clone_lane_busy_ = false;
+  }
+
   void generate(const Request& request) {
     if (request->text) {
       LifecycleResult error;
@@ -771,10 +817,20 @@ struct ServingRuntime::Impl {
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
+      auto match = lookup_prefix(request);
+      if (match) {
+        opened = std::move(match->session);
+        // Lookup always leaves the final prompt token for a fresh forward.
+        request->request.delta.erase(
+            request->request.delta.begin(),
+            request->request.delta.begin() + match->matched_tokens);
+      }
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        opened = runner_->open_session_async().get();
+        if (!opened && !request->cancelled.load()) {
+          opened = runner_->open_session_async().get();
+        }
 #if ET_HAS_EXCEPTIONS
       } catch (...) {
         // Refusal below also releases the initial reservation.
@@ -821,13 +877,28 @@ struct ServingRuntime::Impl {
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      auto handle = session.generate_async(
-          std::move(request->request.delta),
-          std::move(request->request.config),
+      batching::GenerationCallback callback =
           [this, request](const batching::GenerationUpdate& update) {
             request->emit(update);
             schedule(request);
-          },
+          };
+      if (request->text && request->text->clone_lane) {
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          request->text->prefix_capture =
+              prefix_cache_.capture_prompt(session, request->text->prompt);
+          callback = request->text->prefix_capture->wrap(callback);
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          // Keep the original callback when optional capture setup fails.
+        }
+#endif
+      }
+      auto handle = session.generate_async(
+          std::move(request->request.delta),
+          std::move(request->request.config),
+          std::move(callback),
           [this, weak = std::weak_ptr<detail::RequestState>(request)] {
             if (auto request = weak.lock()) {
               {
@@ -847,6 +918,7 @@ struct ServingRuntime::Impl {
   }
 
   void finalize(const Request& request) {
+    finish_capture(request);
     const SessionKey key = request->request.key
         ? SessionKey(*request->request.key)
         : SessionKey(request->id);
@@ -1200,6 +1272,7 @@ struct ServingRuntime::Impl {
       retired.swap(sessions_);
     }
     retired.clear();
+    prefix_cache_.clear();
   }
 
   ServingInfo info() const {
@@ -1255,6 +1328,10 @@ struct ServingRuntime::Impl {
   const bool valid_config_;
   const tokenizers::Tokenizer* const tokenizer_;
   std::unique_ptr<batching::Runner> runner_;
+  batching::PrefixCache prefix_cache_;
+  // Control-thread policy; held through capture collection, including clone
+  // refusal and cancellation. At most one transient snapshot can exist.
+  bool clone_lane_busy_ = false;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::condition_variable stopped_cv_;

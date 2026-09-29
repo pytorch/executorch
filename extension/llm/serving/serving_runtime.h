@@ -51,6 +51,15 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::vector<batching::Token> default_stop_tokens = {};
   // Used only for an unset request limit when max_context_length is unknown.
   std::int32_t default_max_new_tokens = 256;
+  // Opt-in, greedy-only prompt snapshots for implicit NEW text sessions.
+  // Explicit open, continuation, reset, and replay never use or populate this
+  // cache. Backend numerical parity still requires model-specific validation.
+  // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
+  // when enabled: retained snapshots plus one exclusive capture reservation.
+  // These rows are not logical serving slots. Busy/refused clones fall back to
+  // cold initialization. Snapshots may survive source close/cancellation and
+  // are released on eviction or shutdown. Zero disables all cache activity.
+  std::size_t prefix_cache_capacity = 0;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
