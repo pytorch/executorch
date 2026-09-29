@@ -17,7 +17,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <memory>
+#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace py = pybind11;
 namespace executorch {
@@ -188,6 +190,39 @@ class PyQnnTensorWrapper {
  private:
   std::shared_ptr<TensorWrapper> tensor_wrapper_;
 };
+
+class PyQnnDlcHandle {
+ public:
+  PyQnnDlcHandle(std::shared_ptr<QnnManager> owner, void* handle)
+      : owner_(std::move(owner)), handle_(handle) {}
+
+  ~PyQnnDlcHandle() {
+    Close();
+  }
+
+  void Close() {
+    if (handle_ != nullptr) {
+      owner_->FreeDlc(handle_);
+      handle_ = nullptr;
+    }
+  }
+
+  void* Get() const {
+    if (handle_ == nullptr) {
+      throw std::runtime_error("QNN DLC handle has already been freed");
+    }
+    return handle_;
+  }
+
+  bool IsOwnedBy(const std::shared_ptr<QnnManager>& owner) const {
+    return owner_ == owner;
+  }
+
+ private:
+  std::shared_ptr<QnnManager> owner_;
+  void* handle_;
+};
+
 class PyQnnManager {
  public:
   // used for AoT compilation
@@ -264,8 +299,43 @@ class PyQnnManager {
             executorch::runtime::Error::Ok) {
       return py::bytes("", 0);
     }
+
     return py::bytes(
         reinterpret_cast<const char*>(binary_info.buffer), binary_info.nbytes);
+  }
+  std::shared_ptr<PyQnnDlcHandle> CreateDlc() {
+    void* handle = nullptr;
+    if (qnn_manager_->CreateDlc(&handle) != Error::Ok) {
+      throw std::runtime_error("Failed to create QNN DLC");
+    }
+    return std::make_shared<PyQnnDlcHandle>(qnn_manager_, handle);
+  }
+
+  void CompileToDlc(
+      const std::vector<std::string>& graph_names,
+      std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers,
+      PyQnnDlcHandle& dlc_handle) {
+    for (uint32_t i = 0; i < graph_names.size(); ++i) {
+      if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) != Error::Ok) {
+        throw std::runtime_error("Failed to compile QNN graph");
+      }
+    }
+    if (qnn_manager_->AddContextToDlc(dlc_handle.Get()) != Error::Ok) {
+      throw std::runtime_error("Failed to add QNN context to DLC");
+    }
+  }
+
+  py::bytes GetDlcBinary(PyQnnDlcHandle& dlc_handle) {
+    if (!dlc_handle.IsOwnedBy(qnn_manager_)) {
+      throw std::runtime_error(
+          "QNN DLC binary must be retrieved by its creating manager");
+    }
+    std::vector<uint8_t> binary;
+    if (qnn_manager_->GetDlcBinary(dlc_handle.Get(), binary) != Error::Ok) {
+      throw std::runtime_error("Failed to get QNN DLC binary");
+    }
+    return py::bytes(
+        reinterpret_cast<const char*>(binary.data()), binary.size());
   }
 
   void Destroy() {

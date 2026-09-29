@@ -9,6 +9,7 @@ import os
 import tempfile
 from functools import partial, reduce
 from operator import mul
+from unittest.mock import Mock
 
 import pytest
 
@@ -34,6 +35,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchLpaiClientPerf,
     QnnExecuTorchProfileLevel,
 )
+
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 from executorch.backends.qualcomm.tests.rework.conftest import (
     calibrate,
     export_and_verify,
@@ -41,6 +46,14 @@ from executorch.backends.qualcomm.tests.rework.conftest import (
     temp_attribute,
     verify_output_remote,
 )
+
+from executorch.backends.qualcomm.tests.rework.src.fcb_utils import (
+    fcb_target_socs,
+    lower_fcb_weight_sharing_model,
+    make_fcb_weight_sharing_model,
+)
+
+from executorch.backends.qualcomm.utils import qnn_manager_lifecycle
 from executorch.backends.qualcomm.utils.utils import update_spill_fill_size
 from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
@@ -813,3 +826,123 @@ class TensorDump:
                             expected_compared_events=2,
                         ),
                     )
+
+
+class Fcb:
+    @staticmethod
+    def compiler_spec_preserves_targets(fcb_compile_specs):
+        soc_models = (QcomChipset.SM8650, QcomChipset.SM8750)
+        option = flatbuffer_to_option(fcb_compile_specs(soc_models)[0].value)
+
+        assert [
+            target.soc_info.soc_model for target in option.target_options.targets
+        ] == list(soc_models)
+
+    @staticmethod
+    def manager_cache_is_keyed_by_soc(monkeypatch):
+        managers = [Mock(), Mock(), Mock()]
+        for manager in managers:
+            manager.InitBackend.return_value = Mock(value=0)
+
+        monkeypatch.setattr(qnn_manager_lifecycle, "setup_qnn_sdk", lambda: None)
+        monkeypatch.setattr(
+            qnn_manager_lifecycle, "disable_mkldnn_on_amd", lambda: None
+        )
+        create = Mock(side_effect=managers)
+        monkeypatch.setattr(qnn_manager_lifecycle.PyQnnManager, "QnnManager", create)
+        registry = qnn_manager_lifecycle.QnnManagerRegistry()
+        first = registry.get_or_create_qnn_manager(
+            QnnExecuTorchBackendType.kHtpBackend, b"first", QcomChipset.SM8650
+        )
+        second = registry.get_or_create_qnn_manager(
+            QnnExecuTorchBackendType.kHtpBackend, b"second", QcomChipset.SM8750
+        )
+        third = registry.get_or_create_qnn_manager(
+            QnnExecuTorchBackendType.kHtpBackend, b"third", QcomChipset.SM8650
+        )
+
+        assert create.call_count == 2
+        assert len(registry._registry) == 2
+        assert first is not second
+        assert first is third
+
+    @staticmethod
+    def dlc_handle_enforces_lifetime_and_owner(fcb_compile_specs):
+        soc_models = (QcomChipset.SM8650, QcomChipset.SM8750)
+        compile_specs = fcb_compile_specs(soc_models)
+
+        with qnn_manager_lifecycle.QnnManagerContext({"forward": compile_specs}):
+            owner = qnn_manager_lifecycle.get_current_qnn_manager(
+                compile_specs, QcomChipset.SM8650
+            )
+            other = qnn_manager_lifecycle.get_current_qnn_manager(
+                compile_specs, QcomChipset.SM8750
+            )
+            assert not hasattr(owner, "FreeDlc")
+            with pytest.raises(TypeError):
+                owner.GetDlcBinary(0)
+
+            handle = owner.CreateDlc()
+            with pytest.raises(RuntimeError, match="test exception"):
+                with handle:
+                    with pytest.raises(RuntimeError, match="creating manager"):
+                        other.GetDlcBinary(handle)
+                    raise RuntimeError("test exception")
+
+            with pytest.raises(RuntimeError, match="already been freed"):
+                owner.GetDlcBinary(handle)
+
+    @staticmethod
+    @unpack_fixtures
+    def e2e(qnn_config, fcb_compile_specs, expected):
+        if qnn_config.build_folder == "build-x86":
+            pytest.skip("FCB execution requires an Android HTP target")
+
+        selected_soc = getattr(QcomChipset, qnn_config.soc_model)
+        soc_models = tuple(fcb_target_socs(selected_soc))
+        module = torch.nn.ReLU()
+        inputs = (torch.randn(1, 3, 4, 4),)
+        with expected as metrics:
+            export_and_verify(
+                module=module,
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=None,
+                compile_specs=fcb_compile_specs(soc_models),
+                metrics=metrics,
+            )
+
+    @staticmethod
+    @unpack_fixtures
+    def reference_weight_sharing_reduces_pte_size(qnn_config, fcb_compile_specs):
+        if qnn_config.build_folder == "build-x86":
+            pytest.skip("FCB reference-weight sharing requires an Android HTP target")
+
+        module, inputs = make_fcb_weight_sharing_model()
+        soc_models = tuple(fcb_target_socs(getattr(QcomChipset, qnn_config.soc_model)))
+        shared = lower_fcb_weight_sharing_model(
+            module, inputs, fcb_compile_specs(soc_models, True)
+        )
+        unshared = lower_fcb_weight_sharing_model(
+            module, inputs, fcb_compile_specs(soc_models, False)
+        )
+
+        assert len(shared.buffer) < len(unshared.buffer)
+
+    @staticmethod
+    @unpack_fixtures
+    def reference_weight_sharing_e2e(qnn_config, fcb_compile_specs, expected):
+        if qnn_config.build_folder == "build-x86":
+            pytest.skip("FCB reference-weight sharing requires an Android HTP target")
+
+        module, inputs = make_fcb_weight_sharing_model()
+        soc_models = tuple(fcb_target_socs(getattr(QcomChipset, qnn_config.soc_model)))
+        with expected as metrics:
+            export_and_verify(
+                module=module,
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=None,
+                compile_specs=fcb_compile_specs(soc_models, True),
+                metrics=metrics,
+            )
