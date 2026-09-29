@@ -54,6 +54,8 @@ class PybindingsNoAtenTest(unittest.TestCase):
         output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
 
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
+        with self.assertRaisesRegex(ValueError, "must be resolved"):
+            module((torch._neg_view(torch.tensor([1.0])), torch.tensor([2.0])))
 
     def test_process_has_no_aten_libraries(self) -> None:
         process_maps = Path("/proc/self/maps")

@@ -355,6 +355,11 @@ class TorchTensorView final {
  public:
   explicit TorchTensorView(const py::handle& value)
       : owner_(py::reinterpret_borrow<py::object>(value)) {
+    if (owner_.attr("is_neg")().cast<bool>() ||
+        owner_.attr("is_conj")().cast<bool>()) {
+      throw py::value_error(
+          "Lazy conjugate and negative torch tensor views must be resolved before execution");
+    }
     const auto device_type = py::str(owner_.attr("device").attr("type"));
     if (device_type.cast<std::string>() != "cpu") {
       throw py::value_error(
@@ -1261,6 +1266,12 @@ struct PyModule final {
 #else
         torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
         const auto& tensor = torch_inputs.back();
+        validate_tensor_input(
+            method_meta,
+            i,
+            tensor->scalar_type(),
+            tensor->sizes(),
+            tensor->strides());
         input_sizes.emplace_back(
             tensor->sizes().begin(), tensor->sizes().end());
         input_strides.emplace_back(
@@ -1848,6 +1859,12 @@ struct PyMethod final {
 #else
         torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
         const auto& view = torch_inputs.back();
+        validate_tensor_input(
+            method_->method_meta(),
+            i,
+            view->scalar_type(),
+            view->sizes(),
+            view->strides());
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())
@@ -1918,6 +1935,12 @@ struct PyMethod final {
           buffer_tensor_ptrs_.end(),
           buffer_tensor_ptrs.begin(),
           buffer_tensor_ptrs.end());
+#ifndef EXECUTORCH_PYBIND_USE_ATEN
+      torch_inputs_.insert(
+          torch_inputs_.end(), torch_inputs.begin(), torch_inputs.end());
+      torch_tensor_ptrs_.insert(
+          torch_tensor_ptrs_.end(), input_tensors.begin(), input_tensors.end());
+#endif
       THROW_IF_ERROR(
           set_inputs_status,
           "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -2410,7 +2433,23 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
   // Import the PyDataLoader type from the shared module.
   // This ensures the type is registered once and shared across all modules.
+#ifdef EXECUTORCH_PYBIND_USE_ATEN
   py::module_::import("executorch.extension.pybindings.data_loader");
+#else
+  // A standalone torch-free extension can be imported directly for embedded
+  // use. The data-loader overload remains unavailable until its shared type is
+  // installed, but the rest of the runtime does not require that package.
+  try {
+    py::module_::import("executorch.extension.pybindings.data_loader");
+  } catch (py::error_already_set& error) {
+    if (!error.matches(PyExc_ModuleNotFoundError) ||
+        py::str(error.value().attr("name")).cast<std::string>() !=
+            "executorch") {
+      throw;
+    }
+    error.clear();
+  }
+#endif
 
   m.def(
       "_load_for_executorch_from_data_loader",
