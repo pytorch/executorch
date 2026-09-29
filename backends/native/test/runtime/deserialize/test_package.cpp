@@ -158,6 +158,32 @@ TEST(PackageTest, SupportsCallerOwnedArchiveBytes) {
       weight->span(), (std::array<uint8_t, 4>{'d', 'a', 't', 'a'})));
 }
 
+TEST(PackageTest, ViewsConstantsInPlace) {
+  const TempPackage file;
+  std::optional<OwnedBytes> view;
+  {
+    const Package package =
+        Package::load(OwnedBytes::from_file(file.path(), false));
+    EXPECT_EQ(package.view_constant("missing"), std::nullopt);
+    view = package.view_constant("tied_weight");
+  }
+  ASSERT_TRUE(view);
+  EXPECT_FALSE(view->is_mapped());
+  EXPECT_TRUE(std::ranges::equal(
+      view->span(), (std::array<uint8_t, 4>{'d', 'a', 't', 'a'})));
+
+  const Package mapped = Package::load(file.path());
+  const std::optional<OwnedBytes> bias = mapped.view_constant("bias");
+#if defined(_WIN32)
+  EXPECT_EQ(bias, std::nullopt);
+#else
+  ASSERT_TRUE(bias);
+  EXPECT_TRUE(bias->is_mapped());
+  EXPECT_TRUE(
+      std::ranges::equal(bias->span(), (std::array<uint8_t, 2>{'x', 'y'})));
+#endif
+}
+
 TEST(PackageTest, RejectsOversizedSafeTensorsHeaderBeforeReadingIt) {
   std::vector<uint8_t> tensors(sizeof(uint64_t));
   const uint64_t header_size = detail::kMaxJsonBytes + 1;
