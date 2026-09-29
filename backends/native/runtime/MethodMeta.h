@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/native/runtime/Method.h>
@@ -16,6 +17,15 @@ namespace ptn {
 
 class MethodMeta {
  public:
+  MethodMeta() = default;
+  MethodMeta(
+      std::string name,
+      std::vector<TensorInfo> inputs,
+      std::vector<TensorInfo> outputs)
+      : name_(std::move(name)),
+        inputs_(std::move(inputs)),
+        outputs_(std::move(outputs)) {}
+
   static MethodMeta from_method(const Method& method);
 
   const std::string& name() const {

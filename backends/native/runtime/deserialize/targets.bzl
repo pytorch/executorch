@@ -112,6 +112,7 @@ def define_common_targets():
             ":deserialize_error",
             ":json",
             ":limits",
+            ":package_test_data",
             ":safetensors_reader",
             ":zip_reader",
         ],
