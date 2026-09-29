@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/module/ptn_module.h>
 
 #include <array>
 #include <memory>
@@ -17,6 +18,14 @@
 
 namespace executorch::extension {
 namespace {
+
+TEST(PtnNoHooksTest, Register_MissingLoad_DoesNotPublishIt) {
+  native_module::internal::PtnHooks missing_load;
+  EXPECT_EQ(
+      native_module::internal::register_ptn_hooks(missing_load),
+      runtime::Error::InvalidArgument);
+  EXPECT_EQ(native_module::internal::get_ptn_hooks(), nullptr);
+}
 
 TEST(PtnNoHooksTest, Load_PtnSource_ReturnsNotSupported) {
   runtime::runtime_init();
