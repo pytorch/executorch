@@ -408,7 +408,7 @@ target_link_libraries(
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
   target_compile_definitions(
-    aoti_cuda_backend PRIVATE EXECUTORCH_CUDA_OFFGRAPH_KV_CACHE
+    aoti_cuda_backend PRIVATE EXECUTORCH_BUILD_EXTENSION_LLM
   )
 endif()
 
