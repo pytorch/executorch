@@ -19,7 +19,7 @@ import torch
 import torch.fx
 from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.quantizer import QuantizationConfig
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
@@ -575,6 +575,7 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.squeeze_copy.default,
     torch.ops.aten.squeeze_copy.dim,
     torch.ops.aten.squeeze_.dim,
+    torch.ops.aten.squeeze_copy.dims,
     torch.ops.aten.squeeze.dim,
     torch.ops.aten.squeeze.dims,
     torch.ops.aten.unbind.int,
