@@ -142,7 +142,7 @@ ExternalProject_Add(
   flatcc_ep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep
   SOURCE_DIR ${PROJECT_SOURCE_DIR}/third-party/flatcc-host
-  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/build
+  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/flatcc_ep/src/host-build
   BUILD_ALWAYS TRUE
   CMAKE_ARGS
     -DEXECUTORCH_FLATCC_SOURCE_DIR:PATH=${PROJECT_SOURCE_DIR}/third-party/flatcc
