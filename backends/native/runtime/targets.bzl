@@ -126,6 +126,36 @@ def define_common_targets():
         visibility = ["//executorch/backends/native/..."],
     )
 
+    runtime.cxx_library(
+        name = "tensor_info",
+        srcs = ["TensorInfo.cpp"],
+        exported_headers = ["TensorInfo.h"],
+        exported_deps = [
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "method_meta",
+        srcs = ["MethodMeta.cpp"],
+        exported_headers = ["MethodMeta.h"],
+        exported_deps = [
+            ":method",
+            ":tensor_info",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_test(
+        name = "method_meta_test",
+        srcs = ["test/MethodMetaTest.cpp"],
+        deps = [":method_meta"],
+    )
+
     # The graph/ printer stops at Graph, since Method sits above that package;
     # this adds the method layer on top of it.
     runtime.cxx_library(
