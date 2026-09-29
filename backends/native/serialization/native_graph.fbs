@@ -116,10 +116,16 @@ enum OutputValueKind : byte {
 // axis). Scales (and, if asymmetric, zero-points) are shipped out-of-line via the
 // external constant file, keyed by data_key (empty zero_point_data_key means symmetric).
 // Their shapes derive from the weight shape and group_size, but their dtypes do not,
-// so they are recorded here. The dequant result dtype is the op output value's
-// TensorMeta.dtype, not part of this scheme. The qdata itself (the enclosing
-// TensorMeta) uses dtype=BYTE with logical sizes; its packed byte length follows from
-// the logical shape and bitwidth, not prod(sizes).
+// so they are recorded here. The qdata itself (the enclosing TensorMeta) uses
+// dtype=BYTE with logical sizes. Sub-byte packing is flat over the elements in
+// memory order with no per-row padding, so the packed byte length is
+// ceil(numel * bitwidth / 8), not prod(sizes). The scale and zero-point keys must
+// also be stored constants of every method that uses the quantized tensor.
+//
+// A quantized tensor may feed an explicit dequant op, whose output TensorMeta.dtype
+// gives the result dtype, or it may be a direct op operand. A direct operand denotes
+// its decoded value with dtype scale_dtype; an engine must lower the consuming op,
+// materialize the decode, or reject the program.
 table AffineGroup {
     scale_data_key: string (required);
     scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable

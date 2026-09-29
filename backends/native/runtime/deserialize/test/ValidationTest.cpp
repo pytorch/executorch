@@ -277,6 +277,86 @@ TEST(ValidationTest, ValidateMethodConstants_InvalidDimOrder_Throws) {
   EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
 }
 
+constexpr char kQuantizedHeader[] =
+    R"({"weight":{"dtype":"U8","shape":[8],"data_offsets":[0,8]},)"
+    R"("weight_scales":{"dtype":"F32","shape":[2,2],"data_offsets":[8,24]},)"
+    R"("weight_zeros":{"dtype":"I32","shape":[2,2],"data_offsets":[24,40]}})";
+
+Package make_quantized_package() {
+  auto tensors = testing::make_safetensors(
+      kQuantizedHeader,
+      /*payload_size=*/40);
+  return Package::load(OwnedBytes::from_vector(testing::make_zip({
+      {kProgramEntry, {'N', 'P', 'T', 'G'}},
+      {kSafeTensorsEntry, std::move(tensors)},
+  })));
+}
+
+// An int4 [2, 8] weight in groups of 4, with its scale and zero-point tensors
+// bound as ordinary constants of the method.
+Method make_quantized_method() {
+  Method method;
+  method.name = "forward";
+  TensorMeta weight{kByte, {2, 8}, {}};
+  weight.quant = AffineGroupQuant{
+      "weight_scales",
+      kFloat,
+      /*quant_min=*/-8,
+      /*quant_max=*/7,
+      /*group_size=*/4,
+      "weight_zeros",
+      kInt};
+  method.graph.values.emplace_back("weight", std::move(weight));
+  method.graph.values.emplace_back(
+      "weight_scales", TensorMeta{kFloat, {2, 2}, {}});
+  method.graph.values.emplace_back(
+      "weight_zeros", TensorMeta{kInt, {2, 2}, {}});
+  for (ValueId id = 0; id < 3; ++id) {
+    method.data_bindings.push_back(DataBinding{
+        id,
+        ValueRole::Parameter,
+        method.graph.values[id].name,
+        /*has_data=*/true,
+        /*mutated=*/false});
+  }
+  return method;
+}
+
+TEST(ValidationTest, ValidateMethodConstants_QuantizedWeight_Succeeds) {
+  const Package package = make_quantized_package();
+  const Method method = make_quantized_method();
+
+  EXPECT_NO_THROW(validate_method_constants(method, package));
+  ASSERT_NE(find_data_binding(method, "weight_scales"), nullptr);
+  EXPECT_EQ(find_data_binding(method, "weight_scales")->value_id, 1);
+  EXPECT_EQ(find_data_binding(method, "missing"), nullptr);
+}
+
+TEST(ValidationTest, ValidateMethodConstants_UnboundScale_Throws) {
+  const Package package = make_quantized_package();
+  Method method = make_quantized_method();
+  method.data_bindings.erase(method.data_bindings.begin() + 1);
+
+  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+}
+
+TEST(ValidationTest, ValidateMethodConstants_UnboundZeroPoint_Throws) {
+  const Package package = make_quantized_package();
+  Method method = make_quantized_method();
+  method.data_bindings.pop_back();
+
+  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+}
+
+TEST(ValidationTest, ValidateMethodConstants_ScaleBindingDtypeMismatch_Throws) {
+  const Package package = make_quantized_package();
+  Method method = make_quantized_method();
+  std::get<AffineGroupQuant>(*method.graph.values[0].tensor_meta().quant)
+      .scale_dtype = kHalf;
+
+  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+}
+
 TEST(ValidationTest, ValidateProgramState_MatchingDefinitions_Succeeds) {
   const StateSpec state;
   const Program program = make_program(state, state);
@@ -379,7 +459,14 @@ Method make_q4_method(
   Method method = make_method();
   method.graph.values.clear();
   method.graph.values.emplace_back("weight", std::move(meta));
+  method.graph.values.emplace_back("scale", TensorMeta{kFloat, {2}});
   method.data_bindings[0].key = std::move(key);
+  method.data_bindings.push_back(DataBinding{
+      /*value_id=*/1,
+      ValueRole::Parameter,
+      "scale",
+      /*has_data=*/true,
+      /*mutated=*/false});
   return method;
 }
 

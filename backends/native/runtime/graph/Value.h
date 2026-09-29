@@ -110,6 +110,7 @@ class Value {
   }
 
   // Typed payload accessors: throw std::runtime_error unless the kind matches.
+  TensorMeta& tensor_meta();
   const TensorMeta& tensor_meta() const;
   const Scalar& scalar() const;
   const std::vector<ValueId>& content_ids() const;

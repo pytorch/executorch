@@ -117,6 +117,7 @@ size_t affine_group_nbytes(
 }
 
 void validate_quant_parameter(
+    const Method& method,
     const Package& package,
     const std::string& key,
     ScalarType dtype,
@@ -131,9 +132,23 @@ void validate_quant_parameter(
         "native package: quantization parameter '" + key + "' for '" +
         tensor_key + "' has incompatible metadata");
   }
+  // Engines read quantization parameters through the method's bindings.
+  const DataBinding* binding = find_data_binding(method, key);
+  if (binding == nullptr) {
+    throw std::runtime_error(
+        "native program: quantization parameter '" + key + "' for '" +
+        tensor_key + "' is not bound in method '" + method.name + "'");
+  }
+  const TensorMeta& meta = bound_value(method, *binding).tensor_meta();
+  if (meta.quant.has_value() || meta.dtype != dtype) {
+    throw std::runtime_error(
+        "native program: quantization parameter '" + key + "' for '" +
+        tensor_key + "' has an incompatible binding");
+  }
 }
 
 void validate_quantized_constant(
+    const Method& method,
     const TensorMeta& meta,
     const ConstantInfo& constant,
     const Package& package,
@@ -157,9 +172,15 @@ void validate_quantized_constant(
     const size_t groups =
         tensor_numel(meta, key) / static_cast<size_t>(group_size);
     validate_quant_parameter(
-        package, affine->scale_data_key, affine->scale_dtype, groups, key);
+        method,
+        package,
+        affine->scale_data_key,
+        affine->scale_dtype,
+        groups,
+        key);
     if (!affine->zero_point_data_key.empty()) {
       validate_quant_parameter(
+          method,
           package,
           affine->zero_point_data_key,
           affine->zero_point_dtype,
@@ -345,7 +366,8 @@ void validate_method_constants(const Method& method, const Package& package) {
           "native package: missing constant '" + binding.key + "'");
     }
     if (meta.quant.has_value()) {
-      validate_quantized_constant(meta, *constant, package, binding.key);
+      validate_quantized_constant(
+          method, meta, *constant, package, binding.key);
     } else if (
         constant->dtype != meta.dtype || *constant->sizes != meta.sizes ||
         constant->nbytes != tensor_nbytes(meta, binding.key)) {
