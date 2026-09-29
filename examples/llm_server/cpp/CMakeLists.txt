@@ -96,3 +96,7 @@ target_link_libraries(
   test_multiplexed_worker PRIVATE multiplexed_worker GTest::gtest_main
 )
 add_test(NAME multiplexed_worker COMMAND test_multiplexed_worker)
+
+# Native subprocess fixture for the opt-in Python/OpenAI integration tests.
+add_executable(test_batching_worker test_batching_worker_main.cpp)
+target_link_libraries(test_batching_worker PRIVATE multiplexed_worker)
