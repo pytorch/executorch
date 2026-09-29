@@ -32,8 +32,11 @@ import logging
 import os
 import subprocess
 import threading
-from dataclasses import dataclass, field
-from typing import Callable, Optional, Sequence
+from dataclasses import dataclass
+from typing import Callable, Optional, Sequence, TYPE_CHECKING, Union
+
+if TYPE_CHECKING:
+    from .multiplexed_worker_client import MultiplexedWorkerClient
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +72,9 @@ class WorkerStats:
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
-    # a lossy chat-template re-render. Empty on older workers and cancelled turns.
-    generated_token_ids: list = field(default_factory=list)
+    # a lossy chat-template re-render. None means unknown/unsafe (including older
+    # workers); an explicit empty list is a known-empty, resumable token sequence.
+    generated_token_ids: Optional[list[int]] = None
     # True when an out-of-band cancellation ended this request. Older workers
     # omit the field and therefore report False.
     cancelled: bool = False
@@ -164,6 +168,8 @@ class WorkerClient:
     reservation, cancellation, health, and shutdown use a separate state lock,
     so ``stop()`` never waits behind a blocking stdout read.
     """
+
+    supports_multiplexing = False
 
     def __init__(
         self,
@@ -434,7 +440,7 @@ class WorkerClient:
                     decode_tok_s=msg.get("decode_tok_s", 0.0),
                     vision_encoder_ms=msg.get("vision_encoder_ms"),
                     cancelled=bool(msg.get("cancelled", False)),
-                    generated_token_ids=msg.get("generated_token_ids", []),
+                    generated_token_ids=msg.get("generated_token_ids"),
                 )
             )
 
@@ -580,13 +586,14 @@ def spawn_worker(
     env: Optional[dict] = None,
     cwd: Optional[str] = None,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
-) -> WorkerClient:
+) -> Union[WorkerClient, "MultiplexedWorkerClient"]:
     """Start a worker and wait for its additive readiness negotiation.
 
     POSIX workers inherit the read end of a cancellation pipe through
     ``EXECUTORCH_LLM_WORKER_CONTROL_FD``. The parent retains a nonblocking writer
     only when readiness includes ``{"supports_cancel": true}``; old workers keep
-    their original JSONL request shape and behavior.
+    their original JSONL request shape and behavior. Explicit ``multiplexed``
+    readiness selects the request-scoped client and closes the unused pipe.
     """
     logger.info("Starting model worker: %s", cmd[0])
     control_read_fd: Optional[int] = None
@@ -627,6 +634,16 @@ def spawn_worker(
         msg = _decode_worker_json(line)
         if not msg.get("ready"):
             raise WorkerError(f"worker did not report ready: {msg}")
+        if msg.get("multiplexed") is True:
+            from .multiplexed_worker_client import MultiplexedWorkerClient
+
+            _close_fd(control_write_fd)
+            control_write_fd = None
+            return MultiplexedWorkerClient(
+                proc,
+                max_named_sessions=msg.get("max_named_sessions", 0),
+                max_inflight_requests=msg.get("max_inflight_requests", 64),
+            )
         max_named = int(msg.get("max_named_sessions", 0))
         supports_cancel = msg.get("supports_cancel") is True
         if not supports_cancel:
