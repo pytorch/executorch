@@ -104,9 +104,12 @@ class AnnotateQparamsPass(ExportPass):
             if u.target in QuantConstants.QUANT_OPS_KEY_MAP
             or u.target in QuantConstants.DEQUANT_OPS_KEY_MAP
         ]
-        if not next_nodes:
-            return [cur]
         terminals: List[Node] = []
+        """ `cur` may feed a non-Q/DQ consumer *and* further Q/DQ branches. It
+         still terminates the chain for that direct consumer, so collect it
+         as well as walking the branches."""
+        if not next_nodes or len(next_nodes) < len(cur.users):
+            terminals.append(cur)
         for nxt in next_nodes:
             terminals.extend(self._walk_qdq_chain_to_terminals(nxt))
         return terminals

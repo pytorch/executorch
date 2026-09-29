@@ -273,7 +273,7 @@ def main(args):
         TestConfig.chipset = args.chipset
 
         print("\nRunning full device validation ...")
-        print(f"  Device: {TestConfig.device_id or 'auto-detect'}")
+        print(f"  Device: {args.device or 'auto-detect'}")
         print(f"  Host: {TestConfig.host_ip or 'localhost'}")
         print(f"  Chipset: {TestConfig.chipset}")
         stats = validate_yolo_on_device(

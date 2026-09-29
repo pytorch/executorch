@@ -42,6 +42,10 @@ class DecomposeRemainder(ExportPass):
                 is_edge = isinstance(node.target, EdgeOpOverload)
                 meta = node.meta
 
+                val = meta.get("val", None)
+                if val is None or val.dtype.is_floating_point:
+                    continue
+
                 floor_div_op = (
                     exir_ops.edge.aten.floor_divide.default
                     if is_edge
@@ -100,28 +104,22 @@ class DecomposeRemainder(ExportPass):
                     )
                     sub_node.meta = copy_meta(meta)
 
-                    # Cast result back to original dtype if remainder op was on integer type
-                    orig_val = meta.get("val", None)
-                    orig_dtype = orig_val.dtype if orig_val is not None else None
-
-                    if orig_dtype is not None and not orig_dtype.is_floating_point:
-                        to_copy_op = (
-                            exir_ops.edge.aten._to_copy.default
-                            if is_edge
-                            else torch.ops.aten._to_copy.default
-                        )
-                        cast_node = graph.create_node(
-                            "call_function",
-                            to_copy_op,
-                            (sub_node,),
-                            {"dtype": orig_dtype},
-                        )
-                        cast_node.meta = copy_meta(meta)
-                        for user in node.users.copy():
-                            user.replace_input_with(node, cast_node)
-                    else:
-                        for user in node.users.copy():
-                            user.replace_input_with(node, sub_node)
+                    # Cast back to the original integer dtype, which the
+                    # division may have promoted away from.
+                    to_copy_op = (
+                        exir_ops.edge.aten._to_copy.default
+                        if is_edge
+                        else torch.ops.aten._to_copy.default
+                    )
+                    cast_node = graph.create_node(
+                        "call_function",
+                        to_copy_op,
+                        (sub_node,),
+                        {"dtype": val.dtype},
+                    )
+                    cast_node.meta = copy_meta(meta)
+                    for user in node.users.copy():
+                        user.replace_input_with(node, cast_node)
 
         graph.eliminate_dead_code()
         graph_module.recompile()

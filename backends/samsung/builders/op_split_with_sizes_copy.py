@@ -58,7 +58,7 @@ class SplitVisitor(NodeVisitor):
                     "begin": begin,
                     "end": end,
                     "strides": strides,
-                    "shrink_axis_mask": pow(2, axis),
+                    "shrink_axis_mask": 0,
                 }
                 self._update_params_qdtype(node, params)
                 enn_graph.define_op(

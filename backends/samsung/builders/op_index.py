@@ -27,8 +27,15 @@ class IndexVisitor(NodeVisitor):
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
-        axis = len(node.args[1]) - 1
-        target_indices_node = node.args[1][axis]
+        indices = node.args[1]
+        if sum(index is not None for index in indices) > 1:
+            # ENN GATHER consumes a single index tensor, so advanced indexing
+            # such as x[i, j] cannot be expressed here without dropping an
+            # index. Reject it instead.
+            return False
+
+        axis = len(indices) - 1
+        target_indices_node = indices[axis]
 
         indices_id = self.define_tensor(target_indices_node, enn_graph, vals_to_ids)
 
