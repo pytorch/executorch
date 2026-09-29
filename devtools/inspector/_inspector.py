@@ -73,10 +73,8 @@ from executorch.devtools.inspector._intermediate_output_capturer import (
     IntermediateOutputCapturer,
 )
 from executorch.devtools.inspector.numerical_comparator import (
-    L1Comparator,
-    MSEComparator,
+    comparator_class_for_metric,
     NumericalComparatorBase,
-    SNRComparator,
 )
 from executorch.exir import ExportedProgram
 
@@ -1647,15 +1645,7 @@ class Inspector:
             if comparator.inspector is None:
                 comparator.inspector = self
         else:
-            metric = distance.strip().upper()
-            if metric == "MSE":
-                comparator = MSEComparator(inspector=self)
-            elif metric == "L1":
-                comparator = L1Comparator(inspector=self)
-            elif metric == "SNR":
-                comparator = SNRComparator(inspector=self)
-            else:
-                raise ValueError(f"Unsupported distance metric {distance!r}")
+            comparator = comparator_class_for_metric(distance)(inspector=self)
 
         # Delegate to comparator's compare method (includes preprocessing)
         df = comparator.compare(
