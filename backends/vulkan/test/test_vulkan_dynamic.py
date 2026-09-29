@@ -715,6 +715,29 @@ class TestVulkanDynamic(unittest.TestCase):
                         self.assertEqual(_vulkan_graphs(edge), [])
                         self._run(edge, model, [(x,)])
 
+    def test_power_special_values(self):
+        class Power(torch.nn.Module):
+            def __init__(self, exponent):
+                super().__init__()
+                self.exponent = exponent
+
+            def forward(self, x):
+                return torch.pow(x, self.exponent)
+
+        for dtype in (torch.float32, torch.float16):
+            x = torch.tensor(
+                [-torch.inf, -10000, -4, -0.0, 0.0, 1, 10000, torch.inf, torch.nan],
+                dtype=dtype,
+            ).repeat(3, 1)
+            for exponent in (-3, -0.5, 0, 0.5, 2, 3, torch.inf, -torch.inf):
+                for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                    with self.subTest(dtype=dtype, exponent=exponent, storage=storage):
+                        model = Power(exponent)
+                        edge = self._lower(model, (x,), storage=storage)
+                        self._run(
+                            edge, model, [(x,)], equal_nan=True, check_signed_zero=True
+                        )
+
     def test_fp16_scalar_rounding(self):
         class CreateTensor(torch.nn.Module):
             def __init__(self, value, scalar):
