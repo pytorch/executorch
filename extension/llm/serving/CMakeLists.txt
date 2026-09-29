@@ -11,7 +11,8 @@ target_include_directories(
 )
 target_compile_options(extension_llm_serving PUBLIC ${_common_compile_options})
 target_link_libraries(
-  extension_llm_serving PUBLIC extension_llm_batching executorch_core
+  extension_llm_serving PUBLIC extension_llm_batching tokenizers::tokenizers
+                               executorch_core
 )
 
 install(

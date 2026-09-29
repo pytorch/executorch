@@ -11,6 +11,13 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 et_cxx_test(
-  extension_llm_serving_test SOURCES serving_runtime_test.cpp
-  generation_bridge_test.cpp EXTRA_LIBS extension_llm_serving
+  extension_llm_serving_test
+  SOURCES
+  serving_runtime_test.cpp
+  generation_bridge_test.cpp
+  prompt_preparer_test.cpp
+  text_output_test.cpp
+  text_generation_test.cpp
+  EXTRA_LIBS
+  extension_llm_serving
 )
