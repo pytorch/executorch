@@ -109,6 +109,19 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "upsample_nearest2d_neon_impl",
+        srcs = select({
+            "DEFAULT": [],
+            "ovr_config//cpu:arm64": ["op_upsample_nearest2d_neon.cpp"],
+        }),
+        exported_headers = ["op_upsample_nearest2d_neon.h"],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+    )
+
     # Used for dtype selective build. Collect source and header files.
     runtime.filegroup(
         name = "optimized_source_files",
