@@ -100,6 +100,25 @@ class PybindingsTest(unittest.TestCase):
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
 
+    def test_readonly_buffer_input_is_copied(self):
+        exported_program, inputs = create_program(
+            ModuleAddSingleInput(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+        array = inputs[0].numpy()
+        method.set_inputs(memoryview(array).toreadonly())
+        array.fill(3)
+
+        method.execute()
+
+        self.assertTrue(
+            torch.equal(method.get_outputs()[0], torch.full((2, 2), 2.0))
+        )
+
     def test_numpy_layout_must_match_exported_layout(self):
         model = ModuleChannelsLast()
         exported_program, inputs = create_program(model)
