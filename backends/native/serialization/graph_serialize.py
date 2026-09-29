@@ -25,6 +25,7 @@ import json
 import operator
 import os
 import tempfile
+from contextvars import ContextVar
 from dataclasses import fields, is_dataclass
 from enum import IntEnum
 from typing import (
@@ -84,9 +85,16 @@ from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
+from torch.utils._sympy.value_ranges import bound_sympy
 
 SCHEMA_VERSION = "1.0"
 _SCHEMA_RESOURCE = "native_graph.fbs"
+# The exported program's range_constraints for the program being serialized. The
+# ShapeEnv raises a declared min of 0 or 1 on a backed symbol to 2, so _dim bounds
+# symbols with these instead.
+_DECLARED_RANGES: ContextVar[dict[Any, Any]] = ContextVar(
+    "_DECLARED_RANGES", default={}
+)
 _FILE_STEM = "native_graph"
 
 _DTYPE_TO_SCALAR_TYPE: dict[torch.dtype, ScalarType] = {
@@ -175,7 +183,10 @@ def _dim(x: object) -> Dim:
         # engine). Unbounded above is max = -1.
         lower, upper = 0, -1
         try:
-            vr = x.node.shape_env.bound_sympy(x.node.expr)
+            shape_env = x.node.shape_env
+            vr = bound_sympy(
+                x.node.expr, {**shape_env.var_to_range, **_DECLARED_RANGES.get()}
+            )
             if vr.lower.is_finite:
                 lower = int(vr.lower)
             if vr.upper.is_finite:
@@ -1140,6 +1151,7 @@ def serialize_program(
             torch.fx.GraphModule, object, dict[str, object], dict[str, object] | None
         ],
     ],
+    range_constraints: dict[Any, Any] | None = None,
 ) -> tuple[bytes, dict[str, torch.Tensor]]:
     """Serialize one or more named methods into a native flatbuffer Program.
 
@@ -1154,7 +1166,25 @@ def serialize_program(
     is validated; if two methods carry the same fqn with different data (constants) or
     different shape/dtype (mutable buffers), this raises rather than silently aliasing
     or clobbering.
+
+    ``range_constraints`` is the exported program's, and sets each dynamic Dim's
+    declared range; without it Dim.min is the traced lower bound, which is at least 2.
     """
+    token = _DECLARED_RANGES.set(dict(range_constraints or {}))
+    try:
+        return _serialize_program(methods)
+    finally:
+        _DECLARED_RANGES.reset(token)
+
+
+def _serialize_program(
+    methods: dict[
+        str,
+        tuple[
+            torch.fx.GraphModule, object, dict[str, object], dict[str, object] | None
+        ],
+    ],
+) -> tuple[bytes, dict[str, torch.Tensor]]:
     method_objs: list[Method] = []
     constant_data: dict[str, torch.Tensor] = {}
     mutable_meta: dict[str, TensorMeta] = {}
@@ -1204,6 +1234,7 @@ def serialize_graph(
     graph_signature: object,
     state_dict: dict[str, object],
     constants: dict[str, object] | None = None,
+    range_constraints: dict[Any, Any] | None = None,
 ) -> tuple[bytes, dict[str, torch.Tensor]]:
     """Serialize a single fx graph as a one-method ("forward") Program.
 
@@ -1211,7 +1242,8 @@ def serialize_graph(
     constant_data) as documented there.
     """
     return serialize_program(
-        {"forward": (graph_module, graph_signature, state_dict, constants)}
+        {"forward": (graph_module, graph_signature, state_dict, constants)},
+        range_constraints,
     )
 
 
