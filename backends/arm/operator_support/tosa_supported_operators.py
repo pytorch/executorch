@@ -31,6 +31,10 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
+)
+
 from executorch.backends.arm._passes.size_adjust_input_pass import (
     get_slices_convolution,
     get_slices_pooling,
@@ -1254,6 +1258,8 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     def has_rejected_int64_output(
         self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
     ) -> bool:
+        if is_safe_int32_to_int64_gather_boundary(node):
+            return False
         if node.target in _ARGMAX_OPS:
             return not self._is_tosa_argmax_supported(node)
 
@@ -1379,6 +1385,12 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 continue
             tensor_in = get_first_fake_tensor(input_node)
             if tensor_in.dtype != torch.int64:
+                continue
+
+            if (
+                node.target == exir_ops.edge.aten.gather.default
+                and is_safe_int32_to_int64_gather_boundary(input_node)
+            ):
                 continue
 
             # aten.argmax is nominally int64, but TOSA ARGMAX produces int32.
