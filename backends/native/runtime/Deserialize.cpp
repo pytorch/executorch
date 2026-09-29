@@ -20,13 +20,13 @@
 #include <executorch/backends/native/runtime/Program.h>
 
 #include <cstdint>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include <flatbuffers/flatbuffers.h>
 
@@ -593,6 +593,7 @@ Method Program::build_method(size_t index) const {
 // the deserializer helpers it drives: get_method is the public lazy entry
 // point, build_method the private materializer it calls on a cache miss.
 const Method& Program::get_method(const std::string& name) const {
+  const std::lock_guard<std::mutex> lock(method_cache_mutex_);
   const auto it = method_cache_.find(name);
   if (it != method_cache_.end()) {
     return it->second;
