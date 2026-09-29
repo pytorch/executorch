@@ -62,6 +62,57 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
         node = _make_node("call_function", lambda x: x)
         self.assertFalse(self.sup.is_node_supported({}, node))
 
+    def test_accepts_tuple_getitem(self):
+        graph = torch.fx.Graph()
+        producer = graph.call_function(
+            torch.ops.aten.max.dim, args=(graph.placeholder("x"), 0)
+        )
+        producer.meta["val"] = (torch.ones(1), torch.zeros(1, dtype=torch.int64))
+        node = graph.call_function(operator.getitem, args=(producer, 0))
+        self.assertTrue(self.sup.is_node_supported({}, node))
+
+    def test_rejects_unsupported_tuple_getitem_indices(self):
+        for index in (-1, 2, slice(0, 1), True):
+            with self.subTest(index=index):
+                graph = torch.fx.Graph()
+                producer = graph.call_function(
+                    torch.ops.aten.max.dim, args=(graph.placeholder("x"), 0)
+                )
+                producer.meta["val"] = (
+                    torch.ones(1),
+                    torch.zeros(1, dtype=torch.int64),
+                )
+                node = graph.call_function(operator.getitem, args=(producer, index))
+                self.assertFalse(self.sup.is_node_supported({}, node))
+
+    def test_rejects_duplicate_tuple_getitem(self):
+        graph = torch.fx.Graph()
+        producer = graph.call_function(
+            torch.ops.aten.max.dim, args=(graph.placeholder("x"), 0)
+        )
+        producer.meta["val"] = (torch.ones(1), torch.zeros(1, dtype=torch.int64))
+        first = graph.call_function(operator.getitem, args=(producer, 0))
+        second = graph.call_function(operator.getitem, args=(producer, 0))
+        self.assertFalse(self.sup.is_node_supported({}, first))
+        self.assertFalse(self.sup.is_node_supported({}, second))
+
+    def test_rejects_tuple_getitem_from_unsupported_producer(self):
+        graph = torch.fx.Graph()
+        producer = graph.call_function(
+            torch.ops.aten.linalg_solve_triangular.default,
+            args=(graph.placeholder("a"), graph.placeholder("b")),
+        )
+        producer.meta["val"] = (torch.ones(1), torch.zeros(1))
+        node = graph.call_function(operator.getitem, args=(producer, 0))
+        self.assertFalse(self.sup.is_node_supported({}, node))
+
+    def test_rejects_tensor_getitem(self):
+        graph = torch.fx.Graph()
+        producer = graph.placeholder("x")
+        producer.meta["val"] = torch.ones(1)
+        node = graph.call_function(operator.getitem, args=(producer, 0))
+        self.assertFalse(self.sup.is_node_supported({}, node))
+
     def test_accepts_core_aten_op(self):
         op = torch.ops.aten.add.Tensor
         self.assertIn(torch.Tag.core, op.tags)
@@ -95,9 +146,14 @@ class NativeSupportedOperatorsTest(unittest.TestCase):
     def test_accepts_getitem_on_supported_producer(self):
         # getitem unpacks a multi-output result; it must be claimed alongside a
         # producer the backend claims, so the two stay in one partition.
-        producer = _make_node("call_function", torch.ops.aten.split_copy.Tensor)
+        graph = torch.fx.Graph()
+        producer = graph.call_function(
+            torch.ops.aten.split_copy.Tensor,
+            args=(graph.placeholder("x"), 1),
+        )
+        producer.meta["val"] = [torch.ones(1), torch.zeros(1)]
+        getitem = graph.call_function(operator.getitem, args=(producer, 0))
         self.assertTrue(self.sup.is_node_supported({}, producer))
-        getitem = _make_node("call_function", operator.getitem, args=(producer, 0))
         self.assertTrue(self.sup.is_node_supported({}, getitem))
 
     def test_rejects_getitem_on_unsupported_producer(self):
@@ -208,6 +264,20 @@ class NativePartitionerE2ETest(unittest.TestCase):
             "All ops should be delegated, but found: "
             f"{[str(n.target) for n in non_delegate_ops]}",
         )
+
+    def test_tuple_getitems_stay_in_one_delegate(self):
+        model = nn.BatchNorm2d(3).eval()
+        ep = torch.export.export(model, (torch.randn(1, 3, 4, 4),))
+        lowered = to_edge_transform_and_lower(
+            ep,
+            transform_passes=get_default_passes(),
+            partitioner=[NativePartitioner()],
+            compile_config=get_default_compile_config(),
+        )
+        submodules = get_lowered_submodules(
+            lowered._edge_programs["forward"].graph_module
+        )
+        self.assertEqual(len(submodules), 1)
 
 
 class _CondModel(nn.Module):

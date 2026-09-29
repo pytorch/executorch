@@ -660,11 +660,11 @@ TEST_F(CudaKVCacheTest, GrowthDropsACapturedGraphOnlyWhenStorageMoves) {
 
   // Grows: the graph points at freed storage, so the growth itself drops it
   // -- freeing what the capture pinned -- and this very call captures again,
-  // with no warmup.
+  // after one eager step that absorbs AOTI's constant fold.
   ASSERT_EQ(kv.prepare_step(1, cudaStreamPerThread), Error::Ok);
   ASSERT_EQ(kv.metrics().growth_count, 1);
   EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Warmup);
-  EXPECT_EQ(graph.warmup_remaining, 0);
+  EXPECT_EQ(graph.warmup_remaining, 1);
   EXPECT_TRUE(graph.static_input_ptrs.empty());
   EXPECT_TRUE(graph.static_input_nbytes.empty());
   EXPECT_EQ(graph.graph_exec, nullptr);
@@ -709,7 +709,7 @@ TEST_F(CudaKVCacheTest, GrowthDuringAnotherMethodDropsItsGraph) {
   ASSERT_EQ(kv.prepare_step(16, cudaStreamPerThread), Error::Ok);
   ASSERT_EQ(kv.metrics().growth_count, 1);
   EXPECT_EQ(decode.cuda_graph_state.phase, cu::CudaGraphPhase::Warmup);
-  EXPECT_EQ(decode.cuda_graph_state.warmup_remaining, 0);
+  EXPECT_EQ(decode.cuda_graph_state.warmup_remaining, 1);
   // A handle that never captured is left as it was.
   EXPECT_EQ(prefill.cuda_graph_state.phase, cu::CudaGraphPhase::Disabled);
   ASSERT_EQ(kv.rebind_for_execute(&prefill), Error::Ok);

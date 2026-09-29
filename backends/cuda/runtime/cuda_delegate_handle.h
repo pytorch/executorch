@@ -148,12 +148,14 @@ struct CudaGraphState {
     static_output_nbytes.clear();
   }
 
-  // Drops the captured graph so the next call captures a new one, for when
-  // memory the graph baked in has moved. No warmup: the kernels are loaded.
+  // Drops the captured graph so a new one is captured, for when memory the
+  // graph baked in has moved. One eager step first: rebinding constants resets
+  // AOTI's constant-fold state, and the fold the next run performs cannot run
+  // inside a stream capture. The kernels are already loaded, so one is enough.
   void recapture() {
     release();
     phase = CudaGraphPhase::Warmup;
-    warmup_remaining = 0;
+    warmup_remaining = 1;
   }
 
   // Non-copyable: prevent double-free of CUDA resources
@@ -196,6 +198,14 @@ struct CudaGraphState {
 
 // CUDA-specific delegate handle that extends AOTIDelegateHandle.
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
+  // AOTI's run() records a completion event on the stream and queries it at
+  // the start of the next run. Captured into a CUDA graph, that record belongs
+  // to the graph, so the first run() after the graph is dropped (to recapture
+  // against moved KV storage) fails the query. The single-threaded entry point
+  // skips the event, and a CUDA-graph method runs single-threaded by design.
+  // Null when the .so does not export it; run() is used then.
+  aoti::AOTInductorModelContainerRunFunc run_single_threaded{nullptr};
+
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
 
