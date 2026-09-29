@@ -417,11 +417,23 @@ DEFINE_REDUCE_FN(mean, 4)
 DEFINE_REDUCE_FN(amax, 3)
 DEFINE_REDUCE_FN(amin, 3)
 
+void any_dim(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  if (graph.is_buffer_storage(args[0])) {
+    VK_CHECK_COND(
+        normalize(
+            graph.extract_scalar<int64_t>(args[1]), graph.dim_of(args[0])) ==
+        graph.dim_of(args[0]) - 1);
+    return add_reduce_per_row_node(graph, args[0], args[2], args[3], "any");
+  }
+  return add_reduce_node(graph, args[0], args[1], args[3], "any");
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sum.dim_IntList, sum);
   VK_REGISTER_OP(aten.mean.dim, mean);
   VK_REGISTER_OP(aten.amax.default, amax);
   VK_REGISTER_OP(aten.amin.default, amin);
+  VK_REGISTER_OP(aten.any.dim, any_dim);
 }
 
 } // namespace vkcompute

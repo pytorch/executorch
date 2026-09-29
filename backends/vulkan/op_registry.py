@@ -812,6 +812,20 @@ def register_reduce_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.aten.any.dim)
+def register_any_dim():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: (
+            utils.ndim_of(node.args[0]) > 0 and is_reduce_node_supported(node)
+        ),
+        pick_io_storage_fn=pick_storage_for_reduce,
+    )
+
+
 # =============================================================================
 # ArgReduce.cpp
 # =============================================================================
