@@ -50,17 +50,17 @@ jobs:
         xcrun --show-sdk-version
         echo "::endgroup::"
 
-        echo "::group::Install ExecuTorch and Core AI requirements"
-        ${CONDA_RUN} python install_executorch.py --editable > /dev/null
-        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt
-        ${CONDA_RUN} pip list
-        echo "::endgroup::"
-
         echo "::group::Install the Metal Toolchain"
         # coreai-build ships in the Metal Toolchain; without it the AOT compile
         # tests skip.
         xcodebuild -downloadComponent MetalToolchain
         xcrun --find coreai-build
+        echo "::endgroup::"
+
+        echo "::group::Install ExecuTorch and Core AI requirements"
+        ${CONDA_RUN} python install_executorch.py --editable > /dev/null
+        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt
+        ${CONDA_RUN} pip list
         echo "::endgroup::"
 
         echo "::group::Run Core AI export tests"
