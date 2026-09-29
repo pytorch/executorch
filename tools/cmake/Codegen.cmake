@@ -563,7 +563,7 @@ endfunction()
 
 function(executorch_load_build_variables)
   set(EXECUTORCH_BUILD_VARIABLES_FILELISTS
-      EXECUTORCH_SRCS
+      PRIM_OPS_LIB_SRCS
       EXECUTORCH_CORE_SRCS
       PORTABLE_KERNELS_SRCS
       KERNELS_UTIL_ALL_DEPS_SRCS
@@ -594,7 +594,7 @@ function(executorch_load_build_variables)
       LLAMA_RUNNER_SRCS
   )
   set(EXECUTORCH_BUILD_VARIABLES_VARNAMES
-      _executorch__srcs
+      _prim_ops_lib__srcs
       _executorch_core__srcs
       _portable_kernels__srcs
       _kernels_util_all_deps__srcs

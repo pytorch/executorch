@@ -58,7 +58,7 @@ if(TARGET executorch-shared AND NOT APPLE)
   set(required_lib_list portable_kernels)
   set(EXECUTORCH_LIBRARIES executorch-shared)
 else()
-  set(required_lib_list prim_ops_lib executorch_core portable_kernels)
+  set(required_lib_list executorch executorch_core portable_kernels)
   set(EXECUTORCH_LIBRARIES)
 endif()
 set(EXECUTORCH_INCLUDE_DIRS
