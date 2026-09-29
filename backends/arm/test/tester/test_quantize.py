@@ -10,6 +10,7 @@ from executorch.backends.arm.quantizer import (
     TOSAQuantizer,
 )
 from executorch.backends.arm.test.tester.quantize import ArmQuantize
+from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineINT
 from executorch.backends.arm.tosa import TosaSpecification
 
 
@@ -62,3 +63,26 @@ def test_arm_quantize_preserves_shared_dynamic_input_shape() -> None:
     assert all(isinstance(size, torch.SymInt) for size in batch_sizes)
     assert batch_sizes[0] == batch_sizes[1]
     assert graph_module(torch.randn(3, 4), torch.randn(3, 4)).shape == (3, 4)
+
+
+def test_pipeline_sets_quantization_calibration() -> None:
+    inputs = (torch.randn(2, 4),)
+    calibration_samples = iter([(torch.randn(2, 4),)])
+    batch = torch.export.Dim("batch", min=1, max=4)
+    dynamic_shapes = ({0: batch},)
+    pipeline = TosaPipelineINT(
+        torch.nn.ReLU(),
+        inputs,
+        aten_op=[],
+        run_on_tosa_ref_model=False,
+    )
+
+    result = pipeline.set_quantization_calibration(
+        calibration_samples,
+        dynamic_shapes=dynamic_shapes,
+    )
+
+    quantize_stage = pipeline._stages[pipeline.find_pos("quantize")].args[0]
+    assert result is pipeline
+    assert quantize_stage.calibration_samples is calibration_samples
+    assert quantize_stage.dynamic_shapes is dynamic_shapes
