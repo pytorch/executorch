@@ -9,8 +9,10 @@ import warnings as _warnings
 from typing import (
     Any,
     Callable,
+    cast,
     Dict,
     Generic,
+    Iterable,
     List,
     Optional,
     Sequence,
@@ -245,6 +247,22 @@ class BasePipeline(Generic[T]):
             raise RuntimeError(
                 f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
             )
+
+    def set_quantization_calibration(
+        self,
+        calibration_samples: Iterable[Tuple[Any, ...]],
+        dynamic_shapes: Optional[Tuple[Any, ...]] = None,
+    ):
+        quantize_pipeline_stage = self._stages[self.find_pos("quantize")]
+        quantize_stage = quantize_pipeline_stage.args[0]
+        if not isinstance(quantize_stage, Quantize):
+            raise RuntimeError(
+                f"First argument of quantize stage was {type(quantize_stage).__name__}, not Quantize as expected."
+            )
+
+        cast(Any, quantize_stage).calibration_samples = calibration_samples
+        quantize_stage.dynamic_shapes = dynamic_shapes
+        return self
 
     def pop_stage(self, identifier: int | str):
         """Removes and returns the stage at postion pos."""
