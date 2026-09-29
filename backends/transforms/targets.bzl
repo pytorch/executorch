@@ -477,6 +477,19 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_fuse_batch_norm_with_conv",
+        srcs = [
+            "test/test_fuse_batch_norm_with_conv.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":fuse_batch_norm_with_conv",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_quantize_fused_convbn_bias_pass",
         srcs = [
             "test/test_quantize_fused_convbn_bias_pass.py",

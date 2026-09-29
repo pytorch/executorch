@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 #include <executorch/backends/qualcomm/runtime/backends/lpai/LpaiBackendCustomConfig.h>
 #include <unordered_map>
 
@@ -42,7 +43,7 @@ LpaiBackendCustomConfig::CreateBackendCustomConfig() {
   std::unordered_map<LpaiHardwareVersion, QnnLpaiBackend_HwVersion_t>
       lpai_hw_ver = {
           {LpaiHardwareVersion::V6, QNN_LPAI_BACKEND_HW_VERSION_V6},
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 29)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 29)
           {LpaiHardwareVersion::V7, QNN_LPAI_BACKEND_HW_VERSION_V7},
 #endif
       };
