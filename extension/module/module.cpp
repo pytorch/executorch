@@ -770,6 +770,11 @@ runtime::Result<runtime::EValue> Module::get_output(
   return method->get_output(output_index);
 }
 
+runtime::Result<Module::Format> Module::format() {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return ptn_ ? Format::Ptn : Format::Pte;
+}
+
 bool Module::unload_method(const std::string& method_name) {
   return ptn_ ? ptn_->unload_method(method_name) : methods_.erase(method_name);
 }
