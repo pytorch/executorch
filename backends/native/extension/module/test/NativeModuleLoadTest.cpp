@@ -13,6 +13,7 @@
 #include <executorch/backends/native/extension/module/test/TestData.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/backend/options.h>
 #include <gtest/gtest.h>
 
 namespace executorch::extension::native_module {
@@ -75,6 +76,38 @@ TEST_F(NativeModuleLoadTest, Load_InternalConsistencyVerifiesConstants) {
   EXPECT_EQ(
       verified.load(runtime::Program::Verification::InternalConsistency),
       runtime::Error::InvalidProgram);
+}
+
+TEST_F(NativeModuleLoadTest, Load_NonEmptyBackendOptions_DoesNotPublishState) {
+  const std::vector<uint8_t> bytes = testing::make_tensor_package();
+  Module module(std::make_unique<BufferDataLoader>(bytes.data(), bytes.size()));
+  runtime::LoadBackendOptionsMap backend_options;
+  runtime::BackendOptions<1> options;
+  ASSERT_EQ(
+      options.set_option("unsupported", /*value=*/true), runtime::Error::Ok);
+  ASSERT_EQ(
+      backend_options.set_options("engine", options.view()),
+      runtime::Error::Ok);
+
+  EXPECT_EQ(module.load(backend_options), runtime::Error::NotSupported);
+  EXPECT_FALSE(module.is_loaded());
+  EXPECT_EQ(module.load(), runtime::Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+}
+
+TEST_F(NativeModuleLoadTest, Load_ExternalDataLoader_IsRejected) {
+  const std::vector<uint8_t> bytes = testing::make_tensor_package();
+  const std::vector<uint8_t> external_data{0};
+  Module module(
+      std::make_unique<BufferDataLoader>(bytes.data(), bytes.size()),
+      /*memory_allocator=*/nullptr,
+      /*temp_allocator=*/nullptr,
+      /*event_tracer=*/nullptr,
+      std::make_unique<BufferDataLoader>(
+          external_data.data(), external_data.size()));
+
+  EXPECT_EQ(module.load(), runtime::Error::InvalidArgument);
+  EXPECT_FALSE(module.is_loaded());
 }
 
 } // namespace

@@ -115,5 +115,17 @@ TEST(MethodMetaBridgeTest, PreservesTensorSignatureWithoutFakeRuntimeData) {
   EXPECT_EQ(meta.num_instructions(), 0);
 }
 
+TEST(MethodMetaBridgeTest, MapsUnsignedTypesAcrossDifferentEnumValues) {
+  ptn::Method method = make_method();
+  method.graph.values[0] =
+      ptn::Value("input", ptn::TensorMeta{ptn::kUInt16, {2}, {}});
+  const auto storage =
+      MethodMetaBridge::create(ptn::MethodMeta::from_method(method));
+
+  const auto input = storage->view().input_tensor_meta(0);
+  ASSERT_TRUE(input.ok());
+  EXPECT_EQ(input->scalar_type(), executorch::aten::ScalarType::UInt16);
+}
+
 } // namespace
 } // namespace executorch::extension::native_module
