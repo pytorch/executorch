@@ -47,7 +47,7 @@ jobs:
         echo "::group::Toolchain"
         sw_vers
         xcodebuild -version
-        ${CONDA_RUN} python -m pytest backends/apple/coreai
+        xcrun --show-sdk-version
         echo "::endgroup::"
 
         echo "::group::Install ExecuTorch and Core AI requirements"
