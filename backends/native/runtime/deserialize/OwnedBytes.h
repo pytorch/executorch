@@ -17,7 +17,8 @@
 
 namespace ptn {
 
-// Owning, read-only bytes: either a heap buffer or a read-only file mapping.
+// Owning, read-only bytes: a heap buffer, a read-only file mapping, or a view
+// that keeps another OwnedBytes alive.
 //
 // Hands out spans that alias the storage. Each alternative keeps its payload
 // address across a move, so spans taken before a move stay valid for as long as
@@ -45,13 +46,20 @@ class OwnedBytes {
   // A read-only mapping of an entire file.
   using MappedFile = std::unique_ptr<void, Unmap>;
 
-  std::variant<std::vector<uint8_t>, HeapBuffer, MappedFile> storage_;
+  struct SharedView {
+    std::shared_ptr<const OwnedBytes> owner;
+    ByteSpan bytes;
+  };
+
+  std::variant<std::vector<uint8_t>, HeapBuffer, MappedFile, SharedView>
+      storage_;
 
   explicit OwnedBytes(std::vector<uint8_t> bytes)
       : storage_(std::move(bytes)) {}
   explicit OwnedBytes(HeapBuffer buffer) : storage_(std::move(buffer)) {}
   explicit OwnedBytes(MappedFile mapped_file)
       : storage_(std::move(mapped_file)) {}
+  explicit OwnedBytes(SharedView view) : storage_(std::move(view)) {}
 
  public:
   // Empty, owning nothing.
@@ -66,11 +74,19 @@ class OwnedBytes {
   // The whole payload. Valid for this OwnedBytes' lifetime.
   ByteSpan span() const;
 
-  // True when these bytes are a file mapping rather than a heap buffer.
+  // True when these bytes are, or view, a file mapping rather than a heap
+  // buffer.
   bool is_mapped() const;
 
   // Take ownership of a buffer the caller already has, without copying it.
   static OwnedBytes from_vector(std::vector<uint8_t> bytes);
+
+  // A view of `bytes`, which must lie within `owner` unless empty, that shares
+  // ownership of `owner` rather than copying. Throws std::invalid_argument
+  // otherwise.
+  static OwnedBytes view(
+      std::shared_ptr<const OwnedBytes> owner,
+      ByteSpan bytes);
 
   // Acquire the contents of `path`. Maps it read-only by default: nothing is
   // copied, pages arrive on demand, and they are shared with any other process
