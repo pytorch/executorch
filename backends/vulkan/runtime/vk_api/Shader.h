@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/DispatchGrid.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Types.h>
 
@@ -61,7 +61,7 @@ struct ShaderInfo final {
   ShaderLayout::Signature kernel_layout{};
 
   // Shader Metadata
-  utils::WorkgroupSize out_tile_size{1u, 1u, 1u};
+  LocalWorkGroup out_tile_size{1u, 1u, 1u};
   bool requires_shader_int16 = false;
   bool requires_16bit_storage = false;
   bool requires_8bit_storage = false;

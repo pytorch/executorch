@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -88,6 +89,22 @@ class Verifier:
             return accept_both_none
 
         return lhs_spec.mem_obj_id == rhs_spec.mem_obj_id
+
+    @classmethod
+    def _storage_root_chain(cls, spec: TensorSpec) -> set[TensorSpec]:
+        """Return spec and all TensorSpecs backing its storage."""
+        seen: Set[TensorSpec] = set()
+        root = spec
+        while True:
+            internal_assert(
+                root not in seen,
+                "Circular storage_base relationship is not supported.",
+            )
+            seen.add(root)
+            if root.storage_base is None:
+                break
+            root = root.storage_base
+        return seen
 
     @classmethod
     def has_overlap(cls, lhs_ivl: List[int], rhs_ivl: List[int]) -> bool:
@@ -191,13 +208,16 @@ class Verifier:
                 if not allow_lifetime_and_storage_overlap and self.lifetime_overlap(
                     lhs_spec, rhs_spec
                 ):
-                    # In-place element-wise ops intentionally share storage
-                    # between input and output despite overlapping lifetimes.
-                    is_inplace_pair = (
-                        lhs_spec.inplace_base is rhs_spec
-                        or rhs_spec.inplace_base is lhs_spec
-                    )
-                    if not is_inplace_pair:
+                    # Some ops, such as in-place ops, intentionally place one
+                    # TensorSpec inside another TensorSpec's storage despite
+                    # overlapping lifetimes.
+                    # This is OK if one spec is storage-backed by the other.
+                    # Specs that merely share a root, such as siblings, should
+                    # still be checked as normal allocations.
+                    lhs_chain = Verifier._storage_root_chain(lhs_spec)
+                    rhs_chain = Verifier._storage_root_chain(rhs_spec)
+                    is_common_base_pair = lhs_spec in rhs_chain or rhs_spec in lhs_chain
+                    if not is_common_base_pair:
                         raise InternalError(
                             f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
                         )
@@ -691,6 +711,7 @@ def update_all_tensors_lifetime(
         ):
             update_tensor_lifetime(node, spec, node_idx, max_node_idx, graph_signature)
             specs.add(spec)
+    _extend_storage_base_lifetimes(specs)
     return specs
 
 
@@ -756,21 +777,6 @@ class MemoryAlgoResult:
 
     spec_dict: Dict[TensorSpec, SpecAllocResult]
     bufsizes: List[int]
-
-
-def materialize_buffer(
-    shared_objects: List[SharedObject], input_total_size: int = 0
-) -> int:
-    r"""
-    Assign concrete location in the buffer for each SharedObject.offset.
-
-    Assuming all the passed in shared objects belong to the same memory buffer.
-    """
-    total_size = input_total_size
-    for sobj in shared_objects:
-        sobj.offset = total_size
-        total_size += sobj.size
-    return total_size
 
 
 def _does_not_overlap(sobj: SharedObject, spec: TensorSpec) -> bool:
@@ -939,17 +945,48 @@ def _contains_xnnpack_delegate(graph_module: torch.fx.GraphModule) -> bool:
     return False
 
 
-def _resolve_inplace_specs(
-    deferred_inplace: List[TensorSpec],
+def _extend_storage_base_lifetimes(specs: Set[TensorSpec]) -> None:
+    for spec in specs:
+        if spec.storage_base is None:
+            continue
+        internal_assert(
+            spec.lifetime[0] is not None and spec.lifetime[1] is not None,
+            "Storage-backed TensorSpec must have a lifetime.",
+        )
+        start = cast(int, spec.lifetime[0])
+        end = cast(int, spec.lifetime[1])
+        seen: Set[TensorSpec] = {spec}
+        base = spec.storage_base
+        while base is not None:
+            internal_assert(
+                base not in seen,
+                "Circular storage_base relationship is not supported.",
+            )
+            seen.add(base)
+            internal_assert(
+                base.lifetime[0] is not None and base.lifetime[1] is not None,
+                "storage_base TensorSpec must have a lifetime.",
+            )
+            base.lifetime[0] = min(cast(int, base.lifetime[0]), start)
+            base.lifetime[1] = max(cast(int, base.lifetime[1]), end)
+            base = base.storage_base
+
+
+def _resolve_storage_base_specs(
+    deferred_storage_base: List[TensorSpec],
     spec2obj: Dict[TensorSpec, SharedObject],
     greedy_result: MemoryAlgoResult,
 ) -> None:
-    remaining = list(deferred_inplace)
+    remaining = list(deferred_storage_base)
     while remaining:
         progress = False
         next_remaining = []
         for spec in remaining:
-            base = spec.inplace_base
+            base = spec.storage_base
+            internal_assert(
+                base is not None,
+                "Deferred storage-backed TensorSpec should have a storage_base.",
+            )
             if base not in spec2obj:
                 next_remaining.append(spec)
                 continue
@@ -960,25 +997,47 @@ def _resolve_inplace_specs(
             spec_alloc_result = greedy_result.spec_dict[spec]
             spec_alloc_result.mem_id = base_alloc_result.mem_id
 
+            allocated_memory = spec.allocated_memory
+            storage_base_offset = spec.storage_base_offset
+            internal_assert(
+                storage_base_offset >= 0,
+                "storage_base_offset must be non-negative.",
+            )
             base_alloc_offset = None
+            base_allocated_memory = None
             for alloc_entry in sobj.allocations:
                 if alloc_entry.spec is base:
                     base_alloc_offset = alloc_entry.offset
+                    base_allocated_memory = alloc_entry.spec.allocated_memory
                     break
             assert base_alloc_offset is not None, (
                 f"Base allocation entry not found in shared object for spec "
                 f"with allocated_memory={spec.allocated_memory}"
             )
+            assert base_allocated_memory is not None, (
+                f"Base allocation entry not found in shared object for spec "
+                f"with allocated_memory={allocated_memory}"
+            )
+            internal_assert(
+                (base_alloc_offset + storage_base_offset) % spec.alignment == 0,
+                f"Storage-backed TensorSpec allocation must respect alignment, got offset {storage_base_offset} inside parent with offset {base_alloc_offset} for alignment {spec.alignment}.",
+            )
+            internal_assert(
+                storage_base_offset + allocated_memory <= base_allocated_memory,
+                "Storage-backed TensorSpec allocation must fit within storage_base.",
+            )
             sobj.first_used_index = min(sobj.first_used_index, spec.lifetime[0])
             sobj.last_used_index = max(sobj.last_used_index, spec.lifetime[1])
-            sobj.allocations.append(AllocationSpec(base_alloc_offset, spec))
+            sobj.allocations.append(
+                AllocationSpec(base_alloc_offset + storage_base_offset, spec)
+            )
             spec2obj[spec] = sobj
         if not progress:
             unresolved = ", ".join(
                 f"allocated_memory={s.allocated_memory}" for s in next_remaining
             )
             raise InternalError(
-                f"Circular or unresolvable in-place dependency chain: {unresolved}"
+                "Circular or unresolvable storage_base dependency chain: " + unresolved
             )
         remaining = next_remaining
 
@@ -1001,9 +1060,11 @@ def _compute_total_sizes(
             assert isinstance(bufsizes, list)
             if len(bufsizes) > mem_id:
                 input_total_size = bufsizes[mem_id]
-        total_sizes[mem_id] = materialize_buffer(
-            shared_objects[mem_id], input_total_size
-        )
+        total_size = input_total_size
+        for sobj in shared_objects[mem_id]:
+            sobj.offset = total_size
+            total_size += sobj.size
+        total_sizes[mem_id] = total_size
         total_sizes[mem_id] += extra_padding
 
         for sobj in shared_objects[mem_id]:
@@ -1056,7 +1117,7 @@ def greedy(
 
     sorted_specs.reverse()
 
-    deferred_inplace: List[TensorSpec] = []
+    deferred_storage_base: List[TensorSpec] = []
 
     for spec in sorted_specs:
         spec_alloc_result = greedy_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))
@@ -1067,8 +1128,8 @@ def greedy(
         greedy_result.spec_dict[spec] = spec_alloc_result
         spec.realign(alignment)
 
-        if spec.inplace_base is not None:
-            deferred_inplace.append(spec)
+        if spec.storage_base is not None:
+            deferred_storage_base.append(spec)
             continue
 
         spec2obj[spec] = pick_shared_obj(
@@ -1077,7 +1138,7 @@ def greedy(
             allow_overlapping_allocations,
         )
 
-    _resolve_inplace_specs(deferred_inplace, spec2obj, greedy_result)
+    _resolve_storage_base_specs(deferred_storage_base, spec2obj, greedy_result)
 
     total_sizes = _compute_total_sizes(
         shared_objects, graph_module, extra_padding, greedy_result, len(spec2obj)
@@ -1206,10 +1267,10 @@ def naive(
     bufsizes = cast(List[int], bufsizes)
 
     for spec in specs:
-        if spec.inplace_base is not None:
+        if spec.storage_base is not None:
             raise InternalError(
-                "The naive memory planning algorithm does not support in-place "
-                "element-wise ops (inplace_base). Use the greedy algorithm instead."
+                "The naive memory planning algorithm does not support storage-backed "
+                "TensorSpecs. Use the greedy algorithm instead."
             )
 
         spec_alloc_result = naive_result.spec_dict.get(spec, SpecAllocResult(0, 0, 0))

@@ -8,10 +8,13 @@
 
 #include <executorch/extension/module/module.h>
 
+#include <functional>
+
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/extension/module/ptn_module.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -26,6 +29,37 @@ using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
 
 namespace {
+runtime::Result<bool> is_ptn_source(runtime::DataLoader& loader) {
+  auto size = loader.size();
+  if (!size.ok()) {
+    return size.error();
+  }
+  if (*size < 2) {
+    return false;
+  }
+  // DataLoader requires a segment kind; this prefix belongs to the top-level
+  // program artifact.
+  auto head = loader.load(
+      /*offset=*/0,
+      /*size=*/2,
+      runtime::DataLoader::SegmentInfo(
+          runtime::DataLoader::SegmentInfo::Type::Program));
+  if (!head.ok()) {
+    return head.error();
+  }
+  auto data = head->data_safe();
+  if (!data.ok()) {
+    return data.error();
+  }
+  if (head->size() < 2 || *data == nullptr) {
+    return runtime::Error::InvalidProgram;
+  }
+  const auto* bytes = static_cast<const uint8_t*>(*data);
+  // PTN packages are ZIP archives, whose signatures begin with "PK". The PTN
+  // provider performs full package validation after this routing check.
+  return bytes[0] == 'P' && bytes[1] == 'K';
+}
+
 runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
     const std::string& file_path,
     Module::LoadMode mode) {
@@ -205,10 +239,14 @@ runtime::Error Module::load(const Program::Verification verification) {
 runtime::Error Module::load(
     const LoadBackendOptionsMap& backend_options,
     const Program::Verification verification) {
+  if (ptn_ && backend_options.size() != 0) {
+    return runtime::Error::NotSupported;
+  }
   // load_internal does not read backend options, so run it first; on
   // failure we skip the deep-copy work entirely and leave the prior
   // installed options (if any) in place.
-  ET_CHECK_OK_OR_RETURN_ERROR(load_internal(verification));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      load_internal(verification, backend_options.size() != 0));
 
   // Deep-copy the input into local storage so the Module owns the
   // BackendOption arrays for the lifetime of any methods loaded with
@@ -250,7 +288,9 @@ runtime::Error Module::load(
   return runtime::Error::Ok;
 }
 
-runtime::Error Module::load_internal(const Program::Verification verification) {
+runtime::Error Module::load_internal(
+    const Program::Verification verification,
+    bool has_backend_options) {
   if (!is_loaded()) {
     if (!data_loader_) {
       auto data_loader_result = make_data_loader(file_path_, load_mode_);
@@ -258,6 +298,40 @@ runtime::Error Module::load_internal(const Program::Verification verification) {
         return data_loader_result.error();
       }
       data_loader_ = std::move(*data_loader_result);
+    }
+    auto ptn_detection_result = is_ptn_source(*data_loader_);
+    if (!ptn_detection_result.ok()) {
+      return ptn_detection_result.error();
+    }
+    if (*ptn_detection_result) {
+      if (load_mode_ != LoadMode::File && load_mode_ != LoadMode::Mmap) {
+        return runtime::Error::NotSupported;
+      }
+      if (has_backend_options) {
+        return runtime::Error::NotSupported;
+      }
+      if (!data_files_.empty() || !data_map_loaders_.empty()) {
+        return runtime::Error::InvalidArgument;
+      }
+      const ET_PTN_MODULE_NAMESPACE::internal::PtnSource source =
+          file_path_.empty()
+          ? ET_PTN_MODULE_NAMESPACE::internal::PtnSource(
+                std::ref(*data_loader_))
+          : ET_PTN_MODULE_NAMESPACE::internal::PtnSource(
+                ET_PTN_MODULE_NAMESPACE::internal::PtnFileSource{
+                    file_path_,
+                    load_mode_ == LoadMode::Mmap
+                        ? ET_PTN_MODULE_NAMESPACE::internal::PtnFileSource::
+                              Mode::Mmap
+                        : ET_PTN_MODULE_NAMESPACE::internal::PtnFileSource::
+                              Mode::Read});
+      auto ptn_load_result =
+          ET_PTN_MODULE_NAMESPACE::load_ptn(source, verification);
+      if (!ptn_load_result.ok()) {
+        return ptn_load_result.error();
+      }
+      ptn_ = std::move(*ptn_load_result);
+      return runtime::Error::Ok;
     }
     if (data_files_.size() > 0) {
       for (const auto& data_file : data_files_) {
@@ -313,11 +387,17 @@ runtime::Error Module::load_internal(const Program::Verification verification) {
 
 runtime::Result<size_t> Module::num_methods() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (ptn_) {
+    return ptn_->num_methods();
+  }
   return program_->num_methods();
 }
 
 runtime::Result<std::unordered_set<std::string>> Module::method_names() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (ptn_) {
+    return ptn_->method_names();
+  }
   const auto method_count = program_->num_methods();
   std::unordered_set<std::string> result;
   result.reserve(method_count);
@@ -368,7 +448,8 @@ Module::make_planned_memory_with_shared_arenas(
   return planned;
 }
 
-std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
+runtime::Result<std::unique_ptr<Module::PlannedMemory>>
+Module::make_planned_memory_with_devices(
     const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta) {
   auto planned = std::make_unique<PlannedMemory>();
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
@@ -379,9 +460,11 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
 
   for (size_t i = 0; i < num_buffers; ++i) {
     auto size = method_meta.memory_planned_buffer_size(i);
-    ET_CHECK_MSG(size.ok(), "Failed to get buffer size for index %zu", i);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        size.error(), "Failed to get buffer size for index %zu", i);
     auto device = method_meta.memory_planned_buffer_device(i);
-    ET_CHECK_MSG(device.ok(), "Failed to get buffer device for index %zu", i);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        device.error(), "Failed to get buffer device for index %zu", i);
     planned->planned_devices.push_back(device.get());
 
     if (device->is_cpu()) {
@@ -391,13 +474,17 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
     } else {
       // Allocate device memory via DeviceAllocator and store the RAII buffer.
       planned->planned_buffers.emplace_back(); // empty CPU placeholder
+      // Whether a device allocator exists, and whether the device has room,
+      // are properties of the machine rather than of the program, so report
+      // them to the caller instead of aborting the process.
       auto dmb = runtime::DeviceMemoryBuffer::create(
           size.get(), device->type(), device->index());
-      ET_CHECK_MSG(
-          dmb.ok(),
-          "Failed to allocate device memory for buffer %zu (device_type=%d)",
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          dmb.error(),
+          "Failed to allocate device memory for buffer %zu (device_type=%d, device_index=%d)",
           i,
-          static_cast<int>(device->type()));
+          static_cast<int>(device->type()),
+          static_cast<int>(device->index()));
       planned->planned_spans.emplace_back(dmb->as_span());
       planned->device_buffers.push_back(std::move(dmb.get()));
     }
@@ -415,6 +502,10 @@ std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory_with_devices(
 
 runtime::Result<std::vector<size_t>> Module::get_mem_planned_buffer_sizes(
     const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (ptn_) {
+    return runtime::Error::NotSupported;
+  }
   auto meta_res = program_->method_meta(method_name.c_str());
   ET_CHECK_OK_OR_RETURN_ERROR(meta_res.error());
   auto meta = meta_res.get();
@@ -457,6 +548,14 @@ runtime::Error Module::load_method(
     std::vector<Kernel> kernel_registry) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
+    if (ptn_) {
+      if (planned_memory != nullptr || event_tracer != nullptr ||
+          (backend_options != nullptr && backend_options->size() != 0) ||
+          !kernel_registry.empty()) {
+        return runtime::Error::NotSupported;
+      }
+      return ptn_->load_method(method_name);
+    }
 
     // Use passed backend_options, or fall back to stored ones from load().
     // An empty stored map behaves identically to nullptr downstream, so we
@@ -473,10 +572,16 @@ runtime::Error Module::load_method(
       ET_CHECK_OK_OR_RETURN_ERROR(meta_res.error());
       auto& meta = meta_res.get();
 
+      // A failed device query must not read as "this buffer is on the host",
+      // which would silently hand a backend host memory. The loop bounds i by
+      // num_memory_planned_buffers(), so the callee's range check cannot fire
+      // today; this keeps the failure handled if that ever stops holding.
       bool has_device_buffers = false;
       for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
         auto dev = meta.memory_planned_buffer_device(i);
-        if (dev.ok() && !dev->is_cpu()) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            dev.error(), "Failed to get buffer device for index %zu", i);
+        if (!dev->is_cpu()) {
           has_device_buffers = true;
           break;
         }
@@ -493,7 +598,9 @@ runtime::Error Module::load_method(
 
         // Device-aware path: allocate CPU and device buffers. The device
         // span is owned by the HierarchicalAllocator inside PlannedMemory.
-        method_holder.planned_memory = make_planned_memory_with_devices(meta);
+        auto planned_res = make_planned_memory_with_devices(meta);
+        ET_CHECK_OK_OR_RETURN_ERROR(planned_res.error());
+        method_holder.planned_memory = std::move(planned_res.get());
         planned_memory = method_holder.planned_memory->planned_memory.get();
       } else if (!share_memory_arenas_) {
         auto sizes_res = get_mem_planned_buffer_sizes(method_name);
@@ -545,6 +652,10 @@ runtime::Error Module::load_method(
 
 ET_NODISCARD runtime::Result<Method*> Module::method(
     const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (ptn_) {
+    return runtime::Error::NotSupported;
+  }
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   return methods_[method_name].method.get();
 }
@@ -552,6 +663,9 @@ ET_NODISCARD runtime::Result<Method*> Module::method(
 runtime::Result<MethodMeta> Module::method_meta(
     const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (ptn_) {
+    return ptn_->method_meta(method_name);
+  }
   return program_->method_meta(method_name.c_str());
 }
 
@@ -559,6 +673,9 @@ runtime::Result<std::vector<runtime::EValue>> Module::execute(
     const std::string& method_name,
     const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->execute(method_name, input_values);
+  }
   auto& method = methods_.at(method_name).method;
   for (auto index = 0; index < input_values.size(); ++index) {
     ET_CHECK_OK_OR_RETURN_ERROR(method->set_input(input_values[index], index));
@@ -577,6 +694,9 @@ runtime::Error Module::set_input(
     const runtime::EValue& input_value,
     size_t input_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->set_input(method_name, input_value, input_index);
+  }
   auto& method = methods_.at(method_name).method;
   return method->set_input(input_value, input_index);
 }
@@ -585,6 +705,9 @@ runtime::Error Module::set_inputs(
     const std::string& method_name,
     const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->set_inputs(method_name, input_values);
+  }
   auto& method = methods_.at(method_name).method;
   return method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
       input_values.data(), input_values.size()));
@@ -595,6 +718,9 @@ runtime::Error Module::set_output(
     runtime::EValue output_value,
     size_t output_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->set_output(method_name, std::move(output_value), output_index);
+  }
   auto& method = methods_.at(method_name).method;
   ET_CHECK_OR_RETURN_ERROR(
       output_value.isTensor(),
@@ -610,6 +736,9 @@ runtime::Error Module::set_outputs(
     const std::string& method_name,
     const std::vector<runtime::EValue>& output_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->set_outputs(method_name, output_values);
+  }
   auto& method = methods_.at(method_name).method;
   const auto outputs_size = method->outputs_size();
   ET_CHECK_OR_RETURN_ERROR(
@@ -628,6 +757,9 @@ runtime::Error Module::set_outputs(
 runtime::Result<std::vector<runtime::EValue>> Module::get_outputs(
     const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->get_outputs(method_name);
+  }
   auto& method = methods_.at(method_name).method;
   const auto outputs_size = method->outputs_size();
   std::vector<runtime::EValue> outputs(outputs_size);
@@ -640,6 +772,9 @@ runtime::Result<runtime::EValue> Module::get_output(
     const std::string& method_name,
     size_t output_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  if (ptn_) {
+    return ptn_->get_output(method_name, output_index);
+  }
   auto& method = methods_.at(method_name).method;
   ET_CHECK_OR_RETURN_ERROR(
       output_index < method->outputs_size(),
@@ -647,6 +782,20 @@ runtime::Result<runtime::EValue> Module::get_output(
       "output index: %zu is out of range",
       output_index);
   return method->get_output(output_index);
+}
+
+runtime::Result<Module::Format> Module::format() {
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  return ptn_ ? Format::Ptn : Format::Pte;
+}
+
+bool Module::unload_method(const std::string& method_name) {
+  return ptn_ ? ptn_->unload_method(method_name) : methods_.erase(method_name);
+}
+
+bool Module::is_method_loaded(const std::string& method_name) const {
+  return ptn_ ? ptn_->is_method_loaded(method_name)
+              : methods_.count(method_name) != 0;
 }
 
 } // namespace ET_MODULE_NAMESPACE

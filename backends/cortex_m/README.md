@@ -5,7 +5,17 @@
 
 ## Overview
 
-The Cortex-M backend is implemented as an operator dialect/library based on [CMSIS-NN](https://github.com/ARM-software/CMSIS-NN), together with the `CortexMQuantizer` which targets supported ops, and the `CortexMPassManager` which modifies the exported program to use Cortex-M operators where possible. It is intended for use with **channels-last input**  since this is what the accelerated kernels are using.
+The Cortex-M backend is implemented as an operator dialect/library based on [CMSIS-NN](https://github.com/ARM-software/CMSIS-NN), together with the `CortexMQuantizer` which targets supported ops, and the `CortexMPassManager` which modifies the exported program to use Cortex-M operators where possible.
+
+The default AOT path retains the established channels-last input and dim-order contract. An experimental explicit-layout path accepts ordinary contiguous inputs, inserts graph-visible NHWC copies, and lowers spatial kernels to the `cortex_m::*_nhwc` operator family. Enable it with `--cortex-m-explicit-layout`; the two modes do not fall back to or mix with each other. Explicit-layout compilation fails when a spatial operator is not eligible for NHWC lowering, so models using unsupported configurations must use the legacy mode.
+
+### Explicit-layout migration
+
+The `use_explicit_layout=True` modes on `CortexMQuantizer` and `CortexMPassManager` are temporary staging APIs. They keep the experimental path isolated while the default modes and `CortexMTester` continue to exercise the legacy path.
+
+When explicit layout becomes the default, its support table and pass list will become the defaults in `CortexMQuantizer` and `CortexMPassManager`. The existing legacy support table and pass list will remain temporarily behind an opt-out AOT flag. This keeps the public Python entry points stable and switches `CortexMTester` to explicit layout without changing its callers. The direct NHWC kernel tests and explicit-only model tests will then be folded into the normal operator and model suites.
+
+After the legacy AOT compatibility period, the legacy support table, pass list, input conversion, opt-out flag, and remaining dual-mode tests will be removed. Legacy runtime operators will remain registered so programs serialized by the old AOT path continue to load.
 
 For a detailed example of the full lowering flow, see `examples/arm/cortex_m_mv2_example.ipynb`.
 

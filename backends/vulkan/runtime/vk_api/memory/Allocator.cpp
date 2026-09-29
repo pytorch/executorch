@@ -177,13 +177,13 @@ VulkanBuffer Allocator::create_staging_buffer(
   if (direction == CopyDirection::HOST_TO_DEVICE) {
     alloc_create_info.flags |=
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    alloc_create_info.preferredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
   } else {
     alloc_create_info.flags |= allocation_strategy_device_to_host_;
+    alloc_create_info.preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
   }
   alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
   alloc_create_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-  alloc_create_info.preferredFlags =
-      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
 
   return VulkanBuffer(allocator_, size, alloc_create_info, buffer_usage);
 }

@@ -433,6 +433,46 @@ class TestCoreMLPartitioner(unittest.TestCase):
         self.assertIn("executorch_call_delegate", op_names)
         self.assertNotIn("aten.argmax.default", op_names)
 
+    def test_tied_embedding_is_quantized_with_its_linear(self):
+        """A weight that is both an embedding table and an output projection lowers.
+
+        The quantizer config opts gathers out so that embedding tables are not compressed
+        by it. When the table is tied to a linear's weight, that opt-out leaves one
+        constant with two configurations, which coremltools rejects — so the opt-out has
+        to stop at the tie rather than fail the whole lowering.
+        """
+
+        class Tied(torch.nn.Module):
+            def __init__(self, vocab=512, dim=64, tie=True):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(vocab, dim)
+                self.output = torch.nn.Linear(dim, vocab, bias=False)
+                if tie:
+                    self.output.weight = self.embedding.weight
+
+            def forward(self, ids):
+                return self.output(self.embedding(ids))
+
+        ids = torch.zeros(1, 4, dtype=torch.long)
+        for tie in (True, False):
+            compile_specs = CoreMLBackend.generate_compile_specs(
+                minimum_deployment_target=ct.target.iOS18,
+                compute_precision=ct.precision(ct.precision.FLOAT16.value),
+                op_linear_quantizer_config={
+                    "mode": "linear_symmetric",
+                    "dtype": "int4",
+                    "granularity": "per_channel",
+                },
+            )
+            exported = torch.export.export(Tied(tie=tie).eval(), (ids,), strict=True)
+            delegated = executorch.exir.to_edge_transform_and_lower(
+                exported,
+                partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            )
+            # Reaching a program at all is the assertion: the failure this covers is
+            # raised during lowering, not carried in the result.
+            self.assertIsNotNone(delegated.to_executorch())
+
     def test_deprecation_warning_for_to_backend_workflow(self):
         """
         Test that the deprecated to_edge + to_backend workflow shows a deprecation warning.
@@ -532,5 +572,6 @@ if __name__ == "__main__":
     test_runner.test_take_over_constant_data_false()
     test_runner.test_aten_rand_default_falls_back_to_portable()
     test_runner.test_aten_randn_is_still_delegated()
+    test_runner.test_tied_embedding_is_quantized_with_its_linear()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()

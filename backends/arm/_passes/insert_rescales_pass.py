@@ -408,6 +408,12 @@ class InsertRescaleInt32Pass(ArmPass):
             if node.op != "call_function" or node.target not in self.included_targets:
                 continue
 
+            has_preserved_qdq = any(
+                input_node.target in DQ_OPS for input_node in node.all_input_nodes
+            ) or any(user.target in Q_OPS for user in node.users)
+            if has_preserved_qdq:
+                continue
+
             if "input_qparams" not in node.meta or len(node.meta["input_qparams"]) == 0:
                 continue
             input_qparams = node.meta["input_qparams"]

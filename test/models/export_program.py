@@ -59,7 +59,7 @@ class ModuleIndex(nn.Module):
     def forward(self, x):
         # Weird index that happens to generate a None in torch.index.Tensor_out
         # which is desirable for deserialization testing. A modified form of
-        # an example index from https://pytorch.org/cppdocs/notes/tensor_indexing.html.
+        # an example index from the PyTorch C++ tensor indexing notes.
         return x[1::2, torch.tensor([1, 2])]
 
     def get_random_inputs(self):

@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Optional
 
 import torch
 from torch.export.unflatten import _assign_attr, _AttrKind
@@ -54,7 +53,7 @@ class FuseBatchNormWithConvPass(PassBase):
             attr_itr = getattr(attr_itr, atom)
         return attr_itr
 
-    def call(self, graph_module: GraphModule) -> Optional[PassResult]:
+    def call(self, graph_module: GraphModule) -> PassResult:
         def _is_batch_norm(node_: Node) -> bool:
             return (
                 node_.op == "call_function"

@@ -5,8 +5,10 @@ ciflow_push_tags:
 - ciflow/apple
 - ciflow/cuda
 - ciflow/cuda-perf
+- ciflow/docker
 - ciflow/metal
 - ciflow/mlx
+- ciflow/rocm
 - ciflow/nightly
 - ciflow/trunk
 - ciflow/binaries

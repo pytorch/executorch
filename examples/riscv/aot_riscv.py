@@ -126,6 +126,7 @@ def build_yolo26():
         np.ones((input_h, input_w, 3)),
         imgsz=(input_h, input_w),
         device="cpu",
+        channels_last=False,
     )
 
     class Wrapper(torch.nn.Module):

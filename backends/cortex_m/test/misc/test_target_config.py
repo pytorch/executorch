@@ -102,7 +102,7 @@ class TestPassManagerTargetConfigWiring:
             CortexMPassManager,
         )
 
-        pm = CortexMPassManager(exported_program=None)
+        pm = CortexMPassManager()
         assert pm.target_config.cpu == CortexM.M55
         assert pm.target_config.backend == cmsis_nn.Backend.MVE
 
@@ -112,6 +112,6 @@ class TestPassManagerTargetConfigWiring:
         )
 
         target_config = CortexMTargetConfig(cpu=CortexM.M33)
-        pm = CortexMPassManager(exported_program=None, target_config=target_config)
+        pm = CortexMPassManager(target_config=target_config)
         assert pm.target_config.cpu == CortexM.M33
         assert pm.target_config.backend == cmsis_nn.Backend.DSP

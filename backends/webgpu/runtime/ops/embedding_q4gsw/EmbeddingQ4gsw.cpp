@@ -37,13 +37,37 @@ static_assert(
     sizeof(EmbeddingParams) == 32,
     "EmbeddingParams must be 32 bytes");
 
+struct EmbeddingLayout {
+  uint32_t embed_dim;
+  uint32_t blocks_per_row;
+  uint32_t group_size;
+  uint32_t groups_per_row;
+  uint32_t bytes_per_row;
+  bool is_linear_weight;
+};
+
+EmbeddingParams make_embedding_params(
+    const EmbeddingLayout& layout,
+    uint32_t num_indices,
+    uint32_t total_blocks) {
+  return {
+      layout.embed_dim,
+      layout.blocks_per_row,
+      num_indices,
+      layout.group_size,
+      layout.groups_per_row,
+      layout.bytes_per_row,
+      total_blocks,
+      layout.is_linear_weight ? 1u : 0u};
+}
+
 // Resize hook body: recompute counts/dispatch; out = indices dims +
 // [embed_dim].
 void resize_embedding_q4gsw(
     WebGPUGraph& g,
     int indices_id,
     int out_id,
-    EmbeddingParams params,
+    const EmbeddingLayout& layout,
     uint32_t wg_size,
     size_t dispatch_idx,
     WGPUBuffer params_buf) {
@@ -52,17 +76,17 @@ void resize_embedding_q4gsw(
   if (ni == 0) {
     throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
   }
-  const uint64_t total_blocks = ni * params.blocks_per_row;
+  const uint64_t total_blocks = ni * layout.blocks_per_row;
   if (total_blocks > UINT32_MAX) {
     throw std::runtime_error(
         "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
   }
   std::vector<int64_t> od = id;
-  od.push_back(static_cast<int64_t>(params.embed_dim));
+  od.push_back(static_cast<int64_t>(layout.embed_dim));
   g.set_cur_dims(out_id, od);
-  params.num_indices = static_cast<uint32_t>(ni);
-  params.total_blocks = static_cast<uint32_t>(total_blocks);
-  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &params, sizeof(params));
+  EmbeddingParams p = make_embedding_params(
+      layout, static_cast<uint32_t>(ni), static_cast<uint32_t>(total_blocks));
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
   g.dispatch_at(dispatch_idx).workgroup_count_x =
       utils::compute_1d_workgroup_count(
           g.device(),
@@ -166,15 +190,15 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const uint32_t workgroup_count = utils::compute_1d_workgroup_count(
       device, static_cast<uint32_t>(total_blocks), wg_size, "embedding_q4gsw");
 
-  EmbeddingParams params = {};
-  params.embed_dim = embed_dim;
-  params.blocks_per_row = blocks_per_row;
-  params.num_indices = num_indices; // std140 layout only; shader derives it
-  params.group_size = static_cast<uint32_t>(group_size);
-  params.groups_per_row = groups_per_row;
-  params.bytes_per_row = bytes_per_row;
-  params.total_blocks = static_cast<uint32_t>(total_blocks);
-  params.is_linear_weight = is_linear ? 1u : 0u;
+  const EmbeddingLayout layout = {
+      embed_dim,
+      blocks_per_row,
+      static_cast<uint32_t>(group_size),
+      groups_per_row,
+      bytes_per_row,
+      is_linear};
+  EmbeddingParams params = make_embedding_params(
+      layout, num_indices, static_cast<uint32_t>(total_blocks));
 
   WGPUBufferDescriptor uniform_desc = {};
   uniform_desc.size = sizeof(EmbeddingParams);
@@ -223,10 +247,10 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       indices_id,
-      [indices_id, out_id, params, wg_size, dispatch_idx, params_buf](
+      [indices_id, out_id, layout, wg_size, dispatch_idx, params_buf](
           WebGPUGraph& g) {
         resize_embedding_q4gsw(
-            g, indices_id, out_id, params, wg_size, dispatch_idx, params_buf);
+            g, indices_id, out_id, layout, wg_size, dispatch_idx, params_buf);
       });
 
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.

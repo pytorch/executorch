@@ -26,10 +26,8 @@ from executorch.backends.cadence.aot.compiler_utils import (
     get_zero_point,
 )
 from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
     get_arg,
     HierarchicalInplacePassInterface,
-    register_cadence_pass,
     RemoveOrReplacePassInterface,
     set_arg,
 )
@@ -51,6 +49,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPac
 from executorch.exir.pass_base import PassResult
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.nn.utils.fusion import fuse_conv_bn_weights
+from torch.utils import _pytree as pytree
 
 
 def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
@@ -61,7 +60,6 @@ def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
     return tensor
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMMWithAdd(RemoveOrReplacePassInterface):
     """
     Fuses mm -> add patterns into addmm.
@@ -212,7 +210,6 @@ class FuseMMWithAdd(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
     """
     This pass fuses a conv op with batchnorm if the following two conditions
@@ -361,7 +358,6 @@ class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
     """
     This pass fuses a quantized::conv op with quantized::batchnorm if the
@@ -589,17 +585,14 @@ class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseCascadedTransposeOrPermuteOps(_SharedFuseCascadedTransposeOrPermuteOps):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseCascadedViewOps(_SharedFuseCascadedViewOps):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
     """
     Fuse dequantize-quantize op pairs to a single requantize op.
@@ -670,7 +663,12 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         )
 
     def _quant_params_match(self, node1: torch.fx.Node, node2: torch.fx.Node) -> bool:
-        return node1.args[1:] == node2.args[1:]
+        arg_names = ("scale", "zero_point", "quant_min", "quant_max", "dtype")
+        arg_types = (float, int, int, int, torch.dtype)
+        return all(
+            get_arg(node1, name, arg_type) == get_arg(node2, name, arg_type)
+            for name, arg_type in zip(arg_names, arg_types)
+        )
 
     def check_ok_to_fuse(
         self,
@@ -686,14 +684,69 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
             return False
         return True
 
+    def _get_bypassed_nodes(
+        self,
+        producer: torch.fx.Node,
+        removal_candidates: list[torch.fx.Node],
+    ) -> list[torch.fx.Node]:
+        """Return the bypassed ops between producer and consumers, in order."""
+        candidates = set(removal_candidates)
+        bypassed: set[torch.fx.Node] = set()
+        stack = list(producer.users)
+        while stack:
+            user = stack.pop()
+            if user in candidates or user in bypassed:
+                continue
+            bypassed.add(user)
+            stack.extend(user.users)
+
+        # The graph's node list is topologically sorted, so walking it forward
+        # from the producer refreshes each node after its predecessor.
+        ordered: list[torch.fx.Node] = []
+        cursor = producer.next
+        while bypassed and cursor.op != "root":
+            if cursor in bypassed:
+                bypassed.remove(cursor)
+                ordered.append(cursor)
+            cursor = cursor.next
+        return ordered
+
+    def fuse(
+        self,
+        node: torch.fx.Node,
+        removal_candidates: list[torch.fx.Node],
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        # Capture the bypassed ops before the rewire erases the chain's root.
+        bypassed_nodes = self._get_bypassed_nodes(node, removal_candidates)
+        node.replace_all_uses_with(cast(torch.fx.Node, node.args[0]))
+        graph_module.graph.erase_node(node)
+        # They now consume the producer's input, so their metadata describes an
+        # operand they no longer have. Refresh before get_fused_node reads it.
+        for bypassed in bypassed_nodes:
+            args, kwargs = pytree.tree_map_only(
+                torch.fx.Node,
+                lambda arg: arg.meta["val"],
+                (bypassed.args, bypassed.kwargs),
+            )
+            assert callable(bypassed.target)
+            bypassed.meta["val"] = bypassed.target(*args, **kwargs)
+            bypassed.meta["tensor_meta"] = None
+        for rnode in removal_candidates:
+            rnode.replace_all_uses_with(self.get_fused_node(node, rnode, graph_module))
+            graph_module.graph.erase_node(rnode)
+
     def get_fused_node(
         self,
         producer: torch.fx.Node,
         consumer: torch.fx.Node,
         graph_module: torch.fx.GraphModule,
     ) -> torch.fx.Node:
-        in_scale, in_zero_point = producer.args[1:3]
-        in_tensor, out_scale, out_zero_point, _, _, out_dtype = consumer.args
+        in_scale = get_arg(producer, "scale", float)
+        in_zero_point = get_arg(producer, "zero_point", int)
+        out_scale = get_arg(consumer, "scale", float)
+        out_zero_point = get_arg(consumer, "zero_point", int)
+        out_dtype = get_arg(consumer, "dtype", torch.dtype)
         if in_scale == out_scale and in_zero_point == out_zero_point:
             # If the quant params match, we can remove both dequantize-quantize ops.
             return cast(torch.fx.Node, consumer.args[0])
@@ -705,13 +758,23 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         with graph_module.graph.inserting_before(consumer):
             requantize_node = self._create_requantize_node(
                 in_tensor=cast(torch.fx.Node, consumer.args[0]),
-                in_scale=cast(float, in_scale),
-                in_zero_point=cast(int, in_zero_point),
-                out_scale=cast(float, out_scale),
-                out_zero_point=cast(int, out_zero_point),
-                out_dtype=cast(torch.dtype, out_dtype),
+                in_scale=in_scale,
+                in_zero_point=in_zero_point,
+                out_scale=out_scale,
+                out_zero_point=out_zero_point,
+                out_dtype=out_dtype,
                 graph=graph_module.graph,
             )
+            requantize_node.meta = consumer.meta.copy()
+            requantize_node.meta["val"] = exir_ops.edge.cadence.requantize.per_tensor(
+                cast(torch.fx.Node, consumer.args[0]).meta["val"],
+                cast(float, in_scale),
+                cast(int, in_zero_point),
+                cast(float, out_scale),
+                cast(int, out_zero_point),
+                cast(torch.dtype, out_dtype),
+            )
+            requantize_node.meta["tensor_meta"] = None
         return requantize_node
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -737,11 +800,12 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
             ),
         )
         if modified:
-            return super().call(graph_module)
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return PassResult(graph_module, True)
         return PassResult(graph_module, False)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul.Scalar is multiplying the
@@ -791,7 +855,6 @@ class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul.Tensor is followed by quant node.
@@ -876,7 +939,6 @@ class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul is multiplying the outputs of dequantize
@@ -940,7 +1002,6 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseTransposeOrPermuteOpPairsPass(_SharedFuseTransposeOrPermuteOpPairsPass):
     bypass_ops: set[EdgeOpOverload] = (
         _SharedFuseTransposeOrPermuteOpPairsPass.bypass_ops
@@ -952,7 +1013,6 @@ class FuseTransposeOrPermuteOpPairsPass(_SharedFuseTransposeOrPermuteOpPairsPass
     )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
     """
     A pass that fuses a chain of full and reshape-like operations into a single full operation.
@@ -1006,7 +1066,6 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class FuseSliceSameDimPass(RemoveOrReplacePassInterface):
     """Fuse chained slices on the same dim into a single slice.
 

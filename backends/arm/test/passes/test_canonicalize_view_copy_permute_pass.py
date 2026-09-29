@@ -298,6 +298,38 @@ def test_canonicalize_moves_permute_before_view() -> None:
     _validate_numerics(gm_before, result.graph_module, (x_data,))
 
 
+def test_canonicalize_sinks_singleton_view_below_permute() -> None:
+    builder = GraphBuilder()
+    x_data = torch.randn(2, 8, 64)
+    x = builder.placeholder("x", x_data)
+    v1 = builder.call_operator(
+        op=exir_ops.edge.aten.view_copy.default,
+        args=(x, [2, 8, 1, 64]),
+    )
+    p1 = builder.call_operator(
+        op=exir_ops.edge.aten.permute_copy.default,
+        args=(v1, [0, 2, 3, 1]),
+    )
+    builder.output([p1])
+    original = builder.get_graph_module()
+    gm_before = copy.deepcopy(original)
+
+    pass_instance = CanonicalizeViewCopyPermutePass()
+    result = cast(PassResult, pass_instance.call(original))
+
+    assert result.modified
+    compute_nodes = [
+        node for node in result.graph_module.graph.nodes if node.op == "call_function"
+    ]
+    assert [node.target for node in compute_nodes] == [
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.view_copy.default,
+    ]
+    assert compute_nodes[0].args[1] == [0, 2, 1]
+    assert compute_nodes[1].args[1] == [2, 1, 64, 8]
+    _validate_numerics(gm_before, result.graph_module, (x_data,))
+
+
 def test_canonicalize_follows_interleaved_chain_users() -> None:
     builder = GraphBuilder()
     x_data = torch.randn(4, 2, 4)

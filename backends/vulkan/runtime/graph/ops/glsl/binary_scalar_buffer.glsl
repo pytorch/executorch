@@ -57,11 +57,13 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 $if not IS_COMPARISON_OP:
   #include "binary_op_defs.glslh"
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.x;
+  const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
     return;
   }

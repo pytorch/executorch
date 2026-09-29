@@ -18,6 +18,10 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QuantizationConfig,
 )
 from executorch.backends.qualcomm.quantizer.rules import OpQuantRule
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    get_sdk_build_id,
+    is_qnn_sdk_version_less_than,
+)
 from tabulate import tabulate
 from torch._ops import OpOverload
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
@@ -91,6 +95,7 @@ class QuantizationStrategy(ABC):
             is_qat=self.is_qat,
             is_conv_per_channel=True,
             is_linear_per_channel=True,
+            is_embedding_per_channel=True,
             act_observer=self.act_observer,
             act_symmetric=self.act_symmetric,
         )
@@ -108,6 +113,15 @@ class QuantizationStrategy(ABC):
         if self.granularity == QuantGranularity.PER_TENSOR:
             return self.quant_config.quant_config
         elif self.granularity == QuantGranularity.PER_CHANNEL:
+            if op == torch.ops.aten.embedding.default and is_qnn_sdk_version_less_than(
+                "2.48"
+            ):
+                raise RuntimeError(
+                    "Per-channel embedding quantization requires QNN SDK version "
+                    f">= 2.48. Current QNN SDK version: {get_sdk_build_id()}. Please "
+                    "upgrade your QNN SDK, or use QuantGranularity.PER_TENSOR for the "
+                    "embedding layer instead."
+                )
             ch_axis = self.quant_config.use_per_channel_weight_quant_ops.get(op)
             assert (
                 ch_axis is not None

@@ -42,6 +42,7 @@ set(CUDA_SHIM_TESTS
     test_aoti_torch_delete_tensor_object
     test_aoti_torch__reinterpret_tensor
     test_aoti_torch_copy_
+    test_aoti_torch_zero_
     test_aoti_torch_cuda_rand
     test_aoti_torch_new_tensor_handle
     test_aoti_torch_item_bool
@@ -131,6 +132,36 @@ add_test(NAME benchmark_int6_plain_mm_m3
 )
 add_test(NAME benchmark_int6_plain_mm_m4
          COMMAND benchmark_int6_plain_mm --M=4 --N=64 --K=256 --gs=16
+                 --warmup=1 --iters=1 --seeds=3
+)
+
+add_executable(benchmark_int5_plain_mm benchmark_int5_plain_mm.cu)
+target_include_directories(
+  benchmark_int5_plain_mm PRIVATE ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}
+                                  ${CUDAToolkit_INCLUDE_DIRS}
+)
+target_compile_definitions(benchmark_int5_plain_mm PRIVATE CUDA_AVAILABLE=1)
+set_property(TARGET benchmark_int5_plain_mm PROPERTY CUDA_ARCHITECTURES 80)
+target_compile_options(
+  benchmark_int5_plain_mm PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xptxas=-v>
+)
+target_link_libraries(
+  benchmark_int5_plain_mm PRIVATE aoti_cuda_shims executorch_core CUDA::cudart
+)
+add_test(NAME benchmark_int5_plain_mm_m1
+         COMMAND benchmark_int5_plain_mm --M=1 --N=64 --K=256 --gs=32
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int5_plain_mm_m2
+         COMMAND benchmark_int5_plain_mm --M=2 --N=64 --K=256 --gs=32
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int5_plain_mm_m3
+         COMMAND benchmark_int5_plain_mm --M=3 --N=64 --K=256 --gs=32
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int5_plain_mm_m4
+         COMMAND benchmark_int5_plain_mm --M=4 --N=64 --K=256 --gs=32
                  --warmup=1 --iters=1 --seeds=3
 )
 

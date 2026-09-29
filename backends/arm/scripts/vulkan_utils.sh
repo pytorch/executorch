@@ -53,7 +53,7 @@ function download_and_extract_vulkan_sdk_linux() {
 
     if [[ ! -e "${vulkan_sdk_tar_file}" ]]; then
         log_step "vulkan" "Downloading Vulkan SDK (${vulkan_sdk_version})"
-        curl -L --output "${vulkan_sdk_tar_file}" "${vulkan_sdk_url}"
+        curl ${ARM_SETUP_CURL_PROGRESS_ARGS[@]+"${ARM_SETUP_CURL_PROGRESS_ARGS[@]}"} -L --output "${vulkan_sdk_tar_file}" "${vulkan_sdk_url}"
         echo "${vulkan_sdk_sha256} ${vulkan_sdk_tar_file}" | sha256sum -c - || exit 1
         rm -fr ${vulkan_sdk_base_dir}
     fi
@@ -67,7 +67,7 @@ function install_vulkan_sdk_macos() {
 
     if [[ ! -e "${vulkan_sdk_zip_file}" ]]; then
         log_step "vulkan" "Downloading Vulkan SDK (${vulkan_sdk_version}) for macOS"
-        curl -L --output "${vulkan_sdk_zip_file}" "${vulkan_sdk_url}"
+        curl ${ARM_SETUP_CURL_PROGRESS_ARGS[@]+"${ARM_SETUP_CURL_PROGRESS_ARGS[@]}"} -L --output "${vulkan_sdk_zip_file}" "${vulkan_sdk_url}"
         echo "${vulkan_sdk_sha256}  ${vulkan_sdk_zip_file}" | shasum -a 256 -c - || exit 1
         rm -fr ${vulkan_sdk_base_dir}
     fi
@@ -180,5 +180,5 @@ function setup_path_vulkan() {
     else
         prepend_env_in_setup_path LD_LIBRARY_PATH "${vulkan_sdk_arch_root}/lib"
     fi
-    prepend_env_in_setup_path VULKAN_SDK "${vulkan_sdk_arch_root}"
+    set_env_in_setup_path VULKAN_SDK "${vulkan_sdk_arch_root}"
 }

@@ -22,7 +22,7 @@ dependencies:
   - pack: ARM::CMSIS
     version: "6.0.0:6.99.99"
   - pack: ARM::CMSIS-NN
-    version: "7.0.0:7.99.99"
+    version: "8.0.0:8.99.99"
     optional: true  # Only for CMSIS-NN optimized backend
   - pack: ARM::ethos-u-core-driver
     version: "1.0.0:1.99.99"

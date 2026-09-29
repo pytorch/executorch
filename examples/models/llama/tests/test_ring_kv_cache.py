@@ -7,7 +7,7 @@
 import unittest
 
 import torch
-from executorch.examples.models.llama.attention import RingKVCache
+from executorch.examples.models.llama.attention import KVCache, RingKVCache
 
 
 class TestRingKVCache(unittest.TestCase):
@@ -19,6 +19,80 @@ class TestRingKVCache(unittest.TestCase):
         self.head_dim = 16
         self.enable_dynamic_shape = True
         self.dtype = torch.float32
+
+    def _require_usable_cuda(self):
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA is not available")
+        try:
+            torch.zeros(1, device="cuda").cpu()
+        except (RuntimeError, torch.AcceleratorError) as error:
+            self.skipTest(f"CUDA kernels are not usable: {error}")
+
+    def test_dynamic_kv_cache_update_on_cuda(self):
+        self._require_usable_cuda()
+        cache = KVCache(
+            max_batch_size=1,
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            head_dim=self.head_dim,
+            enable_dynamic_shape=True,
+            dtype=self.dtype,
+        ).cuda()
+        input_pos = torch.tensor([2], dtype=torch.long, device="cuda")
+        k_val = torch.randn(
+            1, self.n_heads, 3, self.head_dim, device="cuda", dtype=self.dtype
+        )
+        v_val = torch.randn_like(k_val)
+
+        k_out, v_out = cache.update(input_pos, k_val, v_val)
+
+        self.assertEqual(k_out.device.type, "cuda")
+        self.assertEqual(v_out.device.type, "cuda")
+        torch.testing.assert_close(k_out[:, :, 2:5], k_val)
+        torch.testing.assert_close(v_out[:, :, 2:5], v_val)
+
+    def test_ring_cache_positions_and_mask_on_cuda(self):
+        self._require_usable_cuda()
+        cache = RingKVCache(
+            max_batch_size=1,
+            max_context_length=self.max_context_length,
+            n_heads=self.n_heads,
+            head_dim=self.head_dim,
+            enable_dynamic_shape=True,
+            dtype=self.dtype,
+        ).cuda()
+        input_pos = torch.tensor([0], dtype=torch.long, device="cuda")
+        seq_len = 3
+        k_val = torch.randn(
+            1,
+            self.n_heads,
+            seq_len,
+            self.head_dim,
+            device="cuda",
+            dtype=self.dtype,
+        )
+        v_val = torch.randn_like(k_val)
+
+        cache.update(input_pos, k_val, v_val)
+        mask = cache.create_causal_mask_for_ring_buffer(start_pos=0, seq_len=seq_len)
+
+        expected_positions = torch.tensor(
+            [0, 1, 2] + [-1] * 13, dtype=torch.long, device="cuda"
+        )
+        expected_mask = torch.full(
+            (seq_len, 16), float("-inf"), device="cuda", dtype=self.dtype
+        )
+        expected_mask[0, 0] = 0
+        expected_mask[1, :2] = 0
+        expected_mask[2, :3] = 0
+        self.assertEqual(
+            cache.cache_positions_manager.cache_positions.device.type, "cuda"
+        )
+        torch.testing.assert_close(
+            cache.cache_positions_manager.cache_positions, expected_positions
+        )
+        self.assertEqual(mask.device.type, "cuda")
+        torch.testing.assert_close(mask, expected_mask)
 
     def test_basic_update(self):
         """Test basic update functionality of RingKVCache."""

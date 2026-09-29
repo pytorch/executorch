@@ -17,13 +17,15 @@ python -m executorch.backends.arm.vgf.check_env --host-emulator
 python -m executorch.backends.arm.vgf.check_env --source-build --build-dir cmake-out
 ```
 
-Use `--aot` before export. It checks that the TOSA serializer and ML SDK model converter are available and that the converter can be launched.
+Use `--aot` before export. It checks the Python recommendation, TOSA serializer, ML SDK Model Converter availability/version, and that the converter can be launched. Python versions older than 3.12 produce a warning; Model Converter versions older than 0.10.0, or versions whose compatibility cannot be established, fail the preflight.
 
 Use `--runtime` when debugging Python runtime availability. It checks whether the ExecuTorch runtime backend registry reports VgfBackend as available.
 
 Use `--host-emulator` before host-based emulator runs. It checks runtime availability plus Vulkan SDK and ML emulation layer environment variables.
 
 Use `--source-build --build-dir <dir>` when debugging a source build. It checks for VGF runtime build prerequisites such as `libvgf` and CMake options including `EXECUTORCH_BUILD_VGF` and `EXECUTORCH_BUILD_VULKAN`.
+
+The ML SDK components should be kept on the same release line. After the 0.10 upgrade, mixing a 0.9 Model Converter with the ExecuTorch VGF backend is not a supported configuration. Reinstall `executorch[vgf]` or the source-checkout VGF requirements if the preflight reports an old converter.
 
 For CI logs or bug reports, add `--json`:
 

@@ -81,4 +81,6 @@ INFO:root:✓ Model test PASSED - outputs match reference within tolerance
 
 ### Quantization support
 
-Support for quantization is under active development and will be added soon!
+The Vulkan backend supports 4-bit and 8-bit quantized linear layers. See the
+[Vulkan quantization guide](../../docs/source/backends/vulkan/vulkan-quantization.md)
+for supported schemes and export examples.

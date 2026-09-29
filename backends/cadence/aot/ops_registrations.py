@@ -269,10 +269,22 @@ lib.define(
     "quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_depthwise_conv1d_ncl(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_ncl.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_depthwise_conv1d_ncl.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
     "quantized_depthwise_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_depthwise_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
@@ -490,6 +502,13 @@ lib.define(
 )
 
 lib.define(
+    "quantized_rope_rotate_stacked_halves(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point) -> (Tensor out)"
+)
+lib.define(
+    "quantized_rope_rotate_stacked_halves.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "quantized_softmax(Tensor input, Tensor mask, int dim, int mask_type, Tensor pos, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point) -> (Tensor out)"
 )
 lib.define(
@@ -506,6 +525,12 @@ lib.define(
 lib.define("sdpa_bitwise_mask_gen(Tensor mask, float threshold) -> (Tensor out)")
 lib.define(
     "sdpa_bitwise_mask_gen.out(Tensor mask, float threshold, *, Tensor(a!) out) -> Tensor (a!)"
+)
+lib.define(
+    "sdpa_bitwise_causal_mask_gen(Tensor positions, int key_length) -> (Tensor out)"
+)
+lib.define(
+    "sdpa_bitwise_causal_mask_gen.out(Tensor positions, int key_length, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Load/store with iDMA. These only exist before memory planning.
@@ -745,12 +770,6 @@ aten_lib.define(
 aten_lib.define("_cat_nop(Tensor[] tensors, int dim=0) -> Tensor(a!)")
 aten_lib.define(
     "_cat_nop.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
-# Custom ops with cadence_nn_ops namespace
-jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
-jarvis_nn_lib.define(
-    "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Custom ops in aten namespace. RMSNorm is usually decomposed, so having
@@ -1400,6 +1419,76 @@ def quantized_depthwise_conv1d_nlc_per_tensor_meta(
     )
 
     return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_ncl")
+def quantized_depthwise_conv1d_ncl_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_depthwise_conv1d_ncl_per_tensor_meta(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        0,
+        1.0,
+        output_scale,
+        output_zero_point,
+        1,
+        0,
+    )
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_nlc")
+def quantized_depthwise_conv1d_nlc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_depthwise_conv1d_nlc_per_tensor_meta(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        0,
+        1.0,
+        output_scale,
+        output_zero_point,
+        1,
+        0,
+    )
 
 
 @register_fake("cadence::quantized_conv2d_nchw")
@@ -3142,6 +3231,20 @@ def rope_rotate_stacked_halves_meta(
     return input.new_empty(input.shape, dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_rope_rotate_stacked_halves")
+def quantized_rope_rotate_stacked_halves_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return rope_rotate_stacked_halves_meta(input, sin_tensor, cos_tensor, pos)
+
+
 @register_fake("cadence::idma_copy")
 def copy_idma_copy_impl(
     src: torch.Tensor,
@@ -3251,6 +3354,21 @@ def sdpa_bitwise_mask_gen_meta(
     assert last % 8 == 0, "last dimension must be a multiple of 8"
     mask_shape[-1] = last // 8  # pack 8 elements into 1 byte
     return mask.new_empty(mask_shape, dtype=torch.uint8)
+
+
+@register_fake("cadence::sdpa_bitwise_causal_mask_gen")
+def sdpa_bitwise_causal_mask_gen_meta(
+    positions: torch.Tensor,
+    key_length: int,
+) -> torch.Tensor:
+    torch._check(
+        positions.dtype in (torch.int32, torch.int64),
+        lambda: "expected int32 or int64 positions",
+    )
+    torch._check(positions.dim() == 1, lambda: "positions must be one-dimensional")
+    torch._check(key_length > 0, lambda: "key_length must be positive")
+    torch._check(key_length % 8 == 0, lambda: "key_length must be a multiple of 8")
+    return positions.new_empty((positions.numel(), key_length // 8), dtype=torch.uint8)
 
 
 @register_fake("cadence::quantized_w8a32_linear")

@@ -258,6 +258,92 @@ class StaticAttentionTest(unittest.TestCase):
         ):
             test(*args)
 
+    def test_sliding_window_chunked_prefill(self):
+        prompt_len = 24
+        global_cache_len = 32
+
+        def sliding_window_mask(window):
+            causal = torch.tril(torch.ones(prompt_len, prompt_len, dtype=torch.bool))
+            return causal & torch.triu(
+                torch.ones(prompt_len, prompt_len, dtype=torch.bool),
+                diagonal=-(window - 1),
+            )
+
+        def test(window, chunk_len, style):
+            config = ModelArgs(
+                dim=64,
+                n_heads=4,
+                n_kv_heads=2,
+                max_seq_len=prompt_len,
+                max_context_len=global_cache_len + prompt_len,
+                n_layers=2,
+                vocab_size=128,
+                generate_full_logits=True,
+            )
+            mha_transformer, static_transformer, static_config = (
+                self._get_test_transformers(config)
+            )
+            # Layer 0 is the local (sliding-window) layer, layer 1 is global.
+            mha_transformer.layers[0].attention.mask[:prompt_len, :prompt_len] = (
+                sliding_window_mask(window)
+            )
+            x = torch.randint(config.vocab_size, (1, prompt_len))
+            expected = mha_transformer(x)
+
+            cache_lens = [window, global_cache_len]
+            single_chunk = StaticAttentionIOManager(
+                static_config, prompt_len, cache_lens, style=style
+            ).prefill(static_transformer, x)
+            chunked = StaticAttentionIOManager(
+                static_config, chunk_len, cache_lens, style=style
+            ).prefill(static_transformer, x)
+
+            msg = f"window={window}, chunk_len={chunk_len}, style={style}"
+            # atol covers logits that land near zero, where a pure relative tolerance
+            # is meaningless -- float noise here is ~1e-7 while a genuine windowing
+            # regression moves logits by ~1e-1.
+            self.assertTrue(
+                torch.isclose(chunked, single_chunk, rtol=1e-3, atol=1e-5).all(), msg
+            )
+            self.assertTrue(
+                torch.isclose(chunked, expected, rtol=1e-3, atol=1e-5).all(), msg
+            )
+
+        for style in ("shift_pointer", "smart_mask"):
+            test(window=4, chunk_len=8, style=style)  # chunk longer than the window
+            test(window=12, chunk_len=6, style=style)  # chunk shorter than the window
+
+    def test_sliding_window_cache_ring(self):
+        """A cache smaller than the sequence keeps the newest cache_len tokens.
+
+        `pos` is the absolute position of the update, so it exceeds cache_len as soon
+        as the window has been filled once, and an update can be longer than the cache.
+        """
+
+        def test(style, chunk_len):
+            cache_len = 8
+            n_chunks = 5
+            cache = torch.full((1, cache_len, 1), -1, dtype=torch.int64)
+            for i in range(n_chunks):
+                pos = i * chunk_len
+                tokens = torch.arange(pos, pos + chunk_len, dtype=torch.int64).view(
+                    1, chunk_len, 1
+                )
+                cache = StaticKVCache.apply_update(cache, tokens, pos, style)
+
+            total = n_chunks * chunk_len
+            expected = set(range(max(0, total - cache_len), total))
+            self.assertEqual(
+                set(cache.flatten().tolist()),
+                expected,
+                f"style={style}, chunk_len={chunk_len}",
+            )
+
+        for style in ("shift_pointer", "smart_mask"):
+            test(style, chunk_len=2)  # update shorter than the cache
+            test(style, chunk_len=8)  # update exactly the cache length
+            test(style, chunk_len=12)  # update longer than the cache
+
     def test_lookahead_decode(self):
         config = ModelArgs(
             dim=64,

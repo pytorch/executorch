@@ -323,6 +323,7 @@ class DefaultEval(EvalBase):
         self.modality_input_files = []
 
     def run(self, prompt, audio_paths=None, image_paths=None):
+        prompt = [p.replace('"', '\\"') for p in prompt]
         multi_prompts = " ".join([f'--prompt "{p}"' for p in prompt])
 
         model_output_holder = []

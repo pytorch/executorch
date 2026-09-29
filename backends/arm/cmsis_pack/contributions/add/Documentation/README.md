@@ -28,10 +28,12 @@ This pack provides:
      - component: Machine Learning:ExecuTorch:Runtime
      - component: Machine Learning:ExecuTorch:Kernel Utils
      
-     # Backend (choose one or more)
-     - component: Machine Learning:ExecuTorch:Backend::EthosU
+     # Backend (choose one or more). CMSIS component IDs use a single
+     # colon between Cclass / Cgroup / Csub, with a space (not "::")
+     # inside the Csub name.
+     - component: Machine Learning:ExecuTorch:Backend EthosU
      # or
-     - component: Machine Learning:ExecuTorch:Backend::CortexM
+     - component: Machine Learning:ExecuTorch:Backend CortexM
    ```
 
 3. Include ExecuTorch headers in your code:

@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
 from executorch.backends.vulkan._passes.fold_qdq import FoldQDQPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.fuse_quantized_ops import (
@@ -28,6 +29,7 @@ from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
 from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 
 __all__ = [
+    "Conv1dAsConv2dPass",
     "FoldQDQPass",
     "FusePatternsPass",
     "FuseQuantizedOpsTransform",

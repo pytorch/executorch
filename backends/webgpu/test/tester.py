@@ -12,7 +12,7 @@ import executorch.backends.test.harness.stages as BaseStages
 import torch
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import StageType
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.partitioner import WebGPUPartitioner
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -86,13 +86,13 @@ WEBGPU_SUPPORTED_OPS = [
 ]
 
 
-# Lowers via VulkanPartitioner (WebGPU consumes the Vulkan VK00 serialization),
+# Lowers via WebGPUPartitioner (WebGPU consumes the Vulkan VK00 serialization),
 # restricted to the ops the WebGPU runtime implements.
 class Partition(BaseStages.Partition):
     def __init__(self, partitioner: Optional[Partitioner] = None):
         super().__init__(
             partitioner=partitioner
-            or VulkanPartitioner(
+            or WebGPUPartitioner(
                 {"skip_bool_tensors": True},
                 operator_allowlist=WEBGPU_SUPPORTED_OPS,
             ),
@@ -107,14 +107,14 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     ):
         if partitioners is None:
             partitioners = [
-                VulkanPartitioner(
+                WebGPUPartitioner(
                     {"skip_bool_tensors": True},
                     operator_allowlist=WEBGPU_SUPPORTED_OPS,
                 )
             ]
 
         super().__init__(
-            default_partitioner_cls=VulkanPartitioner,
+            default_partitioner_cls=WebGPUPartitioner,
             partitioners=partitioners,
             edge_compile_config=edge_compile_config
             or EdgeCompileConfig(_check_ir_validity=False),

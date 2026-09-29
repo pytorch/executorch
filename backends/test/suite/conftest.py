@@ -30,6 +30,13 @@ def pytest_collection_modifyitems(config, items):
                 should_skip, reason = flow.should_skip_test(test_name, callspec.params)
                 if should_skip:
                     item.add_marker(pytest.mark.skip(reason))
+                elif flow.should_xfail_test(test_name):
+                    item.add_marker(
+                        pytest.mark.xfail(
+                            reason=f"Expected to fail by {flow.name} xfail_patterns",
+                            strict=True,
+                        )
+                    )
 
         item_path = str(getattr(item, "path", ""))
         for suite_prefix, timeout_s in FLOW_TEST_CASE_TIMEOUTS.items():

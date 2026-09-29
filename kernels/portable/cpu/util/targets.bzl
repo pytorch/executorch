@@ -49,8 +49,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
@@ -85,12 +85,12 @@ def define_common_targets():
         ],
         exported_deps = [
             ":broadcast_indexes_range",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         deps = [
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_shape_to_c_string",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["PUBLIC"],
     )
@@ -103,8 +103,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -119,8 +119,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         exported_deps = [
             ":broadcast_indexes_range",
@@ -155,8 +155,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
@@ -174,8 +174,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         exported_deps = [
             ":broadcast_util",
@@ -194,8 +194,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -214,8 +214,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -231,8 +231,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             ":broadcast_util",
@@ -252,8 +252,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -269,8 +269,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
@@ -424,10 +424,10 @@ def define_common_targets():
             exported_headers = ["reduce_util.h"],
             deps = [
                 "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
-                "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
             exported_deps = [
                 "//executorch/extension/threadpool:threadpool",
+                "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = ["PUBLIC"],

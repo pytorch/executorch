@@ -205,6 +205,10 @@ exclude_patterns = [
     # Top-level test and platform integration areas.
     'test/**',
     'zephyr/**',
+
+    # An ExecuTorch platform layer, same as runtime/platform/default above; the
+    # et_pal_* functions are called by the runtime, not from this file.
+    'examples/arduino/arduino_pal.cpp',
 ]
 command = [
     'python',
@@ -390,9 +394,13 @@ exclude_patterns = [
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
     'examples/llm_server',
+    # muse_glimmer is a symlink to this directory; the linter resolves it and
+    # then fails on a directory.
+    'examples/models/muse-glimmer',
     'backends/cadence/utils/FACTO',
     'examples/cuda',
     'examples/qualcomm',
+    'examples/nxp',
     'kernels/portable',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
@@ -732,3 +740,33 @@ init_command = [
   '--requirement=requirements-lintrunner.txt',
 ]
 is_formatter = true
+
+
+[[linter]]
+code = 'CPP_BANNED_FUNCTIONS'
+include_patterns = [
+    'backends/arm/**/*.c',
+    'backends/arm/**/*.cc',
+    'backends/arm/**/*.cpp',
+    'backends/arm/**/*.h',
+    'backends/arm/**/*.hpp',
+    'examples/arm/**/*.c',
+    'examples/arm/**/*.cc',
+    'examples/arm/**/*.cpp',
+    'examples/arm/**/*.h',
+    'examples/arm/**/*.hpp',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cpp_banned_functions_linter',
+    '--config=backends/arm/scripts/banned_functions.json',
+    '--',
+    '@{{PATHSFILE}}',
+]

@@ -60,11 +60,19 @@ Key flags:
 | Flag | Effect |
 |------|--------|
 | `--hf-tokenizer` | model's HF chat template (required unless fallback) |
+| `--assistant-header` | exact assistant generation header, including trailing whitespace (default: ChatML) |
 | `--allow-chatml-fallback` | opt into approximate ChatML when no HF tokenizer |
 | `--no-think` | default `enable_thinking=False` (e.g. Qwen3) |
 | `--max-context N` | reject over-long prompts with 400 instead of failing mid-gen |
 | `--num-runners N` | Worker processes — **1 only** (one worker hosts many isolated sessions on one weight load; more would duplicate weights) |
 | `--worker-bin PATH` | path to a model worker binary that speaks the llm_server JSONL protocol |
+
+Set `--assistant-header` to the model template's exact generation boundary when
+it differs from ChatML. For Llama 3 templates, add
+`--assistant-header $'<|start_header_id|>assistant<|end_header_id|>\n\n'` in Bash;
+the `$'...'` quoting supplies literal newlines. The launcher warns once at startup
+if the configured header is absent from a rendered probe. Unverified boundaries
+use the rendered text, which can reduce KV reuse.
 
 ## Smoke test
 
@@ -113,17 +121,22 @@ persistent per-conversation session:
 Two layers, both contract-focused (assert on the wire, not internals):
 
 ```bash
-# 1. Hermetic unit tests — fake worker, no model/GPU/subprocess, fast (CI-friendly).
-pip install pytest httpx
+# 1. Model-free tests — unit coverage plus loopback disconnect integration.
+pip install pytest httpx tokenizers
 pytest tests/
 
 # 2. Conformance — black-box, against a LIVE server (real model, or llama.cpp/mlx-lm).
 OPENAI_BASE_URL=http://127.0.0.1:8000/v1 pytest ../conformance/test_openai_contract.py
 ```
 
-`tests/` builds a `SessionRuntime` over a single `FakeRunner` worker, so the
+Most of `tests/` builds a `SessionRuntime` over a single `FakeRunner`, so the
 real server/protocol/streaming code is tested over HTTP without a `.pte`. The
-worker JSONL protocol is covered separately by `tests/test_worker_client.py`.
+worker JSONL protocol is covered separately by `tests/test_worker_client.py`,
+and `tests/test_stream_disconnect.py` uses real loopback Uvicorn/TCP plus a
+model-free subprocess to verify disconnect cancellation end to end.
+The BPE splice tests use an in-memory tokenizer with no model downloads. Optional
+integration tests use local tokenizer directories set with `QWEN_HF_DIR`,
+`GEMMA_HF_DIR`, or `MUSE_GLIMMER_HF_DIR` and require `transformers`.
 
 ## Architecture
 
@@ -139,7 +152,10 @@ The JSONL protocol — `generate` / `open` / `close` / `reset` ops, the `prompt`
 `prompt_segments` prompt forms, warm-resume stats, and `generated_token_ids` — is
 defined in `cpp/worker_loop.h` (the worker side, the canonical reference) and
 driven by `worker_client.py` (the Python transport); stdout carries protocol JSON
-only, logs go to stderr.
+only, logs go to stderr. On POSIX, the server also passes a private inherited
+control pipe. Workers advertise it with `supports_cancel`; cancellable generation
+requests carry a monotonically increasing `cancel_request_id`, and cancellation
+writes that ID as one fixed 8-byte little-endian frame.
 
 Process isolation is the reliable shape for CUDA/AOTI models: executing the model
 inside a live asyncio server process can segfault (validated with Qwen3.5-MoE);
@@ -180,15 +196,22 @@ Workers that report capacity 1 serve only the anonymous scratch session (no name
 `session_id`s, no warm resume). Named sessions, warm resume, and token-ID
 splicing activate only when the worker's engine reports capacity > 1.
 
-**Cancellation is best-effort, and it head-of-line blocks.** `WorkerClient.stop()`
-is a no-op, and `SessionRuntime.generate_stream()` holds the single worker lock until
-the worker naturally finishes. On client disconnect/cancellation the server calls
-`stop()` then awaits the in-flight worker request, so the abandoned generation runs to
-completion **and blocks every other session on that worker until it does** — a long or
-runaway generation stalls all concurrent requests (including a subagent fan-out).
-A disconnected client does **not** interrupt the C++ worker mid-generation. Real
-interruption needs a future protocol change — e.g. a control pipe, non-blocking stdin
-polling between decode steps, or request ids plus an out-of-band cancel op.
+**Cancellation is cooperative at token boundaries.** On client disconnect or
+async-generator close, the control plane sends the active request ID over the
+out-of-band control pipe. The worker calls `LLMSession::stop()` once and keeps the
+model resident when generation finishes within the grace period. A cancelled
+session is marked dirty and fully reset before later reuse; its terminal response
+reports `finish_reason="stop"` and `cancelled=true`, and omits
+`generated_token_ids`.
+
+`stop()` cannot interrupt an active backend call, prefill, image decoding, or
+vision encoding. If the worker does not finish within the bounded grace period,
+the control plane terminates, kills if necessary, and reaps it. The runtime then
+fails queued and future operations without additional JSONL writes, and `/health`
+returns 503 until an external supervisor restarts the server. The control plane
+does not reload model weights automatically. Older and non-POSIX workers can still
+serve requests but do not advertise `supports_cancel`; disconnect cancellation
+therefore escalates to the same bounded process termination path.
 
 **Warm resume needs true turn terminators surfaced as EOS/terminal token ids, not just
 string stops.** The worker treats every *string* stop the same — it trims the output,

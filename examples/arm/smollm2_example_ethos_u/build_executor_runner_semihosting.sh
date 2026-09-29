@@ -19,8 +19,8 @@ pte_file=""
 target="ethos-u85-256"
 system_config="Ethos_U85_SYS_DRAM_High"
 memory_mode="Dedicated_Sram_512KB"
-method_pool_size="0x00800000"
-scratch_pool_size="0x00400000"
+method_pool_size="0x01000000"
+scratch_pool_size="0x00800000"
 input_file_pool_size="0x00100000"
 
 usage() {

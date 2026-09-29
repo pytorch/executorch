@@ -52,6 +52,11 @@ The output directory contains:
 - `metrics.csv`: tabular per-sample metrics.
 - `quantization_coverage/`: PTQ and QAT graph coverage details.
 
+The flow uses the VGF SNORM-safe activation range `[-127, 127]`. Keeping this
+range consistent across the graph avoids requantization boundaries around the
+fused flow-offset samplers while ensuring sampled images never use the
+ambiguous SNORM value `-128`.
+
 ## Smoke Runs
 
 Small random or short QAT runs are useful only for checking that the flow runs.

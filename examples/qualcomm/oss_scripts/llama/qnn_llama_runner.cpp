@@ -140,6 +140,18 @@ std::string get_formatted_prompt(
       formatted_prompt.append("<end_of_turn>\n");
       formatted_prompt.append("<start_of_turn>model\n");
       break;
+    case example::DecoderModelVersion::kGemma4:
+      formatted_prompt.append("<bos>");
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|turn>system\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("<turn|>\n");
+      }
+      formatted_prompt.append("<|turn>user\n");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<turn|>\n");
+      formatted_prompt.append("<|turn>model\n");
+      break;
     case example::DecoderModelVersion::kGranite:
       if (!system_prompt.empty()) {
         formatted_prompt.append("<|start_of_role|>system<|end_of_role|>");

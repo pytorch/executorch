@@ -42,6 +42,7 @@ class ChatMessage(BaseModel):
     # ResponseMessage.reasoning_content so a multi-turn client can echo an assistant
     # turn's reasoning back into the request; a chat template that renders prior
     # reasoning needs it here, and without the field it is dropped at parse.
+    # Omission/null allows stored-token replay; a string edit invalidates that turn.
     reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
     tool_call_id: Optional[str] = None
@@ -63,9 +64,6 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[Union[str, list[str]]] = None
     n: int = 1
     seed: Optional[int] = None
-    # Sampling knobs that change generation output. We don't plumb these, so they
-    # are modeled (not dropped) in order to be rejected with a clear error rather
-    # than silently ignored — see serving_chat's unsupported-parameter check.
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     top_k: Optional[int] = None
@@ -98,10 +96,17 @@ class ChatCompletionRequest(BaseModel):
         return -1
 
 
+class PromptTokensDetails(BaseModel):
+    # Warm-resume accounting, SGLang-compatible shape: tokens served from the
+    # session's resident state instead of prefetched this request.
+    cached_tokens: int = 0
+
+
 class Usage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    prompt_tokens_details: Optional[PromptTokensDetails] = None
 
 
 class ResponseMessage(BaseModel):

@@ -150,20 +150,6 @@ if(TARGET qnn_executorch_backend)
   executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
-# MPS backend
-if(TARGET mpsdelegate)
-  list(
-    APPEND
-    link_libraries
-    mpsdelegate
-    "-framework Foundation"
-    "-weak_framework MetalPerformanceShaders"
-    "-weak_framework MetalPerformanceShadersGraph"
-    "-weak_framework Metal"
-  )
-  executorch_target_link_options_shared_lib(mpsdelegate)
-endif()
-
 if(TARGET coremldelegate)
   find_library(SQLITE_LIBRARY sqlite3)
   list(

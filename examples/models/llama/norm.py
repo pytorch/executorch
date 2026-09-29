@@ -103,15 +103,69 @@ class RMSNormCoreML(torch.nn.Module):
 
 
 class RMSNormWithInputScale(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-5):
+    def __init__(self, dim: int, eps: float = 1e-5, zero_centered_gamma: bool = False):
+        """RMSNorm with gamma applied to the input: ``rms_norm(gamma * x)``.
+
+        Args:
+            zero_centered_gamma: when True the checkpoint stores gamma offset by
+                -1, so the effective scale is ``weight + 1``. Mirrors
+                ``RMSNormWithInputScale`` in rlformers' ``core/model/transformer.py``.
+        """
         super().__init__()
         self.eps = eps
         self.dim = dim
+        self.zero_centered_gamma = zero_centered_gamma
         self.weight = torch.nn.Parameter(torch.ones(dim))
 
     def forward(self, x):
-        scaled = self.weight * x
+        w = self.weight + 1.0 if self.zero_centered_gamma else self.weight
+        scaled = w * x
         return F.rms_norm(scaled, (self.dim,), None, self.eps)
+
+
+class RMSNormWithInputScaleCoreML(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5, zero_centered_gamma: bool = False):
+        """
+        CoreML-friendly RMSNormWithInputScale.
+
+        Standard RMSNormWithInputScale emits ``F.rms_norm`` which lowers to
+        ``aten.rms_norm.default``. coremltools materializes that op's eps as an
+        fp32 constant and adds it to the fp16 mean-square, raising an fp16/fp32
+        dtype mismatch during conversion. This variant uses the same
+        ``vector_norm`` formulation as ``RMSNormCoreML`` so the op survives fp16
+        lowering. The learnable scale is applied to the input (matching
+        ``RMSNormWithInputScale``); the norm itself is affine-free.
+
+        Args:
+            dim (int): The dimension of the input tensor.
+            eps (float, optional): Floor on the L2-norm denominator
+                (`clamp_min(‖x‖₂, √(dim·eps))`), matching RMSNormCoreML. Must be > 0.
+        """
+        super().__init__()
+        assert eps > 0, (
+            "RMSNormWithInputScaleCoreML requires eps > 0; eps=0 collapses the "
+            "denominator floor and produces NaN on zero-padded positions"
+        )
+        self.eps = eps
+        self.dim = dim
+        self.zero_centered_gamma = zero_centered_gamma
+        self.weight = torch.nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        floor_val = torch.sqrt(torch.tensor(self.dim * self.eps, dtype=x.dtype))
+        norm_val = torch.clamp_min(
+            torch.linalg.vector_norm(x, dim=-1, keepdim=True), floor_val
+        )
+        return (
+            x
+            * torch.sqrt(torch.tensor(self.dim, dtype=x.dtype))
+            * torch.reciprocal(norm_val)
+        )
+
+    def forward(self, x):
+        w = self.weight + 1.0 if self.zero_centered_gamma else self.weight
+        scaled = w * x
+        return self._norm(scaled)
 
 
 class RMSNormGated(nn.Module):
@@ -143,25 +197,48 @@ def replace_rms_norm_for_coreml_(model: torch.nn.Module) -> torch.nn.Module:
       * `RMSNorm` (this module)
       * `ScalelessRMSNorm` (this module — no-op weight)
       * `torch.nn.RMSNorm` (used for affine q_norm/k_norm in StaticAttention)
+      * `RMSNormWithInputScale` (this module — post-FFN learnable scale) is
+        swapped for `RMSNormWithInputScaleCoreML`, which preserves the
+        input-scale semantics while avoiding the fused `aten.rms_norm` op.
     """
     for name, mod in list(model.named_modules()):
-        if not isinstance(mod, (RMSNorm, ScalelessRMSNorm, torch.nn.RMSNorm)):
-            continue
-        # All three carry the normalized dim either as `dim` or in `normalized_shape[-1]`.
-        dim = getattr(mod, "dim", None) or mod.normalized_shape[-1]
-        eps = getattr(mod, "eps", 1e-6) or 1e-6
-        new = RMSNormCoreML(dim, eps=eps)
-        # Preserve trained scale (no-op for ScalelessRMSNorm).
-        if getattr(mod, "weight", None) is not None:
+        if isinstance(mod, RMSNormWithInputScale):
+            # Input-scale norm: swap to the CoreML-safe input-scale variant so
+            # the learnable pre-scale semantics are preserved (RMSNormCoreML
+            # applies its scale post-norm, which would change the math here).
+            dim = getattr(mod, "dim", None) or mod.normalized_shape[-1]
+            eps = getattr(mod, "eps", 1e-6) or 1e-6
+            # Carry `zero_centered_gamma` across. Dropping it here would silently
+            # downgrade `rms_norm((weight + 1) * x)` to `rms_norm(weight * x)` on the
+            # CoreML path only -- the same wrong-activation bug this flag exists to
+            # prevent, and one that would show up as a CoreML-vs-XNNPACK divergence
+            # rather than as an error.
+            new = RMSNormWithInputScaleCoreML(
+                dim,
+                eps=eps,
+                zero_centered_gamma=getattr(mod, "zero_centered_gamma", False),
+            )
             new.weight = mod.weight
+        elif isinstance(mod, (RMSNorm, ScalelessRMSNorm, torch.nn.RMSNorm)):
+            # All three carry the normalized dim either as `dim` or in `normalized_shape[-1]`.
+            dim = getattr(mod, "dim", None) or mod.normalized_shape[-1]
+            eps = getattr(mod, "eps", 1e-6) or 1e-6
+            new = RMSNormCoreML(dim, eps=eps)
+            # Preserve trained scale (no-op for ScalelessRMSNorm).
+            if getattr(mod, "weight", None) is not None:
+                new.weight = mod.weight
+            else:
+                # Source was weightless (e.g. ScalelessRMSNorm). The freshly-allocated
+                # `nn.Parameter(torch.ones(dim))` inside RMSNormCoreML defaults to fp32,
+                # which causes an fp32 leak in fp16 export. Match the model's existing
+                # parameter dtype/device.
+                ref = next(
+                    (p for p in model.parameters() if p.is_floating_point()), None
+                )
+                if ref is not None:
+                    new.to(dtype=ref.dtype, device=ref.device)
         else:
-            # Source was weightless (e.g. ScalelessRMSNorm). The freshly-allocated
-            # `nn.Parameter(torch.ones(dim))` inside RMSNormCoreML defaults to fp32,
-            # which causes an fp32 leak in fp16 export. Match the model's existing
-            # parameter dtype/device.
-            ref = next((p for p in model.parameters() if p.is_floating_point()), None)
-            if ref is not None:
-                new.to(dtype=ref.dtype, device=ref.device)
+            continue
         # Locate parent module via the dotted name and rebind the attribute.
         if "." in name:
             parent_name, attr = name.rsplit(".", 1)

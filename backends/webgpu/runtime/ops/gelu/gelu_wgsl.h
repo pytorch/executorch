@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from gelu.wgsl - DO NOT EDIT.
-// wgsl-sha256: 18f4a82d3bad1ef8703397b871c708804140c4cb382451661f7a77367ac2425f
+// wgsl-sha256: 96570753688590fa009ee5503f754cf3eb572dcb3dcae6818220fe06fe3139ee
 inline constexpr const char* kGeluWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -50,8 +50,11 @@ fn gelu_erf4(x: vec4<f32>) -> vec4<f32> {
 // before use), computes GELU as one vec4 op, then scatters back only the
 // in-bounds lanes.
 @compute @workgroup_size(wg_size, 1, 1)
-fn main_tanh(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let base = gid.x * 4u;
+fn main_tanh(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let thread_idx = gid.x + gid.y * (num_workgroups.x * wg_size);
+    let base = thread_idx * 4u;
     if (base >= params.num_elements) {
         return;
     }
@@ -66,8 +69,11 @@ fn main_tanh(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main_erf(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let base = gid.x * 4u;
+fn main_erf(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let thread_idx = gid.x + gid.y * (num_workgroups.x * wg_size);
+    let base = thread_idx * 4u;
     if (base >= params.num_elements) {
         return;
     }

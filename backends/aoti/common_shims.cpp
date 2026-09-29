@@ -159,6 +159,11 @@ AOTITorchError aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel) {
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_is_defined(Tensor* tensor, bool* ret_is_defined) {
+  *ret_is_defined = tensor != nullptr;
+  return Error::Ok;
+}
+
 // Device and layout utility functions
 int32_t aoti_torch_device_type_cpu() {
   // Let's say cpu is 0 for ET as well

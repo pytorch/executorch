@@ -2,6 +2,9 @@ binary_op:
   parameter_names_with_default_values:
     OP_EXPR: a + alpha * b
     USE_ALPHA: 1
+    INLINE: 0
+    SAME_EXPR: input1[idx] + input2[idx]
+    BROADCAST_EXPR: input1[l1] + input2[l2]
   shader_variants:
     - NAME: binary_div
       OP_EXPR: a / b
@@ -9,3 +12,23 @@ binary_op:
     - NAME: binary_sub
       OP_EXPR: a - alpha * b
       USE_ALPHA: 1
+    - NAME: binary_minimum
+      USE_ALPHA: 0
+      INLINE: 1
+      SAME_EXPR: min(input1[idx], input2[idx])
+      BROADCAST_EXPR: min(input1[l1], input2[l2])
+    - NAME: binary_pow
+      USE_ALPHA: 0
+      INLINE: 1
+      SAME_EXPR: pow(input1[idx], input2[idx])
+      BROADCAST_EXPR: pow(input1[l1], input2[l2])
+    - NAME: binary_floor_divide
+      USE_ALPHA: 0
+      INLINE: 1
+      SAME_EXPR: floor(input1[idx] / input2[idx])
+      BROADCAST_EXPR: floor(input1[l1] / input2[l2])
+    - NAME: binary_mul
+      USE_ALPHA: 0
+      INLINE: 1
+      SAME_EXPR: input1[idx] * input2[idx]
+      BROADCAST_EXPR: input1[l1] * input2[l2]

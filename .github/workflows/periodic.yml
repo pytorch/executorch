@@ -21,6 +21,10 @@ concurrency:
 permissions: read-all
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   gather-models:
     runs-on: ubuntu-22.04
     outputs:
@@ -42,17 +46,17 @@ jobs:
 
   test-models-linux:
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
-    needs: gather-models
+    needs: [docker-image, gather-models]
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ matrix.timeout }}

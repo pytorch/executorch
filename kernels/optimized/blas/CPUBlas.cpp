@@ -8,7 +8,10 @@
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 
-#include <limits.h>
+#include <cstddef>
+#include <cstdint>
+
+#include <executorch/kernels/optimized/blas/KleidiBlas.h>
 
 #ifdef ET_BUILD_WITH_BLAS
 #ifdef ET_BUILD_FOR_APPLE
@@ -46,6 +49,27 @@ inline CBLAS_TRANSPOSE to_cblas_transpose(TransposeType trans) {
 }
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
+
+bool gemm_uses_blas() {
+#ifdef ET_BUILD_WITH_BLAS
+  return true;
+#else
+  return false;
+#endif
+}
+
+void gemv(
+    int64_t m,
+    int64_t k,
+    const float alpha,
+    const BFloat16* a,
+    int64_t lda,
+    const float* b,
+    const float beta,
+    float* c) {
+  internal::bf16_fp32_gemv_notrans_with_fp32_arith(
+      m, k, alpha, a, lda, b, beta, c);
+}
 
 // clang-format off
 void normalize_last_dims(
@@ -246,6 +270,12 @@ void gemm(
     const float beta,
     float *c, int64_t ldc) {
   normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+#if defined(ET_KLEIDIAI_HAS_NEON_BF16) || defined(ET_KLEIDIAI_HAS_SME2_BF16)
+  if (kleidiai_bfloat16_gemm(
+          transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc)) {
+    return;
+  }
+#endif
   gemm_impl<BFloat16, float, float>(
       transa, transb,
       m, n, k,

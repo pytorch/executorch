@@ -3,8 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import base64
 import json
+import shutil
+import subprocess  # nosec B404 - fixed shader compiler invocation
+import tempfile
 from importlib.resources import files
+from pathlib import Path
 from typing import Any, Sequence
 
 CUSTOM_SHADER_DOMAIN_NAME = "com.arm.VulkanCustomShader"
@@ -34,6 +39,15 @@ GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY = (
 GRID_SAMPLER_2D_SAMPLER_VK_FORMAT = "VK_FORMAT_R32G32B32A32_SFLOAT"
 GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT = "VK_FORMAT_R8G8B8A8_SNORM"
 GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT = "VK_FORMAT_R8_SINT"
+FLOW_OFFSET_GRID_SAMPLER_OPERATOR_NAME = "torch.nn.functional.grid_sample.flow_offset"
+FLOW_OFFSET_GRID_SAMPLER_SHADER_SOURCE = (
+    "flow_offset_grid_sampler_int8_align_corners.glsl"
+)
+
+
+class _FlowOffsetShaderCompilationError(RuntimeError):
+    pass
+
 
 _INTERPOLATION_MODE_NAMES = {
     0: "bilinear",
@@ -245,8 +259,7 @@ def build_grid_sampler_2d_payload(
 def _dispatch_shape_for_output_shape(output_shape: tuple[int, ...]) -> list[int]:
     if len(output_shape) != 4:
         raise ValueError(
-            "grid_sampler output_shape must be rank 4 NCHW, "
-            f"got shape {output_shape}"
+            f"grid_sampler output_shape must be rank 4 NCHW, got shape {output_shape}"
         )
     output_batch = int(output_shape[0])
     output_height = int(output_shape[2])
@@ -257,6 +270,157 @@ def _dispatch_shape_for_output_shape(output_shape: tuple[int, ...]) -> list[int]
         (output_height + group_y - 1) // group_y,
         (output_batch + group_z - 1) // group_z,
     ]
+
+
+def flow_offset_grid_sampler_operator_name() -> str:
+    """Return the custom operator name for fused flow-offset sampling.
+
+    Returns:
+        str: Fully qualified custom operator name.
+
+    """
+    return FLOW_OFFSET_GRID_SAMPLER_OPERATOR_NAME
+
+
+def _format_float(value: float) -> str:
+    return format(float(value), ".9g")
+
+
+def _compile_flow_offset_grid_sampler_shader(
+    *,
+    input_scale: float,
+    input_zero_point: int,
+    output_scale: float,
+    output_zero_point: int,
+    flow_scale: float,
+    flow_zero_point: int,
+    flow_channel_offset: int,
+) -> str:
+    source = (
+        files(__package__)
+        .joinpath(FLOW_OFFSET_GRID_SAMPLER_SHADER_SOURCE)
+        .read_text(encoding="utf-8")
+        .replace("@INPUT_SCALE@", _format_float(input_scale))
+        .replace("@INPUT_ZERO_POINT@", str(int(input_zero_point)))
+        .replace("@OUTPUT_SCALE@", _format_float(output_scale))
+        .replace("@OUTPUT_ZERO_POINT@", str(int(output_zero_point)))
+        .replace("@FLOW_SCALE@", _format_float(flow_scale))
+        .replace("@FLOW_ZERO_POINT@", str(int(flow_zero_point)))
+        .replace("@FLOW_X_CHANNEL@", f"{int(flow_channel_offset)}u")
+        .replace("@FLOW_Y_CHANNEL@", f"{int(flow_channel_offset) + 1}u")
+    )
+    glslc = shutil.which("glslc")
+    if glslc is None:
+        raise _FlowOffsetShaderCompilationError(
+            "glslc is required for fused flow-offset grid sampling"
+        )
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "flow_offset_grid_sampler.glsl"
+            spirv_path = Path(tmpdir) / "flow_offset_grid_sampler.spv"
+            source_path.write_text(source, encoding="utf-8")
+            subprocess.run(  # nosec B603 - glslc path is resolved from PATH.
+                [
+                    glslc,
+                    "-fshader-stage=compute",
+                    str(source_path),
+                    "-o",
+                    str(spirv_path),
+                ],
+                check=True,
+            )
+            return base64.b64encode(spirv_path.read_bytes()).decode("ascii")
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise _FlowOffsetShaderCompilationError(
+            "failed to compile fused flow-offset grid sampler shader"
+        ) from error
+
+
+def build_flow_offset_grid_sampler_payload(
+    *,
+    input_shape: tuple[int, ...],
+    output_shape: tuple[int, ...],
+    flow_shape: tuple[int, ...],
+    input_scale: float,
+    input_zero_point: int,
+    output_scale: float,
+    output_zero_point: int,
+    flow_scale: float,
+    flow_zero_point: int,
+    flow_channel_offset: int,
+) -> dict[str, Any]:
+    """Build custom shader metadata for fused flow-offset grid sampling.
+
+    Args:
+        input_shape (tuple[int, ...]): Static NCHW image input shape.
+        output_shape (tuple[int, ...]): Static NCHW output shape.
+        flow_shape (tuple[int, ...]): Static NCHW four-channel flow shape.
+        input_scale (float): Image input quantization scale.
+        input_zero_point (int): Image input quantization zero point.
+        output_scale (float): Output quantization scale.
+        output_zero_point (int): Output quantization zero point.
+        flow_scale (float): Flow input quantization scale.
+        flow_zero_point (int): Flow input quantization zero point.
+        flow_channel_offset (int): First flow channel, either zero or two.
+
+    Returns:
+        dict[str, Any]: Vulkan custom shader metadata payload.
+
+    """
+    if len(input_shape) != 4 or tuple(input_shape[:2]) != (1, 4):
+        raise ValueError(f"expected static NCHW [1,4,H,W] input, got {input_shape}")
+    if len(output_shape) != 4 or tuple(output_shape[:2]) != (1, 4):
+        raise ValueError(f"expected static NCHW [1,4,H,W] output, got {output_shape}")
+    if len(flow_shape) != 4 or tuple(flow_shape[:2]) != (1, 4):
+        raise ValueError(f"expected static NCHW [1,4,H,W] flow, got {flow_shape}")
+    if tuple(input_shape[2:]) != tuple(output_shape[2:]):
+        raise ValueError("input and output spatial shapes must match")
+    if tuple(flow_shape[2:]) != tuple(output_shape[2:]):
+        raise ValueError("flow and output spatial shapes must match")
+    if any(int(dim) <= 1 for dim in output_shape[2:]):
+        raise ValueError("flow-offset grid sampling requires H and W greater than 1")
+    if flow_channel_offset not in (0, 2):
+        raise ValueError("flow_channel_offset must be 0 or 2")
+
+    sampler_vk_format = GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT
+    return {
+        "entry_point": GRID_SAMPLER_2D_SHADER_ENTRY_POINT,
+        "workgroup_sizes": _dispatch_shape_for_output_shape(output_shape),
+        "shader_language": GRID_SAMPLER_2D_SHADER_LANGUAGE,
+        "shader_code": _compile_flow_offset_grid_sampler_shader(
+            input_scale=input_scale,
+            input_zero_point=input_zero_point,
+            output_scale=output_scale,
+            output_zero_point=output_zero_point,
+            flow_scale=flow_scale,
+            flow_zero_point=flow_zero_point,
+            flow_channel_offset=flow_channel_offset,
+        ),
+        "operator_name": FLOW_OFFSET_GRID_SAMPLER_OPERATOR_NAME,
+        "input_scale": input_scale,
+        "input_zero_point": input_zero_point,
+        "output_scale": output_scale,
+        "output_zero_point": output_zero_point,
+        "flow_scale": flow_scale,
+        "flow_zero_point": flow_zero_point,
+        "flow_channel_offset": flow_channel_offset,
+        "input_0_binding": 0,
+        "input_0_descriptorset": 0,
+        "input_0_type": "Image",
+        "input_0_vkformat": sampler_vk_format,
+        "input_0_vkdescriptortype": "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER",
+        "input_0_sampler": _sampler_config(interpolation_mode=0, padding_mode=1),
+        "input_1_binding": 1,
+        "input_1_descriptorset": 0,
+        "input_1_type": "Tensor",
+        "input_1_vkformat": GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT,
+        "input_1_vkdescriptortype": "VK_DESCRIPTOR_TYPE_TENSOR_ARM",
+        "output_0_binding": 2,
+        "output_0_descriptorset": 0,
+        "output_0_type": "Image",
+        "output_0_vkformat": sampler_vk_format,
+        "output_0_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE",
+    }
 
 
 def _sampler_vk_format(input_dtype: Any | None, output_dtype: Any | None) -> str | None:

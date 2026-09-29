@@ -24,3 +24,18 @@ binary_scalar_texture:
     - NAME: eq_scalar_texture3d
       OPERATOR: equal(X, Y)
       IS_COMPARISON_OP: true
+    - NAME: ne_scalar_texture3d
+      OPERATOR: notEqual(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: lt_scalar_texture3d
+      OPERATOR: lessThan(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: le_scalar_texture3d
+      OPERATOR: lessThanEqual(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: gt_scalar_texture3d
+      OPERATOR: greaterThan(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: ge_scalar_texture3d
+      OPERATOR: greaterThanEqual(X, Y)
+      IS_COMPARISON_OP: true

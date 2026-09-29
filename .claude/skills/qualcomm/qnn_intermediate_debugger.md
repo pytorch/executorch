@@ -137,12 +137,12 @@ Present the result as a fenced bash block, prefixed by a one-line note of what c
 >
 > ```bash
 > python -m examples.qualcomm.util_scripts.my_model_debug \
->     -H $HOST -s $DEVICE_SERIAL -m $SOC_MODEL -b build-android \
+>     --host $HOST --device $DEVICE_SERIAL --soc_model $SOC_MODEL --build_folder build-android \
 >     -d /path/to/dataset -a ./my_model_debug \
 >     --dump_intermediate_outputs
 > ```
 
-If the user did not give you a runnable original command in step 1 (e.g. they pasted only the script path), do **not** fabricate values for `-H` / `-s` / `-m` / `-b` / `-a` / `-d`. Stop and ask before printing — wrong device or SoC values waste a full export + on-device run.
+If the user did not give you a runnable original command in step 1 (e.g. they pasted only the script path), do **not** fabricate values for `--host` / `--device` / `--soc_model` / `--build_folder` / `-a` / `-d`. Stop and ask before printing — wrong device or SoC values waste a full export + on-device run.
 
 After the command runs, the artifact dir will contain SVG / CSV reports — green nodes pass, red nodes fail the comparator threshold. That's the first place to look for the layer that introduces the gap.
 

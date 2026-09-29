@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iomanip>
 #include <list>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -58,6 +59,8 @@ using executorch::runtime::EventTracerEntry;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+
 // Dependencies for processing VGF files into Vulkan calls
 #include <vgf/decoder.hpp>
 #include <vgf/vulkan_helpers.generated.hpp>
@@ -98,30 +101,14 @@ VkResult vkml_allocate_basics(
     VkDevice* device,
     VkQueue* queue,
     VkCommandPool* command_pool,
-    uint32_t* queue_family_index);
-
-void vkml_free_basics(
-    VkInstance* instance,
-    VkDevice* device,
-    VkCommandPool* command_pool) {
-  if (*device != VK_NULL_HANDLE && *command_pool != VK_NULL_HANDLE) {
-    vkDestroyCommandPool(*device, *command_pool, nullptr);
-  }
-  // Note: These primitives are used by the emulation layer for vulkan
-  //       object allocation, the vulkan objects are freed in in library
-  //       shutdown, so we can't yet destroy these here without causing
-  //       a crash there.
-  //  vkDestroyDevice(*device, nullptr);
-  //  vkDestroyInstance(*instance, nullptr);
-}
+    uint32_t* queue_family_index,
+    bool request_neural_statistics,
+    bool* neural_statistics_device_enabled);
 
 // Helper functions to dump VGF Delegate Boundary Inputs
 constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
 constexpr const char* kVgfDumpInputsAndExitEnv =
     "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
-constexpr const char* kVgfNeuralStatisticsEnv =
-    "EXECUTORCH_VGF_ENABLE_NEURAL_STATISTICS";
-
 std::atomic<uint64_t> g_vgf_dump_invocation{0};
 
 bool env_flag_enabled(const char* name) {
@@ -422,13 +409,15 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
  public:
   VGFBackend() = default;
 
-  // Lazy Vulkan init — runs on first use, not in the constructor.
+  // Lazy Vulkan init. All callers hold mutex_; no Vulkan work is done
+  // from the process-global backend's constructor or destructor.
   void ensure_initialized() {
     if (is_initialized_) {
       return;
     }
 
     VkResult result;
+    neural_statistics_config_ = get_vgf_neural_statistics_runtime_config();
 
     // Fetch basic vulkan objects once
     result = vkml_allocate_basics(
@@ -437,10 +426,13 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         &vk_device,
         &vk_queue,
         &vk_command_pool,
-        &vk_queue_family_index);
+        &vk_queue_family_index,
+        neural_statistics_config_.requested,
+        &neural_statistics_device_enabled_);
     if (result != VK_SUCCESS) {
       ET_LOG(
           Error, "Failed to initialize the Vulkan device error 0x%08X", result);
+      release_basics_if_unused();
       return;
     }
 
@@ -451,28 +443,36 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
           Error,
           "Failed to verify VKML extensions needed, error 0x%08X",
           result);
+      release_basics_if_unused();
       return;
     }
 
     is_initialized_ = true;
   }
-  ~VGFBackend() {
-    vkml_free_basics(&vk_instance, &vk_device, &vk_command_pool);
-  }
+
+  // Vulkan teardown belongs to destroy(), not static destruction: the
+  // loader and layers may already have torn down their dispatch state.
+  ~VGFBackend() override = default;
 
   bool is_available() const override {
+    auto* self = const_cast<VGFBackend*>(this);
+    const std::lock_guard<std::mutex> lock(mutex_);
     ET_LOG(Info, "Checking VGFBackend is available");
-    const_cast<VGFBackend*>(this)->ensure_initialized();
-    if (!is_initialized_) {
-      return false;
-    }
-    return vkml_load_extensions(&vk_device) == VK_SUCCESS;
+    self->ensure_initialized();
+    const bool available =
+        is_initialized_ && vkml_load_extensions(&vk_device) == VK_SUCCESS;
+    // An availability-only probe must not retain a device until exit.
+    // Existing delegates, if any, keep their shared device alive.
+    self->release_basics_if_unused();
+    return available;
   }
 
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
+    auto* self = const_cast<VGFBackend*>(this);
+    const std::lock_guard<std::mutex> lock(mutex_);
     ET_LOG(Info, "Entered VGF init");
 
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -490,7 +490,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
             /*delegate_debug_id=*/-1);
 #endif
 
-    const_cast<VGFBackend*>(this)->ensure_initialized();
+    self->ensure_initialized();
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, ensure_initialized_event);
@@ -518,13 +518,24 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
     VgfRepr* repr = allocator->allocateInstance<VgfRepr>();
+    if (repr == nullptr) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
+      event_tracer_end_profiling_delegate(event_tracer, init_total_event);
+#endif
+      self->release_basics_if_unused();
+      return Error::MemoryAllocationFailed;
+    }
     new (repr) VgfRepr(
         vk_instance,
         vk_physical_device,
         vk_device,
         vk_queue,
         vk_command_pool,
-        vk_queue_family_index);
+        vk_queue_family_index,
+        neural_statistics_config_.requested,
+        neural_statistics_device_enabled_,
+        neural_statistics_config_.mode_index);
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
@@ -552,6 +563,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
       ET_LOG(Error, "Failed to process VGF blob.");
+      // The runtime never receives this handle, so it cannot destroy it.
+      self->wait_for_device_idle();
+      repr->~VgfRepr();
+      self->release_basics_if_unused();
       return Error::Internal;
     }
 
@@ -559,6 +574,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
 
+    ++self->live_delegates_;
     return repr;
   }
 
@@ -566,6 +582,9 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
+    // The queue and command pool are shared by all VGF delegates.
+    // Serialize their host access with initialization and teardown.
+    const std::lock_guard<std::mutex> lock(mutex_);
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
     const size_t input_count = repr->model_input_count;
     const size_t output_count = repr->model_output_count;
@@ -621,12 +640,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
       if (io_idx < 0) {
-#ifdef ET_EVENT_TRACER_ENABLED
-        event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
-        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
-#endif
-        ET_LOG(Error, "Missing IO mapping for input %zu", input_arg_idx);
-        return Error::InvalidArgument;
+        ET_LOG(Info, "Skipping eliminated VGF input %zu", input_arg_idx);
+        // See test_addmm_vgf_no_quant[beta_only]
+        // two inputs are eliminated from the graph by the converter
+        continue;
       }
       if (!args[input_arg_idx]->isTensor()) {
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -701,7 +718,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, dispatch_event);
 
-    if (event_tracer != nullptr && env_flag_enabled(kVgfNeuralStatisticsEnv)) {
+    if (event_tracer != nullptr && repr->neural_statistics_requested()) {
       // We attach the neural statistics JSON blob to ETDump as delegate
       // metadata, when event tracer is active.
 
@@ -794,17 +811,74 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle) const override {
+    if (handle == nullptr) {
+      return;
+    }
+    auto* self = const_cast<VGFBackend*>(this);
+    const std::lock_guard<std::mutex> lock(mutex_);
+    ET_CHECK_MSG(live_delegates_ > 0, "Unbalanced VGF delegate destruction");
+    // A failed execution may have submitted work without completing its
+    // fence wait. Drain it before freeing any per-delegate resources.
+    self->wait_for_device_idle();
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
     repr->~VgfRepr();
+    --self->live_delegates_;
+    self->release_basics_if_unused();
   }
 
  private:
+  // Call only with mutex_ held. A device-lost error still permits
+  // destruction; record it rather than leaking the remaining objects.
+  void wait_for_device_idle() {
+    if (vk_device != VK_NULL_HANDLE) {
+      const VkResult result = vkDeviceWaitIdle(vk_device);
+      if (result != VK_SUCCESS) {
+        ET_LOG(Error, "VGF teardown: vkDeviceWaitIdle failed: %d", result);
+      }
+      ET_CHECK_MSG(
+          result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST,
+          "Cannot free VGF resources while device completion is unknown");
+    }
+  }
+
+  // Call only with mutex_ held, after destroying the last VgfRepr (or
+  // when a probe/initialization failed without publishing a handle).
+  // Any submitted work must have been drained before freeing the repr.
+  void release_basics_if_unused() {
+    if (live_delegates_ != 0) {
+      return;
+    }
+    if (vk_command_pool != VK_NULL_HANDLE) {
+      vkDestroyCommandPool(vk_device, vk_command_pool, nullptr);
+      vk_command_pool = VK_NULL_HANDLE;
+    }
+    if (vk_device != VK_NULL_HANDLE) {
+      vkDestroyDevice(vk_device, nullptr);
+      vk_device = VK_NULL_HANDLE;
+    }
+    if (vk_instance != VK_NULL_HANDLE) {
+      vkDestroyInstance(vk_instance, nullptr);
+      vk_instance = VK_NULL_HANDLE;
+    }
+    vk_physical_device = VK_NULL_HANDLE;
+    vk_queue = VK_NULL_HANDLE;
+    vk_queue_family_index = UINT32_MAX;
+    neural_statistics_config_ = {};
+    neural_statistics_device_enabled_ = false;
+    is_initialized_ = false;
+    // Do not call volkFinalize(): the Vulkan backend shares the loader.
+  }
+
+  mutable std::mutex mutex_;
+  size_t live_delegates_ = 0;
   VkInstance vk_instance = VK_NULL_HANDLE;
   VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
   VkDevice vk_device = VK_NULL_HANDLE;
   VkQueue vk_queue = VK_NULL_HANDLE;
   VkCommandPool vk_command_pool = VK_NULL_HANDLE;
   uint32_t vk_queue_family_index = UINT32_MAX;
+  VgfNeuralStatisticsRuntimeConfig neural_statistics_config_{};
+  bool neural_statistics_device_enabled_ = false;
   bool is_initialized_ = false;
 };
 
@@ -820,8 +894,14 @@ VkResult vkml_allocate_basics(
     VkDevice* device,
     VkQueue* queue,
     VkCommandPool* command_pool,
-    uint32_t* queue_family_index) {
+    uint32_t* queue_family_index,
+    bool request_neural_statistics,
+    bool* neural_statistics_device_enabled) {
   VkResult result;
+
+  if (neural_statistics_device_enabled != nullptr) {
+    *neural_statistics_device_enabled = false;
+  }
 
   if (VK_SUCCESS != volkInitialize()) {
     ET_LOG(Error, "Volk failed to initialize");
@@ -894,6 +974,8 @@ VkResult vkml_allocate_basics(
   result = vkCreateInstance(&instance_info, nullptr, instance);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkInstance");
+    // Failed creation leaves the output undefined; do not destroy it.
+    *instance = VK_NULL_HANDLE;
     return result;
   }
   volkLoadInstance(*instance);
@@ -958,21 +1040,55 @@ VkResult vkml_allocate_basics(
   };
 
   // Query features
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR available_bfloat16{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+      .pNext = nullptr,
+  };
   VkPhysicalDeviceVulkan12Features available_12 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-      .pNext = NULL,
+      .pNext = &available_bfloat16,
   };
   VkPhysicalDeviceVulkan11Features available_11 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
       .pNext = &available_12,
   };
+  VkPhysicalDeviceDataGraphFeaturesARM available_graph{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, &available_11};
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+  VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
+      available_neural_statistics{
+          .sType =
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_FEATURES_ARM,
+          .pNext = &available_graph,
+          .dataGraphNeuralAcceleratorStatistics = VK_FALSE,
+      };
+  void* available_features_pnext = &available_neural_statistics;
+#else
+  void* available_features_pnext = &available_graph;
+#endif
   VkPhysicalDeviceFeatures2 available_2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-      .pNext = &available_11,
+      .pNext = available_features_pnext,
   };
   vkGetPhysicalDeviceFeatures2(*physical_device, &available_2);
 
+  if (!vgf_data_graph_features_supported(available_graph)) {
+    ET_LOG(
+        Error,
+        "VGF requires VK_ARM_data_graph features dataGraph and "
+        "dataGraphShaderModule (reported dataGraph=%u, "
+        "dataGraphShaderModule=%u)",
+        available_graph.dataGraph,
+        available_graph.dataGraphShaderModule);
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+  }
+
   // Select features
+  VkPhysicalDeviceShaderBfloat16FeaturesKHR features_bfloat16{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
+      .pNext = nullptr,
+      .shaderBFloat16Type = VK_FALSE,
+  };
   VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT features_c{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT,
       nullptr};
@@ -1006,10 +1122,17 @@ VkResult vkml_allocate_basics(
   features_tensor.shaderTensorAccess = true;
   features_tensor.tensors = true;
   features_tensor.pNext = &features_11;
-  VkPhysicalDeviceDataGraphFeaturesARM features_graph{
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM, nullptr};
-  features_graph.dataGraph = true;
-  features_graph.pNext = &features_tensor;
+  VkPhysicalDeviceDataGraphFeaturesARM features_graph =
+      make_vgf_data_graph_features(&features_tensor);
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+  VkPhysicalDeviceDataGraphNeuralAcceleratorStatisticsFeaturesARM
+      features_neural_statistics{
+          .sType =
+              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_FEATURES_ARM,
+          .pNext = &features_tensor,
+          .dataGraphNeuralAcceleratorStatistics = VK_FALSE,
+      };
+#endif
 
   VkPhysicalDeviceFeatures device_features = {};
   device_features.shaderInt16 = VK_TRUE;
@@ -1032,6 +1155,82 @@ VkResult vkml_allocate_basics(
       *physical_device, nullptr, &exts, available.data());
 
   vector<const char*> requested_exts;
+
+  const bool bfloat16_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& ext_avail) {
+        return std::strcmp(
+                   VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME,
+                   ext_avail.extensionName) == 0;
+      });
+  const bool bfloat16_feature_available =
+      available_bfloat16.shaderBFloat16Type == VK_TRUE;
+
+  if (bfloat16_extension_available && bfloat16_feature_available) {
+    requested_exts.push_back(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+    features_bfloat16.shaderBFloat16Type = VK_TRUE;
+    features_c.pNext = &features_bfloat16;
+    ET_LOG(
+        Info,
+        "Enabled %s with shaderBFloat16Type",
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+  } else if (!bfloat16_extension_available) {
+    ET_LOG(
+        Info,
+        "VGF BF16 shaders are unavailable: Vulkan device does not expose %s",
+        VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+  } else {
+    ET_LOG(
+        Info,
+        "VGF BF16 shaders are unavailable: shaderBFloat16Type is not supported");
+  }
+
+#if defined(VK_ARM_data_graph_neural_accelerator_statistics)
+  const bool neural_statistics_extension_available = std::any_of(
+      available.begin(), available.end(), [](const auto& ext_avail) {
+        return std::strcmp(
+                   VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME,
+                   ext_avail.extensionName) == 0;
+      });
+  const bool neural_statistics_feature_available =
+      available_neural_statistics.dataGraphNeuralAcceleratorStatistics ==
+      VK_TRUE;
+  const bool enable_neural_statistics_device = request_neural_statistics &&
+      neural_statistics_extension_available &&
+      neural_statistics_feature_available;
+
+  if (request_neural_statistics && !neural_statistics_extension_available) {
+    ET_LOG(
+        Info,
+        "%s was requested but the Vulkan device does not expose %s",
+        kVgfNeuralStatisticsEnableEnv,
+        VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME);
+  } else if (
+      request_neural_statistics && !neural_statistics_feature_available) {
+    ET_LOG(
+        Info,
+        "%s was requested but dataGraphNeuralAcceleratorStatistics is not supported",
+        kVgfNeuralStatisticsEnableEnv);
+  }
+
+  if (enable_neural_statistics_device) {
+    requested_exts.push_back(
+        VK_ARM_DATA_GRAPH_NEURAL_ACCELERATOR_STATISTICS_EXTENSION_NAME);
+    features_neural_statistics.dataGraphNeuralAcceleratorStatistics = VK_TRUE;
+    features_graph.pNext = &features_neural_statistics;
+    if (neural_statistics_device_enabled != nullptr) {
+      *neural_statistics_device_enabled = true;
+    }
+  }
+#else
+  if (request_neural_statistics) {
+    ET_LOG(
+        Info,
+        "%s was requested but Vulkan headers do not expose "
+        "VK_ARM_data_graph_neural_accelerator_statistics",
+        kVgfNeuralStatisticsEnableEnv);
+  }
+#endif
+
   for (auto& ext : dev_exts) {
     bool found = false;
     for (auto const& ext_avail : available) {
@@ -1057,6 +1256,8 @@ VkResult vkml_allocate_basics(
   result = vkCreateDevice(*physical_device, &dci, nullptr, device);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkDevice");
+    // Failed creation leaves the output undefined; do not destroy it.
+    *device = VK_NULL_HANDLE;
     return result;
   }
   // Load the device with volk and populate function pointers
@@ -1073,6 +1274,8 @@ VkResult vkml_allocate_basics(
   result = vkCreateCommandPool(*device, &poolInfo, nullptr, command_pool);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkCommandPool");
+    // Failed creation leaves the output undefined; do not destroy it.
+    *command_pool = VK_NULL_HANDLE;
     return result;
   }
 

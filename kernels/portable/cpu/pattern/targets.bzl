@@ -56,8 +56,8 @@ def define_common_targets():
         ],
         compiler_flags = select({
             "DEFAULT": ["-Wno-missing-prototypes"],
-            # ovr_config//os:zephyr is fbsource-internal; OSS bypasses this select via runtime.is_oss.
-            "ovr_config//os:zephyr": [],
+            # GCC's C++ frontend rejects this C-only flag under -Werror.
+            "ovr_config//compiler:gcc": [],
         }) if not runtime.is_oss else ["-Wno-missing-prototypes"],
         exported_deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",

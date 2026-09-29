@@ -5,9 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 from .annotate_avg_pool1d import AnnotateAvgPool1D
+from .annotate_get_attr import AnnotateGetAttr
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
+from .build_quant_io import BuildQuantIo
 from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
@@ -16,6 +18,7 @@ from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_acos import DecomposeAcos
 from .decompose_addmm import DecomposeAddmm
 from .decompose_any import DecomposeAny
+from .decompose_as_strided import DecomposeAsStrided
 from .decompose_atan2 import DecomposeAtan2
 from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
@@ -23,6 +26,7 @@ from .decompose_col_im import DecomposeColIm
 from .decompose_diagonal import DecomposeDiagonal
 from .decompose_div_mode import DecomposeDivMode
 from .decompose_einsum import DecomposeEinsum
+from .decompose_empty import DecomposeEmpty
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_fill import DecomposeFill
 from .decompose_floor_divide import DecomposeFloorDivide
@@ -49,7 +53,9 @@ from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
+from .fuse_batch_norm_with_conv import FuseBatchNormWithConv
 from .fuse_consecutive_cast import FuseConsecutiveCast
+from .fuse_consecutive_reshape import FuseConsecutiveReshape
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
 from .insert_cast_for_fp_act_quantized_weight import InsertCastForFpActQuantizedWeight
@@ -59,6 +65,7 @@ from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
+from .recompose_hadamard import RecomposeHadamard
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
@@ -71,9 +78,11 @@ from .tag_quant_io import TagQuantIO
 
 __all__ = [
     AnnotateAvgPool1D,
+    AnnotateGetAttr,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    BuildQuantIo,
     CanonicalizeConv,
     ConvertBmmToMatmul,
     ConvertLinearToConv2d,
@@ -82,6 +91,7 @@ __all__ = [
     DecomposeAcos,
     DecomposeAddmm,
     DecomposeAny,
+    DecomposeAsStrided,
     DecomposeAtan2,
     DecomposeBinaryAlpha,
     DecomposeCDist,
@@ -89,6 +99,7 @@ __all__ = [
     DecomposeDiagonal,
     DecomposeDivMode,
     DecomposeEinsum,
+    DecomposeEmpty,
     DecomposeExpM1,
     DecomposeFill,
     DecomposeFloorDivide,
@@ -115,7 +126,9 @@ __all__ = [
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseBatchNormWithConv,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,
@@ -125,6 +138,7 @@ __all__ = [
     LayoutTransform,
     LiftConstantScalarOperands,
     LpaiPartitionFallbackSupport,
+    RecomposeHadamard,
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,

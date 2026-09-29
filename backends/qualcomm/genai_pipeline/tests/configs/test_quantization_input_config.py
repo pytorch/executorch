@@ -24,6 +24,25 @@ class TestQuantizationInputConfig(unittest.TestCase):
         with self.assertRaises(TypeError):
             QuantizationInputConfig()
 
+    def test_optional_fields_default_to_none(self):
+        config = QuantizationInputConfig(
+            soc_model=MagicMock(), backend_type=MagicMock()
+        )
+        self.assertIsNone(config.model_module)
+        self.assertIsNone(config.example_inputs)
+        self.assertIsNone(config.calibration_data)
+        self.assertIsNone(config.training_data)
+        self.assertIsNone(config.quant_recipe)
+
+    def test_training_data_carries_qat_dataset(self):
+        training_data = [("features", "labels")]
+        config = QuantizationInputConfig(
+            soc_model=MagicMock(),
+            backend_type=MagicMock(),
+            training_data=training_data,
+        )
+        self.assertIs(config.training_data, training_data)
+
 
 if __name__ == "__main__":
     unittest.main()

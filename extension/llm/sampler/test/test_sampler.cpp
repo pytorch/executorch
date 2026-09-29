@@ -6,9 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @lint-ignore-every CLANGTIDY facebook-hte-Deprecated
+
 #include <executorch/extension/llm/sampler/sampler.h>
 
 #include <set>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
@@ -40,6 +43,30 @@ TEST(SamplerTest, TestArgMaxWithFP16) {
   torch::Tensor input = torch::rand({1, 1, 32000}, at::kHalf);
   input[0][0][396] = 1.0f;
   EXPECT_EQ(sampler.sample(input.data_ptr<c10::Half>()), 396);
+}
+
+TEST(SamplerTest, TestBFloat16SamplingUsesFloatArithmetic) {
+  constexpr int kVocabSize = 256;
+  constexpr unsigned long long kSeed = 42;
+  Sampler float_sampler{kVocabSize, 1.0f, 1.0f, kSeed};
+  Sampler bf16_sampler{kVocabSize, 1.0f, 1.0f, kSeed};
+
+  std::vector<executorch::aten::BFloat16> bf16_logits;
+  std::vector<float> float_logits;
+  bf16_logits.reserve(kVocabSize);
+  float_logits.reserve(kVocabSize);
+  bool observed_bf16_rounding = false;
+  for (int i = 0; i < kVocabSize; i++) {
+    const float input_logit = static_cast<float>(i) * 0.001f - 0.128f;
+    bf16_logits.emplace_back(input_logit);
+    float_logits.push_back(static_cast<float>(bf16_logits.back()));
+    observed_bf16_rounding |= float_logits.back() != input_logit;
+  }
+
+  ASSERT_TRUE(observed_bf16_rounding);
+  EXPECT_EQ(
+      bf16_sampler.sample(bf16_logits.data()),
+      float_sampler.sample(float_logits.data()));
 }
 
 TEST(SamplerTest, TestTopKRestrictsToCandidates) {

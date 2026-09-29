@@ -37,13 +37,9 @@ def test_n_greater_than_one_is_rejected(make_client):
 def test_unsupported_params_rejected(make_client):
     client, _ = make_client()
     for param in (
-        {"top_p": 0.5},
-        {"top_p": 2.0},  # > 1.0 is not a no-op either — only exactly 1.0/unset is
-        {"seed": 42},
         {"reasoning_effort": "high"},
         {"frequency_penalty": 1.0},
         {"presence_penalty": -0.5},
-        {"top_k": 40},
         {"logit_bias": {"123": 5.0}},
         {"response_format": {"type": "json_object"}},
         {"logprobs": True},
@@ -77,6 +73,23 @@ def test_temperature_range_rejected(make_client):
         {"temperature": -0.1},
         {"temperature": 2.1},
         {"temperature": 3},
+    ):
+        r = client.post("/v1/chat/completions", json=_body(**param))
+        assert r.status_code == 400, param
+        assert r.json()["error"]["code"] == "invalid_value", param
+
+
+def test_sampling_parameter_ranges_rejected(make_client):
+    client, _ = make_client()
+    for param in (
+        {"top_p": 0.0},
+        {"top_p": -0.1},
+        {"top_p": 1.1},
+        {"top_k": -1},
+        {"top_k": 2**31},
+        {"seed": 0},
+        {"seed": -1},
+        {"seed": 2**63},
     ):
         r = client.post("/v1/chat/completions", json=_body(**param))
         assert r.status_code == 400, param
@@ -133,13 +146,19 @@ def test_unsupported_tool_choice_rejected(make_client):
 
 
 def test_supported_params_accepted(make_client):
-    # top_p=1.0 (no-op) and temperature/max_tokens must NOT be rejected; neither
+    # Sampling controls and temperature/max_tokens must not be rejected; neither
     # should tool_choice "auto" / "none".
     client, _ = make_client()
     for temperature in (0.0, 1.0, 2.0):
         r = client.post(
             "/v1/chat/completions",
-            json=_body(top_p=1.0, temperature=temperature, max_tokens=8),
+            json=_body(
+                top_p=0.9,
+                top_k=40,
+                seed=42,
+                temperature=temperature,
+                max_tokens=8,
+            ),
         )
         assert r.status_code == 200, temperature
     for choice in ("auto", "none"):

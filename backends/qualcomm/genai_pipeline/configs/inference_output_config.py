@@ -18,7 +18,12 @@ class InferenceOutputConfig:
     """Output produced by the inference stage.
 
     Attributes:
-        inference_results: Generated text output(s) from the model.
+        inference_results: Generated text output(s) from the model, or the paths
+            of the pulled result files when the adapter writes results to disk
+            rather than returning them. Stays ``List[str]`` rather than widening
+            to ``List[Any]``: ``InferenceResult.output_data`` is already decoded
+            text by contract, so it needs no conversion, and coercing it in the
+            strategy would risk stringifying raw token ids.
         performance_metrics: Performance data (e.g., TTFT, tokens/sec).
         eval_results: Evaluation metric results (e.g., SQNR, perplexity).
         etdump: Optional ETDump for debugging. ExecuTorch engine only.

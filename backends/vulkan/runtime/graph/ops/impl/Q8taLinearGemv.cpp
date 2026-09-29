@@ -30,7 +30,7 @@ static bool q8ta_linear_gemv_check_packed_dim_info(
 // Workgroup size selection
 //
 
-utils::uvec3 q8ta_linear_gemv_global_wg_size(
+GlobalWorkGrid q8ta_linear_gemv_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -47,23 +47,11 @@ utils::uvec3 q8ta_linear_gemv_global_wg_size(
   const uint32_t N_per_tile = 8;
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
 
-  return {num_N_tiles, 1, 1};
-}
-
-utils::uvec3 q8ta_linear_gemv_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-
-  // Cooperative algorithm: 64 threads share the K reduction
-  return {1, 1, 64};
+  const LocalWorkGroup lwg(1u, 1u, 64u);
+  GlobalWorkGrid gwg({num_N_tiles, 1u, 1u}, kLinearWorkGrid);
+  gwg.wrap_linear_dispatch(
+      graph->context()->adapter_ptr()->max_compute_workgroup_count(), lwg);
+  return gwg;
 }
 
 //
@@ -120,8 +108,8 @@ void add_q8ta_linear_gemv_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      q8ta_linear_gemv_global_wg_size,
-      q8ta_linear_gemv_local_wg_size,
+      q8ta_linear_gemv_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,

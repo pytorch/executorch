@@ -350,6 +350,17 @@ Adapter::~Adapter() {
   }
 }
 
+ScopedAdapterCapabilityOverride::ScopedAdapterCapabilityOverride(
+    Adapter* adapter,
+    AdapterCapabilityOverrides overrides)
+    : adapter_(adapter), previous_(adapter->capability_overrides_) {
+  adapter_->capability_overrides_ = overrides;
+}
+
+ScopedAdapterCapabilityOverride::~ScopedAdapterCapabilityOverride() {
+  adapter_->capability_overrides_ = previous_;
+}
+
 Adapter::Queue Adapter::request_queue() {
   // Lock the mutex as multiple threads can request a queue at the same time
   std::lock_guard<std::mutex> lock(queue_usage_mutex_);

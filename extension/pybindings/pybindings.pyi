@@ -312,6 +312,7 @@ def _load_program(
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
+    data_path: Optional[str] = None,
 ) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _load_program_from_buffer(
@@ -319,6 +320,7 @@ def _load_program_from_buffer(
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.Minimal,
+    data_path: Optional[str] = None,
 ) -> ExecuTorchProgram: ...
 @experimental("This API is experimental and subject to change without notice.")
 def _is_available(backend_name: str) -> bool:

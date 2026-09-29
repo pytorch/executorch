@@ -8,7 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/binary/BinaryOp.h>
-#include <executorch/backends/webgpu/runtime/ops/minimum/binary_minimum_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_minimum_wgsl.h>
 
 #include <vector>
 

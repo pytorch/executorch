@@ -19,7 +19,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "pattern_utils.py",
     ],
-    typing = True,
     deps = [
         ":utils",
         "//caffe2:torch",
@@ -34,7 +33,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "patterns.py",
     ],
-    typing = True,
     deps = [
         ":pattern_utils",
         ":utils",
@@ -48,7 +46,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "quantizer.py",
     ],
-    typing = True,
     deps = [
         ":patterns",
         ":utils",

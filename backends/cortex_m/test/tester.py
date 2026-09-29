@@ -6,12 +6,14 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Optional
 
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
@@ -22,9 +24,11 @@ from executorch.backends.test.harness.stages import (
     RunPasses,
     StageType,
     ToEdge,
+    ToEdgeTransformAndLower,
     ToExecutorch,
 )
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeProgramManager, to_edge_transform_and_lower
+from torch.export import ExportedProgram
 
 
 class CortexMQuantize(Quantize):
@@ -35,41 +39,48 @@ class CortexMQuantize(Quantize):
 
 class CortexMToEdge(ToEdge):
     def __init__(self):
-        config = EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-                # silu naturally decomposes to sigmoid*x at the to_edge step.
-                # Preserve it so the LUT lowering can collapse it into a single
-                # cortex_m.quantized_activation call rather than emitting an
-                # extra elementwise mul. Set globally because no per-test
-                # opt-out exists today; any new cortex_m test that uses SiLU
-                # must therefore expect a single aten.silu op in the edge graph
-                # (not sigmoid+mul).
-                torch.ops.aten.silu.default,
-            ],
-            _check_ir_validity=False,
-            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-        )
-        super().__init__(config)
+        super().__init__(cortex_m_edge_compile_config())
 
 
 class CortexMRunPasses(RunPasses):
+    def __init__(
+        self,
+        target_config: Optional[CortexMTargetConfig] = None,
+        use_explicit_layout: bool = False,
+    ):
+        super().__init__(CortexMPassManager)
+        self.pass_manager = CortexMPassManager(
+            target_config=target_config,
+            use_explicit_layout=use_explicit_layout,
+        )
+
+    def run(self, artifact: EdgeProgramManager | ExportedProgram, inputs=None) -> None:
+        if isinstance(artifact, EdgeProgramManager):
+            self.edge_or_aten_program = artifact.transform(self.pass_manager)
+        else:
+            self.edge_or_aten_program = self.pass_manager(artifact).exported_program
+
+
+class CortexMToEdgeTransformAndLower(ToEdgeTransformAndLower):
     def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
-        target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
-        # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`.
-        # Pre-bind the target_config so it flows through that 2-arg call.
-        super().__init__(
-            partial(CortexMPassManager, target_config=target_config),  # type: ignore[arg-type]
-            CortexMPassManager.pass_list,  # type: ignore[arg-type]
+        super().__init__(edge_compile_config=cortex_m_edge_compile_config())
+        self.pass_manager = CortexMPassManager(target_config=target_config)
+
+    def run(self, artifact, inputs=None, generate_etrecord: bool = False) -> None:
+        self.edge_dialect_program = to_edge_transform_and_lower(
+            artifact,
+            compile_config=self.edge_compile_conf,
+            transform_passes=self.pass_manager,
+            generate_etrecord=generate_etrecord,
         )
 
 
 class CortexMSerialize(Serialize):
-    def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
+    def __init__(
+        self,
+        target_config: Optional[CortexMTargetConfig] = None,
+        timeout: int = 120,
+    ):
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         compile_spec = get_u55_compile_spec()
         # Select the runner built for this target (build_test_runner.sh writes
@@ -77,6 +88,7 @@ class CortexMSerialize(Serialize):
         super().__init__(
             compile_spec,
             None,
+            timeout=timeout,
             build_dir_suffix=f"_{target_config.target_string}",
         )
 
@@ -86,6 +98,7 @@ cortex_m_stage_classes = {
     StageType.QUANTIZE: CortexMQuantize,
     StageType.RUN_PASSES: CortexMRunPasses,
     StageType.TO_EDGE: CortexMToEdge,
+    StageType.TO_EDGE_TRANSFORM_AND_LOWER: CortexMToEdgeTransformAndLower,
     StageType.TO_EXECUTORCH: ToExecutorch,
     StageType.SERIALIZE: CortexMSerialize,
 }
@@ -97,6 +110,7 @@ class CortexMTester(TesterBase):
         module,
         example_inputs,
         target_config: Optional[CortexMTargetConfig] = None,
+        timeout: int = 120,
     ):
         if callable(example_inputs):
             resolved_example_inputs = example_inputs()
@@ -109,8 +123,11 @@ class CortexMTester(TesterBase):
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
             target_config=target_config
         )
+        stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
+            lambda: CortexMToEdgeTransformAndLower(target_config=target_config)
+        )
         stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
-            target_config=target_config
+            target_config=target_config, timeout=timeout
         )
         super().__init__(module, resolved_example_inputs, stage_classes)
 
@@ -121,6 +138,7 @@ class CortexMTester(TesterBase):
         qtol=0,
         atol=1e-03,
         calibration_samples=None,
+        ops_absent_after_transforms=None,
     ):
         """
         Test the python dialect op implementation.
@@ -131,13 +149,14 @@ class CortexMTester(TesterBase):
             )
         else:
             quantization_stage = None
-
         self.quantize(quantization_stage)
         self.export()
         self.to_edge()
         self.check_count(ops_before_transforms)
         self.run_passes()
         self.check_count(ops_after_transforms)
+        if ops_absent_after_transforms:
+            self.check_not(ops_absent_after_transforms)
         self.run_method_and_compare_outputs(
             inputs=self.example_inputs, qtol=qtol, atol=atol
         )

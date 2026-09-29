@@ -10,6 +10,10 @@ from typing import Any, Callable, cast
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import (
+    ATEN_PERMUTE_COPY,
+    LAYOUT_PERMUTE_COPY,
+)
 from executorch.backends.transforms.permute_pass_utils import (
     FuseOpPairsAcrossBranchesPass,
     get_permuted_dims,
@@ -29,13 +33,12 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
     so transpose(1, 2) then transpose(0, 2) is a pseudo identity and should be fused.
     """
 
-    # A list of ops that can be bypassed when looking for a
-    # transpose-permute chain. Subclasses can extend this with backend-specific ops.
+    # Only layout-invariant ops can be bypassed. Per-channel QDQ requires
+    # remapping its axis and must not be added here without that rewrite.
+    # Subclasses can extend this with backend-specific ops.
     bypass_ops: set[EdgeOpOverload] = {
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
     def can_fuse_for_chain(
@@ -56,7 +59,8 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         # this mapping helps to handle both transpose and permutations
         f: dict[Any, Callable] = {
             exir_ops.edge.aten.transpose_copy.int: get_transposed_dims,
-            exir_ops.edge.aten.permute_copy.default: get_permuted_dims,
+            ATEN_PERMUTE_COPY: get_permuted_dims,
+            LAYOUT_PERMUTE_COPY: get_permuted_dims,
         }
         in_dims = f[producer.target](producer, ident_dims)
         out_dims = f[consumer.target](consumer, in_dims)
@@ -81,6 +85,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
                 (consumer.args[0], output_shape),
                 {},
             )
+        view.meta = dict(consumer.meta)
         return view
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -90,13 +95,17 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             producer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
                 exir_ops.edge.aten.permute_copy,
+                exir_ops.edge.channels_last.permute_copy,
             },
             consumer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
                 exir_ops.edge.aten.permute_copy,
+                exir_ops.edge.channels_last.permute_copy,
             },
             bypass_ops=self.bypass_ops,
         )
         if modified:
-            return super().call(graph_module)
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return PassResult(graph_module, True)
         return PassResult(graph_module, False)

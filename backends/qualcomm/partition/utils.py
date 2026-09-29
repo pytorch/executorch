@@ -69,11 +69,15 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.rms_norm.default,
         torch.ops.aten._safe_softmax.default,
         torch.ops.aten.scatter.src,
+        torch.ops.aten.scatter_add.default,
+        torch.ops.aten.scatter_reduce.two,
         torch.ops.aten.stack.default,
         torch.ops.aten.upsample_bicubic2d.vec,
         # This request is ignored because it is in a blocklist. Refer to exir/program/_program.py
         torch.ops.aten.unbind.int,
         torch.ops.torchao.quantize_affine.default,
         torch.ops.torchao.dequantize_affine.default,
+        torch.ops.quantized_decomposed.quantize_per_channel_group.default,
+        torch.ops.quantized_decomposed.dequantize_per_channel_group.default,
     ]
     return do_not_decompose

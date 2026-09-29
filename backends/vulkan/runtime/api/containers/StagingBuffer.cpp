@@ -178,7 +178,7 @@ void StagingBuffer::cast_float_to_half_and_copy_to(
       vulkan_buffer_.vma_allocator(),
       vulkan_buffer_.allocation(),
       0u,
-      VK_WHOLE_SIZE);
+      numel * sizeof(float));
   const float* src = reinterpret_cast<const float*>(data());
   for (size_t i = 0; i < numel; ++i) {
     dst[i] = float_to_half(src[i]);

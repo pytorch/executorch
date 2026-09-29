@@ -20,7 +20,7 @@ namespace vkcompute {
 
 using namespace utils;
 
-utils::uvec3 fused_ce_global_wg_size(
+GlobalWorkGrid fused_ce_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -28,25 +28,13 @@ utils::uvec3 fused_ce_global_wg_size(
   (void)shader;
   (void)resize_args;
   const ValueRef loss_partial = args.at(0).refs.at(1);
-  return {
-      1u, utils::safe_downcast<uint32_t>(graph->numel_of(loss_partial)), 1u};
+  return GlobalWorkGrid(
+      {1u, utils::safe_downcast<uint32_t>(graph->numel_of(loss_partial)), 1u},
+      kTiledWorkGrid,
+      LocalWorkGroup(64u, 1u, 1u));
 }
 
-utils::uvec3 fused_ce_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64u, 1u, 1u};
-}
-
-utils::uvec3 fused_ce_sum_global_wg_size(
+GlobalWorkGrid fused_ce_sum_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -55,21 +43,8 @@ utils::uvec3 fused_ce_sum_global_wg_size(
   (void)shader;
   (void)args;
   (void)resize_args;
-  return {1u, 1u, 1u};
-}
-
-utils::uvec3 fused_ce_sum_local_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)graph;
-  (void)shader;
-  (void)global_workgroup_size;
-  (void)args;
-  (void)resize_args;
-  return {64u, 1u, 1u};
+  return GlobalWorkGrid(
+      {1u, 1u, 1u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
 }
 
 void resize_fused_ce_node(
@@ -146,8 +121,8 @@ void fused_ce(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      fused_ce_global_wg_size,
-      fused_ce_local_wg_size,
+      fused_ce_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{{dlogits, loss_partial}, vkapi::kWrite},
        {{logits, labels}, vkapi::kRead}},
@@ -174,8 +149,8 @@ void fused_ce(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(sum_kernel_name),
-      fused_ce_sum_global_wg_size,
-      fused_ce_sum_local_wg_size,
+      fused_ce_sum_gwg,
+      pick_required_lwg,
       // Inputs and Outputs
       {{loss, vkapi::kWrite}, {loss_partial, vkapi::kRead}},
       // Shader params buffers

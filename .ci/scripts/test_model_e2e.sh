@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Test CUDA/Metal/XNNPACK model end-to-end, need to run .ci/scripts/export_model_artifact.sh first
+# Test CUDA/Metal/XNNPACK models end-to-end, optionally exporting artifacts first.
 
 show_help() {
   cat << EOF
@@ -26,6 +26,7 @@ Arguments:
                 - nvidia/parakeet-tdt
                 - facebook/dinov2-small-imagenet1k-1-layer
                 - mistralai/Voxtral-Mini-4B-Realtime-2602
+                - meta-models/Muse-Glimmer-30B-GGUF
 
   quant_name  Quantization type (required)
               Options:
@@ -33,6 +34,8 @@ Arguments:
                 - quantized-int4-tile-packed
                 - quantized-int4-weight-only
                 - quantized-8da4w (XNNPACK only)
+                - kquant-17gb (Muse Glimmer only)
+                - kquant-dynamic (Muse Glimmer only)
 
   model_dir   Directory containing model artifacts (optional, default: current directory)
               Expected files: model.pte, aoti_cuda_blob.ptd (CUDA only)
@@ -42,6 +45,11 @@ Arguments:
               Supported modes:
                 - vr-streaming: Voxtral Realtime streaming mode
                 - vr-offline: Voxtral Realtime offline mode
+                - solo-text: Muse Glimmer solo text mode
+                - dflash-image: Muse Glimmer DFlash vision mode
+
+Environment:
+  RUN_EXPORT  Set to 1 to export artifacts with export_model_artifact.sh before testing
 
 Examples:
   test_model_e2e.sh metal "openai/whisper-small" "non-quantized"
@@ -51,6 +59,7 @@ Examples:
   test_model_e2e.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./model_output"
   test_model_e2e.sh metal "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "." "vr-streaming"
   test_model_e2e.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./model_output" "vr-offline"
+  RUN_EXPORT=1 test_model_e2e.sh cuda "meta-models/Muse-Glimmer-30B-GGUF" "kquant-17gb" "./model_output" "solo-text"
 EOF
 }
 
@@ -80,6 +89,17 @@ QUANT_NAME="$3"
 MODEL_DIR="${4:-.}"
 MODE="${5:-}"
 
+# Locate EXECUTORCH_ROOT from the directory of this script.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RUN_EXPORT="${RUN_EXPORT:-0}"
+if [ "$RUN_EXPORT" = "1" ]; then
+  mkdir -p "$MODEL_DIR"
+fi
+if [ -d "$MODEL_DIR" ]; then
+  MODEL_DIR="$(cd "$MODEL_DIR" && pwd)"
+fi
+
 # Validate mode if specified
 if [ -n "$MODE" ]; then
   case "$MODE" in
@@ -91,15 +111,34 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
+    solo-text|dflash-image)
+      if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
+        echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image"
       exit 1
       ;;
   esac
 fi
 
 echo "Testing model: $HF_MODEL (quantization: $QUANT_NAME)"
+
+if [ "$HF_MODEL" = "meta-models/Muse-Glimmer-30B-GGUF" ] && [ "$DEVICE" != "cuda" ]; then
+  echo "Error: Muse Glimmer is only supported with the cuda device"
+  exit 1
+fi
+
+if [ "$RUN_EXPORT" = "1" ]; then
+  (
+    cd "$EXECUTORCH_ROOT"
+    bash "$SCRIPT_DIR/export_model_artifact.sh" "$DEVICE" "$HF_MODEL" "$QUANT_NAME" "$MODEL_DIR" "$MODE"
+  )
+fi
 
 # Make sure model.pte exists
 if [ ! -f "$MODEL_DIR/model.pte" ]; then
@@ -111,10 +150,6 @@ if [ "$DEVICE" = "cuda" ] && [ ! -f "$MODEL_DIR/aoti_cuda_blob.ptd" ]; then
   echo "Error: aoti_cuda_blob.ptd not found in $MODEL_DIR"
   exit 1
 fi
-# Locate EXECUTORCH_ROOT from the directory of this script
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
 pushd "$EXECUTORCH_ROOT"
 
 # Determine model configuration based on HF model ID
@@ -240,9 +275,35 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     ;;
+  meta-models/Muse-Glimmer-30B-GGUF)
+    MODEL_NAME="muse_glimmer"
+    RUNNER_PATH="muse-glimmer"
+    PREPROCESSOR=""
+    TOKENIZER_URL="https://huggingface.co/meta-models/Muse-Glimmer-30B/resolve/main" # @lint-ignore
+    TOKENIZER_FILE="tokenizer.json"
+    AUDIO_URL=""
+    AUDIO_FILE=""
+    IMAGE_PATH=""
+    case "$MODE" in
+      solo-text)
+        RUNNER_TARGET="solo_runner"
+        EXPECTED_OUTPUT="Paris"
+        IMAGE_URL=""
+        ;;
+      dflash-image)
+        RUNNER_TARGET="dflash_runner"
+        EXPECTED_OUTPUT="dog"
+        IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
+        ;;
+      *)
+        echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+        exit 1
+        ;;
+    esac
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF, meta-models/Muse-Glimmer-30B-GGUF"
     exit 1
     ;;
 esac
@@ -382,6 +443,18 @@ EOF
     ;;
   gemma4_31b)
     RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt 'What is the capital of France?' --max_new_tokens 128 --temperature 0 --cuda_graph"
+    ;;
+  muse_glimmer)
+    PROMPT_FILE="${MODEL_DIR}/muse_glimmer_prompt.txt"
+    if [ "$MODE" = "solo-text" ]; then
+      printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
+    else
+      printf '%s' '<|start|>user<|message|>What animal is in this image? <img><|eot|><|start|>assistant' > "$PROMPT_FILE"
+    fi
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512 --cuda_graph"
+    if [ "$MODE" = "dflash-image" ]; then
+      RUNNER_ARGS="$RUNNER_ARGS --image_path ${MODEL_DIR}/test_image.jpg"
+    fi
     ;;
   voxtral_realtime)
     RUNNER_ARGS="--model_path ${MODEL_DIR}/model.pte --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --preprocessor_path ${MODEL_DIR}/$PREPROCESSOR --audio_path ${MODEL_DIR}/$AUDIO_FILE --temperature 0"

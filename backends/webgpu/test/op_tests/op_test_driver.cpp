@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -61,7 +62,15 @@ class OpCase : public ::testing::Test {
       const size_t n = numel(in.shape);
       std::vector<executorch::aten::SizesType> sizes(
           in.shape.begin(), in.shape.end());
-      if (in.dtype == "int32") {
+      if (in.dtype == "bool") {
+        auto data = load_int8_bin(in.path, n);
+        ASSERT_FALSE(data.empty()) << "missing/short input: " << in.path;
+        std::vector<uint8_t> raw(data.begin(), data.end());
+        tensors.push_back(make_tensor_ptr(
+            std::move(sizes),
+            std::move(raw),
+            executorch::aten::ScalarType::Bool));
+      } else if (in.dtype == "int32") {
         auto data = load_int32_bin(in.path, n);
         ASSERT_FALSE(data.empty()) << "missing/short input: " << in.path;
         tensors.push_back(make_tensor_ptr(std::move(sizes), std::move(data)));
@@ -96,10 +105,11 @@ class OpCase : public ::testing::Test {
       auto golden = load_int8_bin(e_.golden.path, gn);
       ASSERT_FALSE(golden.empty())
           << "missing/short golden: " << e_.golden.path;
-      const bool* out_p = out_tensor.const_data_ptr<bool>();
+      ASSERT_EQ(out_tensor.scalar_type(), executorch::aten::ScalarType::Bool);
+      const uint8_t* out_p = out_tensor.const_data_ptr<uint8_t>();
       int mism = -1;
       for (size_t i = 0; i < gn; i++) {
-        if (static_cast<int8_t>(out_p[i]) != golden[i]) {
+        if (out_p[i] != static_cast<uint8_t>(golden[i])) {
           mism = static_cast<int>(i);
           break;
         }

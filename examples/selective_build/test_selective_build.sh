@@ -105,7 +105,7 @@ aten,aten::clone.out" \
             ${example_dir}
 
     echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --config Release
+    cmake --build ${build_dir} -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./mv2.pte"
@@ -129,7 +129,7 @@ test_cmake_select_ops_in_yaml() {
             ${example_dir}
 
     echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --config Release
+    cmake --build ${build_dir} -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 
     echo 'Running selective build test'
     ${build_dir}/selective_build_test --model_path="./custom_ops_1.pte"
@@ -158,7 +158,7 @@ test_cmake_select_ops_in_model() {
             ${example_dir}
 
     echo "Building ${example_dir}"
-    cmake --build ${build_dir} -j9 --config $CMAKE_BUILD_TYPE
+    cmake --build ${build_dir} -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config $CMAKE_BUILD_TYPE
 
     echo "Verifying auto-right-sized MAX_KERNEL_NUM header was generated"
     local generated_header

@@ -5,16 +5,16 @@
 
 import executorch.backends.nxp.tests.nsys_testing as nsys_testing
 import torch
+from executorch.backends.nxp.backend.ops_aliases import AvgPool2D, MulTensor
 
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.models import AvgPool2dModule, MulTensorModule
 from executorch.backends.nxp.tests.nsys_testing import (
     lower_run_compare,
     OUTPUTS_DIR,
     ReferenceModel,
 )
-from executorch.backends.nxp.tests.ops_aliases import AvgPool2D, MulTensor
+from executorch.backends.nxp.tests.simple_models import AvgPool2dModule, MulTensorModule
 
 
 def test__single_quantized_inputs(mocker, request):

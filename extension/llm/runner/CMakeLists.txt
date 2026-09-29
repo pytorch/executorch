@@ -68,10 +68,13 @@ target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
 )
 
-# If the project is configured to build with CUDA support, try to find a CUDA
-# runtime (prefer the CUDAToolkit package). If found, expose a compile-time
-# macro so sources can conditionally compile CUDA-aware code.
-if(EXECUTORCH_BUILD_CUDA)
+# Link the configured GPU runtime for CUDA-aware runner sources.
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+  target_compile_definitions(extension_llm_runner PUBLIC CUDA_AVAILABLE)
+  target_link_libraries(extension_llm_runner PUBLIC hip::host extension_cuda)
+  message(STATUS "HIP found; defining CUDA_AVAILABLE")
+elseif(EXECUTORCH_BUILD_CUDA)
   # Prefer the modern CMake CUDAToolkit module, fall back to searching for the
   # CUDA runtime library (cudart) if the package isn't available.
   find_package(CUDAToolkit QUIET)
@@ -123,6 +126,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
                         portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
+  executorch_target_link_shared_runtime(_llm_runner)
 
   set_target_properties(
     _llm_runner
@@ -140,6 +144,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
   set_target_properties(
     _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"
+  )
+  executorch_target_shared_runtime_path(
+    _llm_runner "extension/llm/runner" "executorch/extension/llm/runner"
   )
   # Add include directories
   target_include_directories(

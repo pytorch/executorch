@@ -89,6 +89,24 @@ class TestBatchNormFusion(unittest.TestCase):
                 .run_method_and_compare_outputs()
             )
 
+    def test_fp32_conv_batch_norm_fusion_top_level_sequential(self):
+        """
+        A top-level nn.Sequential yields digit-leading fused placeholder names,
+        which torch.fx renames. The pass must survive the rename.
+        """
+        model = torch.nn.Sequential(
+            torch.nn.Conv2d(2, 2, (2, 2)),
+            torch.nn.BatchNorm2d(2),
+        ).eval()
+        (
+            Tester(model, (torch.randn(2, 2, 4, 4),))
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+            .check_not([self.bn_name])
+            .run_method_and_compare_outputs()
+        )
+
     def test_q8_conv_batch_norm_fusion(self):
         for transpose in [False, True]:
             (

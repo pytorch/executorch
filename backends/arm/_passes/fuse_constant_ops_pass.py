@@ -219,8 +219,14 @@ class FuseConstantArgsPass(ArmPass):
             if len(input_node.users) == 0:
                 self._delete_constant_placeholder(input_node)
 
+    @staticmethod
+    def _log_summary(fused: int) -> None:
+        if fused:
+            logger.debug("FuseConstantArgsPass: fused %d constant operator(s).", fused)
+
     def call(self, graph_module):
         modified = False
+        fused = 0
         input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
@@ -254,11 +260,8 @@ class FuseConstantArgsPass(ArmPass):
             try:
                 did_fuse = self._fuse_nodes(node)
                 if did_fuse:
-                    logger.debug(
-                        f"Fused constant op: {node.name} with placeholder inputs:"
-                        f"{[input_node.name for input_node in input_nodes]}"
-                    )
                     modified |= did_fuse
+                    fused += 1
                     input_nodes_to_maybe_delete.update(input_nodes)
             except Exception as e:
                 logger.warning(
@@ -269,6 +272,8 @@ class FuseConstantArgsPass(ArmPass):
             graph_module.graph.eliminate_dead_code()
             self.maybe_delete(input_nodes_to_maybe_delete)
             graph_module = super().call(graph_module).graph_module
+
+        self._log_summary(fused)
 
         return PassResult(graph_module, modified)
 

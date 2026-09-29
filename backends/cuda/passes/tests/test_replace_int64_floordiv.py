@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from backends.cuda.cuda_backend import CudaBackend
 from backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
@@ -46,6 +47,14 @@ def _count_int_floordiv(graph_module) -> int:
 
 class TestReplaceInt64FloorDivWithFloatPass(unittest.TestCase):
     """Test the ReplaceInt64FloorDivWithFloatPass transformation pass."""
+
+    def test_cuda_backend_keeps_floor_div_workaround_registered(self):
+        """The rewrite must remain in the CUDA backend pass pipeline."""
+        passes = CudaBackend.get_custom_passes([])
+        self.assertIn(
+            "ReplaceInt64FloorDivWithFloatPass",
+            {type(pass_).__name__ for pass_ in passes},
+        )
 
     def _edge_gm(self, module, inputs):
         ep = to_edge(export(module, inputs, strict=True))

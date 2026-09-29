@@ -46,6 +46,8 @@ $if not TO_STAGING:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "in_layout", "CONTIG_LAYOUT_INT")}
 
 $if not TO_STAGING:
@@ -60,7 +62,7 @@ void main() {
   // the (VRAM-cached) texture reads -- even though each texel is now fetched up
   // to 4 times, once per component. On unified-memory (mobile) GPUs the extra
   // fetches are a net loss, so this variant is gated to discrete GPUs.
-  const int oi = int(gl_GlobalInvocationID.x);
+  const int oi = int(linear_idx_from_gid());
   const int W = inp.sizes.x;
   const int H = inp.sizes.y;
   const int C = inp.sizes.z;

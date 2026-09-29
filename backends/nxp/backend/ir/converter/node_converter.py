@@ -16,8 +16,8 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 )
 from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import (
-    input_quantization_type,
-    output_quantization_type,
+    input_quantization_parameters,
+    output_quantization_parameters,
 )
 from executorch.backends.nxp.backend.ir import logger as logger
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
@@ -119,8 +119,9 @@ class NodeConverter(ABC):
         """
         pass
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
@@ -390,7 +391,8 @@ class NodeConverter(ABC):
         :return: True, if the `node` is QDQ quantized and has quantization input types in `supported_types`.
         """
         return all(
-            input_quantization_type(node, input_index) in supported_types
+            (params := input_quantization_parameters(node, input_index)) is not None
+            and params[2] in supported_types
             for input_index in input_indices
         )
 
@@ -412,7 +414,8 @@ class NodeConverter(ABC):
         :return: True, if the `node` is QDQ quantized and has quantization output types in `supported_types`.
         """
         return all(
-            output_quantization_type(node, output_index) in supported_types
+            (q_params := output_quantization_parameters(node, output_index)) is not None
+            and q_params[2] in supported_types
             for output_index in output_indices
         )
 

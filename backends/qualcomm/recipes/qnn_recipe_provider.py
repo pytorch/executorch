@@ -21,6 +21,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
 )
+from executorch.backends.qualcomm.utils.qnn_sdk_setup import (
+    disable_mkldnn_on_amd,
+    setup_qnn_sdk,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
@@ -52,6 +56,12 @@ class QNNRecipeProvider(BackendRecipeProvider):
             return None
 
         self._validate_recipe_kwargs(recipe_type, kwargs)
+
+        # Done while the recipe is built, which is before the export pipeline traces anything. The
+        # installer can re-execute the interpreter on an old glibc, and doing that partway through
+        # would discard a model that has already been traced.
+        setup_qnn_sdk()
+        disable_mkldnn_on_amd()
 
         if recipe_type == QNNRecipeType.FP16:
             return self._build_fp16_recipe(recipe_type, kwargs)

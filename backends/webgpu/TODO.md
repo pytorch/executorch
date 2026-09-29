@@ -2,24 +2,26 @@
 
 ## Current State (Prototype)
 - Single op: `aten.add.Tensor` (fp32, buffer storage)
-- No Python AOT code — directly consumes Vulkan delegate (.pte exported via VulkanPartitioner)
+- Thin `WebGPUPartitioner` Python frontend wrapping `VulkanPartitioner`
 - Reuses Vulkan FlatBuffer format (VH00 header + VK00 payload)
 - Registers as `"VulkanBackend"` at runtime — mutually exclusive with Vulkan backend at link time
 - Built-in WGSL shaders (not embedded in .pte)
 
 ## Architecture
 ```
-VulkanPartitioner (Python) → VkGraphBuilder → VK00 FlatBuffer → .pte
+WebGPUPartitioner → VulkanPartitioner → VkGraphBuilder → VK00 FlatBuffer → .pte
     → WebGPU Runtime: registers as "VulkanBackend", parses VH00/VK00
     → WebGPUGraph::build → GPU buffers/pipelines/bind groups
     → WebGPUGraph::execute → encode + submit compute passes
 ```
 
-Adding a new op requires only C++ runtime work:
+The wrapper preserves Vulkan partitioning behavior and does not validate WebGPU
+runtime capabilities. WebGPU test and export integrations apply their supported-op
+policy separately. Adding a new op requires runtime work plus updating that policy:
 1. WGSL shader + header
 2. C++ op implementation (read args from VkGraph, create pipeline, record dispatch)
 3. Register in CMakeLists.txt
-4. Test with VulkanPartitioner export
+4. Add it to the WebGPU support policy and test with `WebGPUPartitioner` export
 
 ## Performance: Command Encoding Overhead
 WebGPU `GPUCommandBuffer` is single-use (no equivalent to Vulkan's cached command lists).

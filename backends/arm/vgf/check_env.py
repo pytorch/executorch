@@ -44,6 +44,7 @@ _REQUIRED_VKML_INSTANCE_LAYERS = {
 }
 
 _VGF_LIBRARY_NAMES = ("libvgf.a", "libvgf.so", "libvgf.dylib")
+_VGF_RECOMMENDED_PYTHON = (3, 12)
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,7 @@ def check_vgf_aot_environment() -> VgfEnvironmentReport:
     return VgfEnvironmentReport(
         mode="aot",
         checks=[
+            _check_python_version(),
             _check_tosa_serializer(),
             _check_model_converter(),
             _check_model_converter_lib_dir(),
@@ -267,6 +269,33 @@ def _existing_env_paths(names: Sequence[str]) -> list[Path]:
     for name in names:
         paths.extend(_split_env_paths(os.environ.get(name)))
     return [path for path in _dedupe_paths(paths) if _safe_is_dir(path)]
+
+
+def _check_python_version(
+    version_info: Sequence[int] | None = None,
+) -> VgfEnvironmentCheck:
+    """Warn when VGF AoT is running on an interpreter older than Python 3.12."""
+    current = tuple((version_info or sys.version_info)[:2])
+    current_text = ".".join(str(part) for part in current)
+    recommended_text = ".".join(str(part) for part in _VGF_RECOMMENDED_PYTHON)
+
+    if current >= _VGF_RECOMMENDED_PYTHON:
+        return VgfEnvironmentCheck(
+            "Python version",
+            STATUS_OK,
+            f"Python {current_text} meets the recommended VGF minimum "
+            f"({recommended_text}).",
+        )
+
+    return VgfEnvironmentCheck(
+        "Python version",
+        STATUS_WARN,
+        f"Python {current_text} detected. Python {recommended_text} is the "
+        "recommended minimum for the ML SDK 0.10 VGF flow.",
+        f"Prefer Python {recommended_text} or newer for VGF export and "
+        "host-emulation setup. Older ExecuTorch-supported Python versions may "
+        "work, but are not the reference VGF configuration.",
+    )
 
 
 def _check_tosa_serializer() -> VgfEnvironmentCheck:

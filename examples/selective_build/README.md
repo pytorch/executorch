@@ -18,7 +18,7 @@ python -m examples.portable.scripts.export --model_name="mv2" # Create a PTE fil
 cd examples/selective_build/basic
 mkdir cmake-out && cd cmake-out
 cmake .. -DEXECUTORCH_SELECT_OPS_MODEL="../../mv2.pte" # Build with kernels needed for mv2.pte
-cmake --build . -j8
+cmake --build . -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ./selective_build_test --model_path="../../mv2.pte" # Run the model with the selective kernel library
 ```
 
@@ -78,7 +78,7 @@ python -m examples.portable.custom_ops.custom_ops_1 # Create a model PTE file
 cd examples/selective_build/basic
 mkdir cmake-out && cd cmake-out
 cmake .. -DEXECUTORCH_SELECT_OPS_MODEL="../../custom_ops_1.pte" -DEXECUTORCH_EXAMPLE_USE_CUSTOM_OPS=ON # Build with kernels needed for the model
-cmake --build . -j8
+cmake --build . -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ./selective_build_test --model_path="../../custom_ops_1.pte" # Run the model with the selective kernel library
 ```
 

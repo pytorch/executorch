@@ -103,8 +103,8 @@ void add_binary_scalar_op_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      default_pick_global_wg_size,
-      default_pick_local_wg_size,
+      default_pick_gwg,
+      default_pick_lwg,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {arg, vkapi::kRead}},
       // Shader params buffers
@@ -127,9 +127,34 @@ void eq_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "eq");
 }
 
+void ne_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "ne");
+}
+
+void lt_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "lt");
+}
+
+void le_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "le");
+}
+
+void gt_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "gt");
+}
+
+void ge_tensor_scalar(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_binary_scalar_op_node(graph, args[0], args[1], args[2], "ge");
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.pow.Tensor_Scalar, pow_tensor_scalar);
   VK_REGISTER_OP(aten.eq.Scalar, eq_tensor_scalar);
+  VK_REGISTER_OP(aten.ne.Scalar, ne_tensor_scalar);
+  VK_REGISTER_OP(aten.lt.Scalar, lt_tensor_scalar);
+  VK_REGISTER_OP(aten.le.Scalar, le_tensor_scalar);
+  VK_REGISTER_OP(aten.gt.Scalar, gt_tensor_scalar);
+  VK_REGISTER_OP(aten.ge.Scalar, ge_tensor_scalar);
 }
 
 } // namespace vkcompute

@@ -381,11 +381,16 @@ class Tester:
         logger = logging.getLogger(__name__)
         os.makedirs(artifact_dir, exist_ok=True)
 
+        def _to_physical_layout(t: torch.Tensor) -> torch.Tensor:
+            # The .bin has to match the dim_order the .pte declares; contiguous()
+            # alone would re-lay a channels_last tensor back to NCHW.
+            return t.detach().permute(t.dim_order()).contiguous()
+
         for i, inp in enumerate(inputs):
             if isinstance(inp, torch.Tensor):
                 suffix = "" if len(inputs) == 1 else f"_{i}"
                 path = os.path.join(artifact_dir, f"{artifact_name}_input{suffix}.bin")
-                inp.detach().contiguous().numpy().tofile(path)
+                _to_physical_layout(inp).numpy().tofile(path)
                 logger.info(f"Saved golden input to {path}")
 
         if isinstance(reference_output, torch.Tensor):

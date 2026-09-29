@@ -46,6 +46,7 @@ import torchvision.models as models
 from torch.export import export, ExportedProgram
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.utils.configs import get_transform_passes
 from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 
@@ -56,6 +57,8 @@ sample_inputs = (torch.randn(1, 3, 224, 224), )
 exported_program: ExportedProgram = export(mobilenet_v2, sample_inputs)
 edge: EdgeProgramManager = to_edge(exported_program)
 
+# Optional in the generic API, but recommended for XNNPACK before partitioning.
+edge = edge.transform(get_transform_passes())
 edge = edge.to_backend(XnnpackPartitioner())
 ```
 

@@ -6,14 +6,25 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess  # nosec B404 - invoked only for trusted local converter tools
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
 from typing import Optional
 
+from packaging.version import InvalidVersion, Version
+
 MODEL_CONVERTER_BINARY = "model-converter"
 _MODEL_CONVERTER_FALLBACK_BINARY = "model_converter"
+MIN_MODEL_CONVERTER_VERSION = Version("0.10.0")
+# Keep the old name as an alias while tests/callers migrate.
+MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS = MIN_MODEL_CONVERTER_VERSION
+_MODEL_CONVERTER_VERSION_PATTERN = re.compile(r"\b\d+\.\d+\.\d+(?:[A-Za-z0-9_.+-]*)?\b")
+_MODEL_CONVERTER_BUILD_VERSION_ALIASES = {
+    "d8c1b8e": Version("0.9.0"),
+    "19d1d0f": Version("0.10.0"),
+}
 
 STATUS_OK = "PASS"
 STATUS_FAIL = "FAIL"
@@ -143,6 +154,67 @@ def _command_output(result: subprocess.CompletedProcess[str]) -> str:
     return "\n".join(lines[:4])
 
 
+def get_model_converter_version_text() -> str | None:
+    """Return the raw ``model-converter --version`` output, if available."""
+    binary = find_model_converter_binary()
+    if binary is None:
+        return None
+
+    executable = resolve_model_converter_executable(binary)
+    if executable is None:
+        return None
+
+    try:
+        result = subprocess.run(  # nosec B603 - trusted local converter tool
+            [str(executable), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=model_converter_env(),
+        )
+    except Exception:
+        return None
+
+    version_text = (result.stdout or result.stderr).strip()
+    return version_text or None
+
+
+def parse_model_converter_version(version_text: str) -> Version | None:
+    """Parse a comparable model-converter version from ``--version`` output."""
+    match = _MODEL_CONVERTER_VERSION_PATTERN.search(version_text)
+    if match is not None:
+        try:
+            return Version(match.group(0))
+        except InvalidVersion:
+            pass
+
+    for revision, version in _MODEL_CONVERTER_BUILD_VERSION_ALIASES.items():
+        if revision in version_text:
+            return version
+    return None
+
+
+def get_model_converter_minimum_version_failure_reason(
+    version_text: str,
+    minimum_version: Version,
+    *,
+    requirement_name: str,
+) -> str | None:
+    """Return a reason when the installed converter is unsupported.
+
+    The converter is unsupported when it is below ``minimum_version``.
+
+    """
+    version = parse_model_converter_version(version_text)
+    if version is None or version >= minimum_version:
+        return None
+    return (
+        f"{version_text} is below the minimum supported version "
+        f"{minimum_version} required for {requirement_name}"
+    )
+
+
 def check_model_converter_environment() -> ModelConverterEnvironmentCheck:
     """Check the model-converter dependency used by VGF compilation."""
     binary = find_model_converter_binary()
@@ -195,10 +267,36 @@ def check_model_converter_environment() -> ModelConverterEnvironmentCheck:
             "from the same MLSDK install.",
         )
 
+    version_text = _command_output(result)
+    version = parse_model_converter_version(version_text)
+    if version is None:
+        return ModelConverterEnvironmentCheck(
+            "MLSDK model converter",
+            STATUS_FAIL,
+            f"{executable} --version succeeded, but its version could not be "
+            f"parsed:\n{version_text}",
+            f"ExecuTorch VGF requires model-converter "
+            f">={MIN_MODEL_CONVERTER_VERSION}, but the installed converter "
+            "version could not be verified. Install the VGF dependencies from "
+            "this ExecuTorch checkout. If this is a known compatible custom "
+            "build, add its revision to _MODEL_CONVERTER_BUILD_VERSION_ALIASES.",
+        )
+
+    if version < MIN_MODEL_CONVERTER_VERSION:
+        return ModelConverterEnvironmentCheck(
+            "MLSDK model converter",
+            STATUS_FAIL,
+            f"Found model-converter {version}, but ExecuTorch VGF requires "
+            f">={MIN_MODEL_CONVERTER_VERSION} after the ML SDK 0.10 upgrade.",
+            "Install the VGF dependencies from this ExecuTorch checkout with "
+            "python -m pip install -r backends/arm/requirements-arm-vgf.txt, "
+            "or reinstall the matching executorch[vgf] extra.",
+        )
+
     return ModelConverterEnvironmentCheck(
         "MLSDK model converter",
         STATUS_OK,
-        f"{executable} --version succeeded:\n{_command_output(result)}",
+        f"{executable} --version succeeded (version={version}):\n{version_text}",
     )
 
 

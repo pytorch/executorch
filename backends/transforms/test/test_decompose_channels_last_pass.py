@@ -81,6 +81,13 @@ class _MaxPoolModule(torch.nn.Module):
         )
 
 
+class _MaxPoolValuesModule(torch.nn.Module):
+    def forward(self, x):
+        return torch.ops.channels_last.max_pool2d(
+            x, [2, 2], [2, 2], [0, 0], [1, 1], False
+        )
+
+
 class _PermuteModule(torch.nn.Module):
     def forward(self, x):
         return torch.ops.channels_last.permute_copy(x, [0, 3, 1, 2])
@@ -141,6 +148,13 @@ _CASES = [
         (torch.randn(2, 8, 8, 3), torch.rand(2, 6, 6, 2) * 2 - 1),
         exir_ops.edge.channels_last.grid_sampler_2d.default,
         exir_ops.edge.aten.grid_sampler_2d.default,
+        2,
+    ),
+    (
+        _MaxPoolValuesModule(),
+        (torch.randn(2, 8, 8, 3),),
+        exir_ops.edge.channels_last.max_pool2d.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
         2,
     ),
     (

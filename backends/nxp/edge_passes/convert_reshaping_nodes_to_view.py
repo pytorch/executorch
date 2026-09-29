@@ -6,8 +6,14 @@
 
 import torch
 
+from executorch.backends.nxp.backend.ops_aliases import (
+    SqueezeCopy,
+    SqueezeCopyDim,
+    SqueezeCopyDims,
+    UnsqueezeCopy,
+    ViewCopy,
+)
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor, FakeTensorMode
 from torch.fx import GraphModule, Node
 from torch.fx.passes.infra.pass_base import PassResult
@@ -43,25 +49,20 @@ class ConvertReshapingNodesToViewPass(NeutronEdgePass):
     @staticmethod
     def _is_squeeze(node_: Node) -> bool:
         return node_.op == "call_function" and (
-            node_.target == exir_ops.edge.aten.squeeze_copy.dim
-            or node_.target == exir_ops.edge.aten.squeeze_copy.dims
-            or node_.target == exir_ops.edge.aten.squeeze_copy.default
+            node_.target == SqueezeCopyDim
+            or node_.target == SqueezeCopyDims
+            or node_.target == SqueezeCopy
         )
 
     @staticmethod
     def _is_unsqueeze(node_: Node) -> bool:
-        return (
-            node_.op == "call_function"
-            and node_.target == exir_ops.edge.aten.unsqueeze_copy.default
-        )
+        return node_.op == "call_function" and node_.target == UnsqueezeCopy
 
     def _create_view_copy_node(self, *view_args) -> Node:
-        view_target = exir_ops.edge.aten.view_copy.default
+        view_target = ViewCopy
         view_node = self.graph_module.graph.call_function(view_target, view_args)
 
-        view_node.meta["source_fn_stack"] = [
-            (view_node.name, exir_ops.edge.aten.view_copy.default)
-        ]
+        view_node.meta["source_fn_stack"] = [(view_node.name, ViewCopy)]
 
         x_val = view_args[0].meta["val"]
         with FakeTensorMode() as mode:

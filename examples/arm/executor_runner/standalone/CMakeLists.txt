@@ -59,6 +59,8 @@ if(EXISTS "${_executorch_preset_cmake}")
 endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
+executorch_try_enabling_ccache()
+
 option(ARM_EXECUTOR_RUNNER_SKIP_INSTALL_RULES
        "Skip install() rules for standalone arm_executor_runner builds" ON
 )
@@ -86,12 +88,11 @@ set(EXECUTORCH_SKIP_ARM_EXECUTOR_RUNNER
     CACHE BOOL "" FORCE
 )
 
-# examples/arm/executor_runner/CMakeLists.txt generates the runner-specific
-# portable-op registration based on the PTE or an explicit select-ops list.
-# Avoid feeding those cache entries into the top-level ExecuTorch configure,
-# otherwise executorch_core auto-right-sizes MAX_KERNEL_NUM from the runner's
-# placeholder/selective build inputs even though the runner also links
-# quantized/cortex-m registration libraries.
+# examples/arm/executor_runner/CMakeLists.txt generates runner-specific
+# registration libraries based on the PTE or an explicit select-ops list. Avoid
+# feeding those cache entries into the top-level ExecuTorch configure, otherwise
+# executorch_core auto-right-sizes MAX_KERNEL_NUM from the runner's
+# placeholder/selective build inputs.
 set(_arm_runner_selective_cache_vars
     EXECUTORCH_SELECT_OPS_LIST EXECUTORCH_SELECT_OPS_MODEL
     EXECUTORCH_SELECT_OPS_YAML

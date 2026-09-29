@@ -17,6 +17,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_sampled import (  # type: ignore[import-not-found]
+    KvRunnerSession,
     prepare_input,
     RunnerSession,
 )
@@ -122,6 +123,13 @@ def reshape_full_logits(*, logits: np.ndarray, window: int) -> np.ndarray:
     return logits.reshape(window, vocab_size)
 
 
+def token_nll(logits: np.ndarray, target_id: int) -> float:
+    max_logit = float(np.max(logits))
+    shifted = logits - max_logit
+    log_denom = max_logit + math.log(float(np.exp(shifted).sum()))
+    return log_denom - float(logits[target_id])
+
+
 def eval_prompt_nll(
     *,
     runner: RunnerSession,
@@ -168,6 +176,30 @@ def eval_prompt_nll(
     return total_nll, valid_len
 
 
+def eval_prompt_nll_kv(
+    *,
+    runner: KvRunnerSession,
+    tokenizer,
+    prompt: str,
+    max_tokens_per_prompt: int,
+) -> Tuple[float, int]:
+    token_ids = tokenizer.encode(prompt, bos=True, eos=False)
+    if max_tokens_per_prompt > 0:
+        token_ids = token_ids[:max_tokens_per_prompt]
+
+    if len(token_ids) < 2:
+        return 0.0, 0
+
+    total_nll = 0.0
+    for pos, token_id in enumerate(token_ids[:-1]):
+        logits = runner.run(token_id, pos)
+        target_id = token_ids[pos + 1]
+        if target_id >= logits.shape[0]:
+            raise RuntimeError(f"Target id {target_id} outside vocab {logits.shape[0]}")
+        total_nll += token_nll(logits, target_id)
+    return total_nll, len(token_ids) - 1
+
+
 def eval_model_ppl(
     *,
     runner: Path,
@@ -177,28 +209,55 @@ def eval_model_ppl(
     window: int,
     pad_id: int,
     max_tokens_per_prompt: int,
+    use_kv_cache: bool,
 ) -> float:
     total_nll = 0.0
     total_tokens = 0
 
-    with RunnerSession(
-        runner=str(runner),
-        pte=str(pte),
-        extra_args=[],
-        persistent=True,
-    ) as session:
-        for idx, prompt in enumerate(prompts, start=1):
-            print(f"[eval] {pte.name} prompt {idx}/{len(prompts)}")
-            prompt_nll, prompt_tokens = eval_prompt_nll(
-                runner=session,
-                tokenizer=tokenizer,
-                prompt=prompt,
-                window=window,
-                pad_id=pad_id,
-                max_tokens_per_prompt=max_tokens_per_prompt,
-            )
-            total_nll += prompt_nll
-            total_tokens += prompt_tokens
+    if use_kv_cache:
+        with KvRunnerSession(
+            runner=str(runner),
+            pte=str(pte),
+            extra_args=[],
+            persistent=True,
+        ) as session:
+            for idx, prompt in enumerate(prompts, start=1):
+                print(f"[eval-kv] {pte.name} prompt {idx}/{len(prompts)}")
+                prompt_nll, prompt_tokens = eval_prompt_nll_kv(
+                    runner=session,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                )
+                total_nll += prompt_nll
+                total_tokens += prompt_tokens
+                if total_tokens > 0:
+                    cumulative_ppl = f"{math.exp(total_nll / total_tokens):.4f}"
+                else:
+                    cumulative_ppl = "n/a"
+                print(
+                    f"[eval-kv] {pte.name} prompt {idx}: "
+                    f"tokens={prompt_tokens} cumulative_ppl={cumulative_ppl}"
+                )
+    else:
+        with RunnerSession(
+            runner=str(runner),
+            pte=str(pte),
+            extra_args=[],
+            persistent=True,
+        ) as session:
+            for idx, prompt in enumerate(prompts, start=1):
+                print(f"[eval] {pte.name} prompt {idx}/{len(prompts)}")
+                prompt_nll, prompt_tokens = eval_prompt_nll(
+                    runner=session,
+                    tokenizer=tokenizer,
+                    prompt=prompt,
+                    window=window,
+                    pad_id=pad_id,
+                    max_tokens_per_prompt=max_tokens_per_prompt,
+                )
+                total_nll += prompt_nll
+                total_tokens += prompt_tokens
 
     if total_tokens == 0:
         raise RuntimeError("No prompt tokens were scored.")
@@ -266,6 +325,11 @@ def main() -> None:
         help="Fixed token sequence length expected by the exported model.",
     )
     parser.add_argument(
+        "--use-kv-cache",
+        action="store_true",
+        help="Evaluate KV-cache exports that take token and input_pos inputs.",
+    )
+    parser.add_argument(
         "--refresh-prompts",
         action="store_true",
         help="Rebuild prompts even if --prompts-file already exists.",
@@ -306,6 +370,7 @@ def main() -> None:
             window=args.window,
             pad_id=pad_id,
             max_tokens_per_prompt=args.max_tokens_per_prompt,
+            use_kv_cache=args.use_kv_cache,
         )
 
     print("\n=== Perplexity summary ===")
