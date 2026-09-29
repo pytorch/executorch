@@ -43,7 +43,11 @@ To enable selective build when building the executorch kernel libraries as part 
  * `EXECUTORCH_SELECT_OPS_MODEL`: A path to a PTE file. Only operators used in this model will be included.
  * `EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD`: If enabled, operators will be further specialized to only operator on the data types specified in the operator selection.
 
-Note that `EXECUTORCH_SELECT_OPS_YAML`, `EXECUTORCH_SELECT_OPS_LIST`, and `EXECUTORCH_SELECT_OPS_MODEL` are mutually exclusive. Only one operator specifier directive is allowed.
+`EXECUTORCH_SELECT_OPS_YAML`, `EXECUTORCH_SELECT_OPS_LIST`, and
+`EXECUTORCH_SELECT_OPS_MODEL` can be used individually or together. When more
+than one is provided, ExecuTorch merges their operator sets. Dtype-selective
+build still requires model metadata, so enable it with
+`EXECUTORCH_SELECT_OPS_MODEL`.
 
 As an example, to build with only operators used in mv2_xnnpack_fp32.pte, the CMake build can be configured as follows.
 ```
@@ -65,7 +69,10 @@ gen_selected_ops(
 )
 ```
 
-The macro makes a call to gen_oplist.py, which requires a [distinct selection](https://github.com/pytorch/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228) of API choice. `OPS_SCHEMA_YAML`, `ROOT_OPS`, `INCLUDE_ALL_OPS`, and `OPS_FROM_MODEL` are mutually exclusive options, and should not be used in conjunction.
+The macro calls `gen_oplist.py`. `OPS_SCHEMA_YAML`, `ROOT_OPS`, and
+`OPS_FROM_MODEL` contribute to the merged operator set and can be combined.
+`INCLUDE_ALL_OPS` requests all operators. `DTYPE_SELECTIVE_BUILD` requires
+`OPS_FROM_MODEL` because the model supplies the dtype metadata.
 
 ### Select all ops
 
@@ -79,7 +86,9 @@ Context: each kernel library is designed to have a yaml file associated with it.
 
 ### Select root ops from operator list
 
-This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.
+This API lets users pass in a list of operator names. It can be combined with
+the YAML and model APIs; the selected operator set is the union of their
+inputs.
 
 ### Select ops from model
 
@@ -122,23 +131,28 @@ kernel.
 
 ### Dtype Selective Build
 
-Beyond pruning the binary to remove unused operators, the binary size can further reduced by removing unused dtypes. For example, if your model only uses floats for the `add` operator, then including variants of the `add` operators for `doubles` and `ints` is unnecessary. The flag `DTYPE_SELECTIVE_BUILD` can be set to `ON` to support this additional optimization. Currently, dtype selective build is only supported with the model API described above. Once enabled, a header file that specifies only the operators and dtypes used by the model is created and linked against a rebuild of the `portable_kernels` lib. This feature is only supported for the portable kernels library; it's not supported for optimized, quantized or custom kernel libraries.
+Beyond pruning the binary to remove unused operators, the binary size can be
+reduced further by removing unused dtypes. For example, if your model only uses
+floats for the `add` operator, then including variants of the `add` operators
+for `doubles` and `ints` is unnecessary. Set
+`EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD=ON` to enable this optimization. It
+requires `EXECUTORCH_SELECT_OPS_MODEL`, which provides the operator and dtype
+metadata. A header containing the model's selected operator variants is
+generated and linked into a rebuild of `portable_kernels`. This feature is
+only supported for the portable kernels library; it is not supported for
+optimized, quantized, or custom kernel libraries.
 
 ## Example Walkthrough
 
-In [examples/selective_build/CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt), we have the following cmake config options:
+The [advanced selective-build example](https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt)
+passes its configured selectors to `gen_selected_ops`. For example, the
+top-level CMake build can combine a model with an additional operator list:
 
-1. `EXECUTORCH_SELECT_OPS_YAML`
-2. `EXECUTORCH_SELECT_OPS_LIST`
-3. `EXECUTORCH_SELECT_ALL_OPS`
-4. `EXECUTORCH_SELECT_OPS_FROM_MODEL`
-5. `EXECUTORCH_DTYPE_SELECTIVE_BUILD`
+```bash
+cmake -S . -B cmake-out \
+  -DEXECUTORCH_SELECT_OPS_MODEL=model.pte \
+  -DEXECUTORCH_SELECT_OPS_LIST=aten::relu.out
+```
 
-These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the `gen_selected_ops` [function](https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt). The following table describes some examples of how the invocation changes when these configs are set:
-
-| Example cmake Call | Resultant `gen_selected_ops` Invocation |
-| :----: | :---:|
-|<code><br>  cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" <br></code> | <code><br>  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "" "") <br></code> |
-|<code><br> cmake -D… -DSELECT_OPS_YAML=ON <br></code> | <code><br>  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml) <br> gen_selected_ops("${_custom_ops_yaml}" "" "") <br></code> |
-|<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" <br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "") <br></code> |
-|<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" -DEXECUTORCH_DTYPE_SELECTIVE_BUILD=ON<br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "ON") <br></code> |
+To specialize portable kernels to the model's dtypes, add
+`-DEXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD=ON`.
