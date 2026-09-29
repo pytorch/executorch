@@ -30,6 +30,7 @@ EngineContext::EngineContext(
   if (program_ == nullptr || package_ == nullptr) {
     throw std::invalid_argument("engine context requires program and package");
   }
+  validate_program_state(*program_);
 }
 
 EngineContext::~EngineContext() = default;
