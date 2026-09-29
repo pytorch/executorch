@@ -6,6 +6,7 @@
 
 import json
 import unittest
+import unittest.mock
 
 import torch
 
@@ -165,6 +166,33 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
         )
 
         self._assert_matches(out, oracle, q, k, v, position)
+
+    def test_bound_carries_the_step_width_from_the_shape(self) -> None:
+        # AOTI autotunes sdpa on generated inputs whose integer data is zero.
+        # The bound must still reflect a full step then, or sdpa is tuned for a
+        # one-token context and long prefill runs on a slower tile.
+        k_storage, v_storage = _storage(64)
+        q, k, v, _ = _inputs(0, 16)
+        seen = []
+        real_sdpa = torch.ops.triton.sdpa
+
+        def spy(*args):
+            seen.append(int(args[-1]))
+            return real_sdpa(*args)
+
+        with unittest.mock.patch.object(torch.ops.triton, "sdpa", spy):
+            offgraph_step(
+                q,
+                k,
+                v,
+                torch.zeros(16, dtype=torch.long, device=q.device),
+                k_storage,
+                v_storage,
+                SCALE,
+                64,
+            )
+
+        self.assertEqual(seen, [16])
 
     def test_flat_runs_over_an_allocation_smaller_than_declared(self) -> None:
         # The runtime binds the full declared shape over a buffer that only
