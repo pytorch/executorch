@@ -169,7 +169,7 @@ gen_selected_ops("" "${SELECT_OPS_LIST}" "")
 # Look for functions.yaml associated with portable libs and generate C++ bindings
 generate_bindings_for_kernels(FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml)
 
-# Prepare a C++ library called "generated_lib" with _kernel_lib being the portable library, executorch is a dependency of it.
+# Prepare a C++ library called "generated_lib" with _kernel_lib being the portable library, prim_ops_lib is a dependency of it.
 gen_operators_lib("generated_lib" KERNEL_LIBS ${_kernel_lib} DEPS prim_ops_lib)
 
 # Link "generated_lib" into the application:

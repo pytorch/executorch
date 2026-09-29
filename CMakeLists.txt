@@ -701,16 +701,25 @@ if(EXECUTORCH_BUILD_PYBIND AND APPLE)
 endif()
 
 #
-# executorch: Primary runtime library with primitive operators.
+# prim_ops_lib: Primary runtime library with primitive operators.
 #
-# Provides the Program and Method interfaces, along with primitive operators.
-# Does not contain portable kernels or other full operators. Does not contain
-# any backends.
+# Provides primitive operators. Does not contain portable kernels or other full
+# operators. Does not contain any backends. Pulls executorch_core transitively.
 #
-add_library(prim_ops_lib ${_executorch__srcs})
+add_library(prim_ops_lib ${_prim_ops_lib__srcs})
+# We keep the output name as "executorch" so that the compiled archive is still
+# libexecutorch.a, ensuring scripts and iOS Xcode projects do not break.
+set_target_properties(prim_ops_lib PROPERTIES OUTPUT_NAME "executorch")
+
+# DEPRECATED: executorch alias is kept purely for backwards compatibility.
+# External consumers linking to `executorch` will transparently link `prim_ops_lib`.
+add_library(executorch INTERFACE)
+target_link_libraries(executorch INTERFACE prim_ops_lib)
 target_link_libraries(prim_ops_lib PRIVATE executorch_core)
 target_include_directories(prim_ops_lib PUBLIC ${_common_include_directories})
-target_compile_definitions(prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
+target_compile_definitions(
+  prim_ops_lib PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+)
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   target_compile_definitions(prim_ops_lib PUBLIC ET_LOG_ENABLED=0)
 endif()
@@ -805,7 +814,7 @@ install(
   PATTERN "*.h"
 )
 install(
-  TARGETS prim_ops_lib executorch_core
+  TARGETS prim_ops_lib executorch executorch_core
   EXPORT ExecuTorchTargets
   INCLUDES
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}

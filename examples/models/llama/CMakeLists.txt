@@ -84,6 +84,7 @@ find_package(gflags REQUIRED)
 # cross-compiling (e.g., to Android) to work as well.
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 # llama_runner library
 add_subdirectory(runner)
