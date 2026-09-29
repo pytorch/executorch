@@ -955,6 +955,12 @@ void cpu_flash_attention(
   int64_t qSplitSize = q_split_size > qSize ? qSize : q_split_size;
   int64_t kvSplitSize = kv_split_size > kvSize ? kvSize : kv_split_size;
   int64_t qSlice = (qSize - 1) / qSplitSize + 1;
+  const auto can_use_kleidiai_bfloat16_prefill = [&](int64_t q_block_size) {
+    return seq_dim == SeqDim::TWO && qSize > 1 &&
+        std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+        ::executorch::cpublas::gemm_uses_kleidiai_bfloat16(
+               ::executorch::cpublas::TransposeType::NoTranspose, q_block_size);
+  };
 #ifdef ET_USE_THREADPOOL
   int64_t num_thread =
       ::executorch::extension::threadpool::get_threadpool()->get_thread_count();
@@ -1005,11 +1011,15 @@ void cpu_flash_attention(
   // Scratch for widening q@K.T to fp32 (see _q_at_k_gemm): one K block plus one
   // q block. qBlockSize cannot exceed qSplitSize, so include the runtime bounds
   // that determine whether any block can use the widened path.
+  const auto can_widen_qk = [&](int64_t q_block_size) {
+    return !can_use_kleidiai_bfloat16_prefill(q_block_size) &&
+        std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+        ::executorch::cpublas::gemm_uses_blas() &&
+        headSize <= kMaxHeadSizeForWidenedQK &&
+        q_block_size >= kMinQBlockForWidenedQK;
+  };
   const bool widen_reduced_qk =
-      std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
-      ::executorch::cpublas::gemm_uses_blas() &&
-      headSize <= kMaxHeadSizeForWidenedQK &&
-      qSplitSize >= kMinQBlockForWidenedQK;
+      can_widen_qk(qSplitSize) || can_widen_qk(qSize % qSplitSize);
 #if defined(__APPLE__)
   const bool dequantize_qk = is_quantized_sdpa &&
       ::executorch::cpublas::gemm_uses_blas() && qSplitSize > 4;
@@ -1082,6 +1092,9 @@ void cpu_flash_attention(
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
       int64_t qBlockSize = std::min(qSplitSize, qSize - m);
+      const bool use_kleidiai_bfloat16_prefill =
+          can_use_kleidiai_bfloat16_prefill(qBlockSize);
+      const bool widen_qk_block = can_widen_qk(qBlockSize);
       // Initialize max and sum
       fill_stub(
           qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
@@ -1181,10 +1194,8 @@ void cpu_flash_attention(
             k_sub_matrix_data,
             kStrideN,
             qk_data,
-            ((widen_reduced_qk && qBlockSize >= kMinQBlockForWidenedQK) ||
-             (dequantize_qk && qBlockSize > 4))
-                ? widen_ptr
-                : nullptr);
+            (widen_qk_block || (dequantize_qk && qBlockSize > 4)) ? widen_ptr
+                                                                  : nullptr);
 
         // Update coefficients with scaling, attention mask, and softmax.
         accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
@@ -1298,7 +1309,8 @@ void cpu_flash_attention(
         // them in accum_t, widen V and let BLAS multiply -- also one rounding
         // step fewer. Below it the widening stops amortizing.
         constexpr int64_t kMinQBlockForWidenedAV = 64;
-        const bool widen_v = is_reduced_type && !is_quantized_sdpa &&
+        const bool widen_v = !use_kleidiai_bfloat16_prefill &&
+            is_reduced_type && !is_quantized_sdpa &&
             std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
             qBlockSize >= kMinQBlockForWidenedAV;
         const bool use_fp32_qk_weights = is_reduced_type &&

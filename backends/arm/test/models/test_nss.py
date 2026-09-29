@@ -3,25 +3,36 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
-from pathlib import Path
 from typing import Tuple
 
 import pytest
 import torch
+from executorch.backends.arm.quantizer import (
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.scripts.neural_graphics_test_data import (
-    iter_calibration_samples,
-    load_verification_inputs,
-    nss_test_calibration_path,
+    _NSS_INPUT_CHANNELS,
+    iter_nss_test_calibration_samples,
+    load_nss_verification_inputs,
 )
 
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.models.model_test_utils import (
+    PTQ_AND_QAT_DATA,
+    REAL_AND_RANDOM_DATA,
+    skip_if_frozen_release,
+)
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
+)
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
 )
 
 from huggingface_hub import hf_hub_download
@@ -30,21 +41,17 @@ from ng_model_gym.usecases.nss.model.model_blocks_v1 import (  # type: ignore[im
     AutoEncoderV1,
 )
 from torch.export import Dim
+from torchao.quantization.pt2e import (
+    allow_exported_model_train_eval,
+    FixedQParamsFakeQuantize,
+    FixedQParamsObserver,
+    move_exported_model_to_eval,
+)
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
 
 input_t = Tuple[torch.Tensor]  # Input x
 
-_RELEASE_REFS = (
-    os.environ.get("GITHUB_REF", ""),
-    os.environ.get("GITHUB_REF_NAME", ""),
-    os.environ.get("GITHUB_BASE_REF", ""),
-)
-_IS_FROZEN_RELEASE = any(
-    ref.removeprefix("refs/heads/").startswith("release/") for ref in _RELEASE_REFS
-)
-pytestmark = pytest.mark.skipif(
-    _IS_FROZEN_RELEASE,
-    reason="NSS tests depend on resources fetched from main.",
-)
+pytestmark = skip_if_frozen_release("NSS")
 
 _NSS_HEIGHT = 8 * Dim("_nss_height", min=16, max=68)
 _NSS_WIDTH = 8 * Dim("_nss_width", min=16, max=120)
@@ -79,37 +86,79 @@ def nss() -> AutoEncoderV1:
     return nss_model.auto_encoder
 
 
+def prequantized_nss(inputs: input_t) -> torch.fx.GraphModule:
+    weights = hf_hub_download(  # nosec B615
+        repo_id="Arm/neural-super-sampling",
+        filename="nss_v1_0_1_high_int8.pt",
+        revision="main",
+    )
+    checkpoint = torch.load(
+        weights, map_location=torch.device("cpu"), weights_only=True
+    )["model_state_dict"]
+    prefix = "autoencoder."
+    assert all(key.startswith(prefix) for key in checkpoint)
+    state_dict = {key.removeprefix(prefix): value for key, value in checkpoint.items()}
+
+    exported = torch.export.export(nss().eval(), inputs, strict=True).module()
+    quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
+    quantizer.set_global(
+        get_symmetric_quantization_config(is_per_channel=True, is_qat=True)
+    )
+    prepared = prepare_qat_pt2e(exported, quantizer)
+
+    fixed_observers = {
+        key.removesuffix(".activation_post_process.scale")
+        for key in state_dict
+        if key.endswith(".activation_post_process.scale")
+    }
+    for name in fixed_observers:
+        scale = state_dict[f"{name}.activation_post_process.scale"].item()
+        zero_point = state_dict[f"{name}.activation_post_process.zero_point"].item()
+        observer = FixedQParamsObserver.with_args(
+            scale=scale,
+            zero_point=zero_point,
+            dtype=torch.int8,
+            qscheme=torch.per_tensor_affine,
+            quant_min=-127,
+            quant_max=127,
+        )
+        prepared.set_submodule(name, FixedQParamsFakeQuantize(observer=observer))
+
+    parameter_keys = list(dict(prepared.named_parameters()))
+    lifted_parameter_keys = [
+        key for key in state_dict if key.startswith("_param_constant")
+    ]
+    assert len(parameter_keys) == len(lifted_parameter_keys)
+    for lifted_key, parameter_key in zip(
+        lifted_parameter_keys, parameter_keys, strict=True
+    ):
+        state_dict[parameter_key] = state_dict.pop(lifted_key)
+
+    prepared.load_state_dict(state_dict, strict=True)
+    move_exported_model_to_eval(prepared)
+    converted = convert_pt2e(prepared)
+    DuplicateDynamicQuantChainPass()(converted)
+    allow_exported_model_train_eval(converted)
+    return converted
+
+
 def example_inputs():
-    return load_verification_inputs()
+    return load_nss_verification_inputs()
 
 
 def random_inputs():
-    return (torch.rand((1, 12, 544, 960)),)
+    return (torch.rand((1, _NSS_INPUT_CHANNELS, 544, 960)),)
 
 
-input_test_data = {
-    "real_data": True,
-    "random_data": False,
-}
-
-
-def _nss_calibration_path() -> Path:
-    path = nss_test_calibration_path()
-    if not path.exists():
-        raise RuntimeError(
-            "NSS calibration data is prepared by "
-            "backends/arm/scripts/install_models_for_test.sh."
-        )
-    return path
+input_test_data = REAL_AND_RANDOM_DATA
+is_qat_test_data = PTQ_AND_QAT_DATA
 
 
 def _set_nss_calibration_samples(pipeline):
-    quantize_stage = pipeline._stages[pipeline.find_pos("quantize")].args[0]
-    quantize_stage.dynamic_shapes = _NSS_QUANTIZATION_DYNAMIC_SHAPES
-    quantize_stage.calibration_samples = iter_calibration_samples(
-        _nss_calibration_path(), num_samples=3663
+    return pipeline.set_quantization_calibration(
+        iter_nss_test_calibration_samples(),
+        dynamic_shapes=_NSS_QUANTIZATION_DYNAMIC_SHAPES,
     )
-    return pipeline
 
 
 @common.parametrize("use_real_data", input_test_data)
@@ -126,21 +175,53 @@ def test_nss_tosa_FP(use_real_data):
     pipeline.run()
 
 
+@common.parametrize("is_qat", is_qat_test_data)
 @common.parametrize("use_real_data", input_test_data)
-def test_nss_tosa_INT(use_real_data):
-    pipeline_kwargs = (
-        {"frobenius_threshold": 0.32, "qtol": 12} if use_real_data else {"qtol": 7}
-    )
+def test_nss_tosa_INT(use_real_data, is_qat):
+    if is_qat:
+        pipeline_kwargs = {
+            # Frobenius norm & cosine theshold check disabled for QAT as smoke test has innacurate results and only checks flow functionality.
+            "frobenius_threshold": None,
+            "cosine_threshold": None,
+            "qtol": 12 if use_real_data else 8,
+        }
+    else:
+        pipeline_kwargs = (
+            {"frobenius_threshold": 0.32, "qtol": 12} if use_real_data else {"qtol": 7}
+        )
     pipeline = TosaPipelineINT[input_t](
         nss().eval(),
         example_inputs() if use_real_data else random_inputs(),
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        is_qat=is_qat,
         **pipeline_kwargs,
     )
     if use_real_data:
         _set_nss_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_prequantized_tosa_INT(use_real_data):
+    inputs = example_inputs() if use_real_data else random_inputs()
+    pipeline = TosaPipelineINT[input_t](
+        prequantized_nss(inputs),
+        inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        qtol=12 if use_real_data else 8,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check,
+        ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+        suffix="prequant_nodes",
+    )
     pipeline.run()
 
 
@@ -194,8 +275,9 @@ def test_nss_vgf_FP(use_real_data):
 
 
 @common.SkipIfNoModelConverter
+@common.parametrize("is_qat", is_qat_test_data)
 @common.parametrize("use_real_data", input_test_data)
-def test_nss_vgf_INT(use_real_data):
+def test_nss_vgf_INT(use_real_data, is_qat):
     pipeline = VgfPipeline[input_t](
         nss().eval(),
         example_inputs() if use_real_data else random_inputs(),
@@ -205,45 +287,37 @@ def test_nss_vgf_INT(use_real_data):
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
         quantize=True,
+        is_qat=is_qat,
         # Override tosa version to test INT-only path
         tosa_version="TOSA-1.0+INT",
-        qtol=12 if use_real_data else 7,
+        qtol=12 if use_real_data else (8 if is_qat else 7),
     )
     if use_real_data:
         _set_nss_calibration_samples(pipeline)
     pipeline.run()
 
 
-def test_nss_qat_tosa_INT() -> None:
-    pipeline = TosaPipelineINT[input_t](
-        nss().eval(),
-        example_inputs(),
-        aten_op=[],
-        exir_op=[],
-        use_to_edge_transform_and_lower=True,
-        is_qat=True,
-        frobenius_threshold=None,
-        cosine_threshold=None,
-        qtol=12,
-    )
-    _set_nss_calibration_samples(pipeline)
-    pipeline.run()
-
-
 @common.SkipIfNoModelConverter
-def test_nss_qat_vgf_INT() -> None:
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_prequantized_vgf_INT(use_real_data):
+    inputs = example_inputs() if use_real_data else random_inputs()
     pipeline = VgfPipeline[input_t](
-        nss().eval(),
-        example_inputs(),
+        prequantized_nss(inputs),
+        inputs,
         aten_op=[],
         exir_op=[],
-        symmetric_io_quantization=True,
         use_to_edge_transform_and_lower=True,
         run_on_vulkan_runtime=True,
         quantize=True,
-        is_qat=True,
         tosa_version="TOSA-1.0+INT",
-        qtol=12,
+        qtol=12 if use_real_data else 8,
     )
-    _set_nss_calibration_samples(pipeline)
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check,
+        ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+        suffix="prequant_nodes",
+    )
     pipeline.run()

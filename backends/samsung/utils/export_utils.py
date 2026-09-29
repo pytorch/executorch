@@ -33,6 +33,7 @@ def get_edge_compile_config():
             exir_ops.edge.aten.hardswish.default,
             exir_ops.edge.aten.prelu.default,
             exir_ops.edge.aten.pixel_shuffle.default,
+            exir_ops.edge.aten.pixel_unshuffle.default,
             exir_ops.edge.aten._safe_softmax.default,
             exir_ops.edge.aten.layer_norm.default,
             exir_ops.edge.aten.matmul.default,

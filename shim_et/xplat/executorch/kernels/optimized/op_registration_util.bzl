@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under both the MIT license found in the
 # LICENSE-MIT file in the root directory of this source tree and the Apache
@@ -171,6 +172,15 @@ OPTIMIZED_ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
+    op_target(
+        name = "op_upsample_nearest2d",
+        deps = [
+            ":upsample_nearest2d_neon_impl",
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:op_upsample_nearest2d",
+            "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
     ),
     op_target(

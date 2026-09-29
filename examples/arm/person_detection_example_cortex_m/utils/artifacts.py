@@ -5,6 +5,7 @@
 
 """Canonical paths and reporting for generated µYOLO artifacts."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import torch
@@ -18,6 +19,8 @@ TRAINED_UNPRUNED_PATH = ARTIFACTS_DIR / "trained_unpruned.pt"
 TRAINED_FULLY_PRUNED_PATH = ARTIFACTS_DIR / "trained_fully_pruned.pt"
 TRAINING_RESUME_PATH = ARTIFACTS_DIR / "training.resume.pt"
 PRUNED_PATH = ARTIFACTS_DIR / "pruned.pt"
+PTE_PATH = ARTIFACTS_DIR / "person_detection.pte"
+EAGER_PATH = ARTIFACTS_DIR / "person_detection.eager"
 RESULTS_DIR = ARTIFACTS_DIR / "results"
 
 
@@ -38,7 +41,12 @@ def report_output(path: Path) -> None:
 
 def save_checkpoint(checkpoint: dict, path: Path) -> None:
     """Atomically save a checkpoint to disk."""
+    save_artifact(path, lambda temporary_path: torch.save(checkpoint, temporary_path))
+
+
+def save_artifact(path: Path, writer: Callable[[Path], None]) -> None:
+    """Atomically write an exported artifact to disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_suffix(".tmp")
-    torch.save(checkpoint, temporary_path)
+    writer(temporary_path)
     temporary_path.replace(path)

@@ -31,6 +31,16 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
+)
+
+from executorch.backends.arm._passes.size_adjust_input_pass import (
+    get_slices_convolution,
+    get_slices_pooling,
+    has_dynamic_conv_padding,
+    has_dynamic_pooling_padding,
+)
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.control_flow_support import (
@@ -53,6 +63,7 @@ from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists im
     TOSA_PRO_MIXED_INT_SupportList,
 )
 from executorch.backends.arm.tosa.specification import (
+    get_context_shape_env,
     TosaSpecification,
     TosaSpecMapping,
 )
@@ -867,6 +878,46 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
             return (dims % input_rank,)
         return tuple(dim % input_rank for dim in typing.cast(Sequence[int], dims))
 
+    @staticmethod
+    def _symbolic_spatial_op_requires_shape_extension(node: fx.Node) -> bool:
+        """Return whether a symbolic spatial operation needs TOSA shape
+        operations.
+
+        Args:
+            node (fx.Node): Spatial operation node to inspect.
+
+        Returns:
+            bool: Whether the operation cannot use static input adjustment and
+                padding.
+
+        """
+        try:
+            get_context_shape_env()
+        except RuntimeError:
+            return True
+
+        if node.target == exir_ops.edge.aten.convolution.default:
+            return (
+                bool(node.args[6])
+                or bool(get_slices_convolution(node))
+                or has_dynamic_conv_padding(node)
+            )
+        if node.target in (
+            exir_ops.edge.aten.avg_pool2d.default,
+            exir_ops.edge.aten.max_pool2d.default,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        ):
+            if node.target == exir_ops.edge.aten.max_pool2d_with_indices.default:
+                users = list(node.users)
+                if (
+                    len(users) != 1
+                    or users[0].target != operator.getitem
+                    or users[0].args[1] != 0
+                ):
+                    return True
+            return bool(get_slices_pooling(node)) or has_dynamic_pooling_padding(node)
+        return True
+
     def _has_unsupported_symbolic_tensor_shape(self, node: fx.Node) -> bool:
         if node.target not in (
             *self._SYMBOLIC_SPATIAL_DIM_TARGETS,
@@ -886,6 +937,8 @@ class SymbolicShapeSupportCheck(OperatorSupportBase):
 
         if node.target in self._SYMBOLIC_SPATIAL_DIM_TARGETS:
             if any(isinstance(s, torch.SymInt) for s in input_fake_tensor.shape[2:]):
+                if not self._symbolic_spatial_op_requires_shape_extension(node):
+                    return False
                 self.reporter.report_reject(node, "Symbolic spatial dims unsupported")
                 return True
 
@@ -1205,6 +1258,8 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     def has_rejected_int64_output(
         self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
     ) -> bool:
+        if is_safe_int32_to_int64_gather_boundary(node):
+            return False
         if node.target in _ARGMAX_OPS:
             return not self._is_tosa_argmax_supported(node)
 
@@ -1330,6 +1385,12 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 continue
             tensor_in = get_first_fake_tensor(input_node)
             if tensor_in.dtype != torch.int64:
+                continue
+
+            if (
+                node.target == exir_ops.edge.aten.gather.default
+                and is_safe_int32_to_int64_gather_boundary(input_node)
+            ):
                 continue
 
             # aten.argmax is nominally int64, but TOSA ARGMAX produces int32.

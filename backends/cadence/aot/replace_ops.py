@@ -850,6 +850,13 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
         exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
+        # Tensor-qparam (per-channel) variants. Without these a per-channel conv
+        # silently stops collapsing to fully-connected and falls back to a much
+        # slower path.
+        exir_ops.edge.cadence.quantized_conv1d_ncl.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_nlc.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     quantized_conv_ops: frozenset[EdgeOpOverload] = frozenset(
@@ -858,6 +865,10 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
             exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            exir_ops.edge.cadence.quantized_conv1d_ncl.default,
+            exir_ops.edge.cadence.quantized_conv1d_nlc.default,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
         }
     )
 
@@ -944,26 +955,44 @@ class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
                 out_scale,
                 out_zero_point,
             ) = node.args[7:12]
-            # Always compute out_multiplier and out_shift from bias_scale / out_scale.
-            # The conv reference implementations ignore the out_multiplier and out_shift
-            # args and use out_scale directly, but quantized_linear uses the computed
-            # values. So we must always recompute them to ensure numerical consistency.
-            # pyre-ignore[58]: Division operands
-            requantize_scale = bias_scale / out_scale
-            (out_multiplier, out_shift) = quantize_tensor_multiplier(
-                torch.tensor([requantize_scale])
-            )
-            linear_args = (
-                in_view,
-                linear_weight,
-                bias,
-                in_zero_point,
-                weight_zero_point,
-                int(out_multiplier.item()),
-                int(out_shift.item()),
-                out_zero_point,
-                None,
-            )
+            if isinstance(bias_scale, torch.fx.Node):
+                # Per-channel: bias_scale is a constant tensor, so the scalar
+                # arithmetic below cannot run. The conv's out_multiplier and
+                # out_shift were already derived from bias_scale / out_scale at
+                # fusion time and are per-channel tensors of the right length,
+                # so reuse those nodes rather than rebuilding them here.
+                linear_args = (
+                    in_view,
+                    linear_weight,
+                    bias,
+                    in_zero_point,
+                    weight_zero_point,
+                    node.args[12],  # out_multiplier
+                    node.args[13],  # out_shift
+                    out_zero_point,
+                    None,
+                )
+            else:
+                # Always compute out_multiplier and out_shift from bias_scale / out_scale.
+                # The conv reference implementations ignore the out_multiplier and out_shift
+                # args and use out_scale directly, but quantized_linear uses the computed
+                # values. So we must always recompute them to ensure numerical consistency.
+                # pyre-ignore[58]: Division operands
+                requantize_scale = bias_scale / out_scale
+                (out_multiplier, out_shift) = quantize_tensor_multiplier(
+                    torch.tensor([requantize_scale])
+                )
+                linear_args = (
+                    in_view,
+                    linear_weight,
+                    bias,
+                    in_zero_point,
+                    weight_zero_point,
+                    int(out_multiplier.item()),
+                    int(out_shift.item()),
+                    out_zero_point,
+                    None,
+                )
         else:
             linear_args = (in_view, linear_weight, bias)
         with graph.inserting_before(node):
@@ -999,12 +1028,32 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
     transpose operations before and after the convolution.
     """
 
+    # Conv ops whose qparams are constant tensors rather than inlined scalars.
+    # The channel-last rewrite has to stay on the same overload.
+    _tensor_qparam_targets: frozenset[EdgeOpOverload] = frozenset(
+        {
+            exir_ops.edge.cadence.quantized_conv1d_ncl.default,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.default,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+        }
+    )
+
+    _depthwise_targets: frozenset[EdgeOpOverload] = frozenset(
+        {
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.default,
+        }
+    )
+
     @property
     def targets(self) -> list[EdgeOpOverload]:
         return [
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_conv1d_ncl.default,
             exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
+            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.default,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.default,
         ]
 
     def _transpose_dims(
@@ -1092,18 +1141,23 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         input_shape = input_node.meta["val"].shape
         is_2d = len(input_shape) == 4
 
-        # Determine the new op target
+        # Determine the new op target. The layout comes from the input rank, and
+        # the overload from the incoming node, so a per-channel conv stays on the
+        # tensor-qparam overload.
+        per_channel = node.target in self._tensor_qparam_targets
+
+        def channel_last_op(base_name: str) -> EdgeOpOverload:
+            packet = getattr(exir_ops.edge.cadence, base_name)
+            return packet.default if per_channel else packet.per_tensor
+
         if is_2d:
-            new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
+            new_op = channel_last_op("quantized_conv2d_nhwc")
         else:
             assert len(input_shape) == 3
-            if (
-                node.target
-                == exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor
-            ):
-                new_op = exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor
+            if node.target in self._depthwise_targets:
+                new_op = channel_last_op("quantized_depthwise_conv1d_nlc")
             else:
-                new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+                new_op = channel_last_op("quantized_conv1d_nlc")
 
         graph = node.graph
 
@@ -1299,6 +1353,8 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         exir_ops.edge.cadence.conv3d.default: exir_ops.edge.aten.linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: exir_ops.edge.cadence.quantized_linear.per_tensor,
+        exir_ops.edge.cadence.quantized_conv2d_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     # Set of quantized conv ops
@@ -1306,6 +1362,8 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         {
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
         }
     )
 
@@ -1313,6 +1371,15 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
     channel_last_conv_ops: frozenset[EdgeOpOverload] = frozenset(
         {
             exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+        }
+    )
+
+    # Conv ops whose qparams are constant tensors rather than inlined scalars.
+    per_channel_conv_ops: frozenset[EdgeOpOverload] = frozenset(
+        {
+            exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
         }
     )
 
@@ -1452,19 +1519,29 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
             # The conv reference implementations ignore the out_multiplier and out_shift
             # args and use out_scale directly, but quantized_linear uses the computed
             # values. So we must always recompute them to ensure numerical consistency.
-            # pyre-ignore[58]: Division operands
-            requantize_scale = bias_scale / out_scale
-            (out_multiplier, out_shift) = quantize_tensor_multiplier(
-                torch.tensor([requantize_scale])
-            )
+            if node.target in self.per_channel_conv_ops:
+                # Per-channel qparams are constant tensors carried as graph nodes.
+                # Fusion derived out_multiplier/out_shift from this same
+                # bias_scale / out_scale ratio, so reuse those nodes rather than
+                # collapsing the per-channel vectors to a scalar.
+                out_multiplier_arg = get_arg(node, "out_multiplier")
+                out_shift_arg = get_arg(node, "out_shift")
+            else:
+                # pyre-ignore[58]: Division operands
+                requantize_scale = bias_scale / out_scale
+                (out_multiplier, out_shift) = quantize_tensor_multiplier(
+                    torch.tensor([requantize_scale])
+                )
+                out_multiplier_arg = int(out_multiplier.item())
+                out_shift_arg = int(out_shift.item())
             linear_args = (
                 im2row,
                 linear_weight,
                 bias,
                 in_zero_point,
                 weight_zero_point,
-                int(out_multiplier.item()),
-                int(out_shift.item()),
+                out_multiplier_arg,
+                out_shift_arg,
                 out_zero_point,
                 None,
             )

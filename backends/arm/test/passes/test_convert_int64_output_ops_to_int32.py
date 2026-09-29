@@ -12,13 +12,20 @@ import torch
 from executorch.backends.arm._passes import (
     ArmPassManager,
     ConvertInt64OutputOpsToInt32Pass,
+    PrepareGatherIndicesPass,
+)
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
 )
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf import VgfCompileSpec
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.operator_support import DontPartition, DontPartitionName
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Graph, GraphModule
 
@@ -462,6 +469,13 @@ class TopKMixedDtypeCat(torch.nn.Module):
         return torch.cat((indices, y), dim=1) + 1
 
 
+class TopKGather(torch.nn.Module):
+    def forward(self, scores: torch.Tensor, features: torch.Tensor):
+        indices = torch.topk(scores, 3, dim=1).indices
+        expanded = indices.unsqueeze(-1).expand(-1, -1, 2)
+        return torch.gather(features, dim=1, index=expanded)
+
+
 class TopKSymbolicSafeConsumer(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         indices = torch.topk(x, 3, dim=1).indices
@@ -685,6 +699,449 @@ def test_topk_mixed_dtype_cat_stays_int64(use_edge_ops: bool):
     torch.testing.assert_close(actual, module(x, y))
 
 
+@pytest.mark.parametrize("use_edge_ops", [False, True], ids=["aten", "edge"])
+@pytest.mark.parametrize(
+    "feature_channels",
+    [2, 3],
+    ids=["supported", "unsupported_trailing_dim"],
+)
+def test_topk_gather_index_dtype_at_portable_boundary(
+    use_edge_ops: bool,
+    feature_channels: int,
+):
+    module = TopKGather()
+    inputs = (torch.randn(2, 8), torch.randn(2, 8, feature_channels))
+    exported_program = torch.export.export(module, inputs)
+    if use_edge_ops:
+        exported_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).exported_program()
+
+    result = ConvertInt64OutputOpsToInt32Pass().call(exported_program.graph_module)
+
+    gather_targets = {
+        torch.ops.aten.gather.default,
+        exir_ops.edge.aten.gather.default,
+    }
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target in gather_targets
+    )
+    assert gather.args[2].meta["val"].dtype == torch.int64
+    boundary = gather.args[2]
+    assert boundary in _cast_nodes(result.graph_module)
+    assert boundary.args[0].meta["val"].dtype == torch.int32
+
+    expected = module(*inputs)
+    actual = result.graph_module(*inputs)[0]
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize("use_edge_ops", [False, True], ids=["aten", "edge"])
+@pytest.mark.parametrize(
+    "feature_channels",
+    [2, 3],
+    ids=["supported", "unsupported_trailing_dim"],
+)
+def test_prepare_gather_index_dtype(
+    use_edge_ops: bool,
+    feature_channels: int,
+):
+    module = TopKGather()
+    inputs = (torch.randn(2, 8), torch.randn(2, 8, feature_channels))
+    exported_program = torch.export.export(module, inputs)
+    if use_edge_ops:
+        exported_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).exported_program()
+
+    bounded_result = ConvertInt64OutputOpsToInt32Pass().call(
+        exported_program.graph_module
+    )
+    result = PrepareGatherIndicesPass(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    ).call(bounded_result.graph_module)
+
+    gather_targets = {
+        torch.ops.aten.gather.default,
+        exir_ops.edge.aten.gather.default,
+    }
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target in gather_targets
+    )
+    expected_index_dtype = (
+        torch.int32 if use_edge_ops and feature_channels == 2 else torch.int64
+    )
+    assert gather.args[2].meta["val"].dtype == expected_index_dtype
+    assert result.modified == (expected_index_dtype == torch.int32)
+
+    expected = module(*inputs)
+    actual = result.graph_module(*inputs)[0]
+    torch.testing.assert_close(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "values_dtype,tosa_spec,supported",
+    [
+        (torch.int32, "TOSA-1.0+INT", True),
+        (torch.int32, "TOSA-1.0+FP", False),
+        (torch.float32, "TOSA-1.0+FP", True),
+        (torch.float32, "TOSA-1.0+INT", True),
+        (torch.bfloat16, "TOSA-1.0+FP+bf16", True),
+        (torch.bfloat16, "TOSA-1.0+FP", False),
+        (torch.float8_e4m3fn, "TOSA-1.0+FP+fp8e4m3", True),
+        (torch.float8_e4m3fn, "TOSA-1.0+FP", False),
+        (torch.float8_e5m2, "TOSA-1.0+FP+fp8e5m2", True),
+        (torch.float8_e5m2, "TOSA-1.0+FP", False),
+    ],
+    ids=[
+        "int32-int",
+        "int32-fp",
+        "fp32-fp",
+        "fp32-int",
+        "bf16-enabled",
+        "bf16-disabled",
+        "fp8e4m3-enabled",
+        "fp8e4m3-disabled",
+        "fp8e5m2-enabled",
+        "fp8e5m2-disabled",
+    ],
+)
+def test_prepare_gather_index_dtype_for_tosa_capabilities(
+    values_dtype: torch.dtype,
+    tosa_spec: str,
+    supported: bool,
+):
+    inputs = (
+        torch.randn(2, 8),
+        torch.randn(2, 8, 2).to(values_dtype),
+    )
+    exported_program = to_edge(
+        torch.export.export(TopKGather(), inputs),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+    graph_module = (
+        ConvertInt64OutputOpsToInt32Pass()
+        .call(exported_program.graph_module)
+        .graph_module
+    )
+    gather = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    )
+    boundary = gather.args[2]
+    assert boundary.meta["val"].dtype == torch.int64
+
+    result = PrepareGatherIndicesPass(
+        TosaSpecification.create_from_string(tosa_spec)
+    ).call(graph_module)
+
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    )
+    assert result.modified == supported
+    assert gather.args[2].meta["val"].dtype == (
+        torch.int32 if supported else torch.int64
+    )
+    assert (boundary not in result.graph_module.graph.nodes) == supported
+
+
+def test_symbolic_gather_shape_mismatch_rejects_boundary():
+    scores_batch = torch.export.Dim("scores_batch", min=1, max=8)
+    features_batch = torch.export.Dim("features_batch", min=1, max=8)
+    exported_program = torch.export.export(
+        TopKGather(),
+        (
+            torch.randn(2, 8),
+            torch.randn(3, 8, 2),
+        ),
+        dynamic_shapes={
+            "scores": {0: scores_batch},
+            "features": {0: features_batch},
+        },
+    )
+    exported_program = to_edge(
+        exported_program,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+    graph_module = (
+        ConvertInt64OutputOpsToInt32Pass()
+        .call(exported_program.graph_module)
+        .graph_module
+    )
+
+    gather = next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    )
+    boundary = gather.args[2]
+    assert isinstance(gather.args[0].meta["val"].shape[0], torch.SymInt)
+    assert isinstance(boundary.meta["val"].shape[0], torch.SymInt)
+    assert not is_safe_int32_to_int64_gather_boundary(boundary)
+
+
+@pytest.mark.parametrize("use_edge_ops", [False, True], ids=["aten", "edge"])
+def test_prepare_scalar_gather_is_unchanged(use_edge_ops: bool):
+    class ScalarGather(torch.nn.Module):
+        def forward(self, values: torch.Tensor, indices: torch.Tensor):
+            return torch.gather(values, 0, indices)
+
+    module = ScalarGather()
+    inputs = (torch.tensor(1.0), torch.tensor(0))
+    exported_program = torch.export.export(module, inputs)
+    if use_edge_ops:
+        exported_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).exported_program()
+
+    result = PrepareGatherIndicesPass(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    ).call(exported_program.graph_module)
+
+    assert not result.modified
+    gather_targets = {
+        torch.ops.aten.gather.default,
+        exir_ops.edge.aten.gather.default,
+    }
+    assert any(
+        node.target in gather_targets for node in result.graph_module.graph.nodes
+    )
+    torch.testing.assert_close(result.graph_module(*inputs)[0], module(*inputs))
+
+
+def test_prepare_gather_does_not_narrow_arbitrary_int64_indices():
+    class DirectGather(torch.nn.Module):
+        def forward(self, values: torch.Tensor, indices: torch.Tensor):
+            return torch.gather(values, 1, indices)
+
+    module = DirectGather()
+    inputs = (
+        torch.randn(2, 8, 2),
+        torch.randint(0, 8, (2, 3, 2), dtype=torch.int64),
+    )
+    exported_program = torch.export.export(module, inputs)
+
+    result = PrepareGatherIndicesPass(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    ).call(exported_program.graph_module)
+
+    assert not result.modified
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.gather.default
+    )
+    assert gather.args[2].meta["val"].dtype == torch.int64
+    torch.testing.assert_close(result.graph_module(*inputs)[0], module(*inputs))
+
+
+def test_prepare_gather_preserves_layout_changing_boundary():
+    class LayoutChangingGather(torch.nn.Module):
+        def forward(self, values: torch.Tensor, indices: torch.Tensor):
+            indices = indices.to(
+                dtype=torch.int64, memory_format=torch.contiguous_format
+            )
+            return torch.gather(values, 1, indices)
+
+    module = LayoutChangingGather()
+    inputs = (
+        torch.randn(2, 8, 2),
+        torch.randint(0, 8, (2, 2, 3), dtype=torch.int32).transpose(1, 2),
+    )
+    exported_program = to_edge(
+        torch.export.export(module, inputs),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+    boundary = next(
+        node
+        for node in exported_program.graph.nodes
+        if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+    )
+    source = boundary.args[0]
+    assert source.meta["val"].dim_order() != boundary.meta["val"].dim_order()
+
+    result = PrepareGatherIndicesPass(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    ).call(exported_program.graph_module)
+
+    assert not result.modified
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    )
+    assert gather.args[2] is boundary
+    torch.testing.assert_close(result.graph_module(*inputs)[0], module(*inputs))
+
+
+##############################################################
+## Test gather preparation for Arm target capabilities       ##
+##############################################################
+@pytest.mark.parametrize(
+    "compile_spec",
+    [
+        TosaCompileSpec("TOSA-1.0+FP"),
+        VgfCompileSpec("TOSA-1.0+FP"),
+        EthosUCompileSpec("ethos-u85-128"),
+        EthosUCompileSpec("ethos-u55-128"),
+    ],
+    ids=["tosa", "vgf", "u85", "u55"],
+)
+def test_pre_decomposition_preserves_gather_index_dtype(compile_spec):
+    module = TopKGather()
+    inputs = (torch.randn(2, 8), torch.randn(2, 8, 2))
+    exported_program = torch.export.export(module, inputs)
+
+    result = ArmPassManager(compile_spec).transform_for_pre_decomposition_pipeline(
+        exported_program
+    )
+
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.gather.default
+    )
+    assert gather.args[2].meta["val"].dtype == torch.int64
+    boundary = gather.args[2]
+    assert boundary in _cast_nodes(result.graph_module)
+    assert boundary.args[0].meta["val"].dtype == torch.int32
+
+
+##############################################################
+def test_rejected_gather_keeps_int64_indices():
+    module = TopKGather()
+    inputs = (torch.randn(2, 8), torch.randn(2, 8, 2))
+    compile_spec = TosaCompileSpec("TOSA-1.0+FP")
+    partitioner = TOSAPartitioner(
+        compile_spec,
+        additional_checks=[DontPartition(exir_ops.edge.aten.gather.default)],
+    )
+
+    edge_manager = to_edge_transform_and_lower(
+        torch.export.export(module, inputs),
+        partitioner=[partitioner],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+
+    gather = next(
+        node
+        for node in edge_manager.exported_program().graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    )
+    assert gather.args[2].meta["val"].dtype == torch.int64
+
+
+def test_rejected_gather_boundary_keeps_gather_portable():
+    module = TopKGather()
+    inputs = (torch.randn(2, 8), torch.randn(2, 8, 2))
+    compile_spec = TosaCompileSpec("TOSA-1.0+FP")
+    partitioner = TOSAPartitioner(
+        compile_spec,
+        additional_checks=[
+            DontPartition(exir_ops.edge.dim_order_ops._to_dim_order_copy.default)
+        ],
+    )
+
+    edge_manager = to_edge_transform_and_lower(
+        torch.export.export(module, inputs),
+        partitioner=[partitioner],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+
+    gather = next(
+        node
+        for node in edge_manager.exported_program().graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    )
+    boundary = gather.args[2]
+    assert boundary.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+    assert boundary.meta["val"].dtype == torch.int64
+
+
+def test_supported_gather_is_delegated():
+    module = TopKGather()
+    inputs = (torch.randn(2, 8), torch.randn(2, 8, 2))
+    compile_spec = TosaCompileSpec("TOSA-1.0+FP")
+
+    edge_manager = to_edge_transform_and_lower(
+        torch.export.export(module, inputs),
+        partitioner=[TOSAPartitioner(compile_spec)],
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+
+    assert all(
+        node.target != exir_ops.edge.aten.gather.default
+        for node in edge_manager.exported_program().graph.nodes
+    )
+
+
+def test_shared_gather_boundary_with_rejected_gather_stays_portable():
+    class SharedGatherBoundary(torch.nn.Module):
+        def forward(self, scores, first_features, second_features):
+            scores = scores + 1
+            indices = torch.topk(scores, 3, dim=1).indices
+            indices = indices.unsqueeze(-1).expand(-1, -1, 2)
+            first = torch.gather(first_features, 1, indices) + 1
+            second = torch.gather(second_features, 1, indices) + 1
+            return (
+                first,
+                second,
+            )
+
+    inputs = (
+        torch.randn(2, 8),
+        torch.randn(2, 8, 2),
+        torch.randn(2, 8, 2),
+    )
+    edge_manager = to_edge(
+        torch.export.export(SharedGatherBoundary(), inputs),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).transform([ConvertInt64OutputOpsToInt32Pass()])
+    exported_program = edge_manager.exported_program()
+    graph_module = exported_program.graph_module
+
+    gathers = [
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.gather.default
+    ]
+    assert len(gathers) == 2
+    boundary = gathers[0].args[2]
+    assert boundary is gathers[1].args[2]
+    assert boundary.meta["val"].dtype == torch.int64
+
+    rejected_gather = gathers[1]
+    check = DontPartitionName(rejected_gather.name)
+    result = TOSAPartitioner(
+        TosaCompileSpec("TOSA-1.0+FP"), additional_checks=[check]
+    ).partition(exported_program)
+
+    assert rejected_gather in check.rejected_nodes()
+    assert all("delegation_tag" not in gather.meta for gather in gathers)
+    assert "delegation_tag" not in boundary.meta
+    assert all(gather.args[2] is boundary for gather in gathers)
+    assert boundary.meta["val"].dtype == torch.int64
+
+    returned_tags = set(result.partition_tags)
+    active_tags = {
+        node.meta["delegation_tag"]
+        for node in result.tagged_exported_program.graph.nodes
+        if "delegation_tag" in node.meta
+    }
+    assert returned_tags
+    assert active_tags == returned_tags
+
+
 ##############################################################
 ## Test on_overflow range check for bounded index sources   ##
 ##############################################################
@@ -710,6 +1167,47 @@ def _make_argmax_graph_large_dim() -> GraphModule:
     out.meta["val"] = fake_output
     graph.output(out)
     return GraphModule(torch.nn.Module(), graph)
+
+
+def _make_gather_graph_large_dim() -> GraphModule:
+    """Construct a gather whose indexable dimension exceeds INT32_MAX."""
+    from torch._subclasses import FakeTensorMode
+
+    graph = Graph()
+    with FakeTensorMode():
+        fake_values = torch.empty((1, _OVERFLOW_DIM), dtype=torch.float32)
+        fake_int32_indices = torch.empty((1, 1), dtype=torch.int32)
+        fake_indices = torch.empty((1, 1), dtype=torch.int64)
+        fake_output = torch.empty((1, 1), dtype=torch.float32)
+    values = graph.placeholder("values")
+    values.meta["val"] = fake_values
+    int32_indices = graph.placeholder("indices")
+    int32_indices.meta["val"] = fake_int32_indices
+    indices = graph.call_function(
+        torch.ops.dim_order_ops._to_dim_order_copy.default,
+        (int32_indices,),
+        {"dtype": torch.int64},
+    )
+    indices.meta["val"] = fake_indices
+    gather = graph.call_function(torch.ops.aten.gather.default, (values, 1, indices))
+    gather.meta["val"] = fake_output
+    graph.output(gather)
+    return GraphModule(torch.nn.Module(), graph)
+
+
+def test_prepare_gather_skips_large_indexable_dimension():
+    graph_module = _make_gather_graph_large_dim()
+    result = PrepareGatherIndicesPass(
+        TosaSpecification.create_from_string("TOSA-1.0+FP")
+    ).call(graph_module)
+
+    assert not result.modified
+    gather = next(
+        node
+        for node in result.graph_module.graph.nodes
+        if node.target == torch.ops.aten.gather.default
+    )
+    assert gather.args[2].meta["val"].dtype == torch.int64
 
 
 def _make_topk_graph_large_dim() -> GraphModule:

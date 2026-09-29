@@ -10,6 +10,7 @@ import torch
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 _COPY_SUFFIX = "_copy"
 
@@ -134,10 +135,10 @@ class ReplaceCopyWithAliasPass(ExportPass):
     Multi-output views (``split``/``unbind``) are left as copies for now — their
     getitem consumers need handling this pass does not yet do.
 
-    A view is also left as a copy when its aliased layout is not dim-order
-    expressible (e.g. a gapped last-dim slice): the serialized TensorMeta records
-    only dim_order, not strides, so such a layout cannot be represented and must
-    stay a materialized (contiguous) copy.
+    A view is also left as a copy when it has a nonzero or dynamic storage offset,
+    or when its aliased layout is not dim-order expressible (e.g. a gapped
+    last-dim slice). The serialized TensorMeta records neither storage offsets nor
+    strides, so those layouts cannot be represented and must stay materialized.
     """
 
     def call(self, graph_module: GraphModule) -> PassResult:
@@ -162,6 +163,9 @@ class ReplaceCopyWithAliasPass(ExportPass):
 
             new_val = _recompute_view_val(alias_op, node)
             if new_val is None:
+                continue
+            # TensorMeta cannot describe an offset into the source storage.
+            if not statically_known_true(new_val.storage_offset() == 0):
                 continue
             # TensorMeta serializes only dim_order, not strides, so an aliased view
             # whose layout is not dim-order expressible (e.g. a gapped last-dim

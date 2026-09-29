@@ -169,7 +169,7 @@ def test_gather_tosa_FP(test_data: input_params):
         exir_op=Gather.exir_op,
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
-        ],  # int64 index are not currently supported and need to be cast to int32
+        ],  # int64 indices are not supported and must be cast to int32
         tosa_extensions=["bf16"],
     )
     pipeline.run()
@@ -185,7 +185,7 @@ def test_gather_tosa_FP_fp8(test_data: tuple[input_params, str]):
         exir_op=Gather.exir_op,
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
-        ],  # int64 index are not currently supported and need to be cast to int32
+        ],  # int64 indices are not supported and must be cast to int32
         compare_tosa_ref_model_outputs=False,
         tosa_extensions=[tosa_extension],
     )
@@ -225,7 +225,8 @@ def test_gather_u85_INT(test_data: input_params):
         aten_ops=Gather.aten_op,
         exir_ops=Gather.exir_op,
     )
-    # U85: keep _to_dim_order_copy portable for int64->int32 index casts (not delegatable).
+    # U85: keep _to_dim_order_copy portable for int64->int32 index casts;
+    # the cast is not delegatable.
     pipeline.tester.use_portable_ops = True
     pipeline.run()
 
@@ -241,7 +242,7 @@ def test_gather_vgf_no_quant(test_data: input_params):
         quantize=False,
         transform_passes=[
             InsertInt32CastsAfterInt64PlaceholdersPass(),
-        ],  # int64 index are not currently supported and need to be cast to int32
+        ],  # int64 indices are not supported and must be cast to int32
     )
     pipeline.run()
 

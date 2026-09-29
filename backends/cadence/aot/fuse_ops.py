@@ -49,6 +49,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPac
 from executorch.exir.pass_base import PassResult
 from executorch.exir.passes.cse_pass import CSEPass
 from torch.nn.utils.fusion import fuse_conv_bn_weights
+from torch.utils import _pytree as pytree
 
 
 def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
@@ -682,6 +683,58 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
                 continue
             return False
         return True
+
+    def _get_bypassed_nodes(
+        self,
+        producer: torch.fx.Node,
+        removal_candidates: list[torch.fx.Node],
+    ) -> list[torch.fx.Node]:
+        """Return the bypassed ops between producer and consumers, in order."""
+        candidates = set(removal_candidates)
+        bypassed: set[torch.fx.Node] = set()
+        stack = list(producer.users)
+        while stack:
+            user = stack.pop()
+            if user in candidates or user in bypassed:
+                continue
+            bypassed.add(user)
+            stack.extend(user.users)
+
+        # The graph's node list is topologically sorted, so walking it forward
+        # from the producer refreshes each node after its predecessor.
+        ordered: list[torch.fx.Node] = []
+        cursor = producer.next
+        while bypassed and cursor.op != "root":
+            if cursor in bypassed:
+                bypassed.remove(cursor)
+                ordered.append(cursor)
+            cursor = cursor.next
+        return ordered
+
+    def fuse(
+        self,
+        node: torch.fx.Node,
+        removal_candidates: list[torch.fx.Node],
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        # Capture the bypassed ops before the rewire erases the chain's root.
+        bypassed_nodes = self._get_bypassed_nodes(node, removal_candidates)
+        node.replace_all_uses_with(cast(torch.fx.Node, node.args[0]))
+        graph_module.graph.erase_node(node)
+        # They now consume the producer's input, so their metadata describes an
+        # operand they no longer have. Refresh before get_fused_node reads it.
+        for bypassed in bypassed_nodes:
+            args, kwargs = pytree.tree_map_only(
+                torch.fx.Node,
+                lambda arg: arg.meta["val"],
+                (bypassed.args, bypassed.kwargs),
+            )
+            assert callable(bypassed.target)
+            bypassed.meta["val"] = bypassed.target(*args, **kwargs)
+            bypassed.meta["tensor_meta"] = None
+        for rnode in removal_candidates:
+            rnode.replace_all_uses_with(self.get_fused_node(node, rnode, graph_module))
+            graph_module.graph.erase_node(rnode)
 
     def get_fused_node(
         self,
