@@ -47,11 +47,12 @@ class PyResultMemory final {
     for (const auto stride : strides_) {
       byte_strides.push_back(stride * itemsize);
     }
+    const auto ndim = shape.size();
     return py::buffer_info(
         storage_.data(),
         itemsize,
         buffer_format(scalar_type_),
-        shape.size(),
+        ndim,
         std::move(shape),
         std::move(byte_strides),
         /*readonly=*/true);
@@ -75,7 +76,7 @@ class PyResultMemory final {
   }
 
   py::dtype dtype() const {
-    return py::dtype(buffer_format(scalar_type_));
+    return py::dtype(numpy_dtype_name(scalar_type_));
   }
 
   size_t nbytes() const {
@@ -83,6 +84,44 @@ class PyResultMemory final {
   }
 
  private:
+  static const char* numpy_dtype_name(executorch::aten::ScalarType type) {
+    using executorch::aten::ScalarType;
+    switch (type) {
+      case ScalarType::Byte:
+        return "uint8";
+      case ScalarType::Char:
+        return "int8";
+      case ScalarType::Short:
+        return "int16";
+      case ScalarType::Int:
+        return "int32";
+      case ScalarType::Long:
+        return "int64";
+      case ScalarType::Half:
+        return "float16";
+      case ScalarType::Float:
+        return "float32";
+      case ScalarType::Double:
+        return "float64";
+      case ScalarType::ComplexFloat:
+        return "complex64";
+      case ScalarType::ComplexDouble:
+        return "complex128";
+      case ScalarType::Bool:
+        return "bool";
+      case ScalarType::BFloat16:
+      case ScalarType::UInt16:
+        return "uint16";
+      case ScalarType::UInt32:
+        return "uint32";
+      case ScalarType::UInt64:
+        return "uint64";
+      default:
+        throw std::runtime_error(
+            "ExecuTorch result dtype cannot be represented by NumPy");
+    }
+  }
+
   static const char* buffer_format(executorch::aten::ScalarType type) {
     using executorch::aten::ScalarType;
     switch (type) {

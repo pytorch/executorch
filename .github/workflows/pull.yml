@@ -160,7 +160,7 @@ jobs:
         set -eux
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        python -m pip install flatbuffers numpy pybind11
+        ./install_executorch.sh
 
         cmake -S . -B cmake-out-no-aten \
           -DCMAKE_BUILD_TYPE=Release \
