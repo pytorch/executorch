@@ -1,0 +1,68 @@
+name: Core AI
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/coreai/*
+  pull_request:
+    paths:
+      - .github/workflows/coreai.yml
+      - backends/apple/coreai/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
+  test-coreai:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-coreai
+      # GitHub-hosted macOS 27 with Xcode 27 (public preview).
+      runner: xcode-27
+      # coreai-opt supports Python < 3.14.
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Toolchain"
+        sw_vers
+        xcodebuild -version
+        ${CONDA_RUN} python -m pytest backends/apple/coreai
+        echo "::endgroup::"
+
+        echo "::group::Install ExecuTorch and Core AI requirements"
+        ${CONDA_RUN} python install_executorch.py --editable > /dev/null
+        ${CONDA_RUN} pip install -r backends/apple/coreai/requirements.txt
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        echo "::group::Install the Metal Toolchain"
+        # coreai-build ships in the Metal Toolchain; without it the AOT compile
+        # tests skip.
+        xcodebuild -downloadComponent MetalToolchain
+        xcrun --find coreai-build
+        echo "::endgroup::"
+
+        echo "::group::Run Core AI export tests"
+        ${CONDA_RUN} python -m pytest backends/apple/coreai
+        echo "::endgroup::"
