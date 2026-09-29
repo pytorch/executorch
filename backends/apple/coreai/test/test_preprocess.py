@@ -238,6 +238,21 @@ class PortablePreprocessTest(unittest.TestCase):
             self.assertTrue((bundles[0] / "main.mlirb").exists())
 
 
+class ManifestBindingsTest(unittest.TestCase):
+    def test_names_follow_boundary_order_past_single_digits(self):
+        class ManyInputs(nn.Module):
+            def forward(self, *args):
+                return tuple(x - float(i) for i, x in enumerate(args))
+
+        edge = to_edge(
+            torch.export.export(ManyInputs(), tuple(torch.ones(2) for _ in range(12)))
+        ).exported_program()
+        manifest = json.loads(CoreAIBackend.preprocess(edge, []).processed_bytes)
+        self.assertEqual(manifest["function"], "main")
+        self.assertEqual(manifest["input_names"], [f"input_{i}" for i in range(12)])
+        self.assertEqual(manifest["output_names"], [f"output_{i}" for i in range(12)])
+
+
 def _lower_with_break(partitioner):
     """Lower a model whose middle op is tagged, forcing two delegates."""
     from executorch.backends.apple.coreai import get_default_passes
