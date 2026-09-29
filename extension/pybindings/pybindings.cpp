@@ -38,6 +38,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_dimension_limit.h>
 #include <executorch/runtime/executor/method.h>
@@ -124,9 +125,22 @@ namespace pybindings {
 
 namespace {
 
+executorch::aten::ScalarType runtime_scalar_type(const at::Tensor& tensor) {
+#ifdef USE_ATEN_LIB
+  return tensor.scalar_type();
+#else
+  return torch_to_executorch_scalar_type(tensor.options().dtype());
+#endif
+}
+
 void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
   if (tensor.numel() == 0) {
     return nullptr;
+  }
+
+  if (!tensor.has_storage()) {
+    throw py::value_error(
+        "Tensor has a non-zero number of elements, but its data is not allocated");
   }
 
   auto* storage_data = static_cast<char*>(tensor.unsafeGetTensorImpl()
@@ -134,9 +148,10 @@ void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
                                               .unsafeGetStorageImpl()
                                               ->_mutable_data_ptr_no_checks()
                                               .mutable_get());
-  ET_CHECK_MSG(
-      storage_data != nullptr,
-      "Tensor has a non-zero number of elements, but its data is not allocated");
+  if (storage_data == nullptr) {
+    throw py::value_error(
+        "Tensor has a non-zero number of elements, but its data is not allocated");
+  }
   return storage_data + tensor.storage_offset() * tensor.itemsize();
 }
 
@@ -170,10 +185,15 @@ class BufferTensor final {
           return strides_[a] > strides_[b];
         });
     validate_dense_layout();
+    if (info_.readonly && info_.size > 0) {
+      owned_data_.resize(info_.size * info_.itemsize);
+      std::memcpy(owned_data_.data(), info_.ptr, owned_data_.size());
+    }
   }
 
   void* data() const {
-    return info_.ptr;
+    return owned_data_.empty() ? info_.ptr
+                               : const_cast<uint8_t*>(owned_data_.data());
   }
 
   const std::vector<int>& sizes() const {
@@ -272,14 +292,58 @@ class BufferTensor final {
 
   py::buffer buffer_;
   py::buffer_info info_;
+  std::vector<uint8_t> owned_data_;
   std::vector<int> sizes_;
   std::vector<int> strides_;
   std::vector<uint8_t> dim_order_;
   executorch::aten::ScalarType scalar_type_;
 };
 
+bool is_torch_tensor(const py::handle& value) {
+  static const py::object tensor_type =
+      py::module_::import("torch").attr("Tensor");
+  return py::isinstance(value, tensor_type);
+}
+
+void validate_tensor_input(
+    const MethodMeta& method_meta,
+    size_t index,
+    executorch::aten::ScalarType scalar_type,
+    const std::vector<int>& sizes,
+    const std::vector<int>& strides) {
+  const auto input_meta = method_meta.input_tensor_meta(index);
+  THROW_IF_ERROR(input_meta.error(), "Input %zu is not a tensor input", index);
+  if (input_meta->scalar_type() != scalar_type) {
+    throw py::value_error(
+        "Input " + std::to_string(index) + " has dtype " +
+        std::string(runtime::toString(scalar_type)) +
+        " but the method expects " +
+        std::string(runtime::toString(input_meta->scalar_type())));
+  }
+  const auto expected_order = input_meta->dim_order();
+  if (expected_order.size() != sizes.size() || strides.size() != sizes.size()) {
+    return;
+  }
+  std::vector<int> expected_strides(sizes.size());
+  const auto status = runtime::dim_order_to_stride(
+      sizes.data(),
+      expected_order.data(),
+      sizes.size(),
+      expected_strides.data());
+  THROW_IF_ERROR(status, "Invalid dimension order for input %zu", index);
+  for (size_t dim = 0; dim < sizes.size(); ++dim) {
+    if (sizes[dim] > 1 && strides[dim] != expected_strides[dim]) {
+      throw py::value_error(
+          "Input " + std::to_string(index) + " has stride " +
+          std::to_string(strides[dim]) + " at dimension " +
+          std::to_string(dim) + ", but the method expects stride " +
+          std::to_string(expected_strides[dim]));
+    }
+  }
+}
+
 py::sequence normalize_inputs(const py::object& inputs) {
-  if (PyObject_CheckBuffer(inputs.ptr())) {
+  if (PyObject_CheckBuffer(inputs.ptr()) || is_torch_tensor(inputs)) {
     py::list result;
     result.append(inputs);
     return result;
@@ -915,6 +979,12 @@ struct PyModule final {
       bool clone_outputs = true) {
     const auto inputs = normalize_inputs(python_inputs);
     const auto inputs_size = py::len(inputs);
+    const auto method_meta_result = module_->method_meta(method_name);
+    THROW_IF_ERROR(
+        method_meta_result.error(),
+        "Failed to get metadata for method %s",
+        method_name.c_str());
+    const auto method_meta = method_meta_result.get();
     std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
     std::vector<std::shared_ptr<BufferTensor>> buffer_inputs;
@@ -942,13 +1012,24 @@ struct PyModule final {
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
-      if (type_str == "<class 'torch.Tensor'>") {
+      if (is_torch_tensor(python_input)) {
         if (saw_buffer) {
           throw py::type_error(
               "A call cannot mix buffer and torch tensor inputs");
         }
         saw_torch = true;
         auto at_tensor = python_input.cast<at::Tensor>();
+        std::vector<int> tensor_sizes(
+            at_tensor.sizes().begin(), at_tensor.sizes().end());
+        std::vector<int> tensor_strides(
+            at_tensor.strides().begin(), at_tensor.strides().end());
+        validate_tensor_input(
+            method_meta,
+            i,
+            runtime_scalar_type(at_tensor),
+            tensor_sizes,
+            tensor_strides);
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
 
 #ifdef USE_ATEN_LIB
         EValue evalue(at_tensor);
@@ -975,6 +1056,10 @@ struct PyModule final {
             at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
+        } else if (
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
+            at_tensor.dim() == 5) {
+          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
@@ -1021,6 +1106,12 @@ struct PyModule final {
         saw_buffer = true;
         buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
         const auto& buffer = buffer_inputs.back();
+        validate_tensor_input(
+            method_meta,
+            i,
+            buffer->scalar_type(),
+            buffer->sizes(),
+            buffer->strides());
 #ifdef USE_ATEN_LIB
         auto at_tensor = at::from_blob(
             buffer->data(),
@@ -1495,13 +1586,24 @@ struct PyMethod final {
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
-      if (type_str == "<class 'torch.Tensor'>") {
+      if (is_torch_tensor(python_input)) {
         if (saw_buffer) {
           throw py::type_error(
               "A call cannot mix buffer and torch tensor inputs");
         }
         saw_torch = true;
         auto at_tensor = python_input.cast<at::Tensor>();
+        std::vector<int> tensor_sizes(
+            at_tensor.sizes().begin(), at_tensor.sizes().end());
+        std::vector<int> tensor_strides(
+            at_tensor.strides().begin(), at_tensor.strides().end());
+        validate_tensor_input(
+            method_->method_meta(),
+            i,
+            runtime_scalar_type(at_tensor),
+            tensor_sizes,
+            tensor_strides);
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
 
 #ifdef USE_ATEN_LIB
         EValue evalue(at_tensor);
@@ -1528,6 +1630,10 @@ struct PyMethod final {
             at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
+        } else if (
+            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
+            at_tensor.dim() == 5) {
+          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
@@ -1571,6 +1677,12 @@ struct PyMethod final {
         saw_buffer = true;
         buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
         const auto& buffer = buffer_inputs.back();
+        validate_tensor_input(
+            method_->method_meta(),
+            i,
+            buffer->scalar_type(),
+            buffer->sizes(),
+            buffer->strides());
 #ifdef USE_ATEN_LIB
         auto at_tensor = at::from_blob(
             buffer->data(),
@@ -1609,11 +1721,22 @@ struct PyMethod final {
         cpp_inputs.data(), cpp_inputs.size());
 
     Error set_inputs_status = method_->set_inputs(input_evalue_list);
-    THROW_IF_ERROR(
-        set_inputs_status,
-        "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
-        method_->method_meta().name(),
-        static_cast<uint32_t>(set_inputs_status));
+    if (set_inputs_status != Error::Ok) {
+      // set_inputs() installs values one at a time and does not roll back a
+      // prefix when a later value is rejected. Retain both generations so any
+      // partially installed input continues to point at live memory.
+      buffer_inputs_.insert(
+          buffer_inputs_.end(), buffer_inputs.begin(), buffer_inputs.end());
+      buffer_tensor_ptrs_.insert(
+          buffer_tensor_ptrs_.end(),
+          buffer_tensor_ptrs.begin(),
+          buffer_tensor_ptrs.end());
+      THROW_IF_ERROR(
+          set_inputs_status,
+          "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
+          method_->method_meta().name(),
+          static_cast<uint32_t>(set_inputs_status));
+    }
     buffer_inputs_ = std::move(buffer_inputs);
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
   }

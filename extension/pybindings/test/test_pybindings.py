@@ -100,6 +100,33 @@ class PybindingsTest(unittest.TestCase):
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
 
+    def test_numpy_layout_must_match_exported_layout(self):
+        model = ModuleChannelsLast()
+        exported_program, inputs = create_program(model)
+        executorch_module = self.load_fn(exported_program.buffer)
+        contiguous = inputs[0].contiguous().numpy()
+
+        with self.assertRaisesRegex(ValueError, "method expects stride"):
+            executorch_module(contiguous)
+
+    def test_tensor_subclass_without_storage_is_rejected(self):
+        class Wrapper(torch.Tensor):
+            @staticmethod
+            def __new__(cls, elem):
+                return torch.Tensor._make_wrapper_subclass(
+                    cls, elem.shape, dtype=elem.dtype
+                )
+
+            @classmethod
+            def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+                raise NotImplementedError(func)
+
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(ValueError, "data is not allocated"):
+            executorch_module(Wrapper(inputs[0]))
+
     def test_multiple_entry(self):
         program, inputs = create_program(ModuleMulti())
         executorch_module = self.load_fn(program.buffer)
@@ -374,6 +401,26 @@ class PybindingsTest(unittest.TestCase):
 
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_failed_set_inputs_keeps_buffer_storage_alive(self):
+        exported_program, inputs = create_program(
+            ModuleAdd(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+        method.set_inputs([value.numpy() for value in inputs])
+
+        with self.assertRaises(ValueError):
+            method.set_inputs(
+                [inputs[0].numpy(), inputs[1].to(torch.int32).numpy()]
+            )
+
+        method.execute()
+        output = method.get_outputs()[0]
+        self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
     def test_method_callable(self):
         exported_program, inputs = create_program(ModuleAdd())
