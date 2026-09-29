@@ -19,6 +19,10 @@ namespace ptn {
 // unit that includes the header.
 EngineExecutable::~EngineExecutable() = default;
 
+void EngineExecutable::resize_input(size_t, const std::vector<int64_t>&) {
+  throw std::runtime_error("engine does not support resizing inputs");
+}
+
 EngineContext::EngineContext(
     std::shared_ptr<const Program> program,
     std::shared_ptr<const Package> package)

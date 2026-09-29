@@ -117,27 +117,22 @@ OutputKind map_output_kind(fbs::OutputKind k) {
   }
 }
 
-// The wire describes a dim as a min..max range, while the IR holds a concrete
-// extent. Collapsing a range to its upper bound would run the graph at that
-// bound and compute over elements the caller never supplied, so a dim that is
-// not a single non-negative extent is refused where it enters the IR.
-int64_t static_extent(
+std::pair<int64_t, int64_t> extent_bounds(
     const fbs::Dim* d,
     const std::string& value_name,
     flatbuffers::uoffset_t i) {
-  if (d->min() == d->max() && d->min() >= 0) {
-    if (static_cast<uint64_t>(d->min()) > detail::kMaxTensorDimension) {
+  if (d->min() >= 0 && d->max() >= d->min()) {
+    if (static_cast<uint64_t>(d->max()) > detail::kMaxTensorDimension) {
       throw ResourceLimitError(
           "build_tensor_meta: " + value_name + " dim " + std::to_string(i) +
           " exceeds dimension limit");
     }
-    return d->min();
+    return {d->min(), d->max()};
   }
   throw std::runtime_error(
       "build_tensor_meta: " + value_name + " dim " + std::to_string(i) +
-      " is not a static extent (" + std::to_string(d->min()) + ".." +
-      (d->max() < 0 ? std::string("inf") : std::to_string(d->max())) +
-      "); this runtime requires static shapes");
+      " has invalid or unbounded range (" + std::to_string(d->min()) + ".." +
+      (d->max() < 0 ? std::string("inf") : std::to_string(d->max())) + ")");
 }
 
 TensorMeta build_tensor_meta(
@@ -155,10 +150,15 @@ TensorMeta build_tensor_meta(
     }
     out.sizes.reserve(sizes->size());
     size_t numel = 1;
+    std::vector<int64_t> lower_bounds;
+    lower_bounds.reserve(sizes->size());
+    bool dynamic = false;
     for (flatbuffers::uoffset_t i = 0; i < sizes->size(); ++i) {
-      const int64_t extent = static_extent(sizes->Get(i), name, i);
-      out.sizes.push_back(extent);
-      if (!detail::checked_mul(numel, static_cast<size_t>(extent), numel)) {
+      const auto [lower, upper] = extent_bounds(sizes->Get(i), name, i);
+      lower_bounds.push_back(lower);
+      out.sizes.push_back(upper);
+      dynamic |= lower != upper;
+      if (!detail::checked_mul(numel, static_cast<size_t>(upper), numel)) {
         throw ResourceLimitError(
             "build_tensor_meta: " + name + " element count overflows");
       }
@@ -168,6 +168,9 @@ TensorMeta build_tensor_meta(
         nbytes > detail::kMaxTensorBytes) {
       throw ResourceLimitError(
           "build_tensor_meta: " + name + " exceeds tensor byte limit");
+    }
+    if (dynamic) {
+      out.lower_bounds = std::move(lower_bounds);
     }
   }
   if (const auto* dord = m->dim_order()) {
