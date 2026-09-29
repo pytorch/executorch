@@ -16,7 +16,6 @@
 #include <chrono>
 #include <cinttypes>
 #include <cmath>
-#include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -24,18 +23,26 @@
 #include <numeric>
 #include <optional>
 #include <random>
-#include <thread>
 #include <utility>
 #include <vector>
 
 #ifdef EXECUTORCH_BUILD_CUDA
+#include <executorch/extension/cuda/caller_stream.h>
+
 #include <cuda_runtime.h>
+#else
+#include <condition_variable>
+#include <thread>
 #endif
 
 namespace executorch::extension::llm {
 namespace {
 
 using ::executorch::extension::from_blob;
+#ifdef EXECUTORCH_BUILD_CUDA
+using ::executorch::extension::clone_tensor_ptr_to;
+using ::executorch::extension::make_tensor_ptr;
+#endif
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::Result;
@@ -49,6 +56,8 @@ constexpr const char* kTargetPrefillFromEmbeddings =
 constexpr const char* kEmbedText = "embed_text";
 constexpr const char* kDraftForward = "draft_forward";
 constexpr const char* kDraftPrefill = "draft_prefill";
+constexpr const char* kDFlashSampleTokens = "dflash_sample_tokens";
+constexpr const char* kDFlashVerifySpeculative = "dflash_verify_speculative";
 constexpr const char* kMaxContextLen = "get_max_seq_len";
 
 bool valid_temperature(float temperature) {
@@ -68,6 +77,38 @@ double elapsed_ms(Clock::time_point start, Clock::time_point end) {
   return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
+#ifdef EXECUTORCH_BUILD_CUDA
+const executorch::aten::Device kCudaDevice(
+    executorch::aten::DeviceType::CUDA,
+    0);
+const executorch::aten::Device kCpuDevice(executorch::aten::DeviceType::CPU);
+
+TensorPtr device_tensor(
+    std::vector<SizesType> sizes,
+    void* data,
+    executorch::aten::ScalarType type) {
+  return make_tensor_ptr(std::move(sizes), data, type, kCudaDevice);
+}
+
+// Orders the copy on the stream the CUDA backend executes on.
+Error copy_on_device(void* destination, const void* source, size_t bytes) {
+  const cudaError_t status = cudaMemcpyAsync(
+      destination,
+      source,
+      bytes,
+      cudaMemcpyDeviceToDevice,
+      executorch::extension::cuda::getCallerStream().value_or(
+          cudaStreamPerThread));
+  ET_CHECK_OR_RETURN_ERROR(
+      status == cudaSuccess,
+      Internal,
+      "DFlash device copy failed: %s",
+      cudaGetErrorString(status));
+  return Error::Ok;
+}
+#endif
+
+#ifndef EXECUTORCH_BUILD_CUDA
 class ProbabilityWorkers {
  public:
   explicit ProbabilityWorkers(int64_t worker_count) {
@@ -221,6 +262,7 @@ class ProbabilityWorkers {
   std::vector<std::vector<float>>* probabilities_ = nullptr;
   muse_glimmer::SamplingWorkspace caller_workspace_;
 };
+#endif
 
 class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
  public:
@@ -233,11 +275,12 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         hidden_dtype_(
             config_.activation_dtype == "bfloat16"
                 ? executorch::aten::ScalarType::BFloat16
-                : executorch::aten::ScalarType::Half),
-        rng_(std::random_device{}()) {}
+                : executorch::aten::ScalarType::Half) {}
 
   ~DFlashSession() override {
+#ifndef EXECUTORCH_BUILD_CUDA
     probability_workers_.reset();
+#endif
     if (config_.mutable_state != nullptr &&
         config_.session_token != kMuseGlimmerNoMutableSession) {
       config_.mutable_state->destroy_session(config_.session_token);
@@ -282,11 +325,13 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     ET_CHECK_OK_OR_RETURN_ERROR(validate_sampling(sampling));
     sampling_ = sampling;
     sampling_initialized_ = true;
+#ifndef EXECUTORCH_BUILD_CUDA
     seed_rng(sampling_);
     if (effective_temperature() > 0.0 && n_draft_ > 1 &&
         probability_workers_ == nullptr) {
       probability_workers_ = std::make_unique<ProbabilityWorkers>(n_draft_);
     }
+#endif
     stop_.store(false, std::memory_order_relaxed);
 
     const int64_t token_count = static_cast<int64_t>(tokens.size());
@@ -393,7 +438,9 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     }
     if (!sampling_initialized_) {
       sampling_ = sampling;
+#ifndef EXECUTORCH_BUILD_CUDA
       seed_rng(sampling_);
+#endif
       sampling_initialized_ = true;
     }
 
@@ -534,6 +581,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     return Error::Ok;
   }
 
+#ifndef EXECUTORCH_BUILD_CUDA
   void seed_rng(const SamplingConfig& sampling) {
     if (sampling.seed == 0) {
       std::random_device random;
@@ -546,6 +594,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         static_cast<uint32_t>(sampling.seed >> 32)};
     rng_.seed(seed);
   }
+#endif
 
   int64_t max_context_len() const {
     const auto it = config_.metadata.find(kMaxContextLen);
@@ -695,11 +744,11 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     if (room < n_draft_ + 1) {
       return run_target_only_cycle();
     }
+    return run_device_speculative_cycle();
 #else
     if (room == 1) {
       return run_target_only_cycle();
     }
-#endif
 
     DFlashCycleTiming cycle_timing;
     DFlashCycleTiming* const timing =
@@ -870,12 +919,28 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     if (timing != nullptr) {
       timing->accept_correction_ms += elapsed_ms(accept_start, Clock::now());
     }
+    return commit_cycle(
+        candidates.data(),
+        committed,
+        correction,
+        std::move(verify->hidden),
+        timing,
+        cycle_start);
+#endif
+  }
 
+  Error commit_cycle(
+      const uint64_t* candidates,
+      int64_t committed,
+      uint64_t correction,
+      std::vector<uint16_t> hidden,
+      DFlashCycleTiming* timing,
+      Clock::time_point cycle_start) {
     const auto commit_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
     const int64_t old_hidden_rows = hidden_rows();
     cached_ctx_len_ += old_hidden_rows;
-    hidden_ = std::move(verify->hidden);
+    hidden_ = std::move(hidden);
     hidden_.resize(committed * hidden_dim_);
 
     int64_t nonterminal_committed = committed;
@@ -936,6 +1001,223 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     return sampling_.temperature < 0.0f ? 0.0 : sampling_.temperature;
   }
 
+#ifdef EXECUTORCH_BUILD_CUDA
+  Error ensure_device_state() {
+    if (candidates_ != nullptr) {
+      return Error::Ok;
+    }
+    const int64_t context_len = max_context_len();
+    ET_CHECK_OR_RETURN_ERROR(
+        context_len > 0,
+        InvalidProgram,
+        "CUDA DFlash requires a positive context length");
+    std::vector<int64_t> positions(context_len);
+    std::iota(positions.begin(), positions.end(), 0);
+    position_table_ =
+        clone_tensor_ptr_to(make_tensor_ptr(std::move(positions)), kCudaDevice);
+    positions_ = clone_tensor_ptr_to(
+        make_tensor_ptr(std::vector<int64_t>(block_length_)), kCudaDevice);
+    candidates_ = clone_tensor_ptr_to(
+        make_tensor_ptr(std::vector<int64_t>(block_length_)), kCudaDevice);
+    return Error::Ok;
+  }
+
+  // Uploads sampling scalars only when the configuration changes.
+  void sync_device_sampling(const SamplingConfig& sampling) {
+    if (device_sampling_.has_value() &&
+        same_sampling(*device_sampling_, sampling)) {
+      return;
+    }
+    const float temperature =
+        sampling.temperature < 0.0f ? 0.0f : sampling.temperature;
+    const bool draft_argmax = temperature > 0.0f && config_.draft_argmax;
+    target_temperature_ = clone_tensor_ptr_to(
+        make_tensor_ptr(std::vector<float>{temperature}), kCudaDevice);
+    draft_temperature_ = clone_tensor_ptr_to(
+        make_tensor_ptr(std::vector<float>{draft_argmax ? 0.0f : temperature}),
+        kCudaDevice);
+    top_k_ = clone_tensor_ptr_to(
+        make_tensor_ptr(std::vector<int64_t>{sampling.top_k}), kCudaDevice);
+    top_p_ = clone_tensor_ptr_to(
+        make_tensor_ptr(std::vector<float>{sampling.top_p}), kCudaDevice);
+    bool draft_argmax_value = draft_argmax;
+    draft_argmax_ = clone_tensor_ptr_to(
+        make_tensor_ptr({1}, &draft_argmax_value), kCudaDevice);
+    device_sampling_ = sampling;
+  }
+
+  Error read_device_int64(
+      const executorch::aten::Tensor& source,
+      std::vector<int64_t>& values) {
+    const auto host = clone_tensor_ptr_to(
+        device_tensor(
+            {static_cast<SizesType>(source.numel())},
+            source.mutable_data_ptr(),
+            executorch::aten::ScalarType::Long),
+        kCpuDevice);
+    const auto* data = host->const_data_ptr<int64_t>();
+    values.assign(data, data + host->numel());
+    return Error::Ok;
+  }
+
+  // Samples one row with the PTE sampler. The token also becomes the next
+  // speculative anchor, which stays on the device. Caller must hold
+  // exec_mutex.
+  Result<uint64_t> sample_device_token(
+      float* logits_row,
+      int64_t vocab_size,
+      const SamplingConfig& sampling) {
+    ET_CHECK_OK_OR_RETURN_ERROR(ensure_device_state());
+    sync_device_sampling(sampling);
+    auto outputs = execute_active(
+        kDFlashSampleTokens,
+        {EValue(device_tensor(
+             {1, static_cast<SizesType>(vocab_size)},
+             logits_row,
+             executorch::aten::ScalarType::Float)),
+         EValue(target_temperature_),
+         EValue(top_k_),
+         EValue(top_p_)});
+    ET_CHECK_OK_OR_RETURN_ERROR(outputs.error());
+    ET_CHECK_OR_RETURN_ERROR(
+        outputs->size() == 2 && (*outputs)[0].isTensor(),
+        InvalidProgram,
+        "dflash_sample_tokens must return tokens and probabilities");
+    const auto& token = (*outputs)[0].toTensor();
+    ET_CHECK_OK_OR_RETURN_ERROR(copy_on_device(
+        candidates_->mutable_data_ptr(),
+        token.const_data_ptr(),
+        sizeof(int64_t)));
+    std::vector<int64_t> value;
+    ET_CHECK_OK_OR_RETURN_ERROR(read_device_int64(token, value));
+    return static_cast<uint64_t>(value[0]);
+  }
+
+  // draft_forward -> dflash_sample_tokens -> embed_text -> target ->
+  // dflash_verify_speculative, with vocabulary-wide tensors kept on the device.
+  // Only the cycle result and committed hidden state are copied to the host.
+  Error run_device_speculative_cycle() {
+    DFlashCycleTiming cycle_timing;
+    DFlashCycleTiming* const timing =
+        config_.timing == nullptr ? nullptr : &cycle_timing;
+    const auto cycle_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    const int64_t verify_len = n_draft_ + 1;
+    std::vector<int64_t> cycle;
+    std::vector<uint16_t> hidden;
+    {
+      std::lock_guard<std::mutex> guard(*config_.exec_mutex);
+      ET_CHECK_OK_OR_RETURN_ERROR(ensure_device_state());
+      sync_device_sampling(sampling_);
+      auto draft = execute_draft(hidden_rows(), timing);
+      ET_CHECK_OK_OR_RETURN_ERROR(draft.error());
+      const auto& draft_logits = (*draft)[0].toTensor();
+      const int64_t vocab_size = draft_logits.size(draft_logits.dim() - 1);
+
+      const auto sampling_start =
+          timing == nullptr ? Clock::time_point{} : Clock::now();
+      auto sampled = execute_active(
+          kDFlashSampleTokens,
+          {EValue(device_tensor(
+               {static_cast<SizesType>(n_draft_),
+                static_cast<SizesType>(vocab_size)},
+               static_cast<float*>(draft_logits.mutable_data_ptr()) +
+                   vocab_size,
+               executorch::aten::ScalarType::Float)),
+           EValue(draft_temperature_),
+           EValue(top_k_),
+           EValue(top_p_)});
+      ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
+      ET_CHECK_OR_RETURN_ERROR(
+          sampled->size() == 2 && (*sampled)[0].isTensor(),
+          InvalidProgram,
+          "dflash_sample_tokens must return tokens and probabilities");
+      auto* candidates = static_cast<int64_t*>(candidates_->mutable_data_ptr());
+      ET_CHECK_OK_OR_RETURN_ERROR(copy_on_device(
+          candidates + 1,
+          (*sampled)[0].toTensor().const_data_ptr(),
+          n_draft_ * sizeof(int64_t)));
+      ET_CHECK_OK_OR_RETURN_ERROR(copy_on_device(
+          positions_->mutable_data_ptr(),
+          position_table_->const_data_ptr<int64_t>() + target_pos_,
+          verify_len * sizeof(int64_t)));
+      if (timing != nullptr) {
+        timing->draft_sampling_ms += elapsed_ms(sampling_start, Clock::now());
+      }
+
+      auto verify = run_target_embedded(
+          device_tensor(
+              {1, static_cast<SizesType>(verify_len)},
+              candidates,
+              executorch::aten::ScalarType::Long),
+          device_tensor(
+              {static_cast<SizesType>(verify_len)},
+              positions_->mutable_data_ptr(),
+              executorch::aten::ScalarType::Long),
+          /*host_tokens=*/nullptr,
+          verify_len,
+          sampling_,
+          /*sample_last=*/false,
+          /*image=*/nullptr,
+          /*next_image_row=*/nullptr,
+          timing,
+          /*use_target_prefill=*/false,
+          /*retain_from_row=*/0);
+      ET_CHECK_OK_OR_RETURN_ERROR(verify.error());
+      hidden = std::move(verify->hidden);
+
+      const auto accept_start =
+          timing == nullptr ? Clock::time_point{} : Clock::now();
+      auto verified = execute_active(
+          kDFlashVerifySpeculative,
+          {EValue(last_logits_tensor_),
+           (*sampled)[1],
+           EValue(device_tensor(
+               {static_cast<SizesType>(verify_len)},
+               candidates,
+               executorch::aten::ScalarType::Long)),
+           EValue(target_temperature_),
+           EValue(top_k_),
+           EValue(top_p_),
+           EValue(draft_argmax_)});
+      ET_CHECK_OK_OR_RETURN_ERROR(verified.error());
+      ET_CHECK_OR_RETURN_ERROR(
+          verified->size() == 1 && (*verified)[0].isTensor() &&
+              (*verified)[0].toTensor().numel() == verify_len + 2,
+          InvalidProgram,
+          "dflash_verify_speculative must return [count, correction, tokens]");
+      const auto& result = (*verified)[0].toTensor();
+      ET_CHECK_OK_OR_RETURN_ERROR(copy_on_device(
+          candidates, result.const_data_ptr<int64_t>() + 1, sizeof(int64_t)));
+      ET_CHECK_OK_OR_RETURN_ERROR(read_device_int64(result, cycle));
+      if (timing != nullptr) {
+        timing->accept_correction_ms += elapsed_ms(accept_start, Clock::now());
+      }
+    }
+
+    const int64_t committed = cycle[0];
+    ET_CHECK_OR_RETURN_ERROR(
+        committed > 0 && committed <= verify_len,
+        InvalidProgram,
+        "DFlash verifier returned an invalid committed count");
+    if (timing != nullptr) {
+      const int64_t attempted = std::min(committed, n_draft_);
+      timing->draft_attempts_by_row.assign(attempted, 1);
+      timing->draft_accepts_by_row.assign(attempted, 1);
+      if (committed <= n_draft_) {
+        timing->draft_accepts_by_row.back() = 0;
+      }
+    }
+    return commit_cycle(
+        reinterpret_cast<const uint64_t*>(cycle.data() + 2),
+        committed,
+        static_cast<uint64_t>(cycle[1]),
+        std::move(hidden),
+        timing,
+        cycle_start);
+  }
+#endif
+
   Result<TargetResult> run_target(
       const uint64_t* tokens,
       int64_t count,
@@ -972,18 +1254,49 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     std::vector<int64_t> token_data(tokens, tokens + count);
     std::vector<int64_t> positions(count);
     std::iota(positions.begin(), positions.end(), start_pos);
-    auto token_tensor = from_blob(
+    TensorPtr token_tensor = from_blob(
         token_data.data(),
         {1, static_cast<SizesType>(count)},
         executorch::aten::ScalarType::Long);
-    auto position_tensor = from_blob(
+    TensorPtr position_tensor = from_blob(
         positions.data(),
         {static_cast<SizesType>(count)},
         executorch::aten::ScalarType::Long);
+#ifdef EXECUTORCH_BUILD_CUDA
+    token_tensor = clone_tensor_ptr_to(token_tensor, kCudaDevice);
+    position_tensor = clone_tensor_ptr_to(position_tensor, kCudaDevice);
+#endif
+    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
+    return run_target_embedded(
+        token_tensor,
+        position_tensor,
+        tokens,
+        count,
+        sampling,
+        sample_last,
+        image,
+        next_image_row,
+        timing,
+        use_target_prefill,
+        retain_from_row);
+  }
 
+  // Runs embed_text and the target on inputs already placed for the backend.
+  // host_tokens locates image patch rows. Caller must hold exec_mutex.
+  Result<TargetResult> run_target_embedded(
+      const TensorPtr& token_tensor,
+      const TensorPtr& position_tensor,
+      const uint64_t* host_tokens,
+      int64_t count,
+      const SamplingConfig& sampling,
+      bool sample_last,
+      const PreparedMuseGlimmerImage* image,
+      int64_t* next_image_row,
+      DFlashCycleTiming* timing,
+      bool use_target_prefill,
+      int64_t retain_from_row) {
     const auto execute_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
-    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
     auto embed_outputs = execute_active(kEmbedText, {EValue(token_tensor)});
     ET_CHECK_OK_OR_RETURN_ERROR(embed_outputs.error());
     ET_CHECK_OR_RETURN_ERROR(
@@ -1008,16 +1321,16 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     std::vector<EValue> target_inputs;
     if (image != nullptr) {
       ET_CHECK_OR_RETURN_ERROR(
-          next_image_row != nullptr,
+          next_image_row != nullptr && host_tokens != nullptr,
           InvalidState,
-          "DFlash image splice requires an image row cursor");
+          "DFlash image splice requires host tokens and an image row cursor");
       embeddings.resize(count * embed_dim);
       ET_CHECK_OK_OR_RETURN_ERROR(copy_bytes_to_host(
           embeddings.data(),
           embed_tensor.const_data_ptr(),
           embeddings.size() * sizeof(uint16_t)));
       for (int64_t row = 0; row < count; ++row) {
-        if (tokens[row] != kMuseGlimmerImagePatchTokenId) {
+        if (host_tokens[row] != kMuseGlimmerImagePatchTokenId) {
           continue;
         }
         ET_CHECK_OR_RETURN_ERROR(
@@ -1034,6 +1347,9 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
           embeddings.data(),
           {1, static_cast<SizesType>(count), static_cast<SizesType>(embed_dim)},
           hidden_dtype_);
+#ifdef EXECUTORCH_BUILD_CUDA
+      embeddings_tensor = clone_tensor_ptr_to(embeddings_tensor, kCudaDevice);
+#endif
       target_inputs = {EValue(embeddings_tensor), EValue(position_tensor)};
     } else {
       target_inputs = {(*embed_outputs)[0], EValue(position_tensor)};
@@ -1070,6 +1386,36 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         InvalidProgram,
         "DFlash target must return logits and hidden tensors");
 
+    uint64_t sampled = 0;
+#ifdef EXECUTORCH_BUILD_CUDA
+    const auto& logits = outputs[0].toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        logits.scalar_type() == executorch::aten::ScalarType::Float &&
+            logits.dim() >= 2,
+        InvalidProgram,
+        "DFlash logits must be float32");
+    const int64_t vocab_size = logits.size(logits.dim() - 1);
+    last_logits_tensor_ = device_tensor(
+        {static_cast<SizesType>(logits.numel() / vocab_size),
+         static_cast<SizesType>(vocab_size)},
+        logits.mutable_data_ptr(),
+        executorch::aten::ScalarType::Float);
+    if (sample_last) {
+      const auto sampling_start =
+          timing == nullptr ? Clock::time_point{} : Clock::now();
+      auto token = sample_device_token(
+          static_cast<float*>(logits.mutable_data_ptr()) +
+              (use_target_prefill ? 0 : count - 1) * vocab_size,
+          vocab_size,
+          sampling);
+      ET_CHECK_OK_OR_RETURN_ERROR(token.error());
+      sampled = token.get();
+      if (timing != nullptr) {
+        timing->accept_correction_ms +=
+            elapsed_ms(sampling_start, Clock::now());
+      }
+    }
+#else
     const auto logits_copy_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
     auto logits =
@@ -1080,7 +1426,6 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       timing->target_logits_copy_ms +=
           elapsed_ms(logits_copy_start, Clock::now());
     }
-    uint64_t sampled = 0;
     if (sample_last) {
       const auto sampling_start =
           timing == nullptr ? Clock::time_point{} : Clock::now();
@@ -1099,6 +1444,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
             elapsed_ms(sampling_start, Clock::now());
       }
     }
+#endif
 
     const auto& hidden_tensor = outputs[1].toTensor();
     ET_CHECK_OR_RETURN_ERROR(
@@ -1176,6 +1522,29 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
       bool discard_output,
       int64_t rows_to_feed,
       DFlashCycleTiming* timing = nullptr) {
+    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
+    auto outputs = execute_draft(rows_to_feed, timing);
+    ET_CHECK_OK_OR_RETURN_ERROR(outputs.error());
+    if (discard_output) {
+      return TensorPtr{};
+    }
+    const auto logits_copy_start =
+        timing == nullptr ? Clock::time_point{} : Clock::now();
+    auto host_logits = copy_float_tensor_to_host(
+        (*outputs)[0].toTensor(), draft_logits_storage_);
+    ET_CHECK_OK_OR_RETURN_ERROR(host_logits.error());
+    draft_logits_tensor_ = std::move(host_logits.get());
+    if (timing != nullptr) {
+      timing->draft_logits_copy_ms +=
+          elapsed_ms(logits_copy_start, Clock::now());
+    }
+    return draft_logits_tensor_;
+  }
+
+  // Caller must hold exec_mutex.
+  Result<std::vector<EValue>> execute_draft(
+      int64_t rows_to_feed,
+      DFlashCycleTiming* timing) {
     ET_CHECK_OR_RETURN_ERROR(
         pending_token_.has_value() && hidden_dim_ > 0 && hidden_rows() > 0 &&
             rows_to_feed > 0 && rows_to_feed <= hidden_rows(),
@@ -1224,7 +1593,6 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
 #endif
     const auto execute_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
-    std::lock_guard<std::mutex> guard(*config_.exec_mutex);
     auto outputs = execute_active(kDraftForward, inputs);
     if (timing != nullptr) {
       timing->draft_execute_ms += elapsed_ms(execute_start, Clock::now());
@@ -1234,20 +1602,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         !outputs->empty() && (*outputs)[0].isTensor(),
         InvalidProgram,
         "draft_forward must return logits");
-    if (discard_output) {
-      return TensorPtr{};
-    }
-    const auto logits_copy_start =
-        timing == nullptr ? Clock::time_point{} : Clock::now();
-    auto host_logits = copy_float_tensor_to_host(
-        (*outputs)[0].toTensor(), draft_logits_storage_);
-    ET_CHECK_OK_OR_RETURN_ERROR(host_logits.error());
-    draft_logits_tensor_ = std::move(host_logits.get());
-    if (timing != nullptr) {
-      timing->draft_logits_copy_ms +=
-          elapsed_ms(logits_copy_start, Clock::now());
-    }
-    return draft_logits_tensor_;
+    return outputs;
   }
 
   Result<std::vector<EValue>> execute_active(
@@ -1264,7 +1619,6 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   int64_t block_length_;
   int64_t n_draft_;
   executorch::aten::ScalarType hidden_dtype_;
-  std::mt19937 rng_;
   SamplingConfig sampling_;
   bool sampling_initialized_ = false;
   bool poisoned_ = false;
@@ -1285,10 +1639,24 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   TensorPtr last_logits_tensor_;
   std::vector<float> draft_logits_storage_;
   TensorPtr draft_logits_tensor_;
+#ifdef EXECUTORCH_BUILD_CUDA
+  // Session-owned device inputs of the speculative chain.
+  TensorPtr candidates_;
+  TensorPtr positions_;
+  TensorPtr position_table_;
+  std::optional<SamplingConfig> device_sampling_;
+  TensorPtr target_temperature_;
+  TensorPtr draft_temperature_;
+  TensorPtr top_k_;
+  TensorPtr top_p_;
+  TensorPtr draft_argmax_;
+#else
+  std::mt19937 rng_{std::random_device{}()};
   std::vector<std::vector<float>> draft_probs_;
   std::vector<std::vector<float>> target_probs_;
   muse_glimmer::SamplingWorkspace sampling_workspace_;
   std::unique_ptr<ProbabilityWorkers> probability_workers_;
+#endif
 };
 
 } // namespace
