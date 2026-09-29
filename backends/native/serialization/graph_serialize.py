@@ -85,7 +85,7 @@ from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "1.0"
 _SCHEMA_RESOURCE = "native_graph.fbs"
 _FILE_STEM = "native_graph"
 
