@@ -144,7 +144,13 @@ def offgraph_step(
     # ``total_written`` dead via its ``ring_pos >= 0`` guard, and once it wraps
     # sdpa clamps the bound to the buffer, restoring the full sweep. Without it
     # the call misses sdpa's decode split-K dispatch.
-    kv_len = position[-1] + 1
+    #
+    # Positions are contiguous, so this equals position[-1] + 1 at runtime. It
+    # is written with the step width from the shape because AOTI autotunes sdpa
+    # on generated inputs whose integer data is zero: a bound read entirely
+    # from position data tunes as a one-token context and picks a tile that
+    # runs long prefill markedly slower.
+    kv_len = position[0] + position.shape[0]
     return torch.ops.triton.sdpa(
         q,
         k_storage.transpose(1, 2),
