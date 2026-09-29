@@ -164,8 +164,8 @@ inline runtime::Result<int64_t> read_offgraph_kv_step_width(
 // program that does not (an embedding or vision pass) is left without one.
 // A program that does needs `step_width` from its compile specs.
 //
-// Defined only when the backend is built with the LLM extension, which the
-// off-graph cache builds on (EXECUTORCH_CUDA_OFFGRAPH_KV_CACHE).
+// Defined only when the backend is built with EXECUTORCH_BUILD_EXTENSION_LLM,
+// whose neutral cache the off-graph cache builds on.
 runtime::Error attach_offgraph_kv_cache(
     CudaDelegateHandle& handle,
     const char* cache_key,

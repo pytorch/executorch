@@ -20,16 +20,19 @@
 #include <executorch/backends/native/runtime/Program.h>
 
 #include <cstdint>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include <flatbuffers/flatbuffers.h>
 
+#include <executorch/backends/native/runtime/deserialize/CheckedMath.h>
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 #include <executorch/backends/native/runtime/native_graph_generated.h>
 
 namespace ptn {
@@ -123,6 +126,11 @@ int64_t static_extent(
     const std::string& value_name,
     flatbuffers::uoffset_t i) {
   if (d->min() == d->max() && d->min() >= 0) {
+    if (static_cast<uint64_t>(d->min()) > detail::kMaxTensorDimension) {
+      throw ResourceLimitError(
+          "build_tensor_meta: " + value_name + " dim " + std::to_string(i) +
+          " exceeds dimension limit");
+    }
     return d->min();
   }
   throw std::runtime_error(
@@ -141,9 +149,25 @@ TensorMeta build_tensor_meta(
   }
   out.dtype = map_scalar_type(m->dtype());
   if (const auto* sizes = m->sizes()) {
+    if (sizes->size() > detail::kMaxTensorRank) {
+      throw ResourceLimitError(
+          "build_tensor_meta: " + name + " exceeds tensor rank limit");
+    }
     out.sizes.reserve(sizes->size());
+    size_t numel = 1;
     for (flatbuffers::uoffset_t i = 0; i < sizes->size(); ++i) {
-      out.sizes.push_back(static_extent(sizes->Get(i), name, i));
+      const int64_t extent = static_extent(sizes->Get(i), name, i);
+      out.sizes.push_back(extent);
+      if (!detail::checked_mul(numel, static_cast<size_t>(extent), numel)) {
+        throw ResourceLimitError(
+            "build_tensor_meta: " + name + " element count overflows");
+      }
+    }
+    size_t nbytes = 0;
+    if (!detail::checked_mul(numel, element_size(out.dtype), nbytes) ||
+        nbytes > detail::kMaxTensorBytes) {
+      throw ResourceLimitError(
+          "build_tensor_meta: " + name + " exceeds tensor byte limit");
     }
   }
   if (const auto* dord = m->dim_order()) {
@@ -593,6 +617,7 @@ Method Program::build_method(size_t index) const {
 // the deserializer helpers it drives: get_method is the public lazy entry
 // point, build_method the private materializer it calls on a cache miss.
 const Method& Program::get_method(const std::string& name) const {
+  const std::lock_guard<std::mutex> lock(method_cache_mutex_);
   const auto it = method_cache_.find(name);
   if (it != method_cache_.end()) {
     return it->second;
