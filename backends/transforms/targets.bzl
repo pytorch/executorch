@@ -365,6 +365,8 @@ def define_common_targets():
             ":dim_maps",
             ":fuse_duplicate_users_pass",
             ":fuse_identical_input_transforms_pass",
+            ":permute_view_meta",
+            ":utils",
             "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",

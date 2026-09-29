@@ -17,7 +17,12 @@ import torch
 from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
     CanonicalizeViewCopyPermutePass,
 )
-from executorch.backends.transforms.dim_maps import _Dim, PermuteMap, ViewMap
+from executorch.backends.transforms.dim_maps import (
+    _Dim,
+    _dim_equals,
+    PermuteMap,
+    ViewMap,
+)
 from executorch.backends.transforms.fuse_duplicate_users_pass import (
     FuseDuplicateUsersPass,
 )
@@ -25,11 +30,43 @@ from executorch.backends.transforms.fuse_identical_input_transforms_pass import 
     FuseIdenticalInputTransformsPass,
 )
 from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
+from executorch.backends.transforms.utils import (
+    get_param_tensor,
+    is_param_node,
+    set_param_tensor,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.fx.node import map_arg
+
+
+def _constant_value_for_permutation(
+    exported_program: ExportedProgram | None,
+    node: torch.fx.Node,
+    rank: int,
+    *,
+    dims: Sequence[int] | None = None,
+) -> torch.Tensor | None:
+    """Helper function for applying dims permutation to the constant node and returning the result."""
+    if exported_program is None:
+        return None
+    graph_signature = exported_program.graph_signature
+    buffer_target = graph_signature.inputs_to_buffers.get(node.name)
+    if buffer_target is not None and buffer_target in (
+        graph_signature.buffers_to_mutate.values()
+    ):
+        return None
+    if not is_param_node(exported_program, node):
+        return None
+    value = get_param_tensor(exported_program, node)
+    if value is None or value.dim() > rank:
+        return None
+    if dims is None:
+        return value
+    padded = value.reshape((1,) * (rank - value.dim()) + tuple(value.shape))
+    return padded.permute(tuple(dims)).contiguous()
 
 
 @dataclass(frozen=True)
@@ -231,6 +268,14 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         if swapped_args is None:
             return False
 
+        crossing_permute_dims = (
+            cast(Sequence[int], swapped_args[0][1])
+            if node.target in self._permute_targets
+            and next_node.target
+            in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS
+            else None
+        )
+        self._maybe_update_constant_inputs(next_node, node, crossing_permute_dims)
         node.args = swapped_args[0]
         next_node.args = swapped_args[1]
         return True
@@ -425,9 +470,88 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         """
         return node.target in self._TRANSPARENT_TARGETS
 
-    def is_multi_input_elementwise(self, node: torch.fx.Node) -> bool:
-        """Elementwise ops whose extra inputs are not layout-carrying."""
+    def is_permutable_binary(self, node: torch.fx.Node) -> bool:
+        """Whether a binary op has exactly one layout-carrying input."""
+        if node.target not in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS:
+            return False
+        value = node.meta.get("val")
+        return (
+            isinstance(value, torch.Tensor)
+            and len(self._layout_dependent_inputs(node, len(value.shape))) == 1
+        )
+
+    def is_backend_elementwise(self, node: torch.fx.Node) -> bool:
+        """Whether a backend op can be propagated through as elementwise."""
         return False
+
+    def _layout_dependent_inputs(
+        self, node: torch.fx.Node, rank: int
+    ) -> list[torch.fx.Node]:
+        allow_constants = (
+            node.target in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS
+        )
+        return [
+            input_node
+            for input_node in node.all_input_nodes
+            if not self._is_layout_invariant(input_node, rank)
+            and not (
+                allow_constants
+                and len(input_node.users) == 1
+                and _constant_value_for_permutation(
+                    self.exported_program, input_node, rank
+                )
+                is not None
+            )
+        ]
+
+    @staticmethod
+    def _is_layout_invariant(node: torch.fx.Node, rank: int) -> bool:
+        value = node.meta.get("val")
+        return (
+            isinstance(value, torch.Tensor)
+            and len(value.shape) <= rank
+            and all(_dim_equals(dim, 1) for dim in value.shape)
+        )
+
+    def _maybe_update_constant_inputs(
+        self,
+        node: torch.fx.Node,
+        moving_node: torch.fx.Node,
+        crossing_permute_dims: Sequence[int] | None = None,
+    ) -> None:
+        if (
+            node.target not in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS
+            or moving_node.target not in self._permute_targets
+        ):
+            return
+        permute_map = PermuteMap(moving_node)
+        dims = self._constant_permutation_dims(permute_map, crossing_permute_dims)
+        rank = len(dims)
+        layout_dependent_inputs = set(self._layout_dependent_inputs(node, rank))
+        for input_node in node.all_input_nodes:
+            if input_node in layout_dependent_inputs or self._is_layout_invariant(
+                input_node, rank
+            ):
+                continue
+            value = _constant_value_for_permutation(
+                self.exported_program,
+                input_node,
+                rank,
+                dims=dims,
+            )
+            assert value is not None
+            assert self.exported_program is not None
+            set_param_tensor(self.exported_program, input_node, value)
+            input_node.meta = copy.copy(input_node.meta)
+            input_node.meta["val"] = input_node.meta["val"].new_empty(value.shape)
+
+    @abstractmethod
+    def _constant_permutation_dims(
+        self,
+        permute_map: PermuteMap,
+        crossing_permute_dims: Sequence[int] | None,
+    ) -> Sequence[int]:
+        pass
 
     def blocks_crossing(self, node: torch.fx.Node) -> bool:
         """Users past which a frontier node must not be moved."""
@@ -469,9 +593,16 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
             return torch.Tag.pointwise in op.tags
         return False
 
+    def _is_elementwise_like(self, node: torch.fx.Node) -> bool:
+        return (
+            self.is_elementwise(node)
+            or node.target in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS
+            or self.is_backend_elementwise(node)
+        )
+
     def is_swappable(self, next_node: torch.fx.Node) -> bool:
         return (
-            self.is_elementwise(next_node)
+            self._is_elementwise_like(next_node)
             or next_node.target in self._ARG_UPDATE_TARGETS
         )
 
@@ -480,20 +611,28 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         moving_node: torch.fx.Node,
         next_node: torch.fx.Node,
     ) -> bool:
-        """Return whether ``moving_node`` can cross an elementwise operation.
+        """Return whether ``moving_node`` can cross an elementwise-like operation."""
 
-        Only simple single-input, single-output operations are handled here.
-        Multi-input elementwise operations are handled by horizontal fusion.
+        input_count = len(next_node.all_input_nodes)
+        next_val = next_node.meta.get("val")
+        is_registered_binary = (
+            next_node.target in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS
+        )
+        is_unary_elementwise = (
+            not is_registered_binary
+            and input_count == 1
+            and self.is_elementwise(next_node)
+        )
+        is_permutable_binary = (
+            moving_node.target in self._permute_targets
+            and is_registered_binary
+            and self.is_permutable_binary(next_node)
+        )
+        is_backend_elementwise = self.is_backend_elementwise(next_node)
+        if not (is_unary_elementwise or is_permutable_binary or is_backend_elementwise):
+            return False
 
-        """
-        if (
-            not self.is_elementwise(next_node)
-            or (
-                len(next_node.all_input_nodes) != 1
-                and not self.is_multi_input_elementwise(next_node)
-            )
-            or not isinstance(next_node.meta.get("val"), torch.Tensor)
-        ):
+        if not isinstance(next_val, torch.Tensor):
             return False
 
         if moving_node.target == self._VIEW_TARGET:
@@ -514,13 +653,12 @@ class PropagateViewCopyPermutePass(ExportPass, ABC):
         if moving_node.target not in self._permute_targets:
             return True
 
-        dims = self._dim_arg(moving_node.args[1])
-        source_rank = len(dims) if isinstance(dims, Sequence) else None
-        next_val = next_node.meta.get("val")
-        return (
-            source_rank is not None
-            and isinstance(next_val, torch.Tensor)
-            and len(next_val.shape) == source_rank
+        if is_permutable_binary:
+            return True
+
+        permute_dims = self._dim_arg(moving_node.args[1])
+        return isinstance(permute_dims, Sequence) and len(next_val.shape) == len(
+            permute_dims
         )
 
 
@@ -540,22 +678,8 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         return getattr(val, "shape", None)
 
     def _propagation_input(self, node: torch.fx.Node) -> torch.fx.Node | None:
-        inputs = list(node.all_input_nodes)
-        if len(inputs) > 1 and not self.is_multi_input_elementwise(node):
-            value = node.meta.get("val")
-            if not isinstance(value, torch.Tensor):
-                return None
-            rank = len(value.shape)
-            inputs = [
-                input_node
-                for input_node in inputs
-                if not FuseIdenticalInputTransformsPass.is_layout_invariant(
-                    input_node, rank
-                )
-            ]
-        if inputs and (len(inputs) == 1 or self.is_multi_input_elementwise(node)):
-            return inputs[0]
-        return None
+        inputs = list(self._get_next_nodes(node))
+        return inputs[0] if len(inputs) == 1 else None
 
     def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
         # After moving up, dependencies run from the transform through the
@@ -565,6 +689,13 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         for node in reversed(propagation_path[1:]):
             if node.graph is not None:
                 self._refresh_node_meta(node)
+
+    def _constant_permutation_dims(
+        self,
+        permute_map: PermuteMap,
+        crossing_permute_dims: Sequence[int] | None,
+    ) -> Sequence[int]:
+        return permute_map.permute_dims
 
     def fuse_horizontal(self, graph_module):
         modified = False
@@ -576,7 +707,15 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
         return PassResult(graph_module, modified)
 
     def _get_next_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
-        return list(node.all_input_nodes)
+        input_nodes = list(node.all_input_nodes)
+        value = node.meta.get("val")
+        if len(input_nodes) > 1 and isinstance(value, torch.Tensor):
+            layout_dependent_inputs = self._layout_dependent_inputs(
+                node, len(value.shape)
+            )
+            if len(layout_dependent_inputs) == 1:
+                return layout_dependent_inputs
+        return input_nodes
 
     def _get_prev_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
         return list(node.users.keys())
@@ -598,8 +737,11 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     ) -> bool:
         if super()._can_move_through_elementwise(moving_node, next_node):
             return True
-        if moving_node.target not in self._permute_targets or not self.is_elementwise(
-            next_node
+        if (
+            moving_node.target not in self._permute_targets
+            or next_node.target
+            in FuseIdenticalInputTransformsPass._BINARY_ELEMENTWISE_OPS
+            or not self.is_elementwise(next_node)
         ):
             return False
 
@@ -619,7 +761,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     def _maybe_swap_permute_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:
-        if self.is_elementwise(next_node):
+        if self._is_elementwise_like(next_node):
             if not self._can_move_through_elementwise(node, next_node):
                 return None
             next_val = next_node.meta.get("val")
@@ -679,7 +821,7 @@ class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
     def _maybe_swap_view_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:
-        if self.is_elementwise(next_node):
+        if self._is_elementwise_like(next_node):
             if not self._can_move_through_elementwise(node, next_node):
                 return None
             return node.args, next_node.args
@@ -918,6 +1060,21 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         if moving_node.graph is not None:
             self._refresh_node_meta(moving_node)
 
+    def _constant_permutation_dims(
+        self,
+        permute_map: PermuteMap,
+        crossing_permute_dims: Sequence[int] | None,
+    ) -> Sequence[int]:
+        dims = (
+            crossing_permute_dims
+            if crossing_permute_dims is not None
+            else permute_map.permute_dims
+        )
+        inverse_dims = [0] * len(dims)
+        for output_dim, input_dim in enumerate(dims):
+            inverse_dims[input_dim] = output_dim
+        return inverse_dims
+
     def fuse_horizontal(self, graph_module):
         modified = False
         result = FuseIdenticalInputTransformsPass(
@@ -936,7 +1093,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
     def _maybe_swap_permute_args(
         self, node: torch.fx.Node, next_node: torch.fx.Node
     ) -> Any | None:
-        if self.is_elementwise(next_node):
+        if self._is_elementwise_like(next_node):
             if not self._can_move_through_elementwise(node, next_node):
                 return None
             next_val = next_node.meta.get("val")
@@ -982,7 +1139,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
         return (node_args, (*next_node.args[:1], new_args, *next_node.args[2:]))
 
     def _maybe_swap_view_args(self, node, next_node):
-        if self.is_elementwise(next_node):
+        if self._is_elementwise_like(next_node):
             if not self._can_move_through_elementwise(node, next_node):
                 return None
             return node.args, next_node.args
@@ -1272,9 +1429,9 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
 
         Fork propagation is only implemented for permutes. The permutation must be
         valid, every branch must support the same propagation step, and every branch
-        output must retain the permutation rank. Planning all branches before editing
-        is essential: discovering one unsupported branch after mutating earlier ones
-        would leave a partially rewritten graph.
+        output must match its post-swap permutation rank. Planning all branches
+        before editing is essential: discovering one unsupported branch after mutating
+        earlier ones would leave a partially rewritten graph.
 
         Each planned branch records both its pre-permute shape and any argument update
         needed when crossing reductions or slices.
@@ -1295,9 +1452,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
 
         branch_splits = []
         for next_node in next_nodes:
-            if self._can_move_through_elementwise(
-                node, next_node
-            ) or self._can_split_through_elementwise(node, frontier, next_node):
+            if self._can_split_through_elementwise(node, frontier, next_node):
                 arg_update = None
             elif self.is_swappable(next_node):
                 arg_update = self._maybe_swap_args(node, next_node)
@@ -1306,11 +1461,16 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
             else:
                 return None
 
+            branch_dims = normalized_dims if arg_update is None else arg_update[0][1]
+            branch_rank = len(branch_dims)
             next_val = next_node.meta.get("val")
-            if not isinstance(next_val, torch.Tensor) or len(next_val.shape) != rank:
+            if (
+                not isinstance(next_val, torch.Tensor)
+                or len(next_val.shape) != branch_rank
+            ):
                 return None
-            source_shape: list[_Dim] = [1] * rank
-            for output_axis, source_axis in enumerate(normalized_dims):
+            source_shape: list[_Dim] = [1] * branch_rank
+            for output_axis, source_axis in enumerate(branch_dims):
                 source_shape[source_axis] = next_val.shape[output_axis]
             branch_splits.append(
                 _ForkBranchSplit(next_node, tuple(source_shape), arg_update)
@@ -1330,8 +1490,7 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
             return False
         rank = len(frontier_val.shape)
         return all(
-            input_node is frontier
-            or FuseIdenticalInputTransformsPass.is_layout_invariant(input_node, rank)
+            input_node is frontier or self._is_layout_invariant(input_node, rank)
             for input_node in next_node.all_input_nodes
         )
 
@@ -1358,15 +1517,22 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
             original_user.replace_input_with(node, producer)
 
         for branch_split in branch_splits:
+            crossing_permute_dims = (
+                cast(Sequence[int], branch_split.arg_update[0][1])
+                if branch_split.arg_update is not None
+                else None
+            )
+            self._maybe_update_constant_inputs(
+                branch_split.next_node, node, crossing_permute_dims
+            )
+
+        for branch_split in branch_splits:
             next_node = branch_split.next_node
             old_next_meta = copy.copy(next_node.meta)
+            if branch_split.arg_update is not None:
+                next_node.args = branch_split.arg_update[1]
             if frontier is node:
                 next_node.replace_input_with(node, producer)
-            if branch_split.arg_update is not None:
-                branch_input = (
-                    producer if frontier is node else branch_split.arg_update[1][0]
-                )
-                next_node.args = (branch_input, *branch_split.arg_update[1][1:])
             next_node.meta = copy.copy(next_node.meta)
             next_node.meta["val"] = old_next_meta["val"].new_empty(
                 branch_split.source_shape
