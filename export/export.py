@@ -163,7 +163,7 @@ class ExportSession:
             dynamic_shapes: Optional dynamic shape specifications
             constant_methods: Optional dictionary of constant methods
             artifact_dir: Optional directory to store artifacts
-            generate_etrecord: Optional flag to generate an etrecord
+            generate_etrecord: Optional flag to generate an etrecord. Can also be provided by the ExportRecipe.
         """
         # Load model from file if string path provided
         if isinstance(model, str):
@@ -231,7 +231,8 @@ class ExportSession:
             "export_recipe": self._export_recipe,
             "session_name": name,
             "artifact_dir": artifact_dir,
-            "generate_etrecord": generate_etrecord,
+            "generate_etrecord": generate_etrecord
+            or getattr(export_recipe, "generate_etrecord", False),
         }
 
         self._stage_to_artifacts: Dict[StageType, PipelineArtifact] = {}

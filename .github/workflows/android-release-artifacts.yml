@@ -9,10 +9,15 @@ on:
         type: string
         default: ''
       upload_to_maven:
-        description: Upload the AAR to maven staging repository
+        description: Upload the AAR to Maven Central for manual review
         required: false
         type: boolean
         default: false
+      source_ref:
+        description: Git ref or SHA to build; defaults to the workflow commit
+        required: false
+        type: string
+        default: ''
       flavor:
         description: Build flavor
         required: false
@@ -25,9 +30,13 @@ on:
         required: false
         type: string
       upload_to_maven:
-        description: Upload the AAR to maven staging repository
+        description: Upload the AAR to Maven Central for manual review
         required: false
         type: boolean
+      source_ref:
+        description: Git ref or SHA to build; defaults to the workflow commit
+        required: false
+        type: string
       flavor:
         type: choice
         options:
@@ -49,6 +58,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     outputs:
+      aar-exists: ${{ steps.check.outputs.aar-exists }}
       should-skip: ${{ steps.check.outputs.should-skip }}
     steps:
       - name: Check if this RC version is already in S3
@@ -57,19 +67,32 @@ jobs:
         run: |
           VERSION="${{ inputs.version }}"
           FLAVOR="${{ inputs.flavor }}"
+          UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
           if [ -z "$FLAVOR" ]; then
             FLAVOR="xnnpack"
           fi
+          if [[ "$UPLOAD_TO_MAVEN" == "true" && -z "$VERSION" ]]; then
+            echo "A version is required when publishing to Maven Central"
+            exit 1
+          fi
           if [ -z "$VERSION" ]; then
             echo "No version name specified. Will create a snapshot AAR"
+            echo "aar-exists=false" >> $GITHUB_OUTPUT
             echo "should-skip=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar" | grep "200 OK"; then
             echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar"
-            echo "Will skip build/upload"
-            echo "should-skip=true" >> $GITHUB_OUTPUT
+            echo "aar-exists=true" >> $GITHUB_OUTPUT
+            if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
+              echo "Maven publishing requested. Will rebuild without replacing the S3 artifact"
+              echo "should-skip=false" >> $GITHUB_OUTPUT
+            else
+              echo "Will skip build/upload"
+              echo "should-skip=true" >> $GITHUB_OUTPUT
+            fi
           else
+            echo "aar-exists=false" >> $GITHUB_OUTPUT
             echo "should-skip=false" >> $GITHUB_OUTPUT
           fi
 
@@ -86,7 +109,7 @@ jobs:
       secrets-env: EXECUTORCH_MAVEN_SIGNING_KEYID EXECUTORCH_MAVEN_SIGNING_PASSWORD EXECUTORCH_MAVEN_CENTRAL_PASSWORD EXECUTORCH_MAVEN_CENTRAL_USERNAME EXECUTORCH_MAVEN_SIGNING_GPG_KEY_CONTENTS
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
-      ref: ${{ github.sha }}
+      ref: ${{ inputs.source_ref || github.sha }}
       timeout: 90
       upload-artifact: android-apps
       upload-artifact-to-s3: true
@@ -97,10 +120,9 @@ jobs:
         export CMAKE_CXX_COMPILER_LAUNCHER=sccache
         export CMAKE_C_COMPILER_LAUNCHER=sccache
 
-        # The generic Linux job chooses to use base env, not the one setup by the image
+        # The Android image already contains the build dependencies and pinned PyTorch.
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool buck2
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         mkdir -p ~/.gradle
@@ -157,15 +179,22 @@ jobs:
 
         shasum -a 256 "${ARTIFACTS_DIR_NAME}/executorch-${FLAVOR}.aar"
 
-        # Publish to maven staging
+        # Upload a deployment to Maven Central. A release owner reviews and
+        # publishes it manually in the Central Portal.
         UPLOAD_TO_MAVEN="${{ inputs.upload_to_maven }}"
         if [[ "$UPLOAD_TO_MAVEN" == "true" ]]; then
-          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew  ${GRADLE_ARGS} :executorch_android:publishToMavenCentral)
+          (cd extension/android; ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew --no-daemon --console=plain ${GRADLE_ARGS} :executorch_android:publishToMavenCentral)
+          {
+            echo "### Maven Central deployment uploaded"
+            echo
+            echo "Review and publish the deployment in the [Central Portal](https://central.sonatype.com/publishing/deployments)."
+          } >> "$GITHUB_STEP_SUMMARY"
         fi
 
   upload-release-aar:
     name: upload-release-aar
-    needs: build-aar
+    needs: [check-if-aar-exists, build-aar]
+    if: ${{ needs.check-if-aar-exists.outputs.aar-exists != 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
