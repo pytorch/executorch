@@ -91,9 +91,8 @@ class TestConstantProjectionBiases(unittest.TestCase):
                     )
                     self.assertEqual(info.delegation_by_operator[op].non_delegated, 0)
                     self.assertEqual(info.num_delegated_nodes, 3)
-                    runtime = _load_for_executorch_from_buffer(
-                        edge.to_executorch().buffer
-                    )
+                    pte_buffer = edge.to_executorch().buffer
+                    runtime = _load_for_executorch_from_buffer(pte_buffer)
                     for actual, expected in zip(
                         runtime.forward(inputs), model(*inputs)
                     ):
@@ -161,7 +160,8 @@ class TestConstantProjectionBiases(unittest.TestCase):
                 edge = to_edge_transform_and_lower(
                     program, partitioner=[XnnpackPartitioner()]
                 )
-                runtime = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                pte_buffer = edge.to_executorch().buffer
+                runtime = _load_for_executorch_from_buffer(pte_buffer)
                 torch.testing.assert_close(
                     runtime.forward(inputs)[0], model(*inputs), atol=1e-5, rtol=1e-5
                 )
@@ -179,7 +179,8 @@ class TestConstantProjectionBiases(unittest.TestCase):
         self.assertEqual(
             info.delegation_by_operator["aten_linear_default"].non_delegated, 0
         )
-        runtime = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        pte_buffer = edge.to_executorch().buffer
+        runtime = _load_for_executorch_from_buffer(pte_buffer)
         for batch in (2, 3):
             inputs = (torch.randn(batch, 8), torch.randn(8))
             for actual, expected in zip(runtime.forward(inputs), model(*inputs)):
@@ -257,7 +258,8 @@ class TestConstantProjectionBiases(unittest.TestCase):
         self.assertEqual(
             info.delegation_by_operator["aten_linear_default"].non_delegated, 0
         )
-        runtime = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        pte_buffer = edge.to_executorch().buffer
+        runtime = _load_for_executorch_from_buffer(pte_buffer)
         for actual, expected in zip(runtime.forward(inputs), model(*inputs)):
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
 
@@ -381,7 +383,8 @@ class TestConstantProjectionBiases(unittest.TestCase):
         edge = to_edge_transform_and_lower(
             transformed, partitioner=[XnnpackPartitioner()]
         )
-        runtime = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        pte_buffer = edge.to_executorch().buffer
+        runtime = _load_for_executorch_from_buffer(pte_buffer)
         first = runtime.forward((torch.zeros(8),))[0]
         second = runtime.forward((torch.zeros(8),))[0]
         torch.testing.assert_close(first, torch.ones(8))
