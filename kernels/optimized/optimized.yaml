@@ -1,5 +1,4 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This yaml file contains operators that have optimized kernels available.
 
@@ -122,8 +121,3 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::opt_where_out
-
-- op: upsample_nearest2d.vec_out
-  kernels:
-    - arg_meta: null
-      kernel_name: torch::executor::opt_upsample_nearest2d_vec_out

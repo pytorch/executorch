@@ -1352,7 +1352,6 @@ ATEN_OPS = (
     op_target(
         name = "op_upsample_nearest2d",
         deps = [
-            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:upsample_util",
         ],
     ),
