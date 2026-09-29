@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -27,6 +28,7 @@ from executorch.backends.xnnpack._passes.decompose_batch_norm import DecomposeBa
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
+from executorch.backends.xnnpack._passes.insert_pad_qdq import InsertPadQDQPass
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
     PropagateCustomMetaPass,
@@ -34,6 +36,7 @@ from executorch.backends.xnnpack._passes.propagate_custom_meta_pass import (
 from executorch.backends.xnnpack._passes.remove_redundant_copy_pass import (
     RemoveRedundantCopyPass,
 )
+from executorch.backends.xnnpack._passes.rewrite_fp16_silu import RewriteFp16SiluPass
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 
 from executorch.exir.pass_base import ExportPass
@@ -68,6 +71,7 @@ class XNNPACKPassManager:
         if not passes:
             # All the XNNPACK passes
             self.passes = [
+                RewriteFp16SiluPass,
                 XNNPACKRemoveCloneOpsTransform,
                 # TODO - remove this pass once we have a better support for dim_order ops lowering
                 DimOrderOpsRevertPass,
@@ -81,6 +85,7 @@ class XNNPACKPassManager:
                 FuseActivationPass,
                 DecomposeConcatenate,
                 RemoveGetItemPass,
+                InsertPadQDQPass,
                 Conv1dUnsqueezePass,
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 namespace executorch::runtime {
 /**
  * The expected output size may not be the existing size of any inputs and

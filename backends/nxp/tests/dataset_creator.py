@@ -8,6 +8,7 @@ import os.path
 import shutil
 from collections import OrderedDict
 from copy import deepcopy
+from dataclasses import dataclass
 from os import mkdir
 from random import sample, seed
 
@@ -19,6 +20,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 )
 from executorch.backends.nxp.tests.calibration_dataset import CalibrationDataset
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
+from executorch.exir.scalar_type import ScalarType
 from torch import Tensor
 
 
@@ -33,6 +35,72 @@ def _get_calibration_and_testing_dataset_directory_names(
     return calibration_path, test_path
 
 
+@dataclass
+class InputQuantizationSpec:
+    name: str
+    scale: float
+    zp: int
+    dtype: ScalarType
+
+
+def _replace_input_binary_tensor_with_quantized_variant(
+    input_bin_tensor_path: str,
+    input_spec: ModelInputSpec,
+    q_params: InputQuantizationSpec,
+):
+    tensor = np.fromfile(
+        input_bin_tensor_path, dtype=torch_type_to_numpy_type(input_spec.dtype)
+    )
+    if q_params.dtype == ScalarType.CHAR:
+        tensor = np.add(np.round(np.divide(tensor, [q_params.scale])), [q_params.zp])
+        tensor = np.clip(tensor, -128, 127).astype(np.int8)
+    else:
+        raise ValueError(f"Unknown quantization type: '{q_params.dtype}.")
+    tensor.tofile(input_bin_tensor_path)
+
+
+def create_quantized_variant_of_dataset(
+    dataset_dir: str,
+    dataset_dir_quant: str,
+    input_quant_spec: list[InputQuantizationSpec],
+    input_spec: list[ModelInputSpec],
+):
+    """
+    Create quantized dataset from provided quantization spec. Dataset is cloned from directory 'dataset_dir'.
+
+    :param dataset_dir: Original (float) dataset directory.
+    :param dataset_dir_quant: Quantized dataset directory.
+    :param input_quant_spec: Quantization parameters used for dataset quantization.
+    :param input_spec: Model inputs specification.
+    """
+    assert len(input_quant_spec) > 0
+
+    shutil.copytree(dataset_dir, dataset_dir_quant, dirs_exist_ok=True)
+
+    if len(input_quant_spec) == 1:
+        # Single input dataset - quantize only files in dataset's root dir with first input_quant_spec
+        input_spec = input_spec[0]
+        input_quant_spec = input_quant_spec[0]
+
+        for file in os.listdir(dataset_dir_quant):
+            input_bin_tensor_path = os.path.join(dataset_dir_quant, file)
+            _replace_input_binary_tensor_with_quantized_variant(
+                input_bin_tensor_path, input_spec, input_quant_spec
+            )
+    else:
+        # Iterate over samples (subfolders)
+        for dir_ in os.listdir(dataset_dir_quant):
+            # Iterate over each input in sample
+            sample_dir = os.path.join(dataset_dir_quant, dir_)
+
+            for idx, input_ in enumerate(sorted(os.listdir(sample_dir))):
+                _replace_input_binary_tensor_with_quantized_variant(
+                    os.path.join(sample_dir, input_),
+                    input_spec[idx],
+                    input_quant_spec[idx],
+                )
+
+
 class DatasetCreator(abc.ABC):
 
     @abc.abstractmethod
@@ -45,8 +113,10 @@ class DatasetCreator(abc.ABC):
 class RandomDatasetCreator(DatasetCreator):
     """Dataset creator that generates random input samples."""
 
-    def __init__(self, num_samples=2):
+    def __init__(self, num_samples=2, low=0.0, high=1.0):
         self._num_samples = num_samples
+        self.low = low
+        self.high = high
 
     def generate_samples(
         self, dataset_dir: str, input_spec: list[ModelInputSpec]
@@ -103,9 +173,11 @@ class RandomDatasetCreator(DatasetCreator):
                     case _:
                         raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
 
-                sample_vector = rng.random(
-                    np.prod(shape), torch_type_to_numpy_type(spec.dtype)
-                ).reshape(shape)
+                sample_vector = (
+                    rng.uniform(self.low, self.high, size=np.prod(shape))
+                    .astype(torch_type_to_numpy_type(spec.dtype))
+                    .reshape(shape)
+                )
                 file_name = (
                     f"{str(spec_idx).zfill(2)}.bin"
                     if len(input_spec) > 1
@@ -265,3 +337,81 @@ class FromCalibrationDataDatasetCreator(DatasetCreator):
 
                 bin_file_name = f"{dataset_dir}/example_{label}_{cl}_{i}_i{str(inp_idx).zfill(2)}.bin"
                 dt.tofile(bin_file_name)
+
+
+class LinearRampDatasetCreator(DatasetCreator):
+    """Dataset creator that generates deterministic linear ramp input samples.
+
+    The generated data forms a monotonic sequence where values are evenly
+    distributed between a specified range (low to high) and span the full
+    interval. The first element is equal to `low` and the last element is
+    equal to `high`, with increments depending on the total number of elements.
+    """
+
+    def __init__(self, num_samples=2, low=-1.0, high=1.0):
+        self._num_samples = num_samples
+        self.low = low
+        self.high = high
+
+    def generate_samples(
+        self, dataset_dir: str, input_spec: list[ModelInputSpec]
+    ) -> tuple[str, str]:
+        assert isinstance(input_spec, list) and all(
+            isinstance(spec, ModelInputSpec) for spec in input_spec
+        ), "Input_spec must be a list of ModelInputSpec."
+
+        calibration_dir, test_dir = (
+            _get_calibration_and_testing_dataset_directory_names(dataset_dir)
+        )
+
+        if any(spec.dim_order == torch.channels_last for spec in input_spec):
+            # We will need to generate a separate testing dataset, containing the same data as is in the calibration
+            #  dataset, just permuted to channels last where necessary.
+            self._gen_samples(test_dir, input_spec)
+
+        else:
+            # Use the calibration dataset for testing as well.
+            test_dir = calibration_dir
+
+        # Make sure the calibration dataset contains contiguous tensors.
+        contiguous_input_spec = deepcopy(input_spec)
+        for spec in contiguous_input_spec:
+            spec.dim_order = torch.contiguous_format
+
+        # Generate the calibration dataset. Calibration amd testing dataset s will contain
+        #  the same data (except for the permutation).
+        self._gen_samples(calibration_dir, contiguous_input_spec)
+
+        return calibration_dir, test_dir
+
+    def _gen_samples(self, dataset_dir: str, input_spec: list[ModelInputSpec]):
+        for idx in range(self._num_samples):
+            sample_dir = dataset_dir
+
+            # Multi-input, use a subdirectory containing the inputs for each sample
+            if len(input_spec) > 1:
+                sample_dir = os.path.join(dataset_dir, f"{str(idx).zfill(4)}")
+                mkdir(sample_dir)
+
+            for spec_idx, spec in enumerate(input_spec):
+                match spec.dim_order:
+                    case torch.contiguous_format:
+                        shape = spec.shape
+                    case torch.channels_last:
+                        shape = tuple(
+                            translator.dims_to_channels_last(list(spec.shape))
+                        )
+                    case _:
+                        raise ValueError(f"Unsupported dim_order: {spec.dim_order}")
+
+                sample_vector = (
+                    np.linspace(self.low, self.high, num=np.prod(shape))
+                    .astype(torch_type_to_numpy_type(spec.dtype))
+                    .reshape(shape)
+                )
+                file_name = (
+                    f"{str(spec_idx).zfill(2)}.bin"
+                    if len(input_spec) > 1
+                    else f"{str(idx).zfill(4)}.bin"
+                )
+                sample_vector.tofile(os.path.join(sample_dir, file_name))

@@ -16,7 +16,6 @@ from executorch.backends.vulkan.test.op_tests.utils.aten_types import (
     BOOL,
     DOUBLE,
     INT,
-    OLD_STRING,
     OPT_AT_DOUBLE_ARRAY_REF,
     OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
@@ -122,7 +121,9 @@ class ComputeGraphGen:
             ctype = cpp.argumenttype_type(
                 arg.type, mutable=arg.is_write, binds=arg.name
             )
-            cpp_type = ctype.cpp_type(strip_ref=True)
+            cpp_type = ctype.cpp_type(strip_ref=True).replace(
+                "c10::string_view", STRING
+            )
 
             self.args.append(
                 ATenArg(name=arg.name, cpp_type=cpp_type, default=arg.default)
@@ -286,7 +287,7 @@ class ComputeGraphGen:
     def create_aten_method_call(self) -> str:
         # For functions with only Method variant, we fallback to the function
         # declared in MethodOperators.h
-        cpp_sig = gen_static_dispatch_backend_call_signature(self.f_sig, self.f)
+        cpp_sig = gen_static_dispatch_backend_call_signature(self.f)
         exprs = translate_args(self.f_sig, cpp_sig)
         func_call = f"at::_ops::{self.f_sig.name()}::call({exprs});"
         return func_call
@@ -476,8 +477,8 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type()), "
             ret_str += f"{ref.src_cpp_name}.const_data_ptr()); \n"
         elif ref.src_cpp_type == AT_SCALAR:
-            # TODO(ssjia): generalize this to work with all scalar types
-            ret_str += f"add_scalar<double>({ref.src_cpp_name}.toDouble()); \n"
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"add_scalar_to_graph(*{self.graph}, {ref.src_cpp_name}); \n"
         elif ref.src_cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"add_scalar_list({ref.src_cpp_name}.vec()); \n"
         elif ref.src_cpp_type == BOOL:
@@ -494,7 +495,7 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             or ref.src_cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
-        elif ref.src_cpp_type == STRING or ref.src_cpp_type == OLD_STRING:
+        elif ref.src_cpp_type == STRING:
             ret_str += f"add_string(std::string({ref.src_cpp_name})); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"

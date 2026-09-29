@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2026 Arm Limited and/or its affiliates.

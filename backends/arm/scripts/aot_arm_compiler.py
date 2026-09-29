@@ -33,12 +33,16 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
+from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.devtools import BundledProgram, generate_etrecord
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -465,7 +469,16 @@ TARGETS = [
     "TOSA-1.0+INT",
     "TOSA-1.0+FP",
     "TOSA-1.0+INT+int16",
-    "cortex-m55+int8",
+    "cortex-m0",
+    "cortex-m0plus",
+    "cortex-m3",
+    "cortex-m4",
+    "cortex-m7",
+    "cortex-m23",
+    "cortex-m33",
+    "cortex-m35p",
+    "cortex-m55",
+    "cortex-m85",
 ]
 
 
@@ -482,12 +495,22 @@ def _get_compile_spec(args) -> ArmCompileSpec:
         if args.direct_drive:
             extra_flags.append("--separate-io-regions")
             extra_flags.append("--cop-format=COP2")
+        max_scratch_size = args.max_scratch_size
+        if (
+            max_scratch_size is None
+            and args.target.startswith("ethos-u55")
+            and args.system_config in (None, "Ethos_U55_High_End_Embedded")
+            and args.memory_mode in (None, "Shared_Sram")
+            and args.config in (None, "Arm/vela.ini")
+        ):
+            max_scratch_size = 2 * 1024 * 1024
         compile_spec = EthosUCompileSpec(
             args.target,
             system_config=args.system_config,
             memory_mode=args.memory_mode,
             extra_flags=extra_flags,
             config_ini=args.config,
+            max_scratch_size=max_scratch_size,
         )
     elif "vgf" in args.target:
         if args.quantize:
@@ -521,6 +544,51 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
         )
         with open(delegation_file_path, "w") as file:
             file.write(delegation_info_string)
+    print_delegation_summary(delegation_info, intermediate_files_folder)
+
+
+def print_delegation_summary(
+    delegation_info,
+    intermediate_files_folder: Optional[str] = None,
+) -> None:
+    non_delegated_ops = sorted(
+        (
+            (breakdown.op_type, breakdown.non_delegated)
+            for breakdown in delegation_info.delegation_by_operator.values()
+            if breakdown.non_delegated > 0
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
+
+    summary_lines = ["Delegation summary:"]
+    if delegation_info.num_delegated_nodes == 0:
+        summary_lines.append("  Model was not delegated.")
+    elif delegation_info.num_non_delegated_nodes == 0:
+        summary_lines.append("  Model was fully delegated.")
+    else:
+        summary_lines.append("  Model was partially delegated.")
+
+    summary_lines.append(
+        f"  Delegated partitions for silicon acceleration: {delegation_info.num_delegated_subgraphs}"
+    )
+    summary_lines.append(
+        f"  Non-delegated ops: {delegation_info.num_non_delegated_nodes}"
+    )
+
+    if non_delegated_ops:
+        summary_lines.append("  Non-delegated operators:")
+        for op_type, count in non_delegated_ops:
+            summary_lines.append(f"    - {op_type}: {count}")
+
+    if intermediate_files_folder is not None:
+        delegation_file_path = os.path.join(
+            intermediate_files_folder, "delegation_info.txt"
+        )
+        summary_lines.append("")
+        summary_lines.append("Full delegation report:")
+        summary_lines.append(f"  {delegation_file_path}")
+
+    print("\n".join(summary_lines))
 
 
 def _get_args():
@@ -566,24 +634,15 @@ def _get_args():
         required=False,
         default="ethos-u55-128",
         choices=TARGETS,
-        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m55+int8 (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
-    )
-    # TODO: Remove --evaluate and --evaluate_config completely after a suitable time.
-    # They are deprecated and no longer functional in this script.
-    parser.add_argument(
-        "-e",
-        "--evaluate",
-        required=False,
-        nargs="?",
-        const="generic",
-        choices=["generic", "mv2", "deit_tiny", "resnet18"],
-        help=argparse.SUPPRESS,
+        help=f"Target backend. For delegated models: Ethos-U/VGF/TOSA variants. For non-delegated: cortex-m<variant> (CMSIS-NN portable kernels). Valid targets: {TARGETS}",
     )
     parser.add_argument(
-        "-c",
-        "--evaluate_config",
-        required=False,
-        help=argparse.SUPPRESS,
+        "--cortex-m-explicit-layout",
+        action="store_true",
+        help=(
+            "Use explicit NCHW/NHWC permutes for Cortex-M instead of dim-order "
+            "operators. This is an experimental Cortex-M-only option."
+        ),
     )
     parser.add_argument(
         "-q",
@@ -641,6 +700,15 @@ def _get_args():
         help="Memory mode to select from the Vela configuration file (see vela.ini). Default is 'Shared_Sram' for Ethos-U55 targets and 'Sram_Only' for Ethos-U65 and Ethos-U85 targets",
     )
     parser.add_argument(
+        "--max_scratch_size",
+        type=int,
+        default=None,
+        help="Maximum Ethos-U delegate scratch size in bytes. Defaults to 2097152 "
+        "for U55 Shared_Sram with Ethos_U55_High_End_Embedded and Arm/vela.ini "
+        "(the Corstone-300 test configuration); unset for other configurations. "
+        "Override only to match the deployment platform's scratch capacity.",
+    )
+    parser.add_argument(
         "--config",
         required=False,
         default="Arm/vela.ini",
@@ -652,11 +720,6 @@ def _get_args():
         required=False,
         action="store_false",
         help="Disable strict checking while exporting models.",
-    )
-    parser.add_argument(
-        "--enable_qdq_fusion_pass",
-        action="store_true",
-        help="[DEPRECATED] This flag is no longer used and will be removed in a future release.",
     )
     parser.add_argument(
         "--enable_debug_mode",
@@ -691,12 +754,6 @@ def _get_args():
         and MODELS[args.model_name].can_delegate is False
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
-
-    if args.evaluate is not None or args.evaluate_config is not None:
-        logging.error(
-            "Model evaluation is no longer supported in this script."
-            " Use evaluate_model.py instead. Ignore and continue."
-        )
 
     return args
 
@@ -860,18 +917,33 @@ def _to_edge_cortex_m(
     model: GraphModule,
     example_inputs: Tuple[torch.Tensor],
     calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]],
+    target_config: CortexMTargetConfig,
 ):
     """Cortex-M/CMSIS-NN compilation path with no delegation."""
-    logging.info("Using Cortex-M/CMSIS-NN compilation path (no delegation)")
+    logging.info(
+        f"Using Cortex-M/CMSIS-NN compilation path for cpu={target_config.cpu.name} "
+        f"backend={target_config.backend.name} "
+        f"layout={'explicit' if args.cortex_m_explicit_layout else 'dim-order'}"
+    )
+
+    if args.cortex_m_explicit_layout and not args.quantize:
+        raise RuntimeError(
+            "--cortex-m-explicit-layout requires --quantize; explicit layout "
+            "does not fall back to portable float spatial operators."
+        )
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
-            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
-                logging.warning(
-                    "Converting input tensor with shape %s to channels_last",
-                    list(x.shape),
-                )
-                return x.to(memory_format=torch.channels_last)
+            if x.dim() == 4:
+                # Singleton channels can satisfy both contiguity checks while
+                # retaining NCHW strides, so always request the target format.
+                channels_last = x.to(memory_format=torch.channels_last)
+                if channels_last.stride() != x.stride():
+                    logging.warning(
+                        "Converting input tensor with shape %s to channels_last",
+                        list(x.shape),
+                    )
+                return channels_last
             return x
         elif isinstance(x, tuple):
             return tuple(_to_channels_last(t) for t in x)
@@ -883,17 +955,24 @@ def _to_edge_cortex_m(
         )
         model_quant = None
     else:
-        model = model.to(memory_format=torch.channels_last)  # type: ignore[call-overload]
-        example_inputs = tuple(_to_channels_last(x) for x in example_inputs)
+        if not args.cortex_m_explicit_layout:
+            model = model.to(memory_format=torch.channels_last)  # type: ignore[call-overload]
+            example_inputs = tuple(_to_channels_last(x) for x in example_inputs)
+            # Refresh fake-tensor strides after changing the captured module's
+            # memory format so the legacy quantizer sees channels-last inputs.
+            model = torch.export.export(
+                model, example_inputs, strict=args.strict_export
+            ).module()
 
-        quantizer = CortexMQuantizer()
+        quantizer = CortexMQuantizer(use_explicit_layout=args.cortex_m_explicit_layout)
+
         prepared = prepare_pt2e(model, quantizer)
 
         if calibration_samples is None:
             calibration_samples = [example_inputs]
 
         for sample in calibration_samples:
-            prepared(*tuple(_to_channels_last(x) for x in sample))
+            prepared(*sample)
 
         model_quant = convert_pt2e(prepared)
 
@@ -903,22 +982,14 @@ def _to_edge_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported_program,
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-            ],
-            _check_ir_validity=False,
+        compile_config=cortex_m_edge_compile_config(),
+        transform_passes=CortexMPassManager(
+            target_config=target_config,
+            use_explicit_layout=args.cortex_m_explicit_layout,
         ),
     )
 
-    pass_manager = CortexMPassManager(edge.exported_program())
-    edge._edge_programs["forward"] = pass_manager.transform()
-
-    return model_quant, edge
+    return model_quant, edge, example_inputs
 
 
 def _to_edge_no_delegate(
@@ -973,6 +1044,7 @@ def main() -> None:  # noqa: C901
         args.calibration_data, example_inputs
     )
     model = original_model.eval()
+    model.requires_grad_(False)
 
     # export under the assumption we quantize, the exported form also works
     # in to_edge if we don't quantize
@@ -981,13 +1053,6 @@ def main() -> None:  # noqa: C901
     )
 
     model = exported_program.module()
-
-    if args.enable_qdq_fusion_pass:
-        logging.warning(
-            "--enable_qdq_fusion_pass is deprecated and has no effect. "
-            "Quantized node replacement is now handled within the "
-            "respective compilation paths."
-        )
 
     model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
@@ -1007,20 +1072,22 @@ def main() -> None:  # noqa: C901
     else:
         quant_mode = None
 
-    if args.target == "cortex-m55+int8":
+    if args.target.startswith("cortex-m"):
         # Cortex-M path: CMSIS-NN portable kernels, no delegation
+        target_config = CortexMTargetConfig.from_target_string(args.target)
         if args.delegate:
             logging.warning(
-                "--delegate is ignored for target 'cortex-m55+int8' "
+                f"--delegate is ignored for target {args.target!r} "
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
-        model_quant, edge = _to_edge_cortex_m(
+        model_quant, edge, example_inputs = _to_edge_cortex_m(
             exported_program,
             args,
             model,
             example_inputs,
             calibration_samples,
+            target_config,
         )
     elif args.delegate:
         # As we can target multiple output encodings, one must
@@ -1051,8 +1118,6 @@ def main() -> None:  # noqa: C901
         )
 
     dump_delegation_info(edge, args.intermediates)
-
-    edge_program_manager_copy = copy.deepcopy(edge)
 
     try:
         exec_prog = edge.to_executorch(
@@ -1112,6 +1177,7 @@ def main() -> None:  # noqa: C901
     if args.bundleio or args.etrecord:
         etrecord_file_name = os.path.splitext(output_file_name)[0] + "_etrecord.bin"
         try:
+            edge_program_manager_copy = copy.deepcopy(edge)
             generate_etrecord(etrecord_file_name, edge_program_manager_copy, exec_prog)
             print(f"ETRecord saved as {etrecord_file_name}")
         except Exception as e:

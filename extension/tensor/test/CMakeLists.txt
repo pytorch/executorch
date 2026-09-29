@@ -19,7 +19,9 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_test_srcs tensor_ptr_maker_test.cpp tensor_ptr_test.cpp)
+set(_test_srcs tensor_ptr_maker_test.cpp tensor_ptr_test.cpp
+               tensor_ptr_device_test.cpp
+)
 
 et_cxx_test(
   extension_tensor_test SOURCES ${_test_srcs} EXTRA_LIBS extension_tensor

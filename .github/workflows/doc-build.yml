@@ -18,8 +18,13 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   build:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -29,8 +34,8 @@ jobs:
           - build-tool: buck2
     with:
       job-name: Build doc
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-clang12-android-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       repository: pytorch/executorch
       upload-artifact: docs
@@ -92,19 +97,32 @@ jobs:
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 
+        # linux_job_v3 uploads whatever is left in RUNNER_DOCS_DIR to the
+        # doc-previews bucket on every pull request, and that upload
+        # authenticates through OIDC. A fork PR has no OIDC token, so the step
+        # fails with "Could not load credentials from any providers" and reds
+        # the job after the docs have already built. Clear the directory so v3
+        # skips the upload -- a fork preview was never going to publish anyway.
+        if [[ -n "${{ github.event.pull_request.number }}" && \
+              "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+          echo "Fork PR: skipping the doc preview upload"
+          rm -rf "${RUNNER_DOCS_DIR:?}"/*
+        fi
+
   upload-gh-pages:
     needs: build
     if: github.repository == 'pytorch/executorch' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       id-token: write
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     secrets: inherit
     with:
-      secrets-env: DOC_BUILD_GITHUB_TOKEN
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages
+      # Publish on the host so actions/checkout's persisted credentials are
+      # available to git push.
       timeout: 90
       script: |
         set -euo pipefail
@@ -134,9 +152,6 @@ jobs:
         mkdir -p "${TARGET_FOLDER}"
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
-
-        echo "::add-mask::$SECRET_DOC_BUILD_GITHUB_TOKEN" # Mask the secret in GH logs
-        git remote set-url origin https://x-access-token:$SECRET_DOC_BUILD_GITHUB_TOKEN@github.com/pytorch/executorch.git
 
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'

@@ -10,9 +10,10 @@
 import atexit
 import contextlib
 import importlib.resources
+import json
+import math
 import os
 import re
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -269,27 +270,35 @@ def _get_flatc_path() -> str:
         if _flatc_cached_path is not None:
             return _flatc_cached_path
 
-        flatc_resource = importlib.resources.files(__package__).joinpath(
-            _FLATC_RESOURCE_NAME
-        )
-        if flatc_resource.is_file():
-            exit_stack = contextlib.ExitStack()
-            flatc_path = exit_stack.enter_context(
-                importlib.resources.as_file(flatc_resource)
-            )
+        for package, resource_name in (
+            (__package__, _FLATC_RESOURCE_NAME),
+            ("executorch.data.bin", "flatc"),
+        ):
             try:
-                current_mode = flatc_path.stat().st_mode
-                if not (current_mode & stat.S_IXUSR):
-                    flatc_path.chmod(
-                        current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-                    )
-            except OSError:
-                pass
-            _flatc_exit_stack = exit_stack
-            # Clean up the extracted temp file on normal process exit.
-            atexit.register(exit_stack.close)
-            _flatc_cached_path = str(flatc_path)
-        else:
+                flatc_resource = importlib.resources.files(package).joinpath(
+                    resource_name
+                )
+            except ModuleNotFoundError:
+                continue
+            if flatc_resource.is_file():
+                exit_stack = contextlib.ExitStack()
+                flatc_path = exit_stack.enter_context(
+                    importlib.resources.as_file(flatc_resource)
+                )
+                try:
+                    current_mode = flatc_path.stat().st_mode
+                    if not (current_mode & stat.S_IXUSR):
+                        flatc_path.chmod(
+                            current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+                        )
+                except OSError:
+                    pass
+                _flatc_exit_stack = exit_stack
+                # Clean up the extracted temp file on normal process exit.
+                atexit.register(exit_stack.close)
+                _flatc_cached_path = str(flatc_path)
+                break
+        if _flatc_cached_path is None:
             _flatc_cached_path = os.getenv("FLATC_EXECUTABLE", "flatc")
 
         return _flatc_cached_path
@@ -330,6 +339,36 @@ def _run_flatc(args: Sequence[str]) -> None:
     subprocess.run([_get_flatc_path()] + list(args), check=True)
 
 
+def _replace_non_finite_in_json(content: bytes) -> bytes:
+    """Rewrites non-finite floats into a form that flatc can parse.
+
+    Python's `json` module emits the literals `Infinity`, `-Infinity`, and
+    `NaN` for non-finite floats. Those are a Python extension; RFC 8259 has no
+    representation for them, and flatc's JSON parser rejects them. flatc does
+    accept the quoted forms "inf", "-inf", and "nan" for float fields, so
+    convert to those. Returns `content` unchanged if it holds no such values.
+    """
+    if b"Infinity" not in content and b"NaN" not in content:
+        return content
+
+    def convert(value: object) -> object:
+        if isinstance(value, float) and not math.isfinite(value):
+            if math.isnan(value):
+                return "nan"
+            return "inf" if value > 0 else "-inf"
+        if isinstance(value, dict):
+            return {key: convert(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [convert(item) for item in value]
+        return value
+
+    # json.loads accepts the same non-standard literals that json.dumps emits,
+    # so this round-trip only rewrites the values convert() replaces. Parsing
+    # rather than pattern-matching the text avoids corrupting string fields
+    # that happen to contain "Infinity" or "NaN".
+    return json.dumps(convert(json.loads(content))).encode("utf-8")
+
+
 def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
     """Serializes JSON data to a binary flatbuffer file.
 
@@ -339,8 +378,17 @@ def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
             If the schema inclues other schema files, they must be present in
             the same directory.
         json_path: Path to the data to serialize, as JSON data whose structure
-            matches the schema.
+            matches the schema. Rewritten in place if it contains non-finite
+            floats; flatc derives the output filename from this path, so the
+            data cannot be sanitized into a differently-named file.
     """
+    with open(json_path, "rb") as json_file:
+        content = json_file.read()
+    sanitized = _replace_non_finite_in_json(content)
+    if sanitized != content:
+        with open(json_path, "wb") as json_file:
+            json_file.write(sanitized)
+
     _run_flatc(
         [
             "--binary",
@@ -382,72 +430,6 @@ def _flatc_decompile(
             bin_path,
         ]
     )
-
-
-def _program_json_to_flatbuffer(
-    program_json: str,
-    *,
-    constant_tensor_alignment: Optional[int] = None,
-    delegate_alignment: Optional[int] = None,
-) -> _FlatbufferResult:
-    """Converts Program-compatible JSON into binary flatbuffer data.
-
-    Args:
-        program_json: The JSON to convert. Must be compatible with the root
-            table type of //executorch/schema/program.fbs.
-        constant_tensor_alignment: If provided, the alignment to use for tensor
-            data embedded in the output flatbuffer data. If not provided, uses
-            the alignment in the schema.
-        delegate_alignment: If provided, the alignment to use for delegate
-            data embedded in the output flatbuffer data. If not provided, uses
-            the alignment in the schema.
-
-    Returns: The flatbuffer data and associated metadata.
-    """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        schema_info = _prepare_schema(
-            out_dir=temp_dir,
-            constant_tensor_alignment=constant_tensor_alignment,
-            delegate_alignment=delegate_alignment,
-        )
-        file_stem = "data"
-        json_path = os.path.join(temp_dir, file_stem + ".json")
-        output_path = os.path.join(temp_dir, file_stem + ".pte")
-
-        with open(json_path, "wb") as json_file:
-            json_file.write(program_json.encode("ascii"))
-
-        try:
-            _flatc_compile(temp_dir, schema_info.root_path, json_path)
-        except Exception as err:
-            # It's helpful to save the breaking files for debugging. Optionally
-            # move them out of the auto-deleting temporary directory. Don't do
-            # this by default because some input files can be many GB in size,
-            # and these copies won't be auto-deleted.
-            should_save = os.getenv(_SAVE_FLATC_ENV, "").strip() not in {"", "0"}
-            extra_message = ""
-            if should_save:
-                try:
-                    saved_dir = tempfile.mkdtemp(prefix="exir-saved-flatc-")
-                    for f in os.listdir(temp_dir):
-                        shutil.move(src=os.path.join(temp_dir, f), dst=saved_dir)
-                    extra_message += f" Moved input files to '{saved_dir}'."
-                except Exception as err2:
-                    extra_message += (
-                        f" (Failed to save input files for debugging: {err2})"
-                    )
-            else:
-                extra_message += (
-                    f" Set {_SAVE_FLATC_ENV}=1 to save input files on failure."
-                )
-
-            raise RuntimeError(
-                f"Failed to compile {json_path} to {output_path}." + extra_message
-            ) from err
-        with open(output_path, "rb") as output_file:
-            return _FlatbufferResult(
-                data=output_file.read(), max_alignment=schema_info.max_alignment
-            )
 
 
 def _replace_infinity_in_json_file(content: bytes) -> bytes:

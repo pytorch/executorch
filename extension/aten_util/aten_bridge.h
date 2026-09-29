@@ -8,6 +8,11 @@
 
 #pragma once
 
+// Portable mode only: the declarations below name torch::executor::ScalarType
+// and torch::executor::Tensor, which exec_aten.h defines only when it is not
+// building against ATen. For device conversions either way, use aten_device.h.
+
+#include <executorch/extension/aten_util/aten_device.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 

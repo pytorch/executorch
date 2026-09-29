@@ -1,10 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, cast, Optional, Tuple
+from typing import Any, cast, List, Optional, Sequence, Tuple
 
 import torch
 
@@ -55,6 +56,49 @@ def is_getitem(node: torch.fx.Node) -> bool:
 
 def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
     return cast(torch.fx.Node, node.args[input_index])
+
+
+def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> List[int]:
+    """Return mean dims as non-negative indices for the given rank."""
+    if rank <= 0:
+        raise ValueError(f"Expected rank > 0, got {rank}")
+    if mean_dims is None:
+        return list(range(rank))
+    if isinstance(mean_dims, int):
+        mean_dims = [mean_dims]
+    normalized_dims = []
+    for dim in mean_dims:
+        if dim < -rank or dim >= rank:
+            raise ValueError(f"Dimension out of range: {dim} for rank {rank}")
+        normalized_dims.append(dim % rank)
+    return normalized_dims
+
+
+def normalize_pool2d_args(
+    node: torch.fx.Node, has_dilation: bool
+) -> Tuple[List[int], List[int], List[int], List[int]]:
+    """Return (kernel, stride, padding, dilation) for a pool2d node as 2-element lists.
+
+    Applies the aten schema defaults: an int or 1-element list broadcasts to both
+    dimensions, an omitted or empty stride means kernel_size, padding defaults to
+    0 and dilation to 1.
+    """
+    args = node.args
+
+    def pair(index: int, default: Optional[List[int]] = None) -> List[int]:
+        value = args[index] if len(args) > index else None
+        if isinstance(value, int):
+            return [value, value]
+        values = list(value) if value is not None else []
+        if not values:
+            return cast(List[int], default)
+        return [values[0], values[0]] if len(values) == 1 else [values[0], values[1]]
+
+    kernel = pair(1)
+    stride = pair(2, kernel)
+    padding = pair(3, [0, 0])
+    dilation = pair(4, [1, 1]) if has_dilation else [1, 1]
+    return kernel, stride, padding, dilation
 
 
 def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:

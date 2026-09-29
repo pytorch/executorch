@@ -1,6 +1,8 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 fbcode_target(_kind = runtime.python_library,
     name = "schemas",
     srcs = ["schemas/__init__.py"],
@@ -8,6 +10,27 @@ fbcode_target(_kind = runtime.python_library,
         "schemas/tosa_1.0.fbs",
     ],
     visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "cast_support",
+    srcs = [
+        "cast_support.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":specification",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "constant_pool",
+    srcs = [
+        "constant_pool.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools:serializer",
+    ],
 )
 
 fbcode_target(_kind = runtime.python_library,
@@ -42,6 +65,17 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "resize_utils",
+    srcs = [
+        "resize_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":specification",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "tosa",
     srcs = [
         "__init__.py",
@@ -71,6 +105,7 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         ":compile_spec",
+        ":constant_pool",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:process_node",
         "//executorch/backends/arm/debug:schema",

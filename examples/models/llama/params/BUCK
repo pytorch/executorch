@@ -1,0 +1,14 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.filegroup,
+    name = "params",
+    srcs = [
+        "demo_config.json",
+        "demo_rand_params.pth",
+    ],
+    visibility = ["//executorch/examples/..."],
+)

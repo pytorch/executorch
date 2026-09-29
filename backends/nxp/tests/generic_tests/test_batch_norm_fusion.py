@@ -6,6 +6,8 @@
 from copy import deepcopy
 
 import numpy as np
+
+# noinspection PyUnusedImports
 import pytest
 import torch
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
@@ -27,7 +29,7 @@ from executorch.backends.nxp.tests.executors import (
     graph_contains_any_of_ops,
     OverrideTargetSupportCheck,
 )
-from executorch.backends.nxp.tests.models import (
+from executorch.backends.nxp.tests.simple_models import (
     ConvBatchNormModule,
     LinearBatchNormModule,
 )
@@ -112,7 +114,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
         module, tuple(input_shape)
     ).exported_program()
 
-    assert len(edge_program.graph.nodes) == 15
+    assert len(edge_program.graph.nodes) == 7
     assert not graph_contains_any_of_ops(edge_program.graph, batch_norm_target_ops)
 
 

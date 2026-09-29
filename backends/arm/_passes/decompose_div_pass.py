@@ -8,7 +8,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -28,7 +28,7 @@ def get_div_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get div decomposition for op {op}")
 
 
-class DecomposeDivPass(ArmPass):
+class DecomposeDivPass(ArmOpTargetedPass):
     """This pass decomposes div into a mul and a reciprocal node.
 
     Example:
@@ -40,11 +40,10 @@ class DecomposeDivPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
+    target_ops = edge_div_ops + aten_div_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_div_ops + aten_div_ops) or not self.allowed_to_transform(
-            meta
-        ):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         reciprocal_op, mul_op = get_div_decomposition(op)

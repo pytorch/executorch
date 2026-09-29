@@ -7,10 +7,27 @@ oncall("executorch")
 fbcode_target(_kind = runtime.python_library,
     name = "models",
     srcs = [
-        "models.py",
+        "simple_models.py",
     ],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "tester",
+    srcs = [
+        "tester/__init__.py",
+        "tester/tester.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nxp:edge_passes",
+        "//executorch/backends/nxp:neutron_backend",
+        "//executorch/backends/nxp:quantizer",
+        "//executorch/backends/test/harness:tester",
+        "//executorch/exir:lib",
+        "fbsource//third-party/pypi/numpy:numpy",
     ],
 )
 
@@ -34,6 +51,9 @@ fbcode_target(_kind = python_pytest,
     name = "test_quantizer",
     srcs = [
         "generic_tests/test_quantizer.py",
+    ],
+    resources = [
+        "generic_tests/conftest.py",
     ],
     deps = [
         "//executorch/backends/nxp:quantizer",
@@ -89,6 +109,53 @@ fbcode_target(_kind = python_pytest,
     deps = [
         ":executorch_pipeline",
         ":models",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_fold_redundant_qdq",
+    srcs = [
+        "generic_tests/test_fold_redundant_qdq.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nxp:edge_passes",
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_convert_1d_conv_to_2d",
+    srcs = [
+        "generic_tests/test_convert_1d_conv_to_2d.py",
+    ],
+    env = {
+        "PYTEST_ADDOPTS": "--ignore-glob=*full_pipeline*  -k 'not full_pipeline'",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/nxp:aten_passes",
+        "//executorch/backends/nxp:neutron_backend",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/pypi/pytest:pytest",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
+    ],
+)
+
+fbcode_target(_kind = python_pytest,
+    name = "test_neutron_converter_manager",
+    srcs = [
+        "generic_tests/test_neutron_compiler_manager.py",
+    ],
+    deps = [
+        "//executorch/backends/nxp:neutron_sdk",
+        "//executorch/exir:lib",
+        ":executorch_pipeline",
+        ":models",
+        "fbsource//third-party/pypi/pytest-mock:pytest-mock",  # @manual
     ],
 )
 

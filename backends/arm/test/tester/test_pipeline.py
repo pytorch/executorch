@@ -48,7 +48,7 @@ from executorch.backends.arm.util._factory import create_quantizer
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
-from torch._export.pass_base import PassType
+from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
@@ -435,12 +435,15 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
        symmetric_io_quantization: Whether to use symmetric I/O quantization.
        per_channel_quantization: Whether to use per-channel quantization.
+       is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
        use_to_edge_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
        tosa_debug_mode: Optional debug mode for TOSA compilation.
        atol: Absolute tolerance for output comparison.
        rtol: Relative tolerance for output comparison.
        qtol: Quantization tolerance for output comparison.
+       compare_tosa_ref_model_outputs: Whether to compare TOSA reference model
+               outputs against the eager or quantized reference outputs.
        frobenius_threshold: Threshold for Frobenius norm comparison with original model
        cosine_threshold: Threshold for cosine similarity comparison with original model
        dynamic_shapes: Optional dynamic shape specifications.
@@ -465,6 +468,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
+        compare_tosa_ref_model_outputs: bool = True,
         frobenius_threshold: float | None = 0.15,
         cosine_threshold: float | None = 0.9,
         dynamic_shapes: Optional[Tuple[Any]] = None,
@@ -472,6 +476,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         tosa_extensions: Optional[List[str]] = None,
         epsilon: float = 2**-16,
         fold_quantize: bool = True,
+        is_qat: bool = False,
     ):
         if tosa_extensions is None:
             tosa_extensions = []
@@ -489,16 +494,22 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
         # choose 16A8W quantization config when int16 extension is requested
         if "int16" in tosa_extensions:
             quantization_config = get_symmetric_a16w8_quantization_config(
-                is_per_channel=per_channel_quantization, epsilon=epsilon
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
+                epsilon=epsilon,
             )
         else:
             quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
             )
         if symmetric_io_quantization:
             quantizer.set_io(quantization_config)
         quant_stage = Quantize(
-            quantizer, quantization_config, fold_quantize=fold_quantize
+            quantizer,
+            quantization_config,
+            is_qat=is_qat,
+            fold_quantize=fold_quantize,
         )
 
         super().__init__(
@@ -561,6 +572,7 @@ class TosaPipelineINT(TOSAPipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_tosa_ref_model_outputs,
             )
 
         self.run_and_compare_to_initial_model(
@@ -583,6 +595,8 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
        if not using use_edge_to_transform_and_lower.
 
        run_on_tosa_ref_model: Set to true to test the tosa file on the TOSA reference model.
+       compare_tosa_ref_model_outputs: Whether to compare TOSA reference model
+               outputs against eager reference outputs.
 
        tosa_version: A string for identifying the TOSA version, see common.get_tosa_compile_spec for
                      options.
@@ -604,6 +618,7 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
+        compare_tosa_ref_model_outputs: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
@@ -649,6 +664,7 @@ class TosaPipelineFP(TOSAPipeline, Generic[T]):
                 rtol=rtol,
                 qtol=qtol,
                 inputs=self.test_data,
+                compare_outputs=compare_tosa_ref_model_outputs,
             )
 
 
@@ -834,6 +850,65 @@ class EthosU85PipelineINT(EthosUPipelineINTBase, Generic[T]):
         fold_quantize: bool = True,
     ):
         compile_spec = common.get_u85_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
+        )
+        super().__init__(
+            compile_spec,
+            module,
+            test_data,
+            aten_ops,
+            exir_ops,
+            run_on_fvp=run_on_fvp,
+            symmetric_io_quantization=symmetric_io_quantization,
+            per_channel_quantization=per_channel_quantization,
+            a16w8_quantization=a16w8_quantization,
+            use_to_edge_transform_and_lower=use_to_edge_transform_and_lower,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            epsilon=epsilon,
+            fold_quantize=fold_quantize,
+        )
+
+
+class EthosU65PipelineINT(EthosUPipelineINTBase, Generic[T]):
+    """Lowers a graph to u65 INT TOSA spec and tests it on the Corstone300 U65
+    FVP, if run_on_fvp is true.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge if not using
+                 use_edge_to_transform_and_lower.
+       run_on_fvp: Set to true to test the pte file on a fvp simulator.
+       use_edge_to_transform_and_lower: Selects between two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_ops: str | List[str],
+        exir_ops: str | Sequence[str] | None = None,
+        run_on_fvp: bool = True,
+        symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
+        a16w8_quantization: bool = False,
+        use_to_edge_transform_and_lower: bool = True,
+        custom_path: str | None = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
+        epsilon: float = 2**-12,
+        fold_quantize: bool = True,
+    ):
+        compile_spec = common.get_u65_compile_spec(
             custom_path=custom_path,
             tosa_debug_mode=tosa_debug_mode,
         )
@@ -1150,12 +1225,15 @@ class VgfPipeline(BasePipeline, Generic[T]):
        run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
 
        vgf_compiler_flags: Optional compiler flags.
+       is_qat: Whether to prepare the model for quantization-aware training instead of PTQ.
 
        tosa_version: A string for identifying the TOSA version.
        tosa_spec: Optional override for the TOSA specification.
 
        use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
        custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+       n_expected_delegates: Number of delegate calls expected after
+       partitioning.
 
     """
 
@@ -1185,16 +1263,23 @@ class VgfPipeline(BasePipeline, Generic[T]):
         tosa_spec: TosaSpecification | str | None = None,
         fold_quantize: bool = True,
         preserve_io_quantization: bool = False,
+        n_expected_delegates: int = 1,
+        is_qat: bool = False,
     ):
+        if is_qat and not quantize:
+            raise ValueError("QAT requires quantize=True.")
+
         if tosa_spec is None:
             if tosa_version is None:
-                tosa_spec = VgfCompileSpec().tosa_spec
-            else:
-                if tosa_extensions is None:
+                tosa_version = str(VgfCompileSpec().tosa_spec)
+            if tosa_extensions is None:
+                if "FP" in tosa_version:
+                    tosa_extensions = ["bf16"]
+                else:
                     tosa_extensions = []
-                tosa_spec = TosaSpecification.create_from_string(
-                    tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
-                )
+            tosa_spec = TosaSpecification.create_from_string(
+                tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
+            )
         elif isinstance(tosa_spec, str):
             tosa_spec = TosaSpecification.create_from_string(tosa_spec)
         compile_spec = common.get_vgf_compile_spec(
@@ -1215,6 +1300,10 @@ class VgfPipeline(BasePipeline, Generic[T]):
             dynamic_shapes,
             transform_passes=transform_passes,
         )
+        self.change_args(
+            "check_count.exir",
+            {"torch.ops.higher_order.executorch_call_delegate": n_expected_delegates},
+        )
 
         remove_torch_quant_nodes_stage = (
             "to_edge_transform_and_lower"
@@ -1225,12 +1314,16 @@ class VgfPipeline(BasePipeline, Generic[T]):
         if quantize:
             quantizer = VgfQuantizer(compile_spec)
             quantization_config = get_symmetric_quantization_config(
-                is_per_channel=per_channel_quantization
+                is_per_channel=per_channel_quantization,
+                is_qat=is_qat,
             )
             if symmetric_io_quantization:
                 quantizer.set_io(quantization_config)
             quant_stage = Quantize(
-                quantizer, quantization_config, fold_quantize=fold_quantize
+                quantizer,
+                quantization_config,
+                is_qat=is_qat,
+                fold_quantize=fold_quantize,
             )
 
             self.add_stage(self.tester.quantize, quant_stage, pos=0)

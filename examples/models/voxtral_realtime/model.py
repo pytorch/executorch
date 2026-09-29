@@ -1129,7 +1129,8 @@ class StandardRingKVCache(nn.Module):
         return torch.where(
             valid,
             torch.zeros(1, dtype=dtype, device=start_pos.device),
-            torch.tensor(float("-inf"), dtype=dtype, device=start_pos.device),
+            # MPS SDPA can propagate NaNs from -inf additive masks in AOTI.
+            torch.tensor(-1e9, dtype=dtype, device=start_pos.device),
         )
 
 

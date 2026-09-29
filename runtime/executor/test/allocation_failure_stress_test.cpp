@@ -21,14 +21,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
-using executorch::aten::Tensor;
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
-using executorch::runtime::MemoryAllocator;
-using executorch::runtime::MemoryManager;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;

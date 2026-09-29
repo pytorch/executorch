@@ -7,6 +7,8 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
+
 #include "QnnInterface.h"
 #include "Saver/QnnSaver.h"
 
@@ -106,6 +108,9 @@ class QnnInterface {
   }
   const QNN_INTERFACE_VER_TYPE& GetInterfaceVer() const {
     return qnn_interface_->QNN_INTERFACE_VER_NAME;
+  }
+  const QnnInterface_t* GetInterface() const {
+    return qnn_interface_;
   }
   void Unload() {
     qnn_interface_ = nullptr;

@@ -52,6 +52,14 @@ template QnnExecuTorchProfileLevel get_option<QnnExecuTorchProfileLevel>(
     QnnExecuTorchProfileLevel,
     const char*);
 
+executorch::runtime::Error get_runtime_option(
+    const char* key,
+    executorch::runtime::BackendOption& backend_option) {
+  std::strncpy(backend_option.key, key, runtime::kMaxOptionKeyLength);
+  backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
+  return get_option(QNN_BACKEND, backend_option);
+}
+
 } // namespace qnn
 } // namespace backends
 } // namespace executorch

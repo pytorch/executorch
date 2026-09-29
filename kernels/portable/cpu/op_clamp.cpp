@@ -42,7 +42,7 @@ ET_NODISCARD bool check_bounds(
   auto is_valid = true;
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "clamp.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "clamp.out");
 
   if (isIntegralType(out_type, /*includeBool=*/false)) {
     const int64_t val_long = utils::scalar_to<int64_t>(val_scalar);
@@ -132,7 +132,7 @@ Tensor& clamp_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "clamp.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "clamp.out");
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_unitensor_elementwise_fn<
@@ -210,7 +210,7 @@ Tensor& clamp_tensor_out(
   ScalarType compute_type = utils::get_compute_type(common_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "clamp.Tensor_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "clamp.Tensor_out");
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_tritensor_elementwise_fn<

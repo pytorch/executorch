@@ -12,6 +12,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
+    supported_data_layout_dtypes,
     validate_num_inputs,
     validate_same_dtype,
     validate_valid_dtype,
@@ -36,15 +37,14 @@ class ScatterVisitor(NodeVisitor):
         validate_same_dtype(self.target, [inputs[0], inputs[2], output], ts)
         validate_valid_dtype(
             self.target,
-            [inputs[0], inputs[1], inputs[2], output],
-            [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP32,
-                ts.DType.FP16,
-                ts.DType.BF16,
-            ],
+            [inputs[1]],
+            [ts.DType.INT32],
+            self.tosa_spec,
+        )
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], inputs[2], output],
+            supported_data_layout_dtypes(self.tosa_spec, include_bool=False),
             self.tosa_spec,
         )
 

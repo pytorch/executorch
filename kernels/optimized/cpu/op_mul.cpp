@@ -44,7 +44,7 @@ Tensor& opt_mul_out(
       out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "mul.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "mul.out");
 
   if (b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
@@ -165,7 +165,7 @@ Tensor& opt_mul_scalar_out(
       ctx, resize_tensor(out, a.sizes()) == Error::Ok, InvalidArgument, out);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "mul.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "mul.Scalar_out");
 
   if (a_type == common_type && a_type == out_type &&
       a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {

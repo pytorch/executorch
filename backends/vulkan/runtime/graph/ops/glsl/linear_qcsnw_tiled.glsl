@@ -42,18 +42,21 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 
 void main() {
+  const int linear_idx = int(linear_idx_from_gid());
   // txcol stands for "texel column". One txcol corresponds to 4 scalar columns.
   $if TILE_TXCOLS > 1:
     const int global_wg_x = divup(out_sizes.x, 4 * TILE_TXCOLS);
-    const int out_txcol = (int(gl_GlobalInvocationID.x) % global_wg_x) * TILE_TXCOLS;
+    const int out_txcol = (linear_idx % global_wg_x) * TILE_TXCOLS;
   $else:
     const int global_wg_x = divup4(out_sizes.x);
-    const int out_txcol = int(gl_GlobalInvocationID.x) % global_wg_x;
+    const int out_txcol = linear_idx % global_wg_x;
 
-  const int out_row = (int(gl_GlobalInvocationID.x) / global_wg_x) * TILE_ROWS;
+  const int out_row = (linear_idx / global_wg_x) * TILE_ROWS;
 
   $if QUANT_NBITS == 4:
     const int weight_txcol = out_txcol / 2;

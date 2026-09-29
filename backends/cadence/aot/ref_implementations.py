@@ -318,22 +318,19 @@ def quantized_add_per_tensor(
             f"X and Y dtypes need to be in {supported_dtypes}. Got {dtype}"
         )
 
-    if dtype == torch.uint8:
-        X = X.to(torch.int8)
-        Y = Y.to(torch.int8)
+    qmin = torch.iinfo(dtype).min
+    qmax = torch.iinfo(dtype).max
 
-    # TODO(agrebenisan): This should be done in fixed point arithmetic, but to match the quantized_add_out.cpp
-    # reference implementation, we'll do it in floating point.
-    dequant_X = X_scale * (X - X_zero_point)
-    dequant_Y = Y_scale * (Y - Y_zero_point)
+    dequant_X = dequantize_per_tensor(X, X_scale, X_zero_point, qmin, qmax, dtype)
+    dequant_Y = dequantize_per_tensor(Y, Y_scale, Y_zero_point, qmin, qmax, dtype)
 
     # q_min/q_max are unused args
     return quantize_per_tensor(
         dequant_X + dequant_Y,
         out_scale,
         out_zero_point,
-        torch.iinfo(dtype).min,
-        torch.iinfo(dtype).max,
+        qmin,
+        qmax,
         dtype,
     )
 
@@ -394,9 +391,9 @@ def quantized_add_asym8uxasym8u_asym8u_per_tensor(
     out_zero_point: int,
 ) -> torch.Tensor:
     if X.dtype != torch.uint8:
-        raise ValueError("X dtype must be torch.int8")
+        raise ValueError("X dtype must be torch.uint8")
     if Y.dtype != torch.uint8:
-        raise ValueError("Y dtype must be torch.int8")
+        raise ValueError("Y dtype must be torch.uint8")
 
     return quantized_add_per_tensor(
         X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
@@ -447,19 +444,18 @@ def quantized_mul_per_tensor(
             f"X and Y dtypes need to be in {supported_dtypes}. Got {dtype}"
         )
 
-    if dtype == torch.uint8:
-        X = X.to(torch.int8)
-        Y = Y.to(torch.int8)
+    qmin = torch.iinfo(dtype).min
+    qmax = torch.iinfo(dtype).max
 
-    dequant_X = X_scale * (X - X_zero_point)
-    dequant_Y = Y_scale * (Y - Y_zero_point)
+    dequant_X = dequantize_per_tensor(X, X_scale, X_zero_point, qmin, qmax, dtype)
+    dequant_Y = dequantize_per_tensor(Y, Y_scale, Y_zero_point, qmin, qmax, dtype)
 
     return quantize_per_tensor(
         dequant_X * dequant_Y,
         out_scale,
         out_zero_point,
-        torch.iinfo(dtype).min,
-        torch.iinfo(dtype).max,
+        qmin,
+        qmax,
         dtype,
     )
 
@@ -470,8 +466,8 @@ def quantized_linear_common(
     bias: torch.Tensor,
     in_zero_point: int,
     weight_zero_point: torch.Tensor | int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
     out_zero_point: int,
 ) -> torch.Tensor:
     """
@@ -483,13 +479,12 @@ def quantized_linear_common(
         - bias (Tensor): The bias tensor
         - in_zero_point (int): The quantized mapping of zero for the input
         - weight_zero_point (Tensor): The quantized mapping of zero for the weight
-        - out_multiplier (Tensor): The multiplier used to scale the output
-        - out_shift (Tensor): The shift used to scale the output
+        - out_multiplier (int | Tensor): The multiplier used to scale the output.
+            A 1-D tensor of length out_dim selects per-channel requantization.
+        - out_shift (int | Tensor): The shift used to scale the output
         - out_zero_point (int): The quantized mapping of zero for the output
         - offset (Tensor): Unused
     """
-    out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
-
     N, K = weight.shape
 
     leading_dims = src.shape[:-1]
@@ -502,19 +497,67 @@ def quantized_linear_common(
             f"Unsupported dtype to quantize to {dtype}. Supported dtypes must be one of {supported_dtypes}"
         )
 
+    per_channel = isinstance(out_multiplier, torch.Tensor) and (
+        out_multiplier.numel() > 1
+    )
+
+    if (
+        per_channel
+        and isinstance(weight_zero_point, torch.Tensor)
+        and weight_zero_point.numel() == N
+    ):
+        # per-channel zero point indexes output channels, i.e. weight rows.
+        # Only reshape under per-channel requant: elsewhere a multi-element
+        # zero point is expected to broadcast along the input axis.
+        weight_zero_point = weight_zero_point.reshape(N, 1)
+
     out = torch.nn.functional.linear(
-        (src - in_zero_point).float(),
-        (weight - weight_zero_point).float(),
+        src.float() - in_zero_point,
+        weight.float() - weight_zero_point,
         bias.float(),
     )
-    return quantize_per_tensor(
-        out,
-        out_scale,
-        out_zero_point,
-        torch.iinfo(dtype).min,
-        torch.iinfo(dtype).max,
-        dtype,
-    ).reshape(*leading_dims, N)
+
+    if not per_channel:
+        _multiplier = (
+            int(out_multiplier.flatten()[0].item())
+            if isinstance(out_multiplier, torch.Tensor)
+            else out_multiplier
+        )
+        _shift = (
+            int(out_shift.flatten()[0].item())
+            if isinstance(out_shift, torch.Tensor)
+            else out_shift
+        )
+        out_scale = 1.0 / (-_multiplier * (1 / (1 << 31)) * (2**_shift))
+        return quantize_per_tensor(
+            out,
+            out_scale,
+            out_zero_point,
+            torch.iinfo(dtype).min,
+            torch.iinfo(dtype).max,
+            dtype,
+        ).reshape(*leading_dims, N)
+
+    # Per-channel: one requant scale per output channel. Mirrors the generic
+    # kernel, which reconstructs a float scale from (multiplier, shift) per
+    # channel rather than doing integer fixed-point requantization.
+    assert isinstance(out_shift, torch.Tensor)
+    if out_multiplier.numel() != N or out_shift.numel() != N:
+        raise ValueError(
+            f"per-channel out_multiplier/out_shift must have {N} elements, got "
+            f"{out_multiplier.numel()}/{out_shift.numel()}"
+        )
+    requant_scale = (
+        -out_multiplier.to(torch.float64).flatten()
+        * (1 / (1 << 31))
+        * torch.pow(2.0, out_shift.to(torch.float64).flatten())
+    )
+    quantized = torch.round(out.to(torch.float64) * requant_scale) + out_zero_point
+    return (
+        quantized.clamp(torch.iinfo(dtype).min, torch.iinfo(dtype).max)
+        .to(dtype)
+        .reshape(*leading_dims, N)
+    )
 
 
 def quantized_linear_variant(
@@ -562,16 +605,22 @@ def quantized_linear_variant(
             else:
                 assert isinstance(out_shift, torch.Tensor)
                 assert isinstance(out_multiplier, torch.Tensor)
-                if out_shift.numel() != 1:
-                    raise ValueError("out_shift must be a scalar")
-
                 if out_shift.dtype != torch.int32:
                     raise ValueError(
                         f"out_shift must be an int32. Got {out_shift.dtype} instead"
                     )
-
-                _out_shift = int(out_shift.item())
-                _out_multiplier = int(out_multiplier[0].item())
+                if out_shift.numel() != out_multiplier.numel():
+                    raise ValueError(
+                        "out_shift and out_multiplier must have the same length, got "
+                        f"{out_shift.numel()} and {out_multiplier.numel()}"
+                    )
+                if out_multiplier.numel() == 1:
+                    _out_shift = int(out_shift.item())
+                    _out_multiplier = int(out_multiplier[0].item())
+                else:
+                    # per-channel: pass the vectors through
+                    _out_shift = out_shift
+                    _out_multiplier = out_multiplier
 
             return quantized_linear_common(
                 src,
@@ -673,8 +722,8 @@ def quantized_matmul(
     out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
 
     out = torch.matmul(
-        (X - X_zero_point).float(),
-        (Y - Y_zero_point).float(),
+        X.float() - X_zero_point,
+        Y.float() - Y_zero_point,
     )
     return quantize_per_tensor(
         out,
@@ -821,7 +870,28 @@ def quantized_layer_norm(
     )
 
 
-def quantized_conv_per_tensor(
+def _broadcast_over_channels(
+    value: float | int | torch.Tensor,
+    ndim: int,
+    channel_dim: int,
+    out_channels: int,
+) -> float | int | torch.Tensor:
+    """Shape a scalar or per-output-channel qparam for broadcasting."""
+    if not isinstance(value, torch.Tensor):
+        return value
+    if value.numel() == 1:
+        return value.reshape(())
+    if value.numel() != out_channels:
+        raise ValueError(
+            f"per-channel qparam has {value.numel()} entries, "
+            f"expected 1 or {out_channels}"
+        )
+    shape = [1] * ndim
+    shape[channel_dim] = -1
+    return value.reshape(shape)
+
+
+def quantized_conv_common(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -830,12 +900,12 @@ def quantized_conv_per_tensor(
     dilation: tuple[int, ...],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
 ) -> torch.Tensor:
     """
     Quantized convolution operation.
@@ -849,18 +919,23 @@ def quantized_conv_per_tensor(
         - dilation (Tuple[int]): The dilation of the convolution
         - groups (int): The number of groups
         - in_zero_point (int): The quantized mapping of zero for the input
-        - weight_zero_point (int): The quantized mapping of zero for the weight
-        - bias_scale (float): The quantized bias scale
+        - weight_zero_point (int | Tensor): The quantized mapping of zero for the
+          weight, either a scalar or one entry per output channel
+        - bias_scale (float | Tensor): The quantized bias scale, either a scalar
+          or one entry per output channel
         - output_scale (float): The scale of the output
         - output_zero_point (int): The zero point of the output
-        - out_multiplier (int): Unused
-        - out_shift (int): Unused
+        - out_multiplier (int | Tensor): Unused
+        - out_shift (int | Tensor): Unused
     """
+    out_channels = weight.shape[0]
+    wzp = _broadcast_over_channels(weight_zero_point, weight.dim(), 0, out_channels)
+
     if len(input_tensor.shape) == 3:
-        float_out = torch.nn.functional.conv1d(
-            (input_tensor - in_zero_point).float(),
-            (weight - weight_zero_point).float(),
-            (bias * bias_scale).float(),
+        acc = torch.nn.functional.conv1d(
+            input_tensor.float() - in_zero_point,
+            weight.float() - wzp,
+            bias.float(),
             stride[-1],
             padding[-1],
             dilation[-1],
@@ -868,10 +943,10 @@ def quantized_conv_per_tensor(
         )
 
     elif len(input_tensor.shape) == 4:
-        float_out = torch.nn.functional.conv2d(
-            (input_tensor - in_zero_point).float(),
-            (weight - weight_zero_point).float(),
-            (bias * bias_scale).float(),
+        acc = torch.nn.functional.conv2d(
+            input_tensor.float() - in_zero_point,
+            weight.float() - wzp,
+            bias.float(),
             stride,
             padding,
             dilation,
@@ -879,6 +954,11 @@ def quantized_conv_per_tensor(
         )
     else:
         raise ValueError("Input tensor must be 3D or 4D")
+
+    # conv accumulates in the integer domain (scale = in_scale * weight_scale =
+    # bias_scale) with the integer bias added pre-scale; dequantize the whole
+    # accumulation by bias_scale to get the floating-point result.
+    float_out = acc * _broadcast_over_channels(bias_scale, acc.dim(), 1, out_channels)
 
     return quantize_per_tensor(
         float_out,
@@ -900,12 +980,12 @@ def quantized_conv2d_nchw_per_tensor(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
 ) -> torch.Tensor:
     """
     Quantized convolution operation.
@@ -928,7 +1008,7 @@ def quantized_conv2d_nchw_per_tensor(
     """
     if not input_tensor.is_contiguous(memory_format=torch.contiguous_format):
         raise ValueError("Input tensor must be in NCHW format")
-    return quantized_conv_per_tensor(
+    return quantized_conv_common(
         input_tensor,
         weight,
         bias,
@@ -956,12 +1036,12 @@ def quantized_conv1d_ncl_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
 ) -> torch.Tensor:
     """
     Quantized 1D convolution operation in NCL (channels-first) format.
@@ -984,7 +1064,7 @@ def quantized_conv1d_ncl_per_tensor(
     """
     if not input_tensor.is_contiguous(memory_format=torch.contiguous_format):
         raise ValueError("Input tensor must be in NCL format")
-    return quantized_conv_per_tensor(
+    return quantized_conv_common(
         input_tensor,
         weight,
         bias,
@@ -1028,12 +1108,12 @@ def quantized_conv1d_ncl(
         dilation,
         groups,
         in_zero_point,
-        int(weight_zero_point.item()),
-        float(bias_scale.item()),
+        weight_zero_point,
+        bias_scale,
         output_scale,
         output_zero_point,
-        int(out_multiplier.item()),
-        int(out_shift.item()),
+        out_multiplier,
+        out_shift,
     )
 
 
@@ -1047,12 +1127,12 @@ def quantized_conv1d_nlc_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
 ) -> torch.Tensor:
     """
     Quantized 1D convolution operation in NLC (channels-last) format.
@@ -1078,7 +1158,7 @@ def quantized_conv1d_nlc_per_tensor(
     # Convert weight from [OC, K, IC/groups] to [OC, IC/groups, K]
     weight_ncl = weight.permute(0, 2, 1).contiguous()
 
-    result_ncl = quantized_conv_per_tensor(
+    result_ncl = quantized_conv_common(
         input_ncl,
         weight_ncl,
         bias,
@@ -1125,12 +1205,12 @@ def quantized_conv1d_nlc(
         dilation,
         groups,
         in_zero_point,
-        int(weight_zero_point.item()),
-        float(bias_scale.item()),
+        weight_zero_point,
+        bias_scale,
         output_scale,
         output_zero_point,
-        int(out_multiplier.item()),
-        int(out_shift.item()),
+        out_multiplier,
+        out_shift,
     )
 
 
@@ -1144,12 +1224,12 @@ def quantized_depthwise_conv1d_ncl_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
 ) -> torch.Tensor:
     """
     Quantized depthwise 1D convolution in NCL (channels-first) format.
@@ -1170,7 +1250,7 @@ def quantized_depthwise_conv1d_ncl_per_tensor(
         groups, input_tensor.shape[1]
     ), f"quantized_depthwise_conv1d_ncl requires depthwise conv (groups == in_channels), got groups={groups}, in_channels={input_tensor.shape[1]}"
 
-    return quantized_conv_per_tensor(
+    return quantized_conv_common(
         input_tensor,
         weight,
         bias,
@@ -1198,12 +1278,12 @@ def quantized_depthwise_conv1d_nlc_per_tensor(
     dilation: tuple[int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
 ) -> torch.Tensor:
     """
     Quantized depthwise 1D convolution in NLC (channels-last) format.
@@ -1229,7 +1309,7 @@ def quantized_depthwise_conv1d_nlc_per_tensor(
     # Convert weight from [OC, K, IC/groups] to [OC, IC/groups, K]
     weight_ncl = weight.permute(0, 2, 1).contiguous()
 
-    result_ncl = quantized_conv_per_tensor(
+    result_ncl = quantized_conv_common(
         input_ncl,
         weight_ncl,
         bias,
@@ -1248,6 +1328,76 @@ def quantized_depthwise_conv1d_nlc_per_tensor(
 
     # Convert result back to NLC format
     return result_ncl.permute(0, 2, 1).contiguous()
+
+
+@impl_tracked(m, "quantized_depthwise_conv1d_ncl")
+def quantized_depthwise_conv1d_ncl(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_depthwise_conv1d_ncl_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+@impl_tracked(m, "quantized_depthwise_conv1d_nlc")
+def quantized_depthwise_conv1d_nlc(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int],
+    padding: tuple[int],
+    dilation: tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_depthwise_conv1d_nlc_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
 
 
 @impl_tracked(m, "quantized_conv2d_nchw")
@@ -1276,12 +1426,12 @@ def quantized_conv2d_nchw(
         dilation,
         groups,
         in_zero_point,
-        int(weight_zero_point.item()),
-        float(bias_scale.item()),
+        weight_zero_point,
+        bias_scale,
         output_scale,
         output_zero_point,
-        int(out_multiplier.item()),
-        int(out_shift.item()),
+        out_multiplier,
+        out_shift,
     )
 
 
@@ -1441,12 +1591,12 @@ def quantized_conv2d_nhwc_per_tensor(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: int,
-    bias_scale: float,
+    weight_zero_point: int | torch.Tensor,
+    bias_scale: float | torch.Tensor,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: int,
-    out_shift: int,
+    out_multiplier: int | torch.Tensor,
+    out_shift: int | torch.Tensor,
     offset: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
@@ -1496,7 +1646,7 @@ def quantized_conv2d_nhwc_per_tensor(
             weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
         conv_is_1d = False
 
-    nchw_out = quantized_conv_per_tensor(
+    nchw_out = quantized_conv_common(
         input_tensor,
         weight,
         bias,
@@ -1545,12 +1695,12 @@ def quantized_conv2d_nhwc(
         dilation,
         groups,
         in_zero_point,
-        int(weight_zero_point.item()),
-        float(bias_scale.item()),
+        weight_zero_point,
+        bias_scale,
         output_scale,
         output_zero_point,
-        int(out_multiplier.item()),
-        int(out_shift.item()),
+        out_multiplier,
+        out_shift,
     )
 
 
@@ -1944,8 +2094,8 @@ def quantized_relu_common(
 
     out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
     dequantized_X = torch.where(
-        X > X_zero_point, X - X_zero_point, torch.zeros_like(X)
-    ).to(torch.float32)
+        X > X_zero_point, X.float() - X_zero_point, torch.zeros_like(X)
+    )
     out = quantize_per_tensor(
         dequantized_X,
         out_scale,
@@ -2262,6 +2412,38 @@ def rope_rotate_stacked_halves(
     o1 = x1 * cos_tensor + x0 * sin_tensor
     rotated = torch.cat([o0.view(-1, 1), o1.view(-1, 1)], dim=-2)
     return rotated.view(original_shape)
+
+
+@impl_tracked(m, "quantized_rope_rotate_stacked_halves")
+def quantized_rope_rotate_stacked_halves(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    dtype = input_tensor.dtype
+    dtype_limits = torch.iinfo(dtype)
+    dequantized = dequantize_per_tensor_common(
+        input_tensor,
+        in_scale,
+        in_zero_point,
+        dtype_limits.min,
+        dtype_limits.max,
+        dtype,
+    )
+    rotated = rope_rotate_stacked_halves(dequantized, sin_tensor, cos_tensor, pos)
+    return quantize_per_tensor_common(
+        rotated,
+        out_scale,
+        out_zero_point,
+        dtype_limits.min,
+        dtype_limits.max,
+        dtype,
+    )
 
 
 @impl_tracked(m, "im2row")

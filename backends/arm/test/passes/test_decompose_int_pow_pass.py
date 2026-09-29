@@ -35,7 +35,7 @@ class Square(torch.nn.Module):
 class Pow(torch.nn.Module):
     """Basic squaring."""
 
-    def __init__(self, exponent: int) -> None:
+    def __init__(self, exponent: int | float) -> None:
         super().__init__()
         self.exponent = exponent
 
@@ -48,10 +48,18 @@ class Pow(torch.nn.Module):
 
 test_data: Dict[str, TestParam] = {
     "square": (Square(), 1),
+    "pow_1": (Pow(1), 1),
+    "pow_1_float": (Pow(1.0), 1),
     "pow_2": (Pow(2), 1),
+    "pow_2_float": (Pow(2.0), 1),
     "pow_3": (Pow(3), 2),
     "pow_0": (Pow(0), 0),
     "pow_neg_2": (Pow(-2), 1),
+}
+
+non_integer_float_test_data: Dict[str, ModuleWithInputs] = {
+    "pow_1_999999999": Pow(1.999999999),
+    "pow_2_000000001": Pow(2.000000001),
 }
 
 
@@ -59,18 +67,41 @@ test_data: Dict[str, TestParam] = {
 def test_decompose_int_pow_tosa_FP(data: TestParam) -> None:
     module_with_inputs, nbr_muls = data
     module = cast(torch.nn.Module, module_with_inputs)
+    pow_op = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"
     pipeline = PassPipeline[input_t](
         module,
         module_with_inputs.get_inputs(),
         quantize=False,
         ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1,
+            pow_op: 1,
         },
         ops_not_before_pass=[],
         ops_after_pass={
             "executorch_exir_dialects_edge__ops_aten_mul_Tensor": nbr_muls,
         },
-        ops_not_after_pass=["executorch_exir_dialects_edge__ops_pow_Tensor_Scalar"],
+        pass_list=[DecomposeIntPowPass],
+    )
+    pipeline.run()
+
+
+@common.parametrize("module_with_inputs", non_integer_float_test_data)
+def test_decompose_int_pow_tosa_FP_non_integer_float(
+    module_with_inputs: ModuleWithInputs,
+) -> None:
+    module = cast(torch.nn.Module, module_with_inputs)
+    pow_op = "executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"
+    pipeline = PassPipeline[input_t](
+        module,
+        module_with_inputs.get_inputs(),
+        quantize=False,
+        ops_before_pass={
+            pow_op: 1,
+        },
+        ops_not_before_pass=[],
+        ops_after_pass={
+            pow_op: 1,
+            "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 0,
+        },
         pass_list=[DecomposeIntPowPass],
     )
     pipeline.run()

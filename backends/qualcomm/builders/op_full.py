@@ -25,8 +25,9 @@ class Full(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
+        tensor_shape = list(self.get_tensor(node, node).shape)
         out_tensor = torch.full(
-            node.args[0], node.args[1], dtype=node.meta["val"].dtype
+            tensor_shape, node.args[1], dtype=node.meta["val"].dtype
         )
 
         # since we can derive the constant value of current op in AoT stage

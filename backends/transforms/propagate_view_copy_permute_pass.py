@@ -1,0 +1,1317 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
+
+import copy
+from abc import ABC, abstractmethod
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Any, cast, Set, Type
+
+import torch
+from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
+    CanonicalizeViewCopyPermutePass,
+)
+from executorch.backends.transforms.dim_maps import _Dim, PermuteMap, ViewMap
+from executorch.backends.transforms.fuse_duplicate_users_pass import (
+    FuseDuplicateUsersPass,
+)
+from executorch.backends.transforms.fuse_identical_input_transforms_pass import (
+    FuseIdenticalInputTransformsPass,
+)
+from executorch.backends.transforms.permute_view_meta import refresh_permute_view_meta
+from executorch.exir import ExportedProgram
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
+from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
+from torch.fx.node import map_arg
+
+
+@dataclass(frozen=True)
+class _ForkBranchSplit:
+    next_node: torch.fx.Node
+    source_shape: tuple[_Dim, ...]
+    arg_update: tuple[Any, Any] | None
+
+
+@dataclass(frozen=True)
+class _PointwiseRegionMove:
+    nodes_and_shapes: tuple[tuple[torch.fx.Node, tuple[_Dim, ...]], ...]
+    exit_producer: torch.fx.Node
+    exit_user: torch.fx.Node
+
+
+class PropagateViewCopyPermutePass(ExportPass, ABC):
+    """Abstract implementation of a permute/view_copy propagation pass.
+
+    To be used for upwards/downwards propagation by implementing the abstract
+    methods for the direction of propagation.
+
+    """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
+    _VIEW_TARGET = exir_ops.edge.aten.view_copy.default
+    _VIEW_DEFAULT_TARGET = exir_ops.edge.aten.view.default
+    _PERMUTE_TARGET = exir_ops.edge.aten.permute_copy.default
+    _TARGETS = {_VIEW_TARGET, _VIEW_DEFAULT_TARGET, _PERMUTE_TARGET}
+    _TRANSPARENT_TARGETS = {
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    }
+
+    _REDUCTION_TARGETS = {
+        exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+    _ARG_UPDATE_TARGETS = {
+        *_REDUCTION_TARGETS,
+        exir_ops.edge.aten.slice_copy.Tensor,
+    }
+
+    def __init__(
+        self,
+        compile_spec: Any | None = None,
+        exported_program: ExportedProgram | None = None,
+        permute_targets: Iterable[Any] | None = None,
+    ) -> None:
+        super().__init__()
+        if isinstance(compile_spec, ExportedProgram) and exported_program is None:
+            exported_program = compile_spec
+            compile_spec = None
+        self.exported_program = exported_program
+        self.compile_spec = compile_spec
+        # Which targets count as a permute. A backend carrying its own layout
+        # dialect passes them here; the pass still emits self._PERMUTE_TARGET
+        # when it has to create one.
+        self._permute_targets = frozenset(permute_targets or (self._PERMUTE_TARGET,))
+        self._targets = {
+            self._VIEW_TARGET,
+            self._VIEW_DEFAULT_TARGET,
+        } | self._permute_targets
+
+    @staticmethod
+    def _dim_arg(arg: Any) -> int | Sequence[int] | None:
+        if isinstance(arg, int):
+            return arg
+        if isinstance(arg, Sequence) and not isinstance(arg, (str, bytes)):
+            return cast(Sequence[int], arg)
+        return None
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = False
+
+        result = self.fuse_horizontal(graph_module)
+        graph_module = result.graph_module
+        modified |= result.modified
+        result = self.fuse_vertical(graph_module)
+        graph_module = result.graph_module
+        modified |= result.modified
+        if result.modified:
+            graph_module = self._retrace(graph_module)
+
+        while True:
+            iteration_modified = self._propagate_iteration(graph_module)
+
+            if iteration_modified:
+                modified = True
+                continue
+
+            result = self.fuse_horizontal(graph_module)
+            graph_module = result.graph_module
+            iteration_modified = result.modified
+            result = self.fuse_vertical(graph_module)
+            graph_module = result.graph_module
+            iteration_modified |= result.modified
+
+            modified |= iteration_modified
+            if not iteration_modified:
+                break
+
+        if modified:
+            graph_module = self._retrace(graph_module)
+
+        return PassResult(graph_module, modified)
+
+    def _propagate_iteration(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> bool:
+        modified = False
+        for node in self._propagation_order(graph_module):
+            if node.graph is None:
+                continue
+            if node.target not in self._targets or len(node.users) == 0:
+                continue
+            modified |= self._propagate(node)
+        return modified
+
+    def _propagation_order(
+        self, graph_module: torch.fx.GraphModule
+    ) -> Iterable[torch.fx.Node]:
+        return list(graph_module.graph.nodes)
+
+    def _retrace(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        graph_module.graph.eliminate_dead_code()
+        graph_module.graph.lint()
+        return super().call(graph_module).graph_module
+
+    def _refresh_node_meta(self, node: torch.fx.Node) -> None:
+        if not node.all_input_nodes:
+            return
+        if node.target in {self._VIEW_TARGET, self._PERMUTE_TARGET}:
+            # Derive copy-op shapes from the input so existing SymInts retain
+            # their identity instead of being recreated by fake execution.
+            refresh_permute_view_meta(node)
+            return
+
+        args = map_arg(node.args, lambda input_node: input_node.meta["val"])
+        kwargs = map_arg(node.kwargs, lambda input_node: input_node.meta["val"])
+        fake_mode = next(
+            (
+                value.fake_mode
+                for input_node in node.all_input_nodes
+                if isinstance((value := input_node.meta.get("val")), FakeTensor)
+            ),
+            None,
+        )
+        if fake_mode is None:
+            fake_mode = FakeTensorMode(allow_non_fake_inputs=True)
+            args = torch.utils._pytree.tree_map_only(
+                torch.Tensor, fake_mode.from_tensor, args
+            )
+            kwargs = torch.utils._pytree.tree_map_only(
+                torch.Tensor, fake_mode.from_tensor, kwargs
+            )
+        with fake_mode:
+            node.meta["val"] = node.target(*args, **kwargs)  # type: ignore[operator]
+
+    @abstractmethod
+    def _refresh_propagation_meta(
+        self, moving_node: torch.fx.Node, propagation_path: Sequence[torch.fx.Node]
+    ) -> None:
+        pass
+
+    def _validated_next_nodes(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+    ) -> list[torch.fx.Node] | None:
+        next_nodes = list(self._get_next_nodes(frontier))
+        if not next_nodes:
+            assert frontier.op in (
+                "placeholder",
+                "output",
+            ), f"{self.__class__.__name__} reached an endpoint node which is not a placeholder or output: {frontier}"
+            return None
+
+        if not self._can_cross_next_nodes(frontier, next_nodes):
+            return None
+
+        if self.blocks_moving(node, frontier, next_nodes):
+            return None
+
+        return next_nodes
+
+    def _advance_through_next_node(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        if self._can_move_through_elementwise(node, frontier, next_node):
+            return True
+
+        if not self.is_swappable(next_node):
+            return False
+
+        swapped_args = self._maybe_swap_args(node, next_node)
+        if swapped_args is None:
+            return False
+
+        node.args = swapped_args[0]
+        next_node.args = swapped_args[1]
+        return True
+
+    def _propagate(self, node: torch.fx.Node) -> bool:
+        """Propagate one node and refresh metadata changed by the rewrite."""
+
+        frontier = node
+        previous_frontier = None
+        propagation_path = [node]
+        moved = False
+        while True:
+            next_nodes = self._validated_next_nodes(node, frontier)
+            if next_nodes is None:
+                break
+
+            if len(next_nodes) > 1:
+                if not self._maybe_split_fork(
+                    node, frontier, previous_frontier, next_nodes
+                ):
+                    break
+                self._refresh_propagation_meta(node, propagation_path)
+                return True
+
+            next_node = next_nodes[0]
+            if self._advance_through_next_node(node, frontier, next_node):
+                previous_frontier = frontier
+                frontier = next_node
+                propagation_path.append(next_node)
+                moved = True
+                continue
+
+            # Concats are a special case since they branch the graph.
+            # Perform the swap directly in this case and return.
+            # Otherwise break and move the node before the concat
+            if self._maybe_split_upwards_cat_fanout(node, next_node):
+                self._refresh_propagation_meta(node, propagation_path)
+                return True
+
+            # Unhandled case, stop propagation
+            break
+
+        if not moved:
+            return False
+
+        assert previous_frontier is not None
+        self._move_node(node, frontier, previous_frontier)
+        self._refresh_propagation_meta(node, propagation_path)
+        return True
+
+    def duplicate_user_fusion_exclusions(self) -> frozenset:
+        """Targets whose duplicate users must not be collapsed onto one node.
+
+        Fusing them is unsound wherever a later stage assumes each consumer
+        keeps its own producer.
+        """
+        return frozenset()
+
+    def make_fusion_pass(self) -> ExportPass | None:
+        """The region-cancellation engine to run before canonicalization.
+
+        Region cancellation reaches shapes single-node propagation cannot -- a
+        diamond whose operands are both inside the region, for instance -- so
+        the two are complementary. Return None to skip it.
+
+        """
+        return None
+
+    def fuse_vertical(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        """Fuse consecutive permute/view nodes."""
+        modified = False
+
+        fusion_pass = self.make_fusion_pass()
+        if fusion_pass is not None:
+            result = fusion_pass.call(graph_module)
+            graph_module = result.graph_module
+            modified |= result.modified
+
+        result = CanonicalizeViewCopyPermutePass(self._permute_targets).call(
+            graph_module
+        )
+        graph_module = result.graph_module
+        modified |= result.modified
+        return PassResult(graph_module, modified)
+
+    @abstractmethod
+    def fuse_horizontal(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        """Fuse parallel permute/view nodes going into/ out a single node."""
+        pass
+
+    @abstractmethod
+    def _get_next_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
+        """Return the next nodes in the direction of propagation."""
+        pass
+
+    @abstractmethod
+    def _get_prev_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
+        """Return the previous nodes in the direction of propagation."""
+        pass
+
+    def _can_cross_next_nodes(
+        self, frontier: torch.fx.Node, next_nodes: Sequence[torch.fx.Node]
+    ) -> bool:
+        return True
+
+    @abstractmethod
+    def _maybe_swap_permute_args(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> Any | None:
+        pass
+
+    @abstractmethod
+    def _maybe_swap_view_args(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> Any | None:
+        pass
+
+    def _maybe_split_upwards_cat_fanout(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> bool:
+        """Swap cat([x1,x2]).permute(p) -> cat([x1.permute(p'), x2.permute(p')])
+        if permutes before the concat are noops.
+        """
+        return False
+
+    def _maybe_split_fork(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node | None,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        """Optionally split a transform over a fork in the propagation
+        direction.
+        """
+        return False
+
+    def _maybe_swap_args(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> Any | None:
+        """If the node can be swapped with its next_node, return the new args
+        for the next_node and new shape, otherwise return None.
+        """
+        if node.target in self._permute_targets:
+            return self._maybe_swap_permute_args(node, next_node)
+        elif node.target in {self._VIEW_TARGET, self._VIEW_DEFAULT_TARGET}:
+            return self._maybe_swap_view_args(node, next_node)
+        else:
+            raise ValueError(
+                f"Unexpected node target {node.target} in {self.__class__.__name__}"
+            )
+
+    def _move_node(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node,
+    ) -> None:
+        """Update the graph to move the node into its new position."""
+        raise NotImplementedError()
+
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Shape the crossed node operates on once ``moving_node`` has moved."""
+        raise NotImplementedError()
+
+    def is_transparent(self, node: torch.fx.Node) -> bool:
+        """Ops a data-movement node may cross without changing meaning.
+
+        Rank-changing views may not cross these, so a backend adding to the set
+        is asserting layout-invariance, not merely elementwise-ness.
+
+        """
+        return node.target in self._TRANSPARENT_TARGETS
+
+    def is_multi_input_elementwise(self, node: torch.fx.Node) -> bool:
+        """Elementwise ops whose extra inputs are not layout-carrying."""
+        return False
+
+    def blocks_crossing(self, node: torch.fx.Node) -> bool:
+        """Users past which a frontier node must not be moved."""
+        return False
+
+    def blocks_moving(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        """Whether this copy must stop here, whatever the nodes ahead allow.
+
+        Asked once per step, before the step is planned, for reasons about the
+        value being moved rather than about the node being crossed -- a storage
+        format the copy would address wrongly, say.
+
+        """
+        return False
+
+    def tolerates_shape_after_move(self, next_node: torch.fx.Node, shape: Any) -> bool:
+        """Whether ``next_node`` can operate on the shape the move leaves it.
+
+        Crossing a node changes the shape it reads, and a backend can have
+        operators that are correct only for some of them.
+
+        """
+        return True
+
+    def is_elementwise(self, node: torch.fx.Node) -> bool:
+        if node.op != "call_function":
+            return False
+
+        if self.is_transparent(node):
+            return True
+
+        op = getattr(node.target, "_op", None)
+        if op is not None and hasattr(op, "tags"):
+            return torch.Tag.pointwise in op.tags
+        return False
+
+    def is_swappable(self, next_node: torch.fx.Node) -> bool:
+        if next_node.target not in self._ARG_UPDATE_TARGETS:
+            return False
+        if next_node.target in self._REDUCTION_TARGETS:
+            keep_dim = (
+                next_node.args[2]
+                if len(next_node.args) > 2
+                else next_node.kwargs.get("keepdim")
+            )
+            if keep_dim is not True:
+                # A reduction that drops the dimension changes rank, so the
+                # permutation cannot simply be remapped across it.
+                return False
+        return True
+
+    def _can_move_through_elementwise(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        """Return whether ``moving_node`` can cross an elementwise operation.
+
+        Only simple single-input, single-output operations are handled here.
+        Multi-input elementwise operations are handled by horizontal fusion.
+
+        """
+        if (
+            not self.is_elementwise(next_node)
+            or (
+                len(next_node.all_input_nodes) != 1
+                and not self.is_multi_input_elementwise(next_node)
+            )
+            or not isinstance(next_node.meta.get("val"), torch.Tensor)
+        ):
+            return False
+
+        if moving_node.target == self._VIEW_TARGET:
+            view_map = ViewMap(moving_node)
+            if not view_map.is_valid_map:
+                return False
+            if (
+                self.is_transparent(next_node)
+                and view_map.source_rank != view_map.target_rank
+            ):
+                return False
+
+        if not self.tolerates_shape_after_move(
+            next_node, self._shape_seen_by_next_node(moving_node)
+        ):
+            return False
+
+        if moving_node.target not in self._permute_targets:
+            return True
+
+        dims = self._dim_arg(moving_node.args[1])
+        source_rank = len(dims) if isinstance(dims, Sequence) else None
+        next_val = next_node.meta.get("val")
+        return (
+            source_rank is not None
+            and isinstance(next_val, torch.Tensor)
+            and len(next_val.shape) == source_rank
+        )
+
+
+class PropagateViewCopyPermuteUpPass(PropagateViewCopyPermutePass):
+    """Implements PropagateViewCopyPermutePass for upwards propagation:
+
+    - Next propagation nodes are the input of the current node
+    - Previous propagation nodes are the users of the current node
+    - Swaps are (op -> permute/view) to (permute/view -> op)
+    - Node is moved before the frontier next_node
+    - Horizontal fuses are performed on users
+    """
+
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Moving up leaves the crossed node reading ``moving_node``'s output."""
+        val = moving_node.meta.get("val")
+        return getattr(val, "shape", None)
+
+    def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
+        # After moving up, dependencies run from the transform through the
+        # crossed nodes in reverse propagation order.
+        if moving_node.graph is not None:
+            self._refresh_node_meta(moving_node)
+        for node in reversed(propagation_path[1:]):
+            if node.graph is not None:
+                self._refresh_node_meta(node)
+
+    def fuse_horizontal(self, graph_module):
+        modified = False
+        result = FuseDuplicateUsersPass(self.duplicate_user_fusion_exclusions()).call(
+            graph_module
+        )
+        graph_module = result.graph_module
+        modified |= result.modified
+        return PassResult(graph_module, modified)
+
+    def _get_next_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
+        return list(node.all_input_nodes)
+
+    def _get_prev_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
+        return list(node.users.keys())
+
+    def _can_cross_next_nodes(
+        self, frontier: torch.fx.Node, next_nodes: Sequence[torch.fx.Node]
+    ) -> bool:
+        if any(self.blocks_crossing(user) for user in frontier.users):
+            return False
+        return all(
+            all(prev_node is frontier for prev_node in self._get_prev_nodes(next_node))
+            for next_node in next_nodes
+        )
+
+    def _can_move_through_elementwise(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        if super()._can_move_through_elementwise(moving_node, frontier, next_node):
+            return True
+        if moving_node.target not in self._permute_targets or not self.is_elementwise(
+            next_node
+        ):
+            return False
+
+        frontier_val = frontier.meta.get("val")
+        if not isinstance(frontier_val, torch.Tensor):
+            return False
+        rank = len(frontier_val.shape)
+        layout_dependent_inputs = [
+            input_node
+            for input_node in next_node.all_input_nodes
+            if not FuseIdenticalInputTransformsPass.is_layout_invariant(
+                input_node, rank
+            )
+        ]
+        return len(layout_dependent_inputs) == 1
+
+    def _maybe_swap_permute_args(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> Any | None:
+        permute_map = PermuteMap(node)
+        args = self._dim_arg(next_node.args[1])
+        if args is None:
+            return None
+        mapped_args = permute_map.map_dims(args)
+        new_args: int | list[int] = (
+            mapped_args[0] if isinstance(args, int) else mapped_args
+        )
+        return (node.args, (*next_node.args[:1], new_args, *next_node.args[2:]))
+
+    def _maybe_swap_view_args(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> Any | None:
+        view_map = ViewMap(node)
+        if not view_map.is_valid_map or len(next_node.all_input_nodes) != 1:
+            return None
+
+        input_val = next_node.all_input_nodes[0].meta["val"]
+        input_shape = list(input_val.shape)
+        new_shape = view_map.remap_target_shape(input_shape)
+
+        if next_node.target in self._REDUCTION_TARGETS:
+            return self._maybe_swap_reduction_view_args(node, next_node, view_map)
+        if next_node.target == exir_ops.edge.aten.slice_copy.Tensor:
+            return self._maybe_swap_slice_view_args(
+                node, next_node, view_map, input_shape, new_shape
+            )
+        return None
+
+    def _maybe_swap_reduction_view_args(
+        self,
+        node: torch.fx.Node,
+        next_node: torch.fx.Node,
+        view_map: ViewMap,
+    ) -> Any | None:
+        if len(next_node.args) <= 2 or next_node.args[2] is not True:
+            return None
+        reduction_dims = cast(int | Sequence[int], next_node.args[1])
+        input_val = next_node.all_input_nodes[0].meta["val"]
+        swap = view_map.map_reduction_after_view(input_val.shape, reduction_dims)
+        if swap is None:
+            return None
+        new_shape, new_dims = swap
+        new_next_node_args = (*next_node.args[:1], new_dims, *next_node.args[2:])
+        return ((*node.args[:1], new_shape), new_next_node_args)
+
+    def _maybe_swap_slice_view_args(
+        self,
+        node: torch.fx.Node,
+        next_node: torch.fx.Node,
+        view_map: ViewMap,
+        input_shape: list[_Dim],
+        new_shape: list[_Dim] | None,
+    ) -> Any | None:
+        if len(next_node.args) < 4:
+            return None
+
+        step = next_node.args[4] if len(next_node.args) > 4 else 1
+        unit_slice_swap = view_map.remap_unit_slice(
+            input_shape,
+            cast(int, next_node.args[1]),
+            cast(_Dim, next_node.args[2]),
+            cast(_Dim, next_node.args[3]),
+            cast(_Dim, step),
+        )
+        if unit_slice_swap is not None:
+            new_shape, new_dim, new_start, new_end = unit_slice_swap
+            if not self._valid_slice_interval(new_shape, new_dim, new_start, new_end):
+                return None
+            new_next_node_args = (
+                *next_node.args[:1],
+                new_dim,
+                new_start,
+                new_end,
+                *next_node.args[4:],
+            )
+            return ((*node.args[:1], new_shape), new_next_node_args)
+
+        if new_shape is None:
+            return None
+
+        slice_dim = cast(int, next_node.args[1])
+        mapped_dim = self._map_slice_dim(view_map, slice_dim)
+        if mapped_dim is None:
+            return None
+        if not self._valid_slice_interval(
+            new_shape,
+            mapped_dim,
+            cast(_Dim, next_node.args[2]),
+            cast(_Dim, next_node.args[3]),
+        ):
+            return None
+        new_next_node_args = (*next_node.args[:1], mapped_dim, *next_node.args[2:])
+        return ((*node.args[:1], new_shape), new_next_node_args)
+
+    @staticmethod
+    def _map_slice_dim(view_map: ViewMap, slice_dim: int) -> int | None:
+        new_dims = view_map.map_source_dims_to_target_axes(slice_dim)
+        if new_dims is None or len(new_dims) != 1:
+            return None
+
+        new_dim = new_dims[0]
+        normalized_slice_dim = slice_dim % view_map.source_rank
+        source_to_target_axes = view_map.source_to_target_axes()
+        target_source_axes = view_map.source_axes_for_target_axis(
+            new_dim, source_to_target_axes
+        )
+        if any(
+            source_axis != normalized_slice_dim for source_axis in target_source_axes
+        ):
+            return None
+        return new_dim
+
+    @staticmethod
+    def _valid_slice_interval(
+        shape: Sequence[_Dim], dim: int, start: _Dim, end: _Dim
+    ) -> bool:
+        try:
+            dim = dim % len(shape)
+            return 0 <= start < end <= shape[dim]
+        except (RuntimeError, TypeError):
+            return False
+
+    def _move_node(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node,
+    ) -> None:
+        original_input = node.all_input_nodes[0]
+        if frontier.op == "placeholder":
+            # Nodes cannot be moved before placeholders
+            producer = frontier
+            frontier_user = previous_frontier
+        else:
+            inputs = list(frontier.all_input_nodes)
+            if len(inputs) > 1 and not self.is_multi_input_elementwise(frontier):
+                # The earlier propagation check accepted exactly one layout-dependent
+                # input. Select it because a broadcast scalar may appear first.
+                rank = len(node.args[1])
+                layout_dependent_inputs = [
+                    input_node
+                    for input_node in inputs
+                    if not FuseIdenticalInputTransformsPass.is_layout_invariant(
+                        input_node, rank
+                    )
+                ]
+                assert len(layout_dependent_inputs) == 1, (
+                    f"Expected exactly one layout-dependent input for {frontier.target}, "
+                    f"got {len(layout_dependent_inputs)}"
+                )
+                producer = layout_dependent_inputs[0]
+            else:
+                producer = inputs[0]
+            frontier_user = frontier
+
+        node.replace_input_with(original_input, producer)
+        frontier_user.replace_input_with(producer, node)
+
+        for user in list(node.users):
+            if user is not frontier_user:
+                user.replace_input_with(node, original_input)
+
+        frontier_user.prepend(node)
+
+    def _maybe_split_upwards_cat_fanout(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> bool:
+        """Swap cat([x1,x2]).permute(p) -> cat([x1.permute(p'), x2.permute(p')])
+        if permutes before the concat are noops.
+        """
+        if node.target not in self._permute_targets:
+            return False
+        if next_node.target != exir_ops.edge.aten.cat.default:
+            return False
+
+        cat_users = list(next_node.users)
+        if len(cat_users) == 0:
+            return False
+        if not all(n.target in self._permute_targets for n in cat_users):
+            return False
+
+        permute_args = [self._dim_arg(n.args[1]) for n in cat_users]
+        if not isinstance(permute_args[0], Sequence) or not all(
+            p == permute_args[0] for p in permute_args
+        ):
+            return False
+
+        cat_dim = (
+            next_node.args[1]
+            if len(next_node.args) >= 2
+            else next_node.kwargs.get("dim", 0)
+        )
+        if not isinstance(cat_dim, int):
+            return False
+        new_cat_dim = PermuteMap(node).map_dims(cat_dim)[0]
+
+        cat_inputs = list(next_node.all_input_nodes)
+        cat_input_shapes = [input_node.meta["val"].shape for input_node in cat_inputs]
+
+        # Ensure all input permutes are noops
+        if not all(
+            CanonicalizeViewCopyPermutePass._is_singleton_permutation(
+                shape, permute_args[0]
+            )
+            for shape in cat_input_shapes
+        ):
+            return False
+
+        # Add permutes to all cat inputs, update cat arg, and remove old output permute
+        new_inputs = []
+        for input_node in cat_inputs:
+            input_val = input_node.meta["val"]
+            output_shape = [input_val.shape[dim] for dim in permute_args[0]]
+            with next_node.graph.inserting_before(next_node):
+                permute = next_node.graph.call_function(
+                    self._PERMUTE_TARGET,
+                    args=(input_node, permute_args[0]),
+                )
+            permute.meta = dict(input_node.meta)
+            permute.meta["val"] = input_val.new_empty(tuple(output_shape))
+            new_inputs.append(permute)
+
+        next_node.args = (new_inputs, new_cat_dim, *next_node.args[2:])
+        next_node.meta = dict(node.meta)
+        for cat_user in cat_users:
+            cat_user.replace_all_uses_with(next_node)
+        for cat_user in cat_users:
+            if len(cat_user.users) == 0:
+                next_node.graph.erase_node(cat_user)
+        return True
+
+
+class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
+    """Implements PropagateViewCopyPermutePass for downward propagation:
+
+    - Next propagation nodes are the users of the current node
+    - Previous propagation nodes are the inputs of the current node
+    - Swaps are (permute/view -> op) to (op -> permute/view)
+    - Node is moved after the frontier next_node
+    - Horizontal fuses are performed on inputs
+    """
+
+    def _shape_seen_by_next_node(self, moving_node: torch.fx.Node) -> Any:
+        """Moving down leaves the crossed node reading ``moving_node``'s input."""
+        val = cast(torch.fx.Node, moving_node.args[0]).meta.get("val")
+        return getattr(val, "shape", None)
+
+    def _propagation_order(
+        self, graph_module: torch.fx.GraphModule
+    ) -> Iterable[torch.fx.Node]:
+        return reversed(list(graph_module.graph.nodes))
+
+    def _refresh_propagation_meta(self, moving_node, propagation_path) -> None:
+        # After moving down, dependencies run through the crossed nodes in
+        # propagation order and end at the transform.
+        for node in propagation_path[1:]:
+            if node.graph is not None:
+                self._refresh_node_meta(node)
+        if moving_node.graph is not None:
+            self._refresh_node_meta(moving_node)
+
+    def fuse_horizontal(self, graph_module):
+        modified = False
+        result = FuseIdenticalInputTransformsPass(
+            permute_targets=self._permute_targets
+        ).call(graph_module)
+        graph_module = result.graph_module
+        modified |= result.modified
+        return PassResult(graph_module, modified)
+
+    def _get_next_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
+        return list(node.users.keys())
+
+    def _get_prev_nodes(self, node: torch.fx.Node) -> Iterable[torch.fx.Node]:
+        return list(node.all_input_nodes)
+
+    def _maybe_swap_permute_args(
+        self, node: torch.fx.Node, next_node: torch.fx.Node
+    ) -> Any | None:
+        permute_map = PermuteMap(node)
+        args = self._dim_arg(next_node.args[1])
+        if args is None:
+            return None
+        mapped_args = permute_map.map_dims_inverse(args)
+        new_args: int | list[int] = (
+            mapped_args[0] if isinstance(args, int) else mapped_args
+        )
+        return (node.args, (*next_node.args[:1], new_args, *next_node.args[2:]))
+
+    def _maybe_swap_view_args(self, node, next_node):
+        view_map = ViewMap(node)
+        if not view_map.is_valid_map:
+            return None
+
+        if next_node.target in self._REDUCTION_TARGETS:
+            if len(next_node.args) <= 2 or next_node.args[2] is not True:
+                return None
+            swap = view_map.map_reduction_before_view(next_node.args[1])
+            if swap is None:
+                return None
+            new_dims, output_shape = swap
+        elif next_node.target == exir_ops.edge.aten.slice_copy.Tensor:
+            new_dims = view_map.map_dim_inverse(next_node.args[1])
+            if new_dims is None:
+                return None
+            if len(new_dims) != 1:
+                return None
+            new_dims = new_dims[0]
+            output_shape = list(next_node.meta["val"].shape)
+        else:
+            return None
+
+        new_next_node_args = (*next_node.args[:1], new_dims, *next_node.args[2:])
+        return ((*node.args[:1], output_shape), new_next_node_args)
+
+    def _maybe_split_fork(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node | None,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> bool:
+        if frontier is not node and previous_frontier is None:
+            # We cannot safely detach a path if its previous operation is
+            # unknown.
+            return False
+
+        # First try to handle branches that do not use each other's results.
+        plan = self._plan_fork_split(node, frontier, next_nodes)
+        if plan is not None:
+            producer, branch_splits = plan
+            self._apply_fork_split(node, frontier, producer, branch_splits)
+            return True
+
+        # If the branches use each other's results, try moving the dimension
+        # reorder past the connected group of operations as one change.
+        region_move = self._plan_pointwise_region_move(node)
+        if region_move is not None:
+            self._apply_pointwise_region_move(node, region_move)
+            return True
+
+        # Neither rewrite is safe, so leave the graph unchanged.
+        return False
+
+    def _plan_pointwise_region_move(
+        self, node: torch.fx.Node
+    ) -> _PointwiseRegionMove | None:
+        """Check whether a dimension reorder can move past related operations.
+
+        This handles cases such as ``sub(x, floor(x))``, where one operation
+        uses the result of another. Here ``P`` means permute:
+
+            Before:  P(x) --+-----------------> sub -> user
+                            |                    ^
+                            +-> floor -----------+
+
+            After:      x --+-----------------> sub -> P -> user
+                            |                    ^
+                            +-> floor -----------+
+
+        These operations process each value independently, so the dimension
+        reorder can happen before or after them without changing the result.
+
+        First find all connected operations that can make this move. Only
+        accept the change when the group has one outgoing connection and any
+        input from outside the group is unaffected by dimension order. No graph
+        connections are changed until every check succeeds.
+
+        """
+        normalized_dims = self._pointwise_region_permute_dims(node)
+        if normalized_dims is None:
+            # This is not a supported, valid dimension reorder.
+            return None
+        rank = len(normalized_dims)
+
+        discovered_region = self._discover_pointwise_region(node, normalized_dims)
+        if discovered_region is None:
+            # A backend rejected one of the paths into a shared operation.
+            return None
+        region, exit_edges = discovered_region
+        if not region:
+            # No following operation can safely run before the reorder.
+            return None
+        if any(parent is node for parent, _ in exit_edges):
+            # A direct user still needs the reordered value, so moving the only
+            # reorder would break that path.
+            return None
+
+        # A connection first recorded as leaving the group may turn out to stay
+        # inside it when the same operation is reached through another branch.
+        exit_edges = {
+            (parent, user)
+            for parent, user in exit_edges
+            if parent in region and user not in region
+        }
+        if len(exit_edges) != 1:
+            # Moving one reorder is only safe when the group has exactly one
+            # outgoing connection.
+            return None
+
+        if not self._pointwise_region_inputs_are_safe(region, node, rank):
+            # An outside input depends on dimension order and would no longer
+            # match the reordered input.
+            return None
+
+        # Keep the operations in their original execution order and record the
+        # shape each one will have after the dimension reorder is moved.
+        graph_order = {
+            graph_node: index for index, graph_node in enumerate(node.graph.nodes)
+        }
+        nodes_and_shapes = []
+        for region_node in sorted(region, key=graph_order.__getitem__):
+            region_val = cast(torch.Tensor, region_node.meta["val"])
+            source_shape = self._source_shape(region_val, normalized_dims)
+            nodes_and_shapes.append((region_node, source_shape))
+
+        exit_producer, exit_user = next(iter(exit_edges))
+        return _PointwiseRegionMove(tuple(nodes_and_shapes), exit_producer, exit_user)
+
+    def _pointwise_region_permute_dims(
+        self, node: torch.fx.Node
+    ) -> tuple[int, ...] | None:
+        if node.target not in self._permute_targets or len(node.all_input_nodes) != 1:
+            # This rewrite only handles a known permute with one tensor input.
+            return None
+        producer = node.all_input_nodes[0]
+        if not isinstance(producer.meta.get("val"), torch.Tensor):
+            # The input shape is required to update shapes after the move.
+            return None
+        permute_dims = self._dim_arg(node.args[1])
+        if not isinstance(permute_dims, Sequence):
+            # A permute must provide an ordered list of dimensions.
+            return None
+        rank = len(permute_dims)
+        normalized_dims = tuple(dim if dim >= 0 else dim + rank for dim in permute_dims)
+        if sorted(normalized_dims) != list(range(rank)):
+            # Every input dimension must appear exactly once.
+            return None
+        return normalized_dims
+
+    def _discover_pointwise_region(
+        self, node: torch.fx.Node, normalized_dims: Sequence[int]
+    ) -> tuple[set[torch.fx.Node], set[tuple[torch.fx.Node, torch.fx.Node]]] | None:
+        region: set[torch.fx.Node] = set()
+        pending = [(node, user) for user in node.users]
+        exit_edges: set[tuple[torch.fx.Node, torch.fx.Node]] = set()
+        while pending:
+            parent, candidate = pending.pop()
+            if candidate in region:
+                if self.blocks_moving(node, parent, (candidate,)):
+                    # This operation was safe through another path, but this
+                    # backend does not allow moving through the current path.
+                    return None
+                # Another branch already reached and checked this operation.
+                continue
+            if not self._can_include_in_pointwise_region(
+                node, parent, candidate, normalized_dims
+            ):
+                # Stop following this path and record where the checked group
+                # connects to the rest of the graph.
+                exit_edges.add((parent, candidate))
+                continue
+            if any(exit_user is candidate for _, exit_user in exit_edges):
+                # Another path rejected this operation before this path allowed
+                # it. Only blocks_moving can differ between paths, so keep the
+                # dimension reorder before the whole connected group.
+                return None
+            region.add(candidate)
+            pending.extend((candidate, user) for user in candidate.users)
+        return region, exit_edges
+
+    def _can_include_in_pointwise_region(
+        self,
+        moving_node: torch.fx.Node,
+        parent: torch.fx.Node,
+        candidate: torch.fx.Node,
+        normalized_dims: Sequence[int],
+    ) -> bool:
+        candidate_val = candidate.meta.get("val")
+        if not self.is_elementwise(candidate):
+            # Other operations may produce different results when dimensions
+            # are reordered before them.
+            return False
+        if not isinstance(candidate_val, torch.Tensor):
+            # The output shape is required to update the graph safely.
+            return False
+        if len(candidate_val.shape) != len(normalized_dims):
+            # The same reorder cannot be reused after the number of dimensions
+            # changes.
+            return False
+        if self.blocks_moving(moving_node, parent, (candidate,)):
+            # Give each backend a chance to reject a move it cannot support.
+            return False
+        source_shape = self._source_shape(candidate_val, normalized_dims)
+        if not self.tolerates_shape_after_move(candidate, source_shape):
+            # The operation cannot accept the shape it would see after moving
+            # the reorder.
+            return False
+        return True
+
+    @staticmethod
+    def _source_shape(
+        value: torch.Tensor, normalized_dims: Sequence[int]
+    ) -> tuple[_Dim, ...]:
+        source_shape: list[_Dim] = [1] * len(normalized_dims)
+        for output_axis, source_axis in enumerate(normalized_dims):
+            source_shape[source_axis] = value.shape[output_axis]
+        return tuple(source_shape)
+
+    @staticmethod
+    def _pointwise_region_inputs_are_safe(
+        region: set[torch.fx.Node], moving_node: torch.fx.Node, rank: int
+    ) -> bool:
+        # Inputs created inside the group move together. Any input from outside
+        # must be unaffected by dimension order, or the operation could combine
+        # values from mismatched dimensions after the move.
+        return all(
+            input_node is moving_node
+            or input_node in region
+            or FuseIdenticalInputTransformsPass.is_layout_invariant(input_node, rank)
+            for region_node in region
+            for input_node in region_node.all_input_nodes
+        )
+
+    def _apply_pointwise_region_move(
+        self, node: torch.fx.Node, plan: _PointwiseRegionMove
+    ) -> None:
+        """Move the reorder to the group's only outgoing connection."""
+        # Save the input before the reorder and the information describing the
+        # group's original output.
+        producer = node.all_input_nodes[0]
+        old_exit_meta = copy.copy(plan.exit_producer.meta)
+
+        # Replace uses of the old reorder inside the group with its original
+        # input. Update every operation's recorded output shape to match.
+        for region_node, source_shape in plan.nodes_and_shapes:
+            region_node.replace_input_with(node, producer)
+            region_node.meta = copy.copy(region_node.meta)
+            region_val = cast(torch.Tensor, region_node.meta["val"])
+            region_node.meta["val"] = region_val.new_empty(source_shape)
+
+        # Recreate the reorder after the final operation in the group.
+        with plan.exit_producer.graph.inserting_after(plan.exit_producer):
+            moved_permute = plan.exit_producer.graph.call_function(
+                cast(Any, node.target),
+                args=(plan.exit_producer, *node.args[1:]),
+                kwargs=dict(node.kwargs),
+            )
+
+        # The new reorder produces the same value and retains the same backend
+        # assignment as the group's output did before the move.
+        moved_permute.meta = copy.copy(node.meta)
+        moved_permute.meta["val"] = old_exit_meta["val"]
+        if "delegation_tag" in old_exit_meta:
+            moved_permute.meta["delegation_tag"] = old_exit_meta["delegation_tag"]
+        else:
+            moved_permute.meta.pop("delegation_tag", None)
+
+        # Send the group's only outside user through the new reorder.
+        plan.exit_user.replace_input_with(plan.exit_producer, moved_permute)
+
+        # The reorder at its old location is now unused.
+        if not node.users:
+            node.graph.erase_node(node)
+
+    def _plan_fork_split(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_nodes: Sequence[torch.fx.Node],
+    ) -> tuple[torch.fx.Node, tuple[_ForkBranchSplit, ...]] | None:
+        """Validate every fork branch and return an all-or-nothing rewrite plan.
+
+        Fork propagation is only implemented for permutes. The permutation must be
+        valid, every branch must support the same propagation step, and every branch
+        output must retain the permutation rank. Planning all branches before editing
+        is essential: discovering one unsupported branch after mutating earlier ones
+        would leave a partially rewritten graph.
+
+        Each planned branch records both its pre-permute shape and any argument update
+        needed when crossing reductions or slices.
+
+        """
+        if node.target not in self._permute_targets or len(node.all_input_nodes) != 1:
+            return None
+        producer = node.all_input_nodes[0]
+        if not isinstance(producer.meta.get("val"), torch.Tensor):
+            return None
+        permute_dims = self._dim_arg(node.args[1])
+        if not isinstance(permute_dims, Sequence):
+            return None
+        rank = len(permute_dims)
+        normalized_dims = [dim if dim >= 0 else dim + rank for dim in permute_dims]
+        if sorted(normalized_dims) != list(range(rank)):
+            return None
+
+        branch_splits = []
+        for next_node in next_nodes:
+            if self._can_move_through_elementwise(
+                node, frontier, next_node
+            ) or self._can_split_through_elementwise(node, frontier, next_node):
+                arg_update = None
+            elif self.is_swappable(next_node):
+                arg_update = self._maybe_swap_args(node, next_node)
+                if arg_update is None:
+                    return None
+            else:
+                return None
+
+            next_val = next_node.meta.get("val")
+            if not isinstance(next_val, torch.Tensor) or len(next_val.shape) != rank:
+                return None
+            source_shape: list[_Dim] = [1] * rank
+            for output_axis, source_axis in enumerate(normalized_dims):
+                source_shape[source_axis] = next_val.shape[output_axis]
+            branch_splits.append(
+                _ForkBranchSplit(next_node, tuple(source_shape), arg_update)
+            )
+        return producer, tuple(branch_splits)
+
+    def _can_split_through_elementwise(
+        self,
+        moving_node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        next_node: torch.fx.Node,
+    ) -> bool:
+        if not self.is_elementwise(next_node):
+            return False
+        frontier_val = frontier.meta.get("val")
+        if not isinstance(frontier_val, torch.Tensor):
+            return False
+        rank = len(frontier_val.shape)
+        return all(
+            input_node is frontier
+            or FuseIdenticalInputTransformsPass.is_layout_invariant(input_node, rank)
+            for input_node in next_node.all_input_nodes
+        )
+
+    def _apply_fork_split(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        producer: torch.fx.Node,
+        branch_splits: Sequence[_ForkBranchSplit],
+    ) -> None:
+        """Apply a validated fork plan and place one transform after each
+        branch.
+
+        If propagation already crossed operators before reaching the fork, the
+        original path is first detached from the permute. Each branch is then
+        rewired to the pre-permute layout, its metadata is updated to that
+        layout, and a copy of the original permute is inserted after it.
+        Argument-changing operations use the transform arguments captured during
+        planning.
+
+        """
+        if frontier is not node:
+            original_user = next(iter(node.users))
+            original_user.replace_input_with(node, producer)
+
+        for branch_split in branch_splits:
+            next_node = branch_split.next_node
+            old_next_meta = copy.copy(next_node.meta)
+            if frontier is node:
+                next_node.replace_input_with(node, producer)
+            if branch_split.arg_update is not None:
+                branch_input = (
+                    producer if frontier is node else branch_split.arg_update[1][0]
+                )
+                next_node.args = (branch_input, *branch_split.arg_update[1][1:])
+            next_node.meta = copy.copy(next_node.meta)
+            next_node.meta["val"] = old_next_meta["val"].new_empty(
+                branch_split.source_shape
+            )
+            transform_suffix = (
+                node.args[1:]
+                if branch_split.arg_update is None
+                else branch_split.arg_update[0][1:]
+            )
+            with next_node.graph.inserting_after(next_node):
+                branch_transform = next_node.graph.call_function(
+                    cast(Any, node.target),
+                    args=(next_node, *transform_suffix),
+                    kwargs=dict(node.kwargs),
+                )
+            branch_transform.meta = old_next_meta
+            for user in list(next_node.users):
+                if user is not branch_transform:
+                    user.replace_input_with(next_node, branch_transform)
+
+        if not node.users:
+            node.graph.erase_node(node)
+
+    def _move_node(
+        self,
+        node: torch.fx.Node,
+        frontier: torch.fx.Node,
+        previous_frontier: torch.fx.Node,
+    ) -> None:
+        original_user = next(iter(node.users))
+        producer = node.all_input_nodes[0]
+        if frontier.op == "output":
+            # Nodes cannot be moved after output
+            frontier_input = previous_frontier
+        else:
+            frontier_input = frontier
+        frontier_users = list(frontier_input.users)
+
+        original_user.replace_input_with(node, producer)
+        node.replace_input_with(producer, frontier_input)
+
+        for user in frontier_users:
+            if user is not node:
+                user.replace_input_with(frontier_input, node)
+
+        if frontier.op == "output":
+            frontier.prepend(node)
+        else:
+            frontier.append(node)

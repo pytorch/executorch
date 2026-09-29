@@ -400,8 +400,7 @@ void KVCachedMemory::prepare_io(
     for (int i = 0, range = 1024 / thread_pool_.num_workers();
          i < thread_pool_.num_workers();
          ++i) {
-      lr_update_kv_.push_back(
-          {.start = i * range, .end = (i + 1) * range, .step = 1});
+      lr_update_kv_.push_back({i * range, (i + 1) * range, 1});
     }
   }
 }

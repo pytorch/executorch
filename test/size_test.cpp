@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -15,11 +16,172 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <stdio.h>
 
+#if defined(EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+#include <errno.h>
+#include <stddef.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
+
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
 
 static uint8_t method_allocator_pool[1024];
 static uint8_t activation_pool[512];
+
+#if defined(EXECUTORCH_SIZE_TEST_NO_OS_LINK)
+#define ET_WEAK_SYSCALL __attribute__((weak))
+
+extern "C" {
+
+// The Zephyr size test links directly with arm-zephyr-eabi, outside Zephyr's
+// normal application link flow. This binary is link/size-only and is never run;
+// these stubs only satisfy libc hooks pulled in by FileDataLoader and
+// profiling.
+#ifdef stderr
+#undef stderr
+#endif
+#if !defined(__GLIBC__)
+extern FILE* const stderr ET_WEAK_SYSCALL = nullptr;
+#endif
+
+ET_WEAK_SYSCALL int close(int fd) {
+  (void)fd;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL int _close(int fd) {
+  return close(fd);
+}
+
+ET_WEAK_SYSCALL int fstat(int fd, struct stat* st) {
+  (void)fd;
+  st->st_mode = S_IFCHR;
+  return 0;
+}
+
+ET_WEAK_SYSCALL int _fstat(int fd, struct stat* st) {
+  return fstat(fd, st);
+}
+
+ET_WEAK_SYSCALL int gettimeofday(void* tv, void* tz) {
+  (void)tv;
+  (void)tz;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL int getentropy(void* buffer, size_t length) {
+  (void)buffer;
+  (void)length;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL int _getentropy(void* buffer, size_t length) {
+  return getentropy(buffer, length);
+}
+
+ET_WEAK_SYSCALL int isatty(int fd) {
+  (void)fd;
+  return 1;
+}
+
+ET_WEAK_SYSCALL int _isatty(int fd) {
+  return isatty(fd);
+}
+
+ET_WEAK_SYSCALL off_t lseek(int fd, off_t offset, int whence) {
+  (void)fd;
+  (void)offset;
+  (void)whence;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL off_t _lseek(int fd, off_t offset, int whence) {
+  return lseek(fd, offset, whence);
+}
+
+ET_WEAK_SYSCALL int open(const char* path, int flags, ...) {
+  (void)path;
+  (void)flags;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL int _open(const char* path, int flags, ...) {
+  (void)path;
+  (void)flags;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL ssize_t read(int fd, void* buf, size_t count) {
+  (void)fd;
+  (void)buf;
+  (void)count;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL ssize_t _read(int fd, void* buf, size_t count) {
+  return read(fd, buf, count);
+}
+
+ET_WEAK_SYSCALL ssize_t write(int fd, const void* buf, size_t count) {
+  (void)fd;
+  (void)buf;
+  (void)count;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL ssize_t _write(int fd, const void* buf, size_t count) {
+  return write(fd, buf, count);
+}
+
+ET_WEAK_SYSCALL void* _sbrk(ptrdiff_t increment) {
+  (void)increment;
+  errno = ENOMEM;
+  return (void*)-1;
+}
+
+ET_WEAK_SYSCALL void* sbrk(ptrdiff_t increment) {
+  return _sbrk(increment);
+}
+
+ET_WEAK_SYSCALL int getpid(void) {
+  return 1;
+}
+
+ET_WEAK_SYSCALL int _getpid(void) {
+  return getpid();
+}
+
+ET_WEAK_SYSCALL int kill(int pid, int sig) {
+  (void)pid;
+  (void)sig;
+  errno = ENOSYS;
+  return -1;
+}
+
+ET_WEAK_SYSCALL int _kill(int pid, int sig) {
+  return kill(pid, sig);
+}
+
+ET_WEAK_SYSCALL void _exit(int status) {
+  (void)status;
+  __builtin_trap();
+  for (;;) {
+  }
+}
+
+} // extern "C"
+
+#undef ET_WEAK_SYSCALL
+#endif
 
 int main(int argc, char** argv) {
   runtime_init();

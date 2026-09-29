@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/named_data_map.h>
 
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -48,7 +49,7 @@ class MergedDataMap final
   ET_NODISCARD
   executorch::runtime::Result<
       const executorch::ET_RUNTIME_NAMESPACE::TensorLayout>
-  get_tensor_layout(executorch::aten::string_view key) const override;
+  get_tensor_layout(std::string_view key) const override;
 
   /**
    * Retrieve read-only data for the specified key.
@@ -59,7 +60,7 @@ class MergedDataMap final
    */
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> get_data(
-      executorch::aten::string_view key) const override;
+      std::string_view key) const override;
 
   /**
    * Loads the data of the specified tensor into the provided buffer.
@@ -72,7 +73,7 @@ class MergedDataMap final
    * @returns an Error indicating if the load was successful.
    */
   ET_NODISCARD executorch::runtime::Error load_data_into(
-      executorch::aten::string_view key,
+      std::string_view key,
       void* buffer,
       size_t size) const override;
 
@@ -92,10 +93,12 @@ class MergedDataMap final
   ~MergedDataMap() override = default;
 
  private:
+  using KeyToMapIndex = std::unordered_map<std::string_view, uint32_t>;
+
   MergedDataMap(
       std::vector<const executorch::ET_RUNTIME_NAMESPACE::NamedDataMap*>
           named_data_maps,
-      std::unordered_map<std::string, uint32_t> key_to_map_index)
+      KeyToMapIndex key_to_map_index)
       : named_data_maps_(std::move(named_data_maps)),
         key_to_map_index_(std::move(key_to_map_index)) {}
 
@@ -107,8 +110,8 @@ class MergedDataMap final
   std::vector<const executorch::ET_RUNTIME_NAMESPACE::NamedDataMap*>
       named_data_maps_;
 
-  // Map from key to index in the named_data_maps_ vector.
-  std::unordered_map<std::string, uint32_t> key_to_map_index_;
+  // Keys alias stable storage owned by the wrapped, longer-lived data maps.
+  KeyToMapIndex key_to_map_index_;
 };
 
 } // namespace ET_MERGED_DATA_MAP_NAMESPACE

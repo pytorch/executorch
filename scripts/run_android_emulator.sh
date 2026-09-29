@@ -30,6 +30,13 @@ echo "Waiting for emulator boot to complete"
 $ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 5; done;'
 $ADB_PATH wait-for-device
 
+# sys.boot_completed flips before system_server finishes registering the
+# settings provider and PackageManager. Installing before then fails with
+# "Cannot access system provider: 'settings' before system providers are
+# installed!". Wait until PackageManager actually answers.
+echo "Waiting for package manager to become available"
+adb_shell_with_retries 60 cmd package list packages >/dev/null
+
 echo "Unlock emulator and disable animations"
 adb_shell_with_retries 5 input keyevent 82 || true
 adb_shell_with_retries 5 settings put global window_animation_scale 0.0 || true
@@ -41,7 +48,22 @@ echo "List all running emulators"
 $ADB_PATH devices
 
 "$ADB_PATH" uninstall org.pytorch.executorch.test || true
-"$ADB_PATH" install -t android-test-debug-androidTest.apk
+
+# Retry the install: even after PackageManager answers, a cold software
+# boot can transiently drop adb or the framework can still be settling.
+install_ok=false
+for ((i = 1; i <= 5; i++)); do
+  if "$ADB_PATH" install -r -t android-test-debug-androidTest.apk; then
+    install_ok=true
+    break
+  fi
+  sleep 10
+  "$ADB_PATH" wait-for-device
+done
+if [ "$install_ok" != "true" ]; then
+  echo "Failed to install test APK after retries" >&2
+  exit 1
+fi
 
 "$ADB_PATH" logcat -c
 "$ADB_PATH" shell am instrument -w -r \

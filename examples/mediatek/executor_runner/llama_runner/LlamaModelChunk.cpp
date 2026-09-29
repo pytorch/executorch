@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/runtime/executor/method.h>
@@ -445,19 +446,35 @@ void LlamaModelChunk::PrepareCacheIOs() {
 }
 
 size_t LlamaModelChunk::GetCacheNumRows() const {
-  return std::reduce(
-      mCacheShape.begin(),
-      mCacheShape.begin() + kCacheLengthDim,
-      1,
-      std::multiplies<>());
+  size_t result = 1;
+  for (auto it = mCacheShape.begin();
+       it != mCacheShape.begin() + kCacheLengthDim;
+       ++it) {
+    ET_CHECK_MSG(
+        *it >= 0,
+        "Negative dimension %d in cache shape",
+        static_cast<int>(*it));
+    ET_CHECK_MSG(
+        !c10::mul_overflows(result, static_cast<size_t>(*it), &result),
+        "Overflow computing cache row count");
+  }
+  return result;
 }
 
 size_t LlamaModelChunk::GetCacheStrideSize() const {
-  return std::reduce(
-      mCacheShape.begin() + kCacheLengthDim + 1,
-      mCacheShape.end(),
-      kCacheTypeSize,
-      std::multiplies<>());
+  size_t result = kCacheTypeSize;
+  for (auto it = mCacheShape.begin() + kCacheLengthDim + 1;
+       it != mCacheShape.end();
+       ++it) {
+    ET_CHECK_MSG(
+        *it >= 0,
+        "Negative dimension %d in cache shape",
+        static_cast<int>(*it));
+    ET_CHECK_MSG(
+        !c10::mul_overflows(result, static_cast<size_t>(*it), &result),
+        "Overflow computing cache stride size");
+  }
+  return result;
 }
 
 void LlamaModelChunk::InitMaskBuilder() {

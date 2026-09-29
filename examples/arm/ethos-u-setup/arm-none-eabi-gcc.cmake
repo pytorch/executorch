@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2022 Arm Limited. All rights reserved.
+# Copyright (c) 2020-2022,2026 Arm Limited. All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -59,7 +59,7 @@ add_link_options(-mcpu=${GCC_CPU} -mthumb)
 
 if(SEMIHOSTING)
   add_link_options(--specs=rdimon.specs)
-else()
+elseif(NOT EXECUTORCH_SIZE_TEST_NO_OS_LINK)
   add_link_options(--specs=nosys.specs)
 endif()
 

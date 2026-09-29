@@ -222,7 +222,8 @@ def export_all(model, backend: Optional[str] = None):
         preprocessor_wrapper,
         (sample_audio, sample_length),
         dynamic_shapes={
-            "audio": {0: Dim("audio_len", min=1600, max=max_audio_samples)},
+            # min=10 frames = 0.1 sec @ 16kHz, max is one 120s runner chunk.
+            "audio": {0: Dim.AUTO(min=1600, max=max_audio_samples)},
             "length": {},
         },
         strict=False,

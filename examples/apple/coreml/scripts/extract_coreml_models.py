@@ -9,7 +9,7 @@ import os
 import shutil
 from pathlib import Path
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from executorch.backends.apple.coreml import executorchcoreml
 from executorch.exir._serialize._program import deserialize_pte_binary
@@ -22,7 +22,12 @@ from executorch.exir.schema import (
 COREML_BACKEND_ID = "CoreMLBackend"
 
 
-def extract_coreml_models(pte_data: bytes):
+def extract_coreml_models(
+    pte_data: bytes,
+    out_dir: Optional[Union[str, Path]] = None,
+) -> List[Path]:
+    out_root = Path(out_dir) if out_dir is not None else Path("extracted_coreml_models")
+
     pte_file = deserialize_pte_binary(pte_data)
     program = pte_file.program
 
@@ -44,6 +49,7 @@ def extract_coreml_models(pte_data: bytes):
     ]
 
     # Track extracted models to avoid duplicates (multifunction models share partitions)
+    extracted_paths: List[Path] = []
     extracted_keys: set = set()
     model_index: int = 1
 
@@ -95,7 +101,7 @@ def extract_coreml_models(pte_data: bytes):
         if model_name is None:
             model_name = f"model_{model_index}"
 
-        model_path: Path = Path() / "extracted_coreml_models" / model_name
+        model_path: Path = out_root / model_name
         if model_path.exists():
             shutil.rmtree(model_path.absolute())
         os.makedirs(model_path.absolute())
@@ -104,10 +110,13 @@ def extract_coreml_models(pte_data: bytes):
             coreml_processed_bytes, str(model_path.absolute())
         ):
             print(f"Core ML models are extracted and saved to path = {model_path}")
+            extracted_paths.append(model_path)
         model_index += 1
 
     if len(coreml_delegates) == 0:
         print("The model isn't delegated to Core ML.")
+
+    return extracted_paths
 
 
 def main() -> None:

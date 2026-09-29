@@ -22,6 +22,60 @@ namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 namespace {
+bool has_required_metadata(const executorch_flatbuffer::ExecutionPlan& plan) {
+  const auto* values = plan.values();
+  const auto* inputs = plan.inputs();
+  const auto* outputs = plan.outputs();
+  const auto* delegates = plan.delegates();
+  if (plan.name() == nullptr || values == nullptr || inputs == nullptr ||
+      outputs == nullptr || delegates == nullptr) {
+    return false;
+  }
+
+  for (flatbuffers::uoffset_t i = 0; i < values->size(); ++i) {
+    const auto* value = values->Get(i);
+    if (value == nullptr) {
+      return false;
+    }
+    if (value->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
+      const auto* tensor = value->val_as_Tensor();
+      if (tensor == nullptr || tensor->sizes() == nullptr ||
+          tensor->dim_order() == nullptr) {
+        return false;
+      }
+    }
+  }
+
+  const auto indices_are_valid = [values](const auto* indices) {
+    for (flatbuffers::uoffset_t i = 0; i < indices->size(); ++i) {
+      const int32_t index = indices->Get(i);
+      if (index < 0 || static_cast<size_t>(index) >= values->size()) {
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!indices_are_valid(inputs) || !indices_are_valid(outputs)) {
+    return false;
+  }
+
+  for (flatbuffers::uoffset_t i = 0; i < delegates->size(); ++i) {
+    const auto* delegate = delegates->Get(i);
+    if (delegate == nullptr || delegate->id() == nullptr) {
+      return false;
+    }
+  }
+  const auto* buffer_devices = plan.non_const_buffer_device();
+  if (buffer_devices != nullptr) {
+    for (flatbuffers::uoffset_t i = 0; i < buffer_devices->size(); ++i) {
+      if (buffer_devices->Get(i) == nullptr) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 Result<Tag> get_tag(
     flatbuffers::Vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>::
         return_type serialization_value,
@@ -151,6 +205,27 @@ std::string_view TensorInfo::name() const {
 
 MethodMeta::MethodMeta(const executorch_flatbuffer::ExecutionPlan* s_plan)
     : s_plan_(s_plan) {}
+
+/*static*/ Result<MethodMeta> MethodMeta::from_serialized_execution_plan(
+    const void* data,
+    size_t size) {
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr && size >= sizeof(flatbuffers::uoffset_t),
+      InvalidProgram,
+      "Serialized execution plan is null or too small");
+  flatbuffers::Verifier verifier(static_cast<const uint8_t*>(data), size);
+  ET_CHECK_OR_RETURN_ERROR(
+      verifier.VerifyBuffer<executorch_flatbuffer::ExecutionPlan>(nullptr),
+      InvalidProgram,
+      "Serialized execution plan failed FlatBuffer verification");
+  const auto* plan =
+      flatbuffers::GetRoot<executorch_flatbuffer::ExecutionPlan>(data);
+  ET_CHECK_OR_RETURN_ERROR(
+      plan != nullptr && has_required_metadata(*plan),
+      InvalidProgram,
+      "Serialized execution plan is missing required metadata");
+  return MethodMeta(plan);
+}
 
 const char* MethodMeta::name() const {
   return s_plan_->name()->c_str();
@@ -364,11 +439,53 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   return size;
 }
 
+Result<etensor::Device> MethodMeta::memory_planned_buffer_device(
+    size_t index) const {
+  auto num_buffers = this->num_memory_planned_buffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < num_buffers,
+      InvalidArgument,
+      "index %zu out of range. num_buffers: %zu",
+      index,
+      num_buffers);
+
+  // The non_const_buffer_device field is optional and only present when the
+  // program contains non-CPU buffers. For CPU-only programs (or legacy PTE
+  // files), this field is null and all buffers default to CPU.
+  auto* buffer_devices = s_plan_->non_const_buffer_device();
+  if (buffer_devices == nullptr) {
+    return etensor::Device{etensor::DeviceType::CPU, 0};
+  }
+
+  // The sparse list only contains entries for non-CPU buffers.
+  // buffer_idx uses the same indexing as non_const_buffer_sizes (1-based,
+  // with index 0 reserved). The user-facing index is 0-based, so we
+  // compare against index + 1.
+  const auto internal_idx = static_cast<int32_t>(index + 1);
+  for (size_t i = 0; i < buffer_devices->size(); ++i) {
+    auto entry = buffer_devices->Get(i);
+    if (entry->buffer_idx() == internal_idx) {
+      return etensor::Device{
+          static_cast<etensor::DeviceType>(entry->device_type()),
+          static_cast<etensor::DeviceIndex>(entry->device_index())};
+    }
+  }
+
+  // Not found in the sparse list — this buffer is on CPU.
+  return etensor::Device{etensor::DeviceType::CPU, 0};
+}
+
 bool MethodMeta::uses_backend(const char* backend_name) const {
   ET_CHECK_MSG(backend_name, "backend name is null");
   const auto delegates = s_plan_->delegates();
+  if (delegates == nullptr) {
+    return false;
+  }
   for (size_t i = 0; i < delegates->size(); i++) {
     auto delegate = delegates->Get(i);
+    if (delegate == nullptr || delegate->id() == nullptr) {
+      continue;
+    }
     auto backend_name_len = std::strlen(backend_name);
     auto delegate_id_len = delegate->id()->size();
     if (backend_name_len == delegate_id_len &&

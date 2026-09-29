@@ -42,7 +42,10 @@ _HEADER_BYTEORDER: Literal["little"] = "little"
 # Alignment of the flatbuffer (after the header).
 _FLATBUFFER_ALIGNMENT: int = 16
 
-# Current version. Keep in sync with c++ version number in serialize.
+# Current version. Keep in sync with c++ version number in serialize, and with
+# FlatTensorDataMap::kMaxSupportedSchemaVersion in
+# //executorch/extension/flat_tensor/flat_tensor_data_map.h, which is the
+# highest version the runtime agrees to load.
 _FLAT_TENSOR_VERSION: int = 0
 
 
@@ -401,10 +404,12 @@ class FlatTensorSerializer(DataSerializer):
         flat_tensor_bytes = data[0 : header.flatbuffer_offset + header.flatbuffer_size]
         flat_tensor = _deserialize_to_flat_tensor(flat_tensor_bytes)
 
-        # Verify that this is a supported version.
-        if flat_tensor.version != _FLAT_TENSOR_VERSION:
+        # Verify that this is a supported version. Older files still load; only
+        # a file newer than this reader understands is refused, matching the
+        # runtime readers and the append-only schema policy in schema/README.md.
+        if flat_tensor.version > _FLAT_TENSOR_VERSION:
             raise NotImplementedError(
-                f"Flat tensor files reports unsupported version {flat_tensor.version}. Expected {_FLAT_TENSOR_VERSION}."
+                f"Flat tensor file reports version {flat_tensor.version}, which is newer than this reader supports (max {_FLAT_TENSOR_VERSION})."
             )
 
         # Extract the buffers.

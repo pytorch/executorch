@@ -6,10 +6,11 @@
 
 # pyre-unsafe
 
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
+from executorch.exir.backend.partitioner import Partitioner
 from torch.export import export
 
 
@@ -151,6 +152,7 @@ class ModuleLinear(torch.nn.Module):
 def create_program(
     eager_module: torch.nn.Module,
     et_config: Optional[ExecutorchBackendConfig] = None,
+    partitioner: Optional[Dict[str, Partitioner]] = None,
 ) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
     """Returns an executorch program based on ModuleAdd, along with inputs."""
 
@@ -179,7 +181,10 @@ def create_program(
         wrapped_mod = WrapperModule(getattr(eager_module, method_name))
         exported_methods[method_name] = export(wrapped_mod, method_input, strict=True)
 
-    exec_prog = to_edge(exported_methods).to_executorch(config=et_config)
+    edge_prog = to_edge(exported_methods)
+    if partitioner is not None:
+        edge_prog = edge_prog.to_backend(partitioner)
+    exec_prog = edge_prog.to_executorch(config=et_config)
 
     # Create the ExecuTorch program from the graph.
     exec_prog.dump_executorch_program(verbose=True)

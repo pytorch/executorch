@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -58,6 +59,9 @@ from executorch.exir.passes.debug_handle_generator_pass import (
     DebugHandleGeneratorPass,
     generate_missing_debug_handles,
 )
+from executorch.exir.passes.fold_redundant_qdq_pass import (
+    FoldRedundantDequantizeQuantizePass,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -74,6 +78,7 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
 )
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
@@ -542,6 +547,32 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
 
+    def test_export_pass_preserves_graph_module_meta(self) -> None:
+        """ExportPass should preserve GraphModule-level meta through re-tracing."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        class NullPass(ExportPass):
+            pass
+
+        prog = to_edge(
+            export(Foo(), (torch.ones(3, 2),), strict=True),
+        )
+        # Set custom metadata on the graph module before the pass.
+        prog.exported_program().graph_module.meta["custom"] = {
+            "test_key": "test_value",
+            "nested": {"a": 1},
+        }
+
+        new_prog = prog.transform([NullPass()])
+        new_meta = new_prog.exported_program().graph_module.meta
+
+        self.assertIn("custom", new_meta)
+        self.assertEqual(new_meta["custom"]["test_key"], "test_value")
+        self.assertEqual(new_meta["custom"]["nested"]["a"], 1)
+
     def test_export_scalar_to_tensor_pass(self) -> None:
         # Build a graph with a scalar argument where schema expects tensor
         graph = torch.fx.Graph()
@@ -866,6 +897,47 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
         self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
 
+    def test_eval_upper_bound_int_oo_falls_back_to_hint(self) -> None:
+        """When bound_sympy returns int_oo (no finite upper bound from
+        constraints), eval_upper_bound should fall back to the trace hint
+        for backed symbols rather than returning int_oo."""
+
+        class SimpleModel(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        m = SimpleModel()
+        dim0 = torch.export.Dim("batch", min=1)
+        ep = export(
+            m,
+            (torch.randn(4, 8),),
+            dynamic_shapes={"x": {0: dim0}},
+        )
+        edge = to_edge(ep)
+
+        gm = edge.exported_program().graph_module
+        x_node = next(
+            n for n in gm.graph.nodes if n.op == "placeholder" and n.name == "x"
+        )
+        sym_dim = x_node.meta["val"].shape[0]
+        self.assertIsInstance(sym_dim, torch.SymInt)
+
+        try:
+            from torch.utils._sympy.numbers import int_oo
+        except ImportError:
+            self.skipTest("int_oo not available in this torch version")
+        from torch.utils._sympy.value_ranges import bound_sympy
+
+        raw_upper = bound_sympy(
+            sym_dim.node.expr, sym_dim.node.shape_env.var_to_range
+        ).upper
+        self.assertIs(raw_upper, int_oo)
+
+        self.assertEqual(eval_upper_bound(sym_dim), 4)
+
+        et = edge.to_executorch()
+        self.assertIsNotNone(et)
+
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
             def __init__(self, hidden_size, out_channels):
@@ -1035,6 +1107,53 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(len(alloc_nodes) > 0)
         for node in alloc_nodes:
             self.assertTrue(isinstance(node.meta.get("spec", None), TensorSpec))
+
+    def test_to_out_var_dynamic_alloc_uses_concrete_upper_bounds(self) -> None:
+        class DynamicRelu(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        eager_model = DynamicRelu()
+        inputs = (torch.randn(2, 4, 8, 3),)
+        dynamic_shapes = {
+            "x": {
+                0: torch.export.Dim("batch", min=0, max=2),
+                2: torch.export.Dim("height", min=0, max=8),
+                3: torch.export.Dim("width", min=0, max=8),
+            }
+        }
+        prog = to_edge(
+            export(
+                eager_model,
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+                strict=True,
+            ),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        new_prog = prog.transform(
+            [
+                SpecPropPass(),
+                ConstraintBasedSymShapeEvalPass(),
+            ]
+        )
+
+        new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+
+        alloc_nodes = []
+        for node in new_gm.graph.nodes:
+            if node.target == memory.alloc:
+                alloc_nodes.append(node)
+
+        self.assertTrue(len(alloc_nodes) > 0)
+        for node in alloc_nodes:
+            alloc_spec = node.args[0]
+            self.assertIsInstance(alloc_spec, tuple)
+            shape, _dtype = alloc_spec
+            for dim in shape:
+                self.assertIsInstance(dim, int)
 
     def test_debug_pass_file_log(self) -> None:
         eager_model = Mul()
@@ -1505,6 +1624,42 @@ class TestPasses(unittest.TestCase):
         edge.exported_program()._validate()
         edge.to_executorch()
 
+    def test_constant_prop_preserves_memory_alloc(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        for custom_skip_targets in (None, set()):
+            with self.subTest(custom_skip_targets=custom_skip_targets):
+                edge = to_edge(
+                    export(Add(), (torch.ones(1),), strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=False),
+                )
+                exported_program = edge.exported_program()
+                [add] = exported_program.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+                with exported_program.graph.inserting_before(add):
+                    alloc = exported_program.graph.call_function(
+                        memory.alloc, args=(((1,), torch.float32),)
+                    )
+                alloc.meta["val"] = torch.empty(1, dtype=torch.float32, device="meta")
+                add.args = (add.args[0], alloc)
+                exported_program.graph_module.recompile()
+
+                new_ep = constant_prop_pass(
+                    exported_program, custom_skip_targets=custom_skip_targets
+                )
+
+                self.assertEqual(
+                    new_ep.graph.find_nodes(op="call_function", target=memory.alloc),
+                    [alloc],
+                )
+                self.assertNotIn(alloc.name, new_ep.constants)
+                FileCheck().check("executorch_exir_memory_alloc").check_not(
+                    "_prop_tensor_constant"
+                ).run(new_ep.graph_module.code)
+
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -1683,9 +1838,7 @@ class TestPasses(unittest.TestCase):
         # lower to edge dialect
         edge_prog = to_edge(
             aten_prog,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False, _use_edge_ops=True
-            ),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         edge_prog = edge_prog.to_backend(XnnpackPartitioner())
 
@@ -1722,6 +1875,86 @@ class TestPasses(unittest.TestCase):
         self.assertNotIn("a", new_ep.state_dict)
         # No more slice copy.
         self.assertEqual(count_slice(new_ep.graph_module), 0)
+
+    def test_constant_prop_pass_for_memory_format_slice_scatter(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = torch.nn.Parameter(torch.arange(9, dtype=torch.float32))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                zeros = torch.full_like(
+                    self.bias[3:6],
+                    0,
+                    memory_format=torch.preserve_format,
+                )
+                return x + torch.slice_scatter(
+                    self.bias,
+                    zeros,
+                    dim=0,
+                    start=3,
+                    end=6,
+                )
+
+        model = M().eval()
+        inputs = (torch.randn(9),)
+        expected = model(*inputs)
+        edge = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        exported_program = edge.exported_program()
+        original_ops = collect_ops(exported_program.graph_module)
+        self.assertIn(exir_ops.edge.aten.full_like.default, original_ops)
+        self.assertIn(exir_ops.edge.aten.slice_scatter.default, original_ops)
+
+        new_ep = constant_prop_pass(exported_program)
+
+        propagated_ops = collect_ops(new_ep.graph_module)
+        self.assertNotIn(exir_ops.edge.aten.full_like.default, propagated_ops)
+        self.assertNotIn(exir_ops.edge.aten.slice_scatter.default, propagated_ops)
+        torch.testing.assert_close(new_ep.module()(*inputs), expected)
+
+    def test_constant_prop_pass_preserves_memory_format(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                value = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
+                self.value = torch.nn.Parameter(value)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.value.clone(memory_format=torch.preserve_format)
+
+        model = M().eval()
+        inputs = (torch.randn(2, 3, 4, 5),)
+        expected = model(*inputs)
+        edge = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        exported_program = edge.exported_program()
+        self.assertIn(
+            exir_ops.edge.aten.clone.default,
+            collect_ops(exported_program.graph_module),
+        )
+
+        new_ep = constant_prop_pass(exported_program)
+
+        self.assertNotIn(
+            exir_ops.edge.aten.clone.default,
+            collect_ops(new_ep.graph_module),
+        )
+        folded_constants = [
+            value
+            for name, value in new_ep.constants.items()
+            if name.startswith("_prop_tensor_constant")
+            and value.shape == model.value.shape
+        ]
+        self.assertEqual(len(folded_constants), 1)
+        self.assertTrue(
+            folded_constants[0].is_contiguous(memory_format=torch.channels_last)
+        )
+        torch.testing.assert_close(new_ep.module()(*inputs), expected)
 
     def test_constant_prop_pass_no_propagate(self) -> None:
         def count_placeholder(gm: torch.fx.GraphModule) -> int:
@@ -1963,6 +2196,91 @@ class TestPasses(unittest.TestCase):
             )
         )
 
+    def test_fold_redundant_dq_q_pass(self) -> None:
+        graph = torch.fx.Graph()
+        quantized_input = graph.placeholder("quantized_input")
+        qparams = (0.25, 3, -128, 127, torch.int8)
+        dequantize = graph.call_function(
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            args=(quantized_input, *qparams),
+        )
+        quantize = graph.call_function(
+            torch.ops.quantized_decomposed.quantize_per_tensor.default,
+            args=(dequantize, *qparams),
+        )
+        graph.output(quantize)
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+        inputs = torch.arange(-128, 128, dtype=torch.int8)
+        expected = graph_module(inputs)
+
+        result = FoldRedundantDequantizeQuantizePass()(graph_module)
+
+        self.assertTrue(result.modified)
+        remaining_nodes = list(result.graph_module.graph.nodes)
+        self.assertEqual(
+            [node.op for node in remaining_nodes], ["placeholder", "output"]
+        )
+        self.assertEqual(remaining_nodes[-1].args, (quantized_input,))
+        torch.testing.assert_close(result.graph_module(inputs), expected)
+        self.assertFalse(FoldRedundantDequantizeQuantizePass()(graph_module).modified)
+
+    def test_to_edge_quantized_dropout(self) -> None:
+        class QuantizedDropout(torch.nn.Module):
+            def __init__(self, dtype, per_channel):
+                super().__init__()
+                self.dtype = dtype
+                self.per_channel = per_channel
+                self.qmin = torch.iinfo(dtype).min
+                self.qmax = torch.iinfo(dtype).max
+                self.register_buffer("scales", torch.tensor([0.125, 0.25]))
+                self.register_buffer("zero_points", torch.tensor([3, 3]))
+
+            def forward(self, x):
+                if self.per_channel:
+                    q = torch.ops.quantized_decomposed.quantize_per_channel.default
+                    dq = torch.ops.quantized_decomposed.dequantize_per_channel.default
+                    params = (
+                        self.scales,
+                        self.zero_points,
+                        0,
+                        self.qmin,
+                        self.qmax,
+                        self.dtype,
+                    )
+                else:
+                    q = torch.ops.quantized_decomposed.quantize_per_tensor.default
+                    dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default
+                    params = (0.25, 3, self.qmin, self.qmax, self.dtype)
+                x = dq(q(x, *params), *params)
+                x = torch.nn.functional.dropout(x, p=0.5, training=False)
+                return dq(q(x, *params), *params)
+
+        inputs = (torch.randn(2, 16),)
+        for lower, dtype, per_channel in itertools.product(
+            (to_edge, to_edge_transform_and_lower),
+            (torch.int8, torch.uint8, torch.int16, torch.int32),
+            (False, True),
+        ):
+            with self.subTest(
+                lower=lower.__name__, dtype=dtype, per_channel=per_channel
+            ):
+                model = QuantizedDropout(dtype, per_channel)
+                ep = export(model, inputs, strict=True)
+                self.assertTrue(
+                    any(
+                        n.target == torch.ops.aten.dropout.default
+                        for n in ep.graph.nodes
+                    )
+                )
+                edge = lower(ep).exported_program()
+                targets = [str(n.target) for n in edge.graph.nodes]
+                self.assertEqual(sum(".quantize_per_" in t for t in targets), 1)
+                self.assertEqual(sum(".dequantize_per_" in t for t in targets), 1)
+                self.assertFalse(any("dropout" in t for t in targets))
+                torch.testing.assert_close(
+                    edge.module()(*inputs), model(*inputs), rtol=0, atol=0
+                )
+
     def test_dq_q_no_op_pass(self) -> None:
         class TestDqQ(torch.nn.Module):
             def __init__(self):
@@ -1979,20 +2297,23 @@ class TestPasses(unittest.TestCase):
 
         model = TestDqQ()
         m_eager = model.eval()
-        ep = torch.export.export(m_eager, (torch.randn(9, 8),), strict=True)
+        inputs = (torch.randint(-128, 128, (9, 8), dtype=torch.int8),)
+        ep = torch.export.export(m_eager, inputs, strict=True)
         edge = to_edge(ep)
-        # Check that the dq and q nodes are not touched by the RemoveNoopPass.
-        self.assertTrue(
+        self.assertFalse(
             any(
                 "dequantize" in str(node.target)
                 for node in edge.exported_program().graph_module.graph.nodes
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             any(
                 "quantize" in str(node.target)
                 for node in edge.exported_program().graph_module.graph.nodes
             )
+        )
+        torch.testing.assert_close(
+            edge.exported_program().module()(*inputs), m_eager(*inputs)
         )
 
     def test_dq_q_different_qparams(self) -> None:
@@ -2012,7 +2333,8 @@ class TestPasses(unittest.TestCase):
 
         model = TestDqQDifferentQParam()
         m_eager = model.eval()
-        ep = torch.export.export(m_eager, (torch.randn(9, 8),), strict=True)
+        inputs = (torch.randint(-128, 128, (9, 8), dtype=torch.int8),)
+        ep = torch.export.export(m_eager, inputs, strict=True)
         edge = to_edge(ep)
         print(edge.exported_program().graph_module.graph)
         # Check that the dq and q nodes are not touched by the RemoveNoopPass.
@@ -2325,6 +2647,31 @@ class TestPasses(unittest.TestCase):
         # 1 constant: a (= self.w @ self.cst)
         self.assertEqual(1, len(pass_result.constants))
 
+    def test_constant_prop_pass_skips_nondeterministic_ops(self) -> None:
+        """
+        Ops that draw from the RNG take no tensor inputs, so they look constant
+        to the pass. They have to stay in the graph: folding one would freeze a
+        single random draw into the program.
+        """
+
+        class RandomAdd(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + torch.rand(4)
+
+        x = torch.zeros(4)
+        edge = to_edge(export(RandomAdd(), (x,), strict=True))
+        new_ep = constant_prop_pass(edge.exported_program())
+
+        rand_nodes = [
+            node
+            for node in new_ep.graph.nodes
+            if node.target == exir_ops.edge.aten.rand.default
+        ]
+        self.assertEqual(len(rand_nodes), 1)
+        self.assertEqual(len(new_ep.constants), 0)
+        module = new_ep.module()
+        self.assertFalse(torch.equal(module(x), module(x)))
+
     def test_constant_prop_pass_zero_stride_tensors(self) -> None:
         """
         Test that constant propagation correctly handles tensors with zero strides
@@ -2590,6 +2937,42 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
 
         self.assertTrue(found_clone, "Should find a _clone_dim_order node in the graph")
 
+    def test_clone_non_contiguous_constant_is_normalized(self) -> None:
+        """
+        Verify that clone() normalizes a lifted constant with a dim order
+        that torch.memory_format cannot represent.
+        """
+
+        class CloneConstantModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.anchors = torch.arange(10).reshape(5, 2).T.unsqueeze(0).float()
+
+            def forward(self, x):
+                return self.anchors.clone() + x
+
+        model = CloneConstantModel()
+        self.assertEqual(tuple(model.anchors.dim_order()), (2, 0, 1))
+        inputs = (torch.randn(1, 2, 5),)
+        ep = torch.export.export(model, inputs)
+
+        # lifted constant          Edge constant         clone rewrite
+        # [2, 0, 1] --normalize--> [0, 1, 2] ----------> [0, 1, 2]
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+        edge_program = edge.exported_program()
+
+        anchors = edge_program.constants["anchors"]
+        self.assertTrue(anchors.is_contiguous())
+
+        # Find the clone rewrite and verify its normalized dim order.
+        clone_nodes = [
+            node
+            for node in edge_program.graph_module.graph.nodes
+            if node.op == "call_function" and "_clone_dim_order" in str(node.target)
+        ]
+        self.assertEqual(len(clone_nodes), 1)
+        self.assertEqual(tuple(clone_nodes[0].meta["val"].dim_order()), (0, 1, 2))
+
     def test_clone_contiguous_format_kwarg_stays_contiguous(self) -> None:
         """
         Regression guard: explicit contiguous_format should produce contiguous dim_order.
@@ -2692,6 +3075,64 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
                 break
 
         self.assertTrue(found_copy, "Should find a _to_dim_order_copy node")
+
+    def test_to_copy_non_contiguous_buffer_is_normalized(self) -> None:
+        """
+        Verify that folded anchor layouts are normalized for both buffer
+        storage modes without mutating the source ExportedProgram.
+        """
+
+        class ToCopyBufferModel(torch.nn.Module):
+            def __init__(self, persistent: bool) -> None:
+                super().__init__()
+                # Reproduce a folded detection-anchor layout that
+                # torch.memory_format cannot represent.
+                anchors = torch.arange(10).reshape(5, 2).T.unsqueeze(0).float()
+                self.register_buffer("anchors", anchors, persistent=persistent)
+
+            def forward(self, x):
+                return self.anchors.to(dtype=x.dtype) + x
+
+        # Test both persistent=True and False
+        #                  storage
+        # persistent=True  state_dict --\
+        #                                +--> to_edge --> Edge [0, 1, 2]
+        # persistent=False constants ---/          |
+        #                                          `--> source [2, 0, 1]
+        for persistent in (True, False):
+            with self.subTest(persistent=persistent):
+                model = ToCopyBufferModel(persistent)
+                self.assertEqual(tuple(model.anchors.dim_order()), (2, 0, 1))
+                inputs = (torch.randn(1, 2, 5, dtype=torch.float16),)
+                ep = torch.export.export(model, inputs)
+                source_anchors = dict(ep.named_buffers())["anchors"]
+
+                edge = to_edge(
+                    ep, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+                )
+                edge_program = edge.exported_program()
+
+                # Lowering operates on a derived program. The caller-owned buffer
+                # must keep both its identity and unsupported source layout.
+                source_anchors_after = dict(ep.named_buffers())["anchors"]
+                self.assertIs(source_anchors_after, source_anchors)
+                self.assertEqual(tuple(source_anchors_after.dim_order()), (2, 0, 1))
+
+                # Both storage modes must produce the same normalized Edge buffer.
+                anchors = dict(edge_program.named_buffers())["anchors"]
+                self.assertTrue(anchors.is_contiguous())
+
+                # The preserve-format copy must use the normalized Edge layout.
+                copy_nodes = [
+                    node
+                    for node in edge_program.graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and "_to_dim_order_copy" in str(node.target)
+                ]
+                self.assertEqual(len(copy_nodes), 1)
+                self.assertEqual(
+                    tuple(copy_nodes[0].meta["val"].dim_order()), (0, 1, 2)
+                )
 
 
 class TestCSEPass(unittest.TestCase):

@@ -1,3 +1,8 @@
+# Copyright 2024-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.abs_converter import (
     AbsConverter,
 )
@@ -9,6 +14,12 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.addmm_converter import (
     AddMMConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.amax_converter import (
+    AmaxConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.amin_converter import (
+    AminConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import (
     AvgPool2dConverter,
@@ -31,8 +42,14 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import (
     ConvolutionConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.exp_converter import (
+    ExpConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
     GetItemConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardswish_converter import (
+    HardswishConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
     HardTanhConverter,
@@ -40,11 +57,20 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.leaky_relu_converter import (
     LeakyReluConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.log_converter import (
+    LogConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool2d_with_indices_converter import (
     MaxPool2DWithIndicesConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.maximum_converter import (
+    MaximumConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import (
     MeanDimConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.minimum_converter import (
+    MinimumConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mm_converter import (
     MMConverter,
@@ -54,6 +80,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.neg_converter import (
     NegConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.pad_converter import (
+    PadConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
@@ -71,17 +100,23 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import (
     ReLUConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.rsqrt_converter import (
+    RsqrtConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_tensor_converter import (
-    SliceTensorConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_copy_tensor_converter import (
+    SliceCopyTensorConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sub_tensor_converter import (
     SubTensorConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sum_dim_int_list_converter import (
+    SumDimIntListConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
     TanhConverter,
@@ -96,11 +131,14 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     ViewCopyConverter,
 )
 
+
 __all__ = [
     "AbsConverter",
     "AdaptiveAvgPool2dConverter",
     "AddMMConverter",
     "AddTensorConverter",
+    "AmaxConverter",
+    "AminConverter",
     "AvgPool2dConverter",
     "BMMConverter",
     "CatConverter",
@@ -108,24 +146,32 @@ __all__ = [
     "CloneConverter",
     "ConstantPadNDConverter",
     "ConvolutionConverter",
+    "ExpConverter",
     "GetItemConverter",
+    "HardswishConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
+    "LogConverter",
     "MaxPool2DWithIndicesConverter",
+    "MaximumConverter",
     "MeanDimConverter",
+    "MinimumConverter",
     "MMConverter",
     "MulTensorConverter",
     "NegConverter",
+    "PadConverter",
     "PermuteCopyConverter",
     "PReLUConverter",
     "QDQPerChannelDequantizeConverter",
     "QDQPerTensorDequantizeConverter",
     "QDQQuantizeConverter",
     "ReLUConverter",
+    "RsqrtConverter",
     "SigmoidConverter",
-    "SliceTensorConverter",
+    "SliceCopyTensorConverter",
     "SoftmaxConverter",
     "SubTensorConverter",
+    "SumDimIntListConverter",
     "TanhConverter",
     "UpsampleBilinear2DConverter",
     "UpsampleNearest2DConverter",

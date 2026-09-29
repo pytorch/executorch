@@ -93,14 +93,37 @@ def define_op_library(name, compiler_flags, deps):
             "{}.cpp".format(name),
         ],
         visibility = ["PUBLIC"],
-        compiler_flags = [
+        compiler_flags = (select({
             # kernels often have helpers with no prototypes just disabling the warning here as the headers
             # are codegend and linked in later
+            # GCC's C++ frontend rejects this C-only flag under -Werror. Nested
+            # under DEFAULT so the windows (OS) and gcc keys can't both match.
+            "DEFAULT": select({
+                "DEFAULT": [
+                    "-Wno-missing-prototypes",
+                    # pragma unroll fails with -Os, don't need to warn us and
+                    # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
+                    "-Wno-pass-failed",
+                ],
+                "ovr_config//compiler:gcc": [
+                    "-Wno-pass-failed",
+                ],
+            }),
+            # The vendored ATen vec headers trip several -Werror warnings on
+            # the Windows (clang) host, so disable warnings-as-errors there.
+            "ovr_config//os:windows": select({
+                "DEFAULT": [
+                    "-Wno-missing-prototypes",
+                    "-Wno-pass-failed",
+                    "-Wno-error",
+                ],
+                # MSVC cl.exe rejects the gcc-style flags above.
+                "ovr_config//compiler:msvc": [],
+            }),
+        }) if not runtime.is_oss else [
             "-Wno-missing-prototypes",
-            # pragma unroll fails with -Os, don't need to warn us and
-            # fail Werror builds; see https://godbolt.org/z/zvf85vTsr
             "-Wno-pass-failed",
-        ] + compiler_flags + get_compiler_optimization_flags(),
+        ]) + compiler_flags + get_compiler_optimization_flags(),
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
         # dependencies are not transitive
@@ -302,6 +325,14 @@ OPTIMIZED_ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu:op_sum",
             "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
+        name = "op_to_copy",
+        deps = [
+            "//executorch/extension/threadpool:threadpool",
+            "//executorch/kernels/portable/cpu:op_to_copy",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
     op_target(

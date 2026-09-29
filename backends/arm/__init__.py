@@ -14,11 +14,19 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+# Register Arm-specific torch.library ops and MXFP transforms at package
+# import time.
+import executorch.backends.arm.ao_ext  # noqa: F401
+
 # Public for tooling (manifest generation and API validation).
 LAZY_IMPORTS = {
     "EthosUBackend": ("executorch.backends.arm.ethosu", "EthosUBackend"),
     "EthosUCompileSpec": ("executorch.backends.arm.ethosu", "EthosUCompileSpec"),
     "EthosUPartitioner": ("executorch.backends.arm.ethosu", "EthosUPartitioner"),
+    "VelaExternalBlockPlacements": (
+        "executorch.backends.arm.ethosu",
+        "VelaExternalBlockPlacements",
+    ),
     "VgfBackend": ("executorch.backends.arm.vgf", "VgfBackend"),
     "VgfCompileSpec": ("executorch.backends.arm.vgf", "VgfCompileSpec"),
     "VgfPartitioner": ("executorch.backends.arm.vgf", "VgfPartitioner"),
@@ -32,6 +40,8 @@ LAZY_IMPORTS = {
         "executorch.backends.arm.quantizer",
         "get_symmetric_a16w8_quantization_config",
     ),
+    "MXFPOpConfig": ("executorch.backends.arm.ao_ext.mxfp", "MXFPOpConfig"),
+    "to_mxfp": ("executorch.backends.arm.ao_ext.mxfp", "to_mxfp"),
 }
 
 

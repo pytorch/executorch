@@ -18,9 +18,6 @@ namespace impl {
 namespace generic {
 namespace native {
 
-using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;

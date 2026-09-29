@@ -23,9 +23,13 @@
 #include <io.h>
 #include <cstdint>
 #include <limits>
+#ifndef NOMINMAX
 #define NOMINMAX
 #include <windows.h>
 #undef NOMINMAX
+#else
+#include <windows.h>
+#endif
 
 #ifndef STATUS_SECTION_TOO_BIG
 #define STATUS_SECTION_TOO_BIG 0xC0000040L

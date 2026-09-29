@@ -16,6 +16,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-global-constructors"],
         deps = [
             "//executorch/runtime/executor:program",
+            "//executorch/runtime/core:device_memory_buffer",
             "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/data_loader:buffer_data_loader",
@@ -38,6 +39,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-global-constructors"],
         deps = [
             "//executorch/runtime/executor:program",
+            "//executorch/runtime/core:device_memory_buffer",
             "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/data_loader:buffer_data_loader",

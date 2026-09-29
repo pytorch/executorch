@@ -17,7 +17,6 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using exec_aten::OptionalArrayRef;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -624,6 +623,69 @@ TEST_F(OpUpsampleBilinear2dAAOutTest, TestPrecisionConsistency) {
   for (int i = 0; i < 49; i++) {
     EXPECT_EQ(out1_data[i], out2_data[i]);
   }
+}
+
+TEST_F(OpUpsampleBilinear2dAAOutTest, Simple8x1To3x8) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.make(
+      {1, 1, 8, 1},
+      {-98.5, 49.875, 17.125, -46.5, 10.625, -95.875, -3.875, -4.625});
+  Tensor out = tf.zeros({1, 1, 3, 8});
+
+  int64_t output_size_data[2] = {3, 8};
+  ArrayRef<int64_t> output_size(output_size_data, 2);
+
+  op_upsample_bilinear2d_aa_out(
+      input,
+      output_size,
+      /*align_corners=*/false,
+      std::nullopt,
+      std::nullopt,
+      out);
+
+  auto expected = tf.zeros({1, 1, 3, 8});
+  auto expected_data = expected.mutable_data_ptr<float>();
+  const float expected_rows[] = {-8.440787f, -23.13393f, -24.736841f};
+  for (int row = 0; row < 3; ++row) {
+    for (int col = 0; col < 8; ++col) {
+      expected_data[row * 8 + col] = expected_rows[row];
+    }
+  }
+
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 0, 1e-4);
+}
+
+TEST_F(OpUpsampleBilinear2dAAOutTest, Simple8x1To3x8ChannelsLast) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.make_channels_last(
+      {1, 1, 8, 1},
+      {-98.5, 49.875, 17.125, -46.5, 10.625, -95.875, -3.875, -4.625});
+  Tensor out = tf.zeros_channels_last({1, 1, 3, 8});
+
+  int64_t output_size_data[2] = {3, 8};
+  ArrayRef<int64_t> output_size(output_size_data, 2);
+
+  op_upsample_bilinear2d_aa_out(
+      input,
+      output_size,
+      /*align_corners=*/false,
+      std::nullopt,
+      std::nullopt,
+      out);
+
+  auto expected_contiguous = tf.zeros({1, 1, 3, 8});
+  auto expected_data = expected_contiguous.mutable_data_ptr<float>();
+  const float expected_rows[] = {-8.440787f, -23.13393f, -24.736841f};
+  for (int row = 0; row < 3; ++row) {
+    for (int col = 0; col < 8; ++col) {
+      expected_data[row * 8 + col] = expected_rows[row];
+    }
+  }
+  const auto expected = tf.channels_last_like(expected_contiguous);
+
+  EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, 0, 1e-4);
 }
 
 TEST_F(OpUpsampleBilinear2dAAOutTest, TestSpecificInputCase) {

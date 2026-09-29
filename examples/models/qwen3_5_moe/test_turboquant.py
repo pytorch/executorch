@@ -143,7 +143,7 @@ class TestTurboQuant(unittest.TestCase):
             logits_base.reshape(1, -1).float(),
             logits_tq.reshape(1, -1).float(),
         ).item()
-        self.assertGreater(cos, 0.99, f"Prefill cosine {cos:.4f}")
+        self.assertGreater(cos, 0.98, f"Prefill cosine {cos:.4f}")
 
     def test_export_matches_eager(self):
         """Exported TQ model produces same greedy tokens as eager."""

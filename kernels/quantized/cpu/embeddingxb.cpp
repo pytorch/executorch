@@ -104,13 +104,15 @@ void check_embedding_xbit_args(
 
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float ||
-          out.scalar_type() == ScalarType::Half,
+          out.scalar_type() == ScalarType::Half ||
+          out.scalar_type() == ScalarType::BFloat16,
       "out.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       weight_scales.scalar_type() == ScalarType::Float ||
-          weight_scales.scalar_type() == ScalarType::Half,
+          weight_scales.scalar_type() == ScalarType::Half ||
+          weight_scales.scalar_type() == ScalarType::BFloat16,
       "weight_scales.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(weight_scales.scalar_type()));
 
@@ -284,17 +286,19 @@ Tensor& quantized_embedding_xbit_out(
 
   constexpr auto name = "quantized_decomposed::embedding_xbit.out";
   ScalarType indices_type = indices.scalar_type();
-  ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-    ET_SWITCH_TWO_TYPES(Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
-      embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT, CTYPE_IDX>(
-          weight,
-          weight_scales,
-          opt_weight_zero_points,
-          indices,
-          out,
-          weight_nbit);
-    });
-  });
+  ET_SWITCH_THREE_TYPES(
+      Float, Half, BFloat16, out_type, ctx, name, CTYPE_OUT, [&]() {
+        ET_SWITCH_TWO_TYPES(
+            Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
+              embedding_xbit_per_channel<CTYPE_OUT, CTYPE_OUT, CTYPE_IDX>(
+                  weight,
+                  weight_scales,
+                  opt_weight_zero_points,
+                  indices,
+                  out,
+                  weight_nbit);
+            });
+      });
 
   return out;
 }
@@ -358,19 +362,22 @@ Tensor& quantized_embedding_xbit_dtype_out(
 
   constexpr auto name = "quantized_decomposed::embedding_xbit.dtype_out";
   ScalarType indices_type = indices.scalar_type();
-  ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
-    ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-      ET_SWITCH_TWO_TYPES(Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
-        embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT, CTYPE_IDX>(
-            weight,
-            weight_scales,
-            opt_weight_zero_points,
-            indices,
-            out,
-            weight_nbit);
+  ET_SWITCH_THREE_TYPES(
+      Float, Half, BFloat16, params_type, ctx, name, CTYPE_P, [&]() {
+        ET_SWITCH_THREE_TYPES(
+            Float, Half, BFloat16, out_type, ctx, name, CTYPE_OUT, [&]() {
+              ET_SWITCH_TWO_TYPES(
+                  Int, Long, indices_type, ctx, name, CTYPE_IDX, [&]() {
+                    embedding_xbit_per_channel<CTYPE_P, CTYPE_OUT, CTYPE_IDX>(
+                        weight,
+                        weight_scales,
+                        opt_weight_zero_points,
+                        indices,
+                        out,
+                        weight_nbit);
+                  });
+            });
       });
-    });
-  });
 
   return out;
 }

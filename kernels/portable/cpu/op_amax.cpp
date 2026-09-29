@@ -44,11 +44,39 @@ Tensor& amax_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
-  ReduceOverDimListPlan plan(in, dim_list);
-
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "amax.out";
 
+  // Fast path: contiguous tensor, single innermost dim reduction.
+  // Bypasses the generic ReduceOverDimListPlan (per-element stride/index
+  // recomputation via get_init_index)
+  if (in.numel() > 0 && dim_list.size() == 1 &&
+      !executorch::runtime::isComplexType(in.scalar_type()) &&
+      tensor_is_default_dim_order(in)) {
+    const int64_t d = dim_list[0] < 0 ? dim_list[0] + in.dim() : dim_list[0];
+    if (d >= 0 && d < in.dim() && d == in.dim() - 1 &&
+        tensor_is_contiguous(in)) {
+      const int64_t reduce_size = in.size(d);
+      const int64_t outer_size = in.numel() / reduce_size;
+
+      ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
+        const CTYPE* in_data = in.const_data_ptr<CTYPE>();
+        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+        for (int64_t i = 0; i < outer_size; i++) {
+          const CTYPE* row = in_data + i * reduce_size;
+          CTYPE max_v = row[0];
+          for (int64_t j = 1; j < reduce_size; j++) {
+            const CTYPE v = row[j];
+            max_v = utils::isnan_override(v) || v > max_v ? v : max_v;
+          }
+          out_data[i] = max_v;
+        }
+      });
+      return out;
+    }
+  }
+
+  ReduceOverDimListPlan plan(in, dim_list);
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     const bool success = parallel_for_each_reduce_over_dim_list_output_index(

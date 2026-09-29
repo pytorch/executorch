@@ -83,9 +83,11 @@ std::string make_arg_json(ComputeGraph* const compute_graph, ValueRef arg) {
 std::string make_operator_json(
     ComputeGraph* const compute_graph,
     std::string& op_name,
-    std::vector<ValueRef>& args) {
+    std::vector<ValueRef>& args,
+    const uint32_t delegate_node_id) {
   std::stringstream ss;
-  ss << "\"name\": \"" << op_name << "\", \"args\": [";
+  ss << "\"name\": \"" << op_name
+     << "\", \"delegate_node_id\": " << delegate_node_id << ", \"args\": [";
   for (size_t i = 0; i < args.size(); ++i) {
     ss << make_arg_json(compute_graph, args[i]);
     if (i + 1 < args.size()) {

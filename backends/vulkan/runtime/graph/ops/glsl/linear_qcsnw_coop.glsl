@@ -46,20 +46,23 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 shared VEC4_T partial_sums[NGROUPS][NWORKERS][TILE_ROWS][TILE_TXCOLS];
 
 void main() {
+  const uint linear_idx = linear_idx_from_gid();
   // txcol stands for "texel column". One txcol corresponds to 4 scalar columns.
   $if TILE_TXCOLS > 1:
     const uint global_wg_x = uint(divup(out_sizes.x, 4 * TILE_TXCOLS));
     const uint out_txcol = uint(
-      (gl_GlobalInvocationID.x % global_wg_x) * TILE_TXCOLS);
+      (linear_idx % global_wg_x) * TILE_TXCOLS);
   $else:
     const uint global_wg_x = uint(divup4(out_sizes.x));
-    const uint out_txcol = uint(gl_GlobalInvocationID.x % global_wg_x);
+    const uint out_txcol = uint(linear_idx % global_wg_x);
 
   const uint out_row = uint(
-    (gl_GlobalInvocationID.x / global_wg_x) * TILE_ROWS);
+    (linear_idx / global_wg_x) * TILE_ROWS);
 
   $if QUANT_NBITS == 4:
     const uint weight_txcol = uint(out_txcol / 2);

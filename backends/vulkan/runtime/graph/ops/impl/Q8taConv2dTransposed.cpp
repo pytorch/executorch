@@ -13,9 +13,49 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+// resize_args = { input, kernel_size, stride, padding, dilation, output_padding
+// }
+//
+// Transposed conv output H/W uses the transposed formula
+//   out = (in - 1) * stride - 2 * padding + dilation * (kernel - 1)
+//         + output_padding + 1
+// (computed by calc_out_sizes_hw's transposed=true path, where the 4th args
+// slot is output_padding). Channels stay as allocated. Without this the
+// DynamicDispatchNode freezes the output at the build-time upper bound. Mirrors
+// the fp32 transposed path of resize_conv2d_node.
+void resize_q8ta_conv2d_transposed_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = resize_args.at(0);
+  const ValueRef kernel_size = resize_args.at(1);
+  const ValueRef stride = resize_args.at(2);
+  const ValueRef padding = resize_args.at(3);
+  const ValueRef dilation = resize_args.at(4);
+  const ValueRef output_padding = resize_args.at(5);
+
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+
+  const std::vector<int64_t> out_hw = calc_out_sizes_hw(
+      *graph,
+      in_sizes,
+      kernel_size,
+      /*kernel_size_only=*/true,
+      {stride, padding, dilation, output_padding},
+      /*transposed=*/true);
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(out);
+  const size_t ndim = new_sizes.size();
+  new_sizes.at(ndim - 2) = out_hw.at(0);
+  new_sizes.at(ndim - 1) = out_hw.at(1);
+  graph->virtual_resize(out, new_sizes);
+}
 
 // Dedicated workgroup size functions for transposed convolution.
 // Unlike regular conv2d, transposed conv with stride > 1 causes branch
@@ -23,7 +63,7 @@ namespace vkcompute {
 // stride-alignment patterns). Keeping local_y=1 ensures all threads in a
 // workgroup process the same height row, maximizing branch coherence.
 
-utils::uvec3 pick_q8ta_conv2d_transposed_global_wg_size(
+GlobalWorkGrid pick_q8ta_conv2d_transposed_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -40,13 +80,13 @@ utils::uvec3 pick_q8ta_conv2d_transposed_global_wg_size(
   const uint32_t W4 = utils::div_up_4(W);
   const uint32_t C4 = utils::div_up_4(C);
 
-  return {W4, H, C4};
+  return GlobalWorkGrid({W4, H, C4}, kTiledWorkGrid);
 }
 
-utils::uvec3 pick_q8ta_conv2d_transposed_local_wg_size(
+LocalWorkGroup pick_q8ta_conv2d_transposed_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)shader;
@@ -55,16 +95,16 @@ utils::uvec3 pick_q8ta_conv2d_transposed_local_wg_size(
   (void)args;
 
   // Always keep local_y=1 to avoid branch divergence between height rows.
-  if (global_workgroup_size[0u] >= 6 && global_workgroup_size[2u] >= 6) {
-    return {8u, 1u, 8u};
+  if (gwg[0u] >= 6 && gwg[2u] >= 6) {
+    return LocalWorkGroup(8u, 1u, 8u);
   }
-  if (global_workgroup_size[0u] < 2u) {
-    return {1u, 1u, 64u};
+  if (gwg[0u] < 2u) {
+    return LocalWorkGroup(1u, 1u, 64u);
   }
-  if (global_workgroup_size[2u] < 2u) {
-    return {64u, 1u, 1u};
+  if (gwg[2u] < 2u) {
+    return LocalWorkGroup(64u, 1u, 1u);
   }
-  return {16u, 1u, 4u};
+  return LocalWorkGroup(16u, 1u, 4u);
 }
 
 void add_q8ta_conv2d_transposed_node(
@@ -83,6 +123,7 @@ void add_q8ta_conv2d_transposed_node(
     const ValueRef stride,
     const ValueRef padding,
     const ValueRef dilation,
+    const ValueRef output_padding,
     const ValueRef groups,
     const uint32_t activation_type,
     const ValueRef packed_int8_output) {
@@ -159,8 +200,8 @@ void add_q8ta_conv2d_transposed_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_q8ta_conv2d_transposed_global_wg_size,
-      pick_q8ta_conv2d_transposed_local_wg_size,
+      pick_q8ta_conv2d_transposed_gwg,
+      pick_q8ta_conv2d_transposed_lwg,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input,
@@ -175,8 +216,16 @@ void add_q8ta_conv2d_transposed_node(
       push_constants,
       // Specialization Constants
       spec_constants,
-      // Resize args
-      {}));
+      // Resize args: { input, kernel_size, stride, padding, dilation,
+      // output_padding }
+      {packed_int8_input,
+       kernel_size,
+       stride,
+       padding,
+       dilation,
+       output_padding},
+      // Resizing Logic
+      resize_q8ta_conv2d_transposed_node));
 }
 
 void q8ta_conv2d_transposed(
@@ -195,7 +244,9 @@ void q8ta_conv2d_transposed(
   const ValueRef kernel_size = args.at(idx++);
   const ValueRef stride = args.at(idx++);
   const ValueRef padding = args.at(idx++);
-  args.at(idx++); // output_padding: only affects output size, not shader
+  // output_padding does not affect the shader, but it IS needed to compute the
+  // transposed-conv output H/W on resize (dynamic shapes).
+  const ValueRef output_padding = args.at(idx++);
   const ValueRef dilation = args.at(idx++);
   const ValueRef groups = args.at(idx++);
   const ValueRef activation = args.at(idx++);
@@ -255,6 +306,7 @@ void q8ta_conv2d_transposed(
       stride,
       padding,
       dilation,
+      output_padding,
       groups,
       activation_type_val,
       packed_int8_output);

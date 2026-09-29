@@ -34,7 +34,7 @@ install_buck() {
   # team for help.
   BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
   BUCK2=buck2-aarch64-apple-darwin-${BUCK2_VERSION}.zst
-  curl -s "https://ossci-macos.s3.amazonaws.com/${BUCK2}" -o "${BUCK2}"
+  curl -s --retry 3 --retry-all-errors "https://ossci-macos.s3.amazonaws.com/${BUCK2}" -o "${BUCK2}"
 
   zstd -d "${BUCK2}" -o buck2
 
@@ -68,7 +68,7 @@ install_sccache() {
   # NB: The function is adopted from PyTorch MacOS build workflow
   # https://github.com/pytorch/pytorch/blob/main/.github/workflows/_mac-build.yml
   if ! command -v sccache &> /dev/null; then
-    sudo curl --retry 3 "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
+    sudo curl --retry 3 --retry-all-errors "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
     sudo chmod +x "${SCCACHE_PATH}/sccache"
   fi
 

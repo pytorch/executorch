@@ -31,6 +31,7 @@ set(llama_runner_srcs runner.cpp ../tokenizer/llama_tiktoken.cpp)
 if(CMAKE_TOOLCHAIN_IOS
    OR ANDROID
    OR APPLE
+   OR MSVC
 )
   # Building a share library on iOS requires code signing On Android we see
   # duplicated registration when using shared lib

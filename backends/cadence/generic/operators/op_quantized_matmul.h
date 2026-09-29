@@ -15,9 +15,9 @@ namespace impl {
 namespace generic {
 namespace native {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 Tensor& quantized_matmul_out(
     KernelRuntimeContext& ctx,

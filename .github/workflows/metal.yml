@@ -17,12 +17,37 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+    with:
+      include-push-diff: true
+
+  run-decision:
+    name: CI run decision
+    uses: ./.github/workflows/_ci-run-decision.yml
+
   test-metal-builds:
     name: test-executorch-metal-build
+    needs: [changed-files, run-decision]
+    # Path-filtered: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch metal-relevant paths skip
+    # this job on non-sampled commits. See _ci-run-decision.yml for
+    # the sampling policy.
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -40,6 +65,14 @@ jobs:
 
   test-metal-modules:
     name: test-metal-backend-modules
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -65,6 +98,14 @@ jobs:
 
   test-metal-qwen35-moe-tiny:
     name: test-metal-qwen35-moe-tiny
+    needs: [changed-files, run-decision]
+    if: |
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+      contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+      needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       default-packages: ""
@@ -160,10 +201,23 @@ jobs:
         echo "Success: prefill ($PROMPT_TOKENS tokens) + decode completed"
         echo "::endgroup::"
 
-  export-model-metal-artifact:
-    name: export-model-metal-artifact
-    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+  test-model-metal-e2e:
+    name: test-model-metal-e2e
+    # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
+    # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
+    # filter so push commits that don't touch metal-relevant paths skip
+    # this job on non-sampled commits.
+    needs: [changed-files, run-decision]
+    if: |
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
+      (
+        contains(needs.changed-files.outputs.changed-files, 'backends/apple/metal') ||
+        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
+        contains(needs.changed-files.outputs.changed-files, 'examples/models/qwen3_5_moe') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
+        contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
+        needs.run-decision.outputs.is-full-run == 'true'
+      )
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     strategy:
@@ -197,72 +251,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      upload-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
-      script: |
-        set -eux
-
-        echo "::group::Setup Huggingface"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
-        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        echo "::endgroup::"
-
-        echo "::group::Setup Optimum-ExecuTorch"
-        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
-        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
-        echo "::endgroup::"
-
-        echo "::group::Setup ExecuTorch"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
-        echo "::endgroup::"
-
-        echo "::group::Pip List"
-        ${CONDA_RUN} pip list
-        echo "::endgroup::"
-
-        # Isolate Inductor cache and precompiled headers (PCH) per job to prevent
-        # PCH mtime conflicts between parallel matrix jobs on the same runner.
-        # TORCHINDUCTOR_CACHE_DIR isolates the code cache; setting TMPDIR isolates
-        # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
-        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
-        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
-        ${CONDA_RUN} bash .ci/scripts/export_model_artifact.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
-
-  test-model-metal-e2e:
-    name: test-model-metal-e2e
-    needs: export-model-metal-artifact
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      fail-fast: false
-      matrix:
-        model:
-          - repo: "mistralai"
-            name: "Voxtral-Mini-3B-2507"
-          - repo: "mistralai"
-            name: "Voxtral-Mini-4B-Realtime-2602"
-          - repo: "openai"
-            name: "whisper-small"
-          - repo: "openai"
-            name: "whisper-large-v3-turbo"
-          - repo: "nvidia"
-            name: "parakeet-tdt"
-        quant:
-          - "non-quantized"
-          - "quantized-int4-metal"
-        exclude:
-          # Exclude non-quantized for Voxtral Realtime (too large)
-          - model:
-              repo: "mistralai"
-              name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "non-quantized"
-    with:
-      default-packages: ""
-      runner: macos-m2-stable
-      python-version: '3.11'
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-metal-${{ matrix.quant }}
       script: |
         set -eux
 
@@ -290,4 +278,36 @@ jobs:
         fi
         echo "::endgroup::"
 
-        ${CONDA_RUN} bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        echo "::group::Setup Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]<1.0" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        echo "::endgroup::"
+
+        echo "::group::Setup Optimum-ExecuTorch"
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        echo "Using optimum-executorch version: ${OPTIMUM_ET_VERSION}"
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_EXPERIMENTAL_MPS=1 ./install_executorch.sh
+        echo "::endgroup::"
+
+        echo "::group::Pip List"
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        # Isolate Inductor cache and precompiled headers (PCH) per job to prevent
+        # PCH mtime conflicts between parallel matrix jobs on the same runner.
+        # TORCHINDUCTOR_CACHE_DIR isolates the code cache; setting TMPDIR isolates
+        # the PCH dir, which PyTorch derives from tempfile.gettempdir() independently.
+        export TMPDIR=$(mktemp -d "${RUNNER_TEMP}/tmpdir_XXXXXX")
+        export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
+        VR_MODE=""
+        if [ "${{ matrix.model.name }}" = "Voxtral-Mini-4B-Realtime-2602" ]; then
+          VR_MODE="vr-offline"
+        fi
+        # Export and test in the same job so the model never leaves the runner
+        # (no GitHub Actions artifact upload/download).
+        MODEL_DIR="$(mktemp -d "${RUNNER_TEMP}/metal_model_XXXXXX")"
+        ${CONDA_RUN} RUN_EXPORT=1 bash .ci/scripts/test_model_e2e.sh metal "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${MODEL_DIR}" "${VR_MODE}"

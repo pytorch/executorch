@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +17,7 @@ import dataclasses
 import heapq
 import inspect
 import io
+import contextlib
 import json
 import logging
 import math
@@ -149,6 +151,8 @@ _TORCH_TO_SERIALIZE_DTYPE = {
     torch.complex128: ScalarType.COMPLEXDOUBLE,
     torch.bool: ScalarType.BOOL,
     torch.bfloat16: ScalarType.BFLOAT16,
+    torch.float8_e5m2: ScalarType.FLOAT8E5M2,
+    torch.float8_e4m3fn: ScalarType.FLOAT8E4M3FN,
     torch.uint16: ScalarType.UINT16
 }
 
@@ -301,7 +305,16 @@ def _reconstruct_fake_tensor(
     assert len(_CURRENT_DESERIALIZER) != 0, "Need access to current deserializer state"
     fake_tensor = _CURRENT_DESERIALIZER[-1].deserialize_tensor_meta(tensor_meta)
     if is_parameter:
-        fake_tensor = torch.nn.Parameter(fake_tensor)  # type: ignore[assignment]
+        # `nn.Parameter` defaults `requires_grad` to True, which raises on the
+        # integer dtypes quantized weights use. Derived rather than recorded by
+        # the reducer, whose payload is the on-disk format: a float parameter
+        # that had it False therefore comes back True.
+        requires_grad = (
+            fake_tensor.dtype.is_floating_point or fake_tensor.dtype.is_complex
+        )
+        fake_tensor = torch.nn.Parameter(  # type: ignore[assignment]
+            fake_tensor, requires_grad=requires_grad
+        )
     return fake_tensor
 
 
@@ -333,7 +346,19 @@ def deserialize_torch_artifact(
         return {}
     buffer = io.BytesIO(serialized)
     buffer.seek(0)
-    artifact = torch.load(buffer, weights_only=True)
+    # A fake tensor reduces to `_reconstruct_fake_tensor`, which
+    # `weights_only=True` refuses unless it is allowlisted.
+    #
+    # Conditional because `safe_globals` subtracts from one process-global set on
+    # exit, with no refcount: entering it when the caller has already allowed
+    # this global would revoke their registration.
+    allowance = (
+        contextlib.nullcontext()
+        if _reconstruct_fake_tensor in torch.serialization.get_safe_globals()
+        else torch.serialization.safe_globals([_reconstruct_fake_tensor])
+    )
+    with allowance:
+        artifact = torch.load(buffer, weights_only=True)
     assert isinstance(artifact, (tuple, dict))
     return artifact
 

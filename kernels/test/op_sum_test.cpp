@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -306,10 +307,39 @@ class OpSumOutTest : public OperatorTest {
   }
 };
 
+TEST_F(OpSumOutTest, BFloat16GenericPathAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // Reducing dim=0 of {512, 1} is not the last dim, so the generic path is
+  // taken. Without fp32 accumulation the sum saturates at ~256 instead of
+  // 512. 512 = 2^9 is exactly representable in BFloat16.
+  constexpr int N = 512;
+  Tensor x = tf.ones({N, 1});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 0;
+  op_sum_intlist_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, static_cast<float>(N));
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpSumOutTest, BFloat16LargeDimAccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  // N=512, all-ones input: without fp32 accumulation the sum saturates at
+  // ~256 in BFloat16 instead of 512.
+  constexpr int N = 512;
+  Tensor x = tf.ones({1, N});
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_sum_intlist_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, static_cast<float>(N));
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpSumOutTest, InvalidDimensionListDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_sum_dim_out_invalid_dimensions<                                    \
@@ -325,9 +355,9 @@ TEST_F(OpSumOutTest, InvalidDimensionListDies) {
 }
 
 TEST_F(OpSumOutTest, InvalidShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_sum_dim_out_invalid_shape<                                         \
@@ -343,9 +373,9 @@ TEST_F(OpSumOutTest, InvalidShapeDies) {
 }
 
 TEST_F(OpSumOutTest, MismatchedDTypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Int> tf_int;
 

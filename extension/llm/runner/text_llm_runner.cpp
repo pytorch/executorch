@@ -35,20 +35,19 @@ TextLLMRunner::TextLLMRunner(
     std::unique_ptr<IOManager> io_manager,
     std::unique_ptr<TextTokenGenerator> text_token_generator,
     std::unique_ptr<Stats> stats,
-    float temperature)
+    float temperature,
+    std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner)
     : tokenizer_(std::move(tokenizer)),
       metadata_(std::move(metadata)),
       module_(std::move(module)),
       text_decoder_runner_(std::move(text_decoder_runner)),
+      decode_text_decoder_runner_(std::move(decode_text_decoder_runner)),
       text_prefiller_(std::move(text_prefiller)),
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
       temperature_(temperature),
-      pos_(0) {
-  // Note: This constructor assumes that text_prefiller and text_token_generator
-  // already have references to the Module and TextDecoderRunner they need
-}
+      pos_(0) {}
 
 bool TextLLMRunner::is_loaded() const {
   return text_prefiller_->is_loaded() && text_token_generator_->is_loaded();
@@ -108,6 +107,8 @@ Error TextLLMRunner::generate(
   // return a response token.
 
   stats_->inference_start_ms = time_in_ms();
+  stats_->model_execution_start_ms = 0;
+  stats_->model_execution_end_ms = 0;
 
   // Get max_seq_len for single prefill chunk limit
   int64_t max_seq_len = metadata_.at(kMaxSeqLen);
@@ -235,13 +236,14 @@ Error TextLLMRunner::generate(
   // Set ignore_eos based on config
   text_token_generator_->set_ignore_eos(config.ignore_eos);
 
+  // Use the configuration's temperature
+  float resolved_temp =
+      temperature_ == -1.0f ? config.temperature : temperature_;
+
   // Generate max_new_tokens - 1 because prefill already generated 1 token.
   auto generate_result = text_token_generator_->generate(
-      prompt_tokens,
-      pos_,
-      max_new_tokens - 1,
-      temperature_ == -1.0f ? config.temperature : temperature_,
-      wrapped_callback);
+      prompt_tokens, pos_, max_new_tokens - 1, resolved_temp, wrapped_callback);
+
   if (!generate_result.ok()) {
     return generate_result.error();
   }
@@ -258,7 +260,7 @@ Error TextLLMRunner::generate(
       "RSS after finishing text generation: %f MiB (0 if unsupported)",
       get_rss_bytes() / 1024.0 / 1024.0);
 
-  if (num_generated_tokens == max_new_tokens) {
+  if (num_generated_tokens == max_new_tokens - 1) {
     RUNNER_ET_LOG(config.warming, "Max new tokens %i reached!", max_new_tokens);
   }
 

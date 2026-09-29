@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class ReLU(torch.nn.Module):
@@ -44,7 +45,7 @@ class TestReLU(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()
@@ -56,6 +57,23 @@ class TestReLU(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=inputs)
         )
 
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module,
+            inputs,
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
+        )
+        (
+            tester.quantize()
+            .export()
+            .check_count({"torch.ops.aten.relu.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_relu_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.2)
+        )
+
     def test_fp32_single_relu(self):
         inputs = (torch.randn(1, 3, 56, 56),)
         self._test(ReLU(with_conv=False), inputs)
@@ -63,3 +81,11 @@ class TestReLU(unittest.TestCase):
     def test_fp32_conv_relu(self):
         inputs = (torch.randn(1, 3, 56, 56),)
         self._test(ReLU(with_conv=True), inputs)
+
+    def test_a8w8_single_relu(self):
+        inputs = (torch.randn(1, 3, 56, 56),)
+        self._test_a8w8(ReLU(with_conv=False), inputs)
+
+    def test_a8w8_conv_relu(self):
+        inputs = (torch.randn(1, 3, 56, 56),)
+        self._test_a8w8(ReLU(with_conv=True), inputs)

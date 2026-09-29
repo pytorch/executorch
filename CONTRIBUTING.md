@@ -24,8 +24,7 @@ For Apple, please refer to the [iOS documentation](docs/source/using-executorch-
 executorch
 ├── <a href="backends">backends</a> - Backend delegate implementations for various hardware targets. Each backend uses partitioner to split the graph into subgraphs that can be executed on specific hardware, quantizer to optimize model precision, and runtime components to execute the graph on target hardware. For details refer to the <a href="docs/source/backend-delegates-integration.md">backend documentation</a> and the <a href="docs/source/using-executorch-export.md">Export and Lowering tutorial</a> for more information.
 │   ├── <a href="backends/apple">apple</a> - Apple-specific backends.
-│   │   ├── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
-│   │   └── <a href="backends/apple/mps">mps</a> - Metal Performance Shaders backend for Apple devices. See <a href="docs/source/backends/mps/mps-overview.md">doc</a>.
+│   │   └── <a href="backends/apple/coreml">coreml</a> - CoreML backend for Apple devices. See <a href="docs/source/backends/coreml/coreml-overview.md">doc</a>.
 │   ├── <a href="backends/arm">arm</a> - ARM architecture backends. See <a href="docs/source/backends/arm-ethos-u/arm-ethos-u-overview.md">doc</a>.
 │   ├── <a href="backends/cadence">cadence</a> - Cadence-specific backends. See <a href="docs/source/backends-cadence.md">doc</a>.
 │   ├── <a href="backends/example">example</a> - Example backend implementations.
@@ -320,6 +319,25 @@ CI is run automatically on all pull requests. However, if you want to run tests 
 - The `sh test/build_size_test.sh` script will compile the C++runtime along with portable kernels.
 - The `test/run_oss_cpp_tests.sh` script will build and run C++ tests locally
 - Running `pytest` from the root directory will run Python tests locally. Make sure to run this after finishing [Dev Install](#dev-install).
+
+To build C++ tests manually with CMake, run the following from the repository root:
+
+```bash
+cmake . -Bcmake-out -DCMAKE_INSTALL_PREFIX=cmake-out -DEXECUTORCH_BUILD_TESTS=ON
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
+```
+
+You can then use `ctest` to list or run individual C++ tests directly:
+
+```bash
+ctest --test-dir cmake-out -N
+ctest --test-dir cmake-out -R <test_name_regex> --output-on-failure
+```
+
+This workflow is useful when you want to rerun one test, attach a debugger to a
+test binary under `cmake-out`, or keep a build directory around for quick rebuild
+cycles. Add the same `-DEXECUTORCH_BUILD_*` options used by
+`test/run_oss_cpp_tests.sh` when the test needs optional kernels or extensions.
 
 ### Writing Tests
 To help keep code quality high, ExecuTorch uses a combination of unit tests and

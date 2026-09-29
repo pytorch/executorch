@@ -41,6 +41,8 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "out_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "cond_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "self_layout", "CONTIG_LAYOUT_INT")}
@@ -49,7 +51,7 @@ ${layout_declare_spec_const(C, "int", "other_layout", "CONTIG_LAYOUT_INT")}
 #ifdef USING_BUFFER
 
 void main() {
-  const uint out_bufi = gl_GlobalInvocationID.x;
+  const uint out_bufi = linear_idx_from_gid();
   if (out_of_bounds(out_bufi, outp)) {
     return;
   }

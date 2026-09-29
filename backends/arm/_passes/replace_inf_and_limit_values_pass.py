@@ -16,11 +16,21 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult
 
 class ReplaceInfAndLimitValuesPass(ArmPass):
     """Rewrites +inf/-inf and floating-point limit values (e.g.,
-    torch.finfo(...).min/max) to quantization-friendly values (±255 by default),
+    torch.finfo(...).min/max) to configured quantization-friendly values,
     improving quantizer stability (notably for attention mask paths).
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def __init__(
+        self,
+        neg_inf: float,
+        pos_inf: float,
+        tfa_pass: bool = False,
+    ):
+        super().__init__(tfa_pass=tfa_pass)
+        self.neg_inf = neg_inf
+        self.pos_inf = pos_inf
 
     def _allowed_to_transform_named_buffer(self, buf_name, graph_module) -> bool:
         attr_nodes = [
@@ -51,8 +61,8 @@ class ReplaceInfAndLimitValuesPass(ArmPass):
                 continue
 
             modified = True
-            # 255 here is mainly for attention_mask in Llama for reasonable quant scale
-            t = torch.nan_to_num(tensor, posinf=255, neginf=-255)
+
+            t = torch.nan_to_num(tensor, posinf=self.pos_inf, neginf=self.neg_inf)
             setattr(graph_module, buf_name, t)
 
         for node in graph_module.graph.nodes:
@@ -60,10 +70,10 @@ class ReplaceInfAndLimitValuesPass(ArmPass):
             for index, arg in enumerate(arg_list):
                 if arg == float("-inf") or arg == torch.finfo(torch.float32).min:
                     modified = True
-                    arg_list[index] = -255.0
+                    arg_list[index] = self.neg_inf
                 elif arg == float("inf") or arg == torch.finfo(torch.float32).max:
                     modified = True
-                    arg_list[index] = +255.0
+                    arg_list[index] = self.pos_inf
             node.args = tuple(arg_list)
 
         if modified:

@@ -19,6 +19,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/exir/backend/test/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
+                "//executorch/extension/module/test/...",
                 "//executorch/devtools/fb/runners/...",
                 "//executorch/test/...",
                 "//executorch/examples/...",
@@ -101,6 +102,15 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "method_meta_factory_test",
+        srcs = ["method_meta_factory_test.cpp"],
+        deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/schema:program",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -176,9 +186,16 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
             ],
-            env = modules_env,
+            env = dict(
+                modules_env,
+                **{
+                    "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
+                }
+            ),
         )
 
         runtime.cxx_test(
@@ -201,7 +218,9 @@ def define_common_targets(is_fbcode = False):
                 "program_validation_test.cpp",
             ],
             deps = [
+                ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
@@ -314,6 +333,19 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "tensor_parser_aten_test",
+            srcs = [
+                "tensor_parser_aten_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program_aten",
+                "//executorch/runtime/core/exec_aten:lib_aten",
+                "//executorch/schema:program",
+            ],
+        )
+
+        runtime.cxx_test(
             name = "tensor_parser_device_test",
             srcs = [
                 "tensor_parser_device_test.cpp",
@@ -321,6 +353,9 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
+                "//executorch/runtime/core:device_allocator",
+                "//executorch/runtime/core:device_memory_buffer",
+                "//executorch/runtime/core/test:mock_cuda_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",
             ],

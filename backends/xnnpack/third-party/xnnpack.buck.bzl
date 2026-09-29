@@ -70,7 +70,10 @@ def define_xnnpack():
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "subgraph",
-        srcs = SUBGRAPH_SRCS + ["XNNPACK/src/datatype.c"],
+        srcs = SUBGRAPH_SRCS + [
+            "XNNPACK/src/datatype.c",
+            "XNNPACK/src/subgraph/rewrites/cvt_to_fp32.cc",
+        ],
         compiler_flags = [
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
         ],
@@ -1150,6 +1153,7 @@ def define_xnnpack():
             "XNNPACK/src/init.c",
             "XNNPACK/src/params.c",
             "XNNPACK/src/configs/hardware-config.c",
+            "XNNPACK/src/xnnpack/init-once.c",
             "XNNPACK/src/microparams-init.c",
             "XNNPACK/src/microkernel-utils.c",
             "XNNPACK/src/reference/binary-elementwise.cc",

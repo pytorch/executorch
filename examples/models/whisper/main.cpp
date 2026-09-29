@@ -17,7 +17,7 @@
 
 #include <gflags/gflags.h>
 
-#include <executorch/extension/asr/runner/runner.h>
+#include <executorch/extension/asr/runner/seq2seq_runner.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/module/module.h>
@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
       tensor.mutable_data_ptr<float>()[0]);
   features = std::make_shared<::executorch::aten::Tensor>(std::move(tensor));
 
-  executorch::extension::asr::AsrRunner runner(
+  executorch::extension::asr::Seq2SeqRunner runner(
       FLAGS_model_path, FLAGS_data_path, FLAGS_tokenizer_path);
   auto load_err = runner.load();
   if (load_err != ::executorch::runtime::Error::Ok) {
@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  executorch::extension::asr::AsrTranscribeConfig config;
+  executorch::extension::asr::Seq2SeqTranscribeConfig config;
   config.max_new_tokens = FLAGS_max_new_tokens;
   config.temperature = static_cast<float>(FLAGS_temperature);
 

@@ -39,7 +39,8 @@ class Gemma4Runner {
  public:
   Gemma4Runner(
       const std::string& model_path,
-      const std::string& tokenizer_path);
+      const std::string& tokenizer_path,
+      bool enable_workspace_sharing = true);
 
   Error load();
   bool is_loaded() const;
@@ -176,6 +177,7 @@ class Gemma4Runner {
   std::unique_ptr<tokenizers::Tokenizer> tokenizer_;
   std::string model_path_;
   std::string tokenizer_path_;
+  bool enable_workspace_sharing_;
   Error load_audio_methods();
   Error load_vision_methods();
 

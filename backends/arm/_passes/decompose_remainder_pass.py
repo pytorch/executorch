@@ -6,7 +6,7 @@
 from typing import Dict, Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_div_tensor_mode import (
     DecomposeDivTensorModePass,
 )
@@ -41,7 +41,7 @@ _decomposition_ops: Dict[Op, tuple[Op, Op, Op]] = {
 }
 
 
-class DecomposeRemainderPass(ArmPass):
+class DecomposeRemainderPass(ArmOpTargetedPass):
     """
     Decompose the remainder operation into primitive arithmetic:
         remainder(x, y) -> x - floor_div(x, y) * y
@@ -49,15 +49,10 @@ class DecomposeRemainderPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivTensorModePass}
+    target_ops = tuple(_decomposition_ops)
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        supported_ops = (
-            exir_ops.edge.aten.remainder.Scalar,
-            exir_ops.edge.aten.remainder.Tensor,
-            torch.ops.aten.remainder.Scalar,
-            torch.ops.aten.remainder.Tensor,
-        )
-        if op not in supported_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
         # Keep scalar remainder opaque during transform-for-annotation so the
         # quantizer can wrap the original op directly. In the backend pipeline,

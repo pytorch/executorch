@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -27,20 +27,18 @@ def _get_where_scalar_other_decomposition(op):
     raise RuntimeError(f"Can't get where.ScalarOther decomposition for op {op}")
 
 
-class DecomposeWhereScalarOtherPass(ArmPass):
+class DecomposeWhereScalarOtherPass(ArmOpTargetedPass):
     """Decompose where.ScalarOther into where.self with a tensorized scalar."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    _TARGET_OPS = {
+    target_ops = {
         exir_ops.edge.aten.where.ScalarOther,
     }
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
-        if (
-            op not in DecomposeWhereScalarOtherPass._TARGET_OPS
-            or not self.allowed_to_transform(meta)
-        ):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated)
 
         condition, self_tensor, other_scalar = args

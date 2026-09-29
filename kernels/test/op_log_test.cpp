@@ -15,7 +15,6 @@
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 class OpLogOutTest
     : public torch::executor::testing::UnaryUfuncRealHBBF16ToFloatHBF16Test {

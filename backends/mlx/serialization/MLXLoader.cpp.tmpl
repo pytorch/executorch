@@ -62,7 +62,8 @@ std::vector<T> to_vector(const flatbuffers::Vector<T>* fb_vec) {
 // load_instruction - AUTO-GENERATED switch statement
 // =============================================================================
 
-Instruction load_instruction(const mlx_delegate::Instruction* fb_instr) {
+Instruction load_instruction(
+    const mlx_delegate::Instruction* fb_instr, StringPool& strpool) {
   Instruction instr;
 
   if (!fb_instr || !fb_instr->op()) {
@@ -142,6 +143,10 @@ MLXProgram load_program(const void* data, size_t size) {
   check_collection_size(program.num_tensors(), "num_tensors()");
   check_collection_size(program.num_values, "num_values");
 
+  // Pool shared across all chains so identical kernel source/header blobs are
+  // interned once for the whole program.
+  StringPool strpool;
+
   if (fb_graph->instruction_chains()) {
     check_collection_size(fb_graph->instruction_chains()->size(), "instruction_chains");
     program.instruction_chains.reserve(fb_graph->instruction_chains()->size());
@@ -152,7 +157,7 @@ MLXProgram load_program(const void* data, size_t size) {
         check_collection_size(fb_chain->instructions()->size(), "instructions in chain");
         chain.reserve(fb_chain->instructions()->size());
         for (size_t i = 0; i < fb_chain->instructions()->size(); ++i) {
-          chain.push_back(load_instruction(fb_chain->instructions()->Get(static_cast<flatbuffers::uoffset_t>(i))));
+          chain.push_back(load_instruction(fb_chain->instructions()->Get(static_cast<flatbuffers::uoffset_t>(i)), strpool));
         }
       }
       program.instruction_chains.push_back(std::move(chain));

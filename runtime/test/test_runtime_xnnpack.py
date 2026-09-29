@@ -116,10 +116,7 @@ class RuntimeXNNPACKTest(unittest.TestCase):
 
     # ------------------------------------------------------------------
     # BatchNorm + Conv (common in MobileNet-style models)
-    # Skipped: FuseBatchNormPass crashes on Sequential(Conv2d, BN) export.
-    # TODO(#11225): re-enable once the XNNPACK pass is fixed.
     # ------------------------------------------------------------------
-    @unittest.skip("FuseBatchNormPass bug in XNNPACK backend")
     def test_conv_bn(self):
         model = torch.nn.Sequential(
             torch.nn.Conv2d(3, 16, 3, padding=1),

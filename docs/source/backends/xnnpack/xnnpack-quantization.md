@@ -31,6 +31,7 @@ import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.utils.configs import get_transform_passes
 from executorch.exir import to_edge_transform_and_lower
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -52,19 +53,25 @@ quantized_model = convert_pt2e(prepared_model) # (5)
 et_program = to_edge_transform_and_lower( # (6)
     torch.export.export(quantized_model, sample_inputs),
     partitioner=[XnnpackPartitioner()],
+    transform_passes=get_transform_passes(),
 ).to_executorch()
 ```
 
-See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+The `transform_passes` stage is optional in the generic lowering API. For
+XNNPACK, `get_transform_passes()` is recommended in general because it runs
+pre-partition graph transforms that expose supported patterns to the
+partitioner.
+
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html) for more information.
 
 ### LLM quantization with quantize_
 
 The XNNPACK backend also supports quantizing models with the [torchao](https://github.com/pytorch/ao) quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:
 
-* Quantize embeedings with `IntxWeightOnlyConfig` (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)
+* Quantize embeddings with `IntxWeightOnlyConfig` (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)
 * Quantize linear layers with 4 bit weight and 8bit dynamic activation, use `Int8DynamicActivationIntxWeightConfig` (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)
 
-Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the [torchao documentation](https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch).
+Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the [torchao documentation](https://docs.pytorch.org/ao/main/eager_tutorials/serving.html#mobile-deployment-with-executorch).
 
 ```python
 from torchao.quantization.granularity import PerGroup, PerAxis
@@ -79,13 +86,13 @@ embedding_config = IntxWeightOnlyConfig(
     weight_dtype=torch.int8,
     granularity=PerAxis(0),
 )
-qunatize_(
+quantize_(
     eager_model,
     lambda m, fqn: isinstance(m, torch.nn.Embedding),
 )
 
 
-# Quatize linear layers with 8-bit dynamic activations and 4-bit weights
+# Quantize linear layers with 8-bit dynamic activations and 4-bit weights
 linear_config = Int8DynamicActivationIntxWeightConfig(
     weight_dtype=torch.int4,
     weight_granularity=PerGroup(32),

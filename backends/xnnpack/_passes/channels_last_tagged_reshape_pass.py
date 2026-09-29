@@ -7,11 +7,13 @@
 # pyre-unsafe
 
 from enum import Enum
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
+    extract_qdq_affine_op_args_for_decomposed_ops,
+    is_affine_qdq,
     is_dequant,
     is_dynamic_qdq,
     is_tagged_as_implicit_q_dq,
@@ -72,6 +74,18 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.squeeze_copy.dim,
         exir_ops.edge.aten.unsqueeze_copy.default,
         exir_ops.edge.aten.linear.default,
+    }
+
+    # Broadcasting binary ops whose operands must share one memory format. A
+    # dynamic-quant input_to_nhwc may blanket-replace a shared activation
+    # (replace_all_uses_with), switching one operand of an already-processed
+    # binary op to NHWC while its other (e.g. per-channel constant) operand
+    # stays NCHW. These ops are re-converged after the main traversal.
+    broadcast_binary_ops = {
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.div.Tensor,
     }
 
     # Tag which is added to a node's meta to indicate that it uses NHWC format.
@@ -353,6 +367,23 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 else ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
             )
 
+    @staticmethod
+    def redirect_dynamic_chain_to_nhwc(
+        input_node: torch.fx.Node,
+        input_node_nhwc: torch.fx.Node,
+        chain: List[torch.fx.Node],
+    ) -> None:
+        """Point the traversed chain's quantize and the choose_qparams feeding it
+        at the NHWC copy; consumers outside the chain keep the source.
+        """
+        quantize = chain[-1]
+        quantize_args = quantize.args
+        if is_affine_qdq(quantize):
+            quantize_args = extract_qdq_affine_op_args_for_decomposed_ops(quantize)
+        qparam = quantize_args[1].args[0]
+        quantize.replace_input_with(input_node, input_node_nhwc)
+        qparam.replace_input_with(input_node, input_node_nhwc)
+
     def input_to_nhwc(
         self,
         graph_module: torch.fx.GraphModule,
@@ -397,9 +428,15 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # Check if input uses dynamic quantization
             is_dynamic_input = is_dynamic_qdq(input_node)
 
+            dynamic_chain = []
             if is_dynamic_input:
-                # Trace back to original source node
-                while getattr(input_node, "args", None):
+                # Trace back over this consumer's own q/dq chain to the source
+                # node, so the copy lands ahead of the quantize, and remember the
+                # chain: only it is redirected below.
+                while is_dynamic_qdq(input_node) and isinstance(
+                    input_node.args[0], torch.fx.Node
+                ):
+                    dynamic_chain.append(input_node)
                     input_node = input_node.args[0]
 
             with graph_module.graph.inserting_after(input_node):
@@ -412,10 +449,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # Use static method for consistency
                 ChannelsLastTaggedReshapePass.mark_as_nhwc_node(input_node_nhwc)
 
-            if is_dynamic_input:
-                # Replace downstream input_nodes with NHWC node
-                input_node.replace_all_uses_with(input_node_nhwc)
-                input_node_nhwc.args = (input_node,)
+            if dynamic_chain:
+                self.redirect_dynamic_chain_to_nhwc(
+                    input_node, input_node_nhwc, dynamic_chain
+                )
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
@@ -505,7 +542,13 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             elif self.requires_nhwc_input(node):
                 # Nodes which enter this branch are ones that require their
                 # first input to be nhwc. This makes this node's output nhwc too
-                self.input_to_nhwc(graph_module, node.args[0], node)
+                if isinstance(node.args[0], (list, tuple)):
+                    # Ops like cat have a list of tensors as args[0].
+                    for arg in node.args[0]:
+                        if isinstance(arg, torch.fx.Node):
+                            self.input_to_nhwc(graph_module, arg, node)
+                else:
+                    self.input_to_nhwc(graph_module, node.args[0], node)
                 for input_node in node.all_input_nodes[1:]:
                     if (
                         input_node.op == "placeholder"
@@ -557,5 +600,43 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         # Since we are overriding "call", we need to call the parent's "call"
         # to retrace the graph and regenerate metadata
         graph_module = super().call(graph_module).graph_module
+
+        # The dynamic-quant path of input_to_nhwc can replace_all_uses_with a
+        # binary op's activation operand to NHWC after the op was processed,
+        # leaving its other operand (e.g. a per-channel constant) NCHW and failing
+        # at runtime. Re-converge such binary ops now that the graph has settled.
+        reconverged = False
+        for node in list(graph_module.graph.nodes):
+            if (
+                node.op != "call_function"
+                or node.target not in ChannelsLastTaggedReshapePass.broadcast_binary_ops
+            ):
+                continue
+            input_nodes = node.all_input_nodes
+            if len(input_nodes) != 2:
+                continue
+            layouts = [
+                ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
+                for input_node in input_nodes
+            ]
+            if layouts[0] == layouts[1]:
+                continue
+            if all(
+                self.can_be_converted_to_nhwc(input_node) for input_node in input_nodes
+            ):
+                for input_node in input_nodes:
+                    self.input_to_nhwc(graph_module, input_node, node)
+                self.mark_as_nhwc_node(node)
+            else:
+                for input_node in input_nodes:
+                    self.input_to_nchw(graph_module, input_node, node)
+            reconverged = True
+
+        if reconverged:
+            graph_module.recompile()
+            for node in graph_module.graph.nodes:
+                if ChannelsLastTaggedReshapePass.PARTNER_NODE in node.meta:
+                    node.meta.pop(ChannelsLastTaggedReshapePass.PARTNER_NODE)
+            graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, True)

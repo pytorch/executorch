@@ -64,16 +64,14 @@ def are_fake_tensors_broadcastable(
 def broadcast_tensors(tosa_fb, nodes: list[Node]) -> list[Any]:
     """Broadcast the FX nodes to a shared shape inside the TOSA graph.
 
-    This mirrors ``reshape_for_broadcast`` but also emits the tile operators
-    needed to materialize the broadcast and supports any number of inputs.
+    This emits the reshape and tile operators needed to materialize the
+    broadcast and supports any number of inputs.
 
     Args:
         tosa_fb (Any): TOSA graph builder that receives the broadcast
             operators.
         nodes (list[Node]): FX nodes whose tensor metadata should be
             broadcast.
-        tosa_spec (TosaSpecification): Active TOSA specification used to
-            decode tensor metadata.
 
     Returns:
         list[Any]: Broadcast versions of the inputs. Each element is either
@@ -166,6 +164,10 @@ def build_reshape_tosa(
 def normalize_symint(shape):
     """Dynamic shapes in executorch are represented with torch.SymInt objects in
     the shapes, in TOSA we do not have this concept and instead use -1.
+
+    This function replaces each symbolic dimension with -1. Static dimensions
+    are preserved unchanged.
+
     """
     removed_symints = tuple([-1 if isinstance(d, torch.SymInt) else d for d in shape])
     return list(removed_symints)

@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +16,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -58,6 +59,12 @@ class Squeeze(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return x.squeeze()
+
+
+unsupported_cases = {
+    "squeeze_dim_no_effect": lambda: (torch.randn(3, 4, 5), 1),
+    "squeeze_no_effect": lambda: (torch.randn(3, 4, 5),),
+}
 
 
 ##############
@@ -137,6 +144,16 @@ def test_squeeze_dim_vgf_quant(test_data: Tuple):
     pipeline.run()
 
 
+def test_squeeze_no_target_not_delegated() -> None:
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Squeeze(),
+        unsupported_cases["squeeze_no_effect"](),
+        {"executorch_exir_dialects_edge__ops_aten_squeeze_copy_dims": 1},
+        n_expected_delegates=0,
+    )
+    pipeline.run()
+
+
 #################
 ## SqueezeDim ###
 #################
@@ -210,6 +227,16 @@ def test_squeeze_dim_vgf_quant_2(test_data: Tuple):
         "torch.ops.aten.squeeze.dim",
         [],
         quantize=True,
+    )
+    pipeline.run()
+
+
+def test_squeeze_dim_no_target_not_delegated() -> None:
+    pipeline = OpNotSupportedPipeline[Tuple[torch.Tensor, int]](
+        SqueezeDim(),
+        unsupported_cases["squeeze_dim_no_effect"](),
+        {"executorch_exir_dialects_edge__ops_aten_squeeze_copy_dims": 1},
+        n_expected_delegates=0,
     )
     pipeline.run()
 

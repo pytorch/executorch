@@ -451,6 +451,7 @@ def _export_text_decoder(
     tied_embedding: bool = False,
     variant: str = "e2b",
     quantize_kv_cache: bool = False,
+    use_custom_sdpa: bool = True,
 ):
     """Export text decoder. Returns ExportedProgram."""
     from executorch.examples.models.gemma4.quant_utils import (
@@ -467,6 +468,12 @@ def _export_text_decoder(
     config.use_kv_cache = True
     config.max_seq_len = max_seq_len
     config.enable_dynamic_shape = True
+    config.use_custom_sdpa = use_custom_sdpa
+
+    if use_custom_sdpa:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+        logger.info("Custom SDPA enabled (tiled flash attention)")
 
     model_wrapper = Gemma4Model(
         config=config, checkpoint_path=checkpoint_path, dtype=torch.float32
@@ -507,7 +514,9 @@ def _export_text_decoder(
         )
 
         logger.info("Replacing KV cache with INT8 quantized KV cache...")
-        model = replace_kv_cache_with_quantized_kv_cache(model)
+        model = replace_kv_cache_with_quantized_kv_cache(
+            model, use_custom_sdpa=use_custom_sdpa
+        )
         model.eval()
 
     if linear_quant:
@@ -549,6 +558,7 @@ def _export_components(
     quantize_kv_cache: bool,
     include_audio: bool,
     include_vision: bool,
+    use_custom_sdpa: bool,
 ) -> dict:
     """Export each requested component to an ExportedProgram."""
     components = []
@@ -594,6 +604,7 @@ def _export_components(
         tied_embedding=tied_embedding,
         variant=variant,
         quantize_kv_cache=quantize_kv_cache,
+        use_custom_sdpa=use_custom_sdpa,
     )
 
     return programs
@@ -687,6 +698,7 @@ def export_single_pte(
     quantize_kv_cache: bool = False,
     include_audio: bool = True,
     include_vision: bool = True,
+    use_custom_sdpa: bool = True,
 ) -> Path:
     """Export components into a single PTE.
 
@@ -714,6 +726,7 @@ def export_single_pte(
         quantize_kv_cache=quantize_kv_cache,
         include_audio=include_audio,
         include_vision=include_vision,
+        use_custom_sdpa=use_custom_sdpa,
     )
 
     logger.info("Combining into single PTE...")
@@ -840,6 +853,13 @@ def main():
         default=False,
         help="Exclude vision_encoder method to reduce PTE size.",
     )
+    parser.add_argument(
+        "--use_custom_sdpa",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Route attention through llama::custom_sdpa (tiled flash attention). "
+        "Pass --no-use_custom_sdpa to fall back to matmul attention.",
+    )
     args = parser.parse_args()
 
     export_single_pte(
@@ -856,6 +876,7 @@ def main():
         quantize_kv_cache=args.quantize_kv_cache,
         include_audio=not args.no_audio,
         include_vision=not args.no_vision,
+        use_custom_sdpa=args.use_custom_sdpa,
     )
 
 

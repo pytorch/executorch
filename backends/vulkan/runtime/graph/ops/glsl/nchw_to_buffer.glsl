@@ -18,13 +18,15 @@ ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 // This constant is unused in this shader but is kept so that the signature is
 // consistent with nchw_to_image.
 ${layout_declare_spec_const(C, "int", "unused", "0")}
 ${layout_declare_spec_const(C, "int", "transpose_hw", "0")}
 
 void main() {
-  const uint outp_bufi = int(gl_GlobalInvocationID.x);
+  const uint outp_bufi = linear_idx_from_gid();
   if (outp_bufi >= numel(outp)) {
     return;
   }

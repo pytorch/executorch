@@ -9,6 +9,7 @@ from executorch.backends.arm._passes.symbolic_value_range import (
     evaluate_symbolic_expr_values,
 )
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
+from torch.utils._sympy.functions import PythonMod
 
 
 def _make_shape_env(
@@ -20,6 +21,7 @@ def _make_shape_env(
 ) -> tuple[ShapeEnv, torch.SymInt]:
     shape_env = ShapeEnv()
     symint = shape_env.create_symintnode(sympy.Symbol(symbol_name), hint=hint)
+    assert isinstance(symint, torch.SymInt)
     shape_env.constrain_symbol_range(
         symint.node.expr,
         compiler_min=compiler_min,
@@ -67,3 +69,37 @@ def test_evaluate_symbolic_expr_values_bails_out_for_large_symbol_ranges() -> No
     shape_env, symint = _make_shape_env(hint=3, compiler_min=1, compiler_max=400)
 
     assert evaluate_symbolic_expr_values(symint, shape_env) is None
+
+
+def test_evaluate_symbolic_expr_values_bails_out_on_recursive_bounds(
+    monkeypatch,
+) -> None:
+    shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
+
+    def raise_recursion(_expr):
+        raise RecursionError
+
+    monkeypatch.setattr(shape_env, "bound_sympy", raise_recursion)
+
+    assert evaluate_symbolic_expr_values(symint, shape_env) == {2, 3, 4, 5, 6}
+
+
+def test_evaluate_symbolic_expr_values_handles_python_mod() -> None:
+    shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
+
+    assert evaluate_symbolic_expr_values(
+        PythonMod(16 * symint.node.expr - 7, 4), shape_env
+    ) == {1}
+
+
+def test_evaluate_symbolic_expr_values_handles_python_floordiv() -> None:
+    class PythonFloorDiv(sympy.Function):
+        _torch_handler_name = "python_floordiv"
+        is_integer = True
+        nargs = (2,)
+
+    shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
+
+    assert evaluate_symbolic_expr_values(
+        PythonFloorDiv(symint.node.expr, 2), shape_env
+    ) == {1, 2, 3}

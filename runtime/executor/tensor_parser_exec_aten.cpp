@@ -41,6 +41,10 @@ ET_NODISCARD Result<void*> getMemPlannedPtr(
     const executorch_flatbuffer::AllocationDetails* allocation_info,
     size_t nbytes,
     HierarchicalAllocator* allocator) {
+  ET_CHECK_OR_RETURN_ERROR(
+      allocator != nullptr,
+      InvalidState,
+      "HierarchicalAllocator must not be null for memory-planned tensor");
   // Normal non-constant Tensor. Allocate data using mem_id and offset.
 
   // TODO(T142455629): make the allocator actually id based and not indexed
@@ -125,6 +129,12 @@ ET_NODISCARD Error validateTensorLayout(
       "Scalar type mismatch. Expected %hhd, got %hhd.",
       static_cast<int8_t>(s_tensor->scalar_type()),
       static_cast<int8_t>(expected_layout.scalar_type()));
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidExternalData, "Missing sizes field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidExternalData,
+      "Missing dim_order field");
   int dim = s_tensor->sizes()->size();
   ET_CHECK_OR_RETURN_ERROR(
       dim >= 0, InvalidExternalData, "Dim is negative: %d", dim)
@@ -188,6 +198,13 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
   auto data_buffer_idx = s_tensor->data_buffer_idx();
   const executorch_flatbuffer::AllocationDetails* allocation_info =
       s_tensor->allocation_info();
+
+  if (allocation_info != nullptr) {
+    ET_CHECK_OR_RETURN_ERROR(
+        allocator != nullptr,
+        InvalidState,
+        "HierarchicalAllocator is null but tensor has allocation_info requiring memory-planned buffers");
+  }
 
   // External tensors.
   if (s_tensor->extra_tensor_info() != nullptr &&

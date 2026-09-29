@@ -8,7 +8,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -18,7 +18,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class DecomposeLinearPass(ArmPass):
+class DecomposeLinearPass(ArmOpTargetedPass):
     """This pass decomposes linear into a Conv2D with view operations.
 
     Example:
@@ -31,13 +31,16 @@ class DecomposeLinearPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {InsertRescaleInt32Pass}
+    target_ops = (exir_ops.edge.aten.linear.default,)
 
     def call(self, graph_module):
+        modified = False
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
             if node.target != exir_ops.edge.aten.linear.default:
                 continue
+            modified = True
             args = node.args
             input = args[0]
             weights = args[1]
@@ -53,7 +56,23 @@ class DecomposeLinearPass(ArmPass):
             # weights have shape (Co, Ci)
             weights_reshaped_shape = [weights_shape[0], weights_shape[1], 1, 1]
 
+            # Materialize SymInts into FX nodes; one call shares
+            # the symbol subgraph across all three shape lists.
             with graph_module.graph.inserting_before(node):
+                n_in, n_w = (
+                    len(input_reshaped_shape),
+                    len(weights_reshaped_shape),
+                )
+                all_sizes = graph_module.graph.materialize_symints(
+                    [
+                        *input_reshaped_shape,
+                        *weights_reshaped_shape,
+                        *output_shape,
+                    ]
+                )
+                input_reshaped_shape = all_sizes[:n_in]
+                weights_reshaped_shape = all_sizes[n_in : n_in + n_w]
+                output_size = all_sizes[n_in + n_w :]
                 # Reshape input to 4D with shape (N, Ci, 1, 1)
                 input_reshaped = create_node(
                     graph=graph_module.graph,
@@ -100,7 +119,7 @@ class DecomposeLinearPass(ArmPass):
                 output = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.view_copy.default,
-                    args=(conv, list(output_shape)),
+                    args=(conv, output_size),
                     kwargs={},
                     from_node=node,
                     inherit_qparams=False,
@@ -109,6 +128,6 @@ class DecomposeLinearPass(ArmPass):
             node.replace_all_uses_with(output)
             graph_module.graph.erase_node(node)
             graph_module.graph.eliminate_dead_code()
-        graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
-        return PassResult(graph_module, True)
+        if modified:
+            graph_module = super().call(graph_module).graph_module
+        return PassResult(graph_module, modified)

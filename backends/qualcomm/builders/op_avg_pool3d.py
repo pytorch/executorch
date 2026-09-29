@@ -180,20 +180,14 @@ class AdaptiveAvgPool3d(NodeVisitor):
         output_depth = node.args[1][0]
         output_height = node.args[1][1]
         output_width = node.args[1][2]
-        if output_depth is None:
-            output_depth = input_depth
-        if output_height is None:
-            output_height = input_height
-        if output_width is None:
-            output_width = input_width
 
         # kernel info & stride info
         stride_height = input_height // output_height
-        filter_height = input_height - (output_height - 1) * stride_height
+        filter_height = stride_height
         stride_width = input_width // output_width
-        filter_width = input_width - (output_width - 1) * stride_width
+        filter_width = stride_width
         stride_depth = input_depth // output_depth
-        filter_depth = input_depth - (output_depth - 1) * stride_depth
+        filter_depth = stride_depth
 
         filter_size = [filter_depth, filter_height, filter_width]
         filter_shape = [len(filter_size)]
@@ -206,7 +200,7 @@ class AdaptiveAvgPool3d(NodeVisitor):
 
         if any(x != 0 for x in (depth, height, width)):
             warnings.warn(
-                "[QNN Delegate Op Builder]: Depth or Height or Width is not suitable, fallback op",
+                "[QNN Delegate Op Builder]: Depth or Height or Width is not suitable, fall back op",
                 stacklevel=1,
             )
             return

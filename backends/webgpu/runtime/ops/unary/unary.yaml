@@ -1,0 +1,29 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+unary:
+  parameter_names_with_default_values:
+    OPERATOR: "abs(x)"
+  shader_variants:
+    - NAME: abs
+    - NAME: cos
+      OPERATOR: "cos(x)"
+    - NAME: exp
+      OPERATOR: "exp(x)"
+    - NAME: hardswish
+      OPERATOR: "select(select(x * (x + 3.0) / 6.0, x, x >= 3.0), 0.0, x <= -3.0)"
+    - NAME: neg
+      OPERATOR: "-x"
+    - NAME: round
+      OPERATOR: "round(x)"
+    - NAME: rsqrt
+      OPERATOR: "1.0 / sqrt(x)"
+    - NAME: sin
+      OPERATOR: "sin(x)"
+    - NAME: sqrt
+      OPERATOR: "sqrt(x)"
+    - NAME: tanh
+      OPERATOR: "tanh(clamp(x, -15.0, 15.0))"

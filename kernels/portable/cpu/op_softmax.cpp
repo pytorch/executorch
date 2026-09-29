@@ -7,6 +7,7 @@
  */
 
 #include <cmath>
+#include <type_traits>
 
 #include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
@@ -42,8 +43,16 @@ Tensor& softmax_out(
   // Adjust for negative dim
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;
 
+  // For half-precision inputs, the exp-sum is accumulated in float to avoid
+  // saturation (BFloat16 saturates near 256, Half near 2048). Matches ATen's
+  // acc_type behavior. See also op_grid_sampler_2d.cpp.
   ET_SWITCH_FLOATHBF16_TYPES(
       in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
+        using ACC = std::conditional_t<
+            std::is_same_v<CTYPE, executorch::aten::Half> ||
+                std::is_same_v<CTYPE, executorch::aten::BFloat16>,
+            float,
+            CTYPE>;
         const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
         CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -61,11 +70,12 @@ Tensor& softmax_out(
                   size,
                   stride);
 
-              const CTYPE temp_sum = apply_unary_map_reduce_fn<CTYPE, CTYPE>(
+              const ACC temp_sum = apply_unary_map_reduce_fn<CTYPE, ACC>(
                   [max_in](const CTYPE val_in) {
-                    return std::exp(val_in - max_in);
+                    return std::exp(
+                        static_cast<ACC>(val_in) - static_cast<ACC>(max_in));
                   },
-                  [](const CTYPE mapped_in, CTYPE val_accum) {
+                  [](const ACC mapped_in, ACC val_accum) {
                     return val_accum + mapped_in;
                   },
                   in_data + base,
@@ -74,7 +84,11 @@ Tensor& softmax_out(
 
               apply_unary_map_fn(
                   [max_in, temp_sum](const CTYPE val_in) {
-                    return std::exp(val_in - max_in) / temp_sum;
+                    return static_cast<CTYPE>(
+                        std::exp(
+                            static_cast<ACC>(val_in) -
+                            static_cast<ACC>(max_in)) /
+                        temp_sum);
                   },
                   in_data + base,
                   out_data + base,

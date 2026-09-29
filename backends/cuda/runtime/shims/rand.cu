@@ -77,6 +77,10 @@ void ensure_rng_init(cudaStream_t stream) {
 // (populated by `advance_counter_kernel` immediately before this launch).
 // This replaces the previous per-element atomicAdd contention with a single
 // atomic per kernel launch.
+//
+// Matches PyTorch's `transformation::uniform_int_from_to` semantics: builds
+// a 64-bit random value from two 32-bit curand draws, then takes
+// `val % range + low` so the output lies in [low, high).
 __global__ void philox_randint_graph_kernel(
     int64_t* __restrict__ out,
     int64_t numel,
@@ -87,13 +91,27 @@ __global__ void philox_randint_graph_kernel(
   if (idx < numel) {
     curandStatePhilox4_32_10_t state;
     curand_init(rng->seed, idx, rng->base_scratch, &state);
-    double val = curand_uniform_double(&state);
-    int64_t ival = static_cast<int64_t>(val * range);
-    out[idx] = low + (ival >= range ? range - 1 : ival);
+    uint32_t hi = curand(&state);
+    uint32_t lo = curand(&state);
+    uint64_t rval = (static_cast<uint64_t>(hi) << 32) | static_cast<uint64_t>(lo);
+    uint64_t urange = static_cast<uint64_t>(range);
+    out[idx] = low + static_cast<int64_t>(rval % urange);
   }
 }
 
-// Philox-based uniform float32 generator (graph-safe version).
+// Maps a uniformly distributed uint32 to a float32 in [0, 1) following the
+// pattern used by PyTorch's `transformation::uniform_real` in
+// aten/src/ATen/native/cuda/DistributionTemplates.h: keep the low 24 mantissa
+// bits and divide by 2^24.
+__device__ inline float uniform_real_from_uint32(uint32_t val) {
+  // std::numeric_limits<float>::digits == 24
+  constexpr uint32_t kMantissaMask = (1u << 24) - 1;
+  constexpr float kDivisor = 1.0f / static_cast<float>(1u << 24);
+  return static_cast<float>(val & kMantissaMask) * kDivisor;
+}
+
+// Philox-based uniform float32 generator (graph-safe version). Produces
+// values in [0, 1) to match torch.rand semantics.
 __global__ void philox_rand_float_graph_kernel(
     float* __restrict__ out,
     int64_t numel,
@@ -102,11 +120,12 @@ __global__ void philox_rand_float_graph_kernel(
   if (idx < numel) {
     curandStatePhilox4_32_10_t state;
     curand_init(rng->seed, idx, rng->base_scratch, &state);
-    out[idx] = curand_uniform(&state);
+    out[idx] = uniform_real_from_uint32(curand(&state));
   }
 }
 
-// Philox-based uniform bfloat16 generator (graph-safe version).
+// Philox-based uniform bfloat16 generator (graph-safe version). Produces a
+// float in [0, 1) and rounds to bfloat16 with round-to-nearest-even.
 __global__ void philox_rand_bf16_graph_kernel(
     uint16_t* __restrict__ out,
     int64_t numel,
@@ -115,7 +134,7 @@ __global__ void philox_rand_bf16_graph_kernel(
   if (idx < numel) {
     curandStatePhilox4_32_10_t state;
     curand_init(rng->seed, idx, rng->base_scratch, &state);
-    float val = curand_uniform(&state);
+    float val = uniform_real_from_uint32(curand(&state));
     uint32_t bits;
     memcpy(&bits, &val, sizeof(uint32_t));
     uint32_t lsb = (bits >> 16) & 1;

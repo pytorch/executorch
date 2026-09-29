@@ -93,14 +93,6 @@ else
   QE=OFF
 fi
 
-if [[ "${MODE}" =~ .*mps.* ]]; then
-  MPS=ON
-else
-  MPS=OFF
-fi
-
-echo "MPS option ${MPS}"
-
 if [[ "${MODE}" =~ .*coreml.* ]]; then
   COREML=ON
 else
@@ -236,9 +228,6 @@ if [[ "${CUSTOM}" == "ON" ]]; then
 fi
 if [[ "${QE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,768\""
-fi
-if [[ "${MPS}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} backend.mps.enabled=true model.enable_dynamic_shape=false debug.verbose=true"
 fi
 if [[ "${COREML}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} backend.coreml.enabled=true model.enable_dynamic_shape=false debug.verbose=true"

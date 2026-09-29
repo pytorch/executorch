@@ -58,6 +58,35 @@ Understanding the Backend Dialect IR and how it differs from Edge Dialect — es
 
 ---
 
+### Computer Vision Models
+
+Computer vision apps need a precise contract for image resizing, crop behavior, tensor layout, dtype conversion, normalization, and output decoding.
+
+::::{grid} 2
+:gutter: 2
+
+:::{grid-item-card} Working with Computer Vision Models
+:link: working-with-cv-models
+:link-type: doc
+
+Guidance for preprocessing placement, Android and iOS image-to-tensor conversion, and classifier or segmentation output interpretation.
+
+**Difficulty:** Intermediate
+:::
+
+:::{grid-item-card} Getting Started with ExecuTorch
+:link: getting-started
+:link-type: doc
+
+End-to-end MobileNet V2 export, validation, and mobile runtime links for a first image classification workflow.
+
+**Difficulty:** Beginner
+:::
+
+::::
+
+---
+
 ### Memory Planning and Runtime Optimization
 
 Memory planning is critical for constrained devices. ExecuTorch provides ahead-of-time memory planning to eliminate runtime allocations.
@@ -470,21 +499,24 @@ If you prefer a structured progression rather than topic-based navigation, follo
   - {doc}`using-executorch-export`
   - Master advanced export options
 * - 3
+  - {doc}`working-with-cv-models`
+  - Define image preprocessing, tensor layout, and output decoding for CV apps
+* - 4
   - {doc}`quantization-optimization`
   - Apply production-grade quantization
-* - 4
+* - 5
   - {doc}`compiler-memory-planning`
   - Optimize memory for constrained devices
-* - 5
+* - 6
   - {doc}`compiler-custom-compiler-passes`
   - Write custom graph transformations
-* - 6
+* - 7
   - {doc}`backend-development`
   - Implement a custom backend delegate
-* - 7
+* - 8
   - {doc}`running-a-model-cpp-tutorial`
   - Master the low-level C++ runtime
-* - 8
+* - 9
   - {doc}`devtools-tutorial`
   - Profile and debug production models
 ```

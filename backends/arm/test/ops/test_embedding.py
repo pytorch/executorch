@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,6 +12,7 @@ from executorch.backends.arm._passes import InsertInt32CastsAfterInt64Placeholde
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -63,6 +64,22 @@ test_input: dict[str, input_params] = {
         torch.randint(low=0, high=10, size=(4, 3, 2, 5), dtype=torch.int64),
     ),
 }
+test_input_fp8: dict[str, tuple[input_params, str]] = {
+    "test_fp8e4m3_int32_indices": (
+        (
+            torch.randn(10, 3, dtype=torch.float32).to(torch.float8_e4m3fn),
+            torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int32),
+        ),
+        "fp8e4m3",
+    ),
+    "test_fp8e5m2_int64_indices": (
+        (
+            torch.randn(11, 5, dtype=torch.float32).to(torch.float8_e5m2),
+            torch.randint(low=0, high=10, size=(4, 3), dtype=torch.int64),
+        ),
+        "fp8e5m2",
+    ),
+}
 
 
 @pytest.mark.skip(reason="MLETORCH-1274 Improve data type checks during partitioning")
@@ -74,7 +91,6 @@ def test_embedding_tosa_FP(test_input: input_params):
         test_input,
         op.aten_op,
         op.exir_op,
-        use_to_edge_transform_and_lower=True,
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
     )
     pipeline.run()
@@ -88,11 +104,26 @@ def test_embedding_tosa_INT(test_input: input_params):
         test_input,
         op.aten_op,
         op.exir_op,
-        use_to_edge_transform_and_lower=True,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
 
+    pipeline.run()
+
+
+@common.parametrize("test_input", test_input_fp8)
+def test_embedding_tosa_FP_fp8(test_input):
+    inputs, tosa_extension = test_input
+    op = Embedding()
+    pipeline = TosaPipelineFP[input_params](
+        op,
+        inputs,
+        op.aten_op,
+        op.exir_op,
+        transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
     pipeline.run()
 
 
@@ -103,7 +134,6 @@ def test_embedding_tosa_INT_expand():
         ExpandEmbedding.example_inputs,
         ExpandEmbedding.aten_op,
         ExpandEmbedding.exir_op,
-        use_to_edge_transform_and_lower=True,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
@@ -121,7 +151,6 @@ def test_embedding_vgf_no_quant(test_input: input_params):
         test_input,
         op.aten_op,
         op.exir_op,
-        use_to_edge_transform_and_lower=True,
         transform_passes=[InsertInt32CastsAfterInt64PlaceholdersPass()],
         quantize=False,
     )
@@ -137,10 +166,29 @@ def test_embedding_vgf_quant(test_input: input_params):
         test_input,
         op.aten_op,
         op.exir_op,
-        use_to_edge_transform_and_lower=True,
         quantize=True,
     )
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
 
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_embedding_u85_INT():
+    op = Embedding()
+    test_inputs = (
+        torch.randn(10, 3),
+        torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int32),
+    )
+
+    pipeline = EthosU85PipelineINT[input_params](
+        op,
+        test_inputs,
+        op.aten_op,
+    )
+
+    # embedding may be transformed during export/lowering, so do not require
+    # the source ATen node to remain at the normal pipeline check point.
+    pipeline.pop_stage("check.aten")
     pipeline.run()

@@ -2,9 +2,11 @@ import dataclasses
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import torch.nn.functional as F
+
+MoEScoreFunc = Literal["sigmoid", "softmax", "softmax_all"]
 
 
 class ActFn(Enum):
@@ -71,6 +73,11 @@ class ModelArgs:
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
+    moe_hidden_dim: Optional[int] = None
+    moe_shared_expert_hidden_dim: Optional[int] = None
+    moe_use_expert_bias: bool = False
+    moe_score_func: MoEScoreFunc = "softmax"
+    moe_route_scale: float = 1.0
     attention_type: str = "mha"  # Attention type, registered in attention.py
     use_q_gate: bool = (
         False  # Use q-gated projection in attention (Qwen3.5 full attention)
@@ -118,6 +125,9 @@ class ModelArgs:
     )
     local_rope_theta: Optional[float] = (
         None  # For sliding window attention. e.g., gemma3-1b
+    )
+    rope_parameters: Optional[Dict[str, Dict[str, Any]]] = (
+        None  # Per-layer-type RoPE configs. e.g., {"full_attention": {"rope_theta": 5000000, "partial_rotary_factor": 0.25}}
     )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
@@ -177,10 +187,16 @@ class ModelArgs:
     normalize_tok_embeddings: bool = False
     scale_query_by: float = 1.0
     use_attn_o_gate: bool = False
+    headwise_attn_output_gate: bool = False
     use_attn_o_norm: bool = False
     use_residual_gate: bool = False
     use_ffn_learnable_scales: bool = False
+    # Zero-centered gamma: the checkpoint stores gamma offset by -1, so the
+    # effective scale is ``weight + 1``. rlformers applies this in
+    # RMSNormWithInputScale; ignoring it silently rescales every post-FFN norm.
+    norm_zero_centered_gamma: bool = False
     output_soft_cap_temp: Optional[float] = None
+    output_linear_intermediate_dim: int = 0
 
     def __post_init__(self):  # noqa: C901
         if self.n_kv_heads is None:

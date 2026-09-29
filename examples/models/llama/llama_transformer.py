@@ -80,10 +80,10 @@ class ConditionalFeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
         self.dim = args.dim
-        hidden_dim = args.hidden_dim
+        hidden_dim = (
+            args.moe_hidden_dim if args.moe_hidden_dim is not None else args.hidden_dim
+        )
         if hidden_dim is None:
-            # If hidden_dim is not explicitly set in the ModelArgs,
-            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
             multiple_of = args.multiple_of
             hidden_dim = 4 * self.dim
             hidden_dim = int(2 * hidden_dim / 3)
@@ -95,9 +95,9 @@ class ConditionalFeedForward(nn.Module):
         self.num_experts = args.num_experts
 
     def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
-        w1_weights = self.w1[expert_indices].transpose(-1, -2)  # [T, A, D, D]
-        w3_weights = self.w3[expert_indices].transpose(-1, -2)  # [T, A, D, D]
-        w2_weights = self.w2[expert_indices]  # [T, A, D, D]
+        w1_weights = self.w1[expert_indices].transpose(-1, -2)  # [T, A, D, hidden]
+        w3_weights = self.w3[expert_indices].transpose(-1, -2)  # [T, A, D, hidden]
+        w2_weights = self.w2[expert_indices]  # [T, A, hidden, D]
         x1 = F.silu(torch.einsum("ti,taio -> tao", x, w1_weights))
         x3 = torch.einsum("ti, taio -> tao", x, w3_weights)
         expert_outs = torch.einsum("tao, taoi -> tai", (x1 * x3), w2_weights)
@@ -110,16 +110,67 @@ class MOEFeedForward(nn.Module):
         self.gate = nn.Linear(config.dim, config.num_experts, bias=False)
         self.cond_ffn = ConditionalFeedForward(config)
         self.dim = config.dim
+        self.num_activated_experts = config.num_activated_experts
+        self.score_func = config.moe_score_func
+        self.route_scale = config.moe_route_scale
+        if self.score_func not in {"sigmoid", "softmax", "softmax_all"}:
+            raise ValueError(
+                f"Unsupported MoE routing score function: {self.score_func}"
+            )
+        if self.score_func != "sigmoid" and self.route_scale != 1.0:
+            raise ValueError("MoE route scaling is only supported with sigmoid routing")
+        if not 0 < self.num_activated_experts <= config.num_experts:
+            raise ValueError(
+                "The number of activated experts must be between one and the "
+                "total number of experts"
+            )
+        self.expert_bias: torch.Tensor | None
+        # Citrine C3: initialize the buffer on the gate's device.
+        self.register_buffer(
+            "expert_bias",
+            (
+                self.gate.weight.new_zeros(config.num_experts)
+                if config.moe_use_expert_bias
+                else None
+            ),
+        )
+        if config.moe_shared_expert_hidden_dim is not None:
+            self.shared_expert = FeedForward(
+                dim=config.dim, hidden_dim=config.moe_shared_expert_hidden_dim
+            )
+        else:
+            self.shared_expert = None
+
+    def _route(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        scores = self.gate(x)  # [T, E]
+        if self.score_func == "sigmoid":
+            scores = scores.sigmoid()
+        elif self.score_func == "softmax_all":
+            scores = scores.softmax(dim=-1)
+        scores_for_topk = (
+            (scores + self.expert_bias) if self.expert_bias is not None else scores
+        )
+        _, expert_indices = torch.topk(
+            scores_for_topk, self.num_activated_experts, dim=-1
+        )
+        expert_weights = scores.gather(1, expert_indices)
+        if self.score_func == "sigmoid":
+            normalizer = expert_weights.sum(dim=-1, keepdim=True).clamp_min(
+                torch.finfo(expert_weights.dtype).tiny
+            )
+            expert_weights = expert_weights / normalizer * self.route_scale
+        elif self.score_func == "softmax":
+            expert_weights = expert_weights.softmax(dim=-1)
+        return expert_weights, expert_indices
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.view(-1, self.dim)
-        # T = num_tokens, E = num_experts, D = hidden dim, A = activated experts
-        # x: [T, D]
-        scores = self.gate(x)  # [T, E]
-        expert_weights, expert_indices = torch.topk(scores, 2, dim=-1)  # [T, A], [T, A]
-        expert_weights = expert_weights.softmax(dim=-1)  # [T, A]
+        expert_weights, expert_indices = self._route(x)
         expert_outs = self.cond_ffn(x, expert_indices)
-        return torch.einsum("tai,ta -> ti", expert_outs, expert_weights)
+        out = torch.einsum("tai,ta -> ti", expert_outs, expert_weights)
+        if self.shared_expert is not None:
+            out = out + self.shared_expert(x)
+        return out
 
 
 class TransformerBlock(nn.Module):
@@ -164,7 +215,11 @@ class TransformerBlock(nn.Module):
         ):
             self.feed_forward = LoRAFeedForward(args.dim, args.hidden_dim, args)
         else:
-            self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
+            self.feed_forward = FeedForward(
+                dim=args.dim,
+                hidden_dim=args.hidden_dim,
+                act_fn=args.act_fn.get_function(),
+            )
 
         if isinstance(self.attention, AttentionSkip):
             self.attention_norm = nn.Identity()
@@ -193,7 +248,11 @@ class TransformerBlock(nn.Module):
             self.post_attn_norm = ScalelessRMSNorm(args.dim, eps=args.norm_eps)
 
         if args.use_ffn_learnable_scales and self.mlp_type != "skip":
-            self.post_ffn_norm = RMSNormWithInputScale(args.dim, eps=args.norm_eps)
+            self.post_ffn_norm = RMSNormWithInputScale(
+                args.dim,
+                eps=args.norm_eps,
+                zero_centered_gamma=args.norm_zero_centered_gamma,
+            )
 
     @classmethod
     def from_type(cls, layer_id, args, rope) -> "TransformerBlock":
@@ -216,17 +275,22 @@ class TransformerBlock(nn.Module):
         attention = cls(args, layer_id, rope, **args.attention_kwargs)
         return TransformerBlock(args, attention, mlp_type=mlp_type, layer_id=layer_id)
 
+    def _apply_attention_residual(self, x, attention_output):
+        if isinstance(self.attention, AttentionSkip):
+            if not self.use_residual_gate:
+                return x
+            attention_output = torch.zeros_like(x)
+        if self.use_residual_gate:
+            if hasattr(self, "post_attn_norm"):
+                attention_output = self.post_attn_norm(attention_output)
+            return self.add_attn(stream=x, branch=attention_output)
+        return x + attention_output
+
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
-        h, attn_options_update = self.attention(
+        attention_output, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
-        if not isinstance(self.attention, AttentionSkip):
-            if self.use_residual_gate:
-                if hasattr(self, "post_attn_norm"):
-                    h = self.post_attn_norm(h)
-                h = self.add_attn(stream=x, branch=h)
-            else:
-                h = x + h
+        h = self._apply_attention_residual(x, attention_output)
 
         if self.mlp_type == "skip":
             out = h
@@ -239,7 +303,13 @@ class TransformerBlock(nn.Module):
             else:
                 out = h + ffn_out
         else:
-            ffn_out = self.feed_forward(self.ffn_norm(h))
+            if isinstance(self.feed_forward, LoRAFeedForward):
+                ffn_out = self.feed_forward(
+                    self.ffn_norm(h),
+                    lora_blob=attn_options.get("__lora_io_blob__"),
+                )
+            else:
+                ffn_out = self.feed_forward(self.ffn_norm(h))
             if hasattr(self, "post_ffn_norm"):
                 ffn_out = self.post_ffn_norm(ffn_out)
             if self.use_residual_gate:
@@ -291,6 +361,7 @@ class Transformer(nn.Module):
         self.output_prune_map = params.output_prune_map
         # YOCO (You Only Cache Once) KV sharing configuration.
         self.num_kv_shared_layers = params.num_kv_shared_layers
+        self.layer_types = params.layer_types
 
     def _forward_layers(
         self,
@@ -299,6 +370,7 @@ class Transformer(nn.Module):
         freqs_sin: torch.Tensor,
         attn_options_: Dict,
         seqlen: int,
+        freqs_by_type: Optional[Dict[str, Tuple[torch.Tensor, torch.Tensor]]] = None,
     ) -> Tuple[torch.Tensor, Optional[Any]]:
         """Run transformer layers with YOCO KV sharing support."""
         attn_options_update = None
@@ -317,7 +389,14 @@ class Transformer(nn.Module):
                 if donor_idx in shared_kv:
                     attn_options_["shared_kv"] = shared_kv[donor_idx]
 
-            h, attn_options_update = layer(h, freqs_cos, freqs_sin, attn_options_)
+            # Per-layer-type RoPE: select freqs based on layer type when available.
+            l_cos, l_sin = freqs_cos, freqs_sin
+            if freqs_by_type is not None and self.layer_types is not None:
+                layer_type = self.layer_types[layer_idx]
+                if layer_type in freqs_by_type:
+                    l_cos, l_sin = freqs_by_type[layer_type]
+
+            h, attn_options_update = layer(h, l_cos, l_sin, attn_options_)
 
             if _is_kv_donor_layer(layer_idx, self.n_layers, self.num_kv_shared_layers):
                 assert (
@@ -359,10 +438,23 @@ class Transformer(nn.Module):
             attn_options.get("input_pos"), seqlen
         )
 
+        # Compute per-layer-type freqs when per-layer RoPE is configured.
+        freqs_by_type = None
+        if hasattr(self, "ropes"):
+            input_pos = attn_options.get("input_pos")
+            freqs_by_type = {
+                lt: r.get_freqs(input_pos, seqlen) for lt, r in self.ropes.items()
+            }
+
         attn_options_ = attn_options.copy() if attn_options is not None else {}
 
         h, attn_options_update = self._forward_layers(
-            h, freqs_cos, freqs_sin, attn_options_, seqlen
+            h,
+            freqs_cos,
+            freqs_sin,
+            attn_options_,
+            seqlen,
+            freqs_by_type=freqs_by_type,
         )
 
         if not self.generate_full_logits:
@@ -401,11 +493,35 @@ class Transformer(nn.Module):
         return logits
 
 
+def _build_ropes(model_args: ModelArgs) -> Tuple[Rope, Dict[str, Rope]]:
+    """Build Rope instances, creating per-layer-type ropes when rope_parameters is set.
+
+    Returns (default_rope, ropes_by_type). ropes_by_type is empty when no
+    per-layer-type configuration is provided.
+    """
+    import copy as _copy
+
+    if not model_args.rope_parameters:
+        return Rope(model_args), {}
+
+    ropes: Dict[str, Rope] = {}
+    for layer_type, rope_params in model_args.rope_parameters.items():
+        rope_args = _copy.copy(model_args)
+        if "rope_theta" in rope_params:
+            rope_args.rope_theta = rope_params["rope_theta"]
+            rope_args.rope_freq_base = rope_params["rope_theta"]
+        if "partial_rotary_factor" in rope_params:
+            rope_args.partial_rotary_factor = rope_params["partial_rotary_factor"]
+        ropes[layer_type] = Rope(rope_args)
+    return next(iter(ropes.values())), ropes
+
+
 def construct_transformer(model_args: ModelArgs) -> Transformer:
     """
     Construct a Transformer model from the given model arguments.
     """
-    rope = Rope(model_args)
+    rope, ropes = _build_ropes(model_args)
+
     if model_args.attention_type not in ATTENTION_REGISTRY:
         raise ValueError(
             f"Unknown attention type: {model_args.attention_type}. "
@@ -455,12 +571,20 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
             )
             layers.append(transformer_block)
         else:
+            # Select per-layer-type RoPE when available.
+            layer_rope = rope
+            if ropes and model_args.layer_types:
+                layer_type = model_args.layer_types[layer_id]
+                layer_rope = ropes.get(layer_type, rope)
             attention = cls(
-                model_args, layer_id, rope, **model_args.attention_kwargs
+                model_args, layer_id, layer_rope, **model_args.attention_kwargs
             )  # pyre-ignore[45]
             transformer_block = TransformerBlock(
                 model_args, attention, layer_id=layer_id
             )
             layers.append(transformer_block)
 
-    return Transformer(model_args, layers, rope)
+    transformer = Transformer(model_args, layers, rope)
+    if ropes:
+        transformer.ropes = torch.nn.ModuleDict(ropes)
+    return transformer

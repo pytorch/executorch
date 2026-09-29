@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -16,12 +17,10 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::DimOrderType;
 using executorch::aten::IntArrayRef;
 using executorch::aten::OptionalArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpEmptyDimOrderOutTest : public OperatorTest {
@@ -147,9 +146,9 @@ TEST_F(OpEmptyDimOrderOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpEmptyDimOrderOutTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Dynamic shape unbound not supported";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Dynamic shape unbound not supported");
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};

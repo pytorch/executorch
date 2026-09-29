@@ -9,10 +9,45 @@ allowed dtypes, and compute pooling padding adjustments.
 
 """
 
-from math import ceil, floor
 from typing import Any, List, Optional
 
+import torch
+import tosa_serializer as ts
+
 from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
+
+
+def supported_data_layout_dtypes(
+    tosa_spec: TosaSpecification,
+    *,
+    include_bool: bool = True,
+    allow_int16_without_extension: bool = True,
+    include_mxfp: bool = False,
+) -> List[Any]:
+    """Return serializer dtypes supported by TOSA data-layout ops."""
+    supported_dtypes = []
+    if include_bool:
+        supported_dtypes.append(ts.DType.BOOL)
+    if tosa_spec.support_integer():
+        if allow_int16_without_extension:
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
+        else:
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT32])
+            if tosa_spec.support_extension("int16"):
+                supported_dtypes.append(ts.DType.INT16)
+    if tosa_spec.support_float():
+        supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+    if tosa_spec.support_extension("bf16"):
+        supported_dtypes.append(ts.DType.BF16)
+    if tosa_spec.support_extension("fp8e4m3"):
+        supported_dtypes.append(ts.DType.FP8E4M3)
+    if tosa_spec.support_extension("fp8e5m2"):
+        supported_dtypes.append(ts.DType.FP8E5M2)
+    if include_mxfp and tosa_spec.support_extension("mxfp"):
+        for dtype in (ts.DType.FP8E4M3, ts.DType.FP8E5M2):
+            if dtype not in supported_dtypes:
+                supported_dtypes.append(dtype)
+    return supported_dtypes
 
 
 def validate_num_inputs(op_name: str, inputs: List[Any], expected: int | List[int]):
@@ -168,8 +203,12 @@ def validate_cf_extension(op_name: str, tosa_spec: TosaSpecification) -> None:
 
 
 def adjust_pooling_pad_if_needed(
-    input_size: int, kernel_size: int, stride: int, pad: int, ceil_mode: bool
-) -> int:
+    input_size: int | torch.SymInt,
+    kernel_size: int,
+    stride: int,
+    pad: int | torch.SymInt,
+    ceil_mode: bool,
+) -> int | torch.SymInt:
     """Compute the post padding needed for pooling.
 
     ATen pooling uses a single symmetric ``pad`` per dimension and rounds the
@@ -181,20 +220,23 @@ def adjust_pooling_pad_if_needed(
     This function returns the required ``post_pad`` given a symmetric ``pad``.
 
     Args:
-        input_size (int): Input size.
+        input_size (int | torch.SymInt): Input size.
         kernel_size (int): Kernel size.
         stride (int): Stride size.
-        pad (int): Symmetric padding specified by ATen.
+        pad (int | torch.SymInt): Symmetric padding specified by ATen.
         ceil_mode (bool): Use ceil when computing output size.
 
     Returns:
-        int: Post-padding to satisfy the TOSA formula.
+        int | torch.SymInt: Post-padding to satisfy the TOSA formula.
 
     """
+    numerator = input_size - kernel_size + 2 * pad
     if ceil_mode:
-        output_size = ceil((input_size - kernel_size + 2 * pad) / stride) + 1
+        output_size = (numerator + stride - 1) // stride + 1
+        if (output_size - 1) * stride >= input_size + pad:
+            output_size -= 1
     else:
-        output_size = floor((input_size - kernel_size + 2 * pad) / stride) + 1
+        output_size = numerator // stride + 1
 
     # Solve for post_pad from
     # output_size = (input_size + pre_pad + post_pad - kernel_size) / stride + 1

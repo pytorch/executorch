@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 try:
-    import test.python.outputs_dir as outputs_dir  # noqa F401
+    import outputs_dir as outputs_dir  # noqa F401
 
     logger.debug("Importing from executorch-integration")
 except ImportError:

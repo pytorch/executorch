@@ -11,6 +11,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator.
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -21,7 +22,6 @@ using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpDimOrderCloneTest : public OperatorTest {
@@ -155,9 +155,9 @@ TEST_F(OpDimOrderCloneTest, AllDtypesSupported) {
 
 // Cloning with mismatched input and output tensor shapes should fail.
 TEST_F(OpDimOrderCloneTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "Skipping: ATen kernel supports mismatched sizes.";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Skipping: ATen kernel supports mismatched sizes.");
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
@@ -178,10 +178,9 @@ TEST_F(OpDimOrderCloneTest, MismatchedSizesDie) {
 
 // Cloning with an unsupported memory format should fail.
 TEST_F(OpDimOrderCloneTest, MismatchedMemoryFormatDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP()
-        << "Skipping: ATen kernel supports non-contiguous memory formats.";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Skipping: ATen kernel supports non-contiguous memory formats.");
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor input =
@@ -210,10 +209,9 @@ TEST_F(OpDimOrderCloneTest, MismatchedMemoryFormatDies) {
 // Cloning with non‑blocking=true should fail because portable kernels only
 // support blocking.
 TEST_F(OpDimOrderCloneTest, MismatchedBlockingDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP()
-        << "Skipping: ATen kernel supports non-blocking data transfer.";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "Skipping: ATen kernel supports non-blocking data transfer.");
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros(/*sizes=*/{3, 1, 1, 2});
@@ -244,9 +242,9 @@ TEST_F(OpDimOrderCloneTest, DynamicShapeUpperBoundLargerThanExpected) {
 }
 
 TEST_F(OpDimOrderCloneTest, DynamicShapeUnbound) {
-  if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
-    GTEST_SKIP() << "Skipping: Dynamic shape unbound not supported.";
-  }
+  ET_SKIP_IF(
+      !torch::executor::testing::SupportedFeatures::get()->output_resize,
+      "Skipping: Dynamic shape unbound not supported.");
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }

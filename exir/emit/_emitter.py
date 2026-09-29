@@ -150,6 +150,8 @@ class _EmitterState:
     emit_mutable_buffer_names: bool
 
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
+    # Only literal arguments with no schema aliasing enter this per-plan pool.
+    constant_cache: Dict[Union[int, Tuple[int, ...]], int] = field(default_factory=dict)
 
     def spec2id(self, spec: TensorSpec) -> int:
         """Map a TensorSpec to value index in the values array."""
@@ -270,7 +272,9 @@ class _Emitter(torch.fx.Interpreter):
         if not pred:
             raise InternalError(self._emit_node_specific_error(node, assert_msg))
 
-    def _emit_int_list(self, val: List[_Argument]) -> EValue:
+    def _emit_int_list(
+        self, val: List[_Argument], *, immutable: bool = False
+    ) -> EValue:
         """Emits a list of integers as a collection of EValues.
 
         For every argument in 'val':
@@ -286,7 +290,7 @@ class _Emitter(torch.fx.Interpreter):
                 boxed_list.append(item.id)
             elif isinstance(item, int):
                 boxed_list.append(
-                    self._emit_evalue(self._constant_to_evalue(item, None)).id
+                    self._emit_argument(item, None, immutable=immutable).id
                 )
             else:
                 self._internal_assert_emitter(
@@ -295,7 +299,13 @@ class _Emitter(torch.fx.Interpreter):
 
         return EValue(IntList(boxed_list))
 
-    def _emit_list(self, val: List[_Argument], val_type: _SchemaType) -> EValue:
+    def _emit_list(
+        self,
+        val: List[_Argument],
+        val_type: _SchemaType,
+        *,
+        immutable: bool = False,
+    ) -> EValue:
         """Emits a list type.
 
         Emits the list stored in val. If the list is of Tensors, Optionals, or Ints the emitted list
@@ -308,7 +318,7 @@ class _Emitter(torch.fx.Interpreter):
             return EValue(BoolList(typing.cast(List[bool], val)))
 
         if isinstance(val_type, torch.IntType):
-            return self._emit_int_list(val)
+            return self._emit_int_list(val, immutable=immutable)
 
         if isinstance(val_type, torch.FloatType):
             return EValue(DoubleList(typing.cast(List[float], val)))
@@ -541,6 +551,8 @@ class _Emitter(torch.fx.Interpreter):
         self,
         val: _Argument,
         val_type: Optional[_SchemaType],
+        *,
+        immutable: bool = False,
     ) -> EValue:
         """Converts a constant value to an EValue.
 
@@ -564,6 +576,7 @@ class _Emitter(torch.fx.Interpreter):
             return self._emit_list(
                 typing.cast(List[_Argument], val),
                 typing.cast(_SchemaType, val_type.getElementType()),
+                immutable=immutable,
             )
 
         if isinstance(val, float):
@@ -622,7 +635,16 @@ class _Emitter(torch.fx.Interpreter):
         return _AbstractValue(len(self.emitter_state.values) - 1, tensor)
 
     def _emit_spec(self, spec: ValueSpec) -> _EmitterValue:
-        """Given the provided spec constructs the corresponding EValue from it and then emits it."""
+        """Given the provided spec constructs the corresponding EValue from it and then emits it.
+
+        If `spec` was already emitted earlier (e.g., because two FX
+        nodes share the same TensorSpec object — typically because the
+        planner's `_alias_inplace_result_specs` aliased an in-place
+        op's result onto its mutated input), reuse the existing
+        value_id. This keeps the invariant "one TensorSpec ↔ one
+        Value" so downstream emit doesn't create duplicate Values for
+        aliased FX nodes.
+        """
 
         def _process(spec: LeafValueSpec) -> _AbstractValue:
             if isinstance(spec, (list, tuple)):
@@ -641,6 +663,25 @@ class _Emitter(torch.fx.Interpreter):
                 self.node,
                 f"Invalid node spec expected TensorSpec received {spec}",
             )
+
+            # Spec was already emitted — reuse the existing Value so
+            # two FX nodes sharing one TensorSpec also share one
+            # value_id in the lowered IR.
+            existing_id = self.emitter_state.spec2id_dict.get(spec)
+            if existing_id is not None:
+                existing_evalue = self.emitter_state.values[existing_id]
+                # Both insertion sites for `spec2id_dict` (this method
+                # and the placeholder emitter) only register ids whose
+                # EValue wraps a `Tensor` (built via
+                # `_tensor_spec_to_evalue` from a `TensorSpec`).
+                self._internal_assert_emitter(
+                    isinstance(existing_evalue.val, Tensor),
+                    self.node,
+                    f"spec2id_dict entry for TensorSpec must point to a "
+                    f"Tensor EValue, got "
+                    f"{type(existing_evalue.val).__name__}",
+                )
+                return _AbstractValue(existing_id, existing_evalue.val)
 
             ret = self._emit_evalue(self._tensor_spec_to_evalue(spec))  # pyre-ignore
             self.emitter_state.spec2id_dict[spec] = ret.id  # pyre-ignore
@@ -1325,13 +1366,37 @@ class _Emitter(torch.fx.Interpreter):
         }
 
     def _emit_argument(
-        self, arg: _Argument, arg_type: Optional[_SchemaType]
+        self,
+        arg: _Argument,
+        arg_type: Optional[_SchemaType],
+        *,
+        immutable: bool = False,
     ) -> _AbstractValue:
         """Emit an argument to an operator or delegate if it had not already been emitted otherwise
         return the previously emitted location"""
         if isinstance(arg, _AbstractValue):
             return arg
-        return self._emit_evalue(self._constant_to_evalue(arg, arg_type))
+        value = self._constant_to_evalue(arg, arg_type, immutable=immutable)
+        key: Optional[Union[int, Tuple[int, ...]]] = None
+        if immutable:
+            if isinstance(value.val, Int):
+                key = value.val.int_val
+            elif (
+                isinstance(value.val, IntList)
+                and isinstance(arg, (list, tuple))
+                and all(type(item) is int for item in arg)
+            ):
+                # Boxed lists can reference mutable SymInts. Only literal lists
+                # may share their unboxed buffer; their elements are already pooled.
+                key = tuple(value.val.items)
+        if key is not None:
+            index = self.emitter_state.constant_cache.get(key)
+            if index is not None:
+                return _AbstractValue(index, None)
+        result = self._emit_evalue(value)
+        if key is not None:
+            self.emitter_state.constant_cache[key] = result.id
+        return result
 
     def _get_sym_ret(
         self,
@@ -1509,7 +1574,13 @@ class _Emitter(torch.fx.Interpreter):
             if kernel_arg is None and isinstance(schema_arg.type, torch.TensorType):
                 kernel_arg = self._emit_evalue(_get_empty_tensor_evalue())
 
-            kernel_args.append(self._emit_argument(kernel_arg, schema_arg.type).id)
+            kernel_args.append(
+                self._emit_argument(
+                    kernel_arg,
+                    schema_arg.type,
+                    immutable=not schema_arg.is_out and schema_arg.alias_info is None,
+                ).id
+            )
 
             if schema_arg.is_out:
                 out_args.append((schema_arg.name, kernel_arg))
@@ -2020,6 +2091,14 @@ class _TopLevelEmitter(_Emitter):
         )
         value = self._emit_evalue(evalue)
 
+        # Populate spec2id_dict so downstream `_emit_spec` calls (e.g.,
+        # for in-place op result FX nodes whose spec was aliased onto
+        # this placeholder's spec by the planner's
+        # `_alias_inplace_result_specs`) reuse this placeholder's
+        # value_id rather than creating a new Value.
+        if isinstance(spec, TensorSpec):
+            self.emitter_state.spec2id_dict[spec] = value.id
+
         # Only user inputs should remain as inputs.
         if is_user_input:
             self.inputs.append(value.id)
@@ -2073,4 +2152,9 @@ class _TopLevelEmitter(_Emitter):
                 self.module.meta["non_const_buffer_sizes"],
             ),
             container_meta_type=self.container_meta_type,
+            # non_const_buffer_device is set by apply_algo in memory_planning.py
+            # when device tensors are present. None for CPU-only programs.
+            non_const_buffer_device=self.module.meta.get(
+                "non_const_buffer_device", None
+            ),
         )

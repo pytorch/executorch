@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -17,7 +18,6 @@
 #include <cmath>
 
 using namespace ::testing;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -171,9 +171,9 @@ TEST_F(OpGluOutTest, InfinityAndNANTest) {
 }
 
 TEST_F(OpGluOutTest, MismatchedShapesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched shapes");
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out_mismatched_shape<ScalarType::dtype>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);

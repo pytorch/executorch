@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -760,9 +761,9 @@ TEST_F(OpTrilTest, InvalidInputShapesDies) {
 
 TEST_F(OpTrilTest, MismatchedOutputShapesDies) {
   // Skip ATen test since it supports `self` and `out` having different shapes.
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched output shape");
 
   TensorFactory<ScalarType::Int> tf;
 
@@ -788,9 +789,9 @@ TEST_F(OpTrilTest, MismatchedOutputDtypeDies) {
 
 TEST_F(OpTrilTest, InvalidTensorDims) {
   // Skip ATen test since it supports `self` and `out` having different shapes.
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched output shape");
 
   TensorFactory<ScalarType::Int> tf;
 

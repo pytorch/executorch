@@ -126,6 +126,47 @@ buck2 run fbcode//executorch/examples/models/gemma4:run_gemma4 -- \
     --prompt "Describe this image:"
 ```
 
+## Recommended Prompts
+
+The runners default `--prompt` to a short generic string. For best output quality
+on ASR / translation tasks, pass the canonical Google Gemma 4 prompt explicitly.
+
+### Speech transcription (ASR)
+
+```
+Transcribe the following speech segment in {LANGUAGE} into {LANGUAGE} text.
+
+Follow these specific instructions for formatting the answer:
+* Only output the transcription, with no newlines.
+* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.
+```
+
+Replace `{LANGUAGE}` with the source language (e.g., `English`, `Chinese`,
+`Spanish`).
+
+Example:
+
+```bash
+./gemma4_e2e_runner \
+    --model_path gemma4.pte --tokenizer_path tokenizer.model \
+    --audio_path test_audio.wav \
+    --prompt "$(cat <<'EOF'
+Transcribe the following speech segment in English into English text.
+
+Follow these specific instructions for formatting the answer:
+* Only output the transcription, with no newlines.
+* When transcribing numbers, write the digits, i.e. write 1.7 and not one point seven, and write 3 instead of three.
+EOF
+)"
+```
+
+### Speech translation
+
+```
+Transcribe the following speech segment in {SOURCE_LANGUAGE}, then translate it into {TARGET_LANGUAGE}.
+When formatting the answer, first output the transcription in {SOURCE_LANGUAGE}, then one newline, then output the string '{TARGET_LANGUAGE}: ', then the translation in {TARGET_LANGUAGE}.
+```
+
 ## Input Requirements
 
 **Audio**: WAV, 16kHz, 16-bit PCM, mono, max 30 seconds.

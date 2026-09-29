@@ -31,7 +31,9 @@ namespace vkapi {
 //
 
 enum AdapterSelector {
-  First,
+  // Automatically select the best compute-capable device (highest priority
+  // device type, with an optional ETVK_DEVICE_INDEX override).
+  Auto,
 };
 
 struct RuntimeConfig final {

@@ -7,7 +7,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.accumulate_index_put_pass import (
     AccumulateIndexPutPass,
 )
@@ -53,7 +53,7 @@ def _fixup_end(end, dim_size: int) -> int:
     return max(0, min(e, dim_size))
 
 
-class DecomposeSliceScatterPass(ArmPass):
+class DecomposeSliceScatterPass(ArmOpTargetedPass):
     """
     Decompose slice_scatter into:
       - Fast path (step == 1): slice_copy + cat (contiguous update), or
@@ -71,9 +71,10 @@ class DecomposeSliceScatterPass(ArmPass):
         AccumulateIndexPutPass,
         RewriteIndexPutPass,
     }
+    target_ops = edge_slice_scatter_ops + aten_slice_scatter_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_slice_scatter_ops + aten_slice_scatter_ops):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         (

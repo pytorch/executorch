@@ -21,6 +21,8 @@ from . import (  # noqa
     reduce_sum_support,
     right_shift_support,
     slice_copy_support,
+    sym_size_int_support,
+    symint_arithmetic_support,
     to_dim_order_copy_support,
     tosa_supported_operators,
     unfold_copy_support,

@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <vector>
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
@@ -44,6 +45,14 @@ class ET_EXPERIMENTAL Sampler {
 
   Sampler(int32_t vocab_size, float temperature);
 
+  /// Update the sampling temperature. Invalid (< 0) values are reset to 0.
+  void set_temperature(float temperature) {
+    if (temperature < 0.0f) {
+      temperature = 0.0f;
+    }
+    inv_temperature_ = (temperature != 0.0f) ? 1.0f / temperature : 0.0f;
+  }
+
   // Enable top-k filtering. k <= 0 or k >= vocab_size disables top-k.
   // When top-k is enabled, top-p is ignored — the two modes are mutually
   // exclusive in this implementation.
@@ -72,7 +81,12 @@ class ET_EXPERIMENTAL Sampler {
   // 0 (or >= vocab_size_) means top-k is disabled.
   int32_t topk_ = 0;
   unsigned long long rng_state_;
+  std::vector<float> float_logits_buffer_;
 };
+
+template <>
+int32_t Sampler::sample<executorch::aten::BFloat16>(
+    executorch::aten::BFloat16* logits);
 
 } // namespace llm
 } // namespace extension

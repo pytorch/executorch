@@ -26,12 +26,19 @@ class HtpContextCustomConfig {
  public:
   explicit HtpContextCustomConfig(
       const QnnContext* context,
-      const QnnExecuTorchHtpBackendOptions* htp_options)
-      : context_(context), htp_options_(htp_options) {}
+      const QnnExecuTorchHtpBackendOptions* htp_options,
+      const QnnExecuTorchProfileLevel& profile_level)
+      : profile_level_(profile_level),
+        context_(context),
+        htp_options_(htp_options) {}
 
   std::vector<QnnContext_CustomConfig_t> CreateContextCustomConfig();
 
  private:
+  // profile_level_ is consumed only by the target build; the host build never
+  // reads it. Marked [[maybe_unused]] so the host build doesn't warn while the
+  // field stays available for the target side.
+  [[maybe_unused]] QnnExecuTorchProfileLevel profile_level_;
   QnnHtpContext_CustomConfig_t* AllocContextCustomConfig() {
     htp_context_config_.emplace_back(
         std::make_unique<QnnHtpContext_CustomConfig_t>());

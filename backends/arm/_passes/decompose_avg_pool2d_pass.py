@@ -4,10 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Any, Set, Type
+from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
@@ -38,23 +38,23 @@ def get_decomposition(op) -> tuple:
 
 
 def _compute_post_pad(
-    size: int,
+    size: int | torch.SymInt,
     kernel: int,
     stride: int,
-    pad: int,
+    pad: int | torch.SymInt,
     ceil_mode: bool,
     divisor_override,
-) -> int:
+) -> int | torch.SymInt:
 
     if pad == 0:
         return pad
-    if ceil_mode and divisor_override is None:
-        return pad
-
     pad_adjust = adjust_pooling_pad_if_needed(size, kernel, stride, pad, ceil_mode)
 
-    # Padding must always be above 0, the above adjustment may return -1
-    if pad_adjust > 0:
+    if ceil_mode and divisor_override is None and pad_adjust > pad:
+        return pad
+
+    # Padding must never be below 0; the above adjustment may return -1.
+    if pad_adjust >= 0:
         return pad_adjust
     return pad
 
@@ -70,7 +70,7 @@ def _get_avgpool_post_pad(
     ceil_mode,
     count_include_pad,
     divisor_override,
-) -> tuple[list[Any], list[int]]:
+) -> tuple[list[int | torch.SymInt], list[int | torch.SymInt]]:
     """Compute the post-padding configuration for avg_pool2d when pre-
     materializing explicit zero padding ahead of the pooling operation.
 
@@ -96,13 +96,13 @@ def _get_avgpool_post_pad(
     return [pad_w, post_w, pad_h, post_h], [0, 0]
 
 
-class DecomposeAvgPool2dPass(ArmPass):
+class DecomposeAvgPool2dPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
+    target_ops = edge_avg_pool2d + aten_avg_pool2d
+    check_allowed_to_transform = True
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            edge_avg_pool2d + aten_avg_pool2d
-        ) or not self.allowed_to_transform(meta):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         pad_op, avgpool_op, mul_op = get_decomposition(op)
@@ -111,7 +111,7 @@ class DecomposeAvgPool2dPass(ArmPass):
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
 
-        if len(args) > 2 and args[2] is not None:
+        if len(args) > 2 and args[2]:
             stride_h, stride_w = args[2]
         else:
             stride_h, stride_w = kernel_h, kernel_w

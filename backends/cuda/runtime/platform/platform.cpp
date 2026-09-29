@@ -60,10 +60,12 @@ namespace cuda {
 executorch::runtime::Result<void*> load_library(
     const std::filesystem::path& path) {
 #ifdef _WIN32
-  std::string utf8 = path.u8string();
-  auto lib_handle = LoadLibrary(utf8.c_str());
+  auto lib_handle = LoadLibraryW(path.c_str());
   if (lib_handle == NULL) {
     const DWORD err = GetLastError();
+    // u8string() returns std::u8string under C++20, so copy into std::string.
+    const auto u8 = path.u8string();
+    const std::string utf8(u8.begin(), u8.end());
     ET_LOG(
         Error,
         "Failed to load %s with error %lu: %s",
@@ -75,14 +77,14 @@ executorch::runtime::Result<void*> load_library(
 
 #else
   // Before loading the delegate .so, we need to ensure symbols from the current
-  // process (e.g., _portable_lib.so) are globally visible. Python loads modules
-  // with RTLD_LOCAL by default, so we re-open the current module with
+  // process (e.g. this backend library) are globally visible. Python loads
+  // modules with RTLD_LOCAL by default, so we re-open the current module with
   // RTLD_GLOBAL | RTLD_NOLOAD to promote its symbols to global visibility.
   // This allows the delegate .so to resolve symbols like aoti_torch_dtype_*.
   static std::once_flag symbols_promoted_flag;
   std::call_once(symbols_promoted_flag, []() {
     Dl_info info;
-    // Get info about a symbol we know exists in _portable_lib.so
+    // Get info about a symbol we know exists in this backend library
     if (dladdr((void*)&load_library, &info) && info.dli_fname) {
       // Re-open with RTLD_GLOBAL | RTLD_NOLOAD to promote symbols
       void* handle =

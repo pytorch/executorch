@@ -11,6 +11,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
+from torch.fx.experimental.symbolic_shapes import guard_or_true
 
 # This is a list of ops that are No Ops if used with an empty tensor.
 # Which means that if we remove the empty tensor as input to this op,
@@ -35,7 +36,7 @@ class PruneEmptyTensorsPass(ExportPass):
         pruned_concat_list = []
         for input_arg in concat_list:
             input_arg_tensor = input_arg.meta["val"]
-            if input_arg_tensor.numel() != 0:
+            if guard_or_true(input_arg_tensor.numel() != 0):
                 pruned_concat_list.append(input_arg)
 
         cat_node.args = (pruned_concat_list,) + cat_node.args[1:]

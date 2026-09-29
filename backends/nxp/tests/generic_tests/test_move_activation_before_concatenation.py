@@ -19,6 +19,15 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+from executorch.backends.nxp.backend.ops_aliases import (
+    AddMM,
+    Cat,
+    Convolution,
+    HardTanh,
+    Relu,
+    Sigmoid,
+    Tanh,
+)
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.tests.executorch_pipeline import (
@@ -33,21 +42,20 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelFirstPreprocess,
     ToChannelLastPreprocess,
 )
-from executorch.backends.nxp.tests.models import get_activation
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.tests.simple_models import get_activation
 from parameterized import parameterized
 from torch import nn
 from torch.export import ExportedProgram
 from torch.fx import GraphModule
 
 concat_cluster_ops = [
-    exir_ops.edge.aten.addmm.default,
-    exir_ops.edge.aten.convolution.default,
-    exir_ops.edge.aten.hardtanh.default,
-    exir_ops.edge.aten.relu.default,
-    exir_ops.edge.aten.sigmoid.default,
-    exir_ops.edge.aten.tanh.default,
-    exir_ops.edge.aten.cat.default,
+    AddMM,
+    Convolution,
+    HardTanh,
+    Relu,
+    Sigmoid,
+    Tanh,
+    Cat,
 ]
 
 
@@ -629,7 +637,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 "lowered_module" in node.name for node in edge_program.graph.nodes
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
                 np.int8
@@ -668,7 +676,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 "lowered_module" in node.name for node in edge_program.graph.nodes
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
                 np.int8
@@ -706,7 +714,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 "lowered_module" in node.name for node in edge_program.graph.nodes
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
                 np.int8
@@ -744,7 +752,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                 "lowered_module" in node.name for node in edge_program.graph.nodes
             )
 
-            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+            tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
             exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
             input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
                 np.int8
@@ -788,9 +796,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     "lowered_module" in node.name for node in edge_program.graph.nodes
                 )
 
-                tflite_flatbuffers_model, io_formats = converter_spy.calls[
-                    -1
-                ].return_value
+                tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
                 exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
                 exir_program_aten_quant: GraphModule = quantizer_spy.calls[
                     -1
@@ -861,9 +867,7 @@ class TestMoveActivationBeforeConcat(unittest.TestCase):
                     "lowered_module" in node.name for node in edge_program.graph.nodes
                 )
 
-                tflite_flatbuffers_model, io_formats = converter_spy.calls[
-                    -1
-                ].return_value
+                tflite_flatbuffers_model, *_ = converter_spy.calls[-1].return_value
                 exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
                 exir_program_aten_quant: GraphModule = quantizer_spy.calls[
                     -1

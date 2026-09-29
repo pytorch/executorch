@@ -11,7 +11,6 @@
 #include <gtest/gtest.h>
 
 using executorch::runtime::etensor::Device;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::etensor::kNumDeviceTypes;
 

@@ -13,10 +13,14 @@ linear_dq8ca_q4gsw_tiled:
     TILE_M4: 1
     TILE_K4: 1
     TILE_N8: 1
+    ZP_DTYPE_MODE: zpint8
   generate_variant_forall:
     DTYPE:
       - VALUE: float
       - VALUE: half
+    ZP_DTYPE_MODE:
+      - VALUE: zpint8
+      - VALUE: zpinherit
   shader_variants:
     - NAME: linear_dq8ca_q4gsw_tiled_texture3d_texture2d
     - NAME: linear_dq8ca_q4gsw_tiled_texture3d_buffer

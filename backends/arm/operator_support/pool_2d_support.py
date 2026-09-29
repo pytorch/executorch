@@ -142,7 +142,10 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
 
         # Calculate padding used in the final TOSA operator
         kernel = cast(tuple[int, int], node.args[1])
-        stride = cast(tuple[int, int], node.args[2])
+        stride = cast(
+            tuple[int, int],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
+        )
         padding = cast(tuple[int, int], node.args[3]) if len(node.args) > 3 else (0, 0)
         ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
         count_include_pad = cast(bool, node.args[5]) if len(node.args) > 5 else True
@@ -150,6 +153,12 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
 
         # If count_include_pad is True or divior_override is given, padding is applied
         # by concating zero-elements rather than setting it in the avg_pool op.
+        tosa_padding: tuple[
+            int | torch.SymInt,
+            int | torch.SymInt,
+            int | torch.SymInt,
+            int | torch.SymInt,
+        ]
         if count_include_pad or divisor_override is not None:
             tosa_padding = (0, 0, 0, 0)
         # Otherwise, calculate the padding as done in the node visitor
@@ -222,8 +231,19 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
         """
 
         shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
+        if len(shape) == 3:
+            shape = torch.Size((1, *shape))
+        elif len(shape) != 4:
+            self.reporter.report_reject(
+                node, f"Maxpool2d needs rank 3 or 4 input, got shape {list(shape)}"
+            )
+            return False
+
         kernel = cast(tuple[int, int], node.args[1])
-        stride = cast(tuple[int, int], node.args[2])
+        stride = cast(
+            tuple[int, int],
+            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
+        )
         padding = cast(tuple[int, int], node.args[3]) if len(node.args) >= 4 else (0, 0)
         dilation = (
             cast(tuple[int, int], node.args[4]) if len(node.args) >= 5 else (1, 1)

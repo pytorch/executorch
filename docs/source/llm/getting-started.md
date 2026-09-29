@@ -20,11 +20,12 @@ Deploying LLMs to ExecuTorch can be boiled down to a two-step process: (1) expor
 
 ### Exporting
 - [Exporting LLMs](export-llm.md) - Export using ExecuTorch's native `export_llm` API with advanced optimizations
-- [Exporting LLMs with Optimum](export-llm-optimum.md) - Export Hugging Face models with broader architecture support
+- [Transformers exporters](https://huggingface.co/docs/transformers/en/exporters) - Experimental, broad programmatic export of Hugging Face models
+- [Exporting LLMs with Optimum](export-llm-optimum.md) - Tested Hugging Face recipes, quantization, and higher-level APIs
 - [Exporting custom LLMs](export-custom-llm.md)
 
 ### Running
 - [Running with C++](run-with-c-plus-plus.md)
-- [Running on Android (XNNPack)](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android)
+- [Running on Android](run-on-android.md)
 - [Running on Android (Qualcomm)](build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Running on iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple)
+- [Running on iOS](run-on-ios.md)

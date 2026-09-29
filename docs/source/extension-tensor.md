@@ -148,6 +148,7 @@ auto tensor = make_tensor_ptr(
     {2, 3},                               // sizes
     data,                                 // data pointer
     ScalarType::Double,                   // double scalar type
+    DeviceType::CPU,                      // the data lives in host memory
     TensorShapeDynamism::DYNAMIC_BOUND,   // default dynamism
     [](void* ptr) { delete[] static_cast<double*>(ptr); });
 ```
@@ -198,6 +199,22 @@ auto tensor = clone_tensor_ptr(original_tensor);
 ```
 
 Note that, regardless of whether the original `TensorPtr` owns the data or not, the newly created `TensorPtr` will own a copy of the data.
+
+#### Cloning To or From a Device
+
+If a tensor lives on CPU and you want a copy on an accelerator, or the other way around, use `clone_tensor_ptr_to` with the device you want. It allocates memory on the target device, copies the data for you, and the returned `TensorPtr` owns that memory.
+
+```cpp
+auto cpu_tensor = make_tensor_ptr({2, 3}, {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f});
+
+// CPU to device:
+auto device_tensor = clone_tensor_ptr_to(cpu_tensor, DeviceType::CUDA);
+
+// Device back to CPU:
+auto host_tensor = clone_tensor_ptr_to(device_tensor, DeviceType::CPU);
+```
+
+The direction is chosen from the source and target device. This needs a `DeviceAllocator` registered for the device, so it is available only in the portable (non-`USE_ATEN_LIB`) build. For a plain CPU-to-CPU copy, use `clone_tensor_ptr` instead.
 
 ### Resizing Tensors
 
@@ -271,10 +288,36 @@ auto tensor = from_blob(
     data,             // data pointer
     {3},              // sizes
     ScalarType::Int,  // int scalar type
+    DeviceType::CPU,  // the data lives in host memory
     [](void* ptr) { delete[] static_cast<int*>(ptr); });
 ```
 
 The `TensorPtr` will call the custom deleter when it is destroyed.
+
+*Wrapping Data That Already Lives on an Accelerator*
+
+`from_blob()` and `make_tensor_ptr()` take the device right after the scalar type. Pass a
+different device when the pointer you hand over is already accelerator memory, and no copy
+is made.
+
+The device defaults to `DeviceType::CPU` in the overloads that do not take a custom deleter,
+so a plain `from_blob(host_ptr, sizes, type)` keeps meaning host memory. In the deleter
+overloads the device has to be named, as shown in the example above, because a parameter
+with a default cannot come before one without.
+
+```cpp
+void* device_data = /* allocated with cudaMalloc, or returned by another kernel */;
+auto tensor = from_blob(
+    device_data,        // pointer into device memory
+    {2, 3},             // sizes
+    ScalarType::Float,  // float scalar type
+    DeviceType::CUDA);  // the data lives on the GPU
+```
+
+The tensor only records where the memory lives. It does not allocate, copy, or migrate
+anything, so the pointer must really be valid on the device you name. To move data that
+starts on the host, use `clone_tensor_ptr_to(tensor, DeviceType::CUDA)` instead, which
+allocates on the device and copies across.
 
 ### Creating Empty Tensors
 
@@ -375,6 +418,7 @@ Here's a table matching `TensorPtr` creation functions with their corresponding 
 | `at::tensor(data, type)`                    | `make_tensor_ptr(data, type)`               |
 | `at::tensor(data, type).reshape(sizes)`     | `make_tensor_ptr(sizes, data, type)`        |
 | `tensor.clone()`                            | `clone_tensor_ptr(tensor)`                  |
+| `tensor.to(device)`                         | `clone_tensor_ptr_to(tensor, device)`       |
 | `tensor.resize_(new_sizes)`                 | `resize_tensor_ptr(tensor, new_sizes)`      |
 | `at::scalar_tensor(value)`                  | `scalar_tensor(value)`                      |
 | `at::from_blob(data, sizes, type)`          | `from_blob(data, sizes, type)`              |

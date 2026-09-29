@@ -1,15 +1,16 @@
 # Using ExecuTorch on iOS
 
-ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and Metal Performance Shaders (MPS) for hardware-accelerated execution on Apple platforms.
+ExecuTorch supports both iOS and macOS via Objective-C, Swift, and C++. ExecuTorch also provides backends to leverage Core ML and MLX for hardware-accelerated execution on Apple platforms.
 
 ## Integration
 
 The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
 * `executorch` - Core runtime components
+* `executorch_dump` - ETDump profiling
 * `executorch_llm` - LLM-specific runtime components
 * `backend_coreml` - Core ML backend
-* `backend_mps` - MPS backend
+* `backend_mlx` - MLX backend
 * `backend_xnnpack` - XNNPACK backend
 * `kernels_llm` - Custom kernels for LLMs
 * `kernels_optimized` - Accelerated generic CPU kernels
@@ -18,9 +19,11 @@ The ExecuTorch Runtime for iOS and macOS (ARM64) is distributed as a collection 
 
 Link your binary with the ExecuTorch runtime and any backends or kernels used by the exported ML model. It is recommended to link the core runtime to the components that use ExecuTorch directly, and link kernels and backends against the main app target.
 
-**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#Linkage) section for more details.
+**Note:** You may need to add some extra linker flags for the build settings of the components that links against ExecuTorch backends or kernels to let them register properly at the app startup. See the [Linkage](#linkage) section for more details.
 
-**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#Logging) section for more details.
+**Note:** To access logs, link against the Debug build of the ExecuTorch runtime, i.e., the `executorch_debug` framework. For optimal performance, always link against the Release version of the deliverables (those without the `_debug` suffix), which have all logging overhead removed. See the [Logging](#logging) section for more details.
+
+**Note:** The MLX backend links and registers on the iOS simulator, so an app builds for both destinations, but it reports itself unavailable there because the simulator has no Metal device it can use. A model delegated to MLX will not load on the simulator. Use a real device or a Mac to run one.
 
 ### Swift Package Manager
 
@@ -28,7 +31,14 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 #### Xcode
 
-In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version in format "swiftpm-<version>", (e.g. "swiftpm-1.0.0"), or a branch name in format "swiftpm-<version>.<year_month_date>" (e.g. "swiftpm-1.1.0-20251101") for a [nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date.
+In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the
+[ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and
+select it. For Dependency Rule, select **Branch** and enter
+`swiftpm-<version>` for a stable release (for example, `swiftpm-1.4.1`), or
+`swiftpm-<version>.<YYYYMMDD>` for a
+[nightly build](https://ossci-ios.s3.amazonaws.com/list.html) on a specific date
+(for example, `swiftpm-1.5.0.20260909`). Match this version to the one used to
+export the model.
 
 ![](_static/img/swiftpm_xcode1.png)
 
@@ -50,18 +60,23 @@ Add a package and target dependencies on ExecuTorch to your package file like th
 // swift-tools-version:5.9
 import PackageDescription
 
+let executorchVersion = "1.4.1" // Match the release used to export the model.
+
 let package = Package(
   name: "YourPackageName",
   platforms: [
     .iOS(.v17),
-    .macOS(.v12),
+    .macOS(.v14),
   ],
   products: [
     .library(name: "YourPackageName", targets: ["YourTargetName"]),
   ],
   dependencies: [
-    // Use "swiftpm-<version>.<year_month_day>" branch name for a nightly build.
-    .package(url: "https://github.com/pytorch/executorch.git", branch: "swiftpm-1.0.0")
+    // Append ".<YYYYMMDD>" to the version for a nightly branch.
+    .package(
+      url: "https://github.com/pytorch/executorch.git",
+      branch: "swiftpm-\(executorchVersion)"
+    )
   ],
   targets: [
     .target(
@@ -71,14 +86,20 @@ let package = Package(
         .product(name: "backend_xnnpack", package: "executorch"),
         .product(name: "kernels_optimized", package: "executorch"),
         // Add other backends and kernels as needed.
-      ]),
+      ],
       linkerSettings: [
-         // Force load all symbols from static libraries to trigger backends and kernels registration
-         .unsafeFlags(["-Wl,-all_load"])
+        // Force-load static initializers that register backends and kernels.
+        .unsafeFlags(["-Xlinker", "-all_load"])
       ]
+    )
   ]
 )
 ```
+
+The ExecuTorch package requires a minimum of iOS 17 and macOS 14. Your package
+has to declare at least these versions, as shown above. If it declares a lower
+one, the dependency resolves but the build then fails with a message that the
+target's platform version is too low.
 
 Then check if everything works correctly:
 
@@ -113,7 +134,7 @@ git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 -
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends/coreml/coreml-overview.md) or [MPS](backends/mps/mps-overview.md), if you plan to build them later:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends/coreml/coreml-overview.md), if you plan to build them later:
 
 ```bash
 ./install_requirements.sh
@@ -141,6 +162,8 @@ The following command will build the ExecuTorch runtime components along with al
 After the build finishes successfully, the resulting frameworks can be found in the `cmake-out` directory.
 Copy them to your project and link them against your targets.
 
+When linking frameworks manually, also link `kleidiai.xcframework` for `backend_xnnpack`, `kernels_optimized`, and `kernels_torchao` built with KleidiAI. Use `kleidiai_debug.xcframework` for their Debug variants. Swift Package Manager includes this dependency automatically.
+
 ## Linkage
 
 ExecuTorch initializes its backends and kernels (operators) during app startup by registering them in a static dictionary. If you encounter errors like "unregistered kernel" or "unregistered backend" at runtime, you may need to explicitly force-load certain components. Use the `-all_load` or `-force_load` linker flags in your Xcode build configuration to ensure components are registered early.
@@ -155,13 +178,15 @@ ET_PLATFORM[sdk=macos*] = macos
 OTHER_LDFLAGS = $(inherited) \
     -force_load $(BUILT_PRODUCTS_DIR)/libexecutorch_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_$(ET_PLATFORM).a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mlx_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_$(ET_PLATFORM).a
 ```
 
 **Note:** In the example above, we link against the Debug version of the ExecuTorch runtime (`libexecutorch_debug`) to preserve the logs. Normally, that does not impact the performance too much. Nevertheless, remember to link against the release version of the runtime (`libexecutorch`) for the best performance and no logs.
+
+**Note:** The MLX backend loads its Metal kernels at runtime from a per-slice metallib inside a resource bundle named `executorch_backend_mlx_resources`, not from the frameworks in `cmake-out`. The Apple framework presets enable this resource lookup when MLX is available, and the framework build stages the correctly named files (`mlx-ios.metallib`, `mlx-ios-simulator.metallib`, `mlx-macos.metallib`) under `.Package.swift/backend_mlx_resources/`. Generic Apple presets retain MLX's native colocated-metallib lookup. If you use a custom CMake configuration for SwiftPM packaging, enable `EXECUTORCH_MLX_SWIFTPM_RESOURCES` and ship the matching slice in a bundle of that name.
 
 You can assign such a config file to your target in Xcode:
 
@@ -173,7 +198,8 @@ You can assign such a config file to your target in Xcode:
 
 ExecuTorch provides native Objective-C APIs, automatically bridged to Swift, for interacting with the runtime. These APIs act as wrappers around the core C++ components found in [extension/tensor](extension-tensor.md) and [extension/module](extension-module.md), offering a more idiomatic experience for Apple platform developers.
 
-**Note:** These Objective-C/Swift APIs are currently experimental and subject to change.
+These core APIs follow the [API lifecycle policy](api-life-cycle.md). The
+separate [LLM runner APIs](llm/run-on-ios.md) are marked experimental.
 
 ### Importing
 
@@ -247,7 +273,7 @@ try module.load("forward")
 let imageBuffer: UnsafeMutableRawPointer = ... // Existing image buffer
 
 // Create an input tensor referencing the buffer and assuming the given shape and data type.
-let inputTensor = Tensor<Float>(&imageBuffer, shape: [1, 3, 224, 224])
+let inputTensor = Tensor<Float>(bytesNoCopy: imageBuffer, shape: [1, 3, 224, 224])
 
 // Execute the 'forward' method with the given input tensor and get an output tensor back.
 let outputTensor = try Tensor<Float>(module.forward(inputTensor))
@@ -268,7 +294,9 @@ ExecuTorch offers `ExecuTorchTensor` class in Objective-C and two tensor types i
 
 - `Tensor<T: Scalar>`: A generic, type-safe wrapper around AnyTensor. This is the recommended type for most use cases in Swift. It ensures the element type (e.g., `Float`, `Int`) is known at compile time, providing type-safe access to tensor data and catching type mismatches early.
 
-You can convert between them using `tensor.anyTensor` (to get the underlying `AnyTensor`) and `anyTensor.asTensor()` (to convert to a typed `Tensor<T>` if the data types match).
+You can convert between them using `tensor.anyTensor` (to get the underlying
+`AnyTensor`) and `anyTensor.asTensor()` (which returns an optional typed
+`Tensor<T>` that you must unwrap if the data types match).
 
 #### Key Properties:
 
@@ -943,7 +971,7 @@ settings append target.source-map /executorch <path_to_executorch_source_code>
 
 ### Slow execution
 
-Ensure the exported model is using an appropriate backend, such as XNNPACK, Core ML, or MPS. If the correct backend is invoked but performance issues persist, confirm that you are linking against the Release build of the backend runtime.
+Ensure the exported model is using an appropriate backend, such as XNNPACK or Core ML. If the correct backend is invoked but performance issues persist, confirm that you are linking against the Release build of the backend runtime.
 
 For optimal performance, link the ExecuTorch runtime in Release mode too. If debugging is needed, you can keep the ExecuTorch runtime in Debug mode with minimal impact on performance, but preserve logging and debug symbols.
 

@@ -139,7 +139,41 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
-  int args_index = 0;
+  // The loops below walk the tensor lists recovered from the context binary and
+  // index args[] with a running counter, so the number of bindable tensors the
+  // binary declares has to agree with what the program passes. When it does not
+  // -- a stale binary, or an AOT bug that publishes extra graph I/O -- the walk
+  // runs off the end of the Span. Count first and fail with both numbers rather
+  // than reading out of bounds.
+  size_t bindable_inputs = 0;
+  for (const auto& input_tensor : input_tensors) {
+    const auto& name = input_tensor->GetName();
+    if (name.find("mutbuf_") == std::string::npos) {
+      ++bindable_inputs;
+    }
+  }
+  size_t bindable_outputs = 0;
+  for (const auto& output_tensor : output_tensors) {
+    const auto& name = output_tensor->GetName();
+    if (name.rfind("output_", 0) == 0 &&
+        name.find("mutbuf_") == std::string::npos) {
+      ++bindable_outputs;
+    }
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      bindable_inputs + bindable_outputs == args.size(),
+      Internal,
+      "Method %s: the QNN context binary binds %zu tensors (%zu bindable inputs, "
+      "%zu bindable outputs) but ExecuTorch passed %zu arguments. The binary and "
+      "the program disagree on the delegate signature; the model has to be "
+      "re-exported.",
+      method_name.c_str(),
+      bindable_inputs + bindable_outputs,
+      bindable_inputs,
+      bindable_outputs,
+      args.size());
+
+  size_t args_index = 0;
   input_tensor_structs.reserve(input_tensors.size());
   for (const auto& input_tensor : input_tensors) {
     if (input_tensor->GetName().find("mutbuf_") == std::string::npos) {
@@ -245,6 +279,13 @@ executorch::runtime::Error QnnExecuTorchBackend::set_option(
         qnn_runtime_lpai_core_selection_.value = *val;
         qnn_runtime_lpai_core_selection_.is_set = true;
       }
+    } else if (strcmp(option.key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0) {
+      if (auto* val =
+              std::get_if<std::array<char, runtime::kMaxOptionValueLength>>(
+                  &option.value)) {
+        qnn_runtime_heap_profiling_path_.value = *val;
+        qnn_runtime_heap_profiling_path_.is_set = true;
+      }
     } else {
       ET_LOG(
           Error,
@@ -268,6 +309,7 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
     executorch::runtime::BackendOptionContext& context,
     executorch::runtime::Span<executorch::runtime::BackendOption>&
         backend_options) {
+  std::lock_guard<std::mutex> guard(runtime_option_mutex_);
   size_t matches = backend_options.size();
   for (size_t i = 0; i < backend_options.size(); ++i) {
     // Set the value to what was stored by set_option
@@ -303,6 +345,10 @@ executorch::runtime::Error QnnExecuTorchBackend::get_option(
         strcmp(backend_options[i].key, QNN_RUNTIME_LPAI_CORE_SELECTION) == 0 &&
         qnn_runtime_lpai_core_selection_.is_set) {
       backend_options[i].value = qnn_runtime_lpai_core_selection_.value;
+    } else if (
+        strcmp(backend_options[i].key, QNN_RUNTIME_HEAP_PROFILING_PATH) == 0 &&
+        qnn_runtime_heap_profiling_path_.is_set) {
+      backend_options[i].value = qnn_runtime_heap_profiling_path_.value;
     } else {
       // either runtime never called set_option or key does not exist
       matches--;
@@ -339,10 +385,49 @@ void QnnExecuTorchBackend::erase_cached_delegate(
 }
 
 namespace {
+#if !defined(_MSC_VER)
 auto cls = QnnExecuTorchBackend();
 executorch::runtime::Backend backend{QNN_BACKEND, &cls};
+// On non-Windows platforms a single copy of executorch_core is shared between
+// the DLL and the exe, so the static initializer writes into the correct
+// registered_backends[] array.
 static auto success_with_compiler = register_backend(backend);
+#endif
 } // namespace
+
+#if defined(_MSC_VER)
+static QnnExecuTorchBackend cls_msvc;
+static executorch::runtime::Backend backend_msvc{QNN_BACKEND, &cls_msvc};
+#endif
+
 } // namespace qnn
 } // namespace backends
 } // namespace executorch
+
+#if defined(_MSC_VER)
+// On Windows the DLL and the exe each carry a private copy of executorch_core
+// globals. The runner calls this function at startup, passing its own
+// register_backend() so registration happens in the exe's address space.
+// See QnnExecuTorch.h for the required register_fn signature.
+void QnnExecuTorchBackendRegister(void* register_fn) {
+  using RegisterFn =
+      executorch::runtime::Error (*)(const executorch::runtime::Backend&);
+  if (register_fn == nullptr) {
+    ET_LOG(Error, "QnnExecuTorchBackendRegister called with null register_fn");
+    return;
+  }
+  executorch::runtime::Error err = reinterpret_cast<RegisterFn>(register_fn)(
+      executorch::backends::qnn::backend_msvc);
+  if (err != executorch::runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to register QNN backend: 0x%x",
+        static_cast<uint32_t>(err));
+  }
+}
+#else
+void QnnExecuTorchBackendRegister(void*) {
+  // No-op: ELF symbol interposition already shares a single backend registry
+  // between the .so and the exe, so the static initializer above suffices.
+}
+#endif

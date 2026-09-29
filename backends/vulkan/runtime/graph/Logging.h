@@ -61,6 +61,7 @@ std::string make_arg_json(ComputeGraph* const compute_graph, ValueRef arg);
 std::string make_operator_json(
     ComputeGraph* const compute_graph,
     std::string& op_name,
-    std::vector<ValueRef>& args);
+    std::vector<ValueRef>& args,
+    uint32_t delegate_node_id);
 
 } // namespace vkcompute

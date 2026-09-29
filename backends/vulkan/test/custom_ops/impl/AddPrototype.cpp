@@ -31,23 +31,22 @@ vkapi::ShaderInfo pick_add_shader(
 }
 
 // Global workgroup size function for add operations
-utils::uvec3 add_global_wg_size(
+GlobalWorkGrid add_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return default_pick_global_wg_size(graph, shader, args, resize_args);
+  return default_pick_gwg(graph, shader, args, resize_args);
 }
 
 // Local workgroup size function for add operations
-utils::uvec3 add_local_wg_size(
+LocalWorkGroup add_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return default_pick_local_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  return default_pick_lwg(graph, shader, gwg, args, resize_args);
 }
 
 void add_prototype(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -86,8 +85,8 @@ void add_prototype(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_add_shader,
-      add_global_wg_size,
-      add_local_wg_size,
+      add_gwg,
+      add_lwg,
       // Inputs and Outputs
       {{output, vkapi::kWrite}, {{input_a, input_b}, vkapi::kRead}},
       // Shader params buffers

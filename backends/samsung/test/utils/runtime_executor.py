@@ -26,7 +26,7 @@ def get_runner_path() -> Path:
         cwd=os.path.dirname(os.path.realpath(__file__)),
         text=True,
     ).strip()
-    return Path(git_root) / "build_samsung_android/backends/samsung/enn_executor_runner"
+    return Path(git_root) / "build_samsung_android/examples/samsung/enn_executor_runner"
 
 
 class EDBTestManager:
@@ -157,7 +157,7 @@ class RuntimeExecutor:
                 output_tensor = (
                     torch.from_numpy(output_array)
                     .view(dtype=model_outputs[idx].dtype)
-                    .view(*model_outputs[idx].shape)
+                    .reshape(model_outputs[idx].shape)
                 )
                 result.append(output_tensor)
 

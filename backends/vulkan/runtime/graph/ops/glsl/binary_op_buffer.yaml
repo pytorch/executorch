@@ -30,9 +30,15 @@ binary_op_buffer:
       OPERATOR: floor(X / Y)
     - NAME: binary_minimum_buffer
       OPERATOR: min(X, Y)
-    - NAME: binary_eq_int32_buffer
+    # Named to match the dispatcher, which builds "binary_" + op + storage +
+    # dtype. A variant called binary_eq_int32_buffer generates shaders nothing
+    # ever asks for, and aten.eq on an int32 tensor aborts at dispatch with
+    # "Could not find ShaderInfo with name binary_eq_buffer_int32".
+    - NAME: binary_eq_buffer
       OPERATOR: X == Y
-      DTYPE: int32
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: int32
     - NAME: binary_eq_buffer
       OPERATOR: abs(X - Y) < 1e-5
       generate_variant_forall:
@@ -49,6 +55,11 @@ binary_op_buffer:
       OPERATOR: X >= Y
     - NAME: binary_bitwise_and_buffer
       OPERATOR: X & Y
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: uint8
+    - NAME: binary_bitwise_or_buffer
+      OPERATOR: X | Y
       generate_variant_forall:
         DTYPE:
           - VALUE: uint8

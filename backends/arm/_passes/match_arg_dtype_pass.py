@@ -6,7 +6,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -30,7 +30,7 @@ def get_largest_dtype(dtype_1, dtype_2):
     return dtype_1 if DTYPE_RANK[dtype_1] > DTYPE_RANK[dtype_2] else dtype_2
 
 
-class MatchArgDtypePass(ArmPass):
+class MatchArgDtypePass(ArmOpTargetedPass):
     """Pass to match data types of non-condition input tensors.
 
     Edge dialect allows different data types for non-condition tensors, while TOSA
@@ -44,14 +44,14 @@ class MatchArgDtypePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    targeted_ops = {exir_ops.edge.aten.sub.Tensor, exir_ops.edge.aten.where.self}
+    target_ops = {exir_ops.edge.aten.sub.Tensor, exir_ops.edge.aten.where.self}
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False
         graph = graph_module.graph
 
         for node in list(graph.nodes):
-            if node.op != "call_function" or node.target not in self.targeted_ops:
+            if node.op != "call_function" or node.target not in self.target_ops:
                 continue
 
             input_ = get_node_arg(node.args, 0)

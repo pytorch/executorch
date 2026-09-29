@@ -46,6 +46,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
 ${layout_declare_spec_const(C, "int", "conv2d_params_stride_x", "1")}
 ${layout_declare_spec_const(C, "int", "conv2d_params_stride_y", "1")}
@@ -69,7 +71,7 @@ ${layout_declare_spec_const(C, "int", "conv2d_params_groups", "1")}
 #include "conv2d_dw_q8_utils.glslh"
 
 void main() {
-  const int tid = int(gl_GlobalInvocationID.x);
+  const int tid = int(linear_idx_from_gid());
   Conv2dBlockExtents out_block_extents = make_block_extents(output_sizes);
 
   Conv2dBlockIndex out_block_idx = linear_idx_to_block_idx(

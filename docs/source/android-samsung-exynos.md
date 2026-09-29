@@ -1,1 +1,2 @@
-```{include} backends-samsung-exynos.md
+```{include} backends/samsung/samsung-overview.md
+```

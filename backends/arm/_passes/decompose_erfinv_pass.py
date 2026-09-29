@@ -5,7 +5,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
     ConvertFullLikeToFullPass,
 )
@@ -48,7 +48,7 @@ def get_erfinv_decomposition(op) -> tuple:
     raise RuntimeError(f"Can't get erfinv decomposition for op {op}")
 
 
-class DecomposeErfinvPass(ArmPass):
+class DecomposeErfinvPass(ArmOpTargetedPass):
     """Decomposes `aten.erfinv` using the same *initial-guess* approximation as
     the PyTorch CPU scalar `calc_erfinv`, with a guarded Newton refinement step
     to improve numerical accuracy (especially for fp16).
@@ -127,9 +127,10 @@ class DecomposeErfinvPass(ArmPass):
         MatchArgDtypePass,
         ReplaceScalarWithTensorByProfilePass,
     }
+    target_ops = edge_erfinv_ops
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in edge_erfinv_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
         if self._is_quantized_meta(meta):

@@ -1,4 +1,4 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -58,8 +58,6 @@ def test_multihead_attention_tosa_INT(test_data):
         (*test_data, *test_data, *test_data),
         [],
         [],
-        # TODO: Per-channel quantization is broken (MLETORCH-1144)
-        per_channel_quantization=False,
     )
     pipeline.run()
 
@@ -68,7 +66,6 @@ def test_multihead_attention_tosa_INT(test_data):
     "test_data",
     test_suite,
 )
-@common.XfailIfNoCorstone300
 def test_multihead_attention_u55_INT(test_data: input_t1):
     test_data, module = test_data()
     pipeline = EthosU55PipelineINT(
@@ -76,9 +73,6 @@ def test_multihead_attention_u55_INT(test_data: input_t1):
         (*test_data, *test_data, *test_data),
         [],
         [],
-        use_to_edge_transform_and_lower=True,
-        # TODO: Per-channel quantization is broken (MLETORCH-1144)
-        per_channel_quantization=False,
     )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
@@ -88,7 +82,6 @@ def test_multihead_attention_u55_INT(test_data: input_t1):
     "test_data",
     test_suite,
 )
-@common.XfailIfNoCorstone320
 def test_multihead_attention_u85_INT(test_data: input_t1):
     test_data, module = test_data()
     pipeline = EthosU85PipelineINT(
@@ -97,8 +90,6 @@ def test_multihead_attention_u85_INT(test_data: input_t1):
         [],
         [],
         use_to_edge_transform_and_lower=True,
-        # TODO: Per-channel quantization is broken (MLETORCH-1144)
-        per_channel_quantization=False,
     )
     pipeline.run()
 

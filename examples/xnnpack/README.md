@@ -18,6 +18,9 @@ examples/xnnpack
 ## Delegating a Floating-point Model
 
 The following command will produce a floating-point XNNPACK delegated model `mv2_xnnpack_fp32.pte` that can be run using XNNPACK's operators. It will also print out the lowered graph, showing what parts of the models have been lowered to XNNPACK via `executorch_call_delegate`.
+The compiler uses the optional pre-partition transform stage. For XNNPACK this
+is recommended in general because it exposes supported patterns to the
+partitioner before delegation decisions are made.
 
 ```bash
 # For MobileNet V2
@@ -51,7 +54,7 @@ cmake \
 Then you can build the runtime components with
 
 ```bash
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Now finally you should be able to run this model with the following command
@@ -105,7 +108,7 @@ cmake \
 Then you can build the runtime componenets with
 
 ```bash
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Now you should be able to find the executable built at `./cmake-out/executor_runner` you can run the executable with the model you generated as such

@@ -38,7 +38,7 @@ class IndexSelect(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        axis = node.args[1]
+        axis = node.args[1] % len(input_tensor.shape)
         indices_node = node.args[2]
         indices_tensor = self.get_tensor(indices_node, node).to(torch.int32)
         assert indices_tensor.size(0) != 0, "Not support empty indices list"
@@ -50,7 +50,6 @@ class IndexSelect(NodeVisitor):
             PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-
         gather_input_tensors = [input_tensor_wrapper, indices_tensor_wrapper]
 
         output_tensor = self.get_tensor(node, node)

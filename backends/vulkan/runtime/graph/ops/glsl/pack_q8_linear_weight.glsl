@@ -9,6 +9,7 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+#define ADD_UNSIGNED_OFFSET ${ADD_UNSIGNED_OFFSET}
 
 ${define_active_storage_type(STORAGE)}
 
@@ -52,6 +53,10 @@ void main() {
   } else {
     load_block_data_with_checks(block , k4, n, K4, N);
   }
+
+#if ADD_UNSIGNED_OFFSET == 1
+  block.data = ivec4(uvec4(block.data) ^ uvec4(0x80808080u));
+#endif
 
   // The weight blocks are stored in a tranposed manner, such that weight blocks
   // are indexed like packed_weight[k4][n4]. This is to optimize memory

@@ -9,9 +9,35 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+//
+// Resize
+//
+
+// resize_args = { block_config_ref } (unused here)
+//
+// Elementwise binary with broadcasting: output = broadcast(in_a, in_b). Without
+// this the DynamicDispatchNode freezes the output at the build-time upper
+// bound. Mirrors the fp32 resize_binary_op_node (same arg-group layout: inputs
+// are args[1].refs[0] and [1]).
+void resize_q8ta_binary_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in_a = args.at(1).refs.at(0);
+  const ValueRef in_b = args.at(1).refs.at(1);
+
+  const std::vector<int64_t> a_sizes = graph->sizes_of(in_a);
+  const std::vector<int64_t> b_sizes = graph->sizes_of(in_b);
+  graph->virtual_resize(
+      out, calculate_broadcasted_output_size(a_sizes, b_sizes));
+}
 
 //
 // Dispatch nodes
@@ -87,15 +113,15 @@ void add_q8ta_binary_node(
   const BlockConfig block_config =
       create_block_config_for_tensor(graph, packed_int8_output);
 
-  // Cast block config to ValueRef for pick_linear_global_wg_with_block_config
+  // Cast block config to ValueRef for pick_linear_gwg_with_block_config
   const ValueRef block_config_ref =
       static_cast<ValueRef>(block_config.as_packed_int());
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_linear_global_wg_with_block_config,
-      pick_square_local_wg_with_block_config,
+      pick_linear_gwg_with_block_config,
+      pick_square_lwg_with_block_config,
       // Inputs and Outputs
       {{packed_int8_output, vkapi::kWrite},
        {{packed_int8_input_a, packed_int8_input_b}, vkapi::kRead}},
@@ -111,7 +137,7 @@ void add_q8ta_binary_node(
       // Resize args
       {block_config_ref},
       // Resizing Logic
-      nullptr));
+      resize_q8ta_binary_node));
 }
 
 //

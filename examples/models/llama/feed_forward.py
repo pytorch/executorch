@@ -1,19 +1,20 @@
 import torch.nn.functional as F
 
-from executorch.examples.models.llama.lora import LoRALinear
+from executorch.examples.models.llama.lora import lora_call, LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
 from torch import nn
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int):
+    def __init__(self, dim: int, hidden_dim: int, act_fn=F.silu):
         super().__init__()
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        self.act_fn = act_fn
 
     def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return self.w2(self.act_fn(self.w1(x)) * self.w3(x))
 
 
 class LoRAFeedForward(nn.Module):
@@ -64,5 +65,9 @@ class LoRAFeedForward(nn.Module):
             else nn.Linear(dim, hidden_dim, bias=False)
         )
 
-    def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+    def forward(self, x, lora_blob=None):
+        return lora_call(
+            self.w2,
+            F.silu(lora_call(self.w1, x, lora_blob)) * lora_call(self.w3, x, lora_blob),
+            lora_blob,
+        )

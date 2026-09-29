@@ -60,6 +60,27 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_test,
+    name = "test_conv_bn_qat",
+    srcs = [
+        "test_conv_bn_qat.py",
+    ],
+    env = {} if runtime.is_oss else {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/builders:builders",
+        "//executorch/backends/qualcomm/partition:partition",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
     name = "test_passes",
     srcs = [
         "test_passes.py",
@@ -86,4 +107,30 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/examples/qualcomm/oss_scripts/llama:masking_utils",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
     ]),
+)
+
+# Runs the QNN operator tests on the x86_64 host simulator under buck. Internal
+# only: the underlying :test_qnn_delegate library pulls in caffe2/torchvision/etc
+# that are unavailable in OSS Buck (see the comment on that target), and keeping
+# it out of the OSS graph preserves the `test-qnn-buck-build-linux` CI signal.
+# The host qnn_executor_runner binary and the QNN x86 SDK libs are supplied via
+# env; the test reads QNN_EXECUTOR_RUNNER/QNN_SDK_ROOT and runs the simulator.
+None if runtime.is_oss else fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_qnn_delegate_x86",
+    srcs = [
+        "test_qnn_delegate_x86.py",
+    ],
+    env = {
+        # Force CPU: quantization calibration, AOT compile, and the x86 HTP sim
+        # all run on CPU. Without this, parallel test shards each grab CUDA and
+        # exhaust GPU memory ("CUDA error: out of memory").
+        "CUDA_VISIBLE_DEVICES": "",
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_EXECUTOR_RUNNER": "$(location //executorch/examples/qualcomm/executor_runner:qnn_executor_runner)",
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
+    deps = [
+        ":test_qnn_delegate",
+    ],
 )

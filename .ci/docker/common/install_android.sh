@@ -43,10 +43,10 @@ install_ndk() {
   ARCH=$(uname -m)
   if [ "${ARCH}" = "aarch64" ]; then
     # aarch64 NDK is not cached on S3, download from Google directly
-    curl -Os --retry 3 "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+    curl -Os --retry 3 --retry-all-errors "https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
   else
     # The NDK installation is cached on ossci-android S3 bucket
-    curl -Os --retry 3 "https://ossci-android.s3.amazonaws.com/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+    curl -Os --retry 3 --retry-all-errors "https://ossci-android.s3.amazonaws.com/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
   fi
   unzip -qo "android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
 
@@ -62,7 +62,7 @@ install_cmdtools() {
 
   pushd /tmp
   # The file is cached on ossci-android S3 bucket
-  curl -Os --retry 3 "https://ossci-android.s3.us-west-1.amazonaws.com/${CMDTOOLS_FILENAME}"
+  curl -Os --retry 3 --retry-all-errors "https://ossci-android.s3.us-west-1.amazonaws.com/${CMDTOOLS_FILENAME}"
   unzip -qo "${CMDTOOLS_FILENAME}" -d /opt
 
   ls -lah /opt/cmdline-tools/bin
@@ -79,10 +79,9 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "build-tools;35.0.0"
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
-  # The 'tools' package (emulator) is not available on aarch64
-  if [ "$(uname -m)" != "aarch64" ]; then
-    yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
-  fi
+  # Google withdrew the 'tools' package, so installing it fails under set -e.
+  # cmdline-tools and platform-tools above replace it, and this image neither
+  # installs nor runs an emulator.
 }
 
 install_prerequiresites

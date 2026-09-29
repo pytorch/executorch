@@ -12,12 +12,6 @@
 
 namespace vkcompute {
 
-ValueRef prepack_fp_linear_weight(
-    ComputeGraph& graph,
-    const ValueRef weight_data,
-    bool is_transposed,
-    int64_t B);
-
 void add_linear_tiled_node(
     ComputeGraph& graph,
     const ValueRef input,

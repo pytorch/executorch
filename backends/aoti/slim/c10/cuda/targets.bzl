@@ -11,6 +11,7 @@ def define_common_targets():
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
             "//executorch/backends/aoti/slim/c10/macros:macros",
+            "//executorch/extension/cuda:runtime_api",
             "//executorch/runtime/platform:platform",
         ],
     )

@@ -1,6 +1,10 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
+    if not is_fbcode():
+        return
+
     runtime.python_library(
         name = "subclass",
         srcs = [

@@ -14,6 +14,7 @@ fbcode_target(_kind = runtime.python_library,
     base_module = "executorch.examples.models.smollm2",
     resources = {
         "135M_config.json": "135M_config.json",
+        "360M_config.json": "360M_config.json",
     },
     deps = [
         "//caffe2:torch",

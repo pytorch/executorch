@@ -50,8 +50,7 @@ class Flip(NodeVisitor):
             nodes_to_wrappers,
         )
         ranges = []
-
-        dims = node.args[1]
+        dims = [dim % len(input_node.meta["val"].shape) for dim in node.args[1]]
         if QCOM_AXIS_ORDER in node.meta:
             dims = [node.meta[QCOM_AXIS_ORDER].index(dim) for dim in dims]
 

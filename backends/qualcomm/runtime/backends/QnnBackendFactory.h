@@ -63,6 +63,7 @@ class QnnBackendFactory {
  public:
   std::unique_ptr<BackendConfigParameters> Create(
       QnnImplementation* implementation,
+      QnnSystemImplementation* system_implementation,
       QnnBackend* qnn_backend_ptr,
       QnnDevice* qnn_device_ptr,
       const QnnExecuTorchContextBinary& qnn_context_blob,

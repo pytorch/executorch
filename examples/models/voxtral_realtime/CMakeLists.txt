@@ -7,7 +7,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(voxtral_realtime)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -33,7 +35,10 @@ list(APPEND link_libraries optimized_native_cpu_ops_lib cpublas eigen_blas)
 executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 
 # CPU-only builds need quantized and custom ops
-if(NOT EXECUTORCH_BUILD_CUDA AND NOT EXECUTORCH_BUILD_MLX)
+if(NOT EXECUTORCH_BUILD_CUDA
+   AND NOT EXECUTORCH_BUILD_ROCM
+   AND NOT EXECUTORCH_BUILD_MLX
+)
   list(APPEND link_libraries quantized_ops_lib custom_ops)
   executorch_target_link_options_shared_lib(quantized_ops_lib)
   executorch_target_link_options_shared_lib(custom_ops)
@@ -73,9 +78,11 @@ list(
   extension_flat_tensor
 )
 
-# Link CUDA backend
-if(EXECUTORCH_BUILD_CUDA)
-  find_package(CUDAToolkit REQUIRED)
+# Link the AOTI CUDA backend for CUDA or ROCm.
+if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
+  if(EXECUTORCH_BUILD_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+  endif()
   list(APPEND link_libraries aoti_cuda_backend)
   if(NOT MSVC)
     executorch_target_link_options_shared_lib(aoti_cuda_backend)

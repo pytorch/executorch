@@ -25,6 +25,12 @@ class LinalgVectorNorm(torch.nn.Module):
             self.dim = 0
 
         x = torch.abs(x)
+
+        # QNN would not be able to compute pow where exponential is inf or -inf.
+        if self.exp == float("inf"):
+            return torch.amax(x, dim=self.dim, keepdim=self.keepdim)
+        if self.exp == float("-inf"):
+            return torch.amin(x, dim=self.dim, keepdim=self.keepdim)
         x = torch.pow(x, self.exp)
         x = torch.sum(x, dim=self.dim, keepdim=self.keepdim)
         return torch.pow(x, 1.0 / self.exp)

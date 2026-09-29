@@ -45,6 +45,8 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":runner_utils",
         "//executorch/backends/arm/tosa:tosa",
+        "//executorch/backends/arm:vgf",
+        "fbsource//third-party/pypi/packaging:packaging",
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
@@ -82,6 +84,19 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/arm/test:arm_tester_lib",
         "//executorch/backends/arm/test:arm_tester_serialize",
     ]
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "mxfp_test_common",
+    srcs = [
+        "ops/mxfp/__init__.py",
+        "ops/mxfp/common.py",
+    ],
+    deps = [
+        ":arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
+        "//executorch/backends/arm:ao_ext",
+        "//executorch/backends/test/harness:tester",
+    ],
 )
 
 fbcode_target(_kind = define_arm_tests,)

@@ -48,6 +48,40 @@ public extension MethodMetadata {
 }
 
 public extension Module {
+  /// Loads the module's program with per-delegate backend options.
+  ///
+  /// The receiver retains `options` for as long as the underlying program
+  /// references it (lifetime tracked via ARC).
+  ///
+  /// - Parameters:
+  ///   - options: A `BackendOptionsMap` built once from a dict of
+  ///     per-backend `BackendOption`s, e.g.
+  ///     `try BackendOptionsMap(["CoreMLBackend": [BackendOption("compute_unit", "cpu_and_gpu")]])`.
+  ///   - verification: The verification level to apply when loading the program.
+  /// - Throws: An error if loading fails.
+  func load(
+    options: BackendOptionsMap,
+    verification: ModuleVerification = .minimal
+  ) throws {
+    try __load(withOptions: options, verification: verification)
+  }
+
+  /// Loads a specific method from the program with per-delegate backend options.
+  ///
+  /// - Parameters:
+  ///   - method: The name of the method to load.
+  ///   - options: A `BackendOptionsMap` built once from a dict of
+  ///     per-backend `BackendOption`s.
+  /// - Throws: An error if loading fails.
+  func load(
+    _ method: String,
+    options: BackendOptionsMap
+  ) throws {
+    try __loadMethod(method, options: options)
+  }
+}
+
+public extension Module {
   /// Executes a specific method with the provided input values.
   /// The method is loaded on demand if not already loaded.
   ///

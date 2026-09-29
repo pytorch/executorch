@@ -9,7 +9,7 @@ from typing import cast, Set, Type
 
 import torch
 
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
     UnsqueezeBeforeRepeatPass,
 )
@@ -51,7 +51,7 @@ def calculate_multiples(args):
     return multiples, expanded_rank != len(input_shape)
 
 
-class ConvertExpandCopyToRepeatPass(ArmPass):
+class ConvertExpandCopyToRepeatPass(ArmOpTargetedPass):
     """Replace expand copy with repeat since it is a repeat that can only repeat
     singleton dimensions.
     """
@@ -60,9 +60,21 @@ class ConvertExpandCopyToRepeatPass(ArmPass):
 
     expand_copy = exir_ops.edge.aten.expand_copy.default
     repeat = exir_ops.edge.aten.repeat.default
+    target_ops = (expand_copy,)
+
+    def call(self, graph_module):
+        self._removed_noop_expands = 0
+        result = super().call(graph_module)
+        if self._removed_noop_expands:
+            logger.info(
+                "ConvertExpandCopyToRepeatPass: removed %d redundant "
+                "expand_copy operator(s).",
+                self._removed_noop_expands,
+            )
+        return result
 
     def call_operator(self, op, args, kwargs, meta):
-        if op != self.expand_copy:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         multiples, changes_rank = calculate_multiples(args)
@@ -70,7 +82,7 @@ class ConvertExpandCopyToRepeatPass(ArmPass):
         if all((x == 1 for x in multiples)) and not changes_rank:
             # All dimensions/repetitions occur only once. Remove node
             # altogether since it's in practice just a copy.
-            logger.warning("Found redundant expand node (no-op). Removing it.")
+            self._removed_noop_expands += 1
 
             return args[0]
 

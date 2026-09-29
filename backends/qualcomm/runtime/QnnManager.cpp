@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
@@ -83,7 +84,10 @@ QnnManager::QnnManager(
         "Enable shared buffer: %d", options->shared_buffer());
     QNN_EXECUTORCH_LOG_INFO(
         "The number of op packages: %d",
-        options_->op_package_options()->op_package_infos()->size());
+        options_->op_package_options() &&
+                options_->op_package_options()->op_package_infos()
+            ? options_->op_package_options()->op_package_infos()->size()
+            : 0);
   }
 
   backend_params_ptr_ = std::make_unique<BackendConfigParameters>();
@@ -246,6 +250,7 @@ Error QnnManager::InitContext(
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->system_implementation.get(),
         backend_bundle_ptr_->qnn_backend_ptr.get(),
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
@@ -279,7 +284,10 @@ Error QnnManager::InitContext(
         BackendInitializeState::INITIALIZED;
   }
 
-  if (IsOnlinePrepare()) {
+  if (IsOnlinePrepare() &&
+      backend_params_ptr_->qnn_backend_cache_ptr_->GetCacheState() ==
+          QnnBackendCache::SERIALIZE) {
+    // Set up DLC environment at AOT time
     // Check whether the QNN version supports the DLC format.
     Qnn_ApiVersion_t qnn_version = {QNN_VERSION_INIT};
     backend_bundle_ptr_->implementation->GetQnnInterface()
@@ -304,6 +312,7 @@ Error QnnManager::InitContextCache() {
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         backend_bundle_ptr_->implementation.get(),
+        backend_bundle_ptr_->system_implementation.get(),
         backend_bundle_ptr_->qnn_backend_ptr.get(),
         backend_bundle_ptr_->qnn_device_ptr.get(),
         qnn_context_blob_,
@@ -476,9 +485,9 @@ Error QnnManager::ProfileExecuteData(
 }
 
 void QnnManager::Destroy() {
+  qnn_dlc_manager_->Destroy();
   backend_params_ptr_.reset(new BackendConfigParameters());
   backend_bundle_ptr_.reset(new QnnBackendBundle());
-  qnn_dlc_manager_->Destroy();
 }
 
 void QnnManager::DestroyContext() {
@@ -539,12 +548,25 @@ Error QnnManager::GetContextBinary(
 
 Error QnnManager::CompileDlc() {
   Qnn_ErrorHandle_t error;
-  auto qnn_dlc_graph_info = qnn_dlc_manager_->GetQnnDlcGraphInfoPtr();
-  uint32_t qnn_dlc_graph_info_num = qnn_dlc_manager_->GetQnnDlcGraphInfoNum();
-  for (uint32_t i = 0; i < qnn_dlc_graph_info_num; ++i) {
-    auto& graphInfo = (*qnn_dlc_graph_info)[i];
+  auto graphs = qnn_dlc_manager_->GetQnnDlcGraphInfoPtr();
+  uint32_t num_graphs = qnn_dlc_manager_->GetQnnDlcGraphInfoNum();
+  for (uint32_t i = 0; i < num_graphs; ++i) {
+    auto& graphInfo = graphs[i].graphInfoV1;
+    Qnn_GraphHandle_t graphHandle;
+    error = backend_bundle_ptr_->implementation->GetQnnInterface()
+                .qnn_graph_retrieve(
+                    backend_params_ptr_->qnn_context_ptr_->GetHandle(),
+                    graphInfo.graphName,
+                    &graphHandle);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to retrieve graph %s. Error %d.",
+          graphInfo.graphName,
+          QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
     backend_params_ptr_->qnn_graph_ptr_->SetGraphHandle(
-        graphInfo.graphName, graphInfo.graph);
+        graphInfo.graphName, graphHandle);
     error =
         backend_params_ptr_->qnn_graph_ptr_->GraphFinalize(graphInfo.graphName);
     if (error != QNN_SUCCESS) {
@@ -559,9 +581,9 @@ Error QnnManager::CompileDlc() {
 
     // Mapping memory address for the input and output of mutable buffer
     std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
-    for (uint32_t i = 0; i < graphInfo.numInputTensors; ++i) {
-      auto tw = CreateTensorWrapper(graphInfo.inputTensors[i]);
-      tw->UpdateQnnTensorMeta(graphInfo.inputTensors[i]);
+    for (uint32_t i = 0; i < graphInfo.numGraphInputs; ++i) {
+      auto tw = CreateTensorWrapper(graphInfo.graphInputs[i]);
+      tw->UpdateQnnTensorMeta(graphInfo.graphInputs[i]);
 
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
       if (mutable_buffer_id != -1) {
@@ -572,9 +594,9 @@ Error QnnManager::CompileDlc() {
       }
       graph_inputs.push_back(tw);
     }
-    for (uint32_t i = 0; i < graphInfo.numOutputTensors; ++i) {
-      auto tw = CreateTensorWrapper(graphInfo.outputTensors[i]);
-      tw->UpdateQnnTensorMeta(graphInfo.outputTensors[i]);
+    for (uint32_t i = 0; i < graphInfo.numGraphOutputs; ++i) {
+      auto tw = CreateTensorWrapper(graphInfo.graphOutputs[i]);
+      tw->UpdateQnnTensorMeta(graphInfo.graphOutputs[i]);
       int mutable_buffer_id = ExtractMutableBufferNumber(tw->GetName());
       if (mutable_buffer_id != -1 &&
           mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=

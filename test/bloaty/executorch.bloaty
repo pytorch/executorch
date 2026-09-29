@@ -1,0 +1,72 @@
+# Bloaty custom data source for ExecuTorch binaries.
+#
+# Buckets demangled symbols into ExecuTorch-meaningful groups.
+# Use: `bloaty -c test/bloaty/executorch.bloaty -d executorch <binary>`.
+#
+# `base_data_source: shortsymbols` is load-bearing: bloaty's top-level --demangle
+# does NOT propagate into custom data sources, and shortsymbols is the demangled-
+# name source (it also collapses template instantiations).
+#
+# The `kernels` bucket is a UNION of every operator/SIMD/BLAS namespace across
+# all backends (see the "kernels" block below — it grows as backends land op
+# libraries). When a regression lands in `kernels`, grep the patterns listed
+# there to find which family changed.
+#
+# When new namespaces land in the codebase, anything unmatched falls into
+# `other`. Watch this on real baselines; add rewrites as needed.
+
+custom_data_source: {
+  name: "executorch"
+  base_data_source: "shortsymbols"
+
+  rewrite: { pattern: "^executorch::runtime::"           replacement: "runtime" }
+  rewrite: { pattern: "^executorch::extension::"         replacement: "extension" }
+
+  # --- kernels (operator implementations, SIMD/BLAS helpers, per-backend op libs) ---
+  # ADD NEW OPERATOR/KERNEL NAMESPACES HERE. These must precede the generic
+  # `executorch::backends::` rewrite below — bloaty rewrites are first-match-wins,
+  # so a kernel namespace nested under backends/ would otherwise land in `backends`.
+  rewrite: { pattern: "^executorch::backends::cortex_m::" replacement: "kernels" }
+  rewrite: { pattern: "^cortex_m_"                       replacement: "kernels" }
+  rewrite: { pattern: "^executorch::vec::"               replacement: "kernels" }
+  rewrite: { pattern: "^executorch::cpublas::"           replacement: "kernels" }
+  rewrite: { pattern: "^torch::executor::native::"       replacement: "kernels" }
+  # Cadence ops live under impl::{generic,HiFi,G3,vision}::native::* and
+  # cadence::fused_quant::native::* — all are op implementations.
+  rewrite: { pattern: "^impl::(generic|HiFi|G3|vision)::native::" replacement: "kernels" }
+  rewrite: { pattern: "^cadence::fused_quant::native::"  replacement: "kernels" }
+  # --- end kernels ---
+
+  rewrite: { pattern: "^executorch::backends::"          replacement: "backends" }
+  rewrite: { pattern: "^torch::executor::"               replacement: "runtime" }
+  rewrite: { pattern: "^executor::"                      replacement: "runtime" }
+  rewrite: { pattern: "^executorch_flatbuffer"           replacement: "flatbuffer" }
+  rewrite: { pattern: "^flatbuffers::"                   replacement: "flatbuffer" }
+  rewrite: { pattern: "^tokenizers::"                    replacement: "tokenizers" }
+  rewrite: { pattern: "^arm_cmsis_nn_"                   replacement: "cmsis_nn" }
+
+  rewrite: { pattern: "^std::"                           replacement: "stdlib" }
+  rewrite: { pattern: "^__gnu_cxx::"                     replacement: "stdlib" }
+  rewrite: { pattern: "^__cxxabiv1::"                    replacement: "stdlib" }
+  rewrite: { pattern: "^__gxx_personality"               replacement: "stdlib" }
+  rewrite: { pattern: "^d_(print|type|expression|special|qualified|template|name|operator|substitution|number|abi_tag|cv_qualifiers|exprlist|growable|append|encoding|class_enum_type|local_name|unqualified_name|nested_name|prefix|cv|ref|ptrmem|array|function|java|hex|index|maybe|ctor|dtor|destructor|construct|count|callid|args|java_resource|lambda|unnamed_type|parmlist|expr_primary|operator_name|left|right|child)" replacement: "stdlib" }
+  rewrite: { pattern: "^cplus_demangle"                   replacement: "stdlib" }
+
+  rewrite: { pattern: "^_(start|init|fini)$"             replacement: "startup" }
+  rewrite: { pattern: "^__libc_"                         replacement: "libc" }
+  rewrite: { pattern: "^__aeabi_"                        replacement: "libc" }
+  rewrite: { pattern: "^_*memcpy"                        replacement: "libc" }
+  rewrite: { pattern: "^_*memset"                        replacement: "libc" }
+  rewrite: { pattern: "^_*memmove"                       replacement: "libc" }
+  rewrite: { pattern: "^_*malloc"                        replacement: "libc" }
+  rewrite: { pattern: "^_*free"                          replacement: "libc" }
+  rewrite: { pattern: "^_*printf"                        replacement: "libc" }
+  rewrite: { pattern: "^_*sprintf"                       replacement: "libc" }
+  rewrite: { pattern: "^_s?v?f?i?printf_r$"              replacement: "libc" }
+  rewrite: { pattern: "^_dtoa_r"                         replacement: "libc" }
+  rewrite: { pattern: "^_(sbrk|write|read|close|fstat|lseek|isatty|exit|kill|getpid|open|stat|times|unlink|wait|gettimeofday)_r?$" replacement: "libc" }
+
+  rewrite: { pattern: "^\\[section \\.(debug_|symtab|strtab|shstrtab)" replacement: "metadata" }
+
+  rewrite: { pattern: ".*" replacement: "other" }
+}

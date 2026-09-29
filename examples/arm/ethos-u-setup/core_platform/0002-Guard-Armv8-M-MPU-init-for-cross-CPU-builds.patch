@@ -1,0 +1,53 @@
+From 7a00a3cdf2f47424fdf29718e582ad7ae9af9cb5 Mon Sep 17 00:00:00 2001
+From: RJ Ascani <rja@meta.com>
+Date: Tue, 12 May 2026 09:25:48 -0700
+Subject: [PATCH] Guard Armv8-M MPU init for cross-CPU builds
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The Armv8-M MPU API (ARM_MPU_RBAR, ARM_MPU_RLAR, ARM_MPU_Region_t with
+its v8-M layout) is only defined for Armv8-M Mainline targets. When
+building the Corstone-300 platform for an older Cortex-M variant — to
+exercise the scalar / DSP CMSIS-NN code paths on the Corstone-300 M55
+simulator, which is an ISA superset — the v8-M MPU symbols are not in
+scope and the build fails.
+
+Guard the MPU configuration block with __ARM_ARCH_8M_MAIN__ /
+__ARM_ARCH_8_1M_MAIN__ so the same source compiles for Cortex-M0/M0+/
+M3/M4/M7 against the Corstone-300 platform layer. The FVP doesn't
+enforce MPU permissions, so skipping the configuration has no
+runtime effect on simulation correctness.
+---
+ targets/corstone-300/target.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/targets/corstone-300/target.cpp b/targets/corstone-300/target.cpp
+index 45eb98e..bda2248 100644
+--- a/targets/corstone-300/target.cpp
++++ b/targets/corstone-300/target.cpp
+@@ -314,6 +314,13 @@ void targetSetup() {
+ #endif
+ 
+     // MPU setup
++    //
++    // The Armv8-M `ARM_MPU_RBAR`/`ARM_MPU_RLAR` API is only available on
++    // Armv8-M Mainline cores (M33/M55/M85/M35P). On pre-Armv8-M targets
++    // (M0/M0+/M3/M4/M7), CMSIS doesn't define these macros — the binary
++    // is still runnable on the Corstone-300 M55 simulator (ISA superset)
++    // without MPU configuration, since the FVP doesn't enforce protection.
++#if defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8_1M_MAIN__)
+     const std::vector<ARM_MPU_Region_t> mpuConfig = {
+         {
+             // ITCM (NS)
+@@ -418,6 +425,7 @@ void targetSetup() {
+ 
+     // Setup MPU configuration
+     Mpu::loadAndEnableConfig(&mpuConfig[0], mpuConfig.size());
++#endif // __ARM_ARCH_8M_MAIN__ || __ARM_ARCH_8_1M_MAIN__
+ 
+ #if defined(CPU_CACHE_ENABLE) && defined(__DCACHE_PRESENT) && (__DCACHE_PRESENT == 1U)
+     SCB_EnableICache();
+-- 
+2.53.0-Meta
+

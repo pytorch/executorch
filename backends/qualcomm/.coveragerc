@@ -1,0 +1,20 @@
+[run]
+branch = True
+source = backends/qualcomm/genai_pipeline
+
+omit =
+    */__init__.py
+    */tests/*
+    */__pycache__/*
+    pipeline_types.py
+    */strategies/*/default_*_adapter.py
+
+[report]
+show_missing = True
+
+omit =
+    */__init__.py
+    */tests/*
+    */__pycache__/*
+    pipeline_types.py
+    */strategies/*/default_*_adapter.py

@@ -5,11 +5,13 @@
 - Conformer
 - Deep AutoEncoder
 - Deit Tiny
+- DeepSeek-R1-Distill-Qwen-1.5B
 - DeepLab v3 (DL3)
 - DS CNN
 - Inception v3 (IC3)
 - Llama
 - Gemma3n
+- Qwen3-VL
 - Long Short-Term Memory (LSTM)
 - MobileNet V1 0.25
 - MobileNet v2 (MV2)
@@ -18,7 +20,8 @@
 - Some popular torch.nn.modules models (NN modules)
 - Some popular torch ops (Torch Functions)
 - T5 (T5 for conditional generation)
-- Neural Super Sampler (NSS)
+- Neural Frame Rate Upscaling (NFRU), including QAT smoke coverage
+- Neural Super Sampling (NSS), including QAT smoke coverage
 - Phi-3
 - ResNet 18
 - ResNet-8

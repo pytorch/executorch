@@ -19,6 +19,17 @@ HtpContextCustomConfig::CreateContextCustomConfig() {
   QnnHtpContext_CustomConfig_t* p_custom_config = nullptr;
   const HtpContext* htp_ctx = static_cast<const HtpContext*>(context_);
 
+  // TODO: Verify heap profile works with kProfileBasic once enabled.
+  if (profile_level_ != QnnExecuTorchProfileLevel::kProfileOff) {
+    QnnHtpContext_CustomConfig_t* p_custom_config_profile = nullptr;
+    p_custom_config_profile = AllocContextCustomConfig();
+    p_custom_config_profile->option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_DSP_MEMORY_PROFILING_ENABLED;
+    p_custom_config_profile->dspMemoryProfilingEnabled = true;
+    ret.push_back(
+        static_cast<QnnContext_CustomConfig_t>(p_custom_config_profile));
+  }
+
   if (htp_options_->use_multi_contexts() &&
       htp_options_->max_sf_buf_size() != 0) {
     p_custom_config = AllocContextCustomConfig();

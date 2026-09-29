@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#include <executorch/extension/asr/runner/runner.h>
+#include <executorch/extension/asr/runner/seq2seq_runner.h>
 #include <executorch/extension/llm/runner/wav_loader.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>

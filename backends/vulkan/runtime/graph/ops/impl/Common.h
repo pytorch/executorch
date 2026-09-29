@@ -83,9 +83,9 @@ struct BlockConfig {
 /**
  * Creates a global workgroup size based on the first output tensor in the args.
  * This is a utility function that extracts the output tensor from
- * args.at(0).refs.at(0) and calls graph->create_global_wg_size(out) on it.
+ * args.at(0).refs.at(0) and calls graph->create_gwg(out) on it.
  */
-utils::uvec3 default_pick_global_wg_size(
+GlobalWorkGrid default_pick_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -94,12 +94,19 @@ utils::uvec3 default_pick_global_wg_size(
 /**
  * Creates a local workgroup size based on the first output tensor in the args.
  * This is a utility function that extracts the output tensor from
- * args.at(0).refs.at(0) and calls graph->create_local_wg_size(out) on it.
+ * args.at(0).refs.at(0) and calls graph->create_lwg(out) on it.
  */
-utils::uvec3 default_pick_local_wg_size(
+LocalWorkGroup default_pick_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+LocalWorkGroup pick_required_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
@@ -114,17 +121,24 @@ utils::uvec3 default_pick_local_wg_size(
  * = W * K elements from the weight tensor, resulting in (W + H) * K unique
  * elements in total.
  */
-utils::uvec3 pick_hw_square_wg_size(
+LocalWorkGroup pick_xy_square_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
-utils::uvec3 pick_wc_square_wg_size(
+LocalWorkGroup pick_xz_square_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
+LocalWorkGroup pick_120shape_lwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
@@ -202,7 +216,7 @@ BlockConfig create_block_config_from_other(
  *
  * @return Global workgroup size as {total_blocks, 1, 1}
  */
-utils::uvec3 pick_linear_global_wg_with_block_config(
+GlobalWorkGrid pick_linear_gwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -224,7 +238,7 @@ utils::uvec3 pick_linear_global_wg_with_block_config(
  *
  * @return Global workgroup size as {x_threads, y_threads, z_threads}
  */
-utils::uvec3 pick_extents_global_wg_with_block_config(
+GlobalWorkGrid pick_extents_gwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
     const std::vector<ArgGroup>& args,
@@ -238,10 +252,10 @@ utils::uvec3 pick_extents_global_wg_with_block_config(
  *   - extra_args.at(0): Packed int32_t block configuration cast to ValueRef
  *     (created via static_cast<ValueRef>(BlockConfig::as_packed_int()))
  *
- * For linear dispatch (buffer storage, global_wg = {total_blocks, 1, 1}):
+ * For linear dispatch (buffer storage, gwg = {total_blocks, 1, 1}):
  *   - Returns {64, 1, 1}
  *
- * For extents dispatch (texture storage, global_wg = {x, y, z}):
+ * For extents dispatch (texture storage, gwg = {x, y, z}):
  *   - Returns an 8x8 square configuration where:
  *     - Axes corresponding to inner_dim and outer_dim are set to 8
  *     - The remaining axis is set to 1
@@ -250,10 +264,10 @@ utils::uvec3 pick_extents_global_wg_with_block_config(
  *
  * @return Local workgroup size optimized for the dispatch pattern
  */
-utils::uvec3 pick_square_local_wg_with_block_config(
+LocalWorkGroup pick_square_lwg_with_block_config(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
-    const utils::uvec3& global_workgroup_size,
+    const GlobalWorkGrid& gwg,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args);
 

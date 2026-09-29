@@ -16,7 +16,7 @@ class SliceCopy(torch.nn.Module):
         super().__init__()
         self.val_shape = val_shape
         if dims[0] is None:
-            self.shifts = [shifts[0] % torch.numel(torch.tensor(val_shape))]
+            self.shifts = [shifts[0] % torch.numel(torch.empty(val_shape))]
         else:
             self.shifts = [shift % val_shape[dim] for shift, dim in zip(shifts, dims)]
         self.dims = dims

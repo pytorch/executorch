@@ -7,10 +7,11 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Run exported Llama model (from HuggingFace) using ExecuTorch pybindings.
+Run exported HuggingFace LLM using ExecuTorch pybindings.
 
 This script runs models exported using export_llm_hf.py. It loads the tokenizer
-directly from HuggingFace using the same model ID used during export.
+or processor directly from HuggingFace using the same model ID used during
+export.
 
 Usage:
     python -m executorch.backends.mlx.examples.llm.run_llm_hf \
@@ -24,20 +25,31 @@ import logging
 import time
 
 import torch
+from executorch.backends.mlx.examples.llm.runtime_meta import (
+    apply_chat_template,
+    chunked_prefill,
+    get_eos_token_ids,
+    load_text_processor,
+    read_const_int,
+    read_model_limits,
+)
+from executorch.extension.llm.export.model_metadata import (
+    LOGITS_TO_KEEP_MODE_METHOD,
+    LOGITS_TO_KEEP_MODES,
+)
 from executorch.runtime import Runtime, Verification
-from transformers import AutoTokenizer
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
 
 
-def _get_max_input_seq_len(program) -> int:
-    """Inspect the .pte program metadata to determine the max input_ids seq len.
+def _forward_input_seq_len(program) -> int:
+    """The forward's traced token-input width -- what set_inputs will accept.
 
-    Returns the static seq-len dimension of the first input tensor (input_ids).
-    For models exported with dynamic shapes this will be the upper-bound; for
-    models exported with a fixed (1,1) shape it will be 1.
+    1 for a static token-by-token export (e.g. optimum's static cache), or the
+    dynamic upper bound for a chunked-prefill export. This is authoritative:
+    feeding more tokens than this per step fails set_inputs.
     """
     meta = program.metadata("forward")
     input_ids_info = meta.input_tensor_meta(0)
@@ -49,54 +61,66 @@ def _get_max_input_seq_len(program) -> int:
 def run_inference(
     pte_path: str,
     model_id: str,
+    revision: str | None,
     prompt: str,
     max_new_tokens: int = 50,
 ) -> str:
     """Run inference on the exported HuggingFace model."""
-    logger.info(f"Loading tokenizer from HuggingFace: {model_id}...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    text_processor = load_text_processor(model_id, revision)
 
     logger.info(f"Loading model from {pte_path}...")
     et_runtime = Runtime.get()
     program = et_runtime.load_program(pte_path, verification=Verification.Minimal)
 
-    max_seq_len = _get_max_input_seq_len(program)
-    logger.info(f"Model input_ids max seq len: {max_seq_len}")
+    # This pybindings runner only feeds tokens and positions. A model exported
+    # with --logits-to-keep selected takes a third runtime selector input, so
+    # its forward cannot be invoked here; use the C++ runner (mlx_run_llm_hf).
+    if (
+        read_const_int(program, LOGITS_TO_KEEP_MODE_METHOD)
+        == LOGITS_TO_KEEP_MODES["selected"]
+    ):
+        raise ValueError(
+            "This .pte was exported with --logits-to-keep selected, which needs "
+            "a runtime-supplied logits selector input that run_llm_hf.py does "
+            "not provide. Run it with the C++ runner mlx_run_llm_hf, or "
+            "re-export with --logits-to-keep full or last."
+        )
+
+    max_ctx_len, declared_max_seq_len = read_model_limits(program)
+    # The forward only accepts up to its traced token width, so clamp the
+    # declared step to it: optimum's static export takes 1 token/forward while
+    # its get_max_seq_len is the context length, and feeding more crashes
+    # set_inputs. A chunked-prefill export reports the two as equal.
+    input_seq_len = _forward_input_seq_len(program)
+    prefill_chunk_size = (
+        min(declared_max_seq_len, input_seq_len)
+        if declared_max_seq_len is not None
+        else input_seq_len
+    )
+    logger.info(
+        f"Model limits: max_ctx_len={max_ctx_len}, "
+        f"prefill_chunk_size={prefill_chunk_size}"
+    )
 
     forward = program.load_method("forward")
 
     logger.info(f"Encoding prompt: {prompt!r}")
-    messages = [{"role": "user", "content": prompt}]
-    formatted_prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    input_ids = tokenizer.encode(formatted_prompt, return_tensors="pt")
+    input_ids = apply_chat_template(text_processor, prompt)
     logger.info(f"Input shape: {input_ids.shape}")
 
     generated_tokens = input_ids[0].tolist()
     seq_len = input_ids.shape[1]
+    eos_token_ids = get_eos_token_ids(text_processor, model_id=model_id)
 
     start_time = time.time()
 
-    if max_seq_len == 1:
-        # Model was exported with fixed (1,1) input — token-by-token prefill
-        logger.info(f"Running token-by-token prefill ({seq_len} tokens)...")
-        for i in range(seq_len):
-            token_input = input_ids[:, i : i + 1]
-            cache_position = torch.tensor([i], dtype=torch.long)
-            outputs = forward.execute([token_input, cache_position])
-        logits = outputs[0]
-    else:
-        # Model was exported with dynamic seq len — full-prompt prefill
-        logger.info(f"Running full-prompt prefill ({seq_len} tokens)...")
-        cache_position = torch.arange(seq_len, dtype=torch.long)
-        outputs = forward.execute([input_ids, cache_position])
-        logits = outputs[0]
+    logger.info(f"Running prefill ({seq_len} tokens, chunk {prefill_chunk_size})...")
+    outputs = chunked_prefill(forward, input_ids, prefill_chunk_size)
+    logits = outputs[0]
 
     prefill_time = time.time() - start_time
     logger.info(
-        f"Prefill time: {prefill_time:.3f}s "
-        f"({seq_len / prefill_time:.1f} tokens/sec)"
+        f"Prefill time: {prefill_time:.3f}s ({seq_len / prefill_time:.1f} tokens/sec)"
     )
 
     # Get the next token from the last position
@@ -120,7 +144,7 @@ def run_inference(
         next_token = torch.argmax(next_token_logits).item()
         generated_tokens.append(next_token)
 
-        if next_token == tokenizer.eos_token_id:
+        if next_token in eos_token_ids:
             logger.info(f"EOS token reached at position {i + 1}")
             break
 
@@ -135,12 +159,12 @@ def run_inference(
 
     # Decode only the newly generated tokens (not the input prompt)
     new_tokens = generated_tokens[seq_len:]
-    generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+    generated_text = text_processor.decode(new_tokens, skip_special_tokens=True)
     return generated_text
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run exported HuggingFace Llama model")
+    parser = argparse.ArgumentParser(description="Run exported HuggingFace LLM")
     parser.add_argument(
         "--pte",
         type=str,
@@ -151,7 +175,13 @@ def main():
         "--model-id",
         type=str,
         default="unsloth/Llama-3.2-1B-Instruct",
-        help="HuggingFace model ID (used to load tokenizer)",
+        help="HuggingFace model ID (used to load tokenizer or processor)",
+    )
+    parser.add_argument(
+        "--revision",
+        type=str,
+        default=None,
+        help="Optional HuggingFace model revision/commit to pin",
     )
     parser.add_argument(
         "--prompt",
@@ -171,6 +201,7 @@ def main():
     generated_text = run_inference(
         pte_path=args.pte,
         model_id=args.model_id,
+        revision=args.revision,
         prompt=args.prompt,
         max_new_tokens=args.max_new_tokens,
     )

@@ -6,13 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
-
-#include <executorch/backends/vulkan/runtime/graph/Logging.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Transpose.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
 #include <algorithm>
 

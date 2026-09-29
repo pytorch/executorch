@@ -11,15 +11,25 @@ def define_common_targets():
         aten_suffix = ("_aten" if aten_mode else "")
 
         runtime.cxx_library(
+            name = "ptn_module_internal" + aten_suffix,
+            srcs = ["ptn_module.cpp"],
+            exported_headers = ["ptn_module.h"],
+            visibility = [
+                "//executorch/backends/native/extension/module/...",
+                "//executorch/extension/module/...",
+            ],
+            exported_deps = [
+                "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "module" + aten_suffix,
-            srcs = [
-                "module.cpp",
-            ],
-            exported_headers = [
-                "module.h",
-            ],
+            srcs = ["module.cpp"],
+            exported_headers = ["module.h"],
             visibility = ["PUBLIC"],
             deps = [
+                ":ptn_module_internal" + aten_suffix,
                 "//executorch/extension/memory_allocator:malloc_memory_allocator",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/data_loader:mmap_data_loader",
@@ -27,7 +37,10 @@ def define_common_targets():
                 "//executorch/extension/named_data_map:merged_data_map" + aten_suffix,
             ],
             exported_deps = [
+                "//executorch/runtime/backend:backend_options",
+                "//executorch/runtime/backend:backend_options_map",
                 "//executorch/runtime/executor:program_no_prim_ops" + aten_suffix,
+                "//executorch/runtime/core:device_memory_buffer",
             ],
         )
 

@@ -69,7 +69,10 @@ class PatternMatcher:
             return PatternMatchResult(match, False, self.REJECT_PREVIOUSLY_ANNOTATED)
 
         # Reject match if it contains a node that has an input which is too large to be quantized
-        if any(_is_large_scalar(node, node.graph.owning_module) for node in match):
+        owning_module = match[0].graph.owning_module if match else None
+        if owning_module is not None and any(
+            _is_large_scalar(node, owning_module) for node in match
+        ):
             return PatternMatchResult(match, False, self.REJECT_LARGE_SCALAR)
 
         if all(node.op in ("placeholder", "output") for node in match):
@@ -113,15 +116,25 @@ class PatternMatcher:
         return []
 
     def _get_matches(
-        self, node_queue: List[Node], quantization_config: QuantizationConfig
+        self, node_queue: List[Node], quantization_config: Optional[QuantizationConfig]
     ) -> List[PatternMatchResult]:
         """Returns the longest accepted match starting at the first node of the
         queue as well as longer rejected matches.
         """
+        # Annotating with None means rejecting quantization - this is always supported.
+        if quantization_config is None:
+            node = node_queue[0]
+            if node.meta.get(self.Q_PATTERN_MATCHED_KEY, False):
+                return [
+                    PatternMatchResult([node], False, self.REJECT_PREVIOUSLY_ANNOTATED)
+                ]
+
+            node.meta[self.Q_PATTERN_MATCHED_KEY] = True
+            return [PatternMatchResult([node], True)]
+
         matches: list[PatternMatchResult] = []
         accepted = False
         max_match_length = len(node_queue)
-
         while max_match_length > 0 and not accepted:
             match = self._get_match(node_queue[:max_match_length])
             max_match_length = (
@@ -136,7 +149,7 @@ class PatternMatcher:
         return matches
 
     def _dequeue_and_get_matches(
-        self, node_queue: List[Node], quantization_config: QuantizationConfig
+        self, node_queue: List[Node], quantization_config: Optional[QuantizationConfig]
     ) -> List[PatternMatchResult]:
         """Dequeues the longest accepted match starting at the first node of the
         queue, and returns all potential matches that were checked (rejected
@@ -160,7 +173,7 @@ class PatternMatcher:
         return potential_matches
 
     def find_pattern_matches(
-        self, nodes: Iterator[Node], quantization_config: QuantizationConfig
+        self, nodes: Iterator[Node], quantization_config: Optional[QuantizationConfig]
     ) -> Iterator[PatternMatchResult]:
         """Match all given patterns in the graph and return match results with
         acceptance/rejection status. Each node can only be part of one match,

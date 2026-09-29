@@ -22,7 +22,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::extension::FlatTensorDataMap;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
@@ -35,6 +34,12 @@ using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
 constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
+
+// ET_ENABLE_DEPRECATED_CONSTANT_BUFFER is 1 by default, and
+// set to 0 in the root CMakeLists.txt for OSS builds.
+#ifndef ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+#define ET_ENABLE_DEPRECATED_CONSTANT_BUFFER 1
+#endif
 
 class MethodTest : public ::testing::Test {
  protected:
@@ -81,9 +86,11 @@ class MethodTest : public ::testing::Test {
         std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
     load_program(std::getenv("ET_MODULE_ADD_MUL_PATH"), "add_mul");
     load_program(std::getenv("ET_MODULE_STATEFUL_PATH"), "stateful");
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
     load_program(
         std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH"),
         "linear_constant_buffer");
+#endif
 
     load_program(
         std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH"), "add_mul_program");
@@ -362,6 +369,7 @@ TEST_F(MethodTest, ConstantSegmentTest) {
   ASSERT_EQ(err, Error::Ok);
 }
 
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
 TEST_F(MethodTest, ConstantBufferTest) {
   // Execute model with constants stored in the program flatbuffer.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
@@ -388,6 +396,7 @@ TEST_F(MethodTest, ConstantBufferTest) {
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 }
+#endif // ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
 
 TEST_F(MethodTest, ProgramDataSeparationTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);

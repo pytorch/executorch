@@ -38,8 +38,7 @@ class Gather(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        dim = cast(int, node.args[1])
-
+        dim = cast(int, node.args[1]) % len(input_tensor.shape)
         indices_node = node.args[2]
         indices_tensor = self.get_tensor(indices_node, node)
         indices_tensor_wrapper = self.define_tensor(

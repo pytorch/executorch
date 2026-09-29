@@ -65,17 +65,16 @@ shared float shared_sum_sq[LOCAL_WORK_GROUP_SIZE];
  * N is the number of elements in the tensor buffer; each thread computes one
  * output element.
  *
- * Local work group size:  {1, float, 1}
- * float should be a power of 2, recommended 64 or 128 threads. This allows
- * efficient tree-based reduction in shared memory. Each local group will
- * cooperate to compute the output element.
+ * Local work group size:  {1, 1, 64}
+ * This allows efficient tree-based reduction in shared memory. Each local
+ * group cooperates to compute one output element.
  *
  * Each shader invocation will compute the mean and standard deviation for one
  * channel group in the input, and write out the corresponding result.
  */
 void group_norm_reduce_C_packed() {
   const int global_idx = int(gl_GlobalInvocationID.x);
-  const int local_idx = int(gl_LocalInvocationID.y);
+  const int local_idx = int(gl_LocalInvocationID.z);
 
   // Calculate group dimensions
   const int D = in_sizes.z / group;  // channels per group

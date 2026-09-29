@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -73,9 +74,9 @@ class OpCloneTest : public OperatorTest {
 
 // regular test for clone.out
 TEST_F(OpCloneTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel test fails");
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -88,9 +89,9 @@ TEST_F(OpCloneTest, EmptyInputSupported) {
 }
 
 TEST_F(OpCloneTest, MismatchedSizesDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle mismatched sizes");
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
@@ -114,9 +115,9 @@ TEST_F(OpCloneTest, MismatchedTypesDie) {
 // MemoryFormat::Contiguous should not be allowed. The function is expected
 // depth if using the illegal memory format.
 TEST_F(OpCloneTest, MismatchedMemoryFormatDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle non contiguous memory formats";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non contiguous memory formats");
   TensorFactory<ScalarType::Float> tf_in;
   TensorFactory<ScalarType::Float> tf_out;
   Tensor input =

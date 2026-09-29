@@ -92,7 +92,7 @@ else()
   set(EXECUTORCH_SELECT_OPS_MODEL "")
   set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS OFF)
   message(
-    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
+    "gen_oplist: No aten:: or dim_order_ops:: operators were found in ${ET_PTE_FILE_PATH}; skipping portable operator selection. Other CPU operators may still run."
   )
 endif()
 
@@ -109,7 +109,7 @@ endif()
 project(executorch_mv2_ethosu)
 
 set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -Wall -Wno-switch -Wno-float-conversion -Wno-double-promotion -ffunction-sections -fdata-sections"
+    "${CMAKE_CXX_FLAGS} -Wall -Wno-switch -Wno-float-conversion -ffunction-sections -fdata-sections"
 )
 
 if(NOT DEFINED EXECUTORCH_DIR)
@@ -198,9 +198,8 @@ set(EXECUTORCH_FLATCC_INSTALL_ROOT
     CACHE PATH "" FORCE
 )
 
-set(app_sources
-    src/main.cpp
-    ${EXECUTORCH_DIR}/examples/arm/executor_runner/arm_memory_allocator.cpp
+set(app_sources src/main.cpp
+                ${EXECUTORCH_DIR}/examples/arm/common/arm_memory_allocator.cpp
 )
 target_sources(app PRIVATE ${app_sources})
 
@@ -208,12 +207,11 @@ set(_model_pte_header ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h)
 add_custom_command(
   OUTPUT ${_model_pte_header}
   COMMAND
-    ${Python3_EXECUTABLE}
-    ${EXECUTORCH_DIR}/examples/arm/executor_runner/pte_to_header.py --pte
-    ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR} --section
+    ${Python3_EXECUTABLE} ${EXECUTORCH_DIR}/examples/arm/common/pte_to_header.py
+    --pte ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR} --section
     ${ET_PTE_SECTION}
   DEPENDS ${ET_PTE_FILE_PATH}
-          ${EXECUTORCH_DIR}/examples/arm/executor_runner/pte_to_header.py
+          ${EXECUTORCH_DIR}/examples/arm/common/pte_to_header.py
   COMMENT "Converting ${ET_PTE_FILE_PATH} to model_pte.h"
 )
 add_custom_target(gen_model_header DEPENDS ${_model_pte_header})

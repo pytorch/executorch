@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -185,7 +186,7 @@ def _dump_yaml(
     output["include_all_non_op_selectives"] = False
     output["include_all_operators"] = include_all_operators
     output["kernel_metadata"] = {}
-    output["et_kernel_metadata"] = et_kernel_metadata
+    output["et_kernel_metadata"] = et_kernel_metadata or {}
     with open(output_path, "wb") as out_file:
         out_file.write(
             yaml.safe_dump(

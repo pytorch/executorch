@@ -273,3 +273,54 @@ class TestEdgeVerification(unittest.TestCase):
                 .exported_program()
                 .graph_module
             )
+
+    def test_edge_unsqueeze_complex_dtype(self) -> None:
+        class TestModel(torch.nn.Module):
+            def forward(self, x):
+                return x.unsqueeze(0)
+
+        m = TestModel()
+        for dtype in (torch.complex64, torch.complex128):
+            edge_gm = (
+                to_edge(
+                    export(
+                        m,
+                        (torch.randn(4, 8).to(dtype=dtype),),
+                        strict=True,
+                    )
+                )
+                .exported_program()
+                .graph_module
+            )
+            self.assertTrue(
+                any("unsqueeze_copy" in str(n.target) for n in edge_gm.graph.nodes),
+                "Expected unsqueeze to lower to unsqueeze_copy",
+            )
+            verifier = EXIREdgeDialectVerifier()
+            verifier(edge_gm)
+            self.assertTrue(verifier.is_valid(edge_gm))
+
+    def test_edge_shape_ops_complex_dtype(self) -> None:
+        class TestModel(torch.nn.Module):
+            def forward(self, x):
+                x = x.expand(4, 8)
+                x = x.permute(1, 0)
+                x = x[:, :2]
+                x = x.squeeze(0)
+                return x
+
+        m = TestModel()
+        edge_gm = (
+            to_edge(
+                export(
+                    m,
+                    (torch.randn(1, 8).to(dtype=torch.complex64),),
+                    strict=True,
+                )
+            )
+            .exported_program()
+            .graph_module
+        )
+        verifier = EXIREdgeDialectVerifier()
+        verifier(edge_gm)
+        self.assertTrue(verifier.is_valid(edge_gm))

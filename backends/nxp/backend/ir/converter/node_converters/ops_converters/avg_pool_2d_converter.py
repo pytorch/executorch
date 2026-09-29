@@ -6,6 +6,7 @@
 import numpy as np
 import torch
 
+from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
@@ -17,17 +18,18 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     average_pool_2d_options,
 )
-
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
+@requires_channels_first_format
 class AvgPool2dConverter(NodeConverter):
 
     @staticmethod
@@ -36,6 +38,10 @@ class AvgPool2dConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        # The input must be 4D.
+        if input_rank(node, 0) != 4:
+            return False
+
         n_args = len(node.args)
 
         padding = node.args[3] if n_args >= 4 else [0, 0]
@@ -56,8 +62,9 @@ class AvgPool2dConverter(NodeConverter):
 
         return True
 
-    @staticmethod
+    @classmethod
     def _is_supported_on_target(
+        cls,
         node: Node,
         neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
@@ -66,20 +73,17 @@ class AvgPool2dConverter(NodeConverter):
         kernel = node.args[1]
         stride = node.args[2]
 
-        if custom_delegation_options.use_new_flow_neutron_c:
-            # Requirements specified by the new Neutron flow documentation.
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0], [0]
+        ):
+            return False
 
-            supported_types = [torch.int8, torch.uint8]
-            if not NodeConverter.uses_quantization_type_for_io(
-                node, supported_types, [0]
-            ):
-                return False
+        if any(k > 4096 for k in kernel):
+            return False
 
-            if any(k > 4096 for k in kernel):
-                return False
-
-            if any(s > 4096 for s in stride):
-                return False
+        if any(s > 4096 for s in stride):
+            return False
 
         return True
 

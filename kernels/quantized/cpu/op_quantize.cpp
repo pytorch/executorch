@@ -93,21 +93,37 @@ void check_quantize_per_tensor_args(
 } // namespace
 
 template <typename T, typename K>
+T quantize_val_with_inv_scale(
+    float inv_scale,
+    int64_t zero_point,
+    K value,
+    int64_t quant_min,
+    int64_t quant_max) {
+  const float scaled_value = static_cast<float>(inv_scale * value);
+  // Map NaN to the zero point and clamp infinities before integer conversion.
+  // Double precision keeps int32 bounds exactly representable while clamping.
+  const double qvalue = std::isnan(scaled_value)
+      ? static_cast<double>(zero_point)
+      : static_cast<double>(zero_point) + std::nearbyint(scaled_value);
+  const double clamped_value = std::min(
+      static_cast<double>(quant_max),
+      std::max(static_cast<double>(quant_min), qvalue));
+  return static_cast<T>(clamped_value);
+}
+
+template <typename T, typename K>
 T quantize_val(
     double scale,
     int64_t zero_point,
     K value,
     int64_t quant_min,
     int64_t quant_max) {
-  int64_t qvalue;
-  float inv_scale = 1.0f / static_cast<float>(scale);
-  qvalue = static_cast<int64_t>(
-      static_cast<int32_t>(zero_point) +
-      std::nearbyint(static_cast<float>(inv_scale * value)));
-
-  qvalue = std::max<int64_t>(qvalue, quant_min);
-  qvalue = std::min<int64_t>(qvalue, quant_max);
-  return static_cast<T>(qvalue);
+  return quantize_val_with_inv_scale<T>(
+      1.0f / static_cast<float>(scale),
+      zero_point,
+      value,
+      quant_min,
+      quant_max);
 }
 
 #if defined(__aarch64__) || defined(__ARM_NEON__)
@@ -180,7 +196,8 @@ void quantize_arm(
     const float32x4_t vin0123 = vld1q_f32(in + i);
     const float32x4_t vin4567 = vld1q_f32(in + i + 4);
 
-    // Multiply by inv_scale and round
+    // FCVTNS maps NaN to zero and saturates infinities before adding
+    // zero_point.
     const int32x4_t v0123_rounded =
         vcvtnq_s32_f32(vmulq_f32(vin0123, vinv_scale));
     const int32x4_t v4567_rounded =
@@ -201,16 +218,15 @@ void quantize_arm(
 
   // Handle remaining elements with proper quant_min/quant_max clamping
   for (; i < N; ++i) {
-    float val = in[i] * inv_scale;
-    int32_t qval = static_cast<int32_t>(std::nearbyint(val)) + zero_point;
-    qval = std::max(quant_min, std::min(quant_max, qval));
-    out[i] = static_cast<T>(qval);
+    out[i] = quantize_val_with_inv_scale<T>(
+        inv_scale, zero_point, in[i], quant_min, quant_max);
   }
 
 #else
   // ARMv7: Use magic float rounding
   const int32x4_t voffset = vdupq_n_s32(zero_point - 0x4B400000);
   const float32x4_t vmagic_float = vdupq_n_f32(12582912.0f);
+  const float32x4_t vmagic_float_maximum = vdupq_n_f32(4194304.0f);
 
   int64_t i = 0;
   // Process 8 elements at a time
@@ -218,14 +234,25 @@ void quantize_arm(
     const float32x4_t vin0123 = vld1q_f32(in + i);
     const float32x4_t vin4567 = vld1q_f32(in + i + 4);
 
+    const float32x4_t vscaled0123 = vmulq_f32(vin0123, vinv_scale);
+    const float32x4_t vscaled4567 = vmulq_f32(vin4567, vinv_scale);
+    const uint32x4_t valid = vandq_u32(
+        vcleq_f32(vabsq_f32(vscaled0123), vmagic_float_maximum),
+        vcleq_f32(vabsq_f32(vscaled4567), vmagic_float_maximum));
+    const uint32x2_t valid_pairs =
+        vand_u32(vget_low_u32(valid), vget_high_u32(valid));
+    if (vget_lane_u32(vpmin_u32(valid_pairs, valid_pairs), 0) != UINT32_MAX) {
+      for (int64_t j = 0; j < 8; ++j) {
+        out[i + j] = quantize_val_with_inv_scale<T>(
+            inv_scale, zero_point, in[i + j], quant_min, quant_max);
+      }
+      continue;
+    }
+
     const int32x4_t vraw0123 = vaddq_s32(
-        voffset,
-        vreinterpretq_s32_f32(
-            vaddq_f32(vmagic_float, vmulq_f32(vin0123, vinv_scale))));
+        voffset, vreinterpretq_s32_f32(vaddq_f32(vmagic_float, vscaled0123)));
     const int32x4_t vraw4567 = vaddq_s32(
-        voffset,
-        vreinterpretq_s32_f32(
-            vaddq_f32(vmagic_float, vmulq_f32(vin4567, vinv_scale))));
+        voffset, vreinterpretq_s32_f32(vaddq_f32(vmagic_float, vscaled4567)));
 
     const int16x8_t vraw01234567 =
         vcombine_s16(vqmovn_s32(vraw0123), vqmovn_s32(vraw4567));
@@ -237,10 +264,8 @@ void quantize_arm(
 
   // Handle remaining elements with proper quant_min/quant_max clamping
   for (; i < N; ++i) {
-    float val = in[i] * inv_scale;
-    int32_t qval = static_cast<int32_t>(std::nearbyint(val)) + zero_point;
-    qval = std::max(quant_min, std::min(quant_max, qval));
-    out[i] = static_cast<T>(qval);
+    out[i] = quantize_val_with_inv_scale<T>(
+        inv_scale, zero_point, in[i], quant_min, quant_max);
   }
 #endif
 }

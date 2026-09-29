@@ -61,7 +61,9 @@ XNNWorkspaceManager::get_or_create_workspace(
       return create_result.error();
     }
 
+#ifndef XNNPACK_WORKSPACE_ALWAYS_LOCK
     create_result.get()->disable_locking();
+#endif
     return create_result.get();
   } else if (mode == WorkspaceSharingMode::PerModel) {
     return get_or_create_model_workspace(program_id);

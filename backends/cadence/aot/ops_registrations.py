@@ -269,10 +269,22 @@ lib.define(
     "quantized_conv1d_nlc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, Tensor? offset=None, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_depthwise_conv1d_ncl(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_ncl.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_depthwise_conv1d_ncl.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
     "quantized_depthwise_conv1d_ncl.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+)
+lib.define(
+    "quantized_depthwise_conv1d_nlc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_depthwise_conv1d_nlc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
@@ -487,6 +499,13 @@ lib.define(
 )
 lib.define(
     "rope_rotate_stacked_halves.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_rope_rotate_stacked_halves(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point) -> (Tensor out)"
+)
+lib.define(
+    "quantized_rope_rotate_stacked_halves.out(Tensor input, Tensor sin_tensor, Tensor cos_tensor, Tensor? pos, float in_scale, int in_zero_point, float out_scale, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -745,12 +764,6 @@ aten_lib.define(
 aten_lib.define("_cat_nop(Tensor[] tensors, int dim=0) -> Tensor(a!)")
 aten_lib.define(
     "_cat_nop.out(Tensor[] tensors, int dim=0, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
-# Custom ops with cadence_nn_ops namespace
-jarvis_nn_lib = Library("jarvis_nn_ops", "DEF")
-jarvis_nn_lib.define(
-    "attention_mask.out(Tensor input, Tensor start, Tensor stop, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Custom ops in aten namespace. RMSNorm is usually decomposed, so having
@@ -1400,6 +1413,76 @@ def quantized_depthwise_conv1d_nlc_per_tensor_meta(
     )
 
     return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_ncl")
+def quantized_depthwise_conv1d_ncl_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_depthwise_conv1d_ncl_per_tensor_meta(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        0,
+        1.0,
+        output_scale,
+        output_zero_point,
+        1,
+        0,
+    )
+
+
+@register_fake("cadence::quantized_depthwise_conv1d_nlc")
+def quantized_depthwise_conv1d_nlc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: torch.Tensor,
+    bias_scale: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    return quantized_depthwise_conv1d_nlc_per_tensor_meta(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        0,
+        1.0,
+        output_scale,
+        output_zero_point,
+        1,
+        0,
+    )
 
 
 @register_fake("cadence::quantized_conv2d_nchw")
@@ -3140,6 +3223,20 @@ def rope_rotate_stacked_halves_meta(
             len(pos.shape) == 1 and pos.shape[0] == seq
         ), f"{pos.shape} must be [{seq}]"
     return input.new_empty(input.shape, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_rope_rotate_stacked_halves")
+def quantized_rope_rotate_stacked_halves_meta(
+    input: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: Optional[torch.Tensor],
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    return rope_rotate_stacked_halves_meta(input, sin_tensor, cos_tensor, pos)
 
 
 @register_fake("cadence::idma_copy")

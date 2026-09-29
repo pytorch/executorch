@@ -384,7 +384,7 @@ def arrange_graph_placeholders(
 ) -> torch.fx.GraphModule:
     """
     Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
-    but with placeholders in order of (Params + Buffers) (User Inputs)
+    but with placeholders in order of (Params + Buffers + Constants) (User Inputs)
 
     This is used by the delegate api which disturbs the placeholder ordering when creating a submodule
     from partitioned nodes
@@ -403,32 +403,30 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
-    # Cache these properties — each call rebuilds the dict from input_specs.
+    # Cache these properties to avoid rebuilding the dict on each access.
     params_map = graph_sign.inputs_to_parameters
     buffers_map = graph_sign.inputs_to_buffers
+    constants_map = graph_sign.inputs_to_lifted_tensor_constants
     param_nodes = []
     buffer_nodes = []
+    constant_nodes = []
     input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if node.name in params_map and node.meta.get("delegation_tag", None) == tag:
+        is_tagged = node.meta.get("delegation_tag", None) == tag
+        if node.name in params_map and is_tagged:
             param_nodes.append(node)
-        elif node.name in buffers_map and node.meta.get("delegation_tag", None) == tag:
+        elif node.name in buffers_map and is_tagged:
             buffer_nodes.append(node)
+        elif node.name in constants_map and is_tagged:
+            constant_nodes.append(node)
         else:
             input_nodes.append(node)
 
-    for param_node in param_nodes:
-        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
-        node_map[param_node] = new_node
-    for buffer_node in buffer_nodes:
-        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
-        node_map[buffer_node] = new_node
-    for input_node in input_nodes:
-        new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
-        node_map[input_node] = new_node
+    for node in param_nodes + buffer_nodes + constant_nodes + input_nodes:
+        node_map[node] = new_graph.node_copy(node, lambda x: node_map[x])
 
     # Now add all the other nodes in order
     for node in gm.graph.nodes:
@@ -884,10 +882,11 @@ def create_submodule_from_nodes(
         # all uses with a getitem call to the 0th index of the result
         with gm.graph.inserting_after(submodule_node):
             proxy_out = torch.fx.Proxy(submodule_node)[0].node  # type: ignore[index]
-            submodule_node.replace_all_uses_with(proxy_out)
-            proxy_out.meta["val"] = submodule_node.meta["val"]
+            submodule_node.replace_all_uses_with(proxy_out, propagate_meta=True)
             # Reset the args since it was overwritten in the previous line
             proxy_out.args = (submodule_node, 0)
+            proxy_out.meta.pop("nn_module_stack", None)
+            proxy_out.meta.pop("source_fn_stack", None)
     else:
         # fuse_as_graphmodule will automatically propagate the metadata of the
         # partition's last node to the getitem nodes that appear after the
@@ -969,6 +968,21 @@ def _unsafe_adjust_original_program(  # noqa: C901
     Directly modify the original exported program's signature and state dict
     based on the consumed params/buffers in the delegate.
     """
+    # First pass: identify placeholder nodes that still have users in the graph.
+    # These cannot be deleted because they are shared between the delegate and
+    # the remaining program (e.g., due to identity ops like no-op dropout
+    # causing parameter aliasing across partitions).
+    nodes_to_keep = set()
+    for node in original_program.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in input_specs_to_delete and len(node.users) > 0:
+                nodes_to_keep.add(node.name)
+        else:
+            break
+
+    for name in nodes_to_keep:
+        del input_specs_to_delete[name]
+
     original_program._graph_signature.input_specs = [
         input_spec
         for input_spec in original_program.graph_signature.input_specs
@@ -1005,14 +1019,14 @@ def _unsafe_adjust_original_program(  # noqa: C901
             continue
 
         if input_spec.kind == InputKind.PARAMETER:
-            del original_program._state_dict[input_target]
+            original_program._state_dict.pop(input_target, None)
         elif input_spec.kind == InputKind.BUFFER:
             if input_spec.persistent:
                 original_program._state_dict.pop(input_target, None)
             else:
-                del original_program._constants[input_spec.target]
+                original_program._constants.pop(input_spec.target, None)
         elif input_spec.kind == InputKind.CONSTANT_TENSOR:
-            del original_program._constants[input_spec.target]
+            original_program._constants.pop(input_spec.target, None)
         else:
             raise RuntimeError(f"Invalid input spec {input_spec} received")
 

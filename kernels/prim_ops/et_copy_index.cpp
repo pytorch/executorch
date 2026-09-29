@@ -14,7 +14,6 @@
 #include <executorch/runtime/platform/assert.h>
 
 using executorch::aten::SizesType;
-using executorch::aten::Tensor;
 using torch::executor::Error;
 using torch::executor::resize_tensor;
 

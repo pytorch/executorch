@@ -39,6 +39,8 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+#include "dispatch.glslh"
+
 ${layout_declare_spec_const(C, "int", "inp_layout", "CONTIG_LAYOUT_INT")}
 ${layout_declare_spec_const(C, "int", "outp_layout", "CONTIG_LAYOUT_INT")}
 
@@ -90,7 +92,7 @@ void main() {
   // (along the packed dim) at one (n, oh, ow) spatial position.
   const int C_words = div_up_4(C_out);
   const int total_words = N * C_words * H_out * W_out;
-  const int thread_idx = int(gl_GlobalInvocationID.x);
+  const int thread_idx = int(linear_idx_from_gid());
   if (thread_idx >= total_words) {
     return;
   }
@@ -122,7 +124,7 @@ void main() {
   // helper call needed. (Assumes r*r == inner_block_size == 4, enforced by the
   // C++ dispatch's r==2 and packed_dim_block_size==4 asserts.)
   const int byte_stride =
-      int(stride_at(inp, get_packed_dim(inp_layout))) * get_block_numel(inp_layout);
+      int(safe_idx(inp.strides[0], get_packed_dim(inp_layout))) * get_block_numel(inp_layout);
 
   // lane is the byte position within an int32 word, which equals
   // (intra_block_idx % 4) since block_numel is a multiple of 4. And

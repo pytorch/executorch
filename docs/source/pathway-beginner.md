@@ -65,7 +65,7 @@ Install ExecuTorch and verify your setup before attempting to export a model.
 
 Install the ExecuTorch Python package, export a MobileNet V2 model using XNNPACK, and run your first inference. This is the canonical entry point for all new users.
 
-**Difficulty:** Beginner | **Prerequisites:** Python 3.10–3.13, PyTorch, g++7+ or clang5+
+**Difficulty:** Beginner | **Prerequisites:** Python 3.10–3.14, PyTorch, g++7+ or clang5+
 :::
 
 ::::

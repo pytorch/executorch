@@ -44,7 +44,7 @@ using namespace executorch::runtime;
     _tokenizerPath = [tokenizerPath copy];
     _specialTokens = std::make_unique<std::vector<std::string>>();
     for (NSString *token in specialTokens) {
-      _specialTokens->emplace_back(token.UTF8String);
+      _specialTokens->emplace_back(token.UTF8String ?: "");
     }
   }
   return self;
@@ -56,9 +56,31 @@ using namespace executorch::runtime;
 
 - (BOOL)loadWithError:(NSError**)error {
   if (![self isLoaded]) {
+    // The loader pins the begin of sequence index at 0 and the end of sequence
+    // index at 1, so one entry cannot name both. Caught here because the loader
+    // reports it as a tokenizer that would not load, which hides the cause.
+    if (_specialTokens->size() == 1) {
+      if (error) {
+        *error = [NSError errorWithDomain:ExecuTorchLLMErrorDomain
+                                     code:-1
+                                 userInfo:@{NSLocalizedDescriptionKey: @"Special tokens must name a begin and an end of sequence token, or be empty"}];
+      }
+      return NO;
+    }
+    // An empty list means the caller had none to give, not that the tokenizer
+    // should have none. Copy rather than move so a retry after a failed load
+    // still has them.
+    std::unique_ptr<std::vector<std::string>> specialTokens;
+    if (!_specialTokens->empty()) {
+      specialTokens =
+        std::make_unique<std::vector<std::string>>(*_specialTokens);
+    }
     _runner = llm::create_text_llm_runner(
-      _modelPath.UTF8String,
-      llm::load_tokenizer(_tokenizerPath.UTF8String, std::move(_specialTokens))
+      _modelPath.UTF8String ?: "",
+      llm::load_tokenizer(
+        _tokenizerPath.UTF8String ?: "",
+        std::move(specialTokens)
+      )
     );
     if (!_runner) {
       if (error) {
@@ -89,7 +111,7 @@ using namespace executorch::runtime;
     return NO;
   }
   auto status = _runner->generate(
-    prompt.UTF8String,
+    prompt.UTF8String ?: "",
     config.nativeConfig,
     [callback](const std::string& token) {
       if (callback) {

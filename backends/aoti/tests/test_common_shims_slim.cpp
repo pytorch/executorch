@@ -289,6 +289,50 @@ void runGetDimTest(slim_c10::DeviceType device_type) {
   }
 }
 
+void runGetNumelTest(slim_c10::DeviceType device_type) {
+  slim_c10::Device device(device_type, 0);
+
+  // Test 0D tensor (scalar)
+  {
+    std::vector<int64_t> sizes = {};
+    std::vector<int64_t> strides = {};
+
+    Tensor* tensor = new Tensor(slim::empty_strided(
+        slim::makeArrayRef(sizes),
+        slim::makeArrayRef(strides),
+        slim_c10::ScalarType::Float,
+        device));
+
+    int64_t ret_numel = -1;
+    AOTITorchError error = aoti_torch_get_numel(tensor, &ret_numel);
+
+    EXPECT_EQ(error, Error::Ok);
+    EXPECT_EQ(ret_numel, 1);
+
+    delete tensor;
+  }
+
+  // Test 3D tensor
+  {
+    std::vector<int64_t> sizes = {2, 3, 4};
+    std::vector<int64_t> strides = calculateContiguousStrides(sizes);
+
+    Tensor* tensor = new Tensor(slim::empty_strided(
+        slim::makeArrayRef(sizes),
+        slim::makeArrayRef(strides),
+        slim_c10::ScalarType::Float,
+        device));
+
+    int64_t ret_numel = -1;
+    AOTITorchError error = aoti_torch_get_numel(tensor, &ret_numel);
+
+    EXPECT_EQ(error, Error::Ok);
+    EXPECT_EQ(ret_numel, 24);
+
+    delete tensor;
+  }
+}
+
 // ============================================================================
 // Storage & Device Property Tests
 // ============================================================================
@@ -400,6 +444,10 @@ TEST_F(CommonShimsSlimTest, GetDim_CPU) {
   runGetDimTest(slim_c10::DeviceType::CPU);
 }
 
+TEST_F(CommonShimsSlimTest, GetNumel_CPU) {
+  runGetNumelTest(slim_c10::DeviceType::CPU);
+}
+
 TEST_F(CommonShimsSlimTest, GetStorageOffset_CPU) {
   runGetStorageOffsetTest(slim_c10::DeviceType::CPU);
 }
@@ -456,6 +504,13 @@ TEST_F(CommonShimsSlimTest, GetDim_CUDA) {
   runGetDimTest(slim_c10::DeviceType::CUDA);
 }
 
+TEST_F(CommonShimsSlimTest, GetNumel_CUDA) {
+  if (!isCudaAvailable()) {
+    GTEST_SKIP() << "CUDA not available";
+  }
+  runGetNumelTest(slim_c10::DeviceType::CUDA);
+}
+
 TEST_F(CommonShimsSlimTest, GetStorageOffset_CUDA) {
   if (!isCudaAvailable()) {
     GTEST_SKIP() << "CUDA not available";
@@ -495,6 +550,7 @@ TEST_F(CommonShimsSlimTest, NullTensorArgument) {
   int64_t* strides = nullptr;
   int32_t dtype = -1;
   int64_t dim = -1;
+  int64_t numel = -1;
 
   EXPECT_EQ(
       aoti_torch_get_data_ptr(nullptr, &data_ptr), Error::InvalidArgument);
@@ -502,6 +558,7 @@ TEST_F(CommonShimsSlimTest, NullTensorArgument) {
   EXPECT_EQ(aoti_torch_get_strides(nullptr, &strides), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dtype(nullptr, &dtype), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dim(nullptr, &dim), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_numel(nullptr, &numel), Error::InvalidArgument);
 }
 
 TEST_F(CommonShimsSlimTest, NullReturnPointer) {
@@ -512,6 +569,7 @@ TEST_F(CommonShimsSlimTest, NullReturnPointer) {
   EXPECT_EQ(aoti_torch_get_strides(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dtype(tensor, nullptr), Error::InvalidArgument);
   EXPECT_EQ(aoti_torch_get_dim(tensor, nullptr), Error::InvalidArgument);
+  EXPECT_EQ(aoti_torch_get_numel(tensor, nullptr), Error::InvalidArgument);
 }
 
 // ============================================================================
@@ -534,6 +592,7 @@ TEST_F(CommonShimsSlimTest, ScalarTensor) {
   int64_t* ret_sizes = nullptr;
   int64_t* ret_strides = nullptr;
   int64_t ret_dim = -1;
+  int64_t ret_numel = -1;
 
   EXPECT_EQ(aoti_torch_get_sizes(tensor, &ret_sizes), Error::Ok);
   EXPECT_NE(ret_sizes, nullptr);
@@ -543,6 +602,9 @@ TEST_F(CommonShimsSlimTest, ScalarTensor) {
 
   EXPECT_EQ(aoti_torch_get_dim(tensor, &ret_dim), Error::Ok);
   EXPECT_EQ(ret_dim, 0);
+
+  EXPECT_EQ(aoti_torch_get_numel(tensor, &ret_numel), Error::Ok);
+  EXPECT_EQ(ret_numel, 1);
 }
 
 TEST_F(CommonShimsSlimTest, LargeTensor) {
@@ -559,6 +621,7 @@ TEST_F(CommonShimsSlimTest, LargeTensor) {
 
   int64_t* ret_sizes = nullptr;
   int64_t* ret_strides = nullptr;
+  int64_t ret_numel = -1;
 
   EXPECT_EQ(aoti_torch_get_sizes(tensor, &ret_sizes), Error::Ok);
   EXPECT_EQ(ret_sizes[0], 100);
@@ -569,6 +632,9 @@ TEST_F(CommonShimsSlimTest, LargeTensor) {
   EXPECT_EQ(ret_strides[0], 60000); // 200 * 300
   EXPECT_EQ(ret_strides[1], 300); // 300
   EXPECT_EQ(ret_strides[2], 1);
+
+  EXPECT_EQ(aoti_torch_get_numel(tensor, &ret_numel), Error::Ok);
+  EXPECT_EQ(ret_numel, 6000000);
 }
 
 TEST_F(CommonShimsSlimTest, ConsistentPointerReturn) {

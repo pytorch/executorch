@@ -25,13 +25,19 @@ using SlimTensor = executorch::backends::aoti::slim::SlimTensor;
 extern "C" {
 
 /**
- * Generates a tensor filled with uniform random values in [0, 1).
+ * Generates a tensor filled with uniform random values in [0, 1), matching
+ * the behavior of torch.rand / aten::rand (see
+ * aten/src/ATen/native/cuda/DistributionUniform.cu and the
+ * `transformation::uniform_real` helper in
+ * aten/src/ATen/native/cuda/DistributionTemplates.h).
  *
  * Implements the AOTI shim for aten::rand.default on CUDA. Uses cuRAND
- * Philox counter-based RNG with GPU-resident state. The counter is
- * atomically advanced by each kernel invocation on-device, making it
- * fully compatible with CUDA graph capture and replay — each replay
- * produces different values because the counter increments on the GPU.
+ * Philox counter-based RNG with GPU-resident state, then maps the random
+ * uint32 to [0, 1) using PyTorch's bit-mask + divisor formulation rather
+ * than curand_uniform (which returns (0, 1]). The counter is atomically
+ * advanced by each kernel invocation on-device, making it fully compatible
+ * with CUDA graph capture and replay — each replay produces different
+ * values because the counter increments on the GPU.
  *
  * Supports float32 and bfloat16 output dtypes.
  */
@@ -46,7 +52,10 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_rand(
     SlimTensor** ret0);
 
 /**
- * Fills a pre-allocated int64 tensor with random integers in [low, high).
+ * Fills a pre-allocated int64 tensor with random integers in [low, high),
+ * matching the behavior of torch.randint / aten::randint.low_out (see
+ * `transformation::uniform_int_from_to` in
+ * aten/src/ATen/native/cuda/DistributionTemplates.h).
  *
  * Implements the AOTI shim for aten::randint.low_out on CUDA. Used by
  * Inductor's Philox RNG to generate random seeds. Each thread atomically

@@ -18,7 +18,6 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/platform/log.h>
 
-using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
 using executorch::extension::Module;
 using executorch::extension::llm::time_in_ms;

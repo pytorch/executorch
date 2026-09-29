@@ -1,5 +1,13 @@
 # Building from Source
 
+On Linux and macOS you may not need to build at all. Current main/nightly wheels
+ship the runtime as prebuilt libraries with headers and a CMake package, so a
+C++ program can link it directly. See
+[Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
+including the CUDA packages for running on a GPU. Build from source when you
+need a platform the package does not cover, a build option it does not enable,
+or your own changes to the runtime.
+
 ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
@@ -28,10 +36,14 @@ ExecuTorch is tested on the following systems, although it should also work in s
   - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
 * `g++` version 7 or higher, `clang++` version 5 or higher, or another
   C++17-compatible toolchain.
-* `python` version 3.10-3.13
+* `python` version 3.10-3.14
+* `cmake` version 3.26 or higher
 * `ccache` (optional) - A compiler cache that speeds up recompilation
 * **macOS**
-  - `Xcode Command Line Tools`
+  - Xcode for the Apple platform presets, or Xcode Command Line Tools when
+    using another CMake generator
+  - To build the MLX backend, install the Metal toolchain with
+    `xcodebuild -downloadComponent MetalToolchain`
 * **Windows**
   - `Visual Studio Clang Tools` - See [Clang/LLVM support in Visual Studio](https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild?view=msvc-170).
 
@@ -43,13 +55,13 @@ portability details.
 ## Environment Setup
  Clone the ExecuTorch repository from GitHub and create a conda environment. Venv can be used in place of conda.
    ```bash
-   git clone -b viable/strict https://github.com/pytorch/executorch.git
+   git clone -b viable/strict --recurse-submodules https://github.com/pytorch/executorch.git
    cd executorch
-   conda create -yn executorch python=3.10.0
+   conda create -yn executorch python=3.10
    conda activate executorch
    ```
 
-> **_NOTE:_** Addition Windows Setup
+> **_NOTE:_** Additional Windows Setup
 >
 > ExecuTorch requires symlinks to be enabled to build the Python components. To enable symlinks, run the following command before cloning the repository. Missing symlinks will manifest as an error related to `version.py` when running `pip install .`. See [src/README.md](https://github.com/pytorch/executorch/blob/main/src/README.md) for more information.
 > ```bash
@@ -72,15 +84,38 @@ portability details.
   * `--clean`: Removes build artifacts.
   * `--editable`: Install the ExecuTorch python package in editable mode (see [Editable Install](#editable-install)).
   * `--minimal`: Install only the minimal set of dependencies required to run ExecuTorch. Do not install dependencies for examples.
+  * `--optional-dependency <name>`: Install an optional Python dependency set.
+    Repeat the flag to select more than one. Supported names are `ethos_u`,
+    `vgf`, and `openvino`.
   * `--use-pt-pinned-commit`: Install the pinned PyTorch commit or release version. When not specified, the latest PyTorch nightly build is installed.
+
+  For example, install the current checkout with the dependencies needed for
+  Ethos-U ahead-of-time (AOT) export:
+
+  ```bash
+  ./install_executorch.sh --optional-dependency ethos_u
+  ```
+
+  After the base dependencies have already been installed, the equivalent
+  editable package command is:
+
+  ```bash
+  pip install -e '.[ethos_u]' --no-build-isolation
+  ```
+
+  The `ethos_u` optional dependencies are host-side Python tools used during
+  AOT export. Embedded toolchains, simulators, and target runtimes are
+  configured separately by the backend setup and build instructions.
 
   For Intel-based macOS systems, use `--use-pt-pinned-commit --minimal`. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in [PyTorch Installation](https://github.com/pytorch/pytorch#installation).
 
-  Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags:
+  XNNPACK and Core ML are built by default. On Apple silicon, MLX is also built
+  when the Metal compiler is installed. Additional backends can be enabled or
+  disabled by setting the corresponding CMake flags:
 
   ```bash
-  # Enable the MPS backend
-  CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
+  # Enable the Vulkan backend
+  CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" ./install_executorch.sh
   ```
 
   ### Verify the Build
@@ -129,10 +164,10 @@ When user code is not using CMake, the runtime can be built standalone and linke
 | Use Case                   | How to Build                                                                       |
 | :------------------------- | :--------------------------------------------------------------------------------- |
 | C++ with user CMake        | Use CMake `add_subdirectory`.                                                      |
-| C++ without user CMake     | Bulild ExecuTorch standalone with CMake. Link libraries with user build.           |
-| Android with Java/Kotlin   | Use [scripts/build_android_libraries.sh](#cross-compiling-for-android).            |
+| C++ without user CMake     | Build ExecuTorch standalone with CMake. Link libraries with user build.            |
+| Android with Java/Kotlin   | Use [scripts/build_android_library.sh](#cross-compiling-for-android).             |
 | Android with C++           | Follow C++ build steps, [cross-compile for Android](#cross-compiling-for-android). |
-| iOS                        | Use [scripts/build_ios_frameworks.sh](#cross-compiling-for-ios).                   |
+| iOS                        | Use [scripts/build_apple_frameworks.sh](#cross-compiling-for-ios).                 |
 
 ### Configuring
 
@@ -142,9 +177,8 @@ When building as a submodule as part of a user CMake build, ExecuTorch CMake opt
 
 CMake configuration for standalone runtime build:
 ```bash
-mkdir cmake-out
-cmake -B cmake-out --preset [preset] [options]
-cmake --build cmake-out -j10
+cmake -B cmake-out --preset [preset] -DCMAKE_BUILD_TYPE=Release [options]
+cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 #### Build Presets
@@ -161,6 +195,7 @@ Preset values for common scenarios are listed below. Using a platform preset is 
  * `linux` - Build features and backends for Linux targets.
  * `llm` - Build Large Language Model-specific features.
  * `profiling` - Build the ExecuTorch runtime with profiling enabled.
+ * `windows` - Build features and backends for Windows targets.
  * `zephyr` - Build for Zephyr RTOS.
 
 User CMake:
@@ -171,7 +206,7 @@ set(EXECUTORCH_BUILD_PRESET_FILE ${CMAKE_SOURCE_DIR}/executorch/tools/cmake/pres
 Standalone build:
 ```bash
 # Configure the build with the ios preset.
-cmake .. --preset ios
+cmake -B cmake-out --preset ios
 ```
 
 #### Build Options
@@ -187,7 +222,7 @@ set(EXECUTORCH_BUILD_XNNPACK ON)
 
 Standalone build:
 ```bash
-cmake -DEXECUTORCH_BUILD_XNNPACK=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON
 ```
 
 ##### Build Type
@@ -196,7 +231,7 @@ The CMake build is typically set to `Debug` or `Release`. For production use or 
 
 ```bash
 # Specify build type during CMake configuration
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake -B cmake-out -DCMAKE_BUILD_TYPE=Release
 ```
 
 ##### Backends
@@ -206,7 +241,6 @@ Typically, each hardware backend exposes a CMake option to control whether the b
  * `EXECUTORCH_BUILD_CADENCE` - Build the Cadence DSP backend.
  * `EXECUTORCH_BUILD_COREML` - Build the Apple CoreML backend.
  * `EXECUTORCH_BUILD_CORTEX_M` - Build the ARM Cortex-M backend.
- * `EXECUTORCH_BUILD_MPS` - Build the Apple Metal Performance Shader backend.
  * `EXECUTORCH_BUILD_NEURON` - Build the MediaTek Neuron backend.
  * `EXECUTORCH_BUILD_OPENVINO` - Build the Intel OpenVINO backend.
  * `EXECUTORCH_BUILD_QNN` - Build the Qualcomm AI Engine backend.
@@ -216,7 +250,7 @@ Typically, each hardware backend exposes a CMake option to control whether the b
 
 ```bash
 # Build the XNNPACK and Vulkan backends.
-cmake .. -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON
 ```
 
 ##### Extensions
@@ -237,7 +271,7 @@ ExecuTorch extensions provide optional functionality outside of the core runtime
 
  ```
 # Enable the data loader extension.
-cmake .. -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+cmake -B cmake-out -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
  ```
 
 ##### Logging
@@ -249,7 +283,7 @@ Logging is enabled by default in debug builds and disabled in release. When enab
 
  ```
 # Enable logging at debug
-cmake .. -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
+cmake -B cmake-out -DEXECUTORCH_ENABLE_LOGGING=ON -DEXECUTORCH_LOG_LEVEL=debug
  ```
 
 ### Building
@@ -265,11 +299,12 @@ cd executorch
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
 # building, and tends to speed up the build significantly. It's typical to use
-# "core count + 1" as the `-j` value.
-cmake --build cmake-out -j9
+# "core count + 1" as the `-j` value; the command below derives that
+# dynamically (`nproc` on Linux, `sysctl -n hw.ncpu` on macOS).
+cmake --build cmake-out --config Release -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
-> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) above). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
+> **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
 
 <hr/>
 
@@ -298,8 +333,6 @@ To link against the runtime from outside of the CMake ecosystem, the runtime can
     `-Wl,-force_load` or `-Wl,--whole-archive`. It contains load-time functions
     that automatically register the kernels, but linkers will often prune those
     functions by default because there are no direct calls to them.
-  `libportable_kernels.a`, so the program may use any of the operators it
-  implements.
 
 Backends typically introduce additional targets. See backend-specific documentation for more details.
 
@@ -307,9 +340,13 @@ Backends typically introduce additional targets. See backend-specific documentat
 
 To verify the build, ExecuTorch optionally compiles a simple, stand-alone model runner to run PTE files with all-one input tensors. It is not enabled by default in most presets, but can be enabled by configuring with `-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON`.
 
-Once compiled, invoke the runner with a sample PTE (such as the one generated by [verifying the Python build](#verify-the-build)).
+Once compiled, invoke the runner with a sample PTE (such as the one generated by [verifying the Python build](#verify-the-build)). Single-configuration generators such as Ninja and Make place it directly in `cmake-out`; multi-configuration generators such as Xcode and Visual Studio place it under the selected configuration.
 ```bash
+# Ninja or Make
 cmake-out/executor_runner --model_path=mv2_xnnpack_fp32.pte
+
+# Xcode or Visual Studio
+cmake-out/Release/executor_runner --model_path=mv2_xnnpack_fp32.pte
 ```
 
 If the runner runs successfully, you should see output similar to the following:
@@ -329,8 +366,9 @@ OutputX 0: tensor(sizes=[1, 1000], [
 
 ### Pre-requisites
 - Set up a Python environment and clone the ExecuTorch repository, as described in [Environment Setup](#environment-setup).
-- Install the [Android SDK](https://developer.android.com/studio). Android Studio is recommended.
-- Install the [Android NDK](https://developer.android.com/ndk).
+- Install JDK 17. The Android Gradle plugin used by ExecuTorch requires it.
+- Install the [Android SDK](https://developer.android.com/studio), including SDK Platform 34. Android Studio is recommended.
+- Install Android NDK r28c, the version used in ExecuTorch CI.
   - Option 1: Install via [Android Studio](https://developer.android.com/studio/projects/install-ndk).
   - Option 2: Download from [NDK Downloads](https://developer.android.com/ndk/downloads).
 
@@ -339,11 +377,16 @@ OutputX 0: tensor(sizes=[1, 1000], [
 With the NDK installed, the `build_android_library.sh` script will build the ExecuTorch Java AAR, which contains ExecuTorch Java bindings. See [Using the AAR File](using-executorch-android.md#using-aar-file) for usage.
 
 ```bash
+export ANDROID_SDK=/path/to/android/sdk
+export ANDROID_NDK=/path/to/android/sdk/ndk/28.2.13676358
 export ANDROID_ABIS=arm64-v8a
 export BUILD_AAR_DIR=aar-out
-mkdir -p $BUILD_AAR_DIR
-sh scripts/build_android_library.sh
+mkdir -p "$BUILD_AAR_DIR"
+./scripts/build_android_library.sh
 ```
+
+The build script passes `ANDROID_SDK` to Gradle as `ANDROID_HOME`. The resulting
+AAR is `aar-out/executorch.aar`.
 
 ### Android Native
 
@@ -352,7 +395,9 @@ To use the ExecuTorch runtime from native Android C++ code, the runtime can be c
 For direct cross-compilation, the ExecuTorch runtime can be configured to build with the NDK toolchain:
 ```bash
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a ..
+cmake -B cmake-out \
+  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a
 ```
 
 <hr/>
@@ -380,7 +425,7 @@ xcode-select --install
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
-(like [Core ML](backends/coreml/coreml-overview.md), [MPS](backends/mps/mps-overview.md) or XNNPACK), etc.
+(like [Core ML](backends/coreml/coreml-overview.md) or XNNPACK), etc.
 Note that some backends may require additional dependencies and certain versions of Xcode and iOS.
 See backend-specific documentation for more details.
 

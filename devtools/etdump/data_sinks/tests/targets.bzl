@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_data_sink_test(data_sink_name):
     runtime.cxx_test(
@@ -18,6 +19,9 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+
+    if not is_fbcode():
+        return
 
     define_data_sink_test("buffer_data_sink")
     define_data_sink_test("file_data_sink")

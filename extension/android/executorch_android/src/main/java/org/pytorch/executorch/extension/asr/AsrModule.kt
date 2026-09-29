@@ -11,6 +11,7 @@ package org.pytorch.executorch.extension.asr
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import org.pytorch.executorch.ExecutorchRuntimeException
 import org.pytorch.executorch.annotations.Experimental
 
 /**
@@ -53,7 +54,10 @@ class AsrModule(
 
     val handle = nativeCreate(modelPath, tokenizerPath, dataPath, preprocessorPath)
     if (handle == 0L) {
-      throw RuntimeException("Failed to create native AsrModule")
+      throw ExecutorchRuntimeException(
+          ExecutorchRuntimeException.INTERNAL,
+          "Failed to create native AsrModule",
+      )
     }
     nativeHandle.set(handle)
   }
@@ -129,7 +133,7 @@ class AsrModule(
    * @param callback Optional callback to receive tokens as they are generated (can be null)
    * @return The complete transcribed text
    * @throws IllegalStateException if the module has been destroyed
-   * @throws RuntimeException if transcription fails (non-zero result code)
+   * @throws ExecutorchRuntimeException if transcription fails (error code carried in exception)
    */
   @JvmOverloads
   fun transcribe(
@@ -160,7 +164,7 @@ class AsrModule(
         )
 
     if (status != 0) {
-      throw RuntimeException("Transcription failed with error code: $status")
+      throw ExecutorchRuntimeException(status, "Transcription failed")
     }
 
     return result.toString()
