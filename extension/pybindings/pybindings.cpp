@@ -174,34 +174,61 @@ void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
 /** Holds a Python buffer export and presents its metadata to ExecuTorch. */
 class BufferTensor final {
  public:
-  explicit BufferTensor(const py::handle& value)
+  BufferTensor(
+      const py::handle& value,
+      const MethodMeta& method_meta,
+      size_t input_index)
       : buffer_(py::reinterpret_borrow<py::buffer>(value)),
         info_(buffer_.request()) {
     if (info_.ndim < 0 ||
         static_cast<size_t>(info_.ndim) > runtime::kTensorDimensionLimit) {
       throw py::buffer_error("Buffer rank is too large for ExecuTorch");
     }
-    scalar_type_ = scalar_type_from_buffer(info_);
-    sizes_.reserve(info_.shape.size());
-    strides_.reserve(info_.strides.size());
-    for (const auto size : info_.shape) {
-      sizes_.push_back(checked_int(size, "dimension"));
-    }
-    for (const auto byte_stride : info_.strides) {
-      if (byte_stride < 0 || byte_stride % info_.itemsize != 0) {
-        throw py::buffer_error(
-            "ExecuTorch inputs require non-negative, element-aligned strides");
+    const auto input_meta = method_meta.input_tensor_meta(input_index);
+    THROW_IF_ERROR(
+        input_meta.error(), "Input %zu is not a tensor input", input_index);
+    const bool raw_bfloat16 =
+        input_meta->scalar_type() == executorch::aten::ScalarType::BFloat16 &&
+        info_.ndim == 1 && has_format<uint8_t>(info_);
+    if (raw_bfloat16) {
+      if (static_cast<size_t>(info_.size) != input_meta->nbytes()) {
+        throw py::value_error(
+            "Raw bfloat16 input " + std::to_string(input_index) + " has " +
+            std::to_string(info_.size) + " bytes, but the method expects " +
+            std::to_string(input_meta->nbytes()));
       }
-      strides_.push_back(checked_int(byte_stride / info_.itemsize, "stride"));
+      scalar_type_ = executorch::aten::ScalarType::BFloat16;
+      sizes_.assign(input_meta->sizes().begin(), input_meta->sizes().end());
+      dim_order_.assign(
+          input_meta->dim_order().begin(), input_meta->dim_order().end());
+      strides_.resize(sizes_.size());
+      const auto status = runtime::dim_order_to_stride(
+          sizes_.data(), dim_order_.data(), sizes_.size(), strides_.data());
+      THROW_IF_ERROR(
+          status, "Invalid dimension order for input %zu", input_index);
+    } else {
+      scalar_type_ = scalar_type_from_buffer(info_);
+      sizes_.reserve(info_.shape.size());
+      strides_.reserve(info_.strides.size());
+      for (const auto size : info_.shape) {
+        sizes_.push_back(checked_int(size, "dimension"));
+      }
+      for (const auto byte_stride : info_.strides) {
+        if (byte_stride < 0 || byte_stride % info_.itemsize != 0) {
+          throw py::buffer_error(
+              "ExecuTorch inputs require non-negative, element-aligned strides");
+        }
+        strides_.push_back(checked_int(byte_stride / info_.itemsize, "stride"));
+      }
+      dim_order_.resize(sizes_.size());
+      std::iota(dim_order_.begin(), dim_order_.end(), 0);
+      std::stable_sort(
+          dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
+            return strides_[a] > strides_[b];
+          });
+      validate_dense_layout();
     }
-    dim_order_.resize(sizes_.size());
-    std::iota(dim_order_.begin(), dim_order_.end(), 0);
-    std::stable_sort(
-        dim_order_.begin(), dim_order_.end(), [this](uint8_t a, uint8_t b) {
-          return strides_[a] > strides_[b];
-        });
-    validate_dense_layout();
-    if (info_.readonly && info_.size > 0) {
+    if ((info_.readonly || raw_bfloat16) && info_.size > 0) {
       owned_data_.resize(info_.size * info_.itemsize);
       std::memcpy(owned_data_.data(), info_.ptr, owned_data_.size());
     }
@@ -1380,10 +1407,6 @@ struct PyModule final {
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
     torch_inputs.reserve(inputs_size);
 #endif
-    bool saw_buffer = false;
-    bool saw_torch = false;
-    bool saw_dlpack = false;
-
 #ifndef USE_ATEN_LIB // Portable mode
     // So the ETensors and their metadata stay in scope for
     // Module->run_method.
@@ -1405,10 +1428,6 @@ struct PyModule final {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
       if (is_torch_tensor(python_input)) {
-        if (saw_buffer || saw_dlpack) {
-          throw py::type_error("A call cannot mix tensor input protocols");
-        }
-        saw_torch = true;
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
@@ -1459,11 +1478,8 @@ struct PyModule final {
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        if (saw_torch || saw_dlpack) {
-          throw py::type_error("A call cannot mix tensor input protocols");
-        }
-        saw_buffer = true;
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
+        buffer_inputs.push_back(
+            std::make_shared<BufferTensor>(python_input, method_meta, i));
         const auto& buffer = buffer_inputs.back();
         validate_tensor_input(
             method_meta,
@@ -1498,10 +1514,6 @@ struct PyModule final {
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
 #endif
       } else if (py::hasattr(python_input, "__dlpack__")) {
-        if (saw_torch || saw_buffer) {
-          throw py::type_error("A call cannot mix tensor input protocols");
-        }
-        saw_dlpack = true;
 #ifdef USE_ATEN_LIB
         auto at_tensor = py::module_::import("torch.utils.dlpack")
                              .attr("from_dlpack")(python_input)
@@ -1511,6 +1523,12 @@ struct PyModule final {
         dlpack_inputs.push_back(
             std::make_shared<DLPackTensorView>(python_input));
         const auto& tensor = dlpack_inputs.back();
+        validate_tensor_input(
+            method_meta,
+            i,
+            tensor->scalar_type(),
+            tensor->sizes(),
+            tensor->strides());
         input_sizes.emplace_back(
             tensor->sizes().begin(), tensor->sizes().end());
         input_strides.emplace_back(
@@ -1953,10 +1971,6 @@ struct PyMethod final {
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
     torch_inputs.reserve(inputs_size);
 #endif
-    bool saw_buffer = false;
-    bool saw_torch = false;
-    bool saw_dlpack = false;
-
 #ifndef USE_ATEN_LIB // Portable mode
     // So the ETensors and their metadata stay in scope for
     // Module->set_inputs.
@@ -1971,10 +1985,6 @@ struct PyMethod final {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
       if (is_torch_tensor(python_input)) {
-        if (saw_buffer || saw_dlpack) {
-          throw py::type_error("A call cannot mix tensor input protocols");
-        }
-        saw_torch = true;
 #ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
@@ -2016,11 +2026,8 @@ struct PyMethod final {
       } else if (py::isinstance<py::float_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
-        if (saw_torch || saw_dlpack) {
-          throw py::type_error("A call cannot mix tensor input protocols");
-        }
-        saw_buffer = true;
-        buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
+        buffer_inputs.push_back(std::make_shared<BufferTensor>(
+            python_input, method_->method_meta(), i));
         const auto& buffer = buffer_inputs.back();
         validate_tensor_input(
             method_->method_meta(),
@@ -2048,10 +2055,6 @@ struct PyMethod final {
         cpp_inputs.emplace_back(buffer_tensor_ptrs.back());
 #endif
       } else if (py::hasattr(python_input, "__dlpack__")) {
-        if (saw_torch || saw_buffer) {
-          throw py::type_error("A call cannot mix tensor input protocols");
-        }
-        saw_dlpack = true;
 #ifdef USE_ATEN_LIB
         auto at_tensor = py::module_::import("torch.utils.dlpack")
                              .attr("from_dlpack")(python_input)
@@ -2061,6 +2064,12 @@ struct PyMethod final {
         dlpack_inputs.push_back(
             std::make_shared<DLPackTensorView>(python_input));
         const auto& view = dlpack_inputs.back();
+        validate_tensor_input(
+            method_->method_meta(),
+            i,
+            view->scalar_type(),
+            view->sizes(),
+            view->strides());
         auto tensor = for_blob(view->data(), view->sizes(), view->scalar_type())
                           .strides(view->strides())
                           .dim_order(view->dim_order())

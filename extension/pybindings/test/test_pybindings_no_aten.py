@@ -112,18 +112,34 @@ class PybindingsNoAtenTest(unittest.TestCase):
 
         np.testing.assert_array_equal(np.from_dlpack(output), np.array([3.0]))
 
-    def test_mixed_dlpack_and_buffer_inputs_are_rejected(self) -> None:
+    def test_bfloat16_raw_buffer_input_and_output(self) -> None:
+        with open(
+            os.environ["EXECUTORCH_PYBIND_TEST_BFLOAT16_PTE"], "rb"
+        ) as program_file:
+            program_data = program_file.read()
+        module = runtime._load_for_executorch_from_buffer(program_data)
+        one = bytes((0x80, 0x3F)) * 4
+
+        output = module((one, one))[0]
+
+        self.assertEqual(output.dtype, np.dtype("uint16"))
+        np.testing.assert_array_equal(
+            np.asarray(output), np.full((2, 2), 0x4000, dtype=np.uint16)
+        )
+
+    def test_mixed_dlpack_and_buffer_inputs(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
             program_data = program_file.read()
         module = runtime._load_for_executorch_from_buffer(program_data)
 
-        with self.assertRaisesRegex(TypeError, "cannot mix tensor input protocols"):
-            module(
-                (
-                    DLPackOnly(np.array([1.0], dtype=np.float32)),
-                    np.array([2.0], dtype=np.float32),
-                )
+        output = module(
+            (
+                DLPackOnly(np.array([1.0], dtype=np.float32)),
+                np.array([2.0], dtype=np.float32),
             )
+        )[0]
+
+        np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
 
     @unittest.skipUnless(
         importlib.util.find_spec("torch") is not None, "torch is not installed"
