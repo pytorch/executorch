@@ -61,6 +61,8 @@ struct StateSpec {
   native_backend::ScalarType dtype = native_backend::ScalarType::FLOAT;
   std::vector<int64_t> sizes{2};
   std::vector<int32_t> dim_order;
+  // Empty means each dim is static at its size.
+  std::vector<int64_t> lower_bounds;
 };
 
 flatbuffers::Offset<native_backend::Method> make_state_method(
@@ -69,8 +71,11 @@ flatbuffers::Offset<native_backend::Method> make_state_method(
     const StateSpec& state) {
   std::vector<flatbuffers::Offset<native_backend::Dim>> dimensions;
   dimensions.reserve(state.sizes.size());
-  for (const int64_t size : state.sizes) {
-    dimensions.push_back(native_backend::CreateDim(builder, size, size));
+  for (size_t i = 0; i < state.sizes.size(); ++i) {
+    const int64_t lower =
+        state.lower_bounds.empty() ? state.sizes[i] : state.lower_bounds[i];
+    dimensions.push_back(
+        native_backend::CreateDim(builder, lower, state.sizes[i]));
   }
   const auto value_name = builder.CreateString("state");
   const auto metadata = native_backend::CreateTensorMeta(
@@ -134,6 +139,84 @@ Program make_program(const StateSpec& first, const StateSpec& second) {
   return Program::load(builder.GetBufferPointer(), builder.GetSize());
 }
 
+// forward(x) = test.op(x, weight), with weight a bound parameter.
+Method make_op_method() {
+  Method method;
+  method.name = "forward";
+  method.graph.values = {
+      Value("weight", kFloat, {2}),
+      Value("x", kFloat, {2}),
+      Value("y", kFloat, {2})};
+  method.graph.values[0].role = ValueRole::Parameter;
+  method.graph.values[1].role = ValueRole::UserInput;
+  method.graph.nodes = {
+      Node{
+          .name = "weight",
+          .op_kind = OpKind::Placeholder,
+          .outputs = {{.value_id = 0}}},
+      Node{
+          .name = "x",
+          .op_kind = OpKind::Placeholder,
+          .outputs = {{.value_id = 1}}},
+      Node{
+          .name = "y",
+          .target = "test.op",
+          .inputs =
+              {{.name = "self", .arg = TensorArg{1}},
+               {.name = "other", .arg = TensorArg{0}}},
+          .outputs = {{.value_id = 2}}},
+      Node{
+          .name = "output",
+          .op_kind = OpKind::Output,
+          .inputs = {{.arg = TensorArg{2}}}},
+  };
+  method.graph.input_ids = {1};
+  method.graph.output_ids = {2};
+  method.graph.initialize_schedule();
+  method.graph.rebuild_def_use();
+  method.output_specs = {OutputSpec{}};
+  method.data_bindings.push_back(DataBinding{
+      /*value_id=*/0,
+      ValueRole::Parameter,
+      "weight",
+      /*has_data=*/true,
+      /*mutated=*/false});
+  return method;
+}
+
+TEST(ValidationTest, ValidateMethodConstants_OpMethod_Succeeds) {
+  EXPECT_NO_THROW(validate_method_constants(make_op_method(), make_package()));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_StructureRejects) {
+  Method stale_def_use = make_op_method();
+  stale_def_use.graph.values[2].consumer_ids.push_back(2);
+  Method int_list_refs = make_op_method();
+  int_list_refs.graph.nodes[2].inputs.push_back(
+      {.name = "size", .arg = IntListArg{{2, 1}, {kInvalid}}});
+  Method writes_parameter = make_op_method();
+  writes_parameter.graph.nodes[2].inputs[1].mutated = true;
+  Method aliases_non_input = make_op_method();
+  aliases_non_input.graph.nodes[2].inputs.pop_back();
+  aliases_non_input.graph.rebuild_def_use();
+  aliases_non_input.graph.values[2].alias_id = 0;
+  Method duplicate_key = make_op_method();
+  duplicate_key.data_bindings.push_back(duplicate_key.data_bindings[0]);
+  const std::vector<std::pair<std::string, Method>> cases = {
+      {"stale def-use", std::move(stale_def_use)},
+      {"int list refs", std::move(int_list_refs)},
+      {"parameter written in place", std::move(writes_parameter)},
+      {"alias of a non-input", std::move(aliases_non_input)},
+      {"duplicate binding key", std::move(duplicate_key)},
+  };
+  const Package package = make_package();
+  for (const auto& [name, method] : cases) {
+    SCOPED_TRACE(name);
+    EXPECT_THROW(
+        validate_method_constants(method, package), std::runtime_error);
+  }
+}
+
 TEST(ValidationTest, ValidateMethodConstants_MatchingBinding_Succeeds) {
   const Package package = make_package();
   const Method method = make_method();
@@ -190,6 +273,86 @@ TEST(ValidationTest, ValidateMethodConstants_InvalidDimOrder_Throws) {
   Method method;
   method.name = "forward";
   method.graph.values.emplace_back("input", TensorMeta{kFloat, {1, 2}, {0, 0}});
+
+  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+}
+
+constexpr char kQuantizedHeader[] =
+    R"({"weight":{"dtype":"U8","shape":[8],"data_offsets":[0,8]},)"
+    R"("weight_scales":{"dtype":"F32","shape":[2,2],"data_offsets":[8,24]},)"
+    R"("weight_zeros":{"dtype":"I32","shape":[2,2],"data_offsets":[24,40]}})";
+
+Package make_quantized_package() {
+  auto tensors = testing::make_safetensors(
+      kQuantizedHeader,
+      /*payload_size=*/40);
+  return Package::load(OwnedBytes::from_vector(testing::make_zip({
+      {kProgramEntry, {'N', 'P', 'T', 'G'}},
+      {kSafeTensorsEntry, std::move(tensors)},
+  })));
+}
+
+// An int4 [2, 8] weight in groups of 4, with its scale and zero-point tensors
+// bound as ordinary constants of the method.
+Method make_quantized_method() {
+  Method method;
+  method.name = "forward";
+  TensorMeta weight{kByte, {2, 8}, {}};
+  weight.quant = AffineGroupQuant{
+      "weight_scales",
+      kFloat,
+      /*quant_min=*/-8,
+      /*quant_max=*/7,
+      /*group_size=*/4,
+      "weight_zeros",
+      kInt};
+  method.graph.values.emplace_back("weight", std::move(weight));
+  method.graph.values.emplace_back(
+      "weight_scales", TensorMeta{kFloat, {2, 2}, {}});
+  method.graph.values.emplace_back(
+      "weight_zeros", TensorMeta{kInt, {2, 2}, {}});
+  for (ValueId id = 0; id < 3; ++id) {
+    method.data_bindings.push_back(DataBinding{
+        id,
+        ValueRole::Parameter,
+        method.graph.values[id].name,
+        /*has_data=*/true,
+        /*mutated=*/false});
+  }
+  return method;
+}
+
+TEST(ValidationTest, ValidateMethodConstants_QuantizedWeight_Succeeds) {
+  const Package package = make_quantized_package();
+  const Method method = make_quantized_method();
+
+  EXPECT_NO_THROW(validate_method_constants(method, package));
+  ASSERT_NE(find_data_binding(method, "weight_scales"), nullptr);
+  EXPECT_EQ(find_data_binding(method, "weight_scales")->value_id, 1);
+  EXPECT_EQ(find_data_binding(method, "missing"), nullptr);
+}
+
+TEST(ValidationTest, ValidateMethodConstants_UnboundScale_Throws) {
+  const Package package = make_quantized_package();
+  Method method = make_quantized_method();
+  method.data_bindings.erase(method.data_bindings.begin() + 1);
+
+  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+}
+
+TEST(ValidationTest, ValidateMethodConstants_UnboundZeroPoint_Throws) {
+  const Package package = make_quantized_package();
+  Method method = make_quantized_method();
+  method.data_bindings.pop_back();
+
+  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+}
+
+TEST(ValidationTest, ValidateMethodConstants_ScaleBindingDtypeMismatch_Throws) {
+  const Package package = make_quantized_package();
+  Method method = make_quantized_method();
+  std::get<AffineGroupQuant>(*method.graph.values[0].tensor_meta().quant)
+      .scale_dtype = kHalf;
 
   EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
 }
@@ -257,6 +420,14 @@ TEST(ValidationTest, ValidateProgramState_DifferentShapes_Throws) {
   EXPECT_THROW(validate_program_state(program), std::runtime_error);
 }
 
+TEST(ValidationTest, ValidateProgramState_DifferentLowerBounds_Throws) {
+  StateSpec dynamic;
+  dynamic.lower_bounds = {1};
+  const Program program = make_program(StateSpec{}, dynamic);
+
+  EXPECT_THROW(validate_program_state(program), std::runtime_error);
+}
+
 TEST(ValidationTest, ValidateProgramState_DifferentLayouts_Throws) {
   StateSpec other_layout;
   other_layout.sizes = {1, 2};
@@ -266,6 +437,86 @@ TEST(ValidationTest, ValidateProgramState_DifferentLayouts_Throws) {
   const Program program = make_program(identity, other_layout);
 
   EXPECT_THROW(validate_program_state(program), std::runtime_error);
+}
+
+Package make_q4_package() {
+  auto tensors = testing::make_safetensors(
+      R"({"weight":{"dtype":"U8","shape":[4],"data_offsets":[0,4]},)"
+      R"("scale":{"dtype":"F32","shape":[2],"data_offsets":[4,12]}})",
+      /*payload_size=*/12);
+  return Package::load(OwnedBytes::from_vector(testing::make_zip({
+      {kProgramEntry, {'N', 'P', 'T', 'G'}},
+      {kSafeTensorsEntry, std::move(tensors)},
+  })));
+}
+
+Method make_q4_method(
+    QuantScheme quant,
+    std::vector<int64_t> sizes = {2, 4},
+    std::string key = "weight") {
+  TensorMeta meta{ScalarType::Byte, std::move(sizes)};
+  meta.quant = std::move(quant);
+  Method method = make_method();
+  method.graph.values.clear();
+  method.graph.values.emplace_back("weight", std::move(meta));
+  method.graph.values.emplace_back("scale", TensorMeta{kFloat, {2}});
+  method.data_bindings[0].key = std::move(key);
+  method.data_bindings.push_back(DataBinding{
+      /*value_id=*/1,
+      ValueRole::Parameter,
+      "scale",
+      /*has_data=*/true,
+      /*mutated=*/false});
+  return method;
+}
+
+AffineGroupQuant q4_scheme() {
+  return AffineGroupQuant{
+      .scale_data_key = "scale",
+      .quant_min = -8,
+      .quant_max = 7,
+      .group_size = 4};
+}
+
+TEST(ValidationTest, ValidateMethodConstants_AffineGroup_Succeeds) {
+  EXPECT_NO_THROW(validate_method_constants(
+      make_q4_method(q4_scheme()), make_q4_package()));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_PerChannelAffineGroup_Succeeds) {
+  AffineGroupQuant per_channel = q4_scheme();
+  per_channel.group_size = 0;
+  EXPECT_NO_THROW(validate_method_constants(
+      make_q4_method(per_channel), make_q4_package()));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_AffineGroupRejects) {
+  const Package package = make_q4_package();
+  AffineGroupQuant indivisible = q4_scheme();
+  indivisible.group_size = 3;
+  AffineGroupQuant non_power_of_two = q4_scheme();
+  non_power_of_two.quant_max = 6;
+  AffineGroupQuant scale_count = q4_scheme();
+  scale_count.group_size = 2;
+  AffineGroupQuant missing_zero_point = q4_scheme();
+  missing_zero_point.zero_point_data_key = "missing";
+  AffineGroupQuant no_scale = q4_scheme();
+  no_scale.scale_data_key.clear();
+  const std::vector<std::pair<std::string, Method>> cases = {
+      {"indivisible group", make_q4_method(indivisible)},
+      {"non-power-of-two range", make_q4_method(non_power_of_two)},
+      {"scale count", make_q4_method(scale_count)},
+      {"missing zero point", make_q4_method(missing_zero_point)},
+      {"no scale", make_q4_method(no_scale)},
+      {"packed byte count", make_q4_method(q4_scheme(), {2, 8})},
+      {"non-Byte constant", make_q4_method(q4_scheme(), {2, 4}, "scale")},
+      {"empty codec", make_q4_method(PackedQuant{})},
+  };
+  for (const auto& [name, method] : cases) {
+    SCOPED_TRACE(name);
+    EXPECT_THROW(
+        validate_method_constants(method, package), std::runtime_error);
+  }
 }
 
 } // namespace
