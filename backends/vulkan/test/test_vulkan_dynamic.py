@@ -231,6 +231,97 @@ class TestVulkanDynamic(unittest.TestCase):
                 edge = self._lower(model, inputs[0], fully_delegated=False)
                 self._run(edge, model, inputs, atol=0, rtol=0, equal_nan=True)
 
+    def test_64_bit_arithmetic_without_downcasting(self):
+        class Arithmetic(torch.nn.Module):
+            def forward(self, x):
+                return x + x, x.to(torch.float32) + 1
+
+        for dtype in (torch.int64, torch.float64):
+            with self.subTest(dtype=dtype):
+                model = Arithmetic()
+                inputs = [
+                    (torch.arange(3 * s, dtype=dtype).reshape(3, s),) for s in (7, 2)
+                ]
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=16)},),
+                    fully_delegated=False,
+                    downcast_64_bit=False,
+                )
+                graphs = _vulkan_graphs(edge)
+                self.assertTrue(graphs)
+                for graph in graphs:
+                    for value in graph.values:
+                        if isinstance(value.value, VkTensor):
+                            self.assertNotIn(
+                                value.value.datatype,
+                                (VkDataType.INT64, VkDataType.FLOAT64),
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_64_bit_fusion_inputs_without_downcasting(self):
+        class SelectScalar(torch.nn.Module):
+            def __init__(self, narrow):
+                super().__init__()
+                self.narrow = narrow
+
+            def forward(self, x, pos):
+                value = pos[0].item()
+                if self.narrow:
+                    torch._check(value >= 0)
+                    torch._check(value <= 6)
+                    return x.narrow(1, value, 2) + 1
+                return x * value
+
+        inputs = [(torch.randn(2, 8), torch.tensor([pos])) for pos in (3, 5, 0)]
+        for narrow in (False, True):
+            for downcast in (False, True):
+                with self.subTest(narrow=narrow, downcast=downcast):
+                    model = SelectScalar(narrow)
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        fully_delegated=False,
+                        downcast_64_bit=downcast,
+                    )
+                    for graph in _vulkan_graphs(edge):
+                        for value in graph.values:
+                            if isinstance(value.value, VkTensor):
+                                self.assertNotIn(
+                                    value.value.datatype,
+                                    (VkDataType.INT64, VkDataType.FLOAT64),
+                                )
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_quantized_embedding_without_downcasting(self):
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+        from torchao.utils import unwrap_tensor_subclass
+
+        torch.manual_seed(0)
+        model = torch.nn.Sequential(torch.nn.Embedding(64, 128)).eval()
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            filter_fn=lambda module, fqn: isinstance(module, torch.nn.Embedding),
+        )
+        unwrap_tensor_subclass(model)
+        inputs = [(torch.tensor(indices),) for indices in ([0, 5, 63, 7], [3, 3, 1, 0])]
+        for downcast in (False, True):
+            with self.subTest(downcast=downcast):
+                if downcast and USING_SWIFTSHADER:
+                    self.skipTest("Quantized embedding requires 8-bit storage buffers")
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    fully_delegated=downcast,
+                    downcast_64_bit=downcast,
+                )
+                self.assertEqual(bool(_vulkan_graphs(edge)), downcast)
+                if downcast:
+                    self._run(edge, model, inputs)
+
     def test_dynamic_scalar_values_fall_back(self):
         class DynamicScalars(torch.nn.Module):
             def forward(self, x):
