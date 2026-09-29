@@ -41,7 +41,7 @@ repository root, in an env with ExecuTorch installed in editable mode and
 python -m pytest backends/apple/coreai
 ```
 
-Standard pytest options apply, e.g. `-v` or `-k sidecar`.
+Standard pytest options apply, e.g. `-v` or `-k manifest`.
 
 The real-toolchain AOT test (`CoreAIAOTCompileTest`) is gated on
 `xcrun coreai-build`; it runs on macOS with the Metal Toolchain and skips
