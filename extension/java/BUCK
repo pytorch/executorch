@@ -1,0 +1,32 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:native_rules.bzl", "buck_filegroup")
+
+oncall("executorch")
+
+# Shared platform-neutral Java/Kotlin sources, compiled in place by each
+# platform artifact (see README.md in this directory). Exported as filegroup
+# labels so consuming targets never need parent-relative ("../") source paths,
+# and globs so newly added shared sources are picked up automatically.
+#
+# NOTE: the ASR sources under src/main/java/org/pytorch/executorch/extension/asr
+# are intentionally not referenced by any Buck target here; they are built by
+# the OSS Gradle AAR only (same as before the shared-source move). Add a
+# filegroup + consumer target when an internal Buck build needs them.
+
+fbcode_target(_kind = buck_filegroup,
+    name = "core_sources",
+    srcs = glob([
+        "src/main/java/org/pytorch/executorch/*.kt",
+        "src/main/java/org/pytorch/executorch/annotations/*.kt",
+    ]),
+)
+
+fbcode_target(_kind = buck_filegroup,
+    name = "training_sources",
+    srcs = glob(["src/main/java/org/pytorch/executorch/training/*.kt"]),
+)
+
+fbcode_target(_kind = buck_filegroup,
+    name = "llm_sources",
+    srcs = glob(["src/main/java/org/pytorch/executorch/extension/llm/*.kt"]),
+)
