@@ -789,6 +789,9 @@ def _annotate_add_relu(  # noqa: C901
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
+        if _is_input_non_float_tensor(add_node):
+            continue
+
         input_act_qspec = get_input_act_qspec(quantization_config)
         output_act_qspec = get_output_act_qspec(quantization_config)
 
@@ -843,6 +846,9 @@ def _annotate_add(
             continue
 
         if filter_fn and any(not filter_fn(n) for n in partition):
+            continue
+
+        if _is_input_non_float_tensor(add_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
@@ -913,6 +919,9 @@ def _annotate_mul_relu(  # noqa: C901
         if filter_fn and any(not filter_fn(n) for n in partition):
             continue
 
+        if _is_input_non_float_tensor(mul_node):
+            continue
+
         input_act_qspec = get_input_act_qspec(quantization_config)
         output_act_qspec = get_output_act_qspec(quantization_config)
 
@@ -967,6 +976,9 @@ def _annotate_mul(
             continue
 
         if filter_fn and any(not filter_fn(n) for n in partition):
+            continue
+
+        if _is_input_non_float_tensor(mul_node):
             continue
 
         input_act_qspec = get_input_act_qspec(quantization_config)
@@ -1154,7 +1166,12 @@ def _convert_scalars_to_attrs(model: torch.fx.GraphModule) -> torch.fx.GraphModu
         args = list(n.args)
         new_args = []
         for i in range(len(args)):
-            if isinstance(args[i], torch.fx.Node):
+            # Only FP32 binary ops need scalar lifting for quantization. Other
+            # dtypes must retain Python scalar promotion and rounding semantics.
+            if (
+                isinstance(args[i], torch.fx.Node)
+                or n.meta["val"].dtype != torch.float32
+            ):
                 new_args.append(args[i])
                 continue
             prefix = "_tensor_constant_"
