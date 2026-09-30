@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <provider
+            android:name="org.pytorch.executorch.ExecuTorchInitProvider"
+            android:authorities="${applicationId}.executorch-init"
+            android:exported="false" />
     </application>
     <instrumentation
         android:name="androidx.test.runner.AndroidJUnitRunner"
