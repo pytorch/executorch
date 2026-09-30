@@ -108,7 +108,9 @@ jobs:
           lintrunner init
 
       - name: Test release preparation
-        run: python scripts/release/test_prepare_release.py
+        run: |
+          python scripts/release/test_prepare_release.py
+          python scripts/release/test_finalize_release.py
 
       - name: Validate release configuration
         if: startsWith(github.ref_name, 'release/') || startsWith(github.base_ref, 'release/')
