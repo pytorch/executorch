@@ -227,4 +227,17 @@ def all_flows() -> dict[str, TestFlow]:
     except Exception as e:
         logger.info(f"Skipping MLX flow registration: {e}")
 
+    try:
+        from executorch.backends.test.suite.flows.samsung import (
+            SAMSUNG_A8W8_TEST_FLOW,
+            SAMSUNG_TEST_FLOW,
+        )
+
+        flows += [
+            SAMSUNG_TEST_FLOW,
+            SAMSUNG_A8W8_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping SAMSUNG flow registration: {e}")
+
     return {f.name: f for f in flows if f is not None}

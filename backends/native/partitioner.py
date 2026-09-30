@@ -13,9 +13,13 @@ cleanup (CSE, reinplace) runs before lowering via transform_passes, since
 ExecuTorch forbids a partitioner from mutating the graph module.
 """
 
+import operator
 from typing import Callable, final, List, Mapping, Optional, Tuple
 
+# Registers torch.ops.torchao.dequantize_gguf, referenced in _SUPPORTED_NON_CORE_OPS.
+import executorch.extension.llm.export.gguf  # noqa: F401
 import torch
+from executorch.backends.native.custom_ops import rope_op
 from executorch.backends.native.passes import backend_inplace_aten_variants
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -38,6 +42,11 @@ _SUPPORTED_NON_CORE_OPS = [
     torch.ops.aten.linear.default,
     torch.ops.aten.addmm.default,
     torch.ops.aten.scaled_dot_product_attention.default,
+    # GGUF weight dequantize stays in the delegate; the serializer folds it into a
+    # PackedQuant weight on the consuming op.
+    torch.ops.torchao.dequantize_gguf.default,
+    rope_op,
+    torch.ops.aten.rms_norm.default,
 ]
 
 # Maps a control-flow higher-order op to the arg indices of its branch submodule
@@ -65,6 +74,32 @@ class NativeSupportedOperators(OperatorSupportBase):
             return False
         if isinstance(node.target, torch._ops.HigherOrderOperator):
             return False
+        if node.target is operator.getitem:
+            # Tuple projections are folded into their producer during serialization.
+            if len(node.args) < 2:
+                return False
+            producer, index = node.args[:2]
+            if (
+                not isinstance(producer, Node)
+                or not isinstance(index, int)
+                or isinstance(index, bool)
+                or index < 0
+            ):
+                return False
+            values = producer.meta.get("val")
+            if not isinstance(values, (tuple, list)) or index >= len(values):
+                return False
+            if not self.is_node_supported(submodules, producer):
+                return False
+            return (
+                sum(
+                    user.target is operator.getitem
+                    and len(user.args) >= 2
+                    and user.args[1] == index
+                    for user in producer.users
+                )
+                == 1
+            )
 
         from executorch.exir.dialects.edge._ops import EdgeOpOverload
 

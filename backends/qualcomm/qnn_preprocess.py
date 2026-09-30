@@ -138,7 +138,7 @@ class QnnBackend(BackendDetails):
                         op = unwrap_op_overload(node.target)
                         context_loader_target = eval(
                             f"torch.ops.{OpContextLoader.namespace}.{op.__name__}",
-                            globals().update(torch.__dict__),
+                            {"torch": torch},
                         )
                         assert op == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
@@ -243,6 +243,7 @@ class QnnBackend(BackendDetails):
                             (handle_id := node.meta.get(DEBUG_HANDLE_KEY))
                             and QCOM_TENSOR_NAME in node.meta
                             and len(node.meta[QCOM_TENSOR_NAME]) == 1
+                            and node.op == "call_function"
                         ):
                             debug_handle_builder.insert_delegate_mapping_entry(
                                 handles=handle_id,

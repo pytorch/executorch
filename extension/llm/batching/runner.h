@@ -196,6 +196,20 @@ class ET_EXPERIMENTAL Session {
   // the next generation. Returns 0 for a default or moved-from Session.
   Position position() const noexcept;
 
+  // An independent, idle session holding committed [0, upto), with no pending
+  // prediction, generation, or sampling policy. The source may be generating;
+  // upto is checked against its accepted committed position on the engine
+  // thread. Speculative or pending tokens beyond that position are excluded.
+  //
+  // nullopt = invalid/poisoned source or boundary, unavailable retained state,
+  // unsupported cloning, capacity pressure, or shutdown. An empty prefix may
+  // be refused. Failure leaves the source unchanged. Once queued, a clone
+  // survives source destruction queued after it, but shutdown may refuse it.
+  //
+  // A model-output callback may enqueue a clone before the next model forward.
+  // Never wait for the returned future in a callback serviced by this runner.
+  std::future<std::optional<Session>> clone_async(Position upto) const;
+
   // `delta` is the caller-resolved suffix to append. The session tracks its
   // committed position and any pending generated token, so consecutive
   // generations continue where prior executor work left them. Retain this
@@ -213,7 +227,11 @@ class ET_EXPERIMENTAL Session {
 
  private:
   friend class RunnerImpl;
+  friend class PrefixCache;
   explicit Session(std::unique_ptr<SessionState> state);
+
+  std::function<std::future<std::optional<Session>>()> make_clone_request(
+      Position upto) const;
 
   std::unique_ptr<SessionState> state_;
 };

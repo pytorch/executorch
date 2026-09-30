@@ -22,6 +22,7 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
 from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
+    is_dynamic_qdq,
     is_quant,
     is_tagged_as_implicit_q_dq,
 )
@@ -363,6 +364,222 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             )
             .run_method_and_compare_outputs()
         )
+
+    class EltwiseConv2dDynamicQuant(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 10, 3)
+
+        def forward(self, x):
+            return self.conv(torch.sigmoid(x))
+
+    def test_dq_conv2d_eltwise_source_channels_last_tagged_reshape_pass(self) -> None:
+        # The conv's input is sigmoid -> q -> dq. Stepping past the q/dq pair leaves
+        # the sigmoid reading NHWC while its own output stays NCHW, which XNNPACK
+        # only rejects at runtime.
+        tester = (
+            Tester(self.EltwiseConv2dDynamicQuant().eval(), (torch.randn(1, 3, 8, 8),))
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        artifact = tester.get_artifact(StageType.RUN_PASSES)
+        graph_module = artifact.exported_program().graph_module
+        sigmoid_nodes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.sigmoid.default
+        ]
+        self.assertEqual(len(sigmoid_nodes), 1)
+        sigmoid = sigmoid_nodes[0]
+
+        # The sigmoid keeps its NCHW input and the copy sits on its output instead.
+        self.assertEqual(sigmoid.args[0].op, "placeholder")
+        copies = [
+            user
+            for user in sigmoid.users
+            if user.target == exir_ops.edge.aten._to_copy.default
+            and user.kwargs.get("memory_format") == torch.channels_last
+        ]
+        self.assertEqual(len(copies), 1)
+
+        tester.run_method_and_compare_outputs()
+
+    class SiLUStemSharedConv2dDynamicQuant(torch.nn.Module):
+        """A SiLU stem ahead of the first convolution, as detection backbones have.
+
+        Two producers here have more than one consumer: the input activation feeds
+        both the sigmoid and the mul, and the SiLU output feeds both the quantized
+        convolution and the graph output. Both are reachable by the blanket
+        ``replace_all_uses_with`` in the dynamic-quant branch of ``input_to_nhwc``.
+        """
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def forward(self, x):
+            act = x * torch.sigmoid(x)
+            return self.conv(act), act
+
+    def test_dq_conv2d_silu_stem_shared_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SiLUStemSharedConv2dDynamicQuant().eval(),
+                (torch.randn(1, 3, 16, 16),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        muls = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.mul.Tensor
+        ]
+        self.assertEqual(len(muls), 1)
+        silu = muls[0]
+
+        # The walk must stop at the SiLU output rather than run on to the input
+        # activation, which would leave the mul and the sigmoid reading NHWC while
+        # their own outputs stay NCHW.
+        for arg in silu.all_input_nodes:
+            self.assertNotEqual(arg.target, exir_ops.edge.aten._to_copy.default)
+
+        # The SiLU output is converted once, for the convolution only. The graph
+        # output keeps the unconverted node.
+        copies = [
+            user
+            for user in silu.users
+            if user.target == exir_ops.edge.aten._to_copy.default
+            and user.kwargs.get("memory_format") == torch.channels_last
+        ]
+        self.assertEqual(len(copies), 1)
+        output_node = next(
+            node for node in graph_module.graph.nodes if node.op == "output"
+        )
+        self.assertIn(silu, output_node.args[0])
+
+        tester.run_method_and_compare_outputs()
+
+    class SiblingBranchConv2dDynamicQuant(torch.nn.Module):
+        """A producer feeding both a quantized conv and an ordinary op."""
+
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 8, 3, padding=1)
+
+        def forward(self, x):
+            act = torch.sigmoid(x)
+            return self.conv(act), torch.tanh(act)
+
+    def test_dq_conv2d_sibling_branch_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SiblingBranchConv2dDynamicQuant().eval(),
+                (torch.randn(1, 3, 16, 16),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        tanhs = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.tanh.default
+        ]
+        self.assertEqual(len(tanhs), 1)
+
+        # Only the quantize wrapper moved to the NHWC copy.
+        self.assertEqual(tanhs[0].args[0].target, exir_ops.edge.aten.sigmoid.default)
+
+        tester.run_method_and_compare_outputs()
+
+    class SharedLinearConvDynamicQuant(torch.nn.Module):
+        """Two dynamically quantized siblings sharing one source; only the conv
+        wants NHWC.
+        """
+
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(8, 8)
+            self.conv = torch.nn.Conv2d(3, 4, 1)
+
+        def forward(self, x):
+            act = torch.sigmoid(x)
+            # Keep linear before conv so it is processed first.
+            return self.linear(act), self.conv(act)
+
+    def test_dq_shared_linear_conv_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SharedLinearConvDynamicQuant().eval(),
+                (torch.randn(1, 3, 8, 8),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        quantizes = [
+            node
+            for node in graph_module.graph.nodes
+            if is_dynamic_qdq(node) and is_quant(node)
+        ]
+        self.assertEqual(len(quantizes), 2)
+        for quantize in quantizes:
+            consumer = next(iter(next(iter(quantize.users)).users))
+            source = quantize.args[0].target
+            qparam_source = quantize.args[1].args[0].args[0].target
+            self.assertEqual(source, qparam_source)
+            if consumer.target == exir_ops.edge.aten.convolution.default:
+                # The conv's chain reads the NHWC copy.
+                self.assertEqual(source, exir_ops.edge.aten._to_copy.default)
+            else:
+                # The linear's chain keeps the source.
+                self.assertEqual(source, exir_ops.edge.aten.sigmoid.default)
+
+        tester.run_method_and_compare_outputs()
 
     class ConvAddConvOutput(torch.nn.Module):
         def __init__(self):

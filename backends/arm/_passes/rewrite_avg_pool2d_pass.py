@@ -36,9 +36,7 @@ class RewriteAvgPool2dPass(ArmOpTargetedPass):
         x = args[0]
         kernel = to_2tuple(args[1])
 
-        stride = to_2tuple(args[2]) if len(args) > 2 else ()
-        if not stride:
-            stride = kernel  # default to kernel_size
+        stride = to_2tuple(args[2]) if len(args) > 2 and args[2] else kernel
 
         pad_h, pad_w = to_2tuple(args[3]) if len(args) > 3 else (0, 0)
         # Make sure pad corresponds to TOSA

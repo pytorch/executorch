@@ -44,14 +44,14 @@ export CONTEXT_LENGTH=2048
 ```
 
 Then, export the Llama 3.2 1B/3B Instruct model to ExecuTorch Vulkan. Note that
-that `--vulkan-force-fp16` flag is set, which will improve model inference
+the `--vulkan-force-fp16` flag is set, which will improve model inference
 latency at the cost of model accuracy. Feel free to remove this flag.
 
 ```shell
 python -m examples.models.llama.export_llama \
     -c $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/consolidated.00.pth \
     -p $HOME/.llama/checkpoints/${LLM_NAME}-${LLM_SIZE}${LLM_SUFFIX}/params.json \
-    -d fp32 --${BACKEND} \
+    -d fp32 --${BACKEND} --vulkan-force-fp16 \
     -qmode ${QUANT} -G ${GROUP_SIZE} \
     --max_seq_length ${CONTEXT_LENGTH} \
     --max_context_length ${CONTEXT_LENGTH} \
@@ -93,7 +93,7 @@ cmake . \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_TESTS=OFF \
     -Bcmake-out-android-so && \
-cmake --build cmake-out-android-so -j16 --target install --config Release
+cmake --build cmake-out-android-so -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 ## Build and push the llama runner binary to Android
@@ -111,7 +111,7 @@ cmake examples/models/llama \
     -DCMAKE_BUILD_TYPE=Release \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-out-android-so/examples/models/llama && \
-cmake --build cmake-out-android-so/examples/models/llama -j16 --config Release
+cmake --build cmake-out-android-so/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 Once the binary is built, it can be pushed to your Android device.
@@ -136,7 +136,6 @@ adb shell /data/local/tmp/etvk/llama_main \
 Here is some sample output captured from a Galaxy S24:
 
 ```shell
-E tokenizers:hf_tokenizer.cpp:60] Error parsing json file: [json.exception.parse_error.101] parse error at line 1, column 1: syntax error while parsing value - invalid literal; last read: 'I'
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>Write me a short poem.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 Here is a short poem I came up with:

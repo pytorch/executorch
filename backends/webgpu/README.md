@@ -218,4 +218,4 @@ backends/webgpu/
 - **Linux:** Vulkan-capable GPU and drivers
 - **Browser:** A WebGPU-enabled browser; the benchmark harness uses Chrome
   Canary
-- **Build:** CMake 3.19+ and a Python environment with ExecuTorch installed
+- **Build:** CMake 3.24+ and a Python environment with ExecuTorch installed

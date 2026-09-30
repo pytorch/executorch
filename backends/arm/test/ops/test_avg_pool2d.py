@@ -288,7 +288,16 @@ def test_avg_pool2d_16a8w_u85_INT(test_module):
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules | test_modules_bf16 | test_modules_fp16)
+@common.parametrize(
+    "test_module",
+    test_modules | test_modules_bf16 | test_modules_fp16,
+    xfails={
+        "kernel_3x3_stride_1_pad_1_bf16": common.xfail_if_model_converter_version(
+            "<0.10.0",
+            reason="MLCE-1887: Unsupported BF16 PAD constant encoding in emulation layer.",
+        ),
+    },
+)
 @common.SkipIfNoModelConverter
 def test_avg_pool2d_vgf_no_quant(test_module):
     model, input_tensor = test_module()
@@ -364,7 +373,6 @@ reject_modules = {
 
 @common.parametrize("reject_module", reject_modules)
 def test_avg_pool2d_u55_INT_not_delegated(reject_module):
-
     model, test_data = reject_module()
 
     pipeline = OpNotSupportedPipeline[input_t](

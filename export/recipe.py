@@ -6,6 +6,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
 import copy
 import dataclasses
 import logging
@@ -209,6 +211,8 @@ class LoweringRecipe:
         edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
                                         and return passes to be applied. Applied sequentially after TO_EDGE stage.
         edge_compile_config: Optional edge compilation configuration
+        pre_partitioning_callback: Optional callable invoked just before partitioning with
+                                   `(partitioners, programs)` arguments.
     """
 
     partitioners: Optional[Union[List[Partitioner], Dict[str, List[Partitioner]]]] = (
@@ -223,6 +227,9 @@ class LoweringRecipe:
     ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
+    pre_partitioning_callback: Optional[
+        Callable[[Optional[list[Partitioner]], dict[str, ExportedProgram]], None]
+    ] = None
 
 
 @dataclass
@@ -234,6 +241,8 @@ class _CombineAccumulator:
     quantizers: list = field(default_factory=list)
     ao_quantization_configs: list = field(default_factory=list)
     pre_edge_passes: list = field(default_factory=list)
+    source_transform_passes: list = field(default_factory=list)
+    pre_trace_hooks: list = field(default_factory=list)
     edge_transform_passes: list = field(default_factory=list)
     edge_manager_transform_passes: list = field(default_factory=list)
     pre_prepare_passes: list = field(default_factory=list)
@@ -248,7 +257,10 @@ class _CombineAccumulator:
     mode_values: list = field(default_factory=list)
     pipeline_stages_values: list = field(default_factory=list)
     source_transform_in_place_values: list = field(default_factory=list)
+    release_intermediate_artifacts_values: list = field(default_factory=list)
+    generate_etrecord_values: list = field(default_factory=list)
     backend_config: object = None
+    pre_partitioning_callbacks: list = field(default_factory=list)
 
 
 @experimental(
@@ -267,14 +279,37 @@ class ExportRecipe:
         quantization_recipe: Optional quantization recipe for model quantization
         aten_transform_passes: Optional list of functions to apply transformation passes to the program before edge lowering.
                                These callables are invoked to modify and return the transformed program.
+        source_transform_passes: Optional list of nn.Module transforms applied once
+                               during the SOURCE_TRANSFORM stage, before quantization.
+                               Each is applied once per distinct model object, so a
+                               model shared by several methods is transformed once.
+                               Each pass must return the nn.Module to use, even when
+                               it mutates its input in place.
+        pre_trace_hooks: Optional list of (method_name, model) callables invoked
+                               before each method's first trace: in QUANTIZE for PT2E,
+                               otherwise in TORCH_EXPORT.
+                               Hooks may only change Python configuration, such as
+                               kernel selection, never tensor state or module structure.
+                               Tensor storage remains shared. Configuration persists
+                               on shared models, so hooks must overwrite the settings
+                               they own for each method. Return values are ignored.
+                               Hooks are not repeated on converted PT2E graphs.
         source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
                                stage and mutate the caller's model. Necessary for models
                                large enough that a second copy will not fit in memory.
+        release_intermediate_artifacts: Drop each stage's output once the next stage
+                               has consumed it, so only the final artifact stays
+                               resident. Necessary for models whose intermediates do
+                               not all fit in memory at once. Makes
+                               get_exported_program(), get_edge_program_manager(),
+                               and print_delegation_info() unavailable after export.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
         strict: Set the strict flag in the torch export call.
+        generate_etrecord: When True, the export pipeline captures an ETRecord for
+                           use with the ExecuTorch devtools (profiling, debugging).
     """
 
     name: Optional[str] = None
@@ -289,6 +324,12 @@ class ExportRecipe:
     pipeline_stages: Optional[List[StageType]] = None
     mode: Mode = Mode.RELEASE
     strict: bool = True
+    source_transform_passes: Optional[
+        List[Callable[[torch.nn.Module], torch.nn.Module]]
+    ] = None
+    pre_trace_hooks: Optional[List[Callable[[str, torch.nn.Module], None]]] = None
+    release_intermediate_artifacts: bool = False
+    generate_etrecord: bool = False
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
@@ -437,6 +478,7 @@ class ExportRecipe:
         all_partitioners_by_method: dict,
         all_edge_transform_passes: list,
         all_edge_manager_transform_passes: list,
+        all_pre_partitioning_callbacks: list,
     ) -> "Optional[LoweringRecipe]":
         """
         Build the combined LoweringRecipe from per-recipe collected lists.
@@ -474,11 +516,28 @@ class ExportRecipe:
             )
         edge_compile_config = copy.deepcopy(distinct[0][1]) if distinct else None
 
+        combined_pre_partitioning_callback = None
+        if all_pre_partitioning_callbacks:
+            _cbs = all_pre_partitioning_callbacks
+
+            def _chained_pre_partitioning_callback(partitioners, programs):
+                for cb in _cbs:
+                    try:
+                        cb(partitioners, programs)
+                    except Exception as e:
+                        name = getattr(cb, "__qualname__", repr(cb))
+                        raise RuntimeError(
+                            f"Pre-partitioning callback `{name}` failed: {e}"
+                        ) from e
+
+            combined_pre_partitioning_callback = _chained_pre_partitioning_callback
+
         if not (
             combined_partitioners
             or all_edge_transform_passes
             or all_edge_manager_transform_passes
             or edge_compile_config
+            or combined_pre_partitioning_callback
         ):
             logging.info(
                 "Combined recipe has no lowering fields; lowering_recipe will be None."
@@ -490,6 +549,7 @@ class ExportRecipe:
             edge_transform_passes=all_edge_transform_passes or None,
             edge_manager_transform_passes=all_edge_manager_transform_passes or None,
             edge_compile_config=edge_compile_config or EdgeCompileConfig(),
+            pre_partitioning_callback=combined_pre_partitioning_callback,
         )
 
     @staticmethod
@@ -509,6 +569,8 @@ class ExportRecipe:
             acc.edge_transform_passes.extend(lr.edge_transform_passes)
         if lr.edge_manager_transform_passes:
             acc.edge_manager_transform_passes.extend(lr.edge_manager_transform_passes)
+        if lr.pre_partitioning_callback:
+            acc.pre_partitioning_callbacks.append(lr.pre_partitioning_callback)
 
     @staticmethod
     def _collect_quantization_fields(
@@ -546,6 +608,10 @@ class ExportRecipe:
         for recipe in backend_recipes:
             if recipe.aten_transform_passes:
                 acc.pre_edge_passes.extend(recipe.aten_transform_passes)
+            if recipe.source_transform_passes:
+                acc.source_transform_passes.extend(recipe.source_transform_passes)
+            if recipe.pre_trace_hooks:
+                acc.pre_trace_hooks.extend(recipe.pre_trace_hooks)
 
             if lr := recipe.lowering_recipe:
                 cls._collect_lowering_fields(acc, lr)
@@ -561,6 +627,10 @@ class ExportRecipe:
             acc.source_transform_in_place_values.append(
                 recipe.source_transform_in_place
             )
+            acc.release_intermediate_artifacts_values.append(
+                recipe.release_intermediate_artifacts
+            )
+            acc.generate_etrecord_values.append(recipe.generate_etrecord)
 
             # Use the executorch_backend_config from the first recipe that supplies one.
             if acc.backend_config is None and recipe.executorch_backend_config:
@@ -591,6 +661,10 @@ class ExportRecipe:
         cls._assert_scalar_fields_agree(
             "source_transform_in_place", acc.source_transform_in_place_values
         )
+        cls._assert_scalar_fields_agree(
+            "release_intermediate_artifacts",
+            acc.release_intermediate_artifacts_values,
+        )
 
         combined_quantization_recipe = cls._combine_quantization_recipe(
             is_qat_values=acc.is_qat_values,
@@ -611,6 +685,7 @@ class ExportRecipe:
             all_partitioners_by_method=acc.partitioners_by_method,
             all_edge_transform_passes=acc.edge_transform_passes,
             all_edge_manager_transform_passes=acc.edge_manager_transform_passes,
+            all_pre_partitioning_callbacks=acc.pre_partitioning_callbacks,
         )
 
         recipe_name = recipe_name or "_".join(
@@ -624,6 +699,13 @@ class ExportRecipe:
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
             aten_transform_passes=acc.pre_edge_passes or None,
+            source_transform_passes=acc.source_transform_passes or None,
+            pre_trace_hooks=acc.pre_trace_hooks or None,
+            release_intermediate_artifacts=(
+                acc.release_intermediate_artifacts_values[0]
+                if acc.release_intermediate_artifacts_values
+                else False
+            ),
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=acc.backend_config,
             pipeline_stages=shared_pipeline_stages,
@@ -634,4 +716,6 @@ class ExportRecipe:
                 if acc.source_transform_in_place_values
                 else False
             ),
+            # OR semantics: generate ETRecord when at least one recipe requests it.
+            generate_etrecord=any(acc.generate_etrecord_values),
         )

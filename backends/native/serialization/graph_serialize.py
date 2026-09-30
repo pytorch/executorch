@@ -66,7 +66,9 @@ from executorch.backends.native.serialization.schema import (
     OutputKind,
     OutputSpec,
     OutputValueKind,
+    PackedQuant,
     Program,
+    QuantSpec,
     ScalarType,
     ScalarTypeArg,
     StringArg,
@@ -83,7 +85,7 @@ from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "1.0"
 _SCHEMA_RESOURCE = "native_graph.fbs"
 _FILE_STEM = "native_graph"
 
@@ -203,7 +205,7 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    dim_order = [int(d) for d in dim_order_from_stride(strides)]
+    dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):
         # A size-1 dim only ever indexes 0, so its stride is arbitrary and need not
@@ -226,6 +228,17 @@ def _tensor_meta(t: torch.Tensor) -> TensorMeta:
         dtype=_scalar_type(t.dtype),
         sizes=[_dim(s) for s in t.shape],
         dim_order=_dim_order(t),
+    )
+
+
+def _packed_tensor_meta(codec: str, sizes: tuple[int, ...]) -> TensorMeta:
+    """TensorMeta for a codec-packed weight: logical shape with BYTE dtype, the
+    packing described by a PackedQuant scheme. The raw block bytes ship as data.
+    """
+    return TensorMeta(
+        dtype=ScalarType.BYTE,
+        sizes=[_dim(int(s)) for s in sizes],
+        quant=QuantSpec(scheme=PackedQuant(codec=codec)),
     )
 
 
@@ -353,6 +366,11 @@ def _node_to_arg_value(
     v: torch.fx.Node,
     subgraph_map: "dict[str, torch.fx.GraphModule] | None",
 ) -> ArgumentValue:
+    # A GGUF weight consumed through dequantize_gguf serializes as the raw packed
+    # constant (see _fold_gguf_dequant), so redirect the reference to it.
+    redirect = v.meta.get("native_serialize_as")
+    if redirect is not None:
+        return TensorArg(name=redirect)
     # A get_attr node that resolves to a submodule GraphModule is a
     # higher-order-op subgraph (torch.cond branch, map body, ...). Inline it
     # as a GraphArg rather than referencing it like a tensor value.
@@ -758,6 +776,11 @@ def _collect_fx_nodes(
             ):
                 continue
 
+        # Folded GGUF dequantize nodes are not emitted; the consuming op references
+        # the packed weight directly (see _fold_gguf_dequant).
+        if fx_node.meta.get("native_skip_serialize"):
+            continue
+
         kind = _op_kind(fx_node.op)
         target = None
         inputs: list[NamedArgument] = []
@@ -839,10 +862,12 @@ def _extract_constants_and_mutable_buffers(
     state_dict: dict[str, object],
     constants: dict[str, object] | None,
     mutated_fqns: set[str],
+    packed_quant: dict[str, dict[str, object]] | None = None,
 ) -> tuple[list[NamedTensorRef], dict[str, torch.Tensor], list[MutableBufferSpec]]:
     constant_refs: list[NamedTensorRef] = []
     constant_data: dict[str, torch.Tensor] = {}
     mutable_buffers: list[MutableBufferSpec] = []
+    packed_quant = packed_quant or {}
 
     for ispec in getattr(graph_signature, "input_specs", []) or []:
         if ispec.kind not in _INPUT_KIND_MAP:
@@ -851,7 +876,7 @@ def _extract_constants_and_mutable_buffers(
         target_fqn = getattr(ispec, "target", None)
         if name is None or target_fqn is None:
             continue
-        if _is_non_persistent_buffer(ispec):
+        if _is_non_persistent_buffer(ispec) and target_fqn in mutated_fqns:
             mutable_buffers.append(MutableBufferSpec(name=name, fqn=target_fqn))
             continue
         tensor = None
@@ -862,11 +887,17 @@ def _extract_constants_and_mutable_buffers(
         if not isinstance(tensor, torch.Tensor):
             continue
         tensor = tensor.contiguous()
+        pq = packed_quant.get(name)
+        meta = (
+            _packed_tensor_meta(pq["codec"], pq["sizes"])
+            if pq is not None
+            else _tensor_meta(tensor)
+        )
         constant_refs.append(
             NamedTensorRef(
                 name=name,
                 data_key=target_fqn,
-                meta=_tensor_meta(tensor),
+                meta=meta,
                 kind=_INPUT_KIND_MAP[ispec.kind],
                 mutated=target_fqn in mutated_fqns,
             )
@@ -916,9 +947,14 @@ def _build_method_graph(
 ]:
     _validate_tensor_user_inputs(graph_signature)
     output_specs, mutated_fqns = _build_output_specs(output_names, graph_signature)
+    packed_quant = {
+        n.name: n.meta["native_packed_quant"]
+        for n in graph_module.graph.nodes
+        if n.op == "placeholder" and "native_packed_quant" in n.meta
+    }
     constant_refs, constant_data, mutable_buffers = (
         _extract_constants_and_mutable_buffers(
-            graph_signature, state_dict, constants, mutated_fqns
+            graph_signature, state_dict, constants, mutated_fqns, packed_quant
         )
     )
     constant_names = {c.name for c in constant_refs}
@@ -936,6 +972,30 @@ def _build_method_graph(
     return graph, constant_refs, output_specs, mutable_buffers, constant_data
 
 
+def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
+    """Tag GGUF dequantize nodes so serialization emits the consuming op over the
+    packed weight, the way XNNPACK folds a weight dequantize at write time.
+
+    The graph is left unchanged: each dequantize_gguf node is marked to skip, its
+    packed weight arg is tagged with a PackedQuant scheme (logical shape, codec),
+    and references to the dequantize output are redirected to the packed weight.
+    """
+    for node in graph_module.graph.nodes:
+        op = _resolve_op_overload(node.target) if node.op == "call_function" else None
+        if op is None or op.name() != "torchao::dequantize_gguf" or len(node.args) < 2:
+            continue
+        weight = node.args[0]
+        val = node.meta.get("val")
+        if not isinstance(weight, torch.fx.Node) or not isinstance(val, torch.Tensor):
+            continue
+        weight.meta["native_packed_quant"] = {
+            "codec": f"gguf:{node.args[1]}",
+            "sizes": tuple(int(s) for s in val.shape),
+        }
+        node.meta["native_serialize_as"] = weight.name
+        node.meta["native_skip_serialize"] = True
+
+
 def _build_graph_body(
     graph_module: torch.fx.GraphModule,
     graph_signature: object | None,
@@ -948,6 +1008,7 @@ def _build_graph_body(
     list[MutableBufferSpec],
     dict[str, torch.Tensor],
 ]:
+    _fold_gguf_dequant(graph_module)
     subgraph_map = _subgraph_map(graph_module)
     nodes, val_by_name, output_names = _collect_fx_nodes(graph_module, subgraph_map)
 

@@ -106,6 +106,7 @@ class ChatTemplate:
         # chat_template_kwargs override these.
         self._defaults = default_template_kwargs or {}
         self._assistant_header = assistant_header
+        self._warned_assistant_header = False
         self._strip_rendered_prefix = strip_rendered_prefix
         self._append_generation_prompt_after_tool_response = (
             append_generation_prompt_after_tool_response
@@ -229,8 +230,6 @@ class ChatTemplate:
         the resident one (for Qwen3 the scaffold is tool-independent -> same key).
         Returns ``""`` for the fallback / no-scaffold templates (fix is a no-op).
         """
-        if self._hf is None:
-            return ""
         merged = {**self._defaults, **(template_kwargs or {})}
         if tools:
             try:
@@ -251,7 +250,15 @@ class ChatTemplate:
             template_kwargs=template_kwargs,
         )
         marker = self._assistant_header
-        idx = rendered.rfind(marker)
+        idx = rendered.rfind(marker) if marker else -1
+        if idx == -1 and not self._warned_assistant_header:
+            logger.warning(
+                "Assistant header %r was not found in the chat template's generation "
+                "prompt. Stored-token replay may fall back to rendered text; configure "
+                "assistant_header (--assistant-header for the generic server).",
+                marker,
+            )
+            self._warned_assistant_header = True
         preamble = rendered[idx + len(marker) :] if idx != -1 else ""
         self._preamble_cache[key] = preamble
         return preamble

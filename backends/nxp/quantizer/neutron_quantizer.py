@@ -13,7 +13,8 @@ from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpe
 from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
     ActivationsConcatClusterPattern,
-    AdaptiveAvgPoolPattern,
+    AdaptiveAvgPool1DPattern,
+    AdaptiveAvgPool2DPattern,
     AddmmPattern,
     AddTensorPattern,
     AmaxPattern,
@@ -267,7 +268,8 @@ class NeutronQuantizer(ComposableQuantizer):
         super().__init__(
             [
                 OpQuantizer(AbsPattern(is_qat=is_qat), static_qconfig),
-                OpQuantizer(AdaptiveAvgPoolPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AdaptiveAvgPool1DPattern(is_qat=is_qat), static_qconfig),
+                OpQuantizer(AdaptiveAvgPool2DPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddTensorPattern(is_qat=is_qat), static_qconfig),
                 OpQuantizer(AddmmPattern(self, is_qat=is_qat), static_fc_qconfig),
                 OpQuantizer(AmaxPattern(is_qat=is_qat), static_qconfig),

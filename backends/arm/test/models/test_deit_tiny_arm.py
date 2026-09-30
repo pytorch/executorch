@@ -119,6 +119,28 @@ def test_deit_tiny_tosa_FP_remove_sdpa_safe_softmax_guard(deit_tiny):
     pipeline.run()
 
 
+def test_deit_tiny_tosa_FP_auto_remove_sdpa_safe_softmax_guard(deit_tiny):
+    pipeline = TosaPipelineFP[input_t](
+        deit_tiny,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.tester.compile_spec.set_pass_pipeline_config(
+        ArmPassPipelineConfig(sdpa_safe_softmax_guard=SDPASafeSoftmaxGuardPolicy.AUTO)
+    )
+    pipeline.count_tosa_ops(
+        {
+            "EQUAL": 0,
+            "LOGICAL_NOT": 0,
+            "REDUCE_ANY": 0,
+            "SELECT": 0,
+        }
+    )
+    pipeline.run()
+
+
 def test_deit_tiny_tosa_INT(deit_tiny):
     pipeline = TosaPipelineINT[input_t](
         deit_tiny,

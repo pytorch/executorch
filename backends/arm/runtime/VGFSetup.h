@@ -177,6 +177,12 @@ class VgfRepr {
 
   ~VgfRepr() {
     free_vgf();
+    if (vk_pipeline_cache != VK_NULL_HANDLE) {
+      // The cache is private to this VgfRepr, so no other delegate instance can
+      // be accessing it while this object is being destroyed.
+      vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    }
   }
 
  private:
@@ -187,6 +193,12 @@ class VgfRepr {
   VkQueue vk_queue;
   VkCommandPool vk_command_pool;
   uint32_t vk_queue_family_index = UINT32_MAX;
+
+  // Owned by this VgfRepr. One cache is reused across all graph and compute
+  // segments in this loaded VGF, but is not shared with independent VgfRepr
+  // instances. flags=0 uses Vulkan's default internally synchronized cache
+  // mode.
+  VkPipelineCache vk_pipeline_cache = VK_NULL_HANDLE;
 
   bool neural_statistics_requested_ = false;
   bool neural_statistics_device_enabled_ = false;

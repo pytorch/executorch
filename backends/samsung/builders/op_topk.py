@@ -24,7 +24,7 @@ class TopKVisitor(NodeVisitor):
         node: torch.fx.Node,
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
+    ) -> bool:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
@@ -72,3 +72,5 @@ class TopKVisitor(NodeVisitor):
                 raise AssertionError("Not supported sorted = False.")
 
         enn_graph.define_op(node.name, "TopK", [input_id], all_output_tensors, params)
+
+        return True

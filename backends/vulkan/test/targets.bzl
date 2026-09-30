@@ -89,6 +89,18 @@ def define_common_targets(is_fbcode = False):
             ],
         )
 
+        python_unittest(
+            name = "test_vulkan_quantizer",
+            srcs = [
+                "quantizer/test_vulkan_quantizer.py",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
+                "//pytorch/ao:torchao",  # @manual
+            ],
+        )
+
         runtime.python_library(
             name = "tester",
             srcs = ["tester.py"],

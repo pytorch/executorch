@@ -6,8 +6,8 @@
 
 """Shared runtime helpers for the MLX LLM example runners.
 
-Exports publish their limits as constant methods (``get_max_ctx_len``,
-``get_prefill_chunk_size``) so runners do not have to be told what a .pte
+Exports publish their limits as constant methods (``get_max_context_len``,
+``get_max_seq_len``) so runners do not have to be told what a .pte
 supports. This mirrors ``const_int`` in run_llm_hf.cpp.
 
 Prompt handling (processor loading, chat templating, EOS lookup) lives here too:
@@ -20,6 +20,11 @@ import logging
 from typing import Optional, Sequence, Tuple
 
 import torch
+
+from executorch.extension.llm.export.model_metadata import (
+    MAX_CONTEXT_LEN_METHOD,
+    MAX_SEQ_LEN_METHOD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +42,10 @@ def read_const_int(program, name: str) -> Optional[int]:
 
 
 def read_model_limits(program) -> Tuple[Optional[int], Optional[int]]:
-    """Return (max_ctx_len, prefill_chunk_size) as published by the export."""
+    """Return (max_context_len, max_seq_len) as published by the export."""
     return (
-        read_const_int(program, "get_max_ctx_len"),
-        read_const_int(program, "get_prefill_chunk_size"),
+        read_const_int(program, MAX_CONTEXT_LEN_METHOD),
+        read_const_int(program, MAX_SEQ_LEN_METHOD),
     )
 
 

@@ -587,7 +587,14 @@ def rebuild_op_test_runner(verbose: bool = False) -> bool:
 
     print(f"Rebuilding op_test_runner in {build_dir}...")
 
-    cmd = ["cmake", "--build", str(build_dir), "--target", "op_test_runner", "-j8"]
+    cmd = [
+        "cmake",
+        "--build",
+        str(build_dir),
+        "--target",
+        "op_test_runner",
+        f"-j{(os.cpu_count() or 1) + 1}",
+    ]
 
     if verbose:
         print(f"Running: {' '.join(cmd)}")

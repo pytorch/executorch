@@ -1,43 +1,79 @@
-# MobileSAM Prompt Segmentation Example Application
+# MobileSAM Prompt Segmentation on Ethos-U
 
-This end-to-end example shows how to use the Arm Ethos-U backend in
-ExecuTorch for transformer-based prompt segmentation. MobileSAM predicts a
-binary mask for fixed positive point prompts rather than semantic class IDs.
-The host debug flow validates quantization by comparing FP32 and quantized
-masks, with an optional binary reference mask when one is available.
+This example turns a point on an image into an object mask. It shows the full
+ExecuTorch flow: export MobileSAM, quantize it, delegate it to Ethos-U85, run it
+on the Corstone-320 FVP, and compare the target result with the host result.
 
-It covers:
+There is one tested configuration: MobileSAM `vit_t`, a `448x448` input, and
+Ethos-U85-256. The image can change at runtime, but the point prompt is embedded
+in the exported model. Changing the prompt requires re-exporting the model.
 
-- Loading the MobileSAM `vit_t` checkpoint.
-- Freezing one or more positive point prompts into the exported graph.
-- Applying post-training quantization with the Ethos-U quantizer.
-- Lowering the quantized model to an Ethos-U85-256 ExecuTorch program.
-- Producing validation and debugging artifacts such as masks, overlays,
-  mismatch heatmaps, metrics, and delegation summaries.
-- Building a bare-metal Corstone-320 runtime app and running it on FVP.
+## Run It
 
-The default export uses a reduced `448x448` image input and returns one
-low-resolution `[1, 1, 112, 112]` mask-logit tensor. The example prepares the
-official MobileSAM GitHub source at a pinned revision in an external checkout
-and applies a small configurable-input patch there. Neither the MobileSAM
-source nor checkpoint is redistributed in ExecuTorch.
+From the ExecuTorch repository root:
 
-The export uses int8 activations and int8 weights globally, and A16W8
-quantization for TinyViT attention modules. This keeps the transformer
-attention numerically stable while still producing one Ethos-U delegate.
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+./install_executorch.sh --optional-dependency ethos_u
+./examples/arm/setup.sh --i-agree-to-the-contained-eula
+./examples/arm/mobilesam_prompt_segmentation_example_ethos_u/run.sh
+```
 
-The exported graph intentionally uses `multimask_output=False` and leaves
-mask thresholding outside the model. SAM-style candidate-mask selection can be
-numerically sensitive after export and quantization, so this example keeps the
-target graph focused on the fixed-prompt image encoder and mask decoder.
+The final command performs the complete flow and prints
+`MobileSAM example: PASS`. Its main result is:
 
-## Layout
+`arm_test/mobilesam/result/fvp_comparison.png`
 
-- `model_export/prepare_mobilesam.py` - Prepares the pinned external MobileSAM
-  checkout and applies the configurable-input patch.
-- `model_export/README.md` - Model loading, quantization, lowering,
-  validation, and debug artifact generation.
-- `runtime/README.md` - Bare-metal runtime build, image header generation, and
-  Corstone-320 FVP execution.
-- `runtime/visualize_fvp_output.py` - Decodes the target mask dump, creates an
-  overlay, and compares FVP output with the host quantized mask.
+## What It Does
+
+1. Fetches the pinned official MobileSAM source and checkpoint outside the
+   repository.
+2. Runs `torch.export`, PT2E quantization, and `EthosUPartitioner` to create a
+   `.pte` containing one Ethos-U delegate.
+3. Builds the standard Arm ExecuTorch runner and runs one inference on FVP.
+4. Compares the FVP mask with the host quantized mask and requires `0.9` IoU.
+
+Successful completion creates:
+
+- Program: `arm_test/mobilesam/export/mobilesam.pte`
+- Host masks: `arm_test/mobilesam/export/fp32_mask.png` and
+  `arm_test/mobilesam/export/quantized_mask.png`
+- FVP log: `arm_test/mobilesam/fvp.log`
+- Comparison: `arm_test/mobilesam/result/fvp_comparison.png`
+- FVP validation: `arm_test/mobilesam/result/metrics.json`
+- TOSA and Vela artifacts: `arm_test/mobilesam/export/artifacts`
+
+The Python installer uses this source checkout and installs the dependencies
+needed for ahead-of-time Ethos-U export. The Arm setup script installs the
+cross compiler and FVP. Do not install a separate PyPI `executorch` wheel for
+this source example.
+
+On macOS, Docker must be running and the
+[FVPs-on-Mac](https://github.com/Arm-Examples/FVPs-on-Mac) wrapper must be on
+`PATH`.
+
+## Code Map
+
+- [`prepare_mobilesam.py`](model_export/prepare_mobilesam.py) fetches and
+  verifies the external model.
+- [`export_mobilesam.py`](model_export/export_mobilesam.py) contains the model,
+  quantization, validation, and lowering flow.
+- [`run.sh`](run.sh) uses ExecuTorch's standard Arm runner for target execution.
+- [`visualize_fvp_output.py`](runtime/visualize_fvp_output.py) checks and plots
+  the raw output tensor.
+
+There is no MobileSAM-specific C++ runtime or CMake project.
+
+## Limitations
+
+- The exported model accepts one image tensor and uses one fixed positive point.
+- It returns a low-resolution mask. Upsampling and thresholding are host-side
+  post-processing.
+- The demo image is also the calibration image. Product use requires a
+  representative calibration set.
+- The default fast FVP mode validates correctness. Its counters are not a
+  performance benchmark or a measurement of real-device latency.
+
+See [model export](model_export/README.md) and
+[runtime](runtime/README.md) for details of each stage.

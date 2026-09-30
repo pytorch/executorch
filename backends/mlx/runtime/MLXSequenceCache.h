@@ -55,17 +55,16 @@ inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
 // holds and whether a step's runs wrap.
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
-  explicit MLXSequenceCache(const cache::CacheConfig& cfg)
-      : cache::SequenceCache(checked(cfg)) {
+  MLXSequenceCache(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg)
+      : cache::SequenceCache(checked(geometry, cfg), cfg) {
     const ::mlx::core::Dtype dt =
         resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
-    kpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    vpool_.reserve(static_cast<size_t>(cfg.n_layers));
-    window_.reserve(static_cast<size_t>(cfg.n_layers));
-    for (int l = 0; l < cfg.n_layers; ++l) {
-      // layers size 1 = one config broadcast to every layer, else per-layer.
-      const cache::LayerConfig& lc =
-          cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+    kpool_.reserve(geometry.layers.size());
+    vpool_.reserve(geometry.layers.size());
+    window_.reserve(geometry.layers.size());
+    for (const cache::LayerGeometry& lc : geometry.layers) {
       const bool ring = lc.policy.kind == cache::LayerPolicy::Kind::Ring;
       window_.push_back(ring ? lc.policy.window : 0);
       // Flat retains all history, so its pool may reach the full cap and starts
@@ -79,12 +78,34 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     }
   }
 
+  // A fork at an earlier position. Flat layers take a pool holding just the
+  // prefix; ring layers share the source's, whose wrapped slot mapping must
+  // not change. Precondition: other.can_rewind(upto), which seq_clone checks.
+  MLXSequenceCache(
+      const MLXSequenceCache& other,
+      int upto,
+      ::mlx::core::Stream s)
+      : cache::SequenceCache(other), window_(other.window_) {
+    if (upto <= 0 || !rewind(upto)) {
+      throw std::runtime_error("fork: position is not one this can rewind to");
+    }
+    kpool_.reserve(other.kpool_.size());
+    vpool_.reserve(other.vpool_.size());
+    for (size_t l = 0; l < window_.size(); ++l) {
+      const bool flat = window_[l] == 0;
+      kpool_.push_back(
+          flat ? other.kpool_[l].clone_prefix(upto, s) : other.kpool_[l]);
+      vpool_.push_back(
+          flat ? other.vpool_[l].clone_prefix(upto, s) : other.vpool_[l]);
+    }
+  }
+
   AttendSpec update_and_fetch(
       int layer,
       const std::vector<int32_t>& positions,
       const Tensor& k,
       const Tensor& v,
-      StreamOrDevice s) override {
+      StreamOrDevice s) {
     if (layer < 0 || layer >= static_cast<int>(kpool_.size())) {
       throw std::out_of_range("update_and_fetch: layer out of range");
     }
@@ -123,6 +144,26 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     // MLX "causal" is lower-right aligned, so fresh and chunked prefill are
     // both correct with the new tokens at the tail.
     return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
+  }
+
+  Tensor attend(
+      int layer,
+      const std::vector<int32_t>& positions,
+      const Tensor& q,
+      const Tensor& k,
+      const Tensor& v,
+      float scale,
+      StreamOrDevice s) override {
+    return ::executorch::backends::mlx::attend(
+        update_and_fetch(layer, positions, k, v, s), q, scale, s);
+  }
+
+ protected:
+  void* face(cache::FaceId id) override {
+    if (void* p = cache::SequenceCache::face(id)) {
+      return p;
+    }
+    return cache::expose<MLXCache>(this, id);
   }
 
  private:
@@ -191,12 +232,14 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
 
   // Enforce the neutral contract as an exception, the failure mode this layer
   // already uses. Runs as the base initializer's argument because
-  // SequenceCache's own ctor indexes `layers` before this class's body does.
-  static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
-    if (!cache::valid(cfg)) {
-      throw std::runtime_error("MLXSequenceCache: invalid CacheConfig");
+  // SequenceCache's constructor reads the geometry before this body runs.
+  static const cache::CacheGeometry& checked(
+      const cache::CacheGeometry& geometry,
+      const cache::CacheConfig& cfg) {
+    if (!cache::valid(geometry, cfg)) {
+      throw std::runtime_error("MLXSequenceCache: invalid geometry or config");
     }
-    return cfg;
+    return geometry;
   }
 
   std::vector<Pool> kpool_;

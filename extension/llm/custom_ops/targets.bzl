@@ -53,17 +53,13 @@ def _get_quantized_moe_preproc_flags():
     if runtime.is_oss:
         return []
     if is_xplat():
-        # TODO: enable KleidiAI for the runtime here by adding
-        # -DTORCHAO_ENABLE_KLEIDI (+ -DTORCHAO_ENABLE_ARM_I8MM=1) on arm64 and
-        # linking the kleidi kernel target in _get_quantized_moe_deps(). The
-        # runtime (op_moe.cpp) already selects the ukernel from the header, so
-        # kleidi headers resolve automatically once the kernels are compiled.
-        # Must be paired with the AoT packer emitting kleidi headers (see
-        # _get_quantized_moe_aot_packer_deps()).
+        # TODO: enable KleidiAI by adding its runtime config to op_moe.cpp,
+        # compiling and linking its kernels here, and pairing it with an AoT
+        # packer that emits Kleidi headers.
         return select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
-                "-DENABLE_QUANTIZED_MOE_FFN",
+                "-DEXECUTORCH_QUANTIZED_MOE_USE_TORCHAO",
                 "-DTORCHAO_BUILD_CPU_AARCH64=1",
                 "-DTORCHAO_ENABLE_ARM_NEON_DOT=1",
             ],

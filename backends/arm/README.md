@@ -413,6 +413,15 @@ List of model specific and optional passes:
          - exir_ops.edge.aten.argmax.default
          - torch.ops.aten.argmin.default
          - exir_ops.edge.aten.argmin.default
+    3. Post-process TopK indices:
+       - Applies the same range-safe path conversion to `getitem(topk, 1)`.
+       - Leaves `getitem(topk, 0)` values and unsafe direct consumers unchanged.
+       - Inserts int64 boundary casts where converted paths reach unsafe
+         consumers or model outputs.
+       - Keeps gather indices int64 so an undelegated gather remains valid.
+       - Supported Ops:
+         - torch.ops.aten.topk.default
+         - exir_ops.edge.aten.topk.default
   - Example usage:
     - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
     - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
@@ -478,3 +487,8 @@ EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES=1 \
 
 If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
 to the Arm team developing this backend, or create an issue on [here](https://www.github.com/pytorch/executorch/issues) and add the "partner: arm" label.
+
+## Further documentation
+
+See [Generating operator support documentation](scripts/docgen/README.md)
+for generation commands, coverage checks, and CI troubleshooting.

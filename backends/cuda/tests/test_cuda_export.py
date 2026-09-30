@@ -133,6 +133,33 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
 
                 self.assertIs(triton_compiler.max_shared_mem, local_max_shared_mem)
 
+    def test_cuda_include_ptx_compile_spec(self):
+        with mock.patch.object(
+            CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True
+        ):
+            options = CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="cuda_include_ptx", value=b"ON")]
+            )
+
+        self.assertTrue(options["aot_inductor.emit_multi_arch_kernel"])
+
+    def test_cuda_include_ptx_off_disables_multi_arch_kernel(self):
+        with mock.patch.object(
+            CudaBackend, "_setup_cuda_environment_for_fatbin"
+        ) as setup_fatbin:
+            options = CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="cuda_include_ptx", value=b"OFF")]
+            )
+
+        setup_fatbin.assert_not_called()
+        self.assertFalse(options["aot_inductor.emit_multi_arch_kernel"])
+
+    def test_invalid_cuda_include_ptx_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid cuda_include_ptx"):
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="cuda_include_ptx", value=b"MAYBE")]
+            )
+
 
 class TestCudaExport(unittest.TestCase):
     """Test CUDA export functionality for various operations using to_edge_transform_and_lower."""

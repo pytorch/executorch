@@ -12,6 +12,8 @@
 
 #include <executorch/backends/arm/runtime/VGFSetup.h>
 
+#include <executorch/runtime/platform/log.h>
+
 #include <cstdlib>
 #include <limits>
 
@@ -464,7 +466,7 @@ static VkDescriptorType resolve_descriptor_type(
     return vgflib::ToVkDescriptorType(descriptor_type.value());
   }
   ET_LOG(
-      Info,
+      Debug,
       "Resource %u has no explicit descriptor type; assuming VK_DESCRIPTOR_TYPE_TENSOR_ARM",
       index);
   return VK_DESCRIPTOR_TYPE_TENSOR_ARM;
@@ -1384,6 +1386,15 @@ VkResult transition_image_layout(
   return result;
 }
 
+static constexpr bool vgf_debug_logging_enabled() {
+#if ET_LOG_ENABLED
+  return static_cast<uint32_t>(executorch::runtime::LogLevel::Debug) >=
+      static_cast<uint32_t>(executorch::runtime::LogLevel::ET_MIN_LOG_LEVEL);
+#else
+  return false;
+#endif
+}
+
 static void debug_print_sequence(
     unique_ptr<vgflib::ModelSequenceTableDecoder>& sequence_decoder) {
   auto module_type_to_string = [](vgflib::ModuleType type) {
@@ -1396,34 +1407,34 @@ static void debug_print_sequence(
         return "UNKNOWN";
     }
   };
-  ET_LOG(Info, "VGF Sequences:");
+  ET_LOG(Debug, "VGF Sequences:");
   for (int i = 0; i < sequence_decoder->modelSequenceTableSize(); i++) {
     ET_LOG(
-        Info,
+        Debug,
         "  Sequence(%d) '%s':",
         i,
         string(sequence_decoder->getSegmentName(i)).c_str());
     auto dispatch_shape = sequence_decoder->getSegmentDispatchShape(i);
     ET_LOG(
-        Info,
+        Debug,
         "    dispatch shape %d %d %d",
         dispatch_shape[0],
         dispatch_shape[1],
         dispatch_shape[2]);
     ET_LOG(
-        Info,
+        Debug,
         "    segment type %s",
         module_type_to_string(sequence_decoder->getSegmentType(i)));
     ET_LOG(
-        Info,
+        Debug,
         "    module index %d",
         sequence_decoder->getSegmentModuleIndex(i));
     auto input_names = sequence_decoder->getModelSequenceInputNamesHandle();
     ET_LOG(
-        Info, "    names (%ld):", sequence_decoder->getNamesSize(input_names));
+        Debug, "    names (%ld):", sequence_decoder->getNamesSize(input_names));
     for (int j = 0; j < sequence_decoder->getNamesSize(input_names); j++) {
       ET_LOG(
-          Info,
+          Debug,
           "      %d: %s",
           j,
           string(sequence_decoder->getName(input_names, j)).c_str());
@@ -1452,18 +1463,18 @@ static void debug_print_modules(
         return "UNKNOWN";
     }
   };
-  ET_LOG(Info, "VGF Modules:");
+  ET_LOG(Debug, "VGF Modules:");
   for (int i = 0; i < module_decoder->size(); i++) {
     auto name = string(module_decoder->getModuleName(i));
     auto entrypoint = string(module_decoder->getModuleEntryPoint(i));
     auto type = module_decoder->getModuleType(i);
     auto spirv = module_decoder->getModuleCode(i);
-    ET_LOG(Info, "  Module(%d) '%s':", i, name.c_str());
-    ET_LOG(Info, "    type %s", module_type_to_string(type));
-    ET_LOG(Info, "    entrypoint '%s'", entrypoint.c_str());
-    ET_LOG(Info, "    has spirv %d", module_decoder->hasSPIRV(i));
+    ET_LOG(Debug, "  Module(%d) '%s':", i, name.c_str());
+    ET_LOG(Debug, "    type %s", module_type_to_string(type));
+    ET_LOG(Debug, "    entrypoint '%s'", entrypoint.c_str());
+    ET_LOG(Debug, "    has spirv %d", module_decoder->hasSPIRV(i));
     ET_LOG(
-        Info,
+        Debug,
         "    code size %lu",
         spirv.size()); // read the .begin() to .end()
   }
@@ -1520,7 +1531,8 @@ bool VgfRepr::process_vgf(
   }
 
   // Parse the sequences in the VGF (there can be multiple segments).
-  {
+  // Do not even walk decoder metadata unless Debug logging is compiled in.
+  if constexpr (vgf_debug_logging_enabled()) {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DEBUG_PRINT_SEQUENCE");
 
     debug_print_sequence(sequence_decoder);
@@ -1532,7 +1544,8 @@ bool VgfRepr::process_vgf(
   }
 
   // Extract modules
-  {
+  // Module names, entry points and SPIR-V metadata are diagnostics only.
+  if constexpr (vgf_debug_logging_enabled()) {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DEBUG_PRINT_MODULES");
 
     debug_print_modules(module_decoder);
@@ -2668,9 +2681,44 @@ bool VgfRepr::process_vgf(
     }
   }
 
+  // Keep the pipeline cache local to this VgfRepr. This preserves reuse across
+  // the many segment pipelines in one VGF without sharing mutable cache state
+  // or cache lifetime across independently initialized delegate handles.
+  if (vk_pipeline_cache == VK_NULL_HANDLE) {
+    VkPipelineCacheCreateInfo pipeline_cache_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+        .pNext = nullptr,
+        // Default mode: Vulkan internally synchronizes concurrent
+        // pipeline-cache access. The cache is per-VgfRepr anyway, so
+        // independent delegates do not contend on it.
+        .flags = 0,
+        .initialDataSize = 0,
+        .pInitialData = nullptr,
+    };
+
+    {
+      VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_PIPELINE_CACHE");
+      result = vkCreatePipelineCache(
+          vk_device, &pipeline_cache_info, nullptr, &vk_pipeline_cache);
+    }
+
+    if (result != VK_SUCCESS) {
+      ET_LOG(
+          Info,
+          "Failed to create optional per-VgfRepr Vulkan pipeline cache, "
+          "error 0x%08X; continuing without pipeline caching",
+          result);
+      vk_pipeline_cache = VK_NULL_HANDLE;
+    } else {
+      ET_LOG(Info, "VGF per-VgfRepr Vulkan pipeline cache enabled");
+    }
+  }
+
   // Build per-segment pipelines and descriptor sets.
   segments.clear();
   segments.reserve(segment_count);
+  size_t graph_segment_count = 0;
+  size_t compute_segment_count = 0;
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_BUILD_SEGMENTS");
 
@@ -2681,6 +2729,12 @@ bool VgfRepr::process_vgf(
           segment_type != vgflib::ModuleType::COMPUTE) {
         ET_LOG(Error, "Unsupported segment type");
         return false;
+      }
+
+      if (segment_type == vgflib::ModuleType::GRAPH) {
+        ++graph_segment_count;
+      } else {
+        ++compute_segment_count;
       }
 
       SegmentState segment;
@@ -2695,7 +2749,7 @@ bool VgfRepr::process_vgf(
       auto segment_name = string(sequence_decoder->getSegmentName(segment_id));
       auto segment_module = sequence_decoder->getSegmentModuleIndex(segment_id);
       ET_LOG(
-          Info,
+          Debug,
           "VGF segment '%s' module=%u type=%s dispatch=[%u,%u,%u]",
           segment_name.c_str(),
           segment_module,
@@ -2709,7 +2763,7 @@ bool VgfRepr::process_vgf(
       auto segment_m_entrypoint =
           string(module_decoder->getModuleEntryPoint(segment_module));
       ET_LOG(
-          Info,
+          Debug,
           "VGF module '%s' entrypoint='%s' type=%s has_spirv=%d",
           segment_m_name.c_str(),
           segment_m_entrypoint.c_str(),
@@ -2724,7 +2778,7 @@ bool VgfRepr::process_vgf(
       }
       auto segment_m_spirv =
           get_module_spirv_code(module_decoder, segment_module);
-      ET_LOG(Info, "SPIR-V code size (words) %zu", segment_m_spirv.size());
+      ET_LOG(Debug, "SPIR-V code size (words) %zu", segment_m_spirv.size());
 
       VkShaderModuleCreateInfo smci{
           .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -2947,7 +3001,7 @@ bool VgfRepr::process_vgf(
         auto descriptor_count =
             sequence_decoder->getBindingsSize(descriptor_slots);
         ET_LOG(
-            Info,
+            Debug,
             "VGF descriptor set %u bindings: %zu",
             d_idx,
             descriptor_count);
@@ -2959,7 +3013,7 @@ bool VgfRepr::process_vgf(
           const auto& binding_info = resource_bindings[mrt_i];
           if (binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
             ET_LOG(
-                Info,
+                Debug,
                 "Updating descriptor: segment=%u set=%u binding=%u mrt=%u type=VK_DESCRIPTOR_TYPE_TENSOR_ARM",
                 segment_id,
                 d_idx,
@@ -2991,7 +3045,7 @@ bool VgfRepr::process_vgf(
               binding_info.descriptor_type ==
               VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
             ET_LOG(
-                Info,
+                Debug,
                 "Updating descriptor: segment=%u set=%u binding=%u mrt=%u type=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
                 segment_id,
                 d_idx,
@@ -3033,7 +3087,7 @@ bool VgfRepr::process_vgf(
                        ? "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE"
                        : "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE");
             ET_LOG(
-                Info,
+                Debug,
                 "Updating descriptor: segment=%u set=%u binding=%u mrt=%u type=%s image_view=%p sampler=%p",
                 segment_id,
                 d_idx,
@@ -3137,7 +3191,7 @@ bool VgfRepr::process_vgf(
           result = vkCreateDataGraphPipelinesARM(
               vk_device,
               VK_NULL_HANDLE,
-              VK_NULL_HANDLE,
+              vk_pipeline_cache,
               1,
               &graph_pipeline_info,
               nullptr,
@@ -3399,7 +3453,7 @@ bool VgfRepr::process_vgf(
             segment.neural_statistics_status.clear();
 
             ET_LOG(
-                Info,
+                Debug,
                 "Bound neural accelerator statistics memory for segment %d, size=%llu",
                 segment.segment_id,
                 static_cast<unsigned long long>(
@@ -3429,7 +3483,7 @@ bool VgfRepr::process_vgf(
           VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_CREATE_COMPUTE_PIPELINE");
           result = vkCreateComputePipelines(
               vk_device,
-              VK_NULL_HANDLE,
+              vk_pipeline_cache,
               1,
               &compute_info,
               nullptr,
@@ -3444,6 +3498,14 @@ bool VgfRepr::process_vgf(
       segments.push_back(std::move(segment));
     }
   }
+
+  ET_LOG(
+      Info,
+      "VGF segment counts: total=%d graph=%zu compute=%zu pipeline_cache=%s",
+      segment_count,
+      graph_segment_count,
+      compute_segment_count,
+      vk_pipeline_cache != VK_NULL_HANDLE ? "enabled" : "disabled");
 
   // Map model sequence inputs/outputs to IO indices
   auto input_handle =
@@ -3548,7 +3610,7 @@ bool VgfRepr::process_vgf(
     model_input_io_index[model_input_idx] = io_idx;
 
     ET_LOG(
-        Info,
+        Debug,
         "VGF input: binding_slot=%zu model_input=%zu binding=%u "
         "mrt=%u -> IO[%d]",
         binding_pos,
@@ -3594,7 +3656,7 @@ bool VgfRepr::process_vgf(
     model_output_io_index[output_idx] = io_idx;
 
     ET_LOG(
-        Info,
+        Debug,
         "VGF output: output=%zu binding=%u mrt=%u -> IO[%d]",
         output_idx,
         binding,
@@ -3993,7 +4055,7 @@ bool VgfRepr::process_vgf(
 }
 
 bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
-  ET_LOG(Info, "Executing vgf");
+  ET_LOG(Debug, "Executing vgf");
 
   VkSubmitInfo submit{
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -4097,7 +4159,11 @@ void VgfRepr::free_vgf() {
     vk_execute_fence = VK_NULL_HANDLE;
   }
 
-  vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+  // Also safe for initialization failures and repeated free_vgf().
+  if (vk_execute_cmd != VK_NULL_HANDLE) {
+    vkFreeCommandBuffers(vk_device, vk_command_pool, 1, &vk_execute_cmd);
+    vk_execute_cmd = VK_NULL_HANDLE;
+  }
   vector<VkDeviceMemory> owned_memory;
   auto remember_owned_memory = [&](VkDeviceMemory memory) {
     if (memory == VK_NULL_HANDLE) {
@@ -4195,6 +4261,7 @@ void VgfRepr::free_vgf() {
   for (auto memory : intermediates) {
     vkFreeMemory(vk_device, memory, nullptr);
   }
+  intermediates.clear();
 }
 
 static uint32_t get_format_size(VkFormat format) {

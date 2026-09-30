@@ -43,3 +43,4 @@ class VgfPartitioner(TOSAPartitioner):
         self.intermediate_path = compile_spec._get_intermediate_path()
         # Preserve grid_sampler_2d for the VGF custom-lowering path only.
         self.register_custom_partition_op(exir_ops.edge.aten.grid_sampler_2d.default)
+        self._requires_resolved_tensor_shapes = False

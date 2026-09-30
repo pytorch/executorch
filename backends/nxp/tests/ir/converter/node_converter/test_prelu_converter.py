@@ -11,21 +11,7 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
-from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
-from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    AllCloseOutputComparator,
-)
-from executorch.backends.nxp.tests.models import (
-    ConvPReLUModule,
-    LinearPReLUModule,
-    PReLUModule,
-    TwoPartitionPReLUModel,
-)
-
-from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
+from executorch.backends.nxp.backend.ops_aliases import (
     AddMM,
     Convolution,
     ExecutorchDelegateCall,
@@ -35,6 +21,20 @@ from executorch.backends.nxp.tests.ops_aliases import (
     Prelu,
     ViewCopy,
     WhereSelf,
+)
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    AllCloseOutputComparator,
+)
+
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.simple_models import (
+    ConvPReLUModule,
+    LinearPReLUModule,
+    PReLUModule,
+    TwoPartitionPReLUModel,
 )
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403

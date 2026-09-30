@@ -22,6 +22,7 @@ fbcode_target(
         "//caffe2:torch",
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
+        "//executorch/extension/llm/export:gguf",
     ],
 )
 
@@ -32,7 +33,33 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
         "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+        "//executorch/extension/llm/export:gguf",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_quant",
+    srcs = ["test_quant.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
+        "//executorch/exir:lib",
+        "//executorch/extension/llm/export:gguf",
     ],
 )
 
@@ -44,5 +71,6 @@ fbcode_target(
         "//caffe2:torch",
         "//executorch/backends/native:lib",
         "//executorch/exir:lib",
+        "//executorch/extension/llm/export:gguf",
     ],
 )

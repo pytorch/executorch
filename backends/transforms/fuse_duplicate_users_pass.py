@@ -4,14 +4,89 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections import deque
-from typing import Any, Deque, Dict, Hashable, List, Set, Tuple, Type
+from typing import Any, Callable, Deque, Dict, Hashable, List, Set, Tuple, Type
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
-from torch.fx.node import Argument, map_arg
+from torch.fx.node import map_arg
+
+
+DO_NOT_FUSE_DUPLICATE_META_KEY = "do_not_fuse_duplicate"
+
+
+def _map_leaf_to_key(node: Node) -> str:
+    return node.name
+
+
+def _to_hashable(value: Any) -> Hashable:
+    """Convert arbitrarily nested structures into hashable tuples."""
+
+    if isinstance(value, (list, tuple)):
+        return tuple(_to_hashable(v) for v in value)
+    if isinstance(value, dict):
+        normalized_items = [(k, _to_hashable(v)) for k, v in value.items()]
+        return tuple(sorted(normalized_items, key=lambda item: repr(item[0])))
+    if isinstance(value, set):
+        hashable_values: List[Hashable] = [_to_hashable(v) for v in value]
+        return tuple(sorted(hashable_values, key=repr))
+    if isinstance(value, slice):
+        return (
+            "slice",
+            _to_hashable(value.start),
+            _to_hashable(value.stop),
+            _to_hashable(value.step),
+        )
+    if isinstance(value, range):
+        return ("range", value.start, value.stop, value.step)
+    if isinstance(value, torch.Size):
+        return ("size", tuple(value))
+    if isinstance(value, torch.dtype):
+        return ("dtype", str(value))
+    if isinstance(value, torch.device):
+        return ("device", str(value))
+    if isinstance(value, torch.memory_format):
+        return ("memory_format", str(value))
+    if isinstance(value, torch.Tensor):
+        return (
+            "tensor",
+            str(value.dtype),
+            tuple(value.size()),
+            value.device.type,
+            value.requires_grad,
+        )
+    return value
+
+
+def _get_target_key(target: Any) -> Hashable:
+    if isinstance(target, (EdgeOpOverload, OpOverload)):
+        return str(target)
+    return target
+
+
+def build_node_signature(
+    node: Node, *, positional_arg_start: int = 0
+) -> Tuple[Hashable, ...] | None:
+    """Build a stable signature while ignoring leading positional operands."""
+    try:
+        normalized_args = _to_hashable(
+            map_arg(node.args[positional_arg_start:], _map_leaf_to_key)
+        )
+        normalized_kwargs = _to_hashable(
+            {k: map_arg(v, _map_leaf_to_key) for k, v in node.kwargs.items()}
+        )
+    except TypeError:
+        return None
+
+    return (node.op, _get_target_key(node.target), normalized_args, normalized_kwargs)
+
+
+def _is_erased(node: Node) -> bool:
+    # FX currently retains graph after erase_node(), but also handle versions
+    # that detach erased nodes from their graph.
+    return node.graph is None or getattr(node, "_erased", False)
 
 
 class FuseDuplicateUsersPass(ExportPass):
@@ -43,12 +118,20 @@ class FuseDuplicateUsersPass(ExportPass):
 
         node_order = {node: index for index, node in enumerate(graph.nodes)}
         producers: Deque[Node] = deque(node for node in graph.nodes)
+        queued_producers: Set[Node] = set(producers)
+
+        def enqueue_producer(node: Node) -> None:
+            if _is_erased(node) or node in queued_producers:
+                return
+            producers.append(node)
+            queued_producers.add(node)
 
         while producers:
             producer = producers.popleft()
+            queued_producers.discard(producer)
 
-            if producer.graph is None:
-                # Node was deleted by a previous rewrite while still queued.
+            if _is_erased(producer):
+                # Graph.erase_node marks nodes retained by iterators as erased.
                 continue
 
             # Only meaningful if a value is consumed by multiple users.
@@ -57,33 +140,9 @@ class FuseDuplicateUsersPass(ExportPass):
                 continue
 
             candidate_groups = self._get_candidate_groups(node_order, user_nodes)
-
-            signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
-            for group in candidate_groups:
-                for user in group:
-                    signature = self._build_user_signature(user)
-                    if signature is None:
-                        continue
-
-                    representative = signature_to_user.get(signature)
-                    if representative is None:
-                        # Check if we already encountered identical node that we can fuse with.
-                        signature_to_user[signature] = user
-                        continue
-
-                    if user is representative:
-                        # The queue can enqueue the surviving node again after rewrites.
-                        continue
-
-                    user.replace_all_uses_with(representative)
-                    graph.erase_node(user)
-                    modified = True
-
-                    # Revisit the current producer and the surviving user so that
-                    # newly formed duplicate chains can be fused in later
-                    # iterations.
-                    producers.append(producer)
-                    producers.append(representative)
+            modified |= self._fuse_candidate_groups(
+                graph, producer, candidate_groups, enqueue_producer
+            )
 
         if modified:
             if self._recompile_before_retrace:
@@ -93,10 +152,44 @@ class FuseDuplicateUsersPass(ExportPass):
 
         return PassResult(graph_module, modified)
 
+    def _fuse_candidate_groups(
+        self,
+        graph: torch.fx.Graph,
+        producer: Node,
+        candidate_groups: List[List[Node]],
+        enqueue_producer: Callable[[Node], None],
+    ) -> bool:
+        modified = False
+        signature_to_user: Dict[Tuple[Hashable, ...], Node] = {}
+        for group in candidate_groups:
+            for user in group:
+                signature = self._build_user_signature(user)
+                if signature is None:
+                    continue
+
+                representative = signature_to_user.get(signature)
+                if representative is None:
+                    signature_to_user[signature] = user
+                    continue
+
+                if user is representative:
+                    continue
+
+                user.replace_all_uses_with(representative)
+                graph.erase_node(user)
+                modified = True
+
+                # Revisit the producer and survivor because this fusion can expose
+                # another duplicate pair later in the chain.
+                enqueue_producer(producer)
+                enqueue_producer(representative)
+
+        return modified
+
     def _get_candidate_groups(self, node_order, user_nodes):
         users_by_target: Dict[Tuple[str, Hashable], List[Node]] = {}
         for user in user_nodes:
-            if user.graph is None:
+            if _is_erased(user):
                 # User might already have been removed by a prior rewrite.
                 continue
 
@@ -106,7 +199,7 @@ class FuseDuplicateUsersPass(ExportPass):
             if user.target in self._excluded_targets:
                 continue
 
-            target_key = self._get_target_key(user.target)
+            target_key = _get_target_key(user.target)
             target_signature = (user.op, target_key)
             users_by_target.setdefault(target_signature, []).append(user)
 
@@ -120,62 +213,6 @@ class FuseDuplicateUsersPass(ExportPass):
         return candidate_groups
 
     def _build_user_signature(self, node: Node) -> Tuple[Hashable, ...] | None:
-        try:
-            normalized_args = self._to_hashable(
-                map_arg(node.args, self._map_leaf_to_key)
-            )
-            normalized_kwargs = self._to_hashable(
-                {k: map_arg(v, self._map_leaf_to_key) for k, v in node.kwargs.items()}
-            )
-        except TypeError:
+        if node.meta.get(DO_NOT_FUSE_DUPLICATE_META_KEY, False):
             return None
-
-        target_key = self._get_target_key(node.target)
-
-        return (node.op, target_key, normalized_args, normalized_kwargs)
-
-    def _map_leaf_to_key(self, node: Node) -> Argument:
-        return node.name
-
-    def _to_hashable(self, value: Any) -> Hashable:
-        """Convert arbitrarily nested structures into hashable tuples."""
-
-        if isinstance(value, (list, tuple)):
-            return tuple(self._to_hashable(v) for v in value)
-        if isinstance(value, dict):
-            normalized_items = [(k, self._to_hashable(v)) for k, v in value.items()]
-            return tuple(sorted(normalized_items, key=lambda item: repr(item[0])))
-        if isinstance(value, set):
-            hashable_values: List[Hashable] = [self._to_hashable(v) for v in value]
-            return tuple(sorted(hashable_values, key=repr))
-        if isinstance(value, slice):
-            return (
-                "slice",
-                self._to_hashable(value.start),
-                self._to_hashable(value.stop),
-                self._to_hashable(value.step),
-            )
-        if isinstance(value, range):
-            return ("range", value.start, value.stop, value.step)
-        if isinstance(value, torch.Size):
-            return ("size", tuple(value))
-        if isinstance(value, torch.dtype):
-            return ("dtype", str(value))
-        if isinstance(value, torch.device):
-            return ("device", str(value))
-        if isinstance(value, torch.memory_format):
-            return ("memory_format", str(value))
-        if isinstance(value, torch.Tensor):
-            return (
-                "tensor",
-                str(value.dtype),
-                tuple(value.size()),
-                value.device.type,
-                value.requires_grad,
-            )
-        return value
-
-    def _get_target_key(self, target: Any) -> Hashable:
-        if isinstance(target, (EdgeOpOverload, OpOverload)):
-            return str(target)
-        return target
+        return build_node_signature(node)

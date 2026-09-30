@@ -322,7 +322,46 @@ class ET_EXPERIMENTAL CudaBackend final
           CudaWeightCache::parse(
               processed->data(), processed->size(), fqn_weights),
           "Malformed CUDA FQN weight metadata");
-      so_blob_key = fqn_weights.so_blob_key;
+      size_t variant_index = 0;
+      bool uses_ptx_fallback = false;
+      uint32_t current_sm = 0;
+      if (!(fqn_weights.variants.size() == 1 &&
+            fqn_weights.variants[0].target_sm == 0)) {
+#if defined(EXECUTORCH_USE_HIP)
+        ET_LOG(
+            Error,
+            "Multi-SM CUDA AOTI metadata is not supported by the ROCm runtime");
+        return Error::NotSupported;
+#else
+        int device_index = 0;
+        cudaDeviceProp device_properties{};
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetDevice(&device_index));
+        ET_CUDA_CHECK_OR_RETURN_ERROR(
+            cudaGetDeviceProperties(&device_properties, device_index));
+        current_sm = static_cast<uint32_t>(
+            device_properties.major * 10 + device_properties.minor);
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            CudaWeightCache::select_variant(
+                fqn_weights, current_sm, variant_index, uses_ptx_fallback),
+            "Failed to select a CUDA AOTI variant for sm%u",
+            current_sm);
+#endif
+      }
+      const auto& variant = fqn_weights.variants[variant_index];
+      so_blob_key = variant.so_blob_key;
+      if (variant.target_sm == 0) {
+        ET_LOG(Info, "Selected untargeted CUDA AOTI variant");
+      } else if (uses_ptx_fallback) {
+        ET_LOG(
+            Info,
+            "Selected sm%u CUDA AOTI PTX fallback (compute_%u) for sm%u",
+            variant.target_sm,
+            variant.ptx_compute,
+            current_sm);
+      } else {
+        ET_LOG(
+            Info, "Selected native sm%u CUDA AOTI variant", variant.target_sm);
+      }
     } else {
       ET_CHECK_OK_OR_RETURN_ERROR(
           executorch::backends::aoti::resolve_blob_keys(

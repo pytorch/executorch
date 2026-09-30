@@ -40,16 +40,17 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
-There are two ways to get the C++ runtime. Linking the prebuilt libraries from the pip
-package needs no source checkout and is the quicker option. Building from source gives
-you every option the project has, and is what you need for a platform the wheel does not
+There are two ways to get the C++ runtime. Current main/nightly wheels include
+prebuilt libraries and need no source checkout. Building from source gives you
+every option the project has and is required for a platform the wheel does not
 cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux and macOS, `pip install executorch` ships the runtime as prebuilt shared libraries together
-with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from
-source, and without knowing much CMake.
+On Linux and macOS, current main/nightly wheels ship the runtime as prebuilt
+shared libraries together with the headers and a CMake package. Stable releases
+from before this packaging was introduced do not contain the namespaced CMake
+targets used below; use the documentation for your installed release.
 
 #### Run your first model in four steps
 
@@ -58,12 +59,12 @@ Copy these three files into an empty folder and follow along. No prior CMake kno
 **1. Install, and make a model file.**
 
 ```
-pip install executorch torch --extra-index-url https://download.pytorch.org/whl/cpu
+pip install --upgrade --pre executorch torch --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
-`torch` is named explicitly because the wheel does not depend on it, so you bring your own torch and
-keep the version under your control. You need it only to create a model file in step 1, not to run
-the C++ program.
+`torch` is installed explicitly because nightly ExecuTorch wheels do not declare
+it as a dependency. Python and PyTorch are needed to create the model file in
+step 1, but not to run the compiled C++ program.
 
 A C++ program loads a `.pte` file, which is a model that has already been exported. C++ cannot
 create one, so make it in Python first:
@@ -79,7 +80,7 @@ class Add(torch.nn.Module):
 
 example = (torch.ones(2, 2), torch.ones(2, 2))
 program = to_edge_transform_and_lower(
-    torch.export.export(Add(), example)
+    torch.export.export(Add().eval(), example)
 ).to_executorch()
 open("model.pte", "wb").write(program.buffer)
 ```
@@ -94,6 +95,8 @@ python export.py
 // main.cpp
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+
+#include <array>
 #include <cstdio>
 
 using namespace executorch::extension;
@@ -178,7 +181,7 @@ These are the components the package provides:
 | `threadpool` | Multi-threaded execution. | Linux, macOS |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS |
-| `kernels_torchao` | The TorchAO low-bit quantized kernels | macOS, Apple Silicon |
+| `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
@@ -258,6 +261,49 @@ find_package(executorch REQUIRED COMPONENTS backend_mlx)
 message(STATUS "Metal kernels: ${MLX_METALLIB_PATH}")
 ```
 
+#### Using pkg-config
+
+Build systems such as Meson and Autotools read pkg-config files. The wheel ships one for the
+runtime. It covers the engine and the thread pool. Name the kernel libraries yourself, the same
+way you add CMake components. Point pkg-config at the file with an absolute path, because the
+library search path it gives the linker is built from that path:
+
+```
+export PKG_CONFIG_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "lib" / "pkgconfig")')${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+```
+
+The kernels register themselves when they load, and nothing in your code names them, so the
+linker must be told to keep them. On Linux:
+
+```
+c++ -std=c++17 main.cpp $(pkg-config --cflags --libs executorch) \
+  -Wl,--push-state,--no-as-needed -lexecutorch_kernels_optimized -Wl,--pop-state -o app
+```
+
+On macOS:
+
+```
+c++ -std=c++17 main.cpp $(pkg-config --cflags --libs executorch) -lexecutorch_kernels_optimized -o app
+```
+
+In Meson, take the library directory from the dependency. On macOS, replace the three Linux flags
+with `'-Wl,-needed-lexecutorch_kernels_optimized'`:
+
+```
+executorch = dependency('executorch')
+libdir = executorch.get_variable(pkgconfig : 'libdir')
+executable('app', 'main.cpp',
+  dependencies : executorch,
+  link_args : ['-L' + libdir,
+               '-Wl,--push-state,--no-as-needed',
+               '-lexecutorch_kernels_optimized',
+               '-Wl,--pop-state'],
+  install : true)
+```
+
+Add `-lexecutorch_kernels_quantized` or a backend such as `-lexecutorch_backend_xnnpack` the same
+way, because they sit next to the runtime library.
+
 #### When something does not work
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
@@ -324,12 +370,12 @@ last of the two settings decides the tag for every entry in the link.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index
-matching the CUDA version you have (`cu126`, `cu130` or `cu132`). For CUDA 12.6:
+The CUDA build is a separate package. Releases cover CUDA 13.0, 13.2 and 13.4, so pick the index
+matching the CUDA version you have (`cu130`, `cu132` or `cu134`). For CUDA 13.0:
 
 ```
 pip install executorch torch \
-  --index-url https://download.pytorch.org/whl/cu126 \
+  --index-url https://download.pytorch.org/whl/cu130 \
   --extra-index-url https://pypi.org/simple
 ```
 

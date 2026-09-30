@@ -170,6 +170,14 @@ std::tuple<Tensor&, Tensor&> topk_values(
   ET_KERNEL_CHECK(
       ctx, check_topk_args(in, k, dim, values, indices), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, values, indices),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   if (dim < 0) {
     dim += nonzero_dim(in);
   }

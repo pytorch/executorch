@@ -288,6 +288,30 @@ class TestReorderPasses(unittest.TestCase):
             1,
         )
 
+    def test_does_not_advance_quantize_for_half_size_slice(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 60, 1, 1))
+        sliced = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor,
+            args=(x, 0, 0, 4, 2),
+        )
+        quantized = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(sliced, 0.1, 0, -32768, 32767, torch.int16),
+        )
+        builder.output([quantized])
+        graph_module = builder.get_graph_module()
+
+        result = cast(PassResult, AdvanceQuantizeOpAboveDefInBranchPass()(graph_module))
+
+        self.assertTrue(
+            get_node_pos(result.graph_module, exir_ops.edge.aten.slice_copy.Tensor)
+            < get_node_pos(
+                result.graph_module,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            )
+        )
+
     @torch.no_grad()
     def test_advance_quantize(self) -> None:
         builder = GraphBuilder()
@@ -582,6 +606,132 @@ class TestReorderPasses(unittest.TestCase):
                 exir_ops.edge.cadence.dequantize_per_tensor.default,
                 exir_ops.edge.aten.slice_copy.Tensor,
             ),
+        )
+
+    def _build_mixed_slice_quant_graph(
+        self, third_branch_quantized: bool
+    ) -> tuple[torch.fx.GraphModule, tuple[torch.Tensor, ...]]:
+        builder = GraphBuilder()
+        x_data = torch.randint(0, 255, [12, 4], dtype=torch.uint8)
+        weights_data = torch.randn([4, 4], dtype=torch.float32)
+
+        x = builder.placeholder("x", x_data)
+        weights = builder.placeholder("weights", weights_data)
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x, 0.1, 10, 0, 255, torch.uint8),
+        )
+
+        outputs = []
+        branch_specs = [
+            (0, 8, (0.2, 5)),
+            (2, 10, None),
+            (4, 12, (0.3, 7) if third_branch_quantized else None),
+        ]
+        for start, end, target_qparams in branch_specs:
+            slice_node = builder.call_operator(
+                op=exir_ops.edge.aten.slice_copy.Tensor,
+                args=(dequant, 0, start, end),
+            )
+            if target_qparams is not None:
+                scale, zero_point = target_qparams
+                output = builder.call_operator(
+                    op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                    args=(slice_node, scale, zero_point, 0, 255, torch.uint8),
+                )
+            else:
+                output = builder.call_operator(
+                    op=exir_ops.edge.aten.mm.default,
+                    args=(slice_node, weights),
+                )
+            outputs.append(output)
+
+        builder.output(outputs)
+        return builder.get_graph_module(), (x_data, weights_data)
+
+    def test_postpone_dequantize_mixed_slice_quant_branches(self) -> None:
+        original_graph, inputs = self._build_mixed_slice_quant_graph(True)
+        result = transform_and_check_numerics(
+            original_graph,
+            inputs,
+            PostponeDequantizeOpBelowUseChainPass(),
+        )
+        self.assertTrue(result.modified)
+
+        converted_graph = result.graph_module
+        graph_nodes = list(converted_graph.graph.nodes)
+        slice_nodes = [
+            node
+            for node in graph_nodes
+            if node.op == "call_function"
+            and node.target == exir_ops.edge.aten.slice_copy.Tensor
+        ]
+        dequant_nodes = [
+            node
+            for node in graph_nodes
+            if node.op == "call_function"
+            and node.target
+            == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+        ]
+        self.assertEqual(len(slice_nodes), 3)
+        self.assertEqual(len(dequant_nodes), 3)
+        self.assertTrue(
+            all(node.meta["val"].dtype == torch.uint8 for node in slice_nodes)
+        )
+        self.assertTrue(
+            all(tuple(node.meta["val"].shape) == (8, 4) for node in dequant_nodes)
+        )
+        self.assertTrue(
+            all(node.meta["val"].dtype == torch.float32 for node in dequant_nodes)
+        )
+        for slice_node in slice_nodes:
+            source = slice_node.args[0]
+            self.assertIsInstance(source, torch.fx.Node)
+            self.assertEqual(cast(torch.fx.Node, source).meta["val"].dtype, torch.uint8)
+            downstream_dequants = [
+                user for user in slice_node.users if user in dequant_nodes
+            ]
+            self.assertEqual(len(downstream_dequants), 1)
+            self.assertLess(
+                graph_nodes.index(slice_node),
+                graph_nodes.index(downstream_dequants[0]),
+            )
+
+        fused_result = cast(
+            PassResult, FuseQuantDequantToRequantizePass()(converted_graph)
+        )
+        self.assertTrue(fused_result.modified)
+        self.assertEqual(
+            count_node(
+                fused_result.graph_module,
+                exir_ops.edge.cadence.requantize.per_tensor,
+            ),
+            2,
+        )
+        self.assertEqual(
+            count_node(
+                fused_result.graph_module,
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            ),
+            1,
+        )
+
+    def test_postpone_dequantize_rejects_expensive_mixed_float_branches(
+        self,
+    ) -> None:
+        original_graph, inputs = self._build_mixed_slice_quant_graph(False)
+        result = transform_and_check_numerics(
+            original_graph,
+            inputs,
+            PostponeDequantizeOpBelowUseChainPass(),
+        )
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            ),
+            1,
         )
 
     # 4d -> permute -> 4d -> view -> 3d
@@ -1357,6 +1507,143 @@ class TestPropagateSlice(unittest.TestCase):
         result = PropagateSlice().call(gm)
 
         self.assertFalse(result.modified)
+
+    def test_swap_additional_unary_target(self) -> None:
+        x_data = torch.randn(4, 60, 1, 1)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        relu = builder.call_operator(exir_ops.edge.aten.relu.default, args=(x,))
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(relu, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            gm,
+            (x_data,),
+            PropagateSlice(additional_unary_targets=[exir_ops.edge.aten.relu.default]),
+        )
+
+        self.assertTrue(result.modified)
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        relu_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.relu.default
+        )
+        self.assertEqual(len(relu_nodes), 1)
+        self.assertIs(relu_nodes[0].args[0], slice_nodes[0])
+        self.assertEqual(list(relu_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_swap_additional_binary_target(self) -> None:
+        lhs_data = torch.randn(1, 60, 1, 1)
+        rhs_data = torch.randn(4, 60, 1, 1)
+        builder = GraphBuilder()
+        lhs = builder.placeholder("lhs", lhs_data)
+        rhs = builder.placeholder("rhs", rhs_data)
+        sub = builder.call_operator(
+            exir_ops.edge.aten.sub.Tensor,
+            args=(lhs, rhs),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(sub, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            gm,
+            (lhs_data, rhs_data),
+            PropagateSlice(additional_binary_targets=[exir_ops.edge.aten.sub.Tensor]),
+        )
+
+        self.assertTrue(result.modified)
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertEqual(slice_nodes[0].args[0].name, "rhs")
+        sub_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.sub.Tensor
+        )
+        self.assertEqual(len(sub_nodes), 1)
+        self.assertIs(sub_nodes[0].args[0], lhs.node)
+        self.assertIs(sub_nodes[0].args[1], slice_nodes[0])
+        self.assertEqual(list(sub_nodes[0].meta["val"].shape), [2, 60, 1, 1])
+
+    def test_additional_binary_target_filter_prevents_swap(self) -> None:
+        lhs_data = torch.randn(1, 60, 1, 1)
+        rhs_data = torch.randn(4, 60, 1, 1)
+        builder = GraphBuilder()
+        lhs = builder.placeholder("lhs", lhs_data)
+        rhs = builder.placeholder("rhs", rhs_data)
+        sub = builder.call_operator(
+            exir_ops.edge.aten.sub.Tensor,
+            args=(lhs, rhs),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(sub, 0, 0, 4, 2),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = PropagateSlice(
+            additional_binary_targets=[exir_ops.edge.aten.sub.Tensor],
+            target_filters={exir_ops.edge.aten.sub.Tensor: lambda _: False},
+        ).call(gm)
+
+        self.assertFalse(result.modified)
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 1)
+        self.assertIs(slice_nodes[0].args[0], sub.node)
+
+    def test_swap_additional_binary_target_with_mismatched_ranks(self) -> None:
+        lhs_data = torch.randn(2, 3, 4)
+        rhs_data = torch.randn(3, 4)
+        builder = GraphBuilder()
+        lhs = builder.placeholder("lhs", lhs_data)
+        rhs = builder.placeholder("rhs", rhs_data)
+        sub = builder.call_operator(
+            exir_ops.edge.aten.sub.Tensor,
+            args=(lhs, rhs),
+        )
+        sliced = builder.call_operator(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(sub, 1, 0, 2, 1),
+        )
+        builder.output([sliced])
+        gm = builder.get_graph_module()
+
+        result = transform_and_check_numerics(
+            gm,
+            (lhs_data, rhs_data),
+            PropagateSlice(additional_binary_targets=[exir_ops.edge.aten.sub.Tensor]),
+        )
+
+        self.assertTrue(result.modified)
+        slice_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        )
+        self.assertEqual(len(slice_nodes), 2)
+        lhs_slice, rhs_slice = slice_nodes
+        self.assertIs(lhs_slice.args[0], lhs.node)
+        self.assertEqual(lhs_slice.args[1], 1)
+        self.assertEqual(list(lhs_slice.meta["val"].shape), [2, 2, 4])
+        self.assertIs(rhs_slice.args[0], rhs.node)
+        self.assertEqual(rhs_slice.args[1], 0)
+        self.assertEqual(list(rhs_slice.meta["val"].shape), [2, 4])
+        sub_nodes = gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.sub.Tensor
+        )
+        self.assertEqual(len(sub_nodes), 1)
+        self.assertEqual(list(sub_nodes[0].meta["val"].shape), [2, 2, 4])
 
     def test_swap_broadcast_mul_slice_on_broadcast_dim(self) -> None:
         """[1,60,1,1] * [4,1,1,1] → [4,60,1,1] → slice(dim=0, step=2)
