@@ -7403,6 +7403,256 @@ class ScatterAddTest(OpTestCase):
         return (x, index, src)
 
 
+class GatherModel(nn.Module):
+    """Model that gathers along a dimension, optionally from a transposed view."""
+
+    def __init__(self, dim: int = 0, transpose: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.transpose = transpose
+
+    def forward(self, x: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+        if self.transpose:
+            x = x.transpose(0, 1)
+        return torch.gather(x, self.dim, index)
+
+
+@register_test
+class GatherTest(OpTestCase):
+    """Test case for aten.gather.
+
+    gather(self, dim, index) reads self at index positions along dim. The
+    index may be longer than self along dim and smaller than self on the
+    other axes; the output takes the index shape. Pure data movement, so the
+    comparison is exact.
+    """
+
+    name = "gather"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (4, 8),
+        dim: int = 1,
+        index_shape: Optional[Tuple[int, ...]] = None,
+        dtype: torch.dtype = torch.float32,
+        transpose: bool = False,
+        dynamic_batch: bool = False,
+    ):
+        self.shape = shape
+        self.dim = dim
+        self.index_shape = index_shape
+        self.dtype = dtype
+        self.transpose = transpose
+        self.dynamic_batch = dynamic_batch
+        parts = ["gather", "x".join(str(s) for s in shape), f"dim{dim}"]
+        if index_shape is not None:
+            parts.append("idx" + "x".join(str(s) for s in index_shape))
+        if dtype != torch.float32:
+            parts.append(str(dtype).replace("torch.", ""))
+        if transpose:
+            parts.append("t")
+        if dynamic_batch:
+            parts.append("dyn")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["GatherTest"]:
+        return [
+            # 1D, index longer than input along dim
+            cls(shape=(8,), dim=0, index_shape=(12,)),
+            # 2D, each axis, negative dim
+            cls(shape=(4, 8), dim=0),
+            cls(shape=(4, 8), dim=1),
+            cls(shape=(4, 8), dim=-1),
+            # index smaller than input on the non-gather axis
+            cls(shape=(4, 8), dim=1, index_shape=(2, 5)),
+            # 3D: longer along dim, smaller on the other axes
+            cls(shape=(2, 4, 8), dim=1, index_shape=(1, 6, 3)),
+            cls(shape=(2, 4, 8), dim=0),
+            # 4D
+            cls(shape=(2, 3, 4, 8), dim=-1),
+            cls(shape=(2, 3, 4, 8), dim=2, index_shape=(2, 3, 2, 8)),
+            # half precision and integer inputs
+            cls(shape=(4, 8), dim=1, dtype=torch.float16),
+            cls(shape=(4, 8), dim=0, dtype=torch.bfloat16),
+            cls(shape=(4, 8), dim=1, dtype=torch.int64),
+            # gather from a transposed (non-contiguous) view
+            cls(shape=(4, 8), dim=1, transpose=True),
+            # dynamic batch shared by input and index, and on the input alone
+            # with a static index narrowing it; both run at an unseen batch
+            cls(shape=(4, 8), dim=1, dynamic_batch=True),
+            cls(shape=(4, 8), dim=1, index_shape=(2, 5), dynamic_batch=True),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return GatherModel(dim=self.dim, transpose=self.transpose)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic_batch:
+            return None
+        batch = Dim("batch", min=2, max=16)
+        return {"x": {0: batch}, "index": None if self.index_shape else {0: batch}}
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._make_inputs(self.shape)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic_batch:
+            return self.create_inputs()
+        return self._make_inputs((self.shape[0] + 3,) + self.shape[1:])
+
+    def _make_inputs(self, shape: Tuple[int, ...]) -> Tuple[torch.Tensor, ...]:
+        if self.dtype.is_floating_point:
+            x = torch.randn(shape, dtype=self.dtype)
+        else:
+            x = torch.randint(-8, 8, shape, dtype=self.dtype)
+        view_shape = list(shape)
+        if self.transpose:
+            view_shape[0], view_shape[1] = view_shape[1], view_shape[0]
+        index_shape = self.index_shape or tuple(view_shape)
+        index = torch.randint(0, view_shape[self.dim], index_shape, dtype=torch.long)
+        return (x, index)
+
+
+class ScatterModel(nn.Module):
+    """Model that scatters src (or a scalar value) into x along a dimension."""
+
+    def __init__(self, dim: int = 0, value: Optional[float] = None):
+        super().__init__()
+        self.dim = dim
+        self.value = value
+
+    def forward(self, x: torch.Tensor, index: torch.Tensor, src: torch.Tensor):
+        if self.value is not None:
+            return x.scatter(self.dim, index, self.value)
+        return x.scatter(self.dim, index, src)
+
+
+@register_test
+class ScatterTest(OpTestCase):
+    """Test case for aten.scatter.src and aten.scatter.value.
+
+    scatter(self, dim, index, src) writes src at index positions along dim.
+    The index may be smaller than self on the other axes and smaller than
+    src on every axis. Indices are unique along dim so the result is
+    well-defined, and the comparison is exact.
+    """
+
+    name = "scatter"
+    rtol = 0
+    atol = 0
+
+    def __init__(
+        self,
+        shape: Tuple[int, ...] = (4, 8),
+        dim: int = 1,
+        num_indices: int = 3,
+        index_shape: Optional[Tuple[int, ...]] = None,
+        src_shape: Optional[Tuple[int, ...]] = None,
+        value: Optional[float] = None,
+        dtype: torch.dtype = torch.float32,
+        dynamic_batch: bool = False,
+    ):
+        self.shape = shape
+        self.dim = dim
+        self.num_indices = num_indices
+        self.index_shape = index_shape
+        self.src_shape = src_shape
+        self.value = value
+        self.dtype = dtype
+        self.dynamic_batch = dynamic_batch
+        parts = ["scatter", "x".join(str(s) for s in shape), f"dim{dim}"]
+        parts.append(f"idx{num_indices}")
+        if index_shape is not None:
+            parts.append("ishape" + "x".join(str(s) for s in index_shape))
+        if src_shape is not None:
+            parts.append("src" + "x".join(str(s) for s in src_shape))
+        if value is not None:
+            parts.append("value")
+        if dtype != torch.float32:
+            parts.append(str(dtype).replace("torch.", ""))
+        if dynamic_batch:
+            parts.append("dyn")
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["ScatterTest"]:
+        return [
+            # 1D
+            cls(shape=(8,), dim=0, num_indices=5),
+            # 2D, each axis, negative dim, full permutation along dim
+            cls(shape=(4, 8), dim=1, num_indices=3),
+            cls(shape=(4, 8), dim=0, num_indices=2),
+            cls(shape=(4, 8), dim=-1, num_indices=8),
+            # 3D and 4D
+            cls(shape=(2, 4, 8), dim=1, num_indices=2),
+            cls(shape=(2, 3, 4, 8), dim=-1, num_indices=4),
+            # index smaller than self on the non-scatter axis
+            cls(shape=(4, 8), dim=1, num_indices=3, index_shape=(2, 3)),
+            cls(shape=(2, 4, 8), dim=0, num_indices=1, index_shape=(1, 3, 5)),
+            # src larger than index
+            cls(shape=(4, 8), dim=1, num_indices=3, src_shape=(4, 6)),
+            cls(shape=(4, 8), dim=0, num_indices=2, src_shape=(3, 8)),
+            # scalar value (aten.scatter.value)
+            cls(shape=(4, 8), dim=1, num_indices=3, value=2.5),
+            cls(shape=(2, 4, 8), dim=0, num_indices=1, value=-1.0),
+            # half precision, and a float value cast into an int32 self
+            cls(shape=(4, 8), dim=1, num_indices=3, dtype=torch.float16),
+            cls(shape=(4, 8), dim=0, num_indices=2, dtype=torch.bfloat16),
+            cls(shape=(4, 8), dim=1, num_indices=3, value=2.5, dtype=torch.int32),
+            # dynamic batch shared by all three inputs, and on self alone with
+            # a static index narrowing it at runtime; both run at an unseen batch
+            cls(shape=(4, 8), dim=1, num_indices=3, dynamic_batch=True),
+            cls(
+                shape=(4, 8),
+                dim=1,
+                num_indices=3,
+                index_shape=(2, 3),
+                dynamic_batch=True,
+            ),
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ScatterModel(dim=self.dim, value=self.value)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic_batch:
+            return None
+        batch = Dim("batch", min=2, max=16)
+        rest = None if self.index_shape else {0: batch}
+        return {"x": {0: batch}, "index": rest, "src": rest}
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._make_inputs(self.shape)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic_batch:
+            return self.create_inputs()
+        return self._make_inputs((self.shape[0] + 3,) + self.shape[1:])
+
+    def _make_inputs(self, shape: Tuple[int, ...]) -> Tuple[torch.Tensor, ...]:
+        def rand(s):
+            if self.dtype.is_floating_point:
+                return torch.randn(s, dtype=self.dtype)
+            return torch.randint(-8, 8, s, dtype=self.dtype)
+
+        x = rand(shape)
+        dim = self.dim % len(shape)
+        index_shape = list(self.index_shape or shape)
+        index_shape[dim] = self.num_indices
+        # A random permutation along dim, cut to num_indices, gives unique
+        # targets per output position.
+        perm_shape = list(index_shape)
+        perm_shape[dim] = shape[dim]
+        index = (
+            torch.rand(perm_shape).argsort(dim).narrow(dim, 0, self.num_indices)
+        ).contiguous()
+        src = rand(self.src_shape or index_shape)
+        return (x, index, src)
+
+
 @register_test
 class QuantizedEmbeddingTest(OpTestCase):
     """Test case for TorchAO int4 quantized nn.Embedding."""
