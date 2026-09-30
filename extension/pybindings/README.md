@@ -8,22 +8,24 @@ This Python module, named `portable_lib`, provides a set of functions and classe
 pip install . --no-build-isolation
 ```
 
-## Running without ATen
+## Portable tensor mode
 
-Build with `-DEXECUTORCH_PYBIND_USE_ATEN=OFF` to remove the ATen and PyTorch
-library dependency from the bindings. CPU inputs may be NumPy arrays or other
-dense objects implementing Python's buffer protocol. If PyTorch is installed,
-`torch.Tensor` inputs are inspected through their Python attributes; the
-extension does not link against torch.
+Portable bindings do not link against ATen or PyTorch. CPU inputs may be NumPy
+arrays or other dense objects implementing Python's buffer protocol. If
+PyTorch is installed, `torch.Tensor` inputs are inspected through their Python
+attributes instead of being cast to `at::Tensor`.
 
-Tensor outputs from a torch-free build are result-memory objects. They expose
-shape, strides, dtype, and the Python buffer protocol, so NumPy can read them
-without another copy:
+When PyTorch is already loaded, portable bindings create output tensors through
+its public Python API. Otherwise tensor outputs are `ExecuTorchResult` objects;
+they expose shape, strides, dtype, and the Python buffer protocol so NumPy can
+read them without another copy. ATen-mode bindings continue to return native
+PyTorch tensors directly.
 
 ```python
 output = module.forward([numpy_input])[0]
 result = np.asarray(output)
 ```
+
 # Link Backends
 
 Not all backends are built into the pip wheel by default. You can link these missing/experimental backends by turning on the corresponding cmake flag. For example, to include the Vulkan backend:

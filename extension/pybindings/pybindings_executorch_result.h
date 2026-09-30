@@ -22,7 +22,7 @@ namespace executorch::extension::pybindings {
 
 namespace py = pybind11;
 
-/** Read-only owned tensor result returned by torch-free Python bindings. */
+/** Owned tensor result returned by portable Python bindings. */
 class PyExecuTorchResult final {
  public:
   explicit PyExecuTorchResult(const executorch::aten::Tensor& tensor)
@@ -55,7 +55,7 @@ class PyExecuTorchResult final {
         ndim,
         std::move(shape),
         std::move(byte_strides),
-        /*readonly=*/true);
+        /*readonly=*/false);
   }
 
   py::tuple shape() const {
@@ -75,12 +75,59 @@ class PyExecuTorchResult final {
     return result;
   }
 
+  py::tuple element_strides() const {
+    py::tuple result(strides_.size());
+    for (size_t i = 0; i < strides_.size(); ++i) {
+      result[i] = strides_[i];
+    }
+    return result;
+  }
+
   py::dtype dtype() const {
     return py::dtype(numpy_dtype_name(scalar_type_));
   }
 
   size_t nbytes() const {
     return storage_.size();
+  }
+
+  const char* torch_dtype_name() const {
+    using executorch::aten::ScalarType;
+    switch (scalar_type_) {
+      case ScalarType::Byte:
+        return "uint8";
+      case ScalarType::Char:
+        return "int8";
+      case ScalarType::Short:
+        return "int16";
+      case ScalarType::Int:
+        return "int32";
+      case ScalarType::Long:
+        return "int64";
+      case ScalarType::Half:
+        return "float16";
+      case ScalarType::Float:
+        return "float32";
+      case ScalarType::Double:
+        return "float64";
+      case ScalarType::ComplexFloat:
+        return "complex64";
+      case ScalarType::ComplexDouble:
+        return "complex128";
+      case ScalarType::Bool:
+        return "bool";
+      case ScalarType::BFloat16:
+        return "bfloat16";
+      case ScalarType::UInt16:
+        return "uint16";
+      case ScalarType::UInt32:
+        return "uint32";
+      case ScalarType::UInt64:
+        return "uint64";
+      default:
+        throw std::runtime_error(
+            "ExecuTorch result dtype cannot be represented by PyTorch");
+    }
   }
 
  private:

@@ -899,21 +899,15 @@ if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
-# If CUDA, Metal, or an ATen-enabled pybind will need Torch, find it at root
-# scope first so that imported targets (e.g. MKL::MKL) aren't created in child
-# directory scopes and then duplicated when found again at root scope.
-set(_executorch_pybind_needs_torch OFF)
-if(EXECUTORCH_BUILD_PYBIND AND EXECUTORCH_PYBIND_USE_ATEN)
-  set(_executorch_pybind_needs_torch ON)
-endif()
+# If CUDA, ROCm, or Metal will need Torch, find it at root scope first so that
+# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
+# then duplicated when found again at root scope.
 if(EXECUTORCH_BUILD_CUDA
    OR EXECUTORCH_BUILD_ROCM
    OR EXECUTORCH_BUILD_METAL
-   OR _executorch_pybind_needs_torch
 )
   find_package_torch()
 endif()
-unset(_executorch_pybind_needs_torch)
 
 # Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
 # vendored torch-tensorrt delegate). Built before backends/aoti and
@@ -1296,14 +1290,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
 
-  if(EXECUTORCH_PYBIND_USE_ATEN)
-    # Find PyTorch to allow the bindings to take at::Tensor as input/output.
-    find_package_torch()
-    find_library(
-      TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
-    )
-  endif()
-
   # When the consolidated shared runtime is built, the pybind extension links it
   # instead of whole-archiving the static core, so Python and C++ consumers
   # share one backend registry. `executorch` and the extensions bundled into
@@ -1318,9 +1304,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     set(_dep_libs bundled_program etdump flatccrt executorch
                   extension_data_loader extension_tensor
     )
-  endif()
-  if(EXECUTORCH_PYBIND_USE_ATEN)
-    list(APPEND _dep_libs ${TORCH_PYTHON_LIBRARY} util torch)
   endif()
   # The bindings call the threadpool control APIs directly, so static builds
   # must retain this library rather than relying on transitive linkage.
@@ -1337,23 +1320,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs aoti_common)
   endif()
 
-  # RPATH for the Python extension. It sits in
-  # <site-packages>/executorch/extension/pybindings, so torch is three levels up
-  # and the wheel's own lib/ directory is two.
-  #
-  # ELF spelling. The Mach-O branch below takes only the Torch hop from this
-  # list, because nothing else records it there. The other entries reach a
-  # Mach-O build another way: executorch_target_shared_runtime_path emits lib
-  # and src/executorch/lib, and setup.py's _SIBLING_LIBRARY_DIRECTORIES adds
-  # backends/cuda in the platform's own token at packaging time. An editable
-  # install copies this extension into a package directory whose subdirectories
-  # are symlinks to the checkout, and the loader resolves the origin token
-  # against the real path, so the runtime sits two levels up and then inside
-  # src/executorch/lib rather than beside the copy.
+  # RPATH for the wheel's own lib/ directory. Backend paths are appended below.
   set(_python_extension_rpath "$ORIGIN/../../src/executorch/lib")
-  if(EXECUTORCH_PYBIND_USE_ATEN)
-    string(PREPEND _python_extension_rpath "$ORIGIN/../../../torch/lib:")
-  endif()
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # extension_module_static is already bundled into libexecutorch.so; linking
@@ -1442,41 +1410,17 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fexceptions>
   )
 
-  if(EXECUTORCH_PYBIND_USE_ATEN)
-    # util lib PyTorch requires C++20, so util must be compiled with C++20.
-    add_library(
-      util ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-    )
-    set_target_properties(util PROPERTIES CXX_STANDARD 20)
-    target_include_directories(
-      util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
-    )
-    target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
-
-    target_compile_options(util PUBLIC ${_pybind_compile_options})
-    if(EXECUTORCH_BUILD_SHARED)
-      target_link_libraries(util PRIVATE torch c10 executorch_shared)
-    else()
-      target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
-    endif()
-  endif()
-
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
   strip_python_lib(portable_lib)
   # The actual output file needs a leading underscore so it can coexist with
-  # portable_lib.py in the same python package. PyTorch requires C++20, so
-  # pybindings must be compiled with C++20.
+  # portable_lib.py in the same python package.
   set_target_properties(
-    portable_lib PROPERTIES OUTPUT_NAME "_C" CXX_STANDARD 20
+    portable_lib PROPERTIES OUTPUT_NAME "_C" CXX_STANDARD 17
   )
   target_compile_definitions(
     portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_C
   )
-  if(EXECUTORCH_PYBIND_USE_ATEN)
-    target_compile_definitions(portable_lib PRIVATE EXECUTORCH_PYBIND_USE_ATEN)
-    target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
-  endif()
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
@@ -1509,40 +1453,14 @@ if(EXECUTORCH_BUILD_PYBIND)
     endif()
   endforeach()
 
-  # Where the extension finds PyTorch and the backend libraries, relative to
-  # where it is installed.
-  #
-  # Mach-O gets the Torch hop only, because nothing else records it, while every
-  # other entry in this list arrives another way:
-  # executorch_target_shared_runtime_path below emits lib and
-  # src/executorch/lib, and setup.py's _SIBLING_LIBRARY_DIRECTORIES adds
-  # backends/cuda in the platform's own token at packaging time.
-  # backends/qualcomm is in neither, so it is dropped on Mach-O, which is
-  # correct because QNN is not a macOS backend.
-  #
-  # The Torch hop cannot be left out. Without it this extension records no
-  # relative route to Torch at all, and the absolute one packaging leaves behind
-  # is the build machine's own directory, so the module loads only when
-  # something has already brought libtorch_python into the process. Importing it
-  # directly, or dlopening it from a C++ consumer, finds nothing. The sibling
-  # _training_lib records @loader_path/../../../../torch/lib and loads on its
-  # own, which is the same construct from one directory deeper
-  # (extension/training/pybindings rather than extension/pybindings), and three
-  # more targets do it too: extension/llm/custom_ops, extension/llm/runner and
-  # kernels/quantized.
-  #
-  # The earlier "ld: duplicate LC_RPATH '@loader_path'" is about the bare token.
-  # A token with a subpath is a distinct entry, and this target already ships
-  # several.
-  if(APPLE)
-    set(_python_extension_torch_path "@loader_path/../../../torch/lib")
-  else()
-    set(_python_extension_torch_path "${_python_extension_rpath}")
+  # Mach-O receives its runtime paths from the helpers below. The explicit
+  # backend paths above use ELF's $ORIGIN spelling and only apply elsewhere.
+  if(NOT APPLE)
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "${_python_extension_rpath}"
+                              INSTALL_RPATH "${_python_extension_rpath}"
+    )
   endif()
-  set_target_properties(
-    portable_lib PROPERTIES BUILD_RPATH "${_python_extension_torch_path}"
-                            INSTALL_RPATH "${_python_extension_torch_path}"
-  )
   executorch_target_shared_runtime_path(
     portable_lib "extension/pybindings" "executorch/extension/pybindings"
   )

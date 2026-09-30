@@ -56,6 +56,7 @@ class PybindingsNoAtenTest(unittest.TestCase):
 
         output = module((torch.tensor([1.0]), torch.tensor([2.0])))[0]
 
+        self.assertIsInstance(output, torch.Tensor)
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
         with self.assertRaisesRegex(ValueError, "must be resolved"):
             module((torch._neg_view(torch.tensor([1.0])), torch.tensor([2.0])))

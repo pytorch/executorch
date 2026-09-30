@@ -7,7 +7,7 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
     "//executorch/kernels/quantized:generated_lib",
 ]
 
-PORTABLE_MODULE_DEPS_NO_ATEN = [
+PORTABLE_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:program",
     "//executorch/runtime/core:device_memory_buffer",
@@ -23,10 +23,6 @@ PORTABLE_MODULE_DEPS_NO_ATEN = [
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
     "//executorch/devtools/etdump:etdump_flatcc",
 ] + get_all_cpu_backend_targets()
-
-PORTABLE_MODULE_DEPS = PORTABLE_MODULE_DEPS_NO_ATEN + [
-    "//executorch/extension/aten_util:aten_bridge",
-]
 
 ATEN_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry_aten",
@@ -59,7 +55,7 @@ def executorch_pybindings(
         visibility = ["//executorch/..."],
         types = [],
         compiler_flags = [],
-        use_aten = True):
+        use_aten = False):
     runtime.cxx_python_extension(
         # @autodeps-skip
         name = python_module_name,
@@ -74,7 +70,7 @@ def executorch_pybindings(
         compiler_flags = compiler_flags,
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
-        ] + (["-DEXECUTORCH_PYBIND_USE_ATEN"] if use_aten else []),
+        ] + (["-DUSE_ATEN_LIB"] if use_aten else []),
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/extension/threadpool:threadpool",
