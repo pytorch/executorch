@@ -639,13 +639,16 @@ Error CudaWeightCache::load(
   }
 
   if (!pairs.empty()) {
+    // Full validation stays on with off-graph KV present: those constants are
+    // AOTI buffers, which the check permits to be absent, while every weight
+    // must still be supplied.
     ET_CHECK_OK_OR_RETURN_ERROR(
         handle->update_user_managed_constant_buffer_pairs(
             handle->container_handle,
             pairs.data(),
             pairs.size(),
             /*use_inactive=*/false,
-            /*validate_full_update=*/external_storages == 0),
+            /*validate_full_update=*/true),
         "Failed to bind CUDA FQN weights");
   }
   ET_LOG(

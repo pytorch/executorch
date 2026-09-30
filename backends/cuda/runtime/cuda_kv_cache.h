@@ -159,6 +159,30 @@ inline runtime::Result<int64_t> read_offgraph_kv_step_width(
   return width;
 }
 
+// Whether the program's constants include off-graph KV storage, which only a
+// runtime cache can supply. Read from the program itself, so it holds whether
+// or not the caller passed a cache.
+inline runtime::Result<bool> requires_offgraph_kv_storage(
+    const CudaDelegateHandle& handle) {
+  if (!handle.get_num_constants || !handle.get_constant_original_fqn) {
+    return false;
+  }
+  size_t count = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      handle.get_num_constants(handle.container_handle, &count));
+  constexpr std::string_view kPrefix = "__et_offgraph_kv_";
+  for (size_t index = 0; index < count; ++index) {
+    const char* fqn = nullptr;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_original_fqn(handle.container_handle, index, &fqn));
+    if (fqn != nullptr &&
+        std::string_view(fqn).substr(0, kPrefix.size()) == kPrefix) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Load time. Resolves the cache the runner published under `cache_key` and
 // associates it with `handle` if the program carries off-graph storage; a
 // program that does not (an embedding or vision pass) is left without one.
