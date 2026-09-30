@@ -28,7 +28,7 @@ set(_flatbuffers_include ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 # As in examples/models/llama: point gflags_DIR at the copy the executorch build
 # configured, since a separate find_package() project cannot see it.

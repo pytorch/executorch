@@ -70,7 +70,7 @@ set_target_properties(
     "${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni/prefab/modules/fbjni/libs/android.${ANDROID_ABI}/libfbjni.so"
 )
 
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 add_library(
   executorch_jni SHARED jni/jni_layer.cpp jni/log.cpp jni/jni_layer_runtime.cpp

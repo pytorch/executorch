@@ -712,7 +712,8 @@ add_library(prim_ops_lib ${_prim_ops_lib__srcs})
 set_target_properties(prim_ops_lib PROPERTIES OUTPUT_NAME "executorch")
 
 # DEPRECATED: executorch alias is kept purely for backwards compatibility.
-# External consumers linking to `executorch` will transparently link `prim_ops_lib`.
+# External consumers linking to `executorch` will transparently link
+# `prim_ops_lib`.
 add_library(executorch INTERFACE)
 target_link_libraries(executorch INTERFACE prim_ops_lib)
 target_link_libraries(prim_ops_lib PRIVATE executorch_core)
