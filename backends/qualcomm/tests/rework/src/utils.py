@@ -646,3 +646,51 @@ class LoweringWithExportedProgram:
         with mock.patch("torch.export.export", wraps=torch.export.export) as export_spy:
             to_edge_transform_and_lower_to_qnn(exported, None, compile_spec)
             export_spy.assert_not_called()
+
+
+class NonFloatActivationAnnotation:
+    @staticmethod
+    def test(quantizer):
+        # Observers only handle float tensors, so a spec on an int64 activation makes
+        # convert_pt2e emit a quantize_per_tensor whose dtype assert fires at export.
+        # slice_scatter over an int64 index - the shape HuggingFace's cache_position
+        # update takes - is annotated whole, with no per-operand guard to catch it.
+        class _SliceScatterInt64(torch.nn.Module):
+            def forward(self, x, ids):
+                updated = torch.slice_scatter(ids, ids[:2] + 1, dim=0, start=0, end=2)
+                return x * updated.to(torch.float32)
+
+        inputs = (torch.randn(4), torch.arange(4, dtype=torch.int64))
+        module = _SliceScatterInt64().eval()
+        gm = torch.export.export(module, inputs, strict=True).module()
+        gm = quantizer.transform_for_annotation(gm)
+        quantizer.annotate(gm)
+
+        def _is_non_float(node):
+            val = node.meta.get("val") if isinstance(node, torch.fx.Node) else None
+            return isinstance(val, torch.Tensor) and not val.dtype.is_floating_point
+
+        # Guard against a vacuous test.
+        assert any(
+            n.target == torch.ops.aten.slice_scatter.default and _is_non_float(n)
+            for n in gm.graph.nodes
+        ), "expected an int64 aten.slice_scatter.default in the graph"
+
+        annotated_float_nodes = 0
+        for node in gm.graph.nodes:
+            annotation = node.meta.get(Q_ANNOTATION_KEY)
+            if annotation is None:
+                continue
+            if _is_non_float(node):
+                assert (
+                    annotation.output_qspec is None
+                ), f"non-float node {node.name} carries an output_qspec"
+            else:
+                annotated_float_nodes += 1
+            for arg in annotation.input_qspec_map:
+                assert not _is_non_float(
+                    arg
+                ), f"{node.name} quantizes non-float input {arg.name}"
+
+        # The float half of the graph must still be quantized.
+        assert annotated_float_nodes > 0, "no float node was annotated"
