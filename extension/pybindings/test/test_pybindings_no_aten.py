@@ -26,9 +26,9 @@ class PybindingsNoAtenTest(unittest.TestCase):
         self.assertNotIn("torch", sys.modules)
         self.assertNotIn("executorch.exir", sys.modules)
 
-    def test_result_memory_is_not_constructible(self) -> None:
+    def test_executorch_result_is_not_constructible(self) -> None:
         with self.assertRaises(TypeError):
-            runtime.ResultMemory()
+            runtime.ExecuTorchResult()
 
     def test_executes_program_without_torch(self) -> None:
         with open(os.environ["EXECUTORCH_PYBIND_TEST_PTE"], "rb") as program_file:
@@ -39,7 +39,7 @@ class PybindingsNoAtenTest(unittest.TestCase):
             (np.array([1.0], dtype=np.float32), np.array([2.0], dtype=np.float32))
         )[0]
 
-        self.assertIsInstance(output, runtime.ResultMemory)
+        self.assertIsInstance(output, runtime.ExecuTorchResult)
         self.assertEqual(output.shape, (1,))
         self.assertEqual(output.dtype, np.dtype("float32"))
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))

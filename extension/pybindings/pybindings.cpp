@@ -31,7 +31,7 @@
 #include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/pybindings/pybindings_data_loader.h>
-#include <executorch/extension/pybindings/pybindings_result_memory.h>
+#include <executorch/extension/pybindings/pybindings_executorch_result.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -702,7 +702,7 @@ inline py::list get_outputs_as_py_list(
 #endif
 #else
       (void)clone_outputs;
-      list[i] = py::cast(std::make_shared<PyResultMemory>(v.toTensor()));
+      list[i] = py::cast(std::make_shared<PyExecuTorchResult>(v.toTensor()));
 #endif
     } else {
       ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -2018,7 +2018,7 @@ struct PyMethod final {
 #elif defined(EXECUTORCH_PYBIND_USE_ATEN)
     return py::cast(alias_attensor_to_etensor(attr.get()));
 #else
-    return py::cast(std::make_shared<PyResultMemory>(attr.get()));
+    return py::cast(std::make_shared<PyExecuTorchResult>(attr.get()));
 #endif
   }
 
@@ -2117,7 +2117,7 @@ struct PyMethod final {
 #endif
 #else
         (void)clone_outputs;
-        list[i] = py::cast(std::make_shared<PyResultMemory>(v.toTensor()));
+        list[i] = py::cast(std::make_shared<PyExecuTorchResult>(v.toTensor()));
 #endif
       } else {
         ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -2370,13 +2370,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 #else
   m.attr("_uses_aten") = false;
 #endif
-  py::class_<PyResultMemory, std::shared_ptr<PyResultMemory>>(
-      m, "ResultMemory", py::buffer_protocol())
-      .def_property_readonly("shape", &PyResultMemory::shape)
-      .def_property_readonly("strides", &PyResultMemory::strides)
-      .def_property_readonly("dtype", &PyResultMemory::dtype)
-      .def_property_readonly("nbytes", &PyResultMemory::nbytes)
-      .def_buffer(&PyResultMemory::buffer);
+  py::class_<PyExecuTorchResult, std::shared_ptr<PyExecuTorchResult>>(
+      m, "ExecuTorchResult", py::buffer_protocol())
+      .def_property_readonly("shape", &PyExecuTorchResult::shape)
+      .def_property_readonly("strides", &PyExecuTorchResult::strides)
+      .def_property_readonly("dtype", &PyExecuTorchResult::dtype)
+      .def_property_readonly("nbytes", &PyExecuTorchResult::nbytes)
+      .def_buffer(&PyExecuTorchResult::buffer);
 
   // Bind the verification enum to python.
   py::enum_<Program::Verification>(m, "Verification")
