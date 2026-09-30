@@ -142,10 +142,6 @@ define_overridable_option(
   EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_PYBIND_USE_ATEN
-  "Enable PyTorch Tensor interoperability in the Python bindings" BOOL ON
-)
-define_overridable_option(
   EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" BOOL OFF
 )
 define_overridable_option(

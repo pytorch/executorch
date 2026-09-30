@@ -49,18 +49,14 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
+#ifdef USE_ATEN_LIB
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
 #include <ATen/core/functional.h>
 #include <c10/core/ScalarTypeToTypeMeta.h>
+#include <c10/core/impl/LocalDispatchKeySet.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/python.h>
-#endif
-
-#if defined(EXECUTORCH_PYBIND_USE_ATEN) && !defined(USE_ATEN_LIB)
-#include <c10/core/impl/LocalDispatchKeySet.h>
-#include <executorch/extension/aten_util/aten_bridge.h>
 #endif
 
 /// Throws a runtime_error with the provided message if `error` is not `Ok`.
@@ -114,26 +110,15 @@ using ::executorch::runtime::Tag;
 using torch::executor::etdump_result;
 using torch::executor::ETDumpGen;
 
-#if defined(EXECUTORCH_PYBIND_USE_ATEN) && !defined(USE_ATEN_LIB)
-using ::executorch::extension::alias_attensor_to_etensor;
-using ::executorch::extension::alias_etensor_to_attensor;
-using ::executorch::extension::torch_to_executorch_device;
-using ::executorch::extension::torch_to_executorch_scalar_type;
-#endif
-
 namespace executorch {
 namespace extension {
 namespace pybindings {
 
 namespace {
 
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
-executorch::aten::ScalarType runtime_scalar_type(const at::Tensor& tensor) {
 #ifdef USE_ATEN_LIB
+executorch::aten::ScalarType runtime_scalar_type(const at::Tensor& tensor) {
   return tensor.scalar_type();
-#else
-  return torch_to_executorch_scalar_type(tensor.options().dtype());
-#endif
 }
 
 void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
@@ -349,7 +334,7 @@ void validate_tensor_input(
   }
 }
 
-#ifndef EXECUTORCH_PYBIND_USE_ATEN
+#ifndef USE_ATEN_LIB
 /** A zero-copy view built only from torch.Tensor's public Python API. */
 class TorchTensorView final {
  public:
@@ -363,7 +348,7 @@ class TorchTensorView final {
     const auto device_type = py::str(owner_.attr("device").attr("type"));
     if (device_type.cast<std::string>() != "cpu") {
       throw py::value_error(
-          "Torch-free bindings require CPU torch tensors until DLPack is enabled");
+          "Portable bindings require CPU torch tensors until DLPack is enabled");
     }
     scalar_type_ = scalar_type_from_torch(py::str(owner_.attr("dtype")));
     sizes_ = checked_vector(owner_.attr("shape"), "dimension");
@@ -508,6 +493,27 @@ py::sequence normalize_inputs(const py::object& inputs) {
   }
   return py::reinterpret_borrow<py::sequence>(inputs);
 }
+
+#ifndef USE_ATEN_LIB
+py::object portable_tensor_result(const executorch::aten::Tensor& tensor) {
+  auto result = std::make_shared<PyExecuTorchResult>(tensor);
+  py::object python_result = py::cast(result);
+  const auto modules = py::module_::import("sys").attr("modules");
+  if (!modules.contains("torch")) {
+    return python_result;
+  }
+
+  const auto torch_module = modules["torch"];
+  const auto dtype = torch_module.attr(result->torch_dtype_name());
+  if (result->nbytes() == 0) {
+    return torch_module.attr("empty")(
+        result->shape(), py::arg("dtype") = dtype);
+  }
+  return torch_module
+      .attr("frombuffer")(python_result, py::arg("dtype") = dtype)
+      .attr("as_strided")(result->shape(), result->element_strides());
+}
+#endif
 
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
   FILE* f = fopen(path.c_str(), "w+");
@@ -684,7 +690,6 @@ inline py::list get_outputs_as_py_list(
     } else if (Tag::String == v.tag) {
       list[i] = py::cast(std::string(v.toString().data()));
     } else if (Tag::Tensor == v.tag) {
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
 #ifdef USE_ATEN_LIB
       // Clone so the outputs in python do not share a lifetime with the
       // module object
@@ -694,15 +699,8 @@ inline py::list get_outputs_as_py_list(
         list[i] = py::cast(v.toTensor());
       }
 #else
-      if (clone_outputs) {
-        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
-      } else {
-        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
-      }
-#endif
-#else
       (void)clone_outputs;
-      list[i] = py::cast(std::make_shared<PyExecuTorchResult>(v.toTensor()));
+      list[i] = portable_tensor_result(v.toTensor());
 #endif
     } else {
       ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -1149,7 +1147,7 @@ struct PyModule final {
     cpp_inputs.reserve(inputs_size);
     std::vector<std::shared_ptr<BufferTensor>> buffer_inputs;
     buffer_inputs.reserve(inputs_size);
-#ifndef EXECUTORCH_PYBIND_USE_ATEN
+#ifndef USE_ATEN_LIB
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
     torch_inputs.reserve(inputs_size);
 #endif
@@ -1182,7 +1180,7 @@ struct PyModule final {
               "A call cannot mix buffer and torch tensor inputs");
         }
         saw_torch = true;
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
+#ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
@@ -1194,75 +1192,8 @@ struct PyModule final {
             runtime_scalar_type(at_tensor),
             tensor_sizes,
             tensor_strides);
-#ifdef USE_ATEN_LIB
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
-        EValue evalue(at_tensor);
-#else
-        // convert at::Tensor to torch::executor::Tensor
-        auto type =
-            torch_to_executorch_scalar_type(at_tensor.options().dtype());
-        size_t dim = at_tensor.dim();
-        // cant directly alias at::Tensor sizes and strides due to int64 vs
-        // int32 typing conflict
-        input_sizes.emplace_back(
-            at_tensor.sizes().begin(), at_tensor.sizes().end());
-        input_strides.emplace_back(
-            at_tensor.strides().begin(), at_tensor.strides().end());
-
-        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
-        // inputs
-        std::vector<torch::executor::Tensor::DimOrderType> dim_order;
-        if (at_tensor.is_contiguous()) {
-          for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
-            dim_order.push_back(cur_dim);
-          }
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
-            at_tensor.dim() == 4) {
-          dim_order = decltype(dim_order)({0, 2, 3, 1});
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
-            at_tensor.dim() == 5) {
-          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
-        } else {
-          auto error_msg = "Input " + std::to_string(i) + " for method " +
-              method_name + " should be contiguous or channels-last.";
-          throw std::runtime_error(error_msg);
-        }
-        input_dim_order.push_back(std::move(dim_order));
-        // The runtime has two device types, so a device outside that pair
-        // cannot be represented at all and the tensor would carry a label that
-        // does not describe its memory.
-        auto mapped_device = torch_to_executorch_device(at_tensor.device());
-        // An empty tensor has no buffer for a label to describe, so it is left
-        // alone rather than rejected for a device it never touches.
-        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
-          throw std::runtime_error(
-              "Input " + std::to_string(i) + " for method " + method_name +
-              " is on device " + at_tensor.device().str() +
-              ", and only CPU and CUDA tensors can be passed to a method.");
-        }
-        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
-        const auto device = mapped_device.value_or(
-            torch::executor::Device(torch::executor::DeviceType::CPU));
-        input_tensors.emplace_back(
-            type,
-            dim,
-            input_sizes.back().data(),
-            nullptr,
-            input_dim_order.back().data(),
-            input_strides.back().data(),
-            torch::executor::TensorShapeDynamism::STATIC,
-            device.type(),
-            device.index());
-
-        torch::executor::Tensor temp =
-            torch::executor::Tensor(&input_tensors.back());
-        alias_etensor_to_attensor(at_tensor, temp);
-        EValue evalue(temp);
-#endif
-
-        cpp_inputs.push_back(evalue);
+        cpp_inputs.emplace_back(at_tensor);
 #else
         torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
         const auto& tensor = torch_inputs.back();
@@ -1752,7 +1683,7 @@ struct PyMethod final {
     buffer_inputs.reserve(inputs_size);
     std::vector<TensorPtr> buffer_tensor_ptrs;
     buffer_tensor_ptrs.reserve(inputs_size);
-#ifndef EXECUTORCH_PYBIND_USE_ATEN
+#ifndef USE_ATEN_LIB
     std::vector<std::shared_ptr<TorchTensorView>> torch_inputs;
     torch_inputs.reserve(inputs_size);
 #endif
@@ -1778,7 +1709,7 @@ struct PyMethod final {
               "A call cannot mix buffer and torch tensor inputs");
         }
         saw_torch = true;
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
+#ifdef USE_ATEN_LIB
         auto at_tensor = python_input.cast<at::Tensor>();
         std::vector<int> tensor_sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
@@ -1790,72 +1721,8 @@ struct PyMethod final {
             runtime_scalar_type(at_tensor),
             tensor_sizes,
             tensor_strides);
-#ifdef USE_ATEN_LIB
         (void)mutable_tensor_data_ptr_no_cow(at_tensor);
-        EValue evalue(at_tensor);
-#else
-        // convert at::Tensor to torch::executor::Tensor
-        auto type =
-            torch_to_executorch_scalar_type(at_tensor.options().dtype());
-        size_t dim = at_tensor.dim();
-        // cant directly alias at::Tensor sizes and strides due to int64 vs
-        // int32 typing conflict
-        std::vector<int> sizes(
-            at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> strides(
-            at_tensor.strides().begin(), at_tensor.strides().end());
-
-        // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
-        // inputs
-        std::vector<torch::executor::Tensor::DimOrderType> dim_order;
-        if (at_tensor.is_contiguous()) {
-          for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
-            dim_order.push_back(cur_dim);
-          }
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
-            at_tensor.dim() == 4) {
-          dim_order = decltype(dim_order)({0, 2, 3, 1});
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
-            at_tensor.dim() == 5) {
-          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
-        } else {
-          auto error_msg = "Input " + std::to_string(i) + " for method " +
-              method_->method_meta().name() +
-              " should be contiguous or channels-last.";
-          throw std::runtime_error(error_msg);
-        }
-        // Record where the buffer actually lives. The conversion copied every
-        // other property and left the device at CPU, so an accelerator buffer
-        // was described as host memory.
-        auto mapped_device = torch_to_executorch_device(at_tensor.device());
-        // An empty tensor has no buffer for a label to describe, so it is left
-        // alone rather than rejected for a device it never touches.
-        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
-          throw std::runtime_error(
-              "Input " + std::to_string(i) + " for method " +
-              method_->method_meta().name() + " is on device " +
-              at_tensor.device().str() +
-              ", and only CPU and CUDA tensors can be passed to a method.");
-        }
-        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
-        const auto device =
-            mapped_device.value_or(aten::Device(aten::DeviceType::CPU));
-        TensorPtr tensor = for_blob(
-                               mutable_tensor_data_ptr_no_cow(at_tensor),
-                               std::move(sizes),
-                               type)
-                               .strides(std::move(strides))
-                               .dim_order(std::move(dim_order))
-                               .dynamism(aten::TensorShapeDynamism::STATIC)
-                               .device(device)
-                               .make_tensor_ptr();
-        input_tensors.push_back(tensor);
-        EValue evalue(input_tensors.back());
-#endif
-
-        cpp_inputs.push_back(evalue);
+        cpp_inputs.emplace_back(at_tensor);
 #else
         torch_inputs.push_back(std::make_shared<TorchTensorView>(python_input));
         const auto& view = torch_inputs.back();
@@ -1935,7 +1802,7 @@ struct PyMethod final {
           buffer_tensor_ptrs_.end(),
           buffer_tensor_ptrs.begin(),
           buffer_tensor_ptrs.end());
-#ifndef EXECUTORCH_PYBIND_USE_ATEN
+#ifndef USE_ATEN_LIB
       torch_inputs_.insert(
           torch_inputs_.end(), torch_inputs.begin(), torch_inputs.end());
       torch_tensor_ptrs_.insert(
@@ -1949,7 +1816,7 @@ struct PyMethod final {
     }
     buffer_inputs_ = std::move(buffer_inputs);
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
-#ifndef EXECUTORCH_PYBIND_USE_ATEN
+#ifndef USE_ATEN_LIB
     torch_inputs_ = std::move(torch_inputs);
     torch_tensor_ptrs_ = std::move(input_tensors);
 #endif
@@ -2013,12 +1880,10 @@ struct PyMethod final {
         name.c_str(),
         method_->method_meta().name(),
         static_cast<uint32_t>(attr.error()));
-#if defined(EXECUTORCH_PYBIND_USE_ATEN) && defined(USE_ATEN_LIB)
+#ifdef USE_ATEN_LIB
     return py::cast(attr.get());
-#elif defined(EXECUTORCH_PYBIND_USE_ATEN)
-    return py::cast(alias_attensor_to_etensor(attr.get()));
 #else
-    return py::cast(std::make_shared<PyExecuTorchResult>(attr.get()));
+    return portable_tensor_result(attr.get());
 #endif
   }
 
@@ -2037,7 +1902,7 @@ struct PyMethod final {
   // next successful set_inputs() call.
   std::vector<std::shared_ptr<BufferTensor>> buffer_inputs_;
   std::vector<TensorPtr> buffer_tensor_ptrs_;
-#ifndef EXECUTORCH_PYBIND_USE_ATEN
+#ifndef USE_ATEN_LIB
   std::vector<std::shared_ptr<TorchTensorView>> torch_inputs_;
   std::vector<TensorPtr> torch_tensor_ptrs_;
 #endif
@@ -2099,7 +1964,6 @@ struct PyMethod final {
       } else if (Tag::String == v.tag) {
         list[i] = py::cast(std::string(v.toString().data()));
       } else if (Tag::Tensor == v.tag) {
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
 #ifdef USE_ATEN_LIB
         // Clone so the outputs in python do not share a lifetime with the
         // module object
@@ -2109,15 +1973,8 @@ struct PyMethod final {
           list[i] = py::cast(v.toTensor());
         }
 #else
-        if (clone_outputs) {
-          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
-        } else {
-          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
-        }
-#endif
-#else
         (void)clone_outputs;
-        list[i] = py::cast(std::make_shared<PyExecuTorchResult>(v.toTensor()));
+        list[i] = portable_tensor_result(v.toTensor());
 #endif
       } else {
         ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -2365,7 +2222,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   auto call_guard = py::
       call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
 
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
+#ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
 #else
   m.attr("_uses_aten") = false;
@@ -2433,7 +2290,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
   // Import the PyDataLoader type from the shared module.
   // This ensures the type is registered once and shared across all modules.
-#ifdef EXECUTORCH_PYBIND_USE_ATEN
+#ifdef USE_ATEN_LIB
   py::module_::import("executorch.extension.pybindings.data_loader");
 #else
   // A standalone torch-free extension can be imported directly for embedded

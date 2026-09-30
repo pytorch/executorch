@@ -66,18 +66,7 @@ if sys.platform == "win32":
             e,
         )
 
-# ATen-enabled builds may need torch to load its shared libraries before the
-# extension. Keep this after backend and DLL-path setup so extension module
-# initializers see the configured environment.
-try:
-    _bindings = _import_module("executorch.extension.pybindings._C")
-    _torch = None
-except ImportError as _initial_import_error:
-    try:
-        import torch as _torch
-    except ImportError:
-        raise _initial_import_error
-    _bindings = _import_module("executorch.extension.pybindings._C")
+_bindings = _import_module("executorch.extension.pybindings._C")
 
 if _bindings._uses_aten:
     import executorch.exir._warnings as _exir_warnings
@@ -131,5 +120,5 @@ del _bindings
 del _warning_category
 del _LightweightExperimentalWarning
 del _import_module
-del _torch
+del _exir_warnings
 del _warnings
