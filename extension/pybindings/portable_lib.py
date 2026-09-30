@@ -118,7 +118,6 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 # (apart from some __dunder__ names).
 del _bindings
 del _warning_category
-del _LightweightExperimentalWarning
 del _import_module
 del _exir_warnings
 del _warnings
