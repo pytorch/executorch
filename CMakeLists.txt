@@ -899,12 +899,14 @@ if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
-# If CUDA, ROCm, or Metal will need Torch, find it at root scope first so that
-# imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
-# then duplicated when found again at root scope.
+# Find Torch at root scope when any enabled component needs it so imported
+# targets (e.g. MKL::MKL) aren't created independently in child scopes.
 if(EXECUTORCH_BUILD_CUDA
    OR EXECUTORCH_BUILD_ROCM
    OR EXECUTORCH_BUILD_METAL
+   OR EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER
+   OR EXECUTORCH_BUILD_KERNELS_LLM_AOT
+   OR EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
 )
   find_package_torch()
 endif()
