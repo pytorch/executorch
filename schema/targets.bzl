@@ -78,6 +78,7 @@ def define_common_targets():
             # //executorch/runtime/executor/...
             "//executorch/codegen/tools/...",
             "//executorch/runtime/executor/...",
+            "//executorch/backends/native/extension/module/...",
             # Tests have a set up which uses raw flatbuffer.
             # TODO will refactor these setup steps into 
             # testing utils in runtime/executor/... path

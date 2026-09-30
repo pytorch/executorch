@@ -12,6 +12,7 @@ from executorch.backends.arm._passes import InsertInt32CastsAfterInt64Placeholde
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -170,4 +171,24 @@ def test_embedding_vgf_quant(test_input: input_params):
     pipeline.pop_stage("check.aten")
     pipeline.pop_stage("check_count.exir")
 
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_embedding_u85_INT():
+    op = Embedding()
+    test_inputs = (
+        torch.randn(10, 3),
+        torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int32),
+    )
+
+    pipeline = EthosU85PipelineINT[input_params](
+        op,
+        test_inputs,
+        op.aten_op,
+    )
+
+    # embedding may be transformed during export/lowering, so do not require
+    # the source ATen node to remain at the normal pipeline check point.
+    pipeline.pop_stage("check.aten")
     pipeline.run()

@@ -9,6 +9,7 @@ load(
     "get_pt_ops_deps",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:testpilot_defs.bzl", "tpx_labels")
 
 oncall("executorch")
 # As fb_xplat_cxx_test (using target.bzl) fails to compile for
@@ -94,7 +95,9 @@ fbcode_target(_kind = runtime.python_test,
     ]) + [
         "test_xnnpack_utils.py",
     ],
+    supports_static_listing = False,
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         "//executorch/backends/test/harness:tester",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
@@ -118,7 +121,7 @@ fbcode_target(_kind = runtime.python_test,
     srcs = glob([
         "models/*.py",
     ]),
-    labels = ["long_running"],
+    labels = [tpx_labels.long_running],
     deps = [
         "fbsource//third-party/pypi/timm:timm",
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual

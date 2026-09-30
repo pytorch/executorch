@@ -8,6 +8,7 @@
 
 import asyncio
 import base64
+import json
 import pathlib
 from types import SimpleNamespace
 
@@ -576,6 +577,8 @@ def _benc(text):
 
 
 def _assemble(prompt):
+    if prompt.text is not None:
+        return _benc(prompt.text)
     out = []
     for seg in prompt.segments or []:
         out += _benc(seg["text"]) if "text" in seg else list(seg["ids"])
@@ -592,6 +595,8 @@ def _glimmer_serving(raw_texts, template=None):
         template or _StubTemplate(),
         "test-model",
         reasoning_extractor=serve._extract_muse_glimmer_reasoning,
+        content_filter=serve._strip_muse_glimmer_header,
+        content_filter_specials=serve._MUSE_GLIMMER_HEADER_SPECIALS,
     )
     return serving, runtime
 
@@ -616,6 +621,41 @@ def test_thinking_survives_response_verbatim():
     msg = resp.choices[0].message
     assert msg.reasoning_content == "\nWe should calculate first.\n"
     assert msg.content == "The answer is 42."
+
+
+@pytest.mark.parametrize("recipient", ["self", "user"])
+def test_whitespace_only_channel_does_not_add_response_gaps(recipient):
+    raw = (
+        "to=self<|message|>\nThink first.\n<|eom|>"
+        "<|start|>assistant to=user<|message|>Part one.<|eom|>"
+        f"<|start|>assistant to={recipient}<|message|> \t\n<|eom|>"
+        "<|start|>assistant to=user<|message|>Part two.<|eot|>"
+    )
+    serving, _ = _glimmer_serving([{"text": raw}])
+    response = asyncio.run(
+        serving.create(
+            ChatCompletionRequest(messages=[ChatMessage(role="user", content="hi")])
+        )
+    )
+    message = response.choices[0].message
+    assert message.reasoning_content == "\nThink first.\n"
+    assert message.content == "Part one.\n\nPart two."
+
+
+def test_whitespace_only_reasoning_is_omitted():
+    raw = (
+        "to=self<|message|> \t\n<|eom|>"
+        "<|start|>assistant to=user<|message|>Done.<|eot|>"
+    )
+    serving, _ = _glimmer_serving([{"text": raw}])
+    response = asyncio.run(
+        serving.create(
+            ChatCompletionRequest(messages=[ChatMessage(role="user", content="hi")])
+        )
+    )
+    message = response.choices[0].message
+    assert message.reasoning_content is None
+    assert message.content == "Done."
 
 
 def test_multiple_thinking_blocks_joined_without_protocol_markers():
@@ -643,50 +683,137 @@ def test_multiple_thinking_blocks_joined_without_protocol_markers():
     assert "<|" not in reasoning and "to=self" not in reasoning
 
 
-def test_thinking_turn_resumes_exact_prefix_over_two_turns():
-    # Extraction + splice composition at the worker seam: turn 2's prompt must
-    # assemble to the resident prompt plus the trailing turn-2 text exactly,
-    # so the worker reuses instead of refilling. The recorded ids are the
-    # worker's non-terminal generated ids (no terminal <|eot|>); the trailing
-    # text supplies the terminator. Full-prompt equality, not a prefix check.
+async def _create_message(serving, request):
+    response = await serving.create(request)
+    if not request.stream:
+        return response.choices[0].message.model_dump(exclude_none=True)
+    message = {"role": "assistant"}
+    done = False
+    async for event in response:
+        payload = event.removeprefix("data: ").strip()
+        if payload == "[DONE]":
+            done = True
+            continue
+        chunk = json.loads(payload)
+        assert "error" not in chunk
+        delta = chunk["choices"][0]["delta"]
+        for field in ("content", "reasoning_content"):
+            if field in delta:
+                message[field] = message.get(field, "") + delta[field]
+    assert done
+    return message
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    "echo_mode", ["edited", "unchanged", "omitted", "null", "opt-out", "opt-out-null"]
+)
+def test_thinking_turn_replays_ids_only_for_unchanged_history(stream, echo_mode):
+    # The worker reports non-terminal ids; the next rendered turn supplies EOS.
+    # Two raw thinking blocks become one client-visible reasoning string.
     raw1 = (
-        " to=self<|message|>\nLet me think.\n<|eom|>"
+        " to=self<|message|>\nFirst step.\n<|eom|>"
+        "<|start|>assistant to=self<|message|>Second step.<|eom|>"
         "<|start|>assistant to=user<|message|>156"
     )
     raw2 = " to=user<|message|>210"
+    template = _HarmonyTemplate()
     serving, runtime = _glimmer_serving(
         [
-            {"text": raw1 + "<|eot|>", "gen_ids": _benc(raw1)},
-            {"text": raw2 + "<|eot|>", "gen_ids": _benc(raw2)},
+            {"text": raw1, "gen_ids": _benc(raw1)},
+            {"text": raw2, "gen_ids": _benc(raw2)},
         ],
-        template=_HarmonyTemplate(),
+        template=template,
     )
     u1 = ChatMessage(role="user", content="What is 12*13?")
     first = asyncio.run(
-        serving.create(ChatCompletionRequest(messages=[u1], session_id="s"))
-    )
-    echo = ChatMessage(
-        role="assistant",
-        content=first.choices[0].message.content,
-        reasoning_content=first.choices[0].message.reasoning_content,
-    )
-    second = asyncio.run(
-        serving.create(
+        _create_message(
+            serving,
             ChatCompletionRequest(
-                messages=[u1, echo, ChatMessage(role="user", content="And?")],
+                messages=[u1],
                 session_id="s",
-            )
+                stream=stream,
+                chat_template_kwargs=(
+                    {"return_reasoning": False}
+                    if echo_mode.startswith("opt-out")
+                    else None
+                ),
+            ),
         )
     )
+    assert first["content"] == "156"
+    if echo_mode.startswith("opt-out"):
+        assert "reasoning_content" not in first
+    else:
+        assert first["reasoning_content"] == "\nFirst step.\n\nSecond step."
+    if echo_mode == "edited":
+        first["reasoning_content"] = "Use this corrected reasoning instead."
+    elif echo_mode == "omitted":
+        first.pop("reasoning_content")
+    elif echo_mode in ("null", "opt-out-null"):
+        first["reasoning_content"] = None
+    request2 = ChatCompletionRequest(
+        messages=[u1, ChatMessage(**first), ChatMessage(role="user", content="And?")],
+        session_id="s",
+    )
+    second = asyncio.run(serving.create(request2))
     assert second.choices[0].message.content == "210"
     prompt2 = runtime.prompts[1]
-    assert prompt2.segments is not None  # prior turn spliced as exact ids
     resident = _benc(runtime.prompts[0].text + raw1)
     trailing = "<|eot|><|start|>user<|message|>And?<|eot|><|start|>assistant"
-    assert _assemble(prompt2) == resident + _benc(trailing)
-    # Realism pins (worker_loop.h: generated ids exclude the terminal EOS).
-    assert not raw1.endswith("<|eot|>")
-    assert trailing.startswith("<|eot|>")
+    if echo_mode == "edited":
+        assert _assemble(prompt2) == _benc(template.render(request2.messages))
+        assert _assemble(prompt2) != resident + _benc(trailing)
+    else:
+        assert _assemble(prompt2) == resident + _benc(trailing)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("edited_field", ["content", "reasoning_content"])
+@pytest.mark.parametrize("restore_history", [False, True])
+def test_replay_recovers_after_edit_without_restoring_stale_turns(
+    stream, edited_field, restore_history
+):
+    raw = [
+        f" to=self<|message|>reasoning {i}<|eom|>"
+        f"<|start|>assistant to=user<|message|>a{i}"
+        for i in range(1, 6)
+    ]
+    generated = [_benc(text) for text in raw]
+    template = _HarmonyTemplate()
+    serving, runtime = _glimmer_serving(
+        [{"text": text, "gen_ids": ids} for text, ids in zip(raw, generated)],
+        template=template,
+    )
+
+    async def conversation():
+        messages = []
+        for i in range(5):
+            if i == 3:
+                original = messages[3]
+                messages[3] = original.model_copy(update={edited_field: "EDITED"})
+            elif i == 4 and restore_history:
+                messages[3] = original
+            messages.append(ChatMessage(role="user", content=f"u{i + 1}"))
+            response = await _create_message(
+                serving,
+                ChatCompletionRequest(
+                    messages=list(messages), session_id="s", stream=stream
+                ),
+            )
+            assert response["content"] == f"a{i + 1}"
+            prompt = runtime.prompts[-1]
+            assert _assemble(prompt) == _benc(template.render(messages))
+            expected = generated[:i] if i < 3 else [generated[0]]
+            if i == 4:
+                expected.append(generated[3])
+                if not restore_history:
+                    resident = _assemble(runtime.prompts[3]) + generated[3]
+                    assert _assemble(prompt)[: len(resident)] == resident
+            assert [s["ids"] for s in prompt.segments or [] if "ids" in s] == expected
+            messages.append(ChatMessage(**response))
+
+    asyncio.run(conversation())
 
 
 def test_extract_muse_glimmer_reasoning_plain_text_fallback():

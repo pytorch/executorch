@@ -341,6 +341,63 @@ class TestExportRecipeCombine(unittest.TestCase):
             combined.lowering_recipe.edge_transform_passes, [first, second]
         )
 
+    def test_new_hooks_do_not_change_existing_positional_arguments(self) -> None:
+        recipe = ExportRecipe(None, None, None, True)
+
+        self.assertTrue(recipe.source_transform_in_place)
+        self.assertIsNone(recipe.source_transform_passes)
+        self.assertIsNone(recipe.pre_trace_hooks)
+
+    def test_release_option_does_not_change_existing_positional_arguments(
+        self,
+    ) -> None:
+        lowering_recipe = Mock()
+        recipe = ExportRecipe(None, None, None, False, lowering_recipe)
+
+        self.assertIs(recipe.lowering_recipe, lowering_recipe)
+        self.assertFalse(recipe.release_intermediate_artifacts)
+
+    def test_combine_preserves_release_intermediate_artifacts(self) -> None:
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(release_intermediate_artifacts=True),
+                ExportRecipe(release_intermediate_artifacts=True),
+            ]
+        )
+
+        self.assertTrue(combined.release_intermediate_artifacts)
+
+    def test_preserves_source_transform_passes_and_pre_trace_hooks(self) -> None:
+        first_source_transform = Mock()
+        second_source_transform = Mock()
+        first_pre_trace_hook = Mock()
+        second_pre_trace_hook = Mock()
+
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(
+                    source_transform_passes=[first_source_transform],
+                    pre_trace_hooks=[first_pre_trace_hook],
+                    source_transform_in_place=True,
+                ),
+                ExportRecipe(
+                    source_transform_passes=[second_source_transform],
+                    pre_trace_hooks=[second_pre_trace_hook],
+                    source_transform_in_place=True,
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            combined.source_transform_passes,
+            [first_source_transform, second_source_transform],
+        )
+        self.assertEqual(
+            combined.pre_trace_hooks,
+            [first_pre_trace_hook, second_pre_trace_hook],
+        )
+        self.assertTrue(combined.source_transform_in_place)
+
 
 # ---------------------------------------------------------------------------
 # Helpers shared by combine-recipe tests
@@ -394,17 +451,33 @@ class TestCombineRecipesScalarFields(unittest.TestCase):
             ExportRecipe.combine([r1, r2])
         self.assertIn("source_transform_in_place", str(cm.exception))
 
+    def test_conflicting_release_intermediate_artifacts_raises(self) -> None:
+        r1 = ExportRecipe(name="a", release_intermediate_artifacts=True)
+        r2 = ExportRecipe(name="b", release_intermediate_artifacts=False)
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine([r1, r2])
+        self.assertIn("release_intermediate_artifacts", str(cm.exception))
+
     def test_agreeing_scalar_fields_are_preserved(self) -> None:
         r1 = ExportRecipe(
-            name="a", strict=False, mode=Mode.DEBUG, source_transform_in_place=True
+            name="a",
+            strict=False,
+            mode=Mode.DEBUG,
+            source_transform_in_place=True,
+            release_intermediate_artifacts=True,
         )
         r2 = ExportRecipe(
-            name="b", strict=False, mode=Mode.DEBUG, source_transform_in_place=True
+            name="b",
+            strict=False,
+            mode=Mode.DEBUG,
+            source_transform_in_place=True,
+            release_intermediate_artifacts=True,
         )
         result = ExportRecipe.combine([r1, r2])
         self.assertFalse(result.strict)
         self.assertEqual(result.mode, Mode.DEBUG)
         self.assertTrue(result.source_transform_in_place)
+        self.assertTrue(result.release_intermediate_artifacts)
 
     def test_name_is_joined_from_input_recipe_names(self) -> None:
         r1 = ExportRecipe(name="backend_a")
@@ -777,3 +850,19 @@ class TestCombineRecipesQuantization(unittest.TestCase):
         )
         result = ExportRecipe.combine([r1, r2])
         self.assertEqual(result.quantization_recipe.pre_prepare_passes, [p])
+
+    def test_combine_generate_etrecord_or_semantics_true_false(self) -> None:
+        # Any recipe requesting ETRecord generation must make the combined recipe
+        # request it as well.
+        r1 = ExportRecipe(name="a", generate_etrecord=True)
+        r2 = ExportRecipe(name="b", generate_etrecord=False)
+        result = ExportRecipe.combine([r1, r2])
+        self.assertTrue(result.generate_etrecord)
+
+    def test_combine_generate_etrecord_false_when_none_set(self) -> None:
+        # When no recipe requests ETRecord generation the combined recipe must
+        # not request it either.
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertFalse(result.generate_etrecord)
