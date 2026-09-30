@@ -68,28 +68,14 @@ def test_release_pytorch_requirement() -> None:
         os.environ.get("GITHUB_BASE_REF", ""),
         os.environ.get("GITHUB_REF", "").removeprefix("refs/heads/"),
     )
-    release_tag_ci = any(
-        re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+", ref) for ref in ci_refs
-    )
-    release_ci = release_tag_ci or any(
+    release_ci = any(
         ref.startswith("release/")
-        or re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+-rc\d+", ref)
+        or re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+(?:-rc\d+)?", ref)
         for ref in ci_refs
     )
     assert not release_ci or config["RELEASE_WHEEL"], (
         "this wheel is being built from a release ref, but torch_pin.py does not enable "
         "release metadata; run scripts/release/apply-release-changes.sh"
-    )
-    dependencies_finalized = config.get("RELEASE_DEPENDENCIES_FINALIZED") is True
-    assert not release_tag_ci or dependencies_finalized, (
-        "this wheel is being built from a release tag, but stable dependencies were not "
-        "finalized; run scripts/release/finalize_release.py before tagging"
-    )
-    assert not dependencies_finalized or re.fullmatch(
-        r"\d+\.\d+\.\d+", config["TORCH_VERSION"]
-    ), (
-        "release dependencies are marked finalized, but TORCH_VERSION is not a final "
-        f"PyTorch release: {config['TORCH_VERSION']}"
     )
     torch_requirements = [
         Requirement(raw)

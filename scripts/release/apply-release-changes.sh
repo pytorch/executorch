@@ -51,5 +51,3 @@ fi
 "${PYTHON_EXECUTABLE}" "${GIT_TOP_DIR}/scripts/release/prepare_release.py" "${PREPARE_ARGS[@]}"
 
 echo "Release changes are ready for review. This script does not commit or push them."
-echo "When stable dependency artifacts are published, run:"
-echo "   python scripts/release/finalize_release.py"
