@@ -102,6 +102,9 @@ struct ET_EXPERIMENTAL TextEvent {
   std::string text;
 };
 
+// Final serving result, fixed after engine settlement and text/history
+// finalization. A terminal-sink exception or transport delivery failure does
+// not revise this result or roll back resident session state.
 struct ET_EXPERIMENTAL TerminalEvent {
   FinishReason finish_reason = FinishReason::Stop;
   GenerationStats stats;
@@ -109,10 +112,17 @@ struct ET_EXPERIMENTAL TerminalEvent {
   std::optional<ServingError> error;
 };
 
-// Each admitted request emits zero or more text events, then one terminal event
-// after final text flushing and session finalization. Synchronous rejection
-// emits no events. If the sink throws, it is not called again, even for the
-// terminal.
+// Each admitted request emits zero or more ordered text events, then one
+// terminal event. Synchronous rejection emits no events. A throwing sink is
+// disabled and is not called again, even for the terminal.
+//
+// A request retains runtime admission until its terminal notification is
+// selected for delivery. Before invoking the terminal sink, the runtime has
+// released that admission and the request's session execution claim. Other
+// limits, competing requests, or shutdown can still reject new work.
+//
+// Sinks must do short, nonblocking work. Terminal notification does not mean
+// the callback has returned or that a transport delivered the result.
 using GenerationEvent ET_EXPERIMENTAL = std::variant<TextEvent, TerminalEvent>;
 
 struct ET_EXPERIMENTAL ServingInfo {
