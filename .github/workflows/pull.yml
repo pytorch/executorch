@@ -173,7 +173,7 @@ jobs:
           -DPYTHON_EXECUTABLE="$(which python)"
         cmake --build cmake-out-no-aten --target portable_lib -j "$(nproc)"
 
-        PYTHONPATH=.. python -m examples.portable.scripts.export \
+        python -m examples.portable.scripts.export \
           --model_name=add \
           --output_dir=cmake-out-no-aten
         python -m pip uninstall -y torch torchvision torchaudio
