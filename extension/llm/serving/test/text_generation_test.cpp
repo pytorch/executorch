@@ -9,13 +9,16 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
 #include <executorch/extension/llm/serving/serving_runtime.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <functional>
+#include <future>
 #include <map>
 #include <mutex>
 #include <stdexcept>
@@ -191,6 +194,43 @@ PromptInput ids(std::vector<Token> tokens) {
   return PromptInput{{make_token_input(std::move(tokens))}};
 }
 
+template <class Predicate>
+bool wait_until(Predicate predicate) {
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (!predicate()) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::yield();
+  }
+  return true;
+}
+
+void expect_same_terminal(
+    const TerminalEvent& actual,
+    const TerminalEvent& expected) {
+  EXPECT_EQ(actual.finish_reason, expected.finish_reason);
+  ASSERT_EQ(actual.error.has_value(), expected.error.has_value());
+  if (expected.error) {
+    EXPECT_EQ(actual.error->code, expected.error->code);
+    EXPECT_EQ(actual.error->message, expected.error->message);
+  }
+  EXPECT_EQ(actual.stats.prompt_tokens, expected.stats.prompt_tokens);
+  EXPECT_EQ(actual.stats.completion_tokens, expected.stats.completion_tokens);
+  EXPECT_EQ(
+      actual.stats.reused_prompt_tokens, expected.stats.reused_prompt_tokens);
+  EXPECT_EQ(
+      actual.stats.prefilled_prompt_tokens,
+      expected.stats.prefilled_prompt_tokens);
+  EXPECT_EQ(actual.stats.prefill_ms, expected.stats.prefill_ms);
+  EXPECT_EQ(actual.stats.decode_ms, expected.stats.decode_ms);
+  EXPECT_EQ(actual.stats.total_ms, expected.stats.total_ms);
+  EXPECT_EQ(
+      actual.stats.session_reset_reason, expected.stats.session_reset_reason);
+  EXPECT_EQ(
+      actual.stats.generated_token_ids, expected.stats.generated_token_ids);
+}
+
 class TextGenerationTest : public ::testing::Test {
  protected:
   Executor executor;
@@ -199,8 +239,21 @@ class TextGenerationTest : public ::testing::Test {
   Gate delivery_checkpoint;
   std::unique_ptr<ServingRuntime> runtime;
   std::vector<std::shared_ptr<Events>> events;
+  std::promise<void> callbacks_finished;
+  std::thread callback_watchdog;
 
+  void watch_callbacks() {
+    // Bound teardown too if a reentrant runtime call deadlocks.
+    callback_watchdog = std::thread([finished =
+                                         callbacks_finished.get_future()] {
+      if (finished.wait_for(30s) != std::future_status::ready) {
+        ADD_FAILURE() << "public terminal callback test or teardown deadlocked";
+        std::abort();
+      }
+    });
+  }
   void SetUp() override {
+    executorch::runtime::runtime_init();
     config.max_sessions = 4;
     config.max_context_length = 64;
     config.max_requests = 4;
@@ -227,6 +280,10 @@ class TextGenerationTest : public ::testing::Test {
     }
     runtime.reset();
     EXPECT_EQ(executor.clones.load(), 0);
+    callbacks_finished.set_value();
+    if (callback_watchdog.joinable()) {
+      callback_watchdog.join();
+    }
   }
   std::shared_ptr<Events> output() {
     auto event = std::make_shared<Events>();
@@ -311,6 +368,101 @@ TEST_F(
   EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12, 13}));
   EXPECT_EQ(executor.seen().back().effective_position(), 2);
   EXPECT_EQ(tokenizer.encode_calls.load(), 0);
+}
+
+TEST_F(
+    TextGenerationTest,
+    PublicTerminalCanSubmitStrictContinuationBeforeReturning) {
+  watch_callbacks();
+  config.max_requests = 1;
+  executor.second_step.hold();
+  start();
+  auto first = output();
+  auto continued = output();
+  first->blocked.hold();
+  auto submitted = std::make_shared<std::promise<GenerateResult>>();
+  auto followup = submitted->get_future();
+  auto capture = std::make_shared<int>(0);
+  std::weak_ptr<int> retained = capture;
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  options.stop_strings = {"END"};
+  auto result = runtime->generate(
+      "s",
+      ids({10, 11}),
+      options,
+      [this, first, continued, submitted, capture, options](
+          GenerationEvent update) {
+        (void)capture;
+        const bool terminal = std::holds_alternative<TerminalEvent>(update);
+        first->accept(std::move(update));
+        if (terminal) {
+          // Precreated captures avoid mutating the fixture's events vector
+          // here.
+          submitted->set_value(runtime->generate(
+              "s",
+              ids({10, 11, 100, 12, 13}),
+              options,
+              [continued](GenerationEvent next) {
+                continued->accept(std::move(next));
+              }));
+          first->blocked.enter();
+        }
+      });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto handle = std::get<RequestHandle>(result);
+  capture.reset();
+  ASSERT_TRUE(first->blocked.wait());
+  ASSERT_EQ(followup.wait_for(5s), std::future_status::ready);
+  auto next_result = followup.get();
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(next_result));
+  const auto next = std::get<RequestHandle>(next_result);
+  ASSERT_TRUE(executor.second_step.wait());
+  EXPECT_NE(handle.id(), next.id());
+  EXPECT_FALSE(handle.done());
+  EXPECT_FALSE(next.done());
+  EXPECT_FALSE(handle.error());
+  EXPECT_FALSE(retained.expired());
+  // The gate follows recording the terminal, and no later callback writes
+  // first.
+  ASSERT_TRUE(first->terminal);
+  const auto delivered = *first->terminal;
+  EXPECT_EQ(first->text, "A");
+  EXPECT_EQ(first->terminals, 1u);
+  EXPECT_EQ(delivered.finish_reason, FinishReason::Length);
+  EXPECT_FALSE(delivered.error);
+  EXPECT_EQ(delivered.stats.prompt_tokens, 2u);
+  EXPECT_EQ(delivered.stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(delivered.stats.prefilled_prompt_tokens, 2u);
+  EXPECT_EQ(delivered.stats.completion_tokens, 1u);
+  EXPECT_EQ(delivered.stats.session_reset_reason, "new");
+  EXPECT_EQ(delivered.stats.generated_token_ids, (std::vector<Token>{100}));
+  EXPECT_GE(delivered.stats.prefill_ms, 0.0);
+  EXPECT_GE(delivered.stats.decode_ms, 0.0);
+  EXPECT_GE(delivered.stats.total_ms, delivered.stats.prefill_ms);
+  handle.cancel();
+  first->blocked.release();
+  executor.second_step.release();
+  ASSERT_TRUE(wait_until([&] { return handle.done() && next.done(); }));
+  handle.wait(); // Already done: also exercise the public lifetime barrier.
+  EXPECT_TRUE(retained.expired());
+  EXPECT_FALSE(handle.error());
+  EXPECT_FALSE(next.error());
+  expect_same_terminal(*first->terminal, delivered);
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.prompt_tokens, 5u);
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 3u);
+  EXPECT_EQ(
+      continued->terminal->stats.generated_token_ids,
+      (std::vector<Token>{101}));
+  EXPECT_EQ(executor.opened().size(), 1u);
+  ASSERT_EQ(executor.fed.size(), 2u);
+  EXPECT_EQ(executor.fed.front(), (std::vector<Token>{10, 11}));
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12, 13}));
+  EXPECT_EQ(executor.seen().back().effective_position(), 2);
 }
 
 TEST_F(TextGenerationTest, EqualShorterAndMismatchedHistoriesColdReplay) {
@@ -771,6 +923,156 @@ TEST_F(TextGenerationTest, LifecycleOnlyConstructorRejectsTextWithoutCallback) {
 }
 
 #if ET_HAS_EXCEPTIONS
+TEST_F(
+    TextGenerationTest,
+    ThrowingPublicTerminalPreservesLengthAndStopHistory) {
+  watch_callbacks();
+  config.max_requests = 1;
+  executor.burst = 2;
+  for (const auto reason : {FinishReason::Length, FinishReason::Stop}) {
+    SCOPED_TRACE(reason == FinishReason::Length ? "Length" : "Stop");
+    const auto fed_before = executor.fed.size();
+    const auto opened_before = executor.opened().size();
+    start();
+    auto event = output();
+    event->blocked.hold();
+    GenerationOptions options;
+    options.max_new_tokens = reason == FinishReason::Length ? 2 : 8;
+    if (reason == FinishReason::Stop) {
+      options.stop_tokens = {101};
+    }
+    auto result = runtime->generate(
+        "s", ids({10, 11}), options, [event](GenerationEvent update) {
+          const bool terminal = std::holds_alternative<TerminalEvent>(update);
+          event->accept(std::move(update));
+          if (terminal) {
+            event->blocked.enter();
+            throw std::runtime_error("terminal transport");
+          }
+        });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    const auto handle = std::get<RequestHandle>(result);
+    ASSERT_TRUE(event->blocked.wait());
+    ASSERT_TRUE(event->terminal);
+    const auto delivered = *event->terminal;
+    const auto expected_ids = reason == FinishReason::Length
+        ? std::vector<Token>{100, 101}
+        : std::vector<Token>{100};
+    EXPECT_EQ(delivered.finish_reason, reason);
+    EXPECT_FALSE(delivered.error);
+    EXPECT_EQ(delivered.stats.generated_token_ids, expected_ids);
+    EXPECT_EQ(delivered.stats.completion_tokens, expected_ids.size());
+    EXPECT_EQ(delivered.stats.prompt_tokens, 2u);
+    EXPECT_EQ(delivered.stats.reused_prompt_tokens, 0u);
+    EXPECT_EQ(delivered.stats.prefilled_prompt_tokens, 2u);
+    EXPECT_EQ(delivered.stats.session_reset_reason, "new");
+    EXPECT_EQ(event->text, reason == FinishReason::Length ? "AB" : "A");
+    EXPECT_FALSE(handle.done());
+    EXPECT_FALSE(handle.error());
+    handle.cancel();
+    event->blocked.release();
+    ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+    EXPECT_FALSE(handle.error());
+    EXPECT_EQ(event->terminals, 1u);
+    expect_same_terminal(*event->terminal, delivered);
+
+    // Both outcomes retain 101 as the pending logical token, even when hidden.
+    auto continued = output();
+    const auto next = submit(continued, ids({10, 11, 100, 101, 12}));
+    ASSERT_TRUE(wait_until([&] { return next.done(); }));
+    EXPECT_FALSE(next.error());
+    ASSERT_TRUE(continued->terminal);
+    EXPECT_EQ(continued->terminal->finish_reason, FinishReason::Length);
+    EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+    EXPECT_EQ(continued->terminal->stats.prompt_tokens, 5u);
+    EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 3u);
+    EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
+    EXPECT_EQ(
+        continued->terminal->stats.generated_token_ids,
+        (std::vector<Token>{102}));
+    EXPECT_EQ(executor.opened().size(), opened_before + 1);
+    ASSERT_EQ(executor.fed.size(), fed_before + 2);
+    EXPECT_EQ(executor.fed.back(), (std::vector<Token>{101, 12}));
+    EXPECT_EQ(executor.seen().back().effective_position(), 3);
+    handle.cancel();
+    runtime->shutdown();
+    EXPECT_TRUE(handle.done());
+    EXPECT_FALSE(handle.error());
+    expect_same_terminal(*event->terminal, delivered);
+  }
+}
+
+TEST_F(
+    TextGenerationTest,
+    ThrowingPublicErrorTerminalPreservesInvalidArgumentAndResidentHistory) {
+  watch_callbacks();
+  config.max_requests = 1;
+  start();
+  auto resident = output();
+  const auto seeded = submit(resident, ids({10, 11}));
+  ASSERT_TRUE(wait_until([&] { return seeded.done(); }));
+  ASSERT_FALSE(seeded.error());
+  auto event = output();
+  event->blocked.hold();
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  auto result = runtime->generate(
+      "s",
+      PromptInput{{make_text_input("missing")}},
+      options,
+      [event](GenerationEvent update) {
+        const bool terminal = std::holds_alternative<TerminalEvent>(update);
+        event->accept(std::move(update));
+        if (terminal) {
+          event->blocked.enter();
+          throw std::runtime_error("error terminal transport");
+        }
+      });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto handle = std::get<RequestHandle>(result);
+  ASSERT_TRUE(event->blocked.wait());
+  ASSERT_TRUE(event->terminal);
+  const auto delivered = *event->terminal;
+  EXPECT_EQ(delivered.finish_reason, FinishReason::Failed);
+  ASSERT_TRUE(delivered.error);
+  EXPECT_EQ(delivered.error->code, ErrorCode::InvalidArgument);
+  EXPECT_FALSE(delivered.stats.generated_token_ids);
+  EXPECT_EQ(delivered.stats.prompt_tokens, 0u);
+  EXPECT_EQ(delivered.stats.completion_tokens, 0u);
+  EXPECT_EQ(delivered.stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(delivered.stats.prefilled_prompt_tokens, 0u);
+  EXPECT_TRUE(event->text.empty());
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, delivered.error->code);
+  EXPECT_EQ(handle.error()->message, delivered.error->message);
+  EXPECT_FALSE(handle.done());
+  handle.cancel();
+  event->blocked.release();
+  ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+  EXPECT_EQ(event->terminals, 1u);
+  expect_same_terminal(*event->terminal, delivered);
+
+  auto continued = output();
+  const auto next = submit(continued, ids({10, 11, 100, 12}));
+  ASSERT_TRUE(wait_until([&] { return next.done(); }));
+  EXPECT_FALSE(next.error());
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  ASSERT_EQ(executor.fed.size(), 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12}));
+  handle.cancel();
+  runtime->shutdown();
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, delivered.error->code);
+  EXPECT_EQ(handle.error()->message, delivered.error->message);
+  expect_same_terminal(*event->terminal, delivered);
+}
+
 TEST_F(TextGenerationTest, ThrowingPublicSinkDisablesOutputAndDirtiesHistory) {
   start();
   GenerationOptions options;

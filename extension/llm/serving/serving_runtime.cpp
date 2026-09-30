@@ -42,6 +42,7 @@ struct TextRequest {
   std::vector<batching::Token> history;
   std::unique_ptr<TextOutput> output;
   std::optional<ServingError> render_error;
+  // Completed on control, then transferred unchanged by terminal delivery.
   TerminalEvent terminal;
   batching::MetricsTime submitted = batching::MetricsClock::now();
   std::size_t start_position = 0;
@@ -581,12 +582,6 @@ struct ServingRuntime::Impl {
                                      const batching::GenerationUpdate& update,
                                      const RequestHandle& handle) {
       if (update.finish_reason) {
-        if (*update.finish_reason == batching::FinishReason::Failed) {
-          text->terminal.finish_reason = FinishReason::Failed;
-          text->terminal.error = handle.error().value_or(
-              ServingError{ErrorCode::Internal, update.error_message});
-          text->terminal.stats.generated_token_ids.reset();
-        }
         text->emit(std::move(text->terminal));
         return;
       }
@@ -891,6 +886,12 @@ struct ServingRuntime::Impl {
       request->completion.error = request->error;
       request->completion.terminal = {
           {}, batching::FinishReason::Failed, request->error->message};
+      if (request->text) {
+        auto& terminal = request->text->terminal;
+        terminal.finish_reason = FinishReason::Failed;
+        terminal.error = request->completion.error;
+        terminal.stats.generated_token_ids.reset();
+      }
     }
 #endif
     std::optional<batching::Session> retired;

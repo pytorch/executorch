@@ -132,9 +132,13 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Same-key overlap is Busy. Exact strict prefixes continue; other histories
   // cold-replay without caching. Sinks share one delivery thread and must do
   // short, bounded work: no blocking I/O, waits for runtime work, or
-  // synchronous shutdown/destruction of the runtime. A throwing sink is
-  // disabled and reported by RequestHandle::error(). The lifecycle-only
-  // constructor rejects text generation with NotReady.
+  // synchronous shutdown/destruction of the runtime. A text/flush sink throw
+  // disables output and selects a failure. A terminal sink throw is logged;
+  // it cannot revise the finalized result or committed session history.
+  // Before terminal invocation, this request's session claim and admission
+  // are released. Nonblocking follow-up submission is allowed but may still
+  // be rejected; wait()/done() remain callback-lifetime barriers.
+  // The lifecycle-only constructor rejects text generation with NotReady.
   GenerateResult generate(
       std::optional<std::string> key,
       PromptInput prompt,
