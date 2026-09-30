@@ -100,6 +100,13 @@ class PybindingsTest(unittest.TestCase):
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
 
+    def test_complex_numpy_input_is_rejected(self):
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(BufferError, "Unsupported buffer format"):
+            executorch_module(np.ones((2, 2), dtype=np.complex64))
+
     def test_readonly_buffer_input_is_copied(self):
         exported_program, inputs = create_program(
             ModuleAddSingleInput(),
@@ -277,7 +284,8 @@ class PybindingsTest(unittest.TestCase):
         inputs = (torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
 
         executorch_module = self.load_fn(exported_program.buffer)
-        self.assertRaises(RuntimeError, executorch_module, inputs[0])
+        with self.assertRaisesRegex(ValueError, "rank 5.*expects rank 4"):
+            executorch_module(inputs[0])
 
     def test_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()

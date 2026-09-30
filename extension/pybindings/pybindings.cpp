@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cinttypes>
-#include <complex>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -17,7 +16,6 @@
 #include <numeric>
 #include <stdexcept>
 
-#include <pybind11/complex.h>
 #include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -254,12 +252,6 @@ class BufferTensor final {
     if (has_format<double>(info)) {
       return executorch::aten::ScalarType::Double;
     }
-    if (has_format<std::complex<float>>(info)) {
-      return executorch::aten::ScalarType::ComplexFloat;
-    }
-    if (has_format<std::complex<double>>(info)) {
-      return executorch::aten::ScalarType::ComplexDouble;
-    }
     if (has_format<bool>(info)) {
       return executorch::aten::ScalarType::Bool;
     }
@@ -322,8 +314,16 @@ void validate_tensor_input(
         std::string(runtime::toString(input_meta->scalar_type())));
   }
   const auto expected_order = input_meta->dim_order();
-  if (expected_order.size() != sizes.size() || strides.size() != sizes.size()) {
-    return;
+  if (expected_order.size() != sizes.size()) {
+    throw py::value_error(
+        "Input " + std::to_string(index) + " has rank " +
+        std::to_string(sizes.size()) + ", but the method expects rank " +
+        std::to_string(expected_order.size()));
+  }
+  if (strides.size() != sizes.size()) {
+    throw py::value_error(
+        "Input " + std::to_string(index) +
+        " has inconsistent shape and stride ranks");
   }
   std::vector<int> expected_strides(sizes.size());
   const auto status = runtime::dim_order_to_stride(
@@ -1030,9 +1030,8 @@ struct PyModule final {
             runtime_scalar_type(at_tensor),
             tensor_sizes,
             tensor_strides);
-        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
-
 #ifdef USE_ATEN_LIB
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         EValue evalue(at_tensor);
 #else
         // convert at::Tensor to torch::executor::Tensor
@@ -1079,6 +1078,7 @@ struct PyModule final {
               " is on device " + at_tensor.device().str() +
               ", and only CPU and CUDA tensors can be passed to a method.");
         }
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         const auto device = mapped_device.value_or(
             torch::executor::Device(torch::executor::DeviceType::CPU));
         input_tensors.emplace_back(
@@ -1604,9 +1604,8 @@ struct PyMethod final {
             runtime_scalar_type(at_tensor),
             tensor_sizes,
             tensor_strides);
-        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
-
 #ifdef USE_ATEN_LIB
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         EValue evalue(at_tensor);
 #else
         // convert at::Tensor to torch::executor::Tensor
@@ -1654,6 +1653,7 @@ struct PyMethod final {
               at_tensor.device().str() +
               ", and only CPU and CUDA tensors can be passed to a method.");
         }
+        (void)mutable_tensor_data_ptr_no_cow(at_tensor);
         const auto device =
             mapped_device.value_or(aten::Device(aten::DeviceType::CPU));
         TensorPtr tensor = for_blob(
