@@ -363,6 +363,16 @@ Error platform_init(
     MemoryAllocator* allocator,
     ExecutionHandle* handle) {
   (void)allocator;
+  // The Linux driver stack binds only weights, scratch and IFM/OFM buffers, so
+  // Vela region 5 would be left unmapped and the NPU would read or write
+  // through a null base address.
+  if (handle->handles.persistent_data_size > 0) {
+    ET_LOG(
+        Error,
+        "Ethos-U Linux backend does not support a persistent region (%u bytes)",
+        static_cast<unsigned>(handle->handles.persistent_data_size));
+    return Error::NotSupported;
+  }
   PlatformState* state = new (std::nothrow) PlatformState();
   if (state == nullptr) {
     return Error::MemoryAllocationFailed;
