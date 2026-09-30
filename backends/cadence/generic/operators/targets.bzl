@@ -21,9 +21,18 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "weight_zero_point",
+        exported_headers = ["weight_zero_point.h"],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "quantized_linear",
         exported_headers = ["quantized_linear.h"],
         exported_deps = [
+            ":weight_zero_point",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
         ]
@@ -127,6 +136,7 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             ":cadence_type_util",
+            ":weight_zero_point",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -140,6 +150,7 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             ":cadence_type_util",
+            ":weight_zero_point",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -175,6 +186,7 @@ def define_common_targets():
         platforms = CXX,
         deps = [
             ":cadence_type_util",
+            ":weight_zero_point",
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
         ],

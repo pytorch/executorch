@@ -9,6 +9,7 @@
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -46,9 +47,32 @@ struct Descriptor {
   bool is_value{false};
 };
 
+// The tensors a handle's AOTI constants currently point at.
 struct Bound {
   std::vector<std::unique_ptr<SlimTensor>> tensors;
-  std::vector<aoti::AOTInductorConstantMapEntry> pairs;
+};
+
+// Makes the cache's device current for a scope. The backend runs on one
+// device, so this is normally a no-op, but event and stream calls act on the
+// current device and a caller may have switched it.
+class DeviceGuard {
+ public:
+  explicit DeviceGuard(int device) {
+    if (cudaGetDevice(&previous_) == cudaSuccess && previous_ != device) {
+      restore_ = cudaSetDevice(device) == cudaSuccess;
+    }
+  }
+  ~DeviceGuard() {
+    if (restore_) {
+      (void)cudaSetDevice(previous_);
+    }
+  }
+  DeviceGuard(const DeviceGuard&) = delete;
+  DeviceGuard& operator=(const DeviceGuard&) = delete;
+
+ private:
+  int previous_{0};
+  bool restore_{false};
 };
 
 std::string fqn(int64_t layer_id, const char* suffix) {
@@ -59,10 +83,9 @@ bool is_ring(const cache::LayerGeometry& layer) {
   return layer.policy.kind == cache::LayerPolicy::Kind::Ring;
 }
 
-// The slim enum shares ExecuTorch's ScalarType numbering. Any fixed-width
-// scalar is storable; the kernels only ever ask for a float type, but the
-// storage layer stays agnostic so it is the kernel, not this check, that
-// decides what it can read.
+// The slim enum shares ExecuTorch's ScalarType numbering. The storage layer
+// accepts these dense scalar types; which one a program can use is decided
+// by its compiled constants, which note_handle() checks the dtype against.
 bool storage_dtype_of(int kv_dtype, slimc10::ScalarType& out) {
   switch (static_cast<slimc10::ScalarType>(kv_dtype)) {
     case slimc10::ScalarType::Byte:
@@ -76,6 +99,7 @@ bool storage_dtype_of(int kv_dtype, slimc10::ScalarType& out) {
     case slimc10::ScalarType::BFloat16:
       out = static_cast<slimc10::ScalarType>(kv_dtype);
       return true;
+    case slimc10::ScalarType::Undefined:
     default:
       return false;
   }
@@ -105,14 +129,20 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   CudaSequenceKVCache(CudaSequenceKVCache&&) = delete;
   CudaSequenceKVCache& operator=(CudaSequenceKVCache&&) = delete;
 
+  // Nothing else can reach the cache once it is being destroyed, so this takes
+  // no lock. It also never touches stream_: that is the caller's stream, which
+  // may already be gone. The device is drained instead, which covers any step
+  // still in flight on whatever stream ran it.
   ~CudaSequenceKVCache() override {
-    std::lock_guard<std::mutex> guard(mutex_);
+    if (!device_known_) {
+      return;
+    }
+    DeviceGuard device(device_);
+    (void)cudaDeviceSynchronize();
     for (auto& allocation : allocations_) {
-      release(allocation.second, stream_);
+      release(allocation.second, cudaStreamPerThread);
     }
-    if (device_known_) {
-      (void)cudaStreamSynchronize(stream_);
-    }
+    (void)cudaStreamSynchronize(cudaStreamPerThread);
     if (last_step_done_ != nullptr) {
       (void)cudaEventDestroy(last_step_done_);
     }
@@ -175,8 +205,7 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
 
   Error prepare_step(int64_t write_length, cudaStream_t stream) override {
     std::lock_guard<std::mutex> guard(mutex_);
-    ET_CHECK_OR_RETURN_ERROR(
-        write_length > 0, InvalidArgument, "write length must be positive");
+    ET_CHECK_OK_OR_RETURN_ERROR(check_write_length(write_length));
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
     if (!validated_) {
       const Error valid = validate_locked();
@@ -186,21 +215,9 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       }
       validated_ = true;
     }
-    // plan() is the neutral admission check: it rejects a step that runs past
-    // capacity, and one wider than a ring layer can serve. It runs on the host
-    // between executes, so it never lands inside a CUDA graph capture.
     const int position = length();
-    for (size_t index = 0; index < geometry_.layers.size(); ++index) {
-      ET_CHECK_OR_RETURN_ERROR(
-          plan(
-              static_cast<int>(index), position, static_cast<int>(write_length))
-              .has_value(),
-          InvalidArgument,
-          "offgraph_kv: a %lld-token step at position %d does not fit layer %zu",
-          static_cast<long long>(write_length),
-          position,
-          index);
-    }
+    ET_CHECK_OK_OR_RETURN_ERROR(admit(position, write_length));
+    DeviceGuard device(device_);
     ET_CHECK_OK_OR_RETURN_ERROR(follow_previous_step(stream));
     stream_ = stream;
     const int64_t required = position + write_length;
@@ -216,14 +233,18 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
 
   Error commit_step(int64_t write_length) override {
     std::lock_guard<std::mutex> guard(mutex_);
-    ET_CHECK_OR_RETURN_ERROR(
-        write_length > 0, InvalidArgument, "write length must be positive");
+    ET_CHECK_OK_OR_RETURN_ERROR(check_write_length(write_length));
     ET_CHECK_OK_OR_RETURN_ERROR(error_);
-    const auto step = plan(0, length(), static_cast<int>(write_length));
+    // Every layer, as prepare_step() admitted it: a ring layer can refuse a
+    // step the flat layers accept.
+    const int position = length();
+    ET_CHECK_OK_OR_RETURN_ERROR(admit(position, write_length));
+    const auto step = plan(0, position, static_cast<int>(write_length));
     ET_CHECK_OR_RETURN_ERROR(
         step.has_value(), InvalidArgument, "offgraph_kv: uncommittable step");
     cache::SequenceCache::commit(*step);
     metrics_.logical_length = length();
+    DeviceGuard device(device_);
     return mark_step_done();
   }
 
@@ -252,8 +273,37 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   // step writes all of them before attending, and its earliest query still
   // reads back window - 1 positions. Same formula as cache::RingPolicy and as
   // ring_physical_capacity() in backends/cuda/passes/lower_offgraph_kv.py.
+  // make_cuda_sequence_kv_cache() refuses ring layers without max_write.
   int64_t ring_capacity(const cache::LayerGeometry& layer) const {
-    return static_cast<int64_t>(layer.policy.window) + *config_.max_write - 1;
+    return static_cast<int64_t>(layer.policy.window) +
+        config_.max_write.value_or(1) - 1;
+  }
+
+  static Error check_write_length(int64_t write_length) {
+    ET_CHECK_OR_RETURN_ERROR(
+        write_length > 0 && write_length <= std::numeric_limits<int>::max(),
+        InvalidArgument,
+        "offgraph_kv: write length %lld is out of range",
+        static_cast<long long>(write_length));
+    return Error::Ok;
+  }
+
+  // plan() is the neutral admission check: it rejects a step that runs past
+  // capacity, and one wider than a ring layer can serve. It runs on the host
+  // between executes, so it never lands inside a CUDA graph capture.
+  Error admit(int position, int64_t write_length) const {
+    for (size_t index = 0; index < geometry_.layers.size(); ++index) {
+      ET_CHECK_OR_RETURN_ERROR(
+          plan(
+              static_cast<int>(index), position, static_cast<int>(write_length))
+              .has_value(),
+          InvalidArgument,
+          "offgraph_kv: a %lld-token step at position %d does not fit layer %zu",
+          static_cast<long long>(write_length),
+          position,
+          index);
+    }
+    return Error::Ok;
   }
 
   // Rows the compiled program declares for a layer's storage.
@@ -474,7 +524,11 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     size_t count = 0;
     ET_CHECK_OK_OR_RETURN_ERROR(
         handle->get_num_constants(handle->container_handle, &count));
-    std::unordered_map<std::string, std::string> internal_names;
+    struct Compiled {
+      std::string internal_name;
+      size_t index;
+    };
+    std::unordered_map<std::string, Compiled> compiled;
     for (size_t index = 0; index < count; ++index) {
       const char* internal = nullptr;
       const char* original = nullptr;
@@ -483,11 +537,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       ET_CHECK_OK_OR_RETURN_ERROR(handle->get_constant_original_fqn(
           handle->container_handle, index, &original));
       if (internal && original && internal[0] && original[0]) {
-        internal_names.emplace(original, internal);
+        compiled.emplace(original, Compiled{internal, index});
       }
     }
 
+    // A reload of the same handle replaces what it had rather than adding to
+    // it, so its constants are never bound twice.
     auto& descriptors = descriptors_[handle];
+    descriptors.clear();
+    bound_.erase(handle);
     size_t found_layers = 0;
     for (size_t index = 0; index < geometry_.layers.size(); ++index) {
       const int64_t layer_id = static_cast<int64_t>(index);
@@ -495,12 +553,15 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
       for (const auto& [suffix, is_value] :
            {std::pair{"k", false}, std::pair{"v", true}}) {
         const std::string name = fqn(layer_id, suffix);
-        const auto it = internal_names.find(name);
-        if (it == internal_names.end()) {
+        const auto it = compiled.find(name);
+        if (it == compiled.end()) {
           continue;
         }
+        ET_CHECK_OK_OR_RETURN_ERROR(check_compiled(
+            handle, geometry_.layers[index], name, it->second.index));
         ++found;
-        descriptors.push_back(Descriptor{it->second, layer_id, is_value});
+        descriptors.push_back(
+            Descriptor{it->second.internal_name, layer_id, is_value});
         discovered_fqns_.insert(name);
       }
       if (found == 2) {
@@ -520,6 +581,47 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     return Error::Ok;
   }
 
+  // The program's kernels address its storage with the shape and dtype it was
+  // compiled with, and AOTI binds external buffers without checking either.
+  // So this cache's own idea of a layer -- dtype, heads, head dim, and rows
+  // (capacity, or window + max_write - 1 for a ring) -- must match what the
+  // program declared, or a step could write past the allocation.
+  Error check_compiled(
+      CudaDelegateHandle* handle,
+      const cache::LayerGeometry& layer,
+      const std::string& name,
+      size_t index) const {
+    ET_CHECK_OR_RETURN_ERROR(
+        handle->get_constant_dtype && handle->get_constant_data_size,
+        NotSupported,
+        "offgraph_kv: AOTI constant metadata APIs are unavailable");
+    int32_t dtype = 0;
+    size_t data_size = 0;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->get_constant_dtype(handle->container_handle, index, &dtype));
+    ET_CHECK_OK_OR_RETURN_ERROR(handle->get_constant_data_size(
+        handle->container_handle, index, &data_size));
+    ET_CHECK_OR_RETURN_ERROR(
+        dtype == static_cast<int32_t>(storage_dtype_),
+        InvalidProgram,
+        "offgraph_kv: %s is compiled as dtype %d but the cache stores %d",
+        name.c_str(),
+        static_cast<int>(dtype),
+        static_cast<int>(storage_dtype_));
+    const size_t expected =
+        row_bytes(layer) * static_cast<size_t>(declared_rows(layer));
+    ET_CHECK_OR_RETURN_ERROR(
+        data_size == expected,
+        InvalidProgram,
+        "offgraph_kv: %s is compiled with %zu bytes but the cache declares %zu; "
+        "the cache's capacity, max_write, window or head geometry does not "
+        "match the program",
+        name.c_str(),
+        data_size,
+        expected);
+    return Error::Ok;
+  }
+
   // Binds each storage constant with the shape the program declared (BSHD at
   // the maximum rows) over the current allocation, which may hold fewer rows.
   // That is safe because every access the program makes is bounded by kv_len
@@ -528,8 +630,12 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     if (bound_.find(handle) != bound_.end()) {
       return Error::Ok;
     }
+    const std::vector<Descriptor>& descriptors = descriptors_[handle];
     Bound bound;
-    for (const Descriptor& descriptor : descriptors_[handle]) {
+    bound.tensors.reserve(descriptors.size());
+    std::vector<aoti::AOTInductorConstantMapEntry> pairs;
+    pairs.reserve(descriptors.size());
+    for (const Descriptor& descriptor : descriptors) {
       const cache::LayerGeometry& layer =
           geometry_.layers[static_cast<size_t>(descriptor.layer_id)];
       const Allocation& allocation = allocations_.at(descriptor.layer_id);
@@ -551,17 +657,17 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
           ::executorch::runtime::makeArrayRef(strides, 4),
           storage_dtype_,
           slimc10::Device(slimc10::DeviceType::CUDA, device_)));
-      bound.pairs.push_back(
+      pairs.push_back(
           {descriptor.internal_name.c_str(),
            reinterpret_cast<aoti::AtenTensorHandle>(tensor.get())});
       bound.tensors.push_back(std::move(tensor));
     }
-    if (!bound.pairs.empty()) {
+    if (!pairs.empty()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           handle->update_user_managed_constant_buffer_pairs(
               handle->container_handle,
-              bound.pairs.data(),
-              bound.pairs.size(),
+              pairs.data(),
+              pairs.size(),
               /*use_inactive=*/false,
               /*validate_full_update=*/false));
     }

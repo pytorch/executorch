@@ -39,7 +39,46 @@ struct FakeContainer {
   std::vector<std::string> fqns;
   std::unordered_map<std::string, Binding> bound;
   int updates{0};
+  // Compiled metadata the fake reports for a constant index. Unset entries
+  // report what the most recent make_cache() geometry and config declare.
+  std::unordered_map<size_t, size_t> data_size_override{};
+  std::unordered_map<size_t, int32_t> dtype_override{};
+  size_t last_update_pairs{0};
 };
+
+// What the program under test was "compiled" with, for the fake's defaults.
+struct Compiled {
+  cache::CacheGeometry geometry;
+  cache::CacheConfig config;
+};
+Compiled& compiled() {
+  static Compiled value;
+  return value;
+}
+
+std::shared_ptr<cache::Cache> make_cache(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg) {
+  compiled() = Compiled{geometry, cfg};
+  return cu::make_cuda_sequence_kv_cache(geometry, cfg);
+}
+
+// Bytes the compiled program declares for one layer's K or V: BSHD at the
+// maximum rows, i.e. the capacity, or window + max_write - 1 for a ring.
+size_t declared_bytes(
+    const cache::LayerGeometry& layer,
+    const cache::CacheConfig& cfg) {
+  const int64_t rows = layer.policy.kind == cache::LayerPolicy::Kind::Ring
+      ? layer.policy.window + cfg.max_write.value_or(1) - 1
+      : cfg.capacity;
+  return static_cast<size_t>(rows) * layer.n_kv_heads * layer.head_dim *
+      slimc10::elementSize(static_cast<slimc10::ScalarType>(cfg.kv_dtype));
+}
+
+size_t layer_of(const std::string& fqn) {
+  const std::string prefix = "__et_offgraph_kv_layer_";
+  return std::stoul(fqn.substr(prefix.size()));
+}
 
 Error get_num_constants(
     aoti::AOTInductorModelContainerHandle container,
@@ -66,6 +105,33 @@ Error get_constant_fqn(
   return Error::Ok;
 }
 
+Error get_constant_dtype(
+    aoti::AOTInductorModelContainerHandle container,
+    size_t index,
+    int32_t* dtype) {
+  auto* fake = reinterpret_cast<FakeContainer*>(container);
+  const auto it = fake->dtype_override.find(index);
+  *dtype = it != fake->dtype_override.end() ? it->second
+                                            : compiled().config.kv_dtype;
+  return Error::Ok;
+}
+
+Error get_constant_data_size(
+    aoti::AOTInductorModelContainerHandle container,
+    size_t index,
+    size_t* data_size) {
+  auto* fake = reinterpret_cast<FakeContainer*>(container);
+  const auto it = fake->data_size_override.find(index);
+  if (it != fake->data_size_override.end()) {
+    *data_size = it->second;
+    return Error::Ok;
+  }
+  const std::string& fqn = fake->fqns.at(index);
+  *data_size = declared_bytes(
+      compiled().geometry.layers.at(layer_of(fqn)), compiled().config);
+  return Error::Ok;
+}
+
 Error update_pairs(
     aoti::AOTInductorModelContainerHandle container,
     const aoti::AOTInductorConstantMapEntry* pairs,
@@ -74,6 +140,7 @@ Error update_pairs(
     bool) {
   auto* fake = reinterpret_cast<FakeContainer*>(container);
   ++fake->updates;
+  fake->last_update_pairs = count;
   for (size_t index = 0; index < count; ++index) {
     auto* tensor = reinterpret_cast<slim::SlimTensor*>(pairs[index].handle);
     fake->bound[pairs[index].name] = Binding{
@@ -93,6 +160,8 @@ cu::CudaDelegateHandle make_handle(FakeContainer& container) {
   handle.get_num_constants = get_num_constants;
   handle.get_constant_name = get_constant_name;
   handle.get_constant_original_fqn = get_constant_fqn;
+  handle.get_constant_dtype = get_constant_dtype;
+  handle.get_constant_data_size = get_constant_data_size;
   handle.update_user_managed_constant_buffer_pairs = update_pairs;
   return handle;
 }
@@ -169,8 +238,7 @@ class CudaKVCacheTest : public ::testing::Test {
 TEST_F(CudaKVCacheTest, FlatLayersGrowGeometricallyAndKeepHistory) {
   constexpr int kWindow = 4;
   constexpr int kMaxWrite = 9;
-  auto cache_ptr = cu::make_cuda_sequence_kv_cache(
-      flat_and_ring(kWindow), config(32, 4, kMaxWrite));
+  auto cache_ptr = make_cache(flat_and_ring(kWindow), config(32, 4, kMaxWrite));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   auto container = flat_and_ring_container();
@@ -240,8 +308,7 @@ TEST_F(CudaKVCacheTest, FlatLayersGrowGeometricallyAndKeepHistory) {
 TEST_F(CudaKVCacheTest, BindsTheDeclaredShapeOverTheCurrentAllocation) {
   constexpr int kWindow = 4;
   constexpr int kMaxWrite = 4;
-  auto cache_ptr = cu::make_cuda_sequence_kv_cache(
-      flat_and_ring(kWindow), config(64, 8, kMaxWrite));
+  auto cache_ptr = make_cache(flat_and_ring(kWindow), config(64, 8, kMaxWrite));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   auto container = flat_and_ring_container();
@@ -278,8 +345,7 @@ TEST_F(CudaKVCacheTest, GrowthIsOrderedOnTheStepStream) {
       cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
   cache::CacheGeometry geometry;
   geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim}};
-  auto cache_ptr =
-      cu::make_cuda_sequence_kv_cache(geometry, config(1 << 16, 4, 4096));
+  auto cache_ptr = make_cache(geometry, config(1 << 16, 4, 4096));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   FakeContainer container{
@@ -327,8 +393,7 @@ TEST_F(CudaKVCacheTest, FailedGrowthLeavesTheCacheAsItWas) {
       {{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim},
       {{cache::LayerPolicy::Kind::Flat, 0}, 1, kHugeDim},
   };
-  auto cache_ptr =
-      cu::make_cuda_sequence_kv_cache(geometry, config(1 << 16, 4, 1 << 16));
+  auto cache_ptr = make_cache(geometry, config(1 << 16, 4, 1 << 16));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   FakeContainer container{
@@ -391,8 +456,7 @@ TEST_F(CudaKVCacheTest, FailedFirstAllocationCanBeRetried) {
       {{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim},
       {{cache::LayerPolicy::Kind::Flat, 0}, 1, 1 << 22},
   };
-  auto cache_ptr =
-      cu::make_cuda_sequence_kv_cache(geometry, config(1 << 16, 4, 1 << 16));
+  auto cache_ptr = make_cache(geometry, config(1 << 16, 4, 1 << 16));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   FakeContainer container{
@@ -427,8 +491,7 @@ TEST_F(CudaKVCacheTest, StepOnAnotherStreamWaitsForThePreviousOne) {
       cudaStreamCreateWithFlags(&second, cudaStreamNonBlocking), cudaSuccess);
   cache::CacheGeometry geometry;
   geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim}};
-  auto cache_ptr =
-      cu::make_cuda_sequence_kv_cache(geometry, config(1 << 16, 4, 4096));
+  auto cache_ptr = make_cache(geometry, config(1 << 16, 4, 4096));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   FakeContainer container{
@@ -482,20 +545,129 @@ TEST_F(CudaKVCacheTest, StepOnAnotherStreamWaitsForThePreviousOne) {
   ASSERT_EQ(cudaStreamDestroy(second), cudaSuccess);
 }
 
+TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledRingIsRejected) {
+  // Compiled with max_write 8: the ring constants span window + 8 - 1 rows.
+  // A cache installed with max_write 1 would allocate window rows and let a
+  // one-token step at position `window` write past them.
+  constexpr int kWindow = 16;
+  auto cache_ptr = make_cache(flat_and_ring(kWindow), config(64, 4, 1));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  const size_t compiled_ring_bytes =
+      static_cast<size_t>(kWindow + 8 - 1) * kRow * sizeof(uint16_t);
+  container.data_size_override = {
+      {2, compiled_ring_bytes}, {3, compiled_ring_bytes}};
+  auto handle = make_handle(container);
+
+  EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
+  EXPECT_EQ(container.updates, 0);
+}
+
+TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledCapacityIsRejected) {
+  auto cache_ptr = make_cache(flat_and_ring(4), config(64, 4, 4));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  const size_t compiled_flat_bytes = 128 * kRow * sizeof(uint16_t);
+  container.data_size_override = {
+      {0, compiled_flat_bytes}, {1, compiled_flat_bytes}};
+  auto handle = make_handle(container);
+
+  EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
+}
+
+TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledDtypeIsRejected) {
+  // One-byte storage for a program whose kernels read bf16 would under-
+  // allocate by half; the dtype check refuses it before any binding.
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim}};
+  auto cfg = config(32, 4, 4);
+  cfg.kv_dtype = static_cast<int>(slimc10::ScalarType::Byte);
+  auto cache_ptr = make_cache(geometry, cfg);
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  FakeContainer container{
+      {"flat_k", "flat_v"},
+      {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"},
+      {},
+      0};
+  const auto bf16 = static_cast<int32_t>(slimc10::ScalarType::BFloat16);
+  container.dtype_override = {{0, bf16}, {1, bf16}};
+  auto handle = make_handle(container);
+
+  EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
+}
+
+TEST_F(CudaKVCacheTest, ReloadingAHandleBindsEachConstantOnce) {
+  auto cache_ptr = make_cache(flat_and_ring(4), config(64, 4, 4));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(kv.note_handle(&handle).get());
+  ASSERT_TRUE(kv.note_handle(&handle).get());
+
+  ASSERT_EQ(kv.prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv.rebind_for_execute(&handle), Error::Ok);
+
+  EXPECT_EQ(container.updates, 1);
+  EXPECT_EQ(container.last_update_pairs, 4);
+  kv.forget_handle(&handle);
+}
+
+TEST_F(CudaKVCacheTest, CommitAdmitsTheStepOnEveryLayer) {
+  // The flat layer alone would accept an 8-token step; the ring, sized for
+  // max_write 4, cannot, and commit must refuse it as prepare would.
+  auto cache_ptr = make_cache(flat_and_ring(4), config(64, 4, 4));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(kv.note_handle(&handle).get());
+  ASSERT_EQ(kv.prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv.commit_step(2), Error::Ok);
+
+  EXPECT_EQ(kv.commit_step(8), Error::InvalidArgument);
+  EXPECT_EQ(kv.metrics().logical_length, 2);
+  kv.forget_handle(&handle);
+}
+
+TEST_F(CudaKVCacheTest, CacheOutlivesTheStreamItLastSteppedOn) {
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(
+      cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), cudaSuccess);
+  auto cache_ptr = make_cache(flat_and_ring(4), config(64, 4, 4));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  auto container = flat_and_ring_container();
+  auto handle = make_handle(container);
+  ASSERT_TRUE(kv.note_handle(&handle).get());
+  ASSERT_EQ(kv.prepare_step(2, stream), Error::Ok);
+  ASSERT_EQ(kv.commit_step(2), Error::Ok);
+  kv.forget_handle(&handle);
+
+  // The caller's stream goes first; tearing the cache down must not use it.
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+  cache_ptr.reset();
+  EXPECT_EQ(cudaGetLastError(), cudaSuccess);
+  EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+}
+
 TEST_F(CudaKVCacheTest, RingLayersRequireMaxWrite) {
   auto cfg = config(32, 4, 4);
   cfg.max_write.reset();
-  EXPECT_EQ(cu::make_cuda_sequence_kv_cache(flat_and_ring(4), cfg), nullptr);
+  EXPECT_EQ(make_cache(flat_and_ring(4), cfg), nullptr);
 
   cache::CacheGeometry flat_only;
   flat_only.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim}};
-  EXPECT_NE(cu::make_cuda_sequence_kv_cache(flat_only, cfg), nullptr);
+  EXPECT_NE(make_cache(flat_only, cfg), nullptr);
 }
 
 TEST_F(CudaKVCacheTest, ProgramWithoutStorageIsNotServed) {
   cache::CacheGeometry geometry;
   geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim}};
-  auto cache_ptr = cu::make_cuda_sequence_kv_cache(geometry, config(32, 4, 4));
+  auto cache_ptr = make_cache(geometry, config(32, 4, 4));
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   FakeContainer embedding{{"weight"}, {"tok_embeddings.weight"}, {}, 0};
@@ -524,7 +696,7 @@ TEST_F(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndBindings) {
     cfg.kv_dtype = static_cast<int>(dtype);
     cache::CacheGeometry geometry;
     geometry.layers = {{{cache::LayerPolicy::Kind::Flat, 0}, kHeads, kDim}};
-    auto cache_ptr = cu::make_cuda_sequence_kv_cache(geometry, cfg);
+    auto cache_ptr = make_cache(geometry, cfg);
     ASSERT_NE(cache_ptr, nullptr);
     auto& kv = *cache_ptr->as<cu::CudaKVCache>();
     FakeContainer container{

@@ -298,14 +298,25 @@ class OffGraphKVDecompositionTest(unittest.TestCase):
 
 
 class _FlatAndRing(torch.nn.Module):
+    def __init__(self, out_dtype: torch.dtype = torch.bfloat16) -> None:
+        super().__init__()
+        self.out_dtype = out_dtype
+
     def forward(self, q, k, v, position):
         flat = torch.ops.kvcache.update_and_attend(
-            q, k, v, position, 0, SCALE, torch.bfloat16
+            q, k, v, position, 0, SCALE, self.out_dtype
         )
         ring = torch.ops.kvcache.update_and_attend(
-            q, k, v, position, 1, SCALE, torch.bfloat16
+            q, k, v, position, 1, SCALE, self.out_dtype
         )
         return flat + ring
+
+
+class _Flat(torch.nn.Module):
+    def forward(self, q, k, v, position):
+        return torch.ops.kvcache.update_and_attend(
+            q, k, v, position, 0, SCALE, torch.bfloat16
+        )
 
 
 class LowerOffGraphKVPassTest(unittest.TestCase):
@@ -319,12 +330,14 @@ class LowerOffGraphKVPassTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         _skip_if_no_cuda()
 
-    def _lowered(self):
-        q, k, v, position = _inputs(0, self.MAX_WRITE)
+    def _lowered(self, module=None, args=None):
+        if args is None:
+            q, k, v, position = _inputs(0, self.MAX_WRITE)
+            args = (q, k, v, position.reshape(-1, 1))
         t = torch.export.Dim("t", min=1, max=self.MAX_WRITE)
         program = torch.export.export(
-            _FlatAndRing(),
-            (q, k, v, position.reshape(-1, 1)),
+            module if module is not None else _FlatAndRing(),
+            args,
             dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
             strict=False,
         )
@@ -382,6 +395,39 @@ class LowerOffGraphKVPassTest(unittest.TestCase):
             sorted((n.args[3] is None, n.args[5]) for n in sdpa_calls),
             [(False, False), (True, True)],
         )
+
+    def _run_once(self, lowered, args):
+        for name, value in list(lowered.constants.items()):
+            if name.startswith(OFFGRAPH_KV_FQN_PREFIX):
+                lowered.constants[name] = torch.zeros(
+                    value.shape, device="cuda", dtype=value.dtype
+                )
+        return lowered.module()(*args)
+
+    def test_lowered_output_follows_out_dtype(self) -> None:
+        # sdpa returns the query's dtype; the op promises out_dtype.
+        q, k, v, position = _inputs(0, self.MAX_WRITE)
+        args = (q, k, v, position.reshape(-1, 1))
+        wide = self._run_once(self._lowered(_FlatAndRing(torch.float32), args), args)
+        narrow = self._run_once(self._lowered(_FlatAndRing(), args), args)
+
+        self.assertEqual(wide.dtype, torch.float32)
+        self.assertEqual(narrow.dtype, torch.bfloat16)
+        self.assertLess((wide - narrow.float()).abs().max().item(), 2e-2)
+
+    def test_rejects_value_head_dim_unlike_key_head_dim(self) -> None:
+        q, k, _, position = _inputs(0, self.MAX_WRITE)
+        v = torch.randn(*k.shape[:-1], HEAD_DIM * 2, device="cuda", dtype=k.dtype)
+
+        with self.assertRaisesRegex(ValueError, "v_head_dim == head_dim"):
+            self._lowered(_Flat(), (q, k, v, position.reshape(-1, 1)))
+
+    def test_rejects_multi_component_positions(self) -> None:
+        q, k, v, position = _inputs(0, self.MAX_WRITE)
+        two_d = torch.stack((position, position), dim=1)
+
+        with self.assertRaisesRegex(ValueError, "one position component"):
+            self._lowered(_Flat(), (q, k, v, two_d))
 
     def test_lowered_program_matches_the_neutral_op(self) -> None:
         torch.manual_seed(8)
