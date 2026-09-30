@@ -910,6 +910,8 @@ if(EXECUTORCH_BUILD_CUDA
   find_package_torch()
 elseif(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER AND EXECUTORCH_BUILD_PYBIND)
   find_package_torch()
+elseif(EXECUTORCH_BUILD_EXTENSION_TRAINING AND EXECUTORCH_BUILD_PYBIND)
+  find_package_torch()
 endif()
 
 # Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
@@ -1412,6 +1414,34 @@ if(EXECUTORCH_BUILD_PYBIND)
       -frtti
       -fexceptions>
   )
+
+  # The training pybinding accepts native PyTorch tensors and still needs the
+  # ATen bridge. Keep that bridge on the ATen-consuming target rather than on
+  # the portable pybinding.
+  if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
+    find_library(
+      TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
+    )
+    add_library(
+      aten_bridge
+      ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
+    )
+    set_target_properties(aten_bridge PROPERTIES CXX_STANDARD 20)
+    target_include_directories(
+      aten_bridge PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
+    )
+    target_compile_definitions(
+      aten_bridge PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+    )
+    target_compile_options(aten_bridge PUBLIC ${_pybind_compile_options})
+    if(EXECUTORCH_BUILD_SHARED)
+      target_link_libraries(aten_bridge PRIVATE torch c10 executorch_shared)
+    else()
+      target_link_libraries(
+        aten_bridge PRIVATE torch c10 executorch extension_tensor
+      )
+    endif()
+  endif()
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
