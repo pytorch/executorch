@@ -239,44 +239,27 @@ if(EXECUTORCH_BUILD_VGF)
       set(LIBVGF_PATH "${_vgf_site_pure}")
     endif()
 
-    if(EXECUTORCH_BUILD_TESTS)
-      add_executable(
-        vgf_neural_statistics_test
-        ${EXECUTORCH_ROOT}/backends/arm/test/vgf_neural_statistics_test.cpp
-        ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFNeuralStatistics.cpp
-      )
-      target_include_directories(
-        vgf_neural_statistics_test
-        PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
-                ${VOLK_HEADERS_PATH}
-      )
-      target_compile_options(
-        vgf_neural_statistics_test PRIVATE -DUSE_VULKAN_WRAPPER
-                                           -DUSE_VULKAN_VOLK
-      )
-      target_link_libraries(vgf_neural_statistics_test PRIVATE executorch_core)
-      if(TARGET GTest::gtest_main)
-        target_link_libraries(
-          vgf_neural_statistics_test PRIVATE GTest::gtest_main
-        )
-      else()
-        target_link_libraries(
-          vgf_neural_statistics_test PRIVATE gtest gtest_main
-        )
-      endif()
-      add_test(NAME vgf_neural_statistics_test
-               COMMAND vgf_neural_statistics_test
-      )
-    endif()
+    find_package(
+      VGF
+      CONFIG
+      REQUIRED
+      HINTS
+      "${LIBVGF_PATH}"
+      PATH_SUFFIXES
+      lib64/cmake/VGF
+      lib/cmake/VGF
+      NO_DEFAULT_PATH
+    )
 
-    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
   endif()
 
-  set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
-
-  add_library(vgf STATIC IMPORTED)
-  set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
-  target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
+  if(TARGET VGF::vgf)
+    add_library(vgf ALIAS VGF::vgf)
+  else()
+    add_library(vgf STATIC IMPORTED)
+    set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
+    target_include_directories(vgf INTERFACE "${LIBVGF_PATH}/include/")
+  endif()
 
   # Add backend delegate for VGF
   set(_vgf_backend_sources
@@ -310,6 +293,32 @@ if(EXECUTORCH_BUILD_VGF)
   executorch_target_link_options_shared_lib(vgf_backend)
 
   if(EXECUTORCH_BUILD_TESTS)
+    add_executable(
+      vgf_neural_statistics_test
+      ${EXECUTORCH_ROOT}/backends/arm/test/vgf_neural_statistics_test.cpp
+      ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFNeuralStatistics.cpp
+      ${EXECUTORCH_ROOT}/backends/vulkan/third-party/volk/volk.c
+    )
+    target_include_directories(
+      vgf_neural_statistics_test
+      PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+              ${VOLK_HEADERS_PATH}
+    )
+    target_compile_options(
+      vgf_neural_statistics_test PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+    )
+    target_link_libraries(
+      vgf_neural_statistics_test PRIVATE executorch_core ${CMAKE_DL_LIBS}
+    )
+    if(TARGET GTest::gtest_main)
+      target_link_libraries(
+        vgf_neural_statistics_test PRIVATE GTest::gtest_main
+      )
+    else()
+      target_link_libraries(vgf_neural_statistics_test PRIVATE gtest gtest_main)
+    endif()
+    add_test(NAME vgf_neural_statistics_test COMMAND vgf_neural_statistics_test)
+
     add_executable(
       vgf_vulkan_features_test
       ${EXECUTORCH_ROOT}/backends/arm/test/vgf_vulkan_features_test.cpp

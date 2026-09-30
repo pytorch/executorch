@@ -10,10 +10,14 @@
 #include <array>
 #include <cstdio>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
 #include <zip.h>
+
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
+#include <executorch/backends/native/runtime/deserialize/Limits.h>
 
 namespace ptn {
 namespace {
@@ -90,12 +94,16 @@ struct ZipReader::Impl {
   explicit Impl(ZipHandle handle) : archive(std::move(handle)) {}
 
   ZipHandle archive;
+  mutable std::mutex mutex;
 };
 
 ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
   const zip_int64_t count = zip_get_num_entries(impl_->archive.get(), 0);
   if (count < 0) {
     throw_zip(impl_->archive.get(), "cannot enumerate members");
+  }
+  if (static_cast<uint64_t>(count) > detail::kMaxPackageMembers) {
+    throw ResourceLimitError("zip: member count exceeds package limit");
   }
 
   names_.reserve(static_cast<size_t>(count));
@@ -118,6 +126,10 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
     }
     if (stat.encryption_method != ZIP_EM_NONE) {
       throw std::runtime_error("zip: member is encrypted: " + name);
+    }
+    if (stat.size > detail::kMaxPackageBytes) {
+      throw ResourceLimitError(
+          "zip: member exceeds package size limit: " + name);
     }
     if (stat.size > std::numeric_limits<size_t>::max()) {
       throw std::runtime_error("zip: member is too large: " + name);
@@ -186,6 +198,7 @@ void ZipReader::read_entry_into(
     return;
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry.index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {
@@ -218,6 +231,7 @@ void ZipReader::verify(std::string_view name) const {
     throw std::runtime_error("zip: no member named " + std::string(name));
   }
 
+  const std::lock_guard<std::mutex> lock(impl_->mutex);
   ZipFileHandle file(
       zip_fopen_index(impl_->archive.get(), entry->index, ZIP_FL_UNCHANGED));
   if (file == nullptr) {
