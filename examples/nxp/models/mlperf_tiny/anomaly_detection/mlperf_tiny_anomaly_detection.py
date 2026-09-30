@@ -127,14 +127,14 @@ class MLPerfTinyAnomalyDetection(NXPTestBaseModel):
         self, batch_size: int = 1
     ) -> Iterator[tuple[torch.Tensor]]:
         if not self._dataset_flattened:
-            self._flatten_dataset()  # For Anomaly detection data have to flattened/unbatched first
+            self._flatten_dataset()  # For Anomaly detection data have to be flattened/unbatched first
         return super().get_calibration_inputs(batch_size)
 
     def get_qat_train_inputs(
         self, batch_size: int = 5, dataset_portion: float = 0.1
     ) -> Iterator[tuple[torch.Tensor]]:
         if not self._dataset_flattened:
-            self._flatten_dataset()  # For Anomaly detection data have to flattened/unbatched first for calibration
+            self._flatten_dataset()  # For Anomaly detection data have to be flattened/unbatched first for calibration
         return super().get_qat_train_inputs(
             batch_size=batch_size, dataset_portion=dataset_portion
         )

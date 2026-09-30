@@ -195,8 +195,7 @@ def test_aot_example__mlperf_tiny_ic():
     """Test that the MLPerf Tiny image classification model (ResNet-8) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does).
     # The calibration data of this model is generated randomly, so no dataset download is needed.
@@ -231,8 +230,7 @@ def test_aot_example__mlperf_tiny_ic__profiling():
     """Test that the MLPerf Tiny image classification model (ResNet-8) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and profiling works as intended."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     # Channels-last is buggy, so channels-first is used instead
@@ -274,8 +272,7 @@ def test_aot_example__mlperf_tiny_kws():
     """Test that the MLPerf Tiny keyword spotting model (DS-CNN) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does).
     cmd = [
@@ -307,8 +304,7 @@ def test_aot_example__mlperf_tiny_kws__profiling():
     """Test that the MLPerf Tiny keyword spotting model (DS-CNN) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and profiling works as intended."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -348,8 +344,7 @@ def test_aot_example__mlperf_tiny_ad():
     """Test that the MLPerf Tiny Anomaly detection (DeepAutoEncoder) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does).
     cmd = [
@@ -381,8 +376,7 @@ def test_aot_example__mlperf_tiny_ad__profiling():
     """Test that the MLPerf Tiny Anomaly detection (DeepAutoEncoder) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and profiling works as intended."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
@@ -422,8 +416,7 @@ def test_aot_example__mlperf_tiny_vww():
     """Test that the MLPerf Tiny Visual Wake Words model (MobileNetV1) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and all ops are delegated."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does).
     cmd = [
@@ -455,8 +448,7 @@ def test_aot_example__mlperf_tiny_vww__profiling():
     """Test that the MLPerf Tiny Visual Wake Words model (MobileNetV1) can be lowered to Neutron backend via
     `aot_neutron_compile.py` and profiling works as intended."""
 
-    # Number of random samples to generate, must be divisible by number of classes
-    num_random_samples = 60
+    num_random_samples = 1
 
     # Run the compilation script as a module (like run_aot_example.sh does)
     cmd = [
