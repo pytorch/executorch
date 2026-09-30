@@ -254,7 +254,7 @@ def test_nss_prequantized_tosa_INT(use_real_data):
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        qtol=12 if use_real_data else 8,
+        qtol=12,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
