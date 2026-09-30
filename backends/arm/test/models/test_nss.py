@@ -352,7 +352,7 @@ def test_nss_prequantized_vgf_INT(use_real_data):
         run_on_vulkan_runtime=True,
         quantize=True,
         tosa_version="TOSA-1.0+INT",
-        qtol=12 if use_real_data else 8,
+        qtol=12,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")

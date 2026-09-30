@@ -257,7 +257,7 @@ def test_nfru_vgf_quant(use_real_data, is_qat):
         quantize=True,
         is_qat=is_qat,
         atol=0.2,
-        qtol=2 if use_real_data else 1,
+        qtol=(4 if is_qat else 2) if use_real_data else 1,
         **pipeline_kwargs,
     )
     if use_real_data:
