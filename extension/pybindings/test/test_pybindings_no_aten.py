@@ -44,6 +44,9 @@ class PybindingsNoAtenTest(unittest.TestCase):
         self.assertEqual(output.dtype, np.dtype("float32"))
         np.testing.assert_array_equal(np.asarray(output), np.array([3.0]))
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("torch") is not None, "torch is not installed"
+    )
     def test_z_torch_tensor_uses_python_api(self) -> None:
         import torch
 
