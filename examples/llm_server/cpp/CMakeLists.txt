@@ -39,7 +39,7 @@ if(NOT TARGET executorch)
   )
 endif()
 find_package(Threads REQUIRED)
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 # Older installed packages may omit this header-only interface target.
 if(NOT TARGET extension_llm_session)
