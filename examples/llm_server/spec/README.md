@@ -197,8 +197,8 @@ never accumulates an unbounded line. Invalid JSON, missing/invalid request IDs,
 incomplete or oversized input records, and duplicate in-flight IDs fail the
 transport. Duplicate IDs cannot receive an independent correlated error without
 ambiguously terminating the original operation. Valid-ID field errors are isolated
-to that request. EOF initiates runtime shutdown, settles lifecycle futures, and
-joins the Runner for physical cleanup.
+to that request. EOF initiates runtime shutdown, drains generation and lifecycle
+callbacks, and joins the Runner for physical cleanup before draining wire output.
 
 Generation/lifecycle entries are bounded by `max_inflight_requests`, including
 completed responses not yet written. A separate equally sized budget handles
@@ -206,14 +206,23 @@ cancel acknowledgements and capacity rejection responses; exhausting it fails th
 transport. Every registered operation reserves one terminal/control record up to
 the frame limit. Each generation additionally permits 64 queued token frames and
 256 KiB of queued token bytes by default, plus at most one globally active writer
-record. A full token queue cancels only its owning request, drops its unsent text,
-and returns an explicit `slow_consumer` terminal instead of a truncated success.
-An oversized terminal is replaced with `frame_too_large`, not silently trimmed.
+record. A full token queue requests cancellation only for its owning request,
+drops its queued text, and waits for the runtime terminal before returning an
+explicit `slow_consumer` terminal instead of a truncated success. This reports a
+transport failure; it does not rewrite the runtime result or roll back committed
+session history. An oversized terminal is replaced with `frame_too_large`, not
+silently trimmed.
 
-One writer emits whole JSONL records with bounded nonblocking POSIX writes.
-Runtime callbacks only enqueue; they never wait for stdout. One collector polls a
-bounded set of lifecycle futures, with no per-command threads or retained finished
-thread list. If a record cannot finish writing within 10 seconds, stdout fails,
+One writer emits queued JSONL records in FIFO order with bounded nonblocking POSIX
+writes. Generation and lifecycle callbacks only enqueue; they never wait for
+stdout. Runtime admission is released before those callbacks, so terminal output
+does not wait for callback return or poll request handles. The serial input reader
+retains its operation through handle assignment even if terminal output finishes
+first, and replays any cancellation latched before assignment. Writing a terminal's
+final newline and retiring its wire ID/capacity are atomic with respect to reader
+admission. No lifecycle collector or per-command thread is needed.
+
+If a record cannot finish writing within 10 seconds, stdout fails,
 or the control reserve is exhausted, the entire transport fails and shuts down
 the runtime. A permanently unread pipe cannot guarantee terminal delivery; clients
 must settle all outstanding operations on EOF. Worker executables ignore SIGPIPE

@@ -224,16 +224,12 @@ Json terminal_json(const serving::TerminalEvent& event) {
 struct Operation {
   Id id;
   bool control = false;
-  bool bound = false;
   bool terminal = false;
-  bool written = false;
   bool cancelled = false;
   bool overflow = false;
   std::size_t frames = 0;
   std::size_t bytes = 0;
   serving::RequestHandle handle;
-  std::future<serving::LifecycleResult> future;
-  std::string ack;
 };
 
 struct Frame {
@@ -282,20 +278,12 @@ class Worker {
                "\n",
            false});
       writer_ = std::thread([this] { write_loop(); });
-      collector_ = std::thread([this] { collect_loop(); });
       read_loop();
     } catch (...) {
       failed_ = true;
     }
     // shutdown waits for every admitted callback; none wait for pipe I/O.
     runtime_.shutdown();
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      stopping_ = true;
-    }
-    changed_.notify_all();
-    if (collector_.joinable())
-      collector_.join();
     {
       std::lock_guard<std::mutex> lock(mutex_);
       drained_ = true;
@@ -311,13 +299,6 @@ class Worker {
   void checkpoint(Checkpoint point, Id id) {
     if (hooks_.checkpoint)
       hooks_.checkpoint(point, id);
-  }
-
-  void retire(const std::shared_ptr<Operation>& op) {
-    if (op->bound && op->terminal && op->written) {
-      operations_.erase(op->id);
-      --(op->control ? controls_ : requests_);
-    }
   }
 
   void complete(const std::shared_ptr<Operation>& op, Json message) {
@@ -377,8 +358,10 @@ class Worker {
         op->bytes += bytes.size();
         queue_.push_back({op, std::move(bytes), false});
         changed_.notify_all();
+        return;
       }
     }
+    checkpoint(Checkpoint::OverflowLatched, op->id);
     cancel.cancel();
   }
 
@@ -413,7 +396,6 @@ class Worker {
     try {
       if (name == "overloaded") {
         std::lock_guard<std::mutex> lock(mutex_);
-        op->bound = true;
         complete(
             op,
             failure(
@@ -437,7 +419,8 @@ class Worker {
           key = session_key(message);
         auto prompt = prompt_input(message);
         auto options = generation_options(message);
-        // Register first: callbacks can run before generate returns its handle.
+        // Register first. This serial reader retains op through handle binding,
+        // even if a callback publishes its terminal and the writer retires it.
         auto result = runtime_.generate(
             std::move(key),
             std::move(prompt),
@@ -459,7 +442,6 @@ class Worker {
         serving::RequestHandle cancel;
         {
           std::lock_guard<std::mutex> lock(mutex_);
-          op->bound = true;
           if (const auto* error = std::get_if<serving::ServingError>(&result)) {
             complete(op, failure(error_code(error->code), error->message));
           } else {
@@ -468,7 +450,8 @@ class Worker {
               cancel = op->handle;
           }
         }
-        changed_.notify_all();
+        if (hooks_.handle_bound && op->handle.id() != 0)
+          hooks_.handle_bound(id, op->handle);
         checkpoint(Checkpoint::Bound, id);
         cancel.cancel();
       } else if (name == "cancel") {
@@ -483,29 +466,46 @@ class Worker {
             it->second->cancelled = true;
             cancel = it->second->handle;
           }
-          op->bound = true;
           complete(op, {{"cancelled", true}});
         }
         cancel.cancel();
       } else if (name == "open" || name == "close" || name == "reset") {
         fields(message, {"op", "request_id", "session_id"});
         auto key = session_key(message);
-        auto future = name == "open" ? runtime_.open_session_async(key)
-            : name == "close"        ? runtime_.close_session_async(key)
-                                     : runtime_.reset_session_async(key);
-        std::lock_guard<std::mutex> lock(mutex_);
-        op->ack = name == "open" ? "opened"
-            : name == "close"    ? "closed"
-                                 : "reset";
-        op->future = std::move(future);
-        op->bound = true;
-        changed_.notify_all();
+        const char* ack = name == "open" ? "opened"
+            : name == "close"            ? "closed"
+                                         : "reset";
+        auto completion = [this, weak = std::weak_ptr<Operation>(op), ack](
+                              serving::LifecycleResult error) {
+          try {
+            if (auto active = weak.lock()) {
+              {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (failed_)
+                  return;
+                complete(
+                    active,
+                    error ? failure(error_code(error->code), error->message)
+                          : Json{{ack, true}});
+              }
+              checkpoint(Checkpoint::TerminalEnqueued, active->id);
+            }
+          } catch (...) {
+            failed_ = true;
+            changed_.notify_all();
+          }
+        };
+        if (name == "open")
+          runtime_.open_session_async(std::move(key), std::move(completion));
+        else if (name == "close")
+          runtime_.close_session_async(std::move(key), std::move(completion));
+        else
+          runtime_.reset_session_async(std::move(key), std::move(completion));
       } else {
         throw std::invalid_argument("unsupported or missing op");
       }
     } catch (const std::exception& error) {
       std::lock_guard<std::mutex> lock(mutex_);
-      op->bound = true;
       complete(op, failure("invalid_argument", error.what()));
     }
   }
@@ -544,65 +544,18 @@ class Worker {
     }
   }
 
-  void collect_loop() {
-    try {
-      std::unique_lock<std::mutex> lock(mutex_);
-      do {
-        for (const auto& item : operations_) {
-          auto& op = item.second;
-          if (op->future.valid() &&
-              op->future.wait_for(std::chrono::seconds(0)) ==
-                  std::future_status::ready) {
-            auto error = op->future.get();
-            complete(
-                op,
-                error ? failure(error_code(error->code), error->message)
-                      : Json{{op->ack, true}});
-          }
-        }
-        if (stopping_)
-          return;
-        changed_.wait_for(lock, std::chrono::milliseconds(2));
-      } while (true);
-    } catch (...) {
-      failed_ = true;
-      changed_.notify_all();
-    }
-  }
-
   void write_loop() {
     try {
       while (!failed_) {
         Frame frame;
         {
           std::unique_lock<std::mutex> lock(mutex_);
-          for (;;) {
-            if (failed_ || (drained_ && queue_.empty()))
-              return;
-            const auto eligible = std::find_if(
-                queue_.begin(), queue_.end(), [this](const Frame& candidate) {
-                  if (!candidate.terminal)
-                    return true;
-                  const auto& op = candidate.operation;
-                  // Invalid handles bypass runtime completion only AFTER bind:
-                  // before bind they may still be generation placeholders.
-                  if (op->bound && (op->handle.id() == 0 || op->handle.done()))
-                    return true;
-                  checkpoint(Checkpoint::TerminalDeferred, op->id);
-                  return false;
-                });
-            if (eligible != queue_.end()) {
-              frame = std::move(*eligible);
-              queue_.erase(eligible);
-              break;
-            }
-            if (queue_.empty())
-              changed_.wait(lock);
-            else
-              // Runtime completion follows sink return without a transport
-              // notification. Recheck only while deferred terminals remain.
-              changed_.wait_for(lock, std::chrono::milliseconds(2));
-          }
+          changed_.wait(
+              lock, [this] { return failed_ || drained_ || !queue_.empty(); });
+          if (failed_ || queue_.empty())
+            return;
+          frame = std::move(queue_.front());
+          queue_.pop_front();
           if (frame.operation && !frame.terminal) {
             --frame.operation->frames;
             frame.operation->bytes -= frame.bytes.size();
@@ -637,8 +590,9 @@ class Worker {
               std::lock_guard<std::mutex> lock(mutex_);
               count = write(output_, frame.bytes.data() + offset, 1);
               if (count == 1) {
-                frame.operation->written = true;
-                retire(frame.operation);
+                const auto& op = frame.operation;
+                operations_.erase(op->id);
+                --(op->control ? controls_ : requests_);
               }
             }
           } else {
@@ -671,8 +625,8 @@ class Worker {
   std::deque<Frame> queue_;
   std::size_t requests_ = 0, controls_ = 0;
   std::atomic<bool> failed_{false};
-  bool stopping_ = false, drained_ = false;
-  std::thread writer_, collector_;
+  bool drained_ = false;
+  std::thread writer_;
 };
 } // namespace
 

@@ -27,11 +27,11 @@ struct ET_EXPERIMENTAL MultiplexedWorkerConfig {
 };
 
 // POSIX JSONL transport. Borrows both descriptors exclusively for the call;
-// does not close them. The caller must ignore SIGPIPE. Uses one output writer
-// and one lifecycle collector, never one thread per command. EOF shuts down
-// the runtime (including physical Runner cleanup). Returns 0 on clean EOF,
-// 1 on invalid framing, startup failure, or a failed/stalled output stream.
-// A usable request_id is required to isolate a malformed request;
+// does not close them. The caller must ignore SIGPIPE. Uses one output writer;
+// runtime callbacks enqueue generation and lifecycle results. EOF shuts down
+// the runtime (including callback and physical Runner cleanup). Returns 0 on
+// clean EOF, 1 on invalid framing, startup failure, or a failed/stalled output
+// stream. A usable request_id is required to isolate a malformed request;
 // uncorrelatable frames terminate the transport. No callbacks perform
 // descriptor I/O.
 ET_EXPERIMENTAL int run_multiplexed_worker(

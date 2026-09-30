@@ -15,19 +15,26 @@
 
 namespace executorch::examples::llm_server::testing {
 
-// Internal, per-worker checkpoints. Callbacks must be bounded. TerminalDeferred
-// is observation-only under the worker mutex; all other callbacks run unlocked.
+// Internal, per-worker checkpoints. Callbacks must be bounded and run unlocked.
+// BeforeBind/Bound bracket actual generation handle assignment, not
+// publication. TerminalEnqueued runs inside the generation or lifecycle
+// completion callback. OverflowLatched follows the overflow/cancellation latch
+// and queue accounting.
 enum class Checkpoint {
   Admitted,
   BeforeBind,
   Bound,
   TerminalEnqueued,
-  TerminalDeferred,
+  OverflowLatched,
   TerminalPublished,
 };
 
 struct WorkerTestHooks {
   std::function<void(Checkpoint, std::uint64_t)> checkpoint;
+  // Observation only, unlocked after actual successful handle assignment.
+  std::function<
+      void(std::uint64_t, const extension::llm::serving::RequestHandle&)>
+      handle_bound;
   // Called unlocked before a final-byte write. Zero uses the real write;
   // otherwise simulate a failed write with this errno to exercise retries.
   std::function<int(std::uint64_t)> terminal_write_error;

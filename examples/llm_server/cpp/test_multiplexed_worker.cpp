@@ -63,11 +63,19 @@ class Tokenizer : public tokenizers::Tokenizer {
 
 class Executor : public batching::testing::FakeExecutor {
  public:
+  // Installed before start(); invoked only on the engine thread.
+  std::function<void(std::size_t)> before_execute;
+
   bool execute(const batching::BatchInput& batch, batching::BatchOutput& out)
       override {
+    if (before_execute)
+      before_execute(++execute_count_);
     std::this_thread::sleep_for(2ms);
     return FakeExecutor::execute(batch, out);
   }
+
+ private:
+  std::size_t execute_count_ = 0;
 };
 
 class CheckpointGate {
@@ -84,9 +92,9 @@ class CheckpointGate {
     EXPECT_TRUE(cv_.wait_for(lock, 5s, [this] { return released_; }));
   }
 
-  bool wait() {
+  bool wait(std::chrono::milliseconds timeout = 5s) {
     std::unique_lock<std::mutex> lock(mutex_);
-    return cv_.wait_for(lock, 5s, [this] { return reached_; });
+    return cv_.wait_for(lock, timeout, [this] { return reached_; });
   }
 
   void release() {
@@ -107,7 +115,8 @@ class ProtocolTest : public ::testing::Test {
   void start(
       MultiplexedWorkerConfig config = {},
       std::size_t max_sessions = 4,
-      std::size_t max_requests = 8) {
+      std::size_t max_requests = 8,
+      std::size_t max_pending_operations = 64) {
     signal(SIGPIPE, SIG_IGN);
     ASSERT_EQ(pipe(input_), 0);
     ASSERT_EQ(pipe(output_), 0);
@@ -115,6 +124,7 @@ class ProtocolTest : public ::testing::Test {
     runtime_config.max_sessions = max_sessions;
     runtime_config.max_context_length = 8192;
     runtime_config.max_requests = max_requests;
+    runtime_config.max_pending_operations = max_pending_operations;
     runtime_config.max_events_per_request = 128;
     runtime_config.max_tokens_per_request = 8192;
     runtime_ = std::make_unique<serving::ServingRuntime>(
@@ -571,6 +581,122 @@ TEST_F(ProtocolTest, BacklogCancelsOnlyAffectedRequestAndKeepsTerminalBudget) {
   EXPECT_EQ(finish(), 0);
 }
 
+TEST_F(ProtocolTest, OverflowBeforeBindReplaysCancellationAndWaitsForTerminal) {
+  auto binding = gate();
+  auto overflow = gate();
+  auto engine = gate();
+  auto terminal = gate();
+  executor_.before_execute = [engine](std::size_t call) {
+    if (call == 2)
+      engine->pause();
+  };
+  hooks_.checkpoint = [binding, overflow, terminal](
+                          Checkpoint point, uint64_t id) {
+    if (id != 1)
+      return;
+    if (point == Checkpoint::BeforeBind)
+      binding->pause();
+    if (point == Checkpoint::OverflowLatched)
+      overflow->signal();
+    if (point == Checkpoint::TerminalEnqueued)
+      terminal->signal();
+  };
+  MultiplexedWorkerConfig config;
+  config.max_inflight_requests = 1;
+  config.token_bytes_per_request = 1;
+  start(config, 1, 1);
+  auto request = generate(1, 100);
+  request["session_id"] = "owned";
+  send(request);
+  ASSERT_TRUE(binding->wait());
+  ASSERT_TRUE(engine->wait());
+  ASSERT_TRUE(overflow->wait());
+  EXPECT_FALSE(terminal->wait(0ms));
+  EXPECT_EQ(executor_.seen().size(), 1u);
+  EXPECT_EQ(executor_.open_count(), 1);
+  EXPECT_TRUE(executor_.closed().empty());
+  pollfd descriptor{output_[0], POLLIN, 0};
+  EXPECT_EQ(poll(&descriptor, 1, 0), 0);
+
+  binding->release();
+  send({{"op", "cancel"}, {"request_id", 2}, {"target_request_id", 99}});
+  // Reaching the next input proves handle assignment and latch replay returned.
+  const auto fence = receive();
+  ASSERT_EQ(fence.at("request_id"), 2);
+  ASSERT_TRUE(fence.value("cancelled", false));
+  send(generate(3, 1));
+  const auto overload = receive();
+  ASSERT_EQ(overload.at("request_id"), 3);
+  EXPECT_EQ(overload.at("code"), "capacity_exhausted");
+  EXPECT_EQ(overload.at("error"), "worker operation capacity exhausted");
+  EXPECT_FALSE(terminal->wait(0ms));
+  engine->release();
+  ASSERT_TRUE(terminal->wait());
+  const auto failed = receive();
+  EXPECT_EQ(failed.at("request_id"), 1);
+  EXPECT_EQ(failed.at("code"), "slow_consumer");
+  // Without replay, the invalid pre-bind handle silently loses cancellation
+  // and all 100 forwards run, even though the wire still reports overflow.
+  EXPECT_LE(executor_.seen().size(), 2u);
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, LateOverflowPreservesCommittedNamedSessionHistory) {
+  auto binding = gate();
+  auto overflow = gate();
+  auto terminal = gate();
+  // Deterministic output ID, not a runtime stop token. Set before engine start.
+  executor_.stop_token = 1000;
+  hooks_.checkpoint = [binding, overflow, terminal](
+                          Checkpoint point, uint64_t id) {
+    if (id != 1)
+      return;
+    if (point == Checkpoint::BeforeBind)
+      binding->pause();
+    if (point == Checkpoint::OverflowLatched)
+      overflow->signal();
+    if (point == Checkpoint::TerminalEnqueued)
+      terminal->signal();
+  };
+  MultiplexedWorkerConfig config;
+  config.max_inflight_requests = 1;
+  config.token_bytes_per_request = 1;
+  start(config, 1, 1);
+  auto request = generate(1, 1);
+  request["session_id"] = "owned";
+  send(request);
+  ASSERT_TRUE(binding->wait());
+  ASSERT_TRUE(overflow->wait());
+  ASSERT_TRUE(terminal->wait());
+  const auto failed = receive();
+  ASSERT_EQ(failed.at("request_id"), 1);
+  ASSERT_EQ(failed.at("code"), "slow_consumer");
+  EXPECT_EQ(executor_.opened().size(), 1u);
+  EXPECT_TRUE(executor_.closed().empty());
+
+  auto continuation = generate(2, 1);
+  continuation["session_id"] = "owned";
+  continuation.erase("prompt");
+  continuation["prompt_segments"] =
+      Json::array({{{"ids", {104, 105, 1000, 106}}}});
+  // Suppress text for this request so its tiny transport budget does not fail.
+  continuation["stop"] = Json::array({"x"});
+  send(continuation);
+  binding->release();
+  const auto done = receive();
+  ASSERT_EQ(done.at("request_id"), 2);
+  ASSERT_TRUE(done.value("done", false)) << done;
+  EXPECT_EQ(done.at("session_reset_reason"), "exact_prefix");
+  EXPECT_EQ(done.at("reused_prompt_tokens"), 2);
+  EXPECT_EQ(executor_.opened().size(), 1u);
+  EXPECT_TRUE(executor_.closed().empty());
+  const auto seen = executor_.seen();
+  ASSERT_GE(seen.size(), 2u);
+  EXPECT_EQ(seen[1].session, seen[0].session);
+  EXPECT_EQ(seen[1].effective_position(), 2);
+  EXPECT_EQ(finish(), 0);
+}
+
 TEST_F(ProtocolTest, PermanentlyUnreadOutputExpiresAndCleansUp) {
   MultiplexedWorkerConfig config;
   config.write_timeout = 100ms;
@@ -610,80 +736,168 @@ TEST_F(ProtocolTest, PublishedControlReleasesCapacityBeforeWriterContinues) {
   EXPECT_EQ(finish(), 0);
 }
 
-TEST_F(ProtocolTest, DeferredGenerationTerminalLetsUnrelatedAckProgress) {
+TEST_F(ProtocolTest, PublishedGenerationReusesWireIdBeforeCallbackReturns) {
   auto sink = gate();
-  auto bound = gate();
-  auto deferred = gate();
-  hooks_.checkpoint = [sink, bound, deferred](Checkpoint point, uint64_t id) {
-    if (id != 1)
-      return;
-    if (point == Checkpoint::TerminalEnqueued)
+  auto terminals = std::make_shared<std::atomic<int>>(0);
+  auto first_handle = std::make_shared<std::promise<serving::RequestHandle>>();
+  auto next_handle = std::make_shared<std::promise<serving::RequestHandle>>();
+  auto first_bound = first_handle->get_future();
+  auto next_bound = next_handle->get_future();
+  hooks_.handle_bound = [first_handle, next_handle, bindings = 0](
+                            uint64_t id,
+                            const serving::RequestHandle& handle) mutable {
+    if (id == 1) {
+      if (++bindings == 1)
+        first_handle->set_value(handle);
+      else if (bindings == 2)
+        next_handle->set_value(handle);
+    }
+  };
+  hooks_.checkpoint = [sink, terminals](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::TerminalEnqueued && id == 1 && ++*terminals == 1)
       sink->pause();
-    if (point == Checkpoint::Bound)
-      bound->signal();
-    if (point == Checkpoint::TerminalDeferred)
-      deferred->signal();
   };
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;
-  start(config, 4, 1);
-  send(generate(1, 1));
+  start(config, 1, 1);
+  auto request = generate(1, 1);
+  request["session_id"] = "owned";
+  send(request);
   ASSERT_TRUE(sink->wait());
-  ASSERT_TRUE(bound->wait());
-  ASSERT_TRUE(deferred->wait());
-  const auto text = receive();
-  ASSERT_EQ(text.at("request_id"), 1);
-  ASSERT_EQ(text.at("token"), tokenizer_.piece);
+  ASSERT_EQ(first_bound.wait_for(5s), std::future_status::ready);
+  const auto handle = first_bound.get();
+  ASSERT_NE(handle.id(), 0u);
+  EXPECT_FALSE(handle.done());
+  ASSERT_EQ(receive().at("token"), tokenizer_.piece);
+  const auto done = receive();
+  ASSERT_EQ(done.at("request_id"), 1);
+  ASSERT_TRUE(done.value("done", false));
+
+  // Both transport admission and runtime admission are reusable, even though
+  // the old callback still owns its operation and done() is false.
+  send(request);
+  ASSERT_EQ(next_bound.wait_for(5s), std::future_status::ready);
+  const auto replacement = next_bound.get();
+  ASSERT_NE(replacement.id(), 0u);
+  EXPECT_NE(replacement.id(), handle.id());
+  EXPECT_FALSE(handle.done());
   send({{"op", "cancel"}, {"request_id", 2}, {"target_request_id", 99}});
   const auto ack = receive();
   ASSERT_EQ(ack.at("request_id"), 2);
   ASSERT_TRUE(ack.value("cancelled", false));
+  EXPECT_FALSE(handle.done());
   sink->release();
-  const auto done = receive();
-  ASSERT_EQ(done.at("request_id"), 1);
-  ASSERT_TRUE(done.value("done", false));
-  send(generate(3, 1));
   EXPECT_EQ(receive().at("token"), tokenizer_.piece);
   const auto next = receive();
-  EXPECT_EQ(next.at("request_id"), 3);
+  EXPECT_EQ(next.at("request_id"), 1);
   EXPECT_TRUE(next.value("done", false)) << next;
   EXPECT_EQ(finish(), 0);
+  EXPECT_TRUE(handle.done());
+  EXPECT_TRUE(replacement.done());
 }
 
-TEST_F(ProtocolTest, TerminalBeforeBindingCannotUsePlaceholderHandle) {
+TEST_F(ProtocolTest, TerminalPublishesBeforeBindButReaderWaitsForAssignment) {
   auto binding = gate();
-  auto terminal = gate();
-  auto deferred = gate();
-  hooks_.checkpoint = [binding, terminal, deferred](
-                          Checkpoint point, uint64_t id) {
-    if (id != 1)
-      return;
-    if (point == Checkpoint::BeforeBind)
-      binding->pause();
-    if (point == Checkpoint::TerminalEnqueued)
-      terminal->signal();
-    if (point == Checkpoint::TerminalDeferred)
-      deferred->signal();
-  };
+  auto sink = gate();
+  auto next_admitted = gate();
+  auto admissions = std::make_shared<std::atomic<int>>(0);
+  auto bindings = std::make_shared<std::atomic<int>>(0);
+  auto bound = std::make_shared<std::atomic<bool>>(false);
+  auto terminals = std::make_shared<std::atomic<int>>(0);
+  hooks_.checkpoint =
+      [binding, sink, next_admitted, admissions, bindings, bound, terminals](
+          Checkpoint point, uint64_t id) {
+        if (id != 1)
+          return;
+        if (point == Checkpoint::BeforeBind && ++*bindings == 1)
+          binding->pause();
+        if (point == Checkpoint::Bound)
+          bound->store(true);
+        if (point == Checkpoint::TerminalEnqueued && ++*terminals == 1)
+          sink->pause();
+        if (point == Checkpoint::Admitted && ++*admissions == 2) {
+          EXPECT_TRUE(bound->load());
+          next_admitted->signal();
+        }
+      };
   MultiplexedWorkerConfig config;
   config.max_inflight_requests = 1;
   start(config, 4, 1);
   send(generate(1, 1));
   ASSERT_TRUE(binding->wait());
-  ASSERT_TRUE(terminal->wait());
-  ASSERT_TRUE(deferred->wait());
+  ASSERT_TRUE(sink->wait());
   ASSERT_EQ(receive().at("token"), tokenizer_.piece);
-  pollfd descriptor{output_[0], POLLIN, 0};
-  EXPECT_EQ(poll(&descriptor, 1, 0), 0);
-  binding->release();
   const auto done = receive();
   ASSERT_EQ(done.at("request_id"), 1);
   ASSERT_TRUE(done.value("done", false));
-  // Reusing the identity is legal only once its terminal is published.
+  EXPECT_FALSE(bound->load());
   send(generate(1, 1));
+  EXPECT_FALSE(next_admitted->wait(50ms));
+  EXPECT_EQ(admissions->load(), 1);
+
+  // Only the original assignment is gated. Publication already retired its
+  // wire identity, but the serial reader cannot consume the next command yet.
+  binding->release();
+  ASSERT_TRUE(next_admitted->wait());
+  sink->release();
   EXPECT_EQ(receive().at("token"), tokenizer_.piece);
-  EXPECT_TRUE(receive().value("done", false));
+  const auto next = receive();
+  EXPECT_EQ(next.at("request_id"), 1);
+  EXPECT_TRUE(next.value("done", false));
   EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, PublishedLifecycleAckReentersWithOnePendingPermit) {
+  auto callback = gate();
+  auto terminals = std::make_shared<std::atomic<int>>(0);
+  hooks_.checkpoint = [callback, terminals](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::TerminalEnqueued && id == 1 && ++*terminals == 1)
+      callback->pause();
+  };
+  MultiplexedWorkerConfig config;
+  config.max_inflight_requests = 1;
+  start(config, 1, 1, 1);
+  send({{"op", "close"}, {"request_id", 1}, {"session_id", "absent"}});
+  ASSERT_TRUE(callback->wait());
+  const auto first = receive();
+  ASSERT_EQ(first.at("request_id"), 1);
+  ASSERT_TRUE(first.value("closed", false));
+  send({{"op", "open"}, {"request_id", 1}, {"session_id", "owned"}});
+  send({{"op", "cancel"}, {"request_id", 2}, {"target_request_id", 99}});
+  // This reader fence follows submission. A retained runtime permit would
+  // instead put an inline capacity error ahead of this ACK in the writer FIFO.
+  const auto fence = receive();
+  ASSERT_EQ(fence.at("request_id"), 2);
+  ASSERT_TRUE(fence.value("cancelled", false));
+  callback->release();
+  const auto next = receive();
+  EXPECT_EQ(next.at("request_id"), 1);
+  EXPECT_TRUE(next.value("opened", false)) << next;
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, EofWaitsForPublishedLifecycleCallbackToReturn) {
+  auto callback = gate();
+  hooks_.checkpoint = [callback](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::TerminalEnqueued && id == 1)
+      callback->pause();
+  };
+  start({}, 1, 1, 1);
+  send({{"op", "close"}, {"request_id", 1}, {"session_id", "absent"}});
+  ASSERT_TRUE(callback->wait());
+  const auto ack = receive();
+  ASSERT_EQ(ack.at("request_id"), 1);
+  ASSERT_TRUE(ack.value("closed", false));
+  close(input_[1]);
+  input_[1] = -1;
+  const auto deadline = std::chrono::steady_clock::now() + 5s;
+  while (runtime_->info().ready && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::yield();
+  ASSERT_FALSE(runtime_->info().ready);
+  EXPECT_EQ(result_.wait_for(50ms), std::future_status::timeout);
+  callback->release();
+  ASSERT_EQ(result_.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(result_.get(), 0);
 }
 
 TEST_F(ProtocolTest, TerminalNewlineRetriesKeepAdmissionReserved) {
