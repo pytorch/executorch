@@ -123,6 +123,7 @@ def offgraph_step(
     scale: float,
     buf_size: int,
     mask: torch.Tensor | None = None,
+    out_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """Write this step's K/V into their slots, then attend.
 
@@ -133,6 +134,8 @@ def offgraph_step(
     ``ring_attention_mask`` every ring layer of the step shares.
 
     ``k``/``v`` are BHSD; the storage is BSHD (see ``LowerOffGraphKVPass``).
+    sdpa returns the query's dtype; ``out_dtype`` is the neutral op's requested
+    output dtype.
     """
     position = position.reshape(-1)
     slots = position % buf_size
@@ -151,7 +154,7 @@ def offgraph_step(
     # from position data tunes as a one-token context and picks a tile that
     # runs long prefill markedly slower.
     kv_len = position[0] + position.shape[0]
-    return torch.ops.triton.sdpa(
+    out = torch.ops.triton.sdpa(
         q,
         k_storage.transpose(1, 2),
         v_storage.transpose(1, 2),
@@ -162,6 +165,9 @@ def offgraph_step(
         True,
         kv_len,
     )
+    if out_dtype is not None and out.dtype != out_dtype:
+        out = out.to(out_dtype)
+    return out
 
 
 def _mask_fn(buf_size: int, window: int):
@@ -178,19 +184,36 @@ def _mask_fn(buf_size: int, window: int):
     return fn
 
 
-def _step_fn(scale: float, buf_size: int, masked: bool):
+def _step_fn(scale: float, buf_size: int, masked: bool, out_dtype):
     if masked:
 
         def fn(q, k, v, position, k_storage, v_storage, mask):
             return offgraph_step(
-                q, k, v, position, k_storage, v_storage, scale, buf_size, mask
+                q,
+                k,
+                v,
+                position,
+                k_storage,
+                v_storage,
+                scale,
+                buf_size,
+                mask,
+                out_dtype,
             )
 
     else:
 
         def fn(q, k, v, position, k_storage, v_storage):
             return offgraph_step(
-                q, k, v, position, k_storage, v_storage, scale, buf_size
+                q,
+                k,
+                v,
+                position,
+                k_storage,
+                v_storage,
+                scale,
+                buf_size,
+                out_dtype=out_dtype,
             )
 
     return fn
@@ -209,6 +232,27 @@ class LowerOffGraphKVPass:
         # AOTI needs the logical metadata, while the runtime supplies storage.
         storage.untyped_storage().resize_(0)
         return storage
+
+    @staticmethod
+    def _check_supported(node) -> None:
+        """Reject valid neutral-op inputs this lowering does not implement.
+
+        Both would otherwise fail inside the trace with a shape error that says
+        nothing about why.
+        """
+        _, k, v, position = (n.meta["val"] for n in node.args[0:4])
+        if v.shape[-1] != k.shape[-1]:
+            raise ValueError(
+                "off-graph KV lowering requires v_head_dim == head_dim, got "
+                f"{v.shape[-1]} and {k.shape[-1]}"
+            )
+        if position.dim() not in (1, 2) or (
+            position.dim() == 2 and position.shape[1] != 1
+        ):
+            raise ValueError(
+                "off-graph KV lowering supports one position component per "
+                f"token ([T] or [T, 1]), got {tuple(position.shape)}"
+            )
 
     def _layer_capacity(self, layer: dict[str, Any]) -> int:
         if layer["policy"] == "ring":
@@ -323,8 +367,12 @@ class LowerOffGraphKVPass:
             if layer is None:
                 raise ValueError(f"off-graph manifest has no layer {layer_id}")
 
+            self._check_supported(node)
             inputs = list(node.args[0:4])  # q, k, v, position
             scale = node.args[5]
+            out_dtype = (
+                node.args[6] if len(node.args) > 6 else node.kwargs.get("out_dtype")
+            )
             k_storage, v_storage = self._storage_nodes(exported_program, node, layer)
             call_args = (*inputs, k_storage, v_storage)
             example_args = tuple(n.meta["val"] for n in call_args)
@@ -337,7 +385,7 @@ class LowerOffGraphKVPass:
                 )
                 call_args = (*call_args, mask)
                 example_args = (*example_args, mask.meta["val"])
-            fn = _step_fn(scale, buf_size, masked)
+            fn = _step_fn(scale, buf_size, masked, out_dtype)
 
             new_node = self._inline(
                 graph_module.graph, fn, example_args, call_args, node
