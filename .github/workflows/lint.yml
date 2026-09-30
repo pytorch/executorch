@@ -105,6 +105,15 @@ jobs:
           pip install -r requirements-lintrunner.txt
           lintrunner init
 
+      - name: Test release preparation
+        run: |
+          python scripts/release/test_prepare_release.py
+          python scripts/release/test_finalize_release.py
+
+      - name: Validate release configuration
+        if: startsWith(github.ref_name, 'release/') || startsWith(github.base_ref, 'release/')
+        run: python scripts/release/prepare_release.py --check
+
       - name: Run linters
         env:
           CHANGED_FILES: ${{ needs.get-changed-files.outputs.changed-files }}

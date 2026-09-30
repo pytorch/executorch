@@ -16,6 +16,11 @@ For `pytorch/executorch` usage would be like:
 
 or to cut from main branch:
 > DRY_RUN=disabled GIT_BRANCH_TO_CUT_FROM=main ./scripts/release/cut-release-branch.sh
+
+After creating release/X.Y and orig/release/X.Y at the selected commit, this
+also applies the deterministic release-only changes to the local release/X.Y
+branch. TEST_INFRA_BRANCH defaults to release/X.Y. TORCH_VERSION may override
+the newest PyTorch release candidate selected from the test wheel index.
 '
 
 set -eou pipefail
@@ -26,6 +31,7 @@ GIT_BRANCH_TO_CUT_FROM=${GIT_BRANCH_TO_CUT_FROM:-viable/strict}
 
 # should output something like 1.11
 RELEASE_VERSION=${RELEASE_VERSION:-$(cut -d'.' -f1-2 "${GIT_TOP_DIR}/version.txt")}
+TEST_INFRA_BRANCH=${TEST_INFRA_BRANCH:-release/${RELEASE_VERSION}}
 
 DRY_RUN_FLAG="--dry-run"
 if [[ ${DRY_RUN:-enabled} == "disabled" ]]; then
@@ -52,3 +58,10 @@ for branch in "release/${RELEASE_VERSION}" "orig/release/${RELEASE_VERSION}"; do
         )
     fi
 done
+
+(
+    set -x
+    RELEASE_VERSION="${RELEASE_VERSION}" \
+      TEST_INFRA_BRANCH="${TEST_INFRA_BRANCH}" \
+      "${GIT_TOP_DIR}/scripts/release/apply-release-changes.sh"
+)

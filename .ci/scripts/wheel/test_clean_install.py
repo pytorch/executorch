@@ -21,6 +21,8 @@ user, and names the package it wanted.
 
 import json
 import os
+import re
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -45,10 +47,69 @@ REQUIRED_IMPORTS: List[str] = [
 
 # Distributions that are legitimately present without being declared.
 #
-# torch, because the wheel deliberately does not declare it: a consumer brings the build
-# matching their platform and accelerator. The rest are what torch itself requires, so they are
-# guaranteed alongside it.
+# Development and minimal wheels deliberately do not declare torch: a consumer brings the build
+# matching their platform and accelerator. Release wheels also reach it through their declared
+# requirements. The rest are what torch itself requires, so they are guaranteed alongside it.
 ASSUMED_PRESENT: Set[str] = {"torch", "executorch"}
+
+
+def test_release_pytorch_requirement() -> None:
+    """Release wheels must declare the PyTorch release in torch_pin.py."""
+    import importlib.metadata as metadata
+
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+
+    repo_root = Path(__file__).resolve().parents[3]
+    config = runpy.run_path(str(repo_root / "torch_pin.py"))
+    ci_refs = (
+        os.environ.get("GITHUB_REF_NAME", ""),
+        os.environ.get("GITHUB_BASE_REF", ""),
+        os.environ.get("GITHUB_REF", "").removeprefix("refs/heads/"),
+    )
+    release_tag_ci = any(
+        re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+(?:-rc\d+)?", ref) for ref in ci_refs
+    )
+    release_ci = any(ref.startswith("release/") for ref in ci_refs) or any(
+        re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+(?:-rc\d+)?", ref) for ref in ci_refs
+    )
+    assert not release_ci or config["RELEASE_WHEEL"], (
+        "this wheel is being built from a release ref, but torch_pin.py does not enable "
+        "release metadata; run scripts/release/apply-release-changes.sh"
+    )
+    dependencies_finalized = config.get("RELEASE_DEPENDENCIES_FINALIZED") is True
+    assert not release_tag_ci or dependencies_finalized, (
+        "this wheel is being built from a release tag, but stable dependencies were not "
+        "finalized; run scripts/release/finalize_release.py before tagging"
+    )
+    assert not dependencies_finalized or re.fullmatch(
+        r"\d+\.\d+\.\d+", config["TORCH_VERSION"]
+    ), (
+        "release dependencies are marked finalized, but TORCH_VERSION is not a final "
+        f"PyTorch release: {config['TORCH_VERSION']}"
+    )
+    torch_requirements = [
+        Requirement(raw)
+        for raw in metadata.requires("executorch") or []
+        if canonicalize_name(Requirement(raw).name) == "torch"
+    ]
+
+    if config["RELEASE_WHEEL"]:
+        expected = f">={config['TORCH_VERSION']}"
+        assert len(torch_requirements) == 1, (
+            "a release wheel must declare exactly one PyTorch dependency, but found "
+            f"{[str(requirement) for requirement in torch_requirements]}"
+        )
+        assert str(torch_requirements[0].specifier) == expected, (
+            f"release wheel declares {torch_requirements[0]}, expected torch{expected} "
+            "from torch_pin.py"
+        )
+        print(f"✓ release wheel declares torch{expected}")
+    else:
+        assert not torch_requirements, (
+            "a development wheel unexpectedly declares PyTorch; only release wheels should "
+            f"declare it, found {[str(requirement) for requirement in torch_requirements]}"
+        )
 
 
 def _normalise(name: str) -> str:
@@ -169,6 +230,7 @@ def _blocked_modules(allowed: Set[str]) -> Set[str]:
 
 
 def run_tests(work_dir: Path) -> None:
+    test_release_pytorch_requirement()
     allowed = _allowed_distributions()
     blocked = _blocked_modules(allowed)
     print(

@@ -78,6 +78,15 @@ if _spec.loader is None:
     raise ImportError(f"Module spec has no loader for {_install_utils_path}")
 _spec.loader.exec_module(install_utils)
 
+_torch_pin_path = Path(__file__).parent / "torch_pin.py"
+_spec = importlib.util.spec_from_file_location("torch_pin", _torch_pin_path)
+if _spec is None:
+    raise ImportError(f"Could not create module spec for {_torch_pin_path}")
+torch_pin = importlib.util.module_from_spec(_spec)
+if _spec.loader is None:
+    raise ImportError(f"Could not load {_torch_pin_path}")
+_spec.loader.exec_module(torch_pin)
+
 from setuptools import Distribution, Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
@@ -1116,6 +1125,12 @@ def _torchao_requirement() -> str:
     return f"torchao>={version},<{major}.{minor + 1}"
 
 
+def _release_torch_requirement() -> List[str]:
+    if not torch_pin.RELEASE_WHEEL:
+        return []
+    return [f"torch>={torch_pin.TORCH_VERSION}"]
+
+
 def _base_dependencies() -> List[str]:
     """Runtime dependencies for the full wheel.
 
@@ -1140,6 +1155,7 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
+        *_release_torch_requirement(),
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
         # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
@@ -1197,7 +1213,8 @@ def _minimal_dependencies() -> List[str]:
 
     Derived as the subset of _base_dependencies() that executorch.exir needs to
     lower and serialize a .pte, so version pins and markers stay in sync with the
-    full set. torch is intentionally absent from both (consumers bring their own).
+    full set. torch is intentionally absent from the minimal wheel, including on
+    release branches (consumers bring their own).
     mpmath is intentionally dropped too: it is pulled transitively by sympy, whose
     "mpmath<1.4" cap resolves to the same 1.3.0 the full wheel pins. Keep the name
     set below in sync with the `expected` set in .ci/scripts/test_minimal_wheel.sh.

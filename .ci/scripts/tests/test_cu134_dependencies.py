@@ -100,7 +100,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     core, local, domains, examples = self.install_commands(
                         cuda, machine
                     )
-                    self.assertIn("torch==2.14.0", core)
+                    self.assertIn(f"torch=={self.installer.TORCH_VERSION}", core)
                     self.assertIn("torchao==0.19.0.dev20260907", core)
                     self.assertIn("torchvision==0.29.0", domains)
                     self.assertIn("torchaudio==2.11.0", domains)
@@ -118,14 +118,14 @@ class TestCu134Dependencies(unittest.TestCase):
 
     def test_no_cuda_keeps_default_pins(self):
         core, _, domains, _ = self.install_commands(None)
-        self.assertIn("torch==2.14.0", core)
+        self.assertIn(f"torch=={self.installer.TORCH_VERSION}", core)
         self.assertIn("torchao==0.19.0.dev20260907", core)
         self.assertIn("torchvision==0.29.0", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 
     def test_windows_does_not_select_cu134(self):
         core, _, domains, _ = self.install_commands((13, 4), system="Windows")
-        self.assertIn("torch==2.14.0", core)
+        self.assertIn(f"torch=={self.installer.TORCH_VERSION}", core)
         self.assertIn("torchvision==0.29.0", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 

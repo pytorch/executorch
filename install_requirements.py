@@ -8,10 +8,15 @@
 import argparse
 import os
 import platform
+import runpy
 import subprocess
 import sys
 
 from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
+
+TORCH_VERSION = runpy.run_path(os.path.join(os.path.dirname(__file__), "torch_pin.py"))[
+    "TORCH_VERSION"
+]
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
@@ -103,7 +108,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        ("torch==2.14.0" if use_pytorch_nightly else "torch"),
+        (f"torch=={TORCH_VERSION}" if use_pytorch_nightly else "torch"),
         f"torchao=={TORCHAO_NIGHTLY_VERSION}",
     ]
 

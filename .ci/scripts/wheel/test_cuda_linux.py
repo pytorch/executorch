@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Set
 
 import test_base
+import test_clean_install
 import test_cpp_sdk
 import test_shared_libraries
 from examples.models import Backend, Model
@@ -583,6 +584,7 @@ def test_a_model_runs_through_the_delegate() -> None:
 if __name__ == "__main__":
     assert platform.system() == "Linux", "the CUDA rows are Linux only"
 
+    test_clean_install.test_release_pytorch_requirement()
     test_cuda_libraries_are_shipped()
     test_cuda_runtime_is_declared()
     test_cuda_libraries_resolve_relatively()
