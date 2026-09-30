@@ -85,7 +85,7 @@ from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "1.0"
 _SCHEMA_RESOURCE = "native_graph.fbs"
 _FILE_STEM = "native_graph"
 
@@ -205,7 +205,7 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    dim_order = [int(d) for d in dim_order_from_stride(strides)]
+    dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):
         # A size-1 dim only ever indexes 0, so its stride is arbitrary and need not
@@ -876,7 +876,7 @@ def _extract_constants_and_mutable_buffers(
         target_fqn = getattr(ispec, "target", None)
         if name is None or target_fqn is None:
             continue
-        if _is_non_persistent_buffer(ispec):
+        if _is_non_persistent_buffer(ispec) and target_fqn in mutated_fqns:
             mutable_buffers.append(MutableBufferSpec(name=name, fqn=target_fqn))
             continue
         tensor = None
