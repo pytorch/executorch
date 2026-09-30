@@ -43,6 +43,11 @@ using AOTInductorModelContainerGetConstantDtypeFunc =
         aoti::AOTInductorModelContainerHandle container_handle,
         size_t idx,
         int32_t* dtype);
+using AOTInductorModelContainerGetConstantDataSizeFunc =
+    aoti::AOTIRuntimeError (*)(
+        aoti::AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        size_t* data_size);
 struct CudaWeightStorage {
   void* data{nullptr};
   size_t nbytes{0};
@@ -187,6 +192,10 @@ struct CudaGraphState {
 struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
+  // Bytes a constant's compiled shape spans; the off-graph KV cache checks its
+  // storage against it before binding.
+  AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size{
+      nullptr};
 
   // The per-thread stream. Nothing owns it: the value is a fixed sentinel the
   // driver resolves to a different stream on each host thread, so releasing the
