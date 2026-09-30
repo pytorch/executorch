@@ -89,6 +89,17 @@ constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
 
+// Advances the off-graph KV cache past a step's tokens. Every successful exit
+// of execute() ends here, and only those: a run that failed never wrote its
+// tokens, and committing them would desynchronise the cache's length from the
+// history the kernels actually hold.
+Error commit_offgraph_kv_step(CudaDelegateHandle* handle, int64_t width) {
+  if (handle->kv_cache == nullptr) {
+    return Error::Ok;
+  }
+  return handle->kv_cache->commit_step(width);
+}
+
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
@@ -204,6 +215,8 @@ class ET_EXPERIMENTAL CudaBackend final
         AOTInductorModelContainerGetConstantOriginalFQN);
     LOAD_OPTIONAL_SYMBOL(
         get_constant_dtype, AOTInductorModelContainerGetConstantDtype);
+    LOAD_OPTIONAL_SYMBOL(
+        get_constant_data_size, AOTInductorModelContainerGetConstantDataSize);
     LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
@@ -457,12 +470,23 @@ class ET_EXPERIMENTAL CudaBackend final
     // No key means an in-graph model, whose KV state is ordinary mutable
     // buffers -- that is the whole of the off-graph/in-graph detection, and it
     // needs nothing from the user.
+    //
+    // The key alone does not decide it, though: a program whose storage was
+    // lowered off-graph carries no bytes for it, so running one without a cache
+    // would hand its kernels unbound memory. That requirement is read from the
+    // program's own constants and checked whether or not a key was passed.
+    const char* cache_key = nullptr;
     if (auto spec = context.get_runtime_spec<const char*>(
             ::executorch::extension::llm::cache::kCacheKeyOption);
         spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
+      cache_key = spec.get();
+    }
+    const auto needs_offgraph_kv = requires_offgraph_kv_storage(*handle);
+    ET_CHECK_OK_OR_RETURN_ERROR(needs_offgraph_kv.error());
+    if (cache_key != nullptr) {
 #if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
       ET_CHECK_OK_OR_RETURN_ERROR(
-          attach_offgraph_kv_cache(*handle, spec.get(), kv_step_width));
+          attach_offgraph_kv_cache(*handle, cache_key, kv_step_width));
 #else
       ET_LOG(
           Error,
@@ -471,6 +495,14 @@ class ET_EXPERIMENTAL CudaBackend final
       return Error::NotSupported;
 #endif
     }
+    ET_CHECK_OR_RETURN_ERROR(
+        !needs_offgraph_kv.get() || handle->kv_cache != nullptr,
+        InvalidArgument,
+        "init: method '%s' keeps its KV cache off-graph but no cache was "
+        "installed under the '%s' backend option (a CUDA backend built without "
+        "EXECUTORCH_BUILD_EXTENSION_LLM cannot run it)",
+        method_name.c_str(),
+        ::executorch::extension::llm::cache::kCacheKeyOption);
 
     // Versioned artifacts load each (device, FQN) through the same process-wide
     // cross-method cache model used by the legacy path. The payload only adds
@@ -687,14 +719,7 @@ class ET_EXPERIMENTAL CudaBackend final
       }
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
 
-      // Only a run that reached here wrote its tokens, so only now may the
-      // cache advance past them; an earlier commit would desynchronise its
-      // length from the history the kernels actually hold.
-      if (handle->kv_cache != nullptr) {
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            handle->kv_cache->commit_step(kv_step_width));
-      }
-      return Error::Ok;
+      return commit_offgraph_kv_step(handle, kv_step_width);
     }
 
     // ---------------------------------------------------------------
@@ -987,14 +1012,7 @@ class ET_EXPERIMENTAL CudaBackend final
       // Last failure point is behind us, so the captured state is now the state
       // the next call should replay from.
       capture_guard.disarm();
-      // Only a run that reached here wrote its tokens, so only now may the
-      // cache advance past them; an earlier commit would desynchronise its
-      // length from the history the kernels actually hold.
-      if (handle->kv_cache != nullptr) {
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            handle->kv_cache->commit_step(kv_step_width));
-      }
-      return Error::Ok;
+      return commit_offgraph_kv_step(handle, kv_step_width);
     }
 
     // ----- Normal / WARMUP execution continues here -----
@@ -1040,13 +1058,7 @@ class ET_EXPERIMENTAL CudaBackend final
       slim_outputs[i] = nullptr;
     }
 
-    // Only a run that reached here wrote its tokens, so only now may the cache
-    // advance past them; an earlier commit would desynchronise its length from
-    // the history the kernels actually hold.
-    if (handle->kv_cache != nullptr) {
-      ET_CHECK_OK_OR_RETURN_ERROR(handle->kv_cache->commit_step(kv_step_width));
-    }
-    return Error::Ok;
+    return commit_offgraph_kv_step(handle, kv_step_width);
   }
 
   void destroy(DelegateHandle* handle_) const override {
