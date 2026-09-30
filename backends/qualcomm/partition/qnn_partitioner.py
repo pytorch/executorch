@@ -55,6 +55,28 @@ from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_ta
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+# Highest tensor rank the HTP backend accepts; ranks above this are rejected at
+# graph-prepare, so such nodes must not be delegated to it. Other backends
+# reusing this checker (GPU, LPAI) are not subject to it.
+HTP_TENSOR_RANK_LIMIT = 5
+
+
+def _max_io_tensor_rank(node: torch.fx.Node) -> int:
+    """Largest tensor rank among a node's output and tensor-valued inputs."""
+
+    def _ranks(val):
+        if isinstance(val, (list, tuple)):
+            return [len(v.shape) for v in val if hasattr(v, "shape")]
+        return [len(val.shape)] if hasattr(val, "shape") else []
+
+    # all_input_nodes, not node.args: tensor inputs also arrive nested in a
+    # list (aten.index_put keeps its index tensors in args[1]) or as kwargs,
+    # and an over-rank one of those can otherwise reach define_node unnoticed.
+    ranks = _ranks(node.meta.get("val"))
+    for arg in node.all_input_nodes:
+        ranks += _ranks(arg.meta.get("val"))
+    return max(ranks, default=0)
+
 
 class QnnOperatorSupport(OperatorSupportBase):
     def __init__(
@@ -140,6 +162,22 @@ class QnnOperatorSupport(OperatorSupportBase):
                 f"[{self.phase}] {node.target.__name__} | No node visitor, unsupported"
             )
             return False
+
+        # Scoped to HTP: it rejects tensors with rank > HTP_TENSOR_RANK_LIMIT at
+        # graph-prepare (QnnBackend_validateOpConfig 3110, "incorrect Rank"), and
+        # left in a partition one such op aborts the whole context binary. Detect
+        # it here so the op falls back to CPU instead of failing the entire build.
+        # GPU and LPAI reuse this checker and have no such limit.
+        if (
+            self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            and _max_io_tensor_rank(node) > HTP_TENSOR_RANK_LIMIT
+        ):
+            logger.info(
+                f"[{self.phase}] {node.target.__name__} | "
+                f"Unsupported: tensor rank exceeds {HTP_TENSOR_RANK_LIMIT}"
+            )
+            return False
+
         op_wrapper = self.node_visitors[node.target.__name__].define_node(
             node, self.nodes_to_wrappers
         )
