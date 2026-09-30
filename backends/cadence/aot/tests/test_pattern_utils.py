@@ -288,7 +288,9 @@ class TestPatternUtils(unittest.TestCase):
         self.assertIsNotNone(fused)
         fused = cast(torch.fx.Node, fused)
         self.assertIs(fused.target, torch.ops.cadence.quantized_linear.default)
-        for name in ("weight_zero_point", "out_multiplier", "out_shift"):
+        # Symmetric weights here, so weight_zero_point is deliberately absent.
+        self.assertIsNone(fused.kwargs["weight_zero_point"])
+        for name in ("out_multiplier", "out_shift"):
             arg = fused.kwargs[name]
             self.assertIsInstance(arg, torch.fx.Node, f"{name} should be lifted")
             tensor = resolve_constant(ep.graph_module, arg)
@@ -598,16 +600,36 @@ class TestFuseConvPerChannel(unittest.TestCase):
         )
         torch.testing.assert_close(reconstructed, expected, rtol=1e-4, atol=1e-4)
 
-    def test_symmetric_weights_give_zero_zero_points(self) -> None:
-        """Symmetric per-channel quantization leaves zero_points unset."""
+    def test_symmetric_weights_omit_the_zero_point(self) -> None:
+        """Symmetric per-channel quantization emits no weight_zero_point.
+
+        The zero point is zero in every channel, so materialising it would cost
+        one int32 per output channel to say nothing. The schema takes
+        ``Tensor?`` so the operand can be omitted, and the kernels read an
+        absent operand as zero.
+        """
         scales = torch.tensor([0.1, 0.2, 0.05])
         ep, conv_node = self._build_conv1d_program(scales, weight_zero_points=None)
 
         fused = self._fuse(ep, conv_node)
 
-        wzp = self._kwarg_tensor(ep, fused, "weight_zero_point")
-        self.assertEqual(wzp.shape, scales.shape)
-        self.assertTrue(torch.all(wzp == 0), f"expected zeros, got {wzp}")
+        self.assertIsNone(fused.kwargs["weight_zero_point"])
+
+    def test_explicitly_zero_weight_zero_points_are_also_omitted(self) -> None:
+        """An affine dequantize whose zero points are all zero is still omitted.
+
+        Symmetry is a property of the values, not of how they were declared, so
+        the decision is made on the resolved tensor rather than on whether
+        zero_points was set.
+        """
+        scales = torch.tensor([0.1, 0.2, 0.05])
+        ep, conv_node = self._build_conv1d_program(
+            scales, weight_zero_points=torch.zeros(3, dtype=torch.int32)
+        )
+
+        fused = self._fuse(ep, conv_node)
+
+        self.assertIsNone(fused.kwargs["weight_zero_point"])
 
     def test_affine_weight_zero_points_are_carried_through(self) -> None:
         scales = torch.tensor([0.1, 0.2, 0.05])
@@ -752,7 +774,9 @@ class TestPerChannelPatternRouting(unittest.TestCase):
         self.assertIsNotNone(fused, "conv_relu should fuse a per-channel weight")
         fused = cast(torch.fx.Node, fused)
         self.assertIs(fused.target, torch.ops.cadence.quantized_conv1d_ncl.default)
-        for name in ("weight_zero_point", "out_multiplier", "out_shift", "bias_scale"):
+        # Symmetric weights here, so weight_zero_point is deliberately absent.
+        self.assertIsNone(fused.kwargs["weight_zero_point"])
+        for name in ("out_multiplier", "out_shift", "bias_scale"):
             arg = fused.kwargs[name]
             self.assertIsInstance(
                 arg, torch.fx.Node, f"{name} should be a lifted constant"

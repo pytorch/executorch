@@ -39,3 +39,7 @@ def test_skip_node_quantizer(subtests, quantizer, compile_spec):
 
 def test_qat(subtests):
     QAT.test(subtests)  # noqa: F405
+
+
+def test_lowering_with_exported_program(compile_spec):
+    LoweringWithExportedProgram.test(compile_spec)  # noqa: F405
