@@ -29,6 +29,8 @@ class Backbone(nn.Module):
         elif backend == "mlx":
             import executorch.backends.mlx.custom_kernel_ops.gated_delta_rule  # noqa: F401
             import executorch.backends.mlx.custom_ops  # noqa: F401
+        elif backend == "vulkan":
+            from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
         else:
             raise ValueError(f"Unsupported backend: {backend}")
 
