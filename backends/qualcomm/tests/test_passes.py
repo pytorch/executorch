@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import torch
 from executorch.backends.qualcomm._passes import (
@@ -782,6 +782,73 @@ class TestPasses(unittest.TestCase):
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
+
+    def test_lowering_accepts_exported_program_without_reexport(self):
+        """to_edge_transform_and_lower_to_qnn must lower a caller-supplied
+        ExportedProgram as captured, never re-exporting it.
+
+        Callers that have already captured and patched a program - HF transformers'
+        ExecuTorch exporter, for instance, which owns its own dynamic shapes and fx
+        fixes - cannot express that through a module argument.
+
+        A shape assertion alone does not discriminate here: re-exporting
+        exported.module() reproduces the original graph, so the contract is checked
+        by spying on torch.export.export and requiring that lowering never calls it.
+        """
+
+        class RetraceSensitive(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.narrow = False
+
+            def forward(self, x):
+                return torch.relu(x[:, :1] if self.narrow else x)
+
+        module = RetraceSensitive().eval()
+        exported = torch.export.export(module, (torch.randn(1, 4),), strict=True)
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        with patch("torch.export.export", wraps=torch.export.export) as export_spy:
+            try:
+                edge = to_edge_transform_and_lower_to_qnn(
+                    exported, None, compiler_specs
+                )
+            except RuntimeError as e:
+                if "QNN" in str(e) or "qnn" in str(e):
+                    self.skipTest(f"QNN SDK not available: {e}")
+                raise
+            export_spy.assert_not_called()
+
+        # The lowered graph is the one that was handed in, not a fresh capture.
+        output_node = edge.exported_program("forward").graph.output_node()
+        self.assertEqual(tuple(output_node.args[0][0].meta["val"].shape), (1, 4))
+
+    def test_lowering_warns_when_inputs_ignored_for_exported_program(self):
+        """inputs and dynamic_shapes cannot affect an already-captured program, so
+        supplying them alongside one must warn rather than silently drop them."""
+
+        class Tiny(torch.nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        sample_input = (torch.randn(1, 4),)
+        exported = torch.export.export(Tiny().eval(), sample_input, strict=True)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            with self.assertWarnsRegex(UserWarning, "inputs ignored"):
+                to_edge_transform_and_lower_to_qnn(
+                    exported, sample_input, compiler_specs
+                )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
 
     def test_index_put_int64_value_not_quantized(self):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.
