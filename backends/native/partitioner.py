@@ -72,25 +72,34 @@ class NativeSupportedOperators(OperatorSupportBase):
             return False
         if node.op != "call_function":
             return False
-        # getitem only unpacks a multi-output node's result (e.g. split/chunk); it
-        # is not a real op. Claim it so a supported multi-output op and its
-        # unpackers stay in one partition -- otherwise every getitem is a partition
-        # boundary and fused-projection models (chunked gate_up / qkv) fragment into
-        # many delegates.
-        #
-        # Only claim it when the producer is claimed too. partition() passes
-        # allows_single_node_partition=True, which disables the capability
-        # partitioner's filter that would otherwise drop getitem-only partitions
-        # (getitem counts as non-compute there). Claiming unconditionally can
-        # therefore emit a delegate holding no computation, fed by a tuple crossing
-        # the delegate boundary.
-        if node.target is operator.getitem:
-            producer = node.args[0] if node.args else None
-            return isinstance(producer, Node) and self.is_node_supported(
-                submodules, producer
-            )
         if isinstance(node.target, torch._ops.HigherOrderOperator):
             return False
+        if node.target is operator.getitem:
+            # Tuple projections are folded into their producer during serialization.
+            if len(node.args) < 2:
+                return False
+            producer, index = node.args[:2]
+            if (
+                not isinstance(producer, Node)
+                or not isinstance(index, int)
+                or isinstance(index, bool)
+                or index < 0
+            ):
+                return False
+            values = producer.meta.get("val")
+            if not isinstance(values, (tuple, list)) or index >= len(values):
+                return False
+            if not self.is_node_supported(submodules, producer):
+                return False
+            return (
+                sum(
+                    user.target is operator.getitem
+                    and len(user.args) >= 2
+                    and user.args[1] == index
+                    for user in producer.users
+                )
+                == 1
+            )
 
         from executorch.exir.dialects.edge._ops import EdgeOpOverload
 

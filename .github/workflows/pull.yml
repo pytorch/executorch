@@ -871,6 +871,24 @@ jobs:
 
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
+        if [[ "${{ matrix.test_arm_backend }}" == "test_pytest_ops_no_target" ]]; then
+          for backend in vgf u55 u85; do
+            python backends/arm/scripts/docgen/generate_op_support.py \
+              --backend "$backend" --check || exit 1
+
+            python backends/arm/scripts/docgen/generate_op_support.py \
+              --backend "$backend" || exit 1
+          done
+
+          git diff --exit-code -- \
+            docs/source/backends/arm-vgf/VGF_op_support.md \
+            docs/source/backends/arm-ethos-u/U55_op_support.md \
+            docs/source/backends/arm-ethos-u/U85_op_support.md || {
+              echo "::error::Operator support documentation is outdated. Regenerate it and commit the changes."
+              exit 1
+            }
+        fi
+
         ARM_TEST=${{ matrix.test_arm_backend }}
 
         # Test test_arm_backend.sh with test
@@ -887,6 +905,7 @@ jobs:
         include:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_runtime_vgf
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -1745,7 +1764,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         # Build
-        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -Bcmake-out .
+        cmake -DEXECUTORCH_BUILD_NXP_NEUTRON=ON -DEXECUTORCH_BUILD_NXP_NEUTRON_EXTERNAL_MEM=ON -Bcmake-out .
         cmake --build cmake-out --target executorch_delegate_neutron --config Release
 
         # Build check for the neutron backend library
