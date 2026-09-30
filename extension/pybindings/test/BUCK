@@ -1,3 +1,8 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
@@ -40,6 +45,9 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:portable_lib",
@@ -53,6 +61,9 @@ fbcode_target(
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
         "//executorch/extension/pybindings:aten_lib",
@@ -66,6 +77,9 @@ fbcode_target(
     srcs = ["test_pybindings.py"],
     deps = [
         ":make_test",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/exir:schema",
         "//executorch/exir/backend/test:device_util",
     ],

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,15 +14,146 @@ from typing import List
 import executorch.devtools.bundled_program.schema as bp_schema
 
 import torch
-from executorch.devtools.bundled_program.config import ConfigValue
+from executorch.devtools.bundled_program.config import (
+    ConfigValue,
+    MethodTestCase,
+    MethodTestSuite,
+)
 from executorch.devtools.bundled_program.core import BundledProgram
 from executorch.devtools.bundled_program.util.test_util import (
     get_common_executorch_program,
 )
+from executorch.exir import to_edge
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
+from executorch.exir.tensor import stride_from_dim_order
+from torch.export import export
 
 
 class TestBundle(unittest.TestCase):
+    def _serialize_tensor_test_case(
+        self, input_tensor: torch.Tensor, output_tensor: torch.Tensor
+    ) -> bp_schema.BundledMethodTestCase:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x * 2
+
+        program = to_edge(export(Model(), (input_tensor,))).to_executorch()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as pte_file:
+                pte_file.write(program.buffer)
+            bundled_program = BundledProgram(
+                executorch_program=None,
+                method_test_suites=[
+                    MethodTestSuite(
+                        "forward", [MethodTestCase((input_tensor,), (output_tensor,))]
+                    )
+                ],
+                pte_file_path=pte_path,
+            )
+            return (
+                bundled_program.serialize_to_schema()
+                .method_test_suites[0]
+                .test_cases[0]
+            )
+
+    def test_channels_last_input_and_output(self) -> None:
+        input_tensor = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(2, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )
+        output_tensor = (input_tensor * 2).contiguous(memory_format=torch.channels_last)
+        test_case = self._serialize_tensor_test_case(input_tensor, output_tensor)
+
+        for bundled_value, source in zip(
+            test_case.inputs + test_case.expected_outputs,
+            (input_tensor, output_tensor),
+        ):
+            bundled_tensor = bundled_value.val
+            assert isinstance(bundled_tensor, bp_schema.Tensor)
+            self.assertEqual(bundled_tensor.dim_order, [0, 2, 3, 1])
+            self.assertEqual(bundled_tensor.sizes, list(source.shape))
+            self.assertEqual(
+                bundled_tensor.data,
+                source.permute(0, 2, 3, 1).contiguous().numpy().tobytes(),
+            )
+
+    def test_channels_last_view_with_storage_offset(self) -> None:
+        base = (
+            torch.arange(3 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(3, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )
+        view = base[1:3]
+        self.assertGreater(view.storage_offset(), 0)
+        test_case = self._serialize_tensor_test_case(view, view)
+
+        for bundled_value in test_case.inputs + test_case.expected_outputs:
+            bundled_tensor = bundled_value.val
+            assert isinstance(bundled_tensor, bp_schema.Tensor)
+            self.assertEqual(bundled_tensor.dim_order, [0, 2, 3, 1])
+            self.assertEqual(len(bundled_tensor.data), view.nbytes)
+            self.assertEqual(
+                bundled_tensor.data,
+                view.permute(0, 2, 3, 1).contiguous().numpy().tobytes(),
+            )
+
+    def test_non_dense_view_uses_only_its_own_elements(self) -> None:
+        base = torch.arange(2 * 3 * 4 * 5, dtype=torch.float32).reshape(2, 3, 4, 5)
+        view = base[:, :, ::2, :]
+        test_case = self._serialize_tensor_test_case(view, view)
+
+        for bundled_value in test_case.inputs + test_case.expected_outputs:
+            bundled_tensor = bundled_value.val
+            assert isinstance(bundled_tensor, bp_schema.Tensor)
+            self.assertEqual(len(bundled_tensor.data), view.nbytes)
+            decoded = torch.frombuffer(
+                bytearray(bundled_tensor.data), dtype=view.dtype
+            ).as_strided(
+                bundled_tensor.sizes,
+                stride_from_dim_order(bundled_tensor.sizes, bundled_tensor.dim_order),
+            )
+            self.assertTrue(torch.equal(decoded, view))
+
+    def test_bundle_uses_program_dim_order(self) -> None:
+        class Permute(torch.nn.Module):
+            def forward(self, x):
+                return x.permute(0, 2, 3, 1)
+
+        model = Permute()
+        export_input = torch.zeros(2, 3, 4, 5)
+        program = to_edge(export(model, (export_input,))).to_executorch()
+        input_tensor = torch.arange(120, dtype=torch.float32).reshape(2, 4, 3, 5)
+        input_tensor = input_tensor.transpose(1, 2)
+        expected = model(input_tensor)
+        self.assertFalse(input_tensor.is_contiguous())
+        self.assertFalse(expected.is_contiguous())
+        suites = [
+            MethodTestSuite("forward", [MethodTestCase((input_tensor,), (expected,))])
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pte_path = f"{tmp_dir}/model.pte"
+            with open(pte_path, "wb") as pte_file:
+                pte_file.write(program.buffer)
+            for from_file in (False, True):
+                with self.subTest(from_file=from_file):
+                    bundle = (
+                        BundledProgram(None, suites, pte_file_path=pte_path)
+                        if from_file
+                        else BundledProgram(program, suites)
+                    )
+                    case = (
+                        bundle.serialize_to_schema().method_test_suites[0].test_cases[0]
+                    )
+                    for value, source in zip(
+                        case.inputs + case.expected_outputs, (input_tensor, expected)
+                    ):
+                        self.assertEqual(value.val.dim_order, [0, 1, 2, 3])
+                        self.assertEqual(
+                            value.val.data, source.contiguous().numpy().tobytes()
+                        )
+
     def assertIOsetDataEqual(
         self,
         program_ioset_data: List[bp_schema.Value],
