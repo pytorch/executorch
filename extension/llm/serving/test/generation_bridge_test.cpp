@@ -13,6 +13,8 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
+#include <future>
 #include <mutex>
 #include <random>
 #include <set>
@@ -20,6 +22,7 @@
 
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 
 using namespace executorch::extension::llm;
@@ -49,9 +52,11 @@ class Gate {
     cv_.notify_all();
     cv_.wait(lock, [this] { return !held_; });
   }
-  bool wait_for(std::size_t count = 1) {
+  bool wait_for(
+      std::size_t count = 1,
+      std::chrono::seconds timeout = kTimeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    return cv_.wait_for(lock, kTimeout, [&] { return arrivals_ >= count; });
+    return cv_.wait_for(lock, timeout, [&] { return arrivals_ >= count; });
   }
   void release() {
     {
@@ -172,6 +177,18 @@ void completed(const RequestHandle& handle) {
 
 class GenerationBridgeTest : public ::testing::Test {
  protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+  void watch_callbacks() {
+    // Reentry regressions can deadlock inside submit/info/done or teardown.
+    callback_watchdog = std::thread([this] {
+      if (!test_finished.wait_for(1, kTimeout * 6)) {
+        ADD_FAILURE() << "callback test or teardown deadlocked";
+        std::abort();
+      }
+    });
+  }
   void start(ServingRuntimeConfig config = {4, 128, 16}) {
     runtime = std::make_unique<ServingRuntime>(
         executor, batching::DecodeFirstScheduler::create(32, 4, 8), config);
@@ -227,12 +244,28 @@ class GenerationBridgeTest : public ::testing::Test {
     executor.release_all();
     sink_gate.release();
     other_sink_gate.release();
+    for (auto& caller : callback_callers) {
+      if (caller.joinable()) {
+        caller.join();
+      }
+    }
+    if (runtime) {
+      runtime->shutdown();
+    }
     runtime.reset();
     EXPECT_EQ(executor.clones.load(), 0);
+    test_finished.arrive();
+    if (callback_watchdog.joinable()) {
+      callback_watchdog.join();
+    }
   }
   Executor executor;
   Gate sink_gate;
   Gate other_sink_gate;
+  RequestHandle cleanup_handle;
+  std::vector<std::thread> callback_callers;
+  Gate test_finished;
+  std::thread callback_watchdog;
   std::unique_ptr<ServingRuntime> runtime;
 };
 
@@ -578,6 +611,138 @@ TEST_F(
   EXPECT_FALSE(next.error());
 }
 
+TEST_F(
+    GenerationBridgeTest,
+    TerminalCallbackCanSubmitSameSessionBeforeReturning) {
+  watch_callbacks();
+  ServingRuntimeConfig config{1, 128, 16};
+  config.max_requests = 1;
+  start(config);
+  sink_gate.hold();
+  auto events = std::make_shared<Events>();
+  auto next_events = std::make_shared<Events>();
+  auto submitted = std::make_shared<std::promise<SubmissionResult>>();
+  auto followup = submitted->get_future();
+  auto input = request("session", events, 1);
+  input.on_update = [this, events, next_events, submitted](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle& handle) {
+    events->record(update);
+    if (update.finish_reason) {
+      EXPECT_FALSE(handle.done());
+      submitted->set_value(GenerationBridge::submit(
+          *runtime, request("session", next_events, 1)));
+      sink_gate.arrive();
+      EXPECT_FALSE(handle.done());
+    }
+  };
+  auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  ASSERT_TRUE(sink_gate.wait_for());
+  ASSERT_EQ(followup.wait_for(kTimeout), std::future_status::ready);
+  auto result = followup.get();
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  auto next = std::get<RequestHandle>(std::move(result));
+  EXPECT_NE(next.id(), handle.id());
+  // Control and engine can bind and execute, but the sole dispatcher is held.
+  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 2; }));
+  EXPECT_FALSE(handle.done());
+  EXPECT_FALSE(next.done());
+  EXPECT_FALSE(next.error());
+  const auto seen = executor.seen();
+  EXPECT_EQ(seen[0].session, seen[1].session);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  {
+    std::lock_guard<std::mutex> lock(events->mutex);
+    ASSERT_TRUE(events->completion);
+    ASSERT_TRUE(events->completion->position);
+    EXPECT_EQ(seen[1].position, *events->completion->position);
+    EXPECT_GT(seen[1].position, seen[0].position);
+  }
+  {
+    std::lock_guard<std::mutex> lock(next_events->mutex);
+    EXPECT_TRUE(next_events->updates.empty());
+  }
+  sink_gate.release();
+  completed(handle);
+  completed(next);
+  EXPECT_FALSE(handle.error());
+  EXPECT_FALSE(next.error());
+  expect_terminal(events, batching::FinishReason::NewTokenLimit);
+  expect_terminal(next_events, batching::FinishReason::NewTokenLimit);
+}
+
+TEST_F(
+    GenerationBridgeTest,
+    ControlFinalizedRequestRetainsAdmissionUntilTerminalSelection) {
+  watch_callbacks();
+  ServingRuntimeConfig config{2, 128, 16};
+  config.max_requests = 2;
+  start(config);
+  opened("target");
+  opened("blocker");
+  executor.executing.hold();
+  executor.subsequent.hold();
+  other_sink_gate.hold();
+  sink_gate.hold();
+  auto target_events = std::make_shared<Events>();
+  auto target_input = request("target", target_events, 1);
+  target_input.on_complete = [this, commit = target_input.on_complete](
+                                 const GenerationCompletion& completion) {
+    commit(completion);
+    other_sink_gate.arrive();
+  };
+  auto target =
+      accepted(GenerationBridge::submit(*runtime, std::move(target_input)));
+  ASSERT_TRUE(executor.executing.wait_for());
+  auto blocker_events = std::make_shared<Events>();
+  auto blocker_input = request("blocker", blocker_events, 1);
+  blocker_input.on_update = [this, blocker_events](
+                                const batching::GenerationUpdate& update,
+                                const RequestHandle&) {
+    blocker_events->record(update);
+    if (!update.finish_reason) {
+      sink_gate.arrive();
+    }
+  };
+  auto blocker =
+      accepted(GenerationBridge::submit(*runtime, std::move(blocker_input)));
+  opened("blocker"); // Both starts precede the gated target finalizer.
+  executor.executing.release();
+  ASSERT_TRUE(other_sink_gate.wait_for());
+  ASSERT_TRUE(executor.subsequent.wait_for());
+  executor.subsequent.release();
+  ASSERT_TRUE(sink_gate.wait_for());
+  other_sink_gate.release();
+  opened("target"); // Control finalized target while delivery remains blocked.
+  EXPECT_FALSE(target.done());
+  EXPECT_FALSE(blocker.done());
+  {
+    std::lock_guard<std::mutex> lock(target_events->mutex);
+    ASSERT_TRUE(target_events->completion);
+    EXPECT_TRUE(target_events->completion->current_session);
+    EXPECT_EQ(target_events->terminals, 0);
+  }
+  // Finalization cannot admit an unbounded backlog of undelivered terminals.
+  auto rejected_events = std::make_shared<Events>();
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    auto rejected = GenerationBridge::submit(
+        *runtime, request("target", rejected_events, 1));
+    ASSERT_TRUE(std::holds_alternative<ServingError>(rejected));
+    EXPECT_EQ(
+        std::get<ServingError>(rejected).code, ErrorCode::CapacityExceeded);
+  }
+  {
+    std::lock_guard<std::mutex> lock(rejected_events->mutex);
+    EXPECT_TRUE(rejected_events->updates.empty());
+    EXPECT_FALSE(rejected_events->completion);
+  }
+  sink_gate.release();
+  completed(target);
+  completed(blocker);
+  expect_terminal(target_events, batching::FinishReason::NewTokenLimit);
+  expect_terminal(blocker_events, batching::FinishReason::NewTokenLimit);
+}
+
 TEST_F(GenerationBridgeTest, FullControlQueueDoesNotLeakRequestAdmission) {
   executor.opening.hold();
   ServingRuntimeConfig config{3, 128, 1};
@@ -738,6 +903,82 @@ TEST_F(GenerationBridgeTest, ShutdownSettlesHandlesAndWaitsForReturningSinks) {
 
 TEST_F(
     GenerationBridgeTest,
+    ShutdownAndWaitIncludeSelectedTerminalAndUnlockedCaptureCleanup) {
+  watch_callbacks();
+  ServingRuntimeConfig config{1, 128, 16};
+  config.max_requests = 1;
+  start(config);
+  sink_gate.hold();
+  auto cleaned = std::make_shared<std::atomic<bool>>(false);
+  auto capture = std::shared_ptr<int>(new int(0), [this, cleaned](int* value) {
+    // Both runtime and request locks must be released during capture cleanup.
+    (void)runtime->info();
+    EXPECT_FALSE(cleanup_handle.done());
+    other_sink_gate.arrive();
+    EXPECT_FALSE(cleanup_handle.done());
+    cleaned->store(true);
+    delete value;
+  });
+  auto events = std::make_shared<Events>();
+  auto input = request("session", events, 1);
+  input.on_update = [this, events, capture](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle& handle) {
+    (void)capture;
+    events->record(update);
+    if (update.finish_reason) {
+      EXPECT_FALSE(handle.done());
+      sink_gate.arrive();
+      EXPECT_FALSE(handle.done());
+      EXPECT_EQ(update.finish_reason, batching::FinishReason::NewTokenLimit);
+    }
+  };
+  cleanup_handle =
+      accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  input = {}; // Do not let moved-from callback captures delay destruction.
+  ASSERT_TRUE(sink_gate.wait_for());
+  other_sink_gate.hold();
+  capture.reset();
+  // This is the only request: terminal selection has emptied the registry.
+  auto started = std::make_shared<std::atomic<int>>(0);
+  auto stopped = std::make_shared<std::atomic<int>>(0);
+  auto waited = std::make_shared<std::atomic<bool>>(false);
+  for (int i = 0; i < 2; ++i) {
+    callback_callers.emplace_back([this, started, stopped] {
+      ++*started;
+      runtime->shutdown();
+      ++*stopped;
+    });
+  }
+  callback_callers.emplace_back([handle = cleanup_handle, started, waited] {
+    ++*started;
+    handle.wait();
+    waited->store(true);
+  });
+  ASSERT_TRUE(wait_until([&] { return started->load() == 3; }));
+  ASSERT_TRUE(wait_until([&] { return !runtime->info().ready; }));
+  EXPECT_EQ(stopped->load(), 0);
+  EXPECT_FALSE(waited->load());
+  EXPECT_FALSE(cleanup_handle.done());
+  EXPECT_FALSE(cleaned->load());
+  sink_gate.release();
+  ASSERT_TRUE(other_sink_gate.wait_for());
+  EXPECT_EQ(stopped->load(), 0);
+  EXPECT_FALSE(waited->load());
+  EXPECT_FALSE(cleanup_handle.done());
+  EXPECT_FALSE(cleaned->load());
+  other_sink_gate.release();
+  ASSERT_TRUE(
+      wait_until([&] { return stopped->load() == 2 && waited->load(); }));
+  EXPECT_TRUE(cleaned->load());
+  completed(cleanup_handle);
+  EXPECT_FALSE(cleanup_handle.error());
+  expect_terminal(events, batching::FinishReason::NewTokenLimit);
+  EXPECT_EQ(executor.closed(), executor.opened());
+}
+
+TEST_F(
+    GenerationBridgeTest,
     ConcurrentShutdownSettlesActiveAndQueuedGenerations) {
   start();
   opened("first");
@@ -770,6 +1011,126 @@ TEST_F(
 }
 
 #if ET_HAS_EXCEPTIONS
+TEST_F(
+    GenerationBridgeTest,
+    ThrowingTerminalPreservesSuccessAndResidentSessionPosition) {
+  watch_callbacks();
+  ServingRuntimeConfig config{2, 128, 16};
+  config.max_requests = 1;
+  start(config);
+  sink_gate.hold();
+  auto events = std::make_shared<Events>();
+  auto input = request("session", events, 1);
+  input.on_update = [this, events](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle& handle) {
+    events->record(update);
+    if (update.finish_reason) {
+      EXPECT_EQ(update.finish_reason, batching::FinishReason::NewTokenLimit);
+      EXPECT_FALSE(handle.error());
+      sink_gate.arrive();
+      EXPECT_FALSE(handle.done());
+      EXPECT_FALSE(handle.error());
+      EXPECT_EQ(update.finish_reason, batching::FinishReason::NewTokenLimit);
+      throw 1;
+    }
+  };
+  auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  ASSERT_TRUE(sink_gate.wait_for());
+  handle.cancel(); // The successful control outcome is already frozen.
+  EXPECT_FALSE(handle.done());
+  EXPECT_FALSE(handle.error());
+  sink_gate.release();
+  completed(handle);
+  EXPECT_FALSE(handle.error());
+  expect_terminal(events, batching::FinishReason::NewTokenLimit);
+  EXPECT_EQ(runtime->info().active_sessions, 1u);
+  EXPECT_TRUE(executor.closed().empty());
+
+  auto next_events = std::make_shared<Events>();
+  auto next = accepted(
+      GenerationBridge::submit(*runtime, request("session", next_events, 1)));
+  completed(next);
+  EXPECT_FALSE(next.error());
+  expect_terminal(next_events, batching::FinishReason::NewTokenLimit);
+  const auto seen = executor.seen();
+  ASSERT_EQ(seen.size(), 2u);
+  EXPECT_EQ(seen[0].session, seen[1].session);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  {
+    std::lock_guard<std::mutex> lock(events->mutex);
+    ASSERT_TRUE(events->completion);
+    EXPECT_TRUE(events->completion->current_session);
+    EXPECT_FALSE(events->completion->error);
+    ASSERT_TRUE(events->completion->position);
+    EXPECT_EQ(seen[1].position, *events->completion->position);
+    EXPECT_GT(seen[1].position, seen[0].position);
+  }
+  auto unrelated_events = std::make_shared<Events>();
+  auto unrelated = accepted(GenerationBridge::submit(
+      *runtime, request("unrelated", unrelated_events, 1)));
+  completed(unrelated);
+  EXPECT_FALSE(unrelated.error());
+  expect_terminal(unrelated_events, batching::FinishReason::NewTokenLimit);
+  handle.cancel();
+  runtime->shutdown();
+  EXPECT_FALSE(handle.error());
+  expect_terminal(events, batching::FinishReason::NewTokenLimit);
+}
+
+TEST_F(
+    GenerationBridgeTest,
+    ThrowingTerminalPreservesCapacityFailureAcrossCancelAndShutdown) {
+  watch_callbacks();
+  ServingRuntimeConfig config{1, 128, 16};
+  config.max_requests = 1;
+  start(config);
+  opened("resident");
+  sink_gate.hold();
+  auto events = std::make_shared<Events>();
+  auto input = request("no-slot", events, 1);
+  input.on_update = [this, events](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle& handle) {
+    events->record(update);
+    EXPECT_EQ(update.finish_reason, batching::FinishReason::Failed);
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::CapacityExceeded);
+    sink_gate.arrive();
+    throw 1;
+  };
+  auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  ASSERT_TRUE(sink_gate.wait_for());
+  const auto error = handle.error();
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->code, ErrorCode::CapacityExceeded);
+  handle.cancel();
+  auto stopped = std::make_shared<std::atomic<bool>>(false);
+  callback_callers.emplace_back([this, stopped] {
+    runtime->shutdown();
+    stopped->store(true);
+  });
+  ASSERT_TRUE(wait_until([&] { return !runtime->info().ready; }));
+  EXPECT_FALSE(handle.done());
+  EXPECT_FALSE(stopped->load());
+  sink_gate.release();
+  completed(handle);
+  ASSERT_TRUE(wait_until([&] { return stopped->load(); }));
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, error->code);
+  EXPECT_EQ(handle.error()->message, error->message);
+  expect_terminal(events, batching::FinishReason::Failed);
+  std::lock_guard<std::mutex> lock(events->mutex);
+  ASSERT_TRUE(events->completion);
+  ASSERT_TRUE(events->completion->error);
+  EXPECT_EQ(events->completion->error->code, error->code);
+  EXPECT_EQ(events->completion->error->message, error->message);
+  EXPECT_FALSE(events->completion->current_session);
+  EXPECT_EQ(
+      events->completion->terminal.finish_reason,
+      batching::FinishReason::Failed);
+}
+
 TEST_F(
     GenerationBridgeTest,
     ThrowingPreparationStillCommitsFailureAndTerminates) {
@@ -858,6 +1219,16 @@ TEST_F(
   ASSERT_TRUE(other_sink_gate.wait_for());
   ASSERT_TRUE(busy.error());
   EXPECT_EQ(busy.error()->code, ErrorCode::SessionBusy);
+  EXPECT_FALSE(busy.done());
+  // The selected busy terminal released its slot, but the original request
+  // still owns the session. At most R registry entries plus this callback live.
+  auto another_busy_events = std::make_shared<Events>();
+  auto another_busy = accepted(GenerationBridge::submit(
+      *runtime, request("session", another_busy_events, 1)));
+  opened("session"); // Control rejects the newly admitted request as busy.
+  ASSERT_TRUE(another_busy.error());
+  EXPECT_EQ(another_busy.error()->code, ErrorCode::SessionBusy);
+  EXPECT_FALSE(another_busy.done());
   auto rejected_events = std::make_shared<Events>();
   auto rejected = GenerationBridge::submit(
       *runtime, request("session", rejected_events, 1));
@@ -866,7 +1237,9 @@ TEST_F(
   EXPECT_TRUE(rejected_events->updates.empty());
   other_sink_gate.release();
   completed(busy);
+  completed(another_busy);
   expect_terminal(busy_events, batching::FinishReason::Failed);
+  expect_terminal(another_busy_events, batching::FinishReason::Failed);
   EXPECT_FALSE(handle.done());
   EXPECT_EQ(runtime->info().active_sessions, 1u);
   EXPECT_EQ(executor.calls.load(), 2);

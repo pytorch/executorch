@@ -27,6 +27,8 @@ class ET_EXPERIMENTAL ServingRuntime;
 
 namespace detail {
 
+// Filled during preparation and control finalization, then fixed before
+// terminal dispatch. Delivery failure cannot revise this serving result.
 struct ET_EXPERIMENTAL GenerationCompletion {
   RequestId request_id = 0;
   std::uint64_t incarnation = 0;
@@ -47,7 +49,11 @@ struct ET_EXPERIMENTAL GenerationRequest {
   // Runs on the shared delivery thread, never on engine/control threads.
   // Calls are ordered, with exactly one terminal unless the sink itself throws.
   // Must do short, bounded work: no blocking I/O or waits for runtime work.
-  // A throwing sink is disabled and the handle reports Internal failure.
+  // A nonterminal throw disables the sink and selects Internal failure. A
+  // terminal throw is logged without changing the finalized result or session.
+  // Before terminal invocation, this request's session claim and admission
+  // are released. Competing requests, other limits, or shutdown can still
+  // reject follow-up work; nonblocking submission here is allowed.
   // Terminal token payloads are split into a nonterminal update before either
   // completion hook. The final terminal is empty. Cancellation is available
   // directly here even if callbacks precede submit returning to the caller.
@@ -65,7 +71,9 @@ struct ET_EXPERIMENTAL GenerationRequest {
   // releasing the current session and before delivering the terminal update.
   // May commit history/statistics only when current_session is true. Must not
   // wait, reenter the runtime, or invoke user output. A throw invalidates the
-  // current session and changes the terminal outcome to Failed.
+  // current session and changes the terminal outcome to Failed. Control then
+  // releases the session claim and freezes the result, retaining request
+  // admission until the dispatcher selects its terminal notification.
   std::function<void(const GenerationCompletion&)> on_complete;
 };
 
@@ -77,10 +85,11 @@ using SubmissionResult ET_EXPERIMENTAL =
     std::variant<RequestHandle, ServingError>;
 
 // Internal delta boundary for the text layer and native tests. No Session owner
-// escapes. Request admission is retained through terminal delivery. Callbacks
-// share delivery capacity: transports must enqueue output and handle I/O
-// elsewhere. Sinks must not synchronously shut down or destroy the runtime, or
-// wait for any request serviced by it.
+// escapes. Admission is released immediately before terminal invocation;
+// wait()/done() remain callback-lifetime barriers after capture cleanup.
+// Callbacks share delivery capacity: transports must enqueue output and handle
+// I/O elsewhere. Sinks must not synchronously shut down or destroy the runtime,
+// or wait for any request serviced by it.
 struct ET_EXPERIMENTAL GenerationBridge {
   static SubmissionResult submit(
       ServingRuntime& runtime,

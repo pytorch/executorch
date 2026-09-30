@@ -33,7 +33,9 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Queued plus executing lifecycle/generation-start operations, excluding
   // completion callbacks. Must be non-zero.
   std::size_t max_pending_operations = 64;
-  // Requests retain an admission slot through terminal sink return.
+  // Admission is retained until terminal dispatch, then released before the
+  // sink runs. The shared dispatcher may retain one additional retiring
+  // request.
   std::size_t max_requests = 8;
   // Buffered nonterminal events and total buffered tokens per request. A
   // separate terminal slot is reserved, but its tokens share the token budget.
@@ -105,10 +107,10 @@ class ET_EXPERIMENTAL ServingRuntime {
   // accepted operations/requests, and joins control, Runner, and delivery
   // threads. Accepted callbacks have returned and their runtime-owned captures
   // are released. No new work is accepted afterward. Call only from external
-  // threads, never engine/lifecycle callbacks, sinks, or commit hooks. Callbacks
-  // must do bounded, nonblocking work and return for shutdown to finish.
-  // Destruction calls shutdown; as usual, object lifetime must be synchronized
-  // against callers still accessing the runtime.
+  // threads, never engine/lifecycle callbacks, sinks, or commit hooks.
+  // Callbacks must do bounded, nonblocking work and return for shutdown to
+  // finish. Destruction calls shutdown; as usual, object lifetime must be
+  // synchronized against callers still accessing the runtime.
   void shutdown();
 
  private:

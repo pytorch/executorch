@@ -40,15 +40,18 @@ class ET_EXPERIMENTAL RequestHandle {
   // A request whose terminal outcome was already selected keeps that outcome.
   void cancel() const;
 
-  // True after completion processing and the terminal sink have returned.
-  // False for an invalid handle. wait() on an invalid handle returns at once.
+  // Callback-lifetime barrier: true after completion processing, terminal
+  // invocation, and runtime-owned callback capture destruction. Admission was
+  // released before terminal invocation; this does not acknowledge transport
+  // delivery. False for an invalid handle; wait() then returns at once.
   // Never wait from a sink or hook serviced by the same runtime: callbacks
   // share delivery capacity and their return is part of completion.
   bool done() const;
   void wait() const;
 
-  // Snapshot of a selected failure, final after done(). Cancellation is not an
-  // error.
+  // Snapshot of a selected failure, fixed before terminal invocation (and
+  // always final after done()). Terminal-sink exceptions do not revise it.
+  // Cancellation is not an error.
   std::optional<ServingError> error() const;
 
  private:

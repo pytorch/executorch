@@ -152,9 +152,9 @@ struct RequestState {
   std::deque<batching::GenerationUpdate> updates;
   std::optional<batching::GenerationUpdate> terminal;
   std::optional<ServingError> error;
-  // Written by control at admission, then transferred through the finalizer
-  // queue and its acknowledgement. Neither engine callbacks nor handles read
-  // it.
+  // Transferred through preparation and control finalization; immutable once
+  // finalized is published, until delivery cleanup. Engine callbacks and
+  // handles never read it.
   GenerationCompletion completion;
 };
 
@@ -573,6 +573,7 @@ struct ServingRuntime::Impl {
     retired.reset();
     {
       std::lock_guard<std::mutex> lock(request->mutex);
+      // The session claim is released and completion/error are now fixed.
       request->finalized = true;
     }
     schedule(request);
@@ -683,6 +684,13 @@ struct ServingRuntime::Impl {
         return;
       }
     }
+    // Retire only at terminal dispatch, not control finalization: queued
+    // terminals still count, leaving at most max_requests plus this envelope.
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      requests_.erase(request->id);
+    }
+    cv_.notify_one();
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
@@ -691,15 +699,11 @@ struct ServingRuntime::Impl {
       }
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      request->sink_failed();
+      ET_LOG(Error, "Terminal sink threw after request finalization");
     }
 #endif
-    // Release sinks and their captures even if a caller retains the handle.
+    // Callback quiescence includes capture destruction, outside runtime locks.
     request->request = {};
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      requests_.erase(request->id);
-    }
     {
       std::lock_guard<std::mutex> lock(request->mutex);
       request->terminal.reset();
@@ -707,7 +711,6 @@ struct ServingRuntime::Impl {
       request->done = true;
     }
     request->cv.notify_all();
-    cv_.notify_one();
   }
 
   void dispatch() {
@@ -821,6 +824,7 @@ struct ServingRuntime::Impl {
         dispatch_stopping_ = true;
       }
       dispatch_cv_.notify_all();
+      // An empty registry can still have a terminal callback/cleanup in flight.
       dispatcher_.join();
     }
     {
