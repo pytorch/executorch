@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <executorch/extension/llm/batching/runner.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace executorch {
 namespace extension {
@@ -35,7 +36,8 @@ struct ServingRuntime::Impl {
   struct Command {
     Operation operation;
     std::string key;
-    std::promise<LifecycleResult> completion;
+    // Queue transfers must not destroy user captures under mutex_.
+    std::unique_ptr<LifecycleCallback> completion;
   };
 
   Impl(
@@ -53,12 +55,44 @@ struct ServingRuntime::Impl {
     }
   }
 
+  static void complete(
+      std::unique_ptr<LifecycleCallback> completion,
+      LifecycleResult result) {
+    if (!completion || !*completion) {
+      return;
+    }
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      (*completion)(std::move(result));
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      ET_LOG(Error, "Lifecycle completion callback threw");
+    }
+#endif
+  }
+
   std::future<LifecycleResult> submit(Operation operation, std::string key) {
-    Command command{operation, std::move(key), {}};
-    auto future = command.completion.get_future();
+    auto completion = std::make_shared<std::promise<LifecycleResult>>();
+    auto future = completion->get_future();
+    submit(
+        operation,
+        std::move(key),
+        [completion = std::move(completion)](LifecycleResult result) {
+          completion->set_value(std::move(result));
+        });
+    return future;
+  }
+
+  void
+  submit(Operation operation, std::string key, LifecycleCallback on_complete) {
+    Command command{
+        operation,
+        std::move(key),
+        std::make_unique<LifecycleCallback>(std::move(on_complete))};
+    LifecycleResult error;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      LifecycleResult error;
       if (!valid_config_) {
         error =
             ServingError{ErrorCode::InvalidArgument, "invalid runtime config"};
@@ -74,15 +108,16 @@ struct ServingRuntime::Impl {
         error = ServingError{
             ErrorCode::CapacityExceeded, "lifecycle operation limit reached"};
       }
-      if (error) {
-        command.completion.set_value(std::move(error));
-        return future;
+      if (!error) {
+        inbox_.push_back(std::move(command));
+        ++outstanding_;
       }
-      inbox_.push_back(std::move(command));
-      ++outstanding_;
     }
-    cv_.notify_one();
-    return future;
+    if (error) {
+      complete(std::move(command.completion), std::move(error));
+    } else {
+      cv_.notify_one();
+    }
   }
 
   LifecycleResult process(Command& command) {
@@ -190,8 +225,8 @@ struct ServingRuntime::Impl {
           result = ServingError{ErrorCode::NotReady, "runtime is stopping"};
         }
         --outstanding_;
-        command.completion.set_value(std::move(result));
       }
+      complete(std::move(command.completion), std::move(result));
     }
     decltype(sessions_) retired;
     {
@@ -260,14 +295,32 @@ ServingRuntime::~ServingRuntime() {
   shutdown();
 }
 
+void ServingRuntime::open_session_async(
+    std::string key,
+    LifecycleCallback on_complete) {
+  impl_->submit(Impl::Operation::Open, std::move(key), std::move(on_complete));
+}
+
 std::future<LifecycleResult> ServingRuntime::open_session_async(
     std::string key) {
   return impl_->submit(Impl::Operation::Open, std::move(key));
 }
 
+void ServingRuntime::close_session_async(
+    std::string key,
+    LifecycleCallback on_complete) {
+  impl_->submit(Impl::Operation::Close, std::move(key), std::move(on_complete));
+}
+
 std::future<LifecycleResult> ServingRuntime::close_session_async(
     std::string key) {
   return impl_->submit(Impl::Operation::Close, std::move(key));
+}
+
+void ServingRuntime::reset_session_async(
+    std::string key,
+    LifecycleCallback on_complete) {
+  impl_->submit(Impl::Operation::Reset, std::move(key), std::move(on_complete));
 }
 
 std::future<LifecycleResult> ServingRuntime::reset_session_async(

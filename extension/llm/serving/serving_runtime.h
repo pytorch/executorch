@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <future>
 #include <memory>
 #include <optional>
@@ -28,13 +29,15 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
   // Reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
-  // Queued plus executing lifecycle operations. Must be non-zero.
+  // Queued plus executing lifecycle operations, excluding completion
+  // callbacks. Must be non-zero.
   std::size_t max_pending_operations = 64;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
 // operation.
 using LifecycleResult ET_EXPERIMENTAL = std::optional<ServingError>;
+using LifecycleCallback ET_EXPERIMENTAL = std::function<void(LifecycleResult)>;
 
 class ET_EXPERIMENTAL ServingRuntime {
  public:
@@ -55,15 +58,24 @@ class ET_EXPERIMENTAL ServingRuntime {
   ServingRuntime& operator=(ServingRuntime&&) = delete;
 
   // Any thread. Keys must be non-empty. Accepted operations run in admission
-  // order, including operations submitted before a previous future completes.
-  // Queue saturation returns CapacityExceeded without changing session state.
+  // order. Queue saturation reports CapacityExceeded without changing state.
+  // For all lifecycle operations, callbacks run once on control after
+  // processing and admission release, or inline on the caller for immediate
+  // rejection. They run without runtime locks and may race with submission's
+  // return. Callbacks must do short, nonblocking work: no waits for runtime
+  // work or runtime shutdown/destruction. Exceptions are logged, not retried.
+  // An empty callback discards the result. Futures adapt this same completion
+  // path.
+  //
   // Opens may queue during initialization; success means an empty session is
   // owned, or the key was already open. An initial open failure releases its
   // slot. Opening an unavailable key fails with NotReady; use reset to retry.
+  void open_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> open_session_async(std::string key);
 
   // Idempotent, including absent keys. Success releases the logical slot and
   // requests Session closure through RAII, not synchronous physical cleanup.
+  void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
 
   // Cold replacement, retaining the key and logical slot throughout. Success
@@ -71,6 +83,7 @@ class ET_EXPERIMENTAL ServingRuntime {
   // key unavailable, still reserving its slot until reset succeeds or close
   // releases it. A missing key returns SessionNotFound. Never uses prefix
   // reuse.
+  void reset_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> reset_session_async(std::string key);
 
   // A synchronized snapshot. Ready means initialized and accepting operations,
@@ -78,11 +91,12 @@ class ET_EXPERIMENTAL ServingRuntime {
   // and unavailable keys, but not commands still waiting to reserve a slot.
   ServingInfo info() const;
 
-  // Idempotent, including concurrent callers. Stops admission, settles all
-  // accepted futures, and joins the control and Runner threads. No new work is
-  // accepted afterward. Call only from external threads, never engine
-  // callbacks. Destruction calls shutdown; as usual, object lifetime must be
-  // externally synchronized against callers still accessing the runtime.
+  // Idempotent, including concurrent callers. Stops admission, completes all
+  // accepted operations, and joins the control and Runner threads. Accepted
+  // callbacks have returned and their runtime-owned captures are released.
+  // No new work is accepted afterward. Call only from external threads, never
+  // engine or lifecycle callbacks. Destruction calls shutdown; as usual, object
+  // lifetime must be synchronized against callers still accessing the runtime.
   void shutdown();
 
  private:
