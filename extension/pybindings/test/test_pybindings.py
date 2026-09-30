@@ -122,9 +122,7 @@ class PybindingsTest(unittest.TestCase):
 
         method.execute()
 
-        self.assertTrue(
-            torch.equal(method.get_outputs()[0], torch.full((2, 2), 2.0))
-        )
+        self.assertTrue(torch.equal(method.get_outputs()[0], torch.full((2, 2), 2.0)))
 
     def test_numpy_layout_must_match_exported_layout(self):
         model = ModuleChannelsLast()
@@ -441,9 +439,7 @@ class PybindingsTest(unittest.TestCase):
         method.set_inputs([value.numpy() for value in inputs])
 
         with self.assertRaises(ValueError):
-            method.set_inputs(
-                [inputs[0].numpy(), inputs[1].to(torch.int32).numpy()]
-            )
+            method.set_inputs([inputs[0].numpy(), inputs[1].to(torch.int32).numpy()])
 
         method.execute()
         output = method.get_outputs()[0]
