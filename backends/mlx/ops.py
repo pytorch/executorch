@@ -73,6 +73,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     ConvTranspose3DNode,
     CoshNode,
     CosNode,
+    CummaxNode,
     CumsumNode,
     DequantizeNode,
     DivideNode,
@@ -5328,6 +5329,44 @@ def _cumsum_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
     return out
+
+
+@REGISTRY.register(target=[torch.ops.aten.cummax.default])
+def _cummax_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle aten.cummax(x, dim) -> (values, indices).
+
+    Only the values output is produced; MLX has no cumulative argmax, so a
+    graph that consumes the indices is rejected rather than silently given an
+    unfilled tensor.
+    """
+    if 1 in used_getitem_indices(n):
+        raise ValueError("aten.cummax indices output (index 1) is not supported")
+
+    args = P.args(n)
+    require_args(args, 2, 2, "aten.cummax")
+    require_kwargs(P.kwargs(n), set(), "aten.cummax")
+    x = args[0]
+    dim = args[1]
+
+    output_slots = P.make_or_get_slots(n)
+    if len(n.args[0].meta["val"].shape) == 0:
+        # MLX rejects any axis on a 0-D array; cummax of a scalar is itself.
+        P.emit(
+            ContiguousNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(output_slots[0]),
+            )
+        )
+        return output_slots
+
+    P.emit(
+        CummaxNode(
+            x=P.slot_to_tid(x),
+            out=P.slot_to_tid(output_slots[0]),
+            axis=dim,
+        )
+    )
+    return output_slots
 
 
 @REGISTRY.register(target=[torch.ops.aten.stack.default])
