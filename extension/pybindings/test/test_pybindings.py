@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -192,6 +193,45 @@ class PybindingsTest(unittest.TestCase):
 
         expected = model(inputs[0])
         self.assertTrue(torch.allclose(expected, executorch_output))
+
+    def test_bundled_channels_last_input_and_output(self) -> None:
+        if self.kernel_mode != "aten":
+            self.skipTest("Requires the ATen bundled-program loader")
+
+        from executorch.devtools.bundled_program.config import (
+            MethodTestCase,
+            MethodTestSuite,
+        )
+        from executorch.devtools.bundled_program.core import BundledProgram
+        from executorch.devtools.bundled_program.serialize import (
+            serialize_from_bundled_program_to_flatbuffer,
+        )
+
+        input_tensor = (
+            torch.arange(2 * 3 * 4 * 5, dtype=torch.float32)
+            .reshape(2, 3, 4, 5)
+            .contiguous(memory_format=torch.channels_last)
+        )
+        model = ModuleChannelsLast()
+        expected = model(input_tensor)
+        self.assertTrue(expected.is_contiguous(memory_format=torch.channels_last))
+        program = to_edge(export(model, (input_tensor,))).to_executorch()
+        bundled_program = BundledProgram(
+            program,
+            [
+                MethodTestSuite(
+                    "forward", [MethodTestCase((input_tensor,), (expected,))]
+                )
+            ],
+        )
+        bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+        bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
+
+        output = bundled_module.verify_result_with_bundled_expected_output(
+            "forward", 0
+        )[0]
+        self.assertEqual(output.stride(), expected.stride())
+        self.assertTrue(torch.equal(output, expected))
 
     def test_unsupported_dim_order(self) -> None:
         model = ModuleChannelsLast()
