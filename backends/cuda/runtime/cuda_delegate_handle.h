@@ -18,8 +18,25 @@
 #include <vector>
 
 namespace executorch {
+
+// Forward declarations for the off-graph KV cache the delegate may be given.
+// The concrete types live in cuda_kv_cache.h, which includes this header.
+namespace extension::llm::cache {
+class Cache;
+} // namespace extension::llm::cache
+
 namespace backends {
 namespace cuda {
+
+class CudaKVCache;
+
+// Where a method's inputs carry the number of tokens a step writes: an index
+// into execute()'s inputs and a dimension of that tensor. Declared by the
+// export side as the "offgraph_kv_step_width" compile spec, "input_index:dim".
+struct OffGraphKVStepWidth {
+  int input{0};
+  int dim{0};
+};
 
 using AOTInductorModelContainerGetConstantDtypeFunc =
     aoti::AOTIRuntimeError (*)(
@@ -199,6 +216,22 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // SlimTensor handles alive for as long as AOTI may reference their views.
   std::vector<std::shared_ptr<CudaWeightStorage>> fqn_weight_storages;
   std::vector<std::unique_ptr<aoti::slim::SlimTensor>> fqn_weight_tensors;
+
+  // The off-graph KV cache the runner installed for this model, resolved from
+  // the registry at init. Null for an in-graph model, which is the signal that
+  // this program owns its KV state as ordinary (mutable) buffers.
+  //
+  // The shared_ptr is the handle's own claim on the cache, so the cache
+  // outlives the delegate even if the runner drops its guard first; the raw
+  // pointer is the backend face of that same object. Forward-declared rather
+  // than included: cuda_kv_cache.h includes this header.
+  std::shared_ptr<::executorch::extension::llm::cache::Cache> kv_cache_shared;
+  CudaKVCache* kv_cache{nullptr};
+
+  // Where this method's inputs carry the step width. The compiled program
+  // cannot report it, because lowering replaced the cache op with kernels over
+  // pre-bound memory.
+  OffGraphKVStepWidth kv_step_width;
 };
 
 } // namespace cuda

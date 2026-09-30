@@ -219,6 +219,84 @@ def _step_fn(scale: float, buf_size: int, masked: bool, out_dtype):
     return fn
 
 
+# Ops that pass a tensor's values through unchanged, which the export of a
+# position input may place between the method input and the cache op.
+_VALUE_PRESERVING_OPS = (
+    "view",
+    "reshape",
+    "unsqueeze",
+    "squeeze",
+    "expand",
+    "clone",
+    "alias",
+    "_to_copy",
+)
+
+
+def _source_input(node):
+    while node.op == "call_function" and any(
+        name in str(node.target) for name in _VALUE_PRESERVING_OPS
+    ):
+        node = node.args[0]
+    return node
+
+
+class CheckOffGraphKVStepWidthPass:
+    """Check the declared step width against the delegated program.
+
+    The runtime reads each step's token count from input ``input`` at ``dim``
+    of the delegate. That index is the delegate's own input order, which
+    partitioning decides, so it is checked here, after partitioning: every
+    cache op's position must come from that input, whose ``dim`` must be the
+    position's length.
+    """
+
+    requires_exported_program = True
+
+    def __init__(self, value: bytes) -> None:
+        text = value.decode("utf-8")
+        fields = text.split(":")
+        if len(fields) != 2 or not all(f.isdigit() for f in fields):
+            raise ValueError(
+                f"{OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC} must be "
+                f'"input_index:dim", got {text!r}'
+            )
+        self._input, self._dim = (int(f) for f in fields)
+
+    def __call__(self, exported_program: ExportedProgram) -> ExportedProgram:
+        graph = exported_program.graph_module.graph
+        user_inputs = set(exported_program.graph_signature.user_inputs)
+        inputs = [
+            n for n in graph.nodes if n.op == "placeholder" and n.name in user_inputs
+        ]
+        target = exir_ops.edge.kvcache.update_and_attend.default
+        for node in graph.nodes:
+            if node.op != "call_function" or node.target != target:
+                continue
+            if self._input >= len(inputs):
+                raise ValueError(
+                    f"off-graph KV step width names input {self._input}, but "
+                    f"the delegate takes {len(inputs)}"
+                )
+            declared = inputs[self._input]
+            position = node.args[3]
+            if _source_input(position) is not declared:
+                raise ValueError(
+                    f"off-graph KV step width names input {self._input} "
+                    f"({declared.name}), but the cache op's position comes "
+                    f"from {_source_input(position).name}"
+                )
+            shape = declared.meta["val"].shape
+            width = position.meta["val"].shape[0]
+            if self._dim >= len(shape) or shape[self._dim] != width:
+                raise ValueError(
+                    f"off-graph KV step width names dim {self._dim} of "
+                    f"{declared.name} {tuple(shape)}, which is not the step's "
+                    f"{width} positions"
+                )
+        return exported_program
+
+
 class LowerOffGraphKVPass:
     requires_exported_program = True
 

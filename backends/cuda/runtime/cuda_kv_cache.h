@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string_view>
 
 #include <cuda_runtime.h>
 
@@ -17,6 +19,9 @@
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/result.h>
+#include <executorch/runtime/core/span.h>
 
 namespace executorch::backends::cuda {
 
@@ -80,6 +85,115 @@ class CudaKVCache {
 
   virtual OffGraphKVMetrics metrics() const = 0;
 };
+
+// Compile spec naming where a method's inputs carry the step width.
+inline constexpr char kOffGraphKVStepWidthSpec[] = "offgraph_kv_step_width";
+
+namespace detail {
+// Parses a non-negative decimal int that spans the whole of `text`.
+inline bool parse_index(std::string_view text, int& out) {
+  if (text.empty() || text.size() > 9) {
+    return false;
+  }
+  int value = 0;
+  for (const char c : text) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+    value = value * 10 + (c - '0');
+  }
+  out = value;
+  return true;
+}
+} // namespace detail
+
+// Parses the "input_index:dim" value of kOffGraphKVStepWidthSpec. Both fields
+// must be non-negative decimal integers.
+inline runtime::Result<OffGraphKVStepWidth> parse_offgraph_kv_step_width(
+    std::string_view value) {
+  const size_t colon = value.find(':');
+  OffGraphKVStepWidth where;
+  ET_CHECK_OR_RETURN_ERROR(
+      colon != std::string_view::npos &&
+          detail::parse_index(value.substr(0, colon), where.input) &&
+          detail::parse_index(value.substr(colon + 1), where.dim),
+      InvalidArgument,
+      "%s must be \"input_index:dim\", got '%.*s'",
+      kOffGraphKVStepWidthSpec,
+      static_cast<int>(value.size()),
+      value.data());
+  return where;
+}
+
+// The number of tokens this step writes: the extent of the named input along
+// the named dim. Shape metadata only -- never the tensor's contents, which
+// live on device and would cost a synchronisation every step.
+inline runtime::Result<int64_t> read_offgraph_kv_step_width(
+    const OffGraphKVStepWidth& where,
+    runtime::Span<runtime::EValue*> inputs) {
+  ET_CHECK_OR_RETURN_ERROR(
+      static_cast<size_t>(where.input) < inputs.size(),
+      InvalidArgument,
+      "offgraph_kv: step-width input %d is out of range (%zu inputs)",
+      where.input,
+      inputs.size());
+  const runtime::EValue* input = inputs[where.input];
+  ET_CHECK_OR_RETURN_ERROR(
+      input != nullptr && input->isTensor(),
+      InvalidArgument,
+      "offgraph_kv: step-width input %d is not a tensor",
+      where.input);
+  const auto& tensor = input->toTensor();
+  ET_CHECK_OR_RETURN_ERROR(
+      where.dim < tensor.dim(),
+      InvalidArgument,
+      "offgraph_kv: step-width dim %d is out of range for a %zd-D input",
+      where.dim,
+      static_cast<ssize_t>(tensor.dim()));
+  const int64_t width = tensor.size(where.dim);
+  ET_CHECK_OR_RETURN_ERROR(
+      width > 0,
+      InvalidArgument,
+      "offgraph_kv: step width is %lld",
+      static_cast<long long>(width));
+  return width;
+}
+
+// Whether the program's constants include off-graph KV storage, which only a
+// runtime cache can supply. Read from the program itself, so it holds whether
+// or not the caller passed a cache.
+inline runtime::Result<bool> requires_offgraph_kv_storage(
+    const CudaDelegateHandle& handle) {
+  if (!handle.get_num_constants || !handle.get_constant_original_fqn) {
+    return false;
+  }
+  size_t count = 0;
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      handle.get_num_constants(handle.container_handle, &count));
+  constexpr std::string_view kPrefix = "__et_offgraph_kv_";
+  for (size_t index = 0; index < count; ++index) {
+    const char* fqn = nullptr;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle.get_constant_original_fqn(handle.container_handle, index, &fqn));
+    if (fqn != nullptr &&
+        std::string_view(fqn).substr(0, kPrefix.size()) == kPrefix) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Load time. Resolves the cache the runner published under `cache_key` and
+// associates it with `handle` if the program carries off-graph storage; a
+// program that does not (an embedding or vision pass) is left without one.
+// A program that does needs `step_width` from its compile specs.
+//
+// Defined only when the backend is built with EXECUTORCH_BUILD_EXTENSION_LLM,
+// whose neutral cache the off-graph cache builds on.
+runtime::Error attach_offgraph_kv_cache(
+    CudaDelegateHandle& handle,
+    const char* cache_key,
+    const std::optional<OffGraphKVStepWidth>& step_width);
 
 // Builder for cache::kind::kSingle. Returns null when the geometry or config is
 // invalid, so CacheFactory reports the failure instead of the cache asserting
