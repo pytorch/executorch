@@ -12,6 +12,7 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/cuda/runtime_api.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -43,6 +44,11 @@ using AOTInductorModelContainerGetConstantDtypeFunc =
         aoti::AOTInductorModelContainerHandle container_handle,
         size_t idx,
         int32_t* dtype);
+using AOTInductorModelContainerGetConstantDataSizeFunc =
+    aoti::AOTIRuntimeError (*)(
+        aoti::AOTInductorModelContainerHandle container_handle,
+        size_t idx,
+        size_t* data_size);
 struct CudaWeightStorage {
   void* data{nullptr};
   size_t nbytes{0};
@@ -120,15 +126,62 @@ struct CudaGraphState {
   std::vector<size_t> static_input_nbytes;
   std::vector<size_t> static_output_nbytes;
 
+  // Allocations the graph makes and never frees -- the outputs AOTI allocates
+  // while being captured. AutoFreeOnLaunch frees one launch's before the next
+  // launch of the same graph, so the last launch's outlive a graph that is
+  // dropped unless released with it. Outputs that alias other memory are not
+  // graph allocations and are not listed.
+  std::vector<void*> graph_allocations;
+
   CudaGraphState() = default;
 
   ~CudaGraphState() {
     release();
   }
 
-  // Frees the captured graph and the static inputs pinned for it. Output
-  // buffers are owned by the AOTI runtime (allocated during graph capture via
-  // the caching allocator), so only their records are dropped.
+  // Records the graph's outstanding allocations: every memory-allocation node
+  // without a matching free node. Call once the graph is captured.
+  void note_graph_allocations() {
+    graph_allocations.clear();
+#if !defined(EXECUTORCH_USE_HIP)
+    size_t count = 0;
+    if (graph == nullptr ||
+        cudaGraphGetNodes(graph, nullptr, &count) != cudaSuccess) {
+      return;
+    }
+    std::vector<cudaGraphNode_t> nodes(count);
+    if (cudaGraphGetNodes(graph, nodes.data(), &count) != cudaSuccess) {
+      return;
+    }
+    std::vector<void*> allocated;
+    std::vector<void*> freed;
+    for (cudaGraphNode_t node : nodes) {
+      cudaGraphNodeType type;
+      if (cudaGraphNodeGetType(node, &type) != cudaSuccess) {
+        continue;
+      }
+      if (type == cudaGraphNodeTypeMemAlloc) {
+        cudaMemAllocNodeParams params{};
+        if (cudaGraphMemAllocNodeGetParams(node, &params) == cudaSuccess) {
+          allocated.push_back(params.dptr);
+        }
+      } else if (type == cudaGraphNodeTypeMemFree) {
+        void* ptr = nullptr;
+        if (cudaGraphMemFreeNodeGetParams(node, &ptr) == cudaSuccess) {
+          freed.push_back(ptr);
+        }
+      }
+    }
+    for (void* ptr : allocated) {
+      if (std::find(freed.begin(), freed.end(), ptr) == freed.end()) {
+        graph_allocations.push_back(ptr);
+      }
+    }
+#endif
+  }
+
+  // Frees the captured graph, the static inputs pinned for it, and the
+  // allocations its last launch left outstanding (see graph_allocations).
   void release() {
     if (graph_exec) {
       (void)cudaGraphExecDestroy(graph_exec);
@@ -142,6 +195,11 @@ struct CudaGraphState {
       if (ptr)
         (void)cudaFree(ptr);
     }
+    // cudaFree synchronises, so the last replay's reads of these are done.
+    for (auto* ptr : graph_allocations) {
+      (void)cudaFree(ptr);
+    }
+    graph_allocations.clear();
     static_input_ptrs.clear();
     static_output_ptrs.clear();
     static_input_nbytes.clear();
@@ -171,7 +229,8 @@ struct CudaGraphState {
         static_input_ptrs(std::move(other.static_input_ptrs)),
         static_output_ptrs(std::move(other.static_output_ptrs)),
         static_input_nbytes(std::move(other.static_input_nbytes)),
-        static_output_nbytes(std::move(other.static_output_nbytes)) {
+        static_output_nbytes(std::move(other.static_output_nbytes)),
+        graph_allocations(std::move(other.graph_allocations)) {
     other.graph = nullptr;
     other.graph_exec = nullptr;
   }
@@ -188,6 +247,7 @@ struct CudaGraphState {
       static_output_ptrs = std::move(other.static_output_ptrs);
       static_input_nbytes = std::move(other.static_input_nbytes);
       static_output_nbytes = std::move(other.static_output_nbytes);
+      graph_allocations = std::move(other.graph_allocations);
 
       other.graph = nullptr;
       other.graph_exec = nullptr;
@@ -208,6 +268,10 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
 
   // Extra AOTI metadata used to validate per-FQN weights before binding.
   AOTInductorModelContainerGetConstantDtypeFunc get_constant_dtype{nullptr};
+  // Bytes a constant's compiled shape spans; the off-graph KV cache checks its
+  // storage against it before binding.
+  AOTInductorModelContainerGetConstantDataSizeFunc get_constant_data_size{
+      nullptr};
 
   // The per-thread stream. Nothing owns it: the value is a fixed sentinel the
   // driver resolves to a different stream on each host thread, so releasing the

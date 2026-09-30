@@ -279,12 +279,23 @@ Result<uint64_t> read_sampled_token(
 #endif
 }
 
+// The off-graph KV cache is CUDA-only, and so are its headers; elsewhere the
+// module is built without one and the guard is always null.
+#ifdef EXECUTORCH_BUILD_CUDA
+using OffGraphInstallGuard = ::executorch::extension::llm::cache::InstallGuard;
+#else
+struct OffGraphInstallGuard;
+#endif
+
 Result<std::unique_ptr<Module>> build_muse_glimmer_module(
     const MuseGlimmerConfig& config,
     MuseGlimmerArtifactMode artifact_mode,
     bool has_vision,
     bool multi_session,
-    const ::executorch::extension::llm::cache::InstallGuard* offgraph_guard) {
+    const OffGraphInstallGuard* offgraph_guard) {
+#ifndef EXECUTORCH_BUILD_CUDA
+  (void)offgraph_guard;
+#endif
   std::vector<std::string> data_files;
   if (!config.data_path.empty()) {
     data_files.push_back(config.data_path);
@@ -1491,6 +1502,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   }
 
   std::unique_ptr<MuseGlimmerMutableStateContextOwner> mutable_state;
+  const OffGraphInstallGuard* offgraph_install = nullptr;
 #ifdef EXECUTORCH_BUILD_CUDA
   std::shared_ptr<::executorch::extension::llm::cache::Cache> offgraph_cache;
   std::unique_ptr<::executorch::extension::llm::cache::InstallGuard>
@@ -1519,6 +1531,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
     ET_CHECK_OK_OR_RETURN_ERROR(built.error());
     offgraph_cache = built.get();
     offgraph_guard = std::make_unique<cache::InstallGuard>(offgraph_cache);
+    offgraph_install = offgraph_guard.get();
     offgraph_control = offgraph_cache->as<cache::SequenceControl>();
     ET_CHECK_OR_RETURN_ERROR(
         offgraph_control != nullptr,
@@ -1560,7 +1573,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   const bool multi_session = mutable_state != nullptr;
   auto build_module = [&]() {
     return build_muse_glimmer_module(
-        config, artifact_mode, has_vision, multi_session, offgraph_guard.get());
+        config, artifact_mode, has_vision, multi_session, offgraph_install);
   };
   // The in-graph path still scopes its load, because mutable-buffer rebinding
   // has no registry key to travel on.

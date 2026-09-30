@@ -123,6 +123,7 @@ def offgraph_step(
     scale: float,
     buf_size: int,
     mask: torch.Tensor | None = None,
+    out_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """Write this step's K/V into their slots, then attend.
 
@@ -133,6 +134,8 @@ def offgraph_step(
     ``ring_attention_mask`` every ring layer of the step shares.
 
     ``k``/``v`` are BHSD; the storage is BSHD (see ``LowerOffGraphKVPass``).
+    sdpa returns the query's dtype; ``out_dtype`` is the neutral op's requested
+    output dtype.
     """
     position = position.reshape(-1)
     slots = position % buf_size
@@ -151,7 +154,7 @@ def offgraph_step(
     # from position data tunes as a one-token context and picks a tile that
     # runs long prefill markedly slower.
     kv_len = position[0] + position.shape[0]
-    return torch.ops.triton.sdpa(
+    out = torch.ops.triton.sdpa(
         q,
         k_storage.transpose(1, 2),
         v_storage.transpose(1, 2),
@@ -162,6 +165,9 @@ def offgraph_step(
         True,
         kv_len,
     )
+    if out_dtype is not None and out.dtype != out_dtype:
+        out = out.to(out_dtype)
+    return out
 
 
 def _mask_fn(buf_size: int, window: int):
@@ -178,22 +184,117 @@ def _mask_fn(buf_size: int, window: int):
     return fn
 
 
-def _step_fn(scale: float, buf_size: int, masked: bool):
+def _step_fn(scale: float, buf_size: int, masked: bool, out_dtype):
     if masked:
 
         def fn(q, k, v, position, k_storage, v_storage, mask):
             return offgraph_step(
-                q, k, v, position, k_storage, v_storage, scale, buf_size, mask
+                q,
+                k,
+                v,
+                position,
+                k_storage,
+                v_storage,
+                scale,
+                buf_size,
+                mask,
+                out_dtype,
             )
 
     else:
 
         def fn(q, k, v, position, k_storage, v_storage):
             return offgraph_step(
-                q, k, v, position, k_storage, v_storage, scale, buf_size
+                q,
+                k,
+                v,
+                position,
+                k_storage,
+                v_storage,
+                scale,
+                buf_size,
+                out_dtype=out_dtype,
             )
 
     return fn
+
+
+# Ops that pass a tensor's values through unchanged, which the export of a
+# position input may place between the method input and the cache op.
+_VALUE_PRESERVING_OPS = (
+    "view",
+    "reshape",
+    "unsqueeze",
+    "squeeze",
+    "expand",
+    "clone",
+    "alias",
+    "_to_copy",
+)
+
+
+def _source_input(node):
+    while node.op == "call_function" and any(
+        name in str(node.target) for name in _VALUE_PRESERVING_OPS
+    ):
+        node = node.args[0]
+    return node
+
+
+class CheckOffGraphKVStepWidthPass:
+    """Check the declared step width against the delegated program.
+
+    The runtime reads each step's token count from input ``input`` at ``dim``
+    of the delegate. That index is the delegate's own input order, which
+    partitioning decides, so it is checked here, after partitioning: every
+    cache op's position must come from that input, whose ``dim`` must be the
+    position's length.
+    """
+
+    requires_exported_program = True
+
+    def __init__(self, value: bytes) -> None:
+        text = value.decode("utf-8")
+        fields = text.split(":")
+        if len(fields) != 2 or not all(f.isdigit() for f in fields):
+            raise ValueError(
+                f"{OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC} must be "
+                f'"input_index:dim", got {text!r}'
+            )
+        self._input, self._dim = (int(f) for f in fields)
+
+    def __call__(self, exported_program: ExportedProgram) -> ExportedProgram:
+        graph = exported_program.graph_module.graph
+        user_inputs = set(exported_program.graph_signature.user_inputs)
+        inputs = [
+            n for n in graph.nodes if n.op == "placeholder" and n.name in user_inputs
+        ]
+        target = exir_ops.edge.kvcache.update_and_attend.default
+        for node in graph.nodes:
+            if node.op != "call_function" or node.target != target:
+                continue
+            if self._input >= len(inputs):
+                raise ValueError(
+                    f"off-graph KV step width names input {self._input}, but "
+                    f"the delegate takes {len(inputs)}"
+                )
+            declared = inputs[self._input]
+            position = node.args[3]
+            if _source_input(position) is not declared:
+                raise ValueError(
+                    f"off-graph KV step width names input {self._input} "
+                    f"({declared.name}), but the cache op's position comes "
+                    f"from {_source_input(position).name}"
+                )
+            shape = declared.meta["val"].shape
+            width = position.meta["val"].shape[0]
+            if self._dim >= len(shape) or shape[self._dim] != width:
+                raise ValueError(
+                    f"off-graph KV step width names dim {self._dim} of "
+                    f"{declared.name} {tuple(shape)}, which is not the step's "
+                    f"{width} positions"
+                )
+        return exported_program
 
 
 class LowerOffGraphKVPass:
@@ -209,6 +310,27 @@ class LowerOffGraphKVPass:
         # AOTI needs the logical metadata, while the runtime supplies storage.
         storage.untyped_storage().resize_(0)
         return storage
+
+    @staticmethod
+    def _check_supported(node) -> None:
+        """Reject valid neutral-op inputs this lowering does not implement.
+
+        Both would otherwise fail inside the trace with a shape error that says
+        nothing about why.
+        """
+        _, k, v, position = (n.meta["val"] for n in node.args[0:4])
+        if v.shape[-1] != k.shape[-1]:
+            raise ValueError(
+                "off-graph KV lowering requires v_head_dim == head_dim, got "
+                f"{v.shape[-1]} and {k.shape[-1]}"
+            )
+        if position.dim() not in (1, 2) or (
+            position.dim() == 2 and position.shape[1] != 1
+        ):
+            raise ValueError(
+                "off-graph KV lowering supports one position component per "
+                f"token ([T] or [T, 1]), got {tuple(position.shape)}"
+            )
 
     def _layer_capacity(self, layer: dict[str, Any]) -> int:
         if layer["policy"] == "ring":
@@ -323,8 +445,12 @@ class LowerOffGraphKVPass:
             if layer is None:
                 raise ValueError(f"off-graph manifest has no layer {layer_id}")
 
+            self._check_supported(node)
             inputs = list(node.args[0:4])  # q, k, v, position
             scale = node.args[5]
+            out_dtype = (
+                node.args[6] if len(node.args) > 6 else node.kwargs.get("out_dtype")
+            )
             k_storage, v_storage = self._storage_nodes(exported_program, node, layer)
             call_args = (*inputs, k_storage, v_storage)
             example_args = tuple(n.meta["val"] for n in call_args)
@@ -337,7 +463,7 @@ class LowerOffGraphKVPass:
                 )
                 call_args = (*call_args, mask)
                 example_args = (*example_args, mask.meta["val"])
-            fn = _step_fn(scale, buf_size, masked)
+            fn = _step_fn(scale, buf_size, masked, out_dtype)
 
             new_node = self._inline(
                 graph_module.graph, fn, example_args, call_args, node
