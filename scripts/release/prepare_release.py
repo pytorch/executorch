@@ -11,6 +11,7 @@ import argparse
 import re
 import runpy
 import shutil
+import subprocess
 import urllib.request
 from pathlib import Path
 from typing import Iterable, List
@@ -25,9 +26,7 @@ _TEST_INFRA_MAIN_PATTERN = re.compile(r"(pytorch/test-infra/[^\s\"']+)@main\b")
 _TEST_INFRA_REF_MAIN_PATTERN = re.compile(r"(test-infra-ref:\s*)main\b")
 _TEST_INFRA_BRANCH_PATTERN = re.compile(r"pytorch/test-infra/[^\s\"'@]+@([^\s\"']+)")
 _TEST_INFRA_INPUT_PATTERN = re.compile(r"test-infra-ref:\s*([^\s#]+)")
-_CLONE_BRANCH_PATTERN = re.compile(
-    r"(?P<prefix>-b\s+)(?P<branch>viable/strict|release/\d+\.\d+)\b"
-)
+_CLONE_BRANCH_PATTERN = re.compile(r"(?P<prefix>-b\s+)viable/strict\b")
 _STABLE_SWIFTPM_PATTERN = re.compile(r"swiftpm-\d+\.\d+\.\d+(?![.\d-])")
 _DOCUMENTATION_PATHS = (
     "CONTRIBUTING.md",
@@ -43,7 +42,8 @@ def _validate_release_version(release_version: str) -> None:
         )
 
 
-def _write_if_changed(path: Path, original: str, updated: str) -> bool:
+def _write_if_changed(path: Path, updated: str) -> bool:
+    original = path.read_text()
     if updated == original:
         return False
     path.write_text(updated)
@@ -58,7 +58,7 @@ def enable_release_wheel(torch_pin_path: Path) -> bool:
         raise RuntimeError(
             f"expected exactly one RELEASE_WHEEL assignment in {torch_pin_path}"
         )
-    return _write_if_changed(torch_pin_path, text, updated)
+    return _write_if_changed(torch_pin_path, updated)
 
 
 def set_torch_version(torch_pin_path: Path, torch_version: str) -> bool:
@@ -73,7 +73,7 @@ def set_torch_version(torch_pin_path: Path, torch_version: str) -> bool:
         raise RuntimeError(
             f"expected exactly one TORCH_VERSION assignment in {torch_pin_path}"
         )
-    return _write_if_changed(torch_pin_path, text, updated)
+    return _write_if_changed(torch_pin_path, updated)
 
 
 def newest_torch_test_release(available_versions: Iterable[str]) -> str:
@@ -117,6 +117,37 @@ def torch_version_for_release(torch_pin_path: Path, override: str = "") -> str:
     return latest_torch_test_release()
 
 
+def test_infra_branch_for_torch(torch_version: str) -> str:
+    """Return the test-infra release branch matching a PyTorch release."""
+    match = re.match(r"(\d+)\.(\d+)\.", torch_version)
+    if match is None:
+        raise RuntimeError(
+            f"could not derive a test-infra branch from Torch {torch_version!r}"
+        )
+    return f"release/{match.group(1)}.{match.group(2)}"
+
+
+def require_test_infra_branch(test_infra_branch: str) -> None:
+    """Fail before editing if the selected test-infra branch does not exist."""
+    result = subprocess.run(
+        [
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "https://github.com/pytorch/test-infra.git",
+            test_infra_branch,
+        ],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"pytorch/test-infra does not have branch {test_infra_branch!r}"
+        )
+
+
 def validate_release_build(torch_pin_path: Path) -> str:
     """Return the release PyTorch requirement or raise for invalid config."""
     config = runpy.run_path(str(torch_pin_path))
@@ -132,11 +163,14 @@ def validate_release_build(torch_pin_path: Path) -> str:
     return f"torch>={version}"
 
 
-def configure_release_version(version_path: Path, release_version: str) -> bool:
-    """Set the package version to the first final release in this series."""
-    return _write_if_changed(
-        version_path, version_path.read_text(), f"{release_version}.0\n"
-    )
+def configure_release_version(version_path: Path, release_version: str) -> str:
+    """Finalize a development version without resetting an existing patch release."""
+    current = version_path.read_text().strip()
+    if re.fullmatch(rf"{re.escape(release_version)}\.\d+", current):
+        return current
+    release_full_version = f"{release_version}.0"
+    _write_if_changed(version_path, f"{release_full_version}\n")
+    return release_full_version
 
 
 def configure_workflows(workflow_paths: Iterable[Path], test_infra_branch: str) -> int:
@@ -146,7 +180,7 @@ def configure_workflows(workflow_paths: Iterable[Path], test_infra_branch: str) 
         text = path.read_text()
         updated = _TEST_INFRA_MAIN_PATTERN.sub(rf"\1@{test_infra_branch}", text)
         updated = _TEST_INFRA_REF_MAIN_PATTERN.sub(rf"\1{test_infra_branch}", updated)
-        changed += _write_if_changed(path, text, updated)
+        changed += _write_if_changed(path, updated)
     return changed
 
 
@@ -163,15 +197,17 @@ def documentation_paths(repo_root: Path) -> List[Path]:
 
 
 def configure_documentation(
-    paths: Iterable[Path], release_branch: str, release_version: str
+    paths: Iterable[Path], release_branch: str, release_full_version: str
 ) -> int:
     """Point checkout and stable SwiftPM examples at the new release."""
     changed = 0
     for path in paths:
         text = path.read_text()
         updated = _CLONE_BRANCH_PATTERN.sub(rf"\g<prefix>{release_branch}", text)
-        updated = _STABLE_SWIFTPM_PATTERN.sub(f"swiftpm-{release_version}.0", updated)
-        changed += _write_if_changed(path, text, updated)
+        updated = _STABLE_SWIFTPM_PATTERN.sub(
+            f"swiftpm-{release_full_version}", updated
+        )
+        changed += _write_if_changed(path, updated)
     return changed
 
 
@@ -226,12 +262,11 @@ def validate_release_references(
     expected_swiftpm_branch = f"swiftpm-{release_full_version}"
     for path in documentation:
         text = path.read_text()
-        for match in _CLONE_BRANCH_PATTERN.finditer(text):
-            if match.group("branch") != expected_release_branch:
-                errors.append(
-                    f"{path}: clone command references {match.group('branch')}, "
-                    f"expected {expected_release_branch}"
-                )
+        if _CLONE_BRANCH_PATTERN.search(text):
+            errors.append(
+                f"{path}: clone command still references viable/strict, expected "
+                f"{expected_release_branch}"
+            )
         for swiftpm_branch in _STABLE_SWIFTPM_PATTERN.findall(text):
             if swiftpm_branch != expected_swiftpm_branch:
                 errors.append(
@@ -280,10 +315,12 @@ def prepare_release(
     documentation = documentation_paths(repo_root)
     set_torch_version(repo_root / "torch_pin.py", torch_version)
     enable_release_wheel(repo_root / "torch_pin.py")
-    configure_release_version(repo_root / "version.txt", release_version)
+    release_full_version = configure_release_version(
+        repo_root / "version.txt", release_version
+    )
     workflow_count = configure_workflows(workflow_paths, test_infra_branch)
     documentation_count = configure_documentation(
-        documentation, f"release/{release_version}", release_version
+        documentation, f"release/{release_version}", release_full_version
     )
     manifest_created = freeze_arm_public_api(repo_root, release_version)
     validate_release_references(
@@ -291,7 +328,7 @@ def prepare_release(
         documentation,
         test_infra_branch=test_infra_branch,
         release_version=release_version,
-        release_full_version=f"{release_version}.0",
+        release_full_version=release_full_version,
     )
     validate_release_files(repo_root, release_version)
     requirement = validate_release_build(repo_root / "torch_pin.py")
@@ -322,7 +359,7 @@ def main() -> None:
     parser.add_argument("--release-version", help="release version in MAJOR.MINOR form")
     parser.add_argument(
         "--test-infra-branch",
-        help="test-infra release branch (defaults to release/MAJOR.MINOR)",
+        help="test-infra branch (defaults to the selected PyTorch release line)",
     )
     parser.add_argument(
         "--torch-version",
@@ -335,13 +372,16 @@ def main() -> None:
 
     repo_root = args.repo_root.resolve()
     release_version = args.release_version or _release_version_from_file(repo_root)
-    test_infra_branch = args.test_infra_branch or f"release/{release_version}"
     workflow_paths = sorted((repo_root / ".github/workflows").glob("*.yml"))
     documentation = documentation_paths(repo_root)
 
     if args.check:
         _validate_release_version(release_version)
         requirement = validate_release_build(repo_root / "torch_pin.py")
+        torch_version = runpy.run_path(str(repo_root / "torch_pin.py"))["TORCH_VERSION"]
+        test_infra_branch = args.test_infra_branch or test_infra_branch_for_torch(
+            torch_version
+        )
         release_full_version = validate_release_files(repo_root, release_version)
         validate_release_references(
             workflow_paths,
@@ -355,6 +395,10 @@ def main() -> None:
         torch_version = torch_version_for_release(
             repo_root / "torch_pin.py", args.torch_version or ""
         )
+        test_infra_branch = args.test_infra_branch or test_infra_branch_for_torch(
+            torch_version
+        )
+        require_test_infra_branch(test_infra_branch)
         prepare_release(repo_root, release_version, test_infra_branch, torch_version)
 
 

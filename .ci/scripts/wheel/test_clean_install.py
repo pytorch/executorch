@@ -59,6 +59,7 @@ def test_release_pytorch_requirement() -> None:
 
     from packaging.requirements import Requirement
     from packaging.utils import canonicalize_name
+    from packaging.version import Version
 
     repo_root = Path(__file__).resolve().parents[3]
     config = runpy.run_path(str(repo_root / "torch_pin.py"))
@@ -68,10 +69,12 @@ def test_release_pytorch_requirement() -> None:
         os.environ.get("GITHUB_REF", "").removeprefix("refs/heads/"),
     )
     release_tag_ci = any(
-        re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+(?:-rc\d+)?", ref) for ref in ci_refs
+        re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+", ref) for ref in ci_refs
     )
-    release_ci = any(ref.startswith("release/") for ref in ci_refs) or any(
-        re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+(?:-rc\d+)?", ref) for ref in ci_refs
+    release_ci = release_tag_ci or any(
+        ref.startswith("release/")
+        or re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+-rc\d+", ref)
+        for ref in ci_refs
     )
     assert not release_ci or config["RELEASE_WHEEL"], (
         "this wheel is being built from a release ref, but torch_pin.py does not enable "
@@ -95,7 +98,11 @@ def test_release_pytorch_requirement() -> None:
     ]
 
     if config["RELEASE_WHEEL"]:
-        expected = f">={config['TORCH_VERSION']}"
+        installed_torch = Version(metadata.version("torch"))
+        if installed_torch.local and "cu134" in installed_torch.local:
+            expected = f"=={installed_torch}"
+        else:
+            expected = f">={config['TORCH_VERSION']}"
         assert len(torch_requirements) == 1, (
             "a release wheel must declare exactly one PyTorch dependency, but found "
             f"{[str(requirement) for requirement in torch_requirements]}"

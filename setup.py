@@ -1128,6 +1128,21 @@ def _torchao_requirement() -> str:
 def _release_torch_requirement() -> List[str]:
     if not torch_pin.RELEASE_WHEEL:
         return []
+
+    path = Path(__file__).parent / "install_requirements.py"
+    spec = importlib.util.spec_from_file_location("install_requirements", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("install_utils", install_utils)
+    spec.loader.exec_module(module)
+    torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
+    cu134_requirements = module.cu134_requirements(torch_url)
+    if cu134_requirements:
+        # The CUDA 13.4 build currently uses a PyTorch development wheel. A
+        # stable lower bound would reject and replace the binary it was built
+        # against, so this variant must retain its exact build-time dependency.
+        return [cu134_requirements[0]]
     return [f"torch>={torch_pin.TORCH_VERSION}"]
 
 

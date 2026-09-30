@@ -17,7 +17,11 @@ import urllib.request
 from pathlib import Path
 from typing import Iterable
 
-from prepare_release import _release_version_from_file, set_torch_version
+from prepare_release import (
+    _release_version_from_file,
+    _TORCH_VERSION_PATTERN,
+    _write_if_changed,
+)
 
 _VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 _TORCHCODEC_PATTERN = re.compile(r"torchcodec==\d+\.\d+\.\d+")
@@ -26,6 +30,12 @@ _TOKENIZERS_REQUIREMENT_PATTERN = re.compile(
 )
 _TORCHAO_ASSIGNMENT_PATTERN = re.compile(
     r'^TORCHAO_NIGHTLY_VERSION\s*=\s*"(?P<version>[^"]+)"$', re.MULTILINE
+)
+_ROCM_TORCHAO_ASSIGNMENT_PATTERN = re.compile(
+    r'^ROCM_TORCHAO_NIGHTLY_VERSION\s*=\s*"(?P<version>[^"]+)"$', re.MULTILINE
+)
+_ROCM_VERSION_PATTERN = re.compile(
+    r'^ROCM_VERSION="\$\{ROCM_VERSION:-(?P<version>\d+\.\d+)\}"$', re.MULTILINE
 )
 _FINALIZED_PATTERN = re.compile(
     r"^RELEASE_DEPENDENCIES_FINALIZED\s*=\s*(?:True|False)$", re.MULTILINE
@@ -118,104 +128,126 @@ def require_remote_tag(repository: str, version: str) -> None:
         raise RuntimeError(f"{repository} does not have tag v{version}")
 
 
-def _write_if_changed(path: Path, updated: str) -> bool:
-    original = path.read_text()
-    if updated == original:
-        return False
-    path.write_text(updated)
-    return True
+def require_rocm_torchao_release(repo_root: Path, version: str) -> None:
+    """Verify the stable ROCm TorchAO artifact used by release CI exists."""
+    rocm_script = repo_root / _ROCM_PATHS[0]
+    match = _ROCM_VERSION_PATTERN.search(rocm_script.read_text())
+    if match is None:
+        raise RuntimeError(f"could not determine ROCm version from {rocm_script}")
+    rocm_version = match.group("version")
+    url = (
+        f"https://download.pytorch.org/whl/rocm{rocm_version}/"
+        f"torchao-{version}%2Brocm{rocm_version}-"
+        "cp310-abi3-manylinux_2_28_x86_64.whl"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=30):
+            pass
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            raise RuntimeError(
+                f"TorchAO {version} is not published for ROCm {rocm_version}"
+            ) from error
+        raise
 
 
-def mark_release_dependencies_finalized(torch_pin_path: Path) -> bool:
-    """Record that delayed dependency finalization completed successfully."""
+def planned_torch_release(torch_pin_path: Path, torch_version: str) -> str:
+    """Plan the RC-to-final pin update without changing the checkout."""
+    if _VERSION_PATTERN.fullmatch(torch_version) is None:
+        raise RuntimeError(
+            f"final PyTorch version must be X.Y.Z, got {torch_version!r}"
+        )
     text = torch_pin_path.read_text()
+    updated, version_count = _TORCH_VERSION_PATTERN.subn(
+        f'TORCH_VERSION = "{torch_version}"', text
+    )
+    if version_count != 1:
+        raise RuntimeError(f"expected one TORCH_VERSION assignment in {torch_pin_path}")
     updated, count = _FINALIZED_PATTERN.subn(
-        "RELEASE_DEPENDENCIES_FINALIZED = True", text
+        "RELEASE_DEPENDENCIES_FINALIZED = True", updated
     )
     if count != 1:
         raise RuntimeError(
             f"expected one RELEASE_DEPENDENCIES_FINALIZED assignment in {torch_pin_path}"
         )
-    return _write_if_changed(torch_pin_path, updated)
+    return updated
 
 
 def finalize_torch_release(torch_pin_path: Path, torch_version: str) -> int:
     """Replace the RC pin with the final release and mark finalization complete."""
-    changed = int(set_torch_version(torch_pin_path, torch_version))
-    changed += int(mark_release_dependencies_finalized(torch_pin_path))
-    return changed
+    updated = planned_torch_release(torch_pin_path, torch_version)
+    return int(_write_if_changed(torch_pin_path, updated))
 
 
-def _finalize_torchao(repo_root: Path, version: str) -> set[Path]:
+def plan_dependency_text(
+    repo_root: Path,
+    torchao_version: str,
+    tokenizers_version: str,
+    torchcodec_version: str,
+) -> dict[Path, str]:
+    """Validate and calculate every text edit without changing the checkout."""
+    updates: dict[Path, str] = {}
+
+    def read(path: Path) -> str:
+        if not path.exists():
+            raise RuntimeError(f"expected release dependency file {path}")
+        return updates.get(path, path.read_text())
+
     path = repo_root / "install_requirements.py"
-    text = path.read_text()
     updated, count = _TORCHAO_ASSIGNMENT_PATTERN.subn(
-        f'TORCHAO_NIGHTLY_VERSION = "{version}"', text
+        f'TORCHAO_NIGHTLY_VERSION = "{torchao_version}"', read(path)
     )
     if count != 1:
         raise RuntimeError(f"expected one TORCHAO_NIGHTLY_VERSION in {path}")
-    return {path} if _write_if_changed(path, updated) else set()
+    updated, count = _ROCM_TORCHAO_ASSIGNMENT_PATTERN.subn(
+        f'ROCM_TORCHAO_NIGHTLY_VERSION = "{torchao_version}"', updated
+    )
+    if count != 1:
+        raise RuntimeError(f"expected one ROCM_TORCHAO_NIGHTLY_VERSION in {path}")
+    updates[path] = updated
 
-
-def _finalize_tokenizers(repo_root: Path, version: str) -> set[Path]:
     path = repo_root / "setup.py"
-    text = path.read_text()
     updated, count = _TOKENIZERS_REQUIREMENT_PATTERN.subn(
-        rf'\g<indent>"pytorch-tokenizers>={version}",', text
+        rf'\g<indent>"pytorch-tokenizers>={tokenizers_version}",', read(path)
     )
     if count != 1:
         raise RuntimeError(f"expected one pytorch-tokenizers requirement in {path}")
-    return {path} if _write_if_changed(path, updated) else set()
+    updates[path] = updated
 
-
-def _finalize_torchcodec(repo_root: Path, version: str) -> set[Path]:
-    changed_paths = set()
     for relative in _TORCHCODEC_PATHS:
         path = repo_root / relative
-        if not path.exists():
-            raise RuntimeError(f"expected release dependency file {path}")
-        text = path.read_text()
-        updated, count = _TORCHCODEC_PATTERN.subn(f"torchcodec=={version}", text)
+        updated, count = _TORCHCODEC_PATTERN.subn(
+            f"torchcodec=={torchcodec_version}", read(path)
+        )
         if count == 0:
             raise RuntimeError(f"expected a torchcodec pin in {path}")
-        updated = updated.replace(
+        updates[path] = updated.replace(
             "--extra-index-url https://download.pytorch.org/whl/test/cpu",
             "--index-url https://download.pytorch.org/whl/cpu",
         )
-        if _write_if_changed(path, updated):
-            changed_paths.add(path)
-    return changed_paths
 
-
-def _finalize_stable_indexes(repo_root: Path) -> set[Path]:
-    changed_paths = set()
     for relative in _ROCM_PATHS:
         path = repo_root / relative
-        if not path.exists():
-            raise RuntimeError(f"expected release dependency file {path}")
-        text = path.read_text()
-        updated = text.replace(
-            "https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}",
-            "https://download.pytorch.org/whl/rocm${ROCM_VERSION}",
-        ).replace(
-            "https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}",
-            "https://download.pytorch.org/whl/rocm${ROCM_VERSION}",
+        updates[path] = (
+            read(path)
+            .replace(
+                "https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}",
+                "https://download.pytorch.org/whl/rocm${ROCM_VERSION}",
+            )
+            .replace(
+                "https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}",
+                "https://download.pytorch.org/whl/rocm${ROCM_VERSION}",
+            )
         )
-        if _write_if_changed(path, updated):
-            changed_paths.add(path)
 
     qnn_path = repo_root / ".ci/scripts/test_wheel_package_qnn.sh"
-    if not qnn_path.exists():
-        raise RuntimeError(f"expected release dependency file {qnn_path}")
-    text = qnn_path.read_text()
-    updated = text.replace(_QNN_TEST_INDEX, _QNN_STABLE_INDEX)
+    updated = read(qnn_path).replace(_QNN_TEST_INDEX, _QNN_STABLE_INDEX)
     if _QNN_STABLE_INDEX not in updated:
         raise RuntimeError(
             f"could not find the QNN Torch install command in {qnn_path}"
         )
-    if _write_if_changed(qnn_path, updated):
-        changed_paths.add(qnn_path)
-    return changed_paths
+    updates[qnn_path] = updated
+    return {path: text for path, text in updates.items() if text != path.read_text()}
 
 
 def finalize_dependency_text(
@@ -225,17 +257,19 @@ def finalize_dependency_text(
     torchcodec_version: str,
 ) -> int:
     """Update all recurring stable dependency declarations and index URLs."""
-    changed_paths = _finalize_torchao(repo_root, torchao_version)
-    changed_paths |= _finalize_tokenizers(repo_root, tokenizers_version)
-    changed_paths |= _finalize_torchcodec(repo_root, torchcodec_version)
-    changed_paths |= _finalize_stable_indexes(repo_root)
-    return len(changed_paths)
+    updates = plan_dependency_text(
+        repo_root, torchao_version, tokenizers_version, torchcodec_version
+    )
+    for path, updated in updates.items():
+        _write_if_changed(path, updated)
+    return len(updates)
 
 
-def update_submodule_tags(
+def prepare_submodule_tags(
     repo_root: Path, releases: Iterable[tuple[str, str, str]]
-) -> None:
-    """Check out verified release tags in the dependency submodules."""
+) -> list[tuple[Path, str, str]]:
+    """Fetch and resolve every submodule tag before changing any gitlink."""
+    prepared = []
     for relative, _repository, version in releases:
         path = repo_root / relative
         if (path / ".git").exists() and subprocess.run(
@@ -264,9 +298,39 @@ def update_submodule_tags(
             cwd=path,
             check=True,
         )
-        subprocess.run(
-            ["git", "checkout", "--detach", f"v{version}"], cwd=path, check=True
-        )
+        current = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        target = subprocess.run(
+            ["git", "rev-parse", f"v{version}^{{commit}}"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        prepared.append((path, current, target))
+    return prepared
+
+
+def update_submodule_tags(prepared: Iterable[tuple[Path, str, str]]) -> None:
+    """Apply prepared submodule updates, restoring prior heads on failure."""
+    changed = []
+    try:
+        for path, current, target in prepared:
+            subprocess.run(
+                ["git", "checkout", "--detach", target], cwd=path, check=True
+            )
+            changed.append((path, current))
+    except Exception:
+        for path, current in reversed(changed):
+            subprocess.run(
+                ["git", "checkout", "--detach", current], cwd=path, check=True
+            )
+        raise
 
 
 def main() -> None:
@@ -318,6 +382,7 @@ def main() -> None:
         require_pypi_release(package, version)
     for _path, repository, version in releases:
         require_remote_tag(repository, version)
+    require_rocm_torchao_release(repo_root, torchao_version)
 
     print(
         "Release dependency artifacts are available: "
@@ -327,11 +392,31 @@ def main() -> None:
     if args.preflight_only:
         return
 
-    update_submodule_tags(repo_root, releases)
-    changed = finalize_dependency_text(
+    dependency_updates = plan_dependency_text(
         repo_root, torchao_version, tokenizers_version, torchcodec_version
     )
-    changed += finalize_torch_release(repo_root / "torch_pin.py", torch_version)
+    torch_pin_path = repo_root / "torch_pin.py"
+    torch_pin_update = planned_torch_release(torch_pin_path, torch_version)
+    prepared_submodules = prepare_submodule_tags(repo_root, releases)
+    text_updates = {**dependency_updates, torch_pin_path: torch_pin_update}
+    original_text = {path: path.read_text() for path in text_updates}
+
+    try:
+        update_submodule_tags(prepared_submodules)
+        for path, updated in text_updates.items():
+            _write_if_changed(path, updated)
+    except Exception:
+        for path, original in original_text.items():
+            path.write_text(original)
+        for path, original, _target in reversed(prepared_submodules):
+            subprocess.run(
+                ["git", "checkout", "--detach", original], cwd=path, check=False
+            )
+        raise
+
+    changed = sum(
+        updated != original_text[path] for path, updated in text_updates.items()
+    )
     print(
         f"Finalized release dependencies; changed {changed} text files and 2 submodules"
     )

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from packaging.requirements import Requirement
@@ -164,6 +165,30 @@ class TestCu134Dependencies(unittest.TestCase):
         )
         return namespace["_torchao_requirement"]()
 
+    def release_torch_requirement(self):
+        path = ROOT / "setup.py"
+        tree = ast.parse(path.read_text())
+        function = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_release_torch_requirement"
+        )
+        namespace = {
+            "__file__": str(path),
+            "Path": Path,
+            "List": list,
+            "importlib": importlib,
+            "sys": sys,
+            "install_utils": self.utils,
+            "torch_pin": SimpleNamespace(RELEASE_WHEEL=True, TORCH_VERSION="2.15.0rc1"),
+        }
+        exec(
+            compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
+            namespace,
+        )
+        return namespace["_release_torch_requirement"]()[0]
+
     def test_package_install_preserves_source_pinned_torchao(self):
         with patch.dict(sys.modules, {"install_requirements": self.installer}):
             package_installer = load_module("install_executorch")
@@ -241,11 +266,11 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.assertIn("torch==2.14.0.dev20260810+cu134", commands[-1])
                 self.assertIn("0.19.0+gitb7ac3aa", metadata.specifier)
 
-    def test_wheel_torchao_bound_matches_selected_train(self):
-        for cuda, expected in (
-            ((13, 4), "torchao>=0.19.0.dev20260907,<0.20"),
-            ((13, 2), "torchao>=0.19.0.dev20260907,<0.20"),
-            (None, "torchao>=0.19.0.dev20260907,<0.20"),
+    def test_wheel_bounds_match_selected_train(self):
+        for cuda, expected_torch in (
+            ((13, 4), "torch==2.14.0.dev20260810+cu134"),
+            ((13, 2), "torch>=2.15.0rc1"),
+            (None, "torch>=2.15.0rc1"),
         ):
             self.utils.determine_torch_url.cache_clear()
             with (
@@ -257,7 +282,11 @@ class TestCu134Dependencies(unittest.TestCase):
                 ),
                 patch.object(self.installer.platform, "system", return_value="Linux"),
             ):
-                self.assertEqual(self.torchao_requirement(), expected)
+                self.assertEqual(
+                    self.torchao_requirement(),
+                    "torchao>=0.19.0.dev20260907,<0.20",
+                )
+                self.assertEqual(self.release_torch_requirement(), expected_torch)
 
 
 if __name__ == "__main__":

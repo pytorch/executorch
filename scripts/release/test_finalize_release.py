@@ -11,6 +11,7 @@ from pathlib import Path
 from finalize_release import (
     finalize_dependency_text,
     finalize_torch_release,
+    plan_dependency_text,
     stable_base_version,
 )
 
@@ -31,7 +32,7 @@ class FinalizeReleaseTest(unittest.TestCase):
                 "RELEASE_DEPENDENCIES_FINALIZED = False\n"
             )
 
-            self.assertEqual(finalize_torch_release(path, "2.15.0"), 2)
+            self.assertEqual(finalize_torch_release(path, "2.15.0"), 1)
             self.assertIn('TORCH_VERSION = "2.15.0"', path.read_text())
             self.assertIn("RELEASE_DEPENDENCIES_FINALIZED = True", path.read_text())
 
@@ -40,6 +41,7 @@ class FinalizeReleaseTest(unittest.TestCase):
             root = Path(directory)
             (root / "install_requirements.py").write_text(
                 'TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"\n'
+                'ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"\n'
             )
             (root / "setup.py").write_text('    "pytorch-tokenizers",\n')
             qnn_path = root / ".ci/scripts/test_wheel_package_qnn.sh"
@@ -65,11 +67,21 @@ class FinalizeReleaseTest(unittest.TestCase):
                     'nightly/rocm${ROCM_VERSION}"\n'
                 )
 
-            changed = finalize_dependency_text(root, "0.19.0", "1.6.0", "0.17.0")
+            planned = plan_dependency_text(root, "0.19.0", "1.6.0", "0.17.0")
+            self.assertIn(
+                'TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"',
+                (root / "install_requirements.py").read_text(),
+            )
+            self.assertEqual(len(planned), 7)
 
+            changed = finalize_dependency_text(root, "0.19.0", "1.6.0", "0.17.0")
             self.assertEqual(changed, 7)
             self.assertIn(
                 'TORCHAO_NIGHTLY_VERSION = "0.19.0"',
+                (root / "install_requirements.py").read_text(),
+            )
+            self.assertIn(
+                'ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0"',
                 (root / "install_requirements.py").read_text(),
             )
             self.assertIn(

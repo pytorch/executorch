@@ -11,6 +11,7 @@ from pathlib import Path
 from prepare_release import (
     newest_torch_test_release,
     prepare_release,
+    test_infra_branch_for_torch,
     torch_version_for_release,
 )
 
@@ -22,6 +23,7 @@ class PrepareReleaseTest(unittest.TestCase):
         """A branch cut selects the newest RC and preserves it on reruns."""
         releases = ["2.14.1", "2.15.0a1", "2.15.0b2", "2.15.0rc1"]
         self.assertEqual(newest_torch_test_release(releases), "2.15.0rc1")
+        self.assertEqual(test_infra_branch_for_torch("2.15.0rc1"), "release/2.15")
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "torch_pin.py"
@@ -48,6 +50,7 @@ class PrepareReleaseTest(unittest.TestCase):
             doc = root / "docs/README.md"
             doc.write_text(
                 "git clone -b viable/strict repo\n"
+                "tutorial: git clone -b release/1.0 legacy-example\n"
                 "stable: swiftpm-1.5.1\n"
                 "nightly: swiftpm-1.6.0.20260929\n"
             )
@@ -57,21 +60,23 @@ class PrepareReleaseTest(unittest.TestCase):
             (manifests / "api_manifest_1_5.toml").write_text("previous\n")
             (manifests / "api_manifest_running.toml").write_text("current\n")
 
-            requirement = prepare_release(root, "1.6", "release/1.6", "2.15.0rc1")
+            requirement = prepare_release(root, "1.6", "release/2.15", "2.15.0rc1")
+            (root / "version.txt").write_text("1.6.1\n")
             second_requirement = prepare_release(
-                root, "1.6", "release/1.6", "2.15.0rc1"
+                root, "1.6", "release/2.15", "2.15.0rc1"
             )
 
             self.assertEqual(requirement, "torch>=2.15.0rc1")
             self.assertEqual(second_requirement, requirement)
             self.assertIn("RELEASE_WHEEL = True", (root / "torch_pin.py").read_text())
-            self.assertIn("@release/1.6", workflow.read_text())
-            self.assertIn("test-infra-ref: release/1.6", workflow.read_text())
+            self.assertIn("@release/2.15", workflow.read_text())
+            self.assertIn("test-infra-ref: release/2.15", workflow.read_text())
             self.assertIn("example/action@main", workflow.read_text())
             self.assertIn("-b release/1.6", doc.read_text())
-            self.assertIn("stable: swiftpm-1.6.0", doc.read_text())
+            self.assertIn("-b release/1.0", doc.read_text())
+            self.assertIn("stable: swiftpm-1.6.1", doc.read_text())
             self.assertIn("nightly: swiftpm-1.6.0.20260929", doc.read_text())
-            self.assertEqual((root / "version.txt").read_text(), "1.6.0\n")
+            self.assertEqual((root / "version.txt").read_text(), "1.6.1\n")
             self.assertFalse((manifests / "api_manifest_1_4.toml").exists())
             self.assertEqual(
                 (manifests / "api_manifest_1_6.toml").read_text(), "current\n"
