@@ -11,6 +11,7 @@ from executorch.backends.qualcomm._passes import (
     FoldQDQ,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
+    LiftConstantScalarOperands,
     RemoveRedundancy,
 )
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
@@ -116,6 +117,28 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             QnnOperatorSupport.is_node_supported(support, None, context_loader_nodes[0])
         )
+
+    def test_lift_constant_scalar_operands_skips_higher_order_ops(self):
+        # A `with torch.no_grad()` block is captured as a higher-order op
+        # (wrap_with_set_grad_enabled) whose target carries no schema.
+        # LiftConstantScalarOperands reads node.target._schema, so it must skip
+        # such nodes instead of crashing with AttributeError.
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                with torch.no_grad():
+                    y = x + 1
+                return y * 2
+
+        gm = torch.export.export(Model(), (torch.randn(3),), strict=True).graph_module
+        schemaless = [
+            node
+            for node in gm.graph.nodes
+            if node.op == "call_function" and not hasattr(node.target, "_schema")
+        ]
+        self.assertTrue(schemaless, "expected a higher-order op in the graph")
+
+        # Must not raise.
+        LiftConstantScalarOperands().call(gm)
 
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
