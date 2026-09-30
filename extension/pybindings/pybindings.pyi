@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, Enum, List, Optional, Tuple, TypeVar
 _T = TypeVar("_T")
 
 def experimental(message: str) -> Callable[[_T], _T]: ...
-
 @experimental("This API is experimental and subject to change without notice.")
 class Verification(Enum):
     """Verification maps C++ Program::Verification to Python.
