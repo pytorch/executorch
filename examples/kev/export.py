@@ -95,6 +95,13 @@ def export_model(backbone, head, limits, metadata):
 
             partitioner = MLXPartitioner()
             passes = get_default_passes()
+        elif backbone.backend == "vulkan":
+            from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+                VulkanPartitioner,
+            )
+
+            partitioner = VulkanPartitioner({"require_dynamic_shapes": True}) # TODO: Configure correctly based on failures
+            passes = []
         else:
             from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
                 XnnpackPartitioner,
@@ -124,7 +131,7 @@ def main():
         description="Export Kev prefill and pointer scoring"
     )
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--backend", choices=("xnnpack", "mlx"), required=True)
+    parser.add_argument("--backend", choices=("xnnpack", "mlx", "vulkan"), required=True)
     parser.add_argument("--dtype", choices=("fp32", "bf16"), default="bf16")
     parser.add_argument(
         "--max-prefix",
