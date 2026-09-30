@@ -25,7 +25,7 @@ class Verification(Enum):
     InternalConsistency: ...
 
 @experimental("This API is experimental and subject to change without notice.")
-class ResultMemory:
+class ExecuTorchResult:
     """Read-only tensor result storage used when ATen is not linked."""
 
     @property

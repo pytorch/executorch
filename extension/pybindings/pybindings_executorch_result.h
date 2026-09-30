@@ -22,17 +22,17 @@ namespace executorch::extension::pybindings {
 
 namespace py = pybind11;
 
-/** Read-only owned memory returned by torch-free Python bindings. */
-class PyResultMemory final {
+/** Read-only owned tensor result returned by torch-free Python bindings. */
+class PyExecuTorchResult final {
  public:
-  explicit PyResultMemory(const executorch::aten::Tensor& tensor)
+  explicit PyExecuTorchResult(const executorch::aten::Tensor& tensor)
       : storage_(tensor.nbytes()),
         sizes_(tensor.sizes().begin(), tensor.sizes().end()),
         strides_(tensor.strides().begin(), tensor.strides().end()),
         scalar_type_(tensor.scalar_type()) {
     if (!tensor.device().is_cpu()) {
       throw std::runtime_error(
-          "Result memory only supports CPU outputs until DLPack is enabled");
+          "ExecuTorch results only support CPU outputs until DLPack is enabled");
     }
     if (!storage_.empty()) {
       std::memcpy(storage_.data(), tensor.const_data_ptr(), storage_.size());
