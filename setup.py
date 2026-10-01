@@ -87,6 +87,17 @@ if _spec.loader is None:
     raise ImportError(f"Could not load {_torch_pin_path}")
 _spec.loader.exec_module(torch_pin)
 
+_release_versions_path = Path(__file__).parent / "scripts/release/release_versions.py"
+_spec = importlib.util.spec_from_file_location(
+    "release_versions", _release_versions_path
+)
+if _spec is None:
+    raise ImportError(f"Could not create module spec for {_release_versions_path}")
+release_versions = importlib.util.module_from_spec(_spec)
+if _spec.loader is None:
+    raise ImportError(f"Could not load {_release_versions_path}")
+_spec.loader.exec_module(release_versions)
+
 from setuptools import Distribution, Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
@@ -1132,25 +1143,12 @@ def _release_torch_requirement() -> List[str]:
 
     from importlib import metadata
 
-    module = _load_install_requirements()
-    torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
-    variant = torch_url.rstrip("/").rsplit("/", 1)[-1]
-    if re.fullmatch(r"cu\d+", variant):
-        installed_version = metadata.version("torch")
-        if f"+{variant}" not in installed_version:
-            raise RuntimeError(
-                f"building a {variant} wheel with torch {installed_version}; "
-                "the installed torch build must use the same CUDA variant"
-            )
-        return [f"torch=={installed_version}"]
-
-    match = re.fullmatch(
-        r"(\d+)\.(\d+)\.\d+(?:(?:a|b|rc)\d+)?", torch_pin.TORCH_VERSION
-    )
-    if match is None:
-        raise RuntimeError(f"invalid release Torch version {torch_pin.TORCH_VERSION!r}")
+    variant = os.environ.get("EXECUTORCH_WHEEL_VARIANT", "")
+    installed_version = metadata.version("torch") if variant.startswith("cu") else ""
     return [
-        f"torch>={torch_pin.TORCH_VERSION},<{match.group(1)}.{int(match.group(2)) + 1}"
+        release_versions.torch_requirement(
+            torch_pin.TORCH_VERSION, variant, installed_version
+        )
     ]
 
 
@@ -1178,7 +1176,6 @@ def _base_dependencies() -> List[str]:
         "py-cpuinfo",
         "requests",
         "pytorch-tokenizers",
-        *_release_torch_requirement(),
         # Shipped code imports torchao at module scope in many places, so a plain install cannot
         # lower a model without it. Among others: the XNNPACK utilities the partitioner uses
         # (backends/xnnpack/utils/utils.py), the Core ML quantizer, and executorch.export itself.
@@ -2892,7 +2889,9 @@ else:
     setup_kwargs["packages"] = _full_packages()
     # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
     # carry it are declared here. A CPU wheel adds nothing.
-    setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
+    setup_kwargs["install_requires"] = (
+        _base_dependencies() + _release_torch_requirement() + _cuda_dependencies()
+    )
 
 
 setup(

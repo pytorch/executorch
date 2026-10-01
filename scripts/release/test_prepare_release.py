@@ -12,7 +12,7 @@ from prepare_release import (  # type: ignore[import-not-found]
     configured_test_infra_branch,
     newest_torch_test_release,
     prepare_release,
-    test_infra_branch_for_torch,
+    test_infra_branch_for_torch as _test_infra_branch_for_torch,
     torch_version_for_release,
 )
 
@@ -29,7 +29,7 @@ class PrepareReleaseTest(unittest.TestCase):
         )
         with self.assertRaises(RuntimeError):
             newest_torch_test_release(["2.14.1"], newer_than="2.14.0")
-        self.assertEqual(test_infra_branch_for_torch("2.15.0rc1"), "release/2.15")
+        self.assertEqual(_test_infra_branch_for_torch("2.15.0rc1"), "release/2.15")
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "torch_pin.py"
@@ -77,7 +77,7 @@ class PrepareReleaseTest(unittest.TestCase):
                 (root / "torch_pin.py").read_text(),
             )
             self.assertIn(
-                'TORCHAUDIO_VERSION = "2.15.0rc1"',
+                'TORCHAUDIO_VERSION = "2.11.0"',
                 (root / "torch_pin.py").read_text(),
             )
             self.assertIn("@release/2.15", workflow.read_text())

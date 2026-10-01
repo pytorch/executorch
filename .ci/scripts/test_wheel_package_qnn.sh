@@ -98,8 +98,7 @@ install_qnn
 export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
 install_executorch
-EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
-unset EXECUTORCH_BUILDING_WHEEL
+EXECUTORCH_BUILDING_WHEEL=1 EXECUTORCH_WHEEL_VARIANT=cpu python setup.py bdist_wheel
 
 WHEEL_FILE=$(ls dist/*.whl | head -n 1)
 echo "Found wheel: $WHEEL_FILE"

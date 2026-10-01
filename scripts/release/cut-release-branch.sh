@@ -35,12 +35,29 @@ fi
     git fetch --all
 )
 
-# Read version.txt directly from viable/strict so the caller's starting branch
-# cannot influence which release is cut. This preserves all numeric components
-# (for example, 1.10 does not become 1.1).
 VIABLE_BRANCH="${GIT_REMOTE}/viable/strict"
-SOURCE_VERSION=$(git show "${VIABLE_BRANCH}:version.txt")
-RELEASE_VERSION=${RELEASE_VERSION:-$(printf '%s\n' "${SOURCE_VERSION}" | cut -d'.' -f1-2)}
+if [[ -z "${RELEASE_VERSION:-}" ]]; then
+    # A failed first run may already have preserved the cut point. Resume that
+    # release even if viable/strict has since moved to the next line.
+    PENDING_RELEASES=()
+    while IFS= read -r ORIGINAL_REF; do
+        CANDIDATE=${ORIGINAL_REF#refs/remotes/${GIT_REMOTE}/orig/release/}
+        if ! git show-ref --verify --quiet "refs/remotes/${GIT_REMOTE}/release/${CANDIDATE}"; then
+            PENDING_RELEASES+=("${CANDIDATE}")
+        fi
+    done < <(git for-each-ref --format='%(refname)' "refs/remotes/${GIT_REMOTE}/orig/release/")
+    if [[ ${#PENDING_RELEASES[@]} -gt 1 ]]; then
+        echo "Error: multiple unfinished release cuts: ${PENDING_RELEASES[*]}"
+        exit 1
+    elif [[ ${#PENDING_RELEASES[@]} -eq 1 ]]; then
+        RELEASE_VERSION="${PENDING_RELEASES[0]}"
+    else
+        # Read version.txt directly from viable/strict so the caller's starting
+        # branch cannot influence a new release cut.
+        SOURCE_VERSION=$(git show "${VIABLE_BRANCH}:version.txt")
+        RELEASE_VERSION=$(printf '%s\n' "${SOURCE_VERSION}" | cut -d'.' -f1-2)
+    fi
+fi
 RELEASE_BRANCH="release/${RELEASE_VERSION}"
 ORIGINAL_BRANCH="orig/${RELEASE_BRANCH}"
 ARM_MANIFEST="backends/arm/public_api_manifests/api_manifest_${RELEASE_VERSION//./_}.toml"

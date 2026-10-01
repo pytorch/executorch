@@ -63,6 +63,9 @@ def test_release_pytorch_requirement() -> None:
 
     repo_root = Path(__file__).resolve().parents[3]
     config = runpy.run_path(str(repo_root / "torch_pin.py"))
+    release_versions = runpy.run_path(
+        str(repo_root / "scripts/release/release_versions.py")
+    )
     ci_refs = (
         os.environ.get("GITHUB_REF_NAME", ""),
         os.environ.get("GITHUB_BASE_REF", ""),
@@ -84,25 +87,53 @@ def test_release_pytorch_requirement() -> None:
     ]
 
     if config["RELEASE_WHEEL"]:
-        installed_torch = Version(metadata.version("torch"))
-        if installed_torch.local and re.search(
-            r"(?:^|\.)cu\d+(?:\.|$)", installed_torch.local
-        ):
-            expected_requirement = Requirement(f"torch=={installed_torch}")
-        else:
-            major, minor, *_ = config["TORCH_VERSION"].split(".")
-            expected_requirement = Requirement(
-                f"torch>={config['TORCH_VERSION']},<{major}.{int(minor) + 1}"
-            )
-        expected = str(expected_requirement.specifier)
         assert len(torch_requirements) == 1, (
             "a release wheel must declare exactly one PyTorch dependency, but found "
             f"{[str(requirement) for requirement in torch_requirements]}"
         )
-        assert str(torch_requirements[0].specifier) == expected, (
-            f"release wheel declares {torch_requirements[0]}, expected torch{expected} "
+        requirement = torch_requirements[0]
+        pins = [
+            specifier.version
+            for specifier in requirement.specifier
+            if specifier.operator == "=="
+        ]
+        configured_variant = os.environ.get("EXECUTORCH_WHEEL_VARIANT", "")
+        cuda_version = os.environ.get("CU_VERSION") or os.environ.get(
+            "DESIRED_CUDA", ""
+        )
+        if not configured_variant and cuda_version:
+            configured_variant = "cu" + "".join(
+                character for character in cuda_version if character.isdigit()
+            )
+        if len(pins) == 1 and "+" in pins[0]:
+            local_version = Version(pins[0]).local or ""
+            variants = re.findall(r"(?:^|\.)(cu\d+)(?:\.|$)", local_version)
+            assert (
+                len(variants) == 1
+            ), f"release wheel has an invalid CUDA Torch pin: {requirement}"
+            assert configured_variant in (
+                "",
+                variants[0],
+            ), f"{configured_variant} wheel declares the {variants[0]} Torch build"
+            expected_raw = release_versions["torch_requirement"](
+                config["TORCH_VERSION"], variants[0], pins[0]
+            )
+        else:
+            assert not configured_variant.startswith(
+                "cu"
+            ), f"{configured_variant} wheel declares a generic CPU Torch requirement"
+            expected_raw = release_versions["torch_requirement"](
+                config["TORCH_VERSION"], "cpu"
+            )
+        expected = str(Requirement(expected_raw).specifier)
+        assert str(requirement.specifier) == expected, (
+            f"release wheel declares {requirement}, expected torch{expected} "
             "from torch_pin.py"
         )
+        installed_torch = Version(metadata.version("torch"))
+        assert requirement.specifier.contains(
+            installed_torch, prereleases=True
+        ), f"installed torch {installed_torch} does not satisfy {requirement}"
         print(f"✓ release wheel declares torch{expected}")
     else:
         assert not torch_requirements, (

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import base64
-import hashlib
+import argparse
 import json
+import os
 import re
 import sys
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 
 def parse_nightly_version(nightly_version):
@@ -55,12 +56,14 @@ def get_commit_hash_for_nightly(date_str):
         Commit hash string
     """
     api_url = "https://api.github.com/repos/pytorch/pytorch/commits"
-    params = f"?sha=nightly&per_page=50"
+    params = "?sha=nightly&per_page=50"
     url = api_url + params
 
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github.v3+json")
     req.add_header("User-Agent", "ExecuTorch-Bot")
+    if os.environ.get("GITHUB_TOKEN"):
+        req.add_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
 
     try:
         with urllib.request.urlopen(req) as response:
@@ -120,7 +123,7 @@ def should_skip_file(filename):
 
 def fetch_file_content(commit_hash, file_path):
     """
-    Fetch file content from GitHub API.
+    Fetch file content from GitHub's raw-content service.
 
     Args:
         commit_hash: Commit hash to fetch from
@@ -129,26 +132,27 @@ def fetch_file_content(commit_hash, file_path):
     Returns:
         File content as bytes
     """
-    api_url = f"https://api.github.com/repos/pytorch/pytorch/contents/{file_path}?ref={commit_hash}"
+    raw_url = (
+        "https://raw.githubusercontent.com/pytorch/pytorch/"
+        f"{quote(commit_hash, safe='')}/{quote(file_path)}"
+    )
 
-    req = urllib.request.Request(api_url)
-    req.add_header("Accept", "application/vnd.github.v3+json")
+    req = urllib.request.Request(raw_url)
     req.add_header("User-Agent", "ExecuTorch-Bot")
+    if os.environ.get("GITHUB_TOKEN"):
+        req.add_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
 
     try:
         with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode())
-            # Content is base64 encoded
-            content = base64.b64decode(data["content"])
-            return content
+            return response.read()
     except urllib.request.HTTPError as e:
         print(f"Error fetching file {file_path}: {e}", file=sys.stderr)
         raise
 
 
-def sync_directory(et_dir, pt_path, commit_hash):
+def directory_updates(et_dir, pt_path, commit_hash):
     """
-    Sync files from PyTorch to ExecuTorch using GitHub API.
+    Sync files from PyTorch to ExecuTorch using GitHub raw content.
     Only syncs files that already exist in ExecuTorch - does not add new files.
 
     Args:
@@ -156,15 +160,15 @@ def sync_directory(et_dir, pt_path, commit_hash):
         pt_path: PyTorch directory path in the repository (e.g., "c10")
         commit_hash: Commit hash to fetch from
 
-    Returns:
-        Number of files grafted
+    Returns a list of (path, content) updates without mutating the checkout.
     """
-    files_grafted = 0
     print(f"Checking {et_dir} vs pytorch/{pt_path}...")
 
     if not et_dir.exists():
         print(f"Warning: ExecuTorch directory {et_dir} does not exist, skipping")
-        return 0
+        return []
+
+    updates = []
 
     # Loop through files in ExecuTorch directory
     for et_file in et_dir.rglob("*"):
@@ -186,19 +190,12 @@ def sync_directory(et_dir, pt_path, commit_hash):
 
             if pt_content != et_content:
                 print(f"⚠️  Difference detected in {rel_path}")
-                print(f"📋 Grafting from PyTorch commit {commit_hash}...")
-
-                et_file.write_bytes(pt_content)
-                print(f"✅ Grafted {et_file}")
-                files_grafted += 1
+                updates.append((et_file, pt_content))
         except urllib.request.HTTPError as e:
-            if e.code != 404:  # It's ok to have more files in ET than pytorch/pytorch.
-                print(f"Error fetching {rel_path} from PyTorch: {e}")
-        except Exception as e:
-            print(f"Error syncing {rel_path}: {e}")
-            continue
+            if e.code != 404:
+                raise
 
-    return files_grafted
+    return updates
 
 
 def sync_c10_directories(commit_hash):
@@ -229,38 +226,46 @@ def sync_c10_directories(commit_hash):
         ),
     ]
 
-    total_grafted = 0
+    updates = []
     for et_dir, pt_path in dir_pairs:
-        files_grafted = sync_directory(et_dir, pt_path, commit_hash)
-        total_grafted += files_grafted
+        updates.extend(directory_updates(et_dir, pt_path, commit_hash))
 
-    if total_grafted > 0:
-        print(f"\n✅ Successfully grafted {total_grafted} file(s) from PyTorch")
+    for et_file, pt_content in updates:
+        print(f"📋 Grafting from PyTorch commit {commit_hash}...")
+        et_file.write_bytes(pt_content)
+        print(f"✅ Grafted {et_file}")
+
+    if updates:
+        print(f"\n✅ Successfully grafted {len(updates)} file(s) from PyTorch")
     else:
         print("\n✅ No differences found - c10 is in sync")
 
-    return total_grafted
+    return len(updates)
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--commit",
+        help="PyTorch release commit to use instead of resolving NIGHTLY_VERSION",
+    )
+    args = parser.parse_args()
     try:
-        # Read NIGHTLY_VERSION from torch_pin.py
-        nightly_version = get_torch_nightly_version()
-        print(f"Found NIGHTLY_VERSION: {nightly_version}")
+        if args.commit:
+            commit_hash = args.commit
+            print(f"Using requested PyTorch commit: {commit_hash}")
+        else:
+            nightly_version = get_torch_nightly_version()
+            print(f"Found NIGHTLY_VERSION: {nightly_version}")
+            date_str = parse_nightly_version(nightly_version)
+            print(f"Parsed date: {date_str}")
+            commit_hash = get_commit_hash_for_nightly(date_str)
+            print(f"Found commit hash: {commit_hash}")
 
-        # Parse to date string
-        date_str = parse_nightly_version(nightly_version)
-        print(f"Parsed date: {date_str}")
-
-        # Fetch commit hash from PyTorch nightly branch
-        commit_hash = get_commit_hash_for_nightly(date_str)
-        print(f"Found commit hash: {commit_hash}")
-
-        # Update the pin file
-        update_pytorch_pin(commit_hash)
-
-        # Sync c10 directories from PyTorch
+        # Fetch every header before changing the checkout. If the network or
+        # rate limit fails, the existing source pin and headers stay together.
         sync_c10_directories(commit_hash)
+        update_pytorch_pin(commit_hash)
 
         print(
             "\n✅ Successfully updated PyTorch commit pin and synced c10 directories!"

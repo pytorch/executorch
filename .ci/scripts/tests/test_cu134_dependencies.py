@@ -8,7 +8,6 @@ import ast
 import functools
 import importlib.util
 import os
-import re
 import subprocess
 import sys
 import unittest
@@ -31,6 +30,7 @@ def load_module(name):
 class TestCu134Dependencies(unittest.TestCase):
     def setUp(self):
         self.utils = load_module("install_utils")
+        self.release_versions = load_module("scripts/release/release_versions")
         self.modules = patch.dict(sys.modules, {"install_utils": self.utils})
         self.modules.start()
         self.addCleanup(self.modules.stop)
@@ -147,7 +147,12 @@ class TestCu134Dependencies(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
 
     def setup_requirement(
-        self, function_name, *, installed_torch="2.15.0rc1", building_wheel=True
+        self,
+        function_name,
+        *,
+        installed_torch="2.15.0rc1",
+        building_wheel=True,
+        wheel_variant="cpu",
     ):
         path = ROOT / "setup.py"
         tree = ast.parse(path.read_text())
@@ -169,16 +174,23 @@ class TestCu134Dependencies(unittest.TestCase):
             "functools": functools,
             "importlib": importlib,
             "os": os,
-            "re": re,
             "sys": sys,
             "install_utils": self.utils,
+            "release_versions": self.release_versions,
             "torch_pin": SimpleNamespace(RELEASE_WHEEL=True, TORCH_VERSION="2.15.0rc1"),
         }
         exec(
             compile(ast.Module(body=functions, type_ignores=[]), str(path), "exec"),
             namespace,
         )
-        environment = {"EXECUTORCH_BUILDING_WHEEL": "1"} if building_wheel else {}
+        environment = (
+            {
+                "EXECUTORCH_BUILDING_WHEEL": "1",
+                "EXECUTORCH_WHEEL_VARIANT": wheel_variant,
+            }
+            if building_wheel
+            else {}
+        )
         with (
             patch.dict(os.environ, environment, clear=True),
             patch("importlib.metadata.version", return_value=installed_torch),
@@ -270,30 +282,28 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.assertIn("0.19.0+gitb7ac3aa", metadata.specifier)
 
     def test_wheel_bounds_match_selected_train(self):
-        for cuda, installed_torch, expected_torch in (
-            ((13, 4), "2.14.0.dev20260810+cu134", "torch==2.14.0.dev20260810+cu134"),
-            ((13, 2), "2.15.0rc1+cu132", "torch==2.15.0rc1+cu132"),
-            (None, "2.15.0rc1", "torch>=2.15.0rc1,<2.16"),
+        for wheel_variant, installed_torch, expected_torch in (
+            ("cu132", "2.15.0rc1+cu132", "torch==2.15.0rc1+cu132"),
+            ("cpu", "2.15.0rc1", "torch>=2.15.0rc1,<2.16"),
         ):
-            self.utils.determine_torch_url.cache_clear()
-            with (
-                patch.object(
-                    self.utils,
-                    "_get_cuda_version",
-                    return_value=cuda,
-                    side_effect=RuntimeError("no nvcc") if cuda is None else None,
-                ),
-                patch.object(self.installer.platform, "system", return_value="Linux"),
-            ):
+            with self.subTest(wheel_variant=wheel_variant):
                 self.assertEqual(
                     self.torchao_requirement(),
                     "torchao>=0.19.0.dev20260907,<0.20",
                 )
                 self.assertEqual(
-                    self.release_torch_requirement(installed_torch=installed_torch),
+                    self.release_torch_requirement(
+                        installed_torch=installed_torch,
+                        wheel_variant=wheel_variant,
+                    ),
                     expected_torch,
                 )
 
+        with self.assertRaisesRegex(RuntimeError, "for Torch 2.15.0rc1"):
+            self.release_torch_requirement(
+                installed_torch="2.14.0.dev20260810+cu134",
+                wheel_variant="cu134",
+            )
         self.assertIsNone(self.release_torch_requirement(building_wheel=False))
 
 

@@ -10,6 +10,9 @@
 
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
 
+_executorch_cuda_version="${CU_VERSION:-${DESIRED_CUDA:-}}"
+export EXECUTORCH_WHEEL_VARIANT="cu${_executorch_cuda_version//[!0-9]/}"
+
 # Ask for the CUDA delegate explicitly rather than letting the build detect a toolkit. A detected
 # build is fine locally, but a release row states what it is producing, and a row that silently
 # produced a CPU wheel because the toolkit was missing would publish under a CUDA name.
