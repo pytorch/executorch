@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from prepare_release import (
+from prepare_release import (  # type: ignore[import-not-found]
     newest_torch_test_release,
     prepare_release,
     test_infra_branch_for_torch,
