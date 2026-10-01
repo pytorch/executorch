@@ -53,7 +53,7 @@ _cuda_arch_aarch64_cu134="${_cuda_arch_aarch64_cu130}"
 # rather than the ones a generic wheel resolves.
 #
 # 8.7 is that exception. This is the only row whose CUDA major matches what that module's software
-# release ships, and the wheel declares no PyTorch, so the user supplies the build that carries
+# release ships, and the wheel does not pick a PyTorch build, so the user supplies the one that carries
 # their architecture. Omitting it does not protect them from a bad pairing, it only removes the
 # device code they need.
 #
