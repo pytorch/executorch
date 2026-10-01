@@ -21,6 +21,7 @@ from executorch.backends.arm.scripts.neural_graphics_test_data import (
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.model_test_utils import (
+    download_model_weights,
     PTQ_AND_QAT_DATA,
     REAL_AND_RANDOM_DATA,
     skip_if_frozen_release,
@@ -34,7 +35,6 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from huggingface_hub import hf_hub_download
 from ng_model_gym.usecases.nfru.model.nfru_v1_nn import (  # type: ignore[import-not-found,import-untyped]
     NFRUAutoEncoder,
 )
@@ -55,11 +55,10 @@ _NFRU_DYNAMIC_SHAPES = ({2: _NFRU_HEIGHT, 3: _NFRU_WIDTH},)
 
 def nfru() -> NFRUAutoEncoder:
     """Get an instance of NFRU with FP32 weights loaded."""
-    weights = hf_hub_download(  # nosec B615
+    weights = download_model_weights(
         repo_id="Arm/neural-frame-rate-upscaling",
         filename="nfru_v1_fp32.pt",
         revision="main",
-        cache_dir=os.environ.get("RUNNER_TEMP"),
     )
     checkpoint = torch.load(
         weights,
@@ -78,7 +77,7 @@ def nfru() -> NFRUAutoEncoder:
 
 
 def prequantized_nfru(inputs: input_t, dynamic_shapes=None) -> torch.fx.GraphModule:
-    weights = hf_hub_download(  # nosec B615
+    weights = download_model_weights(
         repo_id="Arm/neural-frame-rate-upscaling",
         filename="nfru_v1_int8.pt",
         revision="main",

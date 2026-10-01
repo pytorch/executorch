@@ -19,6 +19,7 @@ from executorch.backends.arm.scripts.neural_graphics_test_data import (
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.model_test_utils import (
+    download_model_weights,
     PTQ_AND_QAT_DATA,
     REAL_AND_RANDOM_DATA,
     skip_if_frozen_release,
@@ -35,8 +36,6 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-
-from huggingface_hub import hf_hub_download
 
 from ng_model_gym.usecases.nss.model.model_blocks_v1 import (  # type: ignore[import-not-found,import-untyped]
     AutoEncoderV1,
@@ -94,7 +93,7 @@ class _NssFp64ReferenceQuantize(ArmQuantize):
 def nss() -> AutoEncoderV1:
     """Get an instance of NSS with weights loaded."""
 
-    weights = hf_hub_download(  # nosec B615
+    weights = download_model_weights(
         repo_id="Arm/neural-super-sampling",
         filename="nss_v1_0_1_high_fp32.pt",
         revision="main",
@@ -114,7 +113,7 @@ def nss() -> AutoEncoderV1:
 
 
 def prequantized_nss(inputs: input_t, dynamic_shapes=None) -> torch.fx.GraphModule:
-    weights = hf_hub_download(  # nosec B615
+    weights = download_model_weights(
         repo_id="Arm/neural-super-sampling",
         filename="nss_v1_0_1_high_int8.pt",
         revision="main",
