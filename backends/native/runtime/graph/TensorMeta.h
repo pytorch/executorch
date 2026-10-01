@@ -14,12 +14,9 @@
 
 namespace ptn {
 
-// Logical tensor metadata: element type and shape. No storage, no quant scheme.
-//
-// sizes holds concrete extents. The wire format carries a per-dim range
-// instead, but a runtime that plans and executes at fixed shapes cannot honor a
-// dynamic dim, so deserialization rejects one rather than silently collapsing
-// it to its upper bound.
+// Logical tensor metadata: element type and bounded shape. No storage, no quant
+// scheme. `sizes` holds allocation upper bounds; `lower_bounds` is empty for a
+// static shape and holds corresponding lower bounds for a dynamic shape.
 //
 // dim_order_hint is a permutation of dim indices, outermost first; empty means
 // contiguous ([0, 1, ..., n-1]). It is a hint only for a tensor with no stored
@@ -29,8 +26,11 @@ namespace ptn {
 // weight wrong.
 struct TensorMeta {
   ScalarType dtype = ScalarType::Float;
+  // Upper-bound extents used for allocation.
   std::vector<int64_t> sizes;
   std::vector<int32_t> dim_order_hint;
+  // Empty for static shapes. Otherwise one lower bound per extent in `sizes`.
+  std::vector<int64_t> lower_bounds;
 
   size_t ndim() const {
     return sizes.size();
@@ -38,6 +38,8 @@ struct TensorMeta {
 
   // True if dim_order_hint is empty or the identity permutation.
   bool is_contiguous() const;
+
+  bool accepts_sizes(const std::vector<int64_t>& candidate) const;
 
   // Throws std::runtime_error on a negative extent, or on a count that
   // overflows int64_t.

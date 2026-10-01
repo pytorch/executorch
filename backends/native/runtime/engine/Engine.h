@@ -35,14 +35,20 @@ class EngineExecutable {
   EngineExecutable& operator=(EngineExecutable&&) = delete;
   virtual ~EngineExecutable();
 
-  // Counts, dtypes, and static shapes of user inputs and outputs in graph
-  // order.
+  // Counts, dtypes, and current shapes of user inputs and outputs in graph
+  // order. Dynamic inputs start at their allocation upper bounds.
   virtual size_t num_inputs() const = 0;
   virtual size_t num_outputs() const = 0;
   virtual std::vector<int64_t> input_sizes(size_t i) const = 0;
   virtual std::vector<int64_t> output_sizes(size_t i) const = 0;
   virtual ScalarType input_dtype(size_t i) const = 0;
   virtual ScalarType output_dtype(size_t i) const = 0;
+
+  // Change a dynamic input's logical shape within its serialized bounds.
+  // Direct engine clients must call this before set_input(); the Model and
+  // Module adapters currently accept only the serialized upper-bound shape.
+  // The default throws, for engines that run only at the upper-bound shape.
+  virtual void resize_input(size_t i, const std::vector<int64_t>& sizes);
 
   // Copy `numel` elements from host `data` into input i, converting from
   // `src_dtype` to the input's dtype when they differ. `numel` must equal the
