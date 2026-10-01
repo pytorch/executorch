@@ -119,7 +119,9 @@ enum OutputValueKind : byte {
 // so they are recorded here. The dequant result dtype is the op output value's
 // TensorMeta.dtype, not part of this scheme. The qdata itself (the enclosing
 // TensorMeta) uses dtype=BYTE with logical sizes; its packed byte length follows from
-// the logical shape and bitwidth, not prod(sizes).
+// the logical shape and bitwidth, not prod(sizes). The scale and zero-point keys must
+// be read-only stored constants of every method that uses the quantized tensor,
+// whether that tensor is itself a constant or a graph value such as a user input.
 table AffineGroup {
     scale_data_key: string (required);
     scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable
@@ -155,11 +157,10 @@ table QuantSpec {
 // Tensor metadata
 // =============================================================================
 
-// A tensor dimension as a range. Static: min == max. Dynamic: min < max, or max < 0
-// for unbounded. No symbols; the runtime uses concrete shapes at invocation and
-// plans memory from max. An input size is valid iff min <= size <= max. min is the
-// exported program's declared bound; torch.export traces a declared min of 0 or 1 as
-// 2, so the graph is only as correct at those sizes as torch.export makes it.
+// A tensor dimension as a range. Static: min == max. Dynamic: min < max;
+// max < 0 denotes an unbounded upper limit. The runtime uses concrete shapes
+// at invocation, plans bounded tensors from max, and rejects unbounded ranges.
+// A bounded input size is valid iff min <= size <= max.
 table Dim {
     min: long;
     max: long = -1;
@@ -325,11 +326,11 @@ table Output {
 }
 
 // A CALL_FUNCTION node has the semantics of its ATen (or custom) op. Assert ops
-// such as aten._assert_scalar left in the graph are part of those semantics: an
-// engine evaluates them or rejects the program. An out-of-range index operand (e.g.
-// to embedding, gather, or index_put) makes the result unspecified and may raise an
-// execution error, but never causes an access outside a tensor's storage. Negative
-// indices wrap as in ATen.
+// left in the graph are part of those semantics: an engine evaluates them or
+// rejects the program. An index outside the range accepted by the op may raise
+// an execution error and otherwise has unspecified results, but must never
+// access memory outside a tensor's storage. Negative-index handling follows the
+// referenced ATen operator.
 table Node {
     // fx node name (SSA name of this node's output).
     name: string (required);
