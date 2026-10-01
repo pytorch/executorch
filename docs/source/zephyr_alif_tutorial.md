@@ -437,14 +437,7 @@ matching the ImageNet normalisation the sample applies on device. It also record
 that image, so the device output has a reference to compare against.
 
 For that reference to mean anything, export with `--model_name=mv2` rather than
-`mv2_untrained`, and supply representative calibration data:
-
-```bash
-python -m executorch.backends.arm.scripts.aot_arm_compiler \
-    --model_name=mv2 --quantize --delegate \
-    --target=ethos-u55-256 --calibration_data=<dir-of-pt-tensors> \
-    --output=mv2_ethosu.pte
-```
+`mv2_untrained`, and supply representative calibration data.
 
 `--calibration_data` takes a directory of `.pt` files, each holding one
 preprocessed input tensor of shape `[1, 3, 224, 224]`. Produce them with the
@@ -468,7 +461,14 @@ for i, path in enumerate(images):
     torch.save(x, f"calib/{i:04d}.pt")
 ```
 
-Then pass `--calibration_data=calib`.
+Then export against that directory:
+
+```bash
+python -m executorch.backends.arm.scripts.aot_arm_compiler \
+    --model_name=mv2 --quantize --delegate \
+    --target=ethos-u55-256 --calibration_data=calib \
+    --output=mv2_ethosu.pte
+```
 
 A few hundred images spread across classes is a reasonable starting point.
 

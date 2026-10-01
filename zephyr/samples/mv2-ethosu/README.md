@@ -30,7 +30,7 @@ calibrates on the model's example input, which is random:
 ```bash
 python -m executorch.backends.arm.scripts.aot_arm_compiler \
     --model_name=mv2 --quantize --delegate \
-    --target=ethos-u55-256 --calibration_data=<dir-of-pt-tensors> \
+    --target=ethos-u55-256 --calibration_data=calib \
     --output=mv2_ethosu.pte
 ```
 
