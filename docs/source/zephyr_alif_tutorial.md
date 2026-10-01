@@ -9,7 +9,8 @@ works on the Arm Corstone-320 FVP for development without hardware.
 
 - A quantized INT8 MobileNetV2 model with Ethos-U NPU delegation
 - A Zephyr RTOS application that loads the `.pte` model, runs inference on a
-  static test image, and prints the top-5 ImageNet predictions over UART
+  fixed input tensor, and prints the top-5 ImageNet predictions over UART
+- Optionally, classification of your own photograph (Step 7)
 
 ## Prerequisites
 
@@ -419,6 +420,36 @@ The reported inference time covers one `method->execute()` call, measured with
 `k_uptime_get_32()`. Model loading, input preparation, and result reporting are
 outside that interval. For hardware comparisons, record the software versions,
 model, core/NPU configuration and clocks, and measurements over repeated runs.
+
+## Step 7: Classify Your Own Image
+
+The sample ships with a synthetic input tensor, which exercises the runtime but
+produces meaningless predictions. To classify a photograph, regenerate the
+input header:
+
+```bash
+python modules/lib/executorch/zephyr/samples/mv2-ethosu/gen_input.py your_photo.jpg
+```
+
+The script resizes to 256, centre-crops to 224x224, and stores the result as
+uint8 RGB in NCHW order, matching the ImageNet normalisation the sample applies
+on device. It also records what float32 torchvision MobileNetV2 predicts for
+that image, so the device output has a reference to compare against.
+
+For that reference to mean anything, export with `--model_name=mv2` rather than
+`mv2_untrained`, and supply representative calibration data:
+
+```bash
+python -m executorch.backends.arm.scripts.aot_arm_compiler \
+    --model_name=mv2 --quantize --delegate \
+    --target=ethos-u55-256 --calibration_data=<dir-of-pt-tensors> \
+    --output=mv2_ethosu.pte
+```
+
+Then rebuild and reflash as in Steps 5 and 6b.
+
+ImageNet has no "person" class, so portraits return an unrelated label with low
+confidence. Photographs of animals, objects, food and vehicles work well.
 
 ## Troubleshooting
 
