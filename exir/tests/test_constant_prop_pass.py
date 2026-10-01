@@ -12,6 +12,7 @@ import unittest
 import torch
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.passes.constant_prop_pass import _expression, constant_prop_pass
 from torch.export import export
 
@@ -411,3 +412,87 @@ class TestConstantPropPass(unittest.TestCase):
         self.assertRegex(weight, r"^base_prop_[0-9a-f]{64}$")
         self.assertEqual(tag, "model.ptd")
         self.assertTrue(torch.allclose(new_ep.module()(x), expected))
+
+    def test_constant_prop_pass_clones_a_constant_output_in_the_dialect_of_the_graph(
+        self,
+    ) -> None:
+        """
+        A folded value that is also an output is returned through a clone,
+        in the dialect of the graph: before to_edge, as in a pre-decomposition
+        hook, the clone is the ATen op and the program still decomposes; an
+        edge program gets the edge clone.
+        """
+
+        class TransposeAndReturn(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(3, 4))
+
+            def forward(self, x: torch.Tensor):
+                w = self.w.t()
+                return x @ w, w
+
+        def returned_clone(ep):
+            (output,) = ep.graph.find_nodes(op="output")
+            clone = output.args[0][1]
+            self.assertEqual(clone.args[0].op, "placeholder")
+            return clone.target
+
+        x = torch.randn(2, 4)
+        model = TransposeAndReturn()
+        expected = model(x)
+
+        new_ep = constant_prop_pass(
+            export(model, (x,), strict=True), register_like_source=True
+        )
+        self.assertEqual(returned_clone(new_ep), torch.ops.aten.clone.default)
+        self.assertFalse(
+            any(isinstance(n.target, EdgeOpOverload) for n in new_ep.graph.nodes)
+        )
+        decomposed = new_ep.run_decompositions({})
+        for actual, want in zip(decomposed.module()(x), expected):
+            self.assertTrue(torch.allclose(actual, want))
+
+        edge = to_edge(export(model, (x,), strict=True)).exported_program()
+        self.assertEqual(
+            returned_clone(constant_prop_pass(edge)), exir_ops.edge.aten.clone.default
+        )
+
+    def test_constant_prop_pass_fold_buffers_false_leaves_a_buffer_output_alone(
+        self,
+    ) -> None:
+        """
+        With fold_buffers=False a buffer is not a constant to the pass, also
+        where it is an output: a read-only buffer the method returns stays
+        the output as it is. By default it is returned through a clone.
+        """
+
+        class ReturnState(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.ones(4))
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x: torch.Tensor):
+                return x + self.w * 2, self.state
+
+        def returned(ep):
+            (output,) = ep.graph.find_nodes(op="output")
+            return output.args[0][1]
+
+        x = torch.ones(4)
+        new_ep = constant_prop_pass(
+            export(ReturnState(), (x,), strict=True), fold_buffers=False
+        )
+        self.assertEqual(returned(new_ep).op, "placeholder")
+        self.assertEqual(
+            new_ep.graph_signature.inputs_to_buffers[returned(new_ep).name], "state"
+        )
+        self.assertTrue(torch.equal(new_ep.module()(x)[1], torch.zeros(4)))
+
+        new_ep = constant_prop_pass(export(ReturnState(), (x,), strict=True))
+        clone = returned(new_ep)
+        self.assertEqual(clone.target, torch.ops.aten.clone.default)
+        self.assertEqual(
+            new_ep.graph_signature.inputs_to_buffers[clone.args[0].name], "state"
+        )
