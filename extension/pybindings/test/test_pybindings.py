@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -77,6 +78,54 @@ class PybindingsTest(unittest.TestCase):
         output = executorch_module.forward([value.numpy() for value in inputs])[0]
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_torch_inputs_are_safe_across_threads(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings use the Python torch adapter")
+
+        exported_program, _ = create_program(ModuleAdd())
+        with tempfile.TemporaryDirectory() as directory:
+            program_path = os.path.join(directory, "add.pte")
+            with open(program_path, "wb") as program_file:
+                program_file.write(exported_program.buffer)
+
+            script = """
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+import torch
+from executorch.extension.pybindings import portable_lib as runtime
+
+with open(sys.argv[1], "rb") as program_file:
+    program = runtime._load_program_from_buffer(program_file.read())
+
+thread_count = 8
+methods = [program.load_method("forward") for _ in range(thread_count)]
+barrier = threading.Barrier(thread_count)
+
+def execute(method):
+    inputs = (torch.ones(2, 2), torch.ones(2, 2))
+    barrier.wait()
+    for _ in range(20):
+        output = method(inputs)[0]
+        torch.testing.assert_close(output, inputs[0] + inputs[1])
+
+with ThreadPoolExecutor(max_workers=thread_count) as executor:
+    list(executor.map(execute, methods))
+"""
+            completed = subprocess.run(
+                [sys.executable, "-c", script, program_path],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_default_numpy_integer_dtype_error_is_descriptive(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
@@ -235,7 +284,7 @@ class PybindingsTest(unittest.TestCase):
                 executorch_output = executorch_module(inputs)[0]  # noqa
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertTrue(str(out).find("The length of given input array"))
+                self.assertIn("The length of given input array", str(out))
 
     def test_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -513,7 +562,7 @@ class PybindingsTest(unittest.TestCase):
                 executorch_output = executorch_method(inputs)[0]  # noqa
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertTrue(str(out).find("The length of given input array"))
+                self.assertIn("The length of given input array", str(out))
 
     def test_method_quantized_ops(self):
         eager_module = ModuleAdd()
