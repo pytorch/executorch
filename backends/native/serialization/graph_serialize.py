@@ -390,8 +390,8 @@ def _node_to_arg_value(
     v: torch.fx.Node,
     subgraph_map: "dict[str, torch.fx.GraphModule] | None",
 ) -> ArgumentValue:
-    # A GGUF weight consumed through dequantize_gguf serializes as the raw packed
-    # constant (see _fold_gguf_dequant), so redirect the reference to it.
+    # A packed weight consumed through a folded dequantize serializes as the packed
+    # constant itself (see _fold_gguf_dequant, _mark_torchao_q4_weights).
     redirect = v.meta.get("native_serialize_as")
     if redirect is not None:
         return TensorArg(name=redirect)
@@ -800,8 +800,8 @@ def _collect_fx_nodes(
             ):
                 continue
 
-        # Folded GGUF dequantize nodes are not emitted; the consuming op references
-        # the packed weight directly (see _fold_gguf_dequant).
+        # Folded dequantize nodes are not emitted; the consuming op references the
+        # packed weight directly.
         if fx_node.meta.get("native_skip_serialize"):
             continue
 
@@ -1054,12 +1054,35 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
         node.meta["native_skip_serialize"] = True
 
 
-def _mark_torchao_q4_weights(graph_module: torch.fx.GraphModule) -> None:
+def _is_linear_weight_use(dequantize: torch.fx.Node, user: torch.fx.Node) -> bool:
+    op = _resolve_op_overload(user.target) if user.op == "call_function" else None
+    return (
+        op is not None
+        and op.name() == "aten::linear"
+        and len(user.args) >= 2
+        and user.args[1] is dequantize
+        and user.args[0] is not dequantize
+        and dequantize not in user.args[2:]
+        and dequantize not in user.kwargs.values()
+    )
+
+
+def _mark_torchao_q4_weights(
+    graph_module: torch.fx.GraphModule, lifted_constants: set[str] | None
+) -> None:
     """Mark portable torchao q4 weights for packed PTN storage.
 
-    The q/dq nodes remain in the serialized graph; only the weight storage
-    changes, to two four-bit values per byte.
+    A weight dequantize read only as the weight of `aten.linear`, whose output
+    dtype matches its scales and whose operands are serialized state inputs, is
+    folded: the linear reads the packed `AffineGroup` weight directly and the
+    dequantize is not serialized. A weight is packed only if every one of its
+    readers is such a dequantize with the same parameters. Any other dequantize
+    stays in the graph over the plain int8 weight, with torchao semantics.
+    Activation q/dq nodes are never folded.
     """
+    if lifted_constants is None:
+        return
+    folds: dict[torch.fx.Node, list[tuple[torch.fx.Node, dict[str, object]]]] = {}
     for node in graph_module.graph.nodes:
         op = _resolve_op_overload(node.target) if node.op == "call_function" else None
         if (
@@ -1105,12 +1128,35 @@ def _mark_torchao_q4_weights(graph_module: torch.fx.GraphModule) -> None:
             "zero_point_dtype": _scalar_type(zero_point_value.dtype),
             "group_size": block_size[1],
         }
-        existing = weight.meta.get("native_packed_quant")
-        if existing is not None and existing != packed:
-            raise ValueError(
-                f"constant {weight.name!r} has incompatible q4 interpretations"
-            )
+        if (
+            {weight.name, scale.name, zero_point.name} <= lifted_constants
+            and output.dtype == scale_value.dtype
+            and node.users
+            and all(_is_linear_weight_use(node, user) for user in node.users)
+        ):
+            folds.setdefault(weight, []).append((node, packed))
+
+    for weight, weight_folds in folds.items():
+        packed = weight_folds[0][1]
+        if len(weight.users) != len(weight_folds) or any(
+            p != packed for _, p in weight_folds
+        ):
+            continue
         weight.meta["native_packed_quant"] = packed
+        for node, _ in weight_folds:
+            node.meta["native_serialize_as"] = weight.name
+            node.meta["native_skip_serialize"] = True
+
+
+def _lifted_constant_names(graph_signature: object | None) -> set[str] | None:
+    if graph_signature is None:
+        return None
+    return {
+        ispec.arg.name
+        for ispec in getattr(graph_signature, "input_specs", []) or []
+        if ispec.kind in _INPUT_KIND_MAP
+        and isinstance(getattr(ispec, "arg", None), TensorArgument)
+    }
 
 
 def _build_graph_body(
@@ -1126,7 +1172,7 @@ def _build_graph_body(
     dict[str, torch.Tensor],
 ]:
     _fold_gguf_dequant(graph_module)
-    _mark_torchao_q4_weights(graph_module)
+    _mark_torchao_q4_weights(graph_module, _lifted_constant_names(graph_signature))
     subgraph_map = _subgraph_map(graph_module)
     nodes, val_by_name, output_names = _collect_fx_nodes(graph_module, subgraph_map)
 
