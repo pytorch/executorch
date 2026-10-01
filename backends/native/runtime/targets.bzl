@@ -57,7 +57,28 @@ def define_common_targets():
             ":method",
         ],
         deps = [
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
             ":native_graph_schema",
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "validation",
+        srcs = ["Validation.cpp"],
+        exported_headers = ["Validation.h"],
+        exported_deps = [
+            ":method",
+            ":runtime",
+            "//executorch/backends/native/runtime/deserialize:package",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+            "//executorch/backends/native/runtime/deserialize:limits",
         ],
         visibility = ["PUBLIC"],
     )
@@ -79,6 +100,16 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
+    runtime.cxx_test(
+        name = "program_version_test",
+        srcs = ["test/ProgramVersionTest.cpp"],
+        deps = [
+            ":native_graph_schema",
+            ":runtime",
+            "//executorch/backends/native/runtime/deserialize:deserialize_error",
+        ],
+    )
+
     # A named method: one top-level Graph plus its stateful signature bindings
     # (data bindings + output specs). Sits at the Program level (peer to the reader),
     # above the graph/ package.
@@ -93,6 +124,36 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:value",
         ],
         visibility = ["//executorch/backends/native/..."],
+    )
+
+    runtime.cxx_library(
+        name = "tensor_info",
+        srcs = ["TensorInfo.cpp"],
+        exported_headers = ["TensorInfo.h"],
+        exported_deps = [
+            "//executorch/backends/native/runtime/graph:scalar_type",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/deserialize:checked_math",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "method_meta",
+        srcs = ["MethodMeta.cpp"],
+        exported_headers = ["MethodMeta.h"],
+        exported_deps = [
+            ":method",
+            ":tensor_info",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_test(
+        name = "method_meta_test",
+        srcs = ["test/MethodMetaTest.cpp"],
+        deps = [":method_meta"],
     )
 
     # The graph/ printer stops at Graph, since Method sits above that package;

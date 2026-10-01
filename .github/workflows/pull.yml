@@ -871,14 +871,33 @@ jobs:
 
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
+        if [[ "${{ matrix.test_arm_backend }}" == "test_pytest_ops_no_target" ]]; then
+          for backend in vgf u55 u85; do
+            python backends/arm/scripts/docgen/generate_op_support.py \
+              --backend "$backend" --check || exit 1
+
+            python backends/arm/scripts/docgen/generate_op_support.py \
+              --backend "$backend" || exit 1
+          done
+
+          git diff --exit-code -- \
+            docs/source/backends/arm-vgf/VGF_op_support.md \
+            docs/source/backends/arm-ethos-u/U55_op_support.md \
+            docs/source/backends/arm-ethos-u/U85_op_support.md || {
+              echo "::error::Operator support documentation is outdated. Regenerate it and commit the changes."
+              exit 1
+            }
+        fi
+
         ARM_TEST=${{ matrix.test_arm_backend }}
 
         # Test test_arm_backend.sh with test
         backends/arm/test/test_arm_backend.sh "${ARM_TEST}"
 
   test-arm-backend-vkml:
+    needs: docker-image
     name: test-arm-backend-vkml
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -887,10 +906,11 @@ jobs:
         include:
           - test_arm_backend: test_pytest_ops_vkml
           - test_arm_backend: test_ootb_tests_vgf
+          - test_arm_backend: test_runtime_vgf
       fail-fast: false
     with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-24.04-arm-sdk
+      runner: mt-l-x86iavx512-8-64
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-24.04-arm-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
@@ -905,8 +925,6 @@ jobs:
           --disable-ethos-u-deps \
           --enable-mlsdk-deps \
           --install-mlsdk-deps-with-pip
-
-        sudo sysctl fs.inotify.max_user_watches=1048576
 
         ARM_TEST=${{ matrix.test_arm_backend }}
 
