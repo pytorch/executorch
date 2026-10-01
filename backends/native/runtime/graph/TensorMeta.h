@@ -17,6 +17,8 @@
 
 namespace ptn {
 
+// See native_graph.fbs AffineGroup. As a direct op operand, a tensor carrying
+// this scheme denotes its decoded value, with dtype scale_dtype.
 struct AffineGroupQuant {
   std::string scale_data_key;
   ScalarType scale_dtype = ScalarType::Float;
