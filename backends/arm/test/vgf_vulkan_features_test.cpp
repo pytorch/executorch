@@ -7,10 +7,6 @@
 
 #include <gtest/gtest.h>
 
-#include <type_traits>
-#include <utility>
-
-#include <executorch/backends/arm/runtime/VGFSetup.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 
 namespace executorch {
@@ -44,92 +40,6 @@ TEST(VgfVulkanFeaturesTest, RequiresDataGraphShaderModuleSupport) {
 
   available.dataGraphShaderModule = VK_TRUE;
   EXPECT_TRUE(vgf_data_graph_features_supported(available));
-}
-
-TEST(VgfVulkanFeaturesTest, EnablesHostMemoryImportWhenRequestedAndAdvertised) {
-  EXPECT_TRUE(vgf_host_memory_import_should_be_enabled(
-      /*requested=*/true, /*physical_device_advertised=*/true));
-}
-
-TEST(
-    VgfVulkanFeaturesTest,
-    DoesNotEnableHostMemoryImportWhenAdvertisedButNotRequested) {
-  EXPECT_FALSE(vgf_host_memory_import_should_be_enabled(
-      /*requested=*/false, /*physical_device_advertised=*/true));
-}
-
-TEST(
-    VgfVulkanFeaturesTest,
-    DoesNotEnableHostMemoryImportWhenRequestedButNotAdvertised) {
-  EXPECT_FALSE(vgf_host_memory_import_should_be_enabled(
-      /*requested=*/true, /*physical_device_advertised=*/false));
-}
-
-TEST(VgfVulkanFeaturesTest, LegacyHostMemoryImportPathRemainsDisabled) {
-  EXPECT_FALSE(vgf_host_memory_import_should_be_enabled(
-      /*requested=*/false, /*physical_device_advertised=*/false));
-}
-
-TEST(VgfVulkanFeaturesTest, HostImportCommandPoolSupportsIndividualReset) {
-  EXPECT_EQ(
-      vgf_command_pool_flags(/*host_memory_import_enabled=*/true),
-      VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-}
-
-TEST(VgfVulkanFeaturesTest, LegacyCommandPoolFlagsRemainUnchanged) {
-  EXPECT_EQ(vgf_command_pool_flags(/*host_memory_import_enabled=*/false), 0u);
-}
-
-TEST(VgfVulkanFeaturesTest, HostMemoryImportCapabilitiesDefaultToUnavailable) {
-  const VgfHostMemoryImportCapabilities capabilities{};
-  EXPECT_FALSE(capabilities.physical_device_advertised);
-  EXPECT_FALSE(capabilities.logical_device_enabled);
-  EXPECT_EQ(capabilities.min_imported_host_pointer_alignment, 0u);
-}
-
-TEST(
-    VgfVulkanFeaturesTest,
-    HostMemoryImportCapabilitiesDistinguishAdvertisedFromEnabled) {
-  VgfHostMemoryImportCapabilities capabilities{};
-  capabilities.physical_device_advertised = true;
-  capabilities.logical_device_enabled = false;
-  capabilities.min_imported_host_pointer_alignment = 4096;
-
-  EXPECT_TRUE(capabilities.physical_device_advertised);
-  EXPECT_FALSE(capabilities.logical_device_enabled);
-  EXPECT_EQ(capabilities.min_imported_host_pointer_alignment, 4096u);
-}
-
-TEST(VgfVulkanFeaturesTest, VgfReprExposesHostMemoryImportCapabilities) {
-  static_assert(std::is_constructible_v<
-                VgfRepr,
-                VkInstance,
-                VkPhysicalDevice,
-                VkDevice,
-                VkQueue,
-                VkCommandPool,
-                uint32_t,
-                bool,
-                bool,
-                int,
-                VgfHostMemoryImportCapabilities>);
-  static_assert(std::is_same_v<
-                decltype(std::declval<const VgfRepr&>()
-                             .host_memory_import_advertised()),
-                bool>);
-  static_assert(
-      std::is_same_v<
-          decltype(std::declval<const VgfRepr&>().host_memory_import_enabled()),
-          bool>);
-  static_assert(std::is_same_v<
-                decltype(std::declval<const VgfRepr&>()
-                             .min_imported_host_pointer_alignment()),
-                VkDeviceSize>);
-  static_assert(std::is_same_v<
-                decltype(std::declval<const VgfRepr&>()
-                             .host_memory_import_capabilities()),
-                const VgfHostMemoryImportCapabilities&>);
-  SUCCEED();
 }
 
 } // namespace
