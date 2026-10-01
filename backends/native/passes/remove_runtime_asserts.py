@@ -14,13 +14,12 @@ from torch.utils._sympy.value_ranges import bound_sympy, ValueRanges
 
 
 class RemoveRuntimeAssertsPass(ExportPass):
-    """Remove export-time guards that PTN input bounds already enforce.
+    """Remove selected export-time guards before native lowering.
 
-    A PTN records each input dim as a [min, max] range and an engine rejects sizes
-    outside it, so a guard that holds for every size in those ranges is redundant,
-    as is a tensor metadata assert. Any other guard (divisibility, data-dependent
-    values) is kept: it has no native kernel, so lowering fails instead of
-    dropping the check.
+    Scalar and symbolic-range guards are removed only when they hold across the
+    input-dimension ranges. ``_assert_tensor_metadata`` is removed as a whole,
+    including optional size, stride, and device checks. Other guards remain so
+    unsupported lowering fails instead of silently dropping them.
     """
 
     _SYM_RANGE_OPS = {
@@ -49,7 +48,8 @@ class RemoveRuntimeAssertsPass(ExportPass):
         self, node: torch.fx.Node, ranges: dict[sympy.Symbol, ValueRanges]
     ) -> bool:
         if node.target is torch.ops.aten._assert_tensor_metadata.default:
-            # PTN tensor values carry their dtype.
+            # Tensor-metadata assertions are removed as a unit, including optional
+            # checks.
             return True
         if node.target is torch.ops.aten._assert_scalar.default:
             cond = node.args[0]
