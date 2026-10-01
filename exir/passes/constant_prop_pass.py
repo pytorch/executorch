@@ -773,14 +773,16 @@ def create_constant_nodes_and_return_specs(
 # add _skip_dim_order to ensure the introduced correct clone node for different dim order schema
 # TODO(gasoonjia): only relying on _clone_dim_order once we remove _skip_dim_order option in the EdgeCompileConfig
 def _update_output_node_and_specs(
-    exported_program: ExportedProgram, _skip_dim_order: bool
+    exported_program: ExportedProgram, _skip_dim_order: bool, fold_buffers: bool
 ) -> None:
     """
     Update the output node and output specs in the exported program.
     In case a constant node is used as output, we replace it with a clone of the constant node.
     """
     # Dict [node.name -> InputSpec]
-    updated_constant_placeholders = get_constant_placeholder_dict(exported_program)
+    updated_constant_placeholders = get_constant_placeholder_dict(
+        exported_program, fold_buffers
+    )
     output = exported_program.graph.find_nodes(op="output")[0]
     output_nodes = cast(list[torch.fx.Node], list(output.args[0]))
     output_specs = exported_program.graph_signature.output_specs
@@ -888,7 +890,9 @@ def constant_prop_pass(
         new_input_specs.append(name_to_spec_dict[node.name])
     exported_program.graph_signature.input_specs = new_input_specs
 
-    _update_output_node_and_specs(exported_program, _skip_dim_order=_skip_dim_order)
+    _update_output_node_and_specs(
+        exported_program, _skip_dim_order=_skip_dim_order, fold_buffers=fold_buffers
+    )
 
     # Cleanup the graph. A higher order op that writes its operands has no
     # users, yet it has to stay. Graph.eliminate_dead_code also cleans
