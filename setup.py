@@ -1137,7 +1137,7 @@ def _torchao_requirement() -> str:
 def _release_torch_requirement() -> List[str]:
     if (
         not torch_pin.RELEASE_WHEEL
-        or os.environ.get("EXECUTORCH_BUILDING_WHEEL") != "1"
+        or os.environ.get("EXECUTORCH_RELEASE_WHEEL_METADATA") != "1"
     ):
         return []
 

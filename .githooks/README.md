@@ -9,8 +9,9 @@ This directory contains Git hooks for the ExecuTorch repository. It is used as
 
 Runs on every commit:
 
-1. **torch_pin sync** — when `torch_pin.py` is staged, updates the PyTorch commit
-   pin in `.ci/docker/ci_commit_pins/pytorch.txt` and syncs grafted c10 files.
+1. **torch_pin sync** — when a development `torch_pin.py` is staged, updates the
+   PyTorch commit pin and grafted c10 files. Prepared release branches retain
+   the release commit selected by the branch-cut or finalization script.
 2. **lintrunner** — runs `lintrunner -a --revision HEAD^ --skip MYPY` on changed
    files. Auto-fixes formatting and blocks on lint errors. Soft-fails if lintrunner
    is not installed. Runs `lintrunner init` automatically when `.lintrunner.toml`

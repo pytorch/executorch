@@ -15,5 +15,5 @@ export CMAKE_ARGS="${CMAKE_ARGS:-}"
 # setup.py only adds release dependency metadata for artifacts built by the
 # binary wheel jobs. A source install on a release branch must preserve the
 # PyTorch build already installed by that checkout's CI job.
-export EXECUTORCH_BUILDING_WHEEL=1
+export EXECUTORCH_RELEASE_WHEEL_METADATA=1
 export EXECUTORCH_WHEEL_VARIANT=cpu

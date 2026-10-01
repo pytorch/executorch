@@ -11,7 +11,12 @@
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
 
 _executorch_cuda_version="${CU_VERSION:-${DESIRED_CUDA:-}}"
-export EXECUTORCH_WHEEL_VARIANT="cu${_executorch_cuda_version//[!0-9]/}"
+_executorch_cuda_digits="${_executorch_cuda_version//[!0-9]/}"
+if [[ ! "${_executorch_cuda_digits}" =~ ^[0-9]{3}$ ]]; then
+  echo "CU_VERSION or DESIRED_CUDA must identify a CUDA wheel variant, got '${_executorch_cuda_version}'" >&2
+  exit 1
+fi
+export EXECUTORCH_WHEEL_VARIANT="cu${_executorch_cuda_digits}"
 
 # Ask for the CUDA delegate explicitly rather than letting the build detect a toolkit. A detected
 # build is fine locally, but a release row states what it is producing, and a row that silently

@@ -18,6 +18,7 @@ _TORCH_PIN = runpy.run_path(os.path.join(os.path.dirname(__file__), "torch_pin.p
 TORCH_VERSION = _TORCH_PIN["TORCH_VERSION"]
 TORCHVISION_VERSION = _TORCH_PIN["TORCHVISION_VERSION"]
 TORCHAUDIO_VERSION = _TORCH_PIN["TORCHAUDIO_VERSION"]
+RELEASE_WHEEL = _TORCH_PIN["RELEASE_WHEEL"]
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
@@ -28,7 +29,8 @@ CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
-# These wheels' metadata pairs August 11 domain libraries with August 10 torch.
+# cu134 needs explicit local-version pins. Release preparation replaces this
+# development-nightly set with compatible wheels from the test index.
 CU134_TORCH_PACKAGES = [
     "torch==2.14.0.dev20260810+cu134",
     "torchvision==0.29.0.dev20260811+cu134",
@@ -86,9 +88,10 @@ def install_requirements(use_pytorch_nightly):
     torch_url = determine_torch_url(TORCH_URL_BASE)
     cu134_packages = cu134_requirements(torch_url)
     if cu134_packages:
-        torch_url = determine_torch_url(TORCHAO_URL_BASE)
         if not use_pytorch_nightly:
             cu134_packages[0] = "torch"
+        if not RELEASE_WHEEL:
+            torch_url = determine_torch_url(TORCHAO_URL_BASE)
     # torchao's CUDA channel publishes x86_64 only, so asking for a CUDA build makes the pin
     # unsatisfiable on aarch64. Only that case is special-cased: falling back everywhere would
     # change which torchao a CPU x86_64 install resolves, and the CUDA build is genuinely wanted
@@ -182,11 +185,19 @@ def install_optional_example_requirements(use_pytorch_nightly):
         if use_pytorch_nightly
         else []
     )
-    if cu134_packages:
+    if cu134_packages and not RELEASE_WHEEL:
         torch_url = determine_torch_url(TORCHAO_URL_BASE)
     torchao_index = (
-        ["--extra-index-url", f"{TORCHAO_URL_BASE}/cpu"]
-        if cu134_packages and platform.machine().lower() in ("aarch64", "arm64")
+        [
+            "--extra-index-url",
+            (
+                f"{TORCHAO_URL_BASE}/cpu"
+                if platform.machine().lower() in ("aarch64", "arm64")
+                else determine_torch_url(TORCHAO_URL_BASE)
+            ),
+        ]
+        if cu134_packages
+        and (RELEASE_WHEEL or platform.machine().lower() in ("aarch64", "arm64"))
         else []
     )
 

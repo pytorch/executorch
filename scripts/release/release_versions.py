@@ -11,29 +11,37 @@ import re
 _RELEASE_PATTERN = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?")
 
 
-def release_key(version: str) -> tuple[int, int, int, int, int]:
+def release_parts(version: str) -> tuple[int, int, int, str | None, int]:
     match = _RELEASE_PATTERN.fullmatch(version)
     if match is None:
         raise RuntimeError(f"invalid release version {version!r}")
-    stage_rank = {"a": 0, "b": 1, "rc": 2, None: 3}
     major, minor, patch = (int(part) for part in match.groups()[:3])
-    return major, minor, patch, stage_rank[match.group(4)], int(match.group(5) or 0)
+    return major, minor, patch, match.group(4), int(match.group(5) or 0)
 
 
-def torchvision_version(torch_version: str) -> str:
-    match = _RELEASE_PATTERN.fullmatch(torch_version)
-    if match is None:
-        raise RuntimeError(f"invalid Torch release version {torch_version!r}")
-    _major, minor, patch, stage, stage_number = match.groups()
-    suffix = f"{stage}{stage_number}" if stage else ""
-    return f"0.{int(minor) + 15}.{patch}{suffix}"
+def is_release_version(version: object, allow_prerelease: bool = True) -> bool:
+    if not isinstance(version, str):
+        return False
+    try:
+        _major, _minor, _patch, stage, _stage_number = release_parts(version)
+    except RuntimeError:
+        return False
+    return allow_prerelease or stage is None
+
+
+def release_base_version(version: str) -> str:
+    major, minor, patch, _stage, _stage_number = release_parts(version)
+    return f"{major}.{minor}.{patch}"
+
+
+def release_key(version: str) -> tuple[int, int, int, int, int]:
+    major, minor, patch, stage, stage_number = release_parts(version)
+    stage_rank = {"a": 0, "b": 1, "rc": 2, None: 3}
+    return major, minor, patch, stage_rank[stage], stage_number
 
 
 def torch_release_tag(torch_version: str) -> str:
-    match = _RELEASE_PATTERN.fullmatch(torch_version)
-    if match is None:
-        raise RuntimeError(f"invalid Torch release version {torch_version!r}")
-    major, minor, patch, stage, stage_number = match.groups()
+    major, minor, patch, stage, stage_number = release_parts(torch_version)
     suffix = f"-{stage}{stage_number}" if stage else ""
     return f"v{major}.{minor}.{patch}{suffix}"
 

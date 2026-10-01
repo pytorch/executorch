@@ -8,6 +8,7 @@
 """Apply and validate the deterministic changes required on release branches."""
 
 import argparse
+import html
 import re
 import runpy
 import subprocess
@@ -15,13 +16,14 @@ import sys
 import urllib.request
 from pathlib import Path
 from typing import Iterable, List
-from urllib.parse import unquote
+from urllib.parse import unquote, urljoin
 
 from release_versions import (  # type: ignore[import-not-found]
+    is_release_version,
+    release_base_version,
     release_key,
     torch_release_tag,
     torch_requirement,
-    torchvision_version,
 )
 
 _RELEASE_VERSION_PATTERN = re.compile(r"\d+\.\d+")
@@ -34,6 +36,9 @@ _TORCHVISION_VERSION_PATTERN = re.compile(
 )
 _TORCHAUDIO_VERSION_PATTERN = re.compile(
     r'^TORCHAUDIO_VERSION\s*=\s*"([^"]+)"$', re.MULTILINE
+)
+_CU134_TORCH_PACKAGES_PATTERN = re.compile(
+    r"^CU134_TORCH_PACKAGES = \[\n.*?^\]\n", re.MULTILINE | re.DOTALL
 )
 _TEST_INFRA_MAIN_PATTERN = re.compile(r"(pytorch/test-infra/[^\s\"']+)@main\b")
 _TEST_INFRA_REF_MAIN_PATTERN = re.compile(r"(test-infra-ref:\s*)main\b")
@@ -76,7 +81,7 @@ def enable_release_wheel(torch_pin_path: Path) -> bool:
 
 def set_torch_version(torch_pin_path: Path, torch_version: str) -> bool:
     """Set the Torch release pin used by installs and release wheel metadata."""
-    if re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", torch_version) is None:
+    if not is_release_version(torch_version, allow_prerelease=False):
         raise RuntimeError(f"invalid Torch release version {torch_version!r}")
     text = torch_pin_path.read_text()
     updated, count = _TORCH_VERSION_PATTERN.subn(
@@ -89,27 +94,54 @@ def set_torch_version(torch_pin_path: Path, torch_version: str) -> bool:
     return _write_if_changed(torch_pin_path, updated)
 
 
-def set_companion_versions(torch_pin_path: Path, torch_version: str) -> bool:
-    """Move torchvision to the selected PyTorch release train."""
+def set_companion_versions(
+    torch_pin_path: Path, torchvision: str, torchaudio: str
+) -> bool:
+    """Set domain-library releases that declare the selected Torch version."""
     text = torch_pin_path.read_text()
     updated, vision_count = _TORCHVISION_VERSION_PATTERN.subn(
-        f'TORCHVISION_VERSION = "{torchvision_version(torch_version)}"', text
+        f'TORCHVISION_VERSION = "{torchvision}"', text
     )
-    if vision_count != 1 or _TORCHAUDIO_VERSION_PATTERN.search(updated) is None:
+    updated, audio_count = _TORCHAUDIO_VERSION_PATTERN.subn(
+        f'TORCHAUDIO_VERSION = "{torchaudio}"', updated
+    )
+    if vision_count != 1 or audio_count != 1:
         raise RuntimeError(
             f"expected exactly one torchvision and torchaudio assignment in {torch_pin_path}"
         )
     return _write_if_changed(torch_pin_path, updated)
 
 
+def set_cu134_versions(
+    install_requirements_path: Path,
+    torch_version: str,
+    torchvision: str,
+    torchaudio: str,
+) -> bool:
+    """Move the exceptional cu134 package list to the selected release train."""
+    text = install_requirements_path.read_text()
+    packages = (
+        "CU134_TORCH_PACKAGES = [\n"
+        f'    "torch=={torch_version}+cu134",\n'
+        f'    "torchvision=={torchvision}+cu134",\n'
+        f'    "torchaudio=={torchaudio}+cu134",\n'
+        "]\n"
+    )
+    updated, count = _CU134_TORCH_PACKAGES_PATTERN.subn(packages, text)
+    if count != 1:
+        raise RuntimeError(
+            f"expected one CU134_TORCH_PACKAGES list in {install_requirements_path}"
+        )
+    return _write_if_changed(install_requirements_path, updated)
+
+
 def newest_torch_test_release(
     available_versions: Iterable[str], newer_than: str = ""
 ) -> str:
-    """Return the newest RC/final on a newer PyTorch release train."""
+    """Return the newest final-form wheel on a newer PyTorch release train."""
     candidates = []
     for version in available_versions:
-        match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:(rc)(\d+))?", version)
-        if match is None:
+        if not is_release_version(version, allow_prerelease=False):
             continue
         key = release_key(version)
         if newer_than and key[:2] <= release_key(newer_than)[:2]:
@@ -117,22 +149,54 @@ def newest_torch_test_release(
         candidates.append((key, version))
     if not candidates:
         qualifier = f" newer than {newer_than}" if newer_than else ""
-        raise RuntimeError(
-            f"PyTorch test index has no release candidate or final release{qualifier}"
-        )
+        raise RuntimeError(f"PyTorch test index has no release wheel{qualifier}")
     return max(candidates)[1]
 
 
-def _test_index_versions(package: str) -> set[str]:
-    with urllib.request.urlopen(
-        f"https://download.pytorch.org/whl/test/cpu/{package}/", timeout=30
-    ) as response:
-        index = unquote(response.read().decode())
-    return set(
-        re.findall(
-            rf"{re.escape(package)}-(\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?)(?:\+[^-]+)?-",
-            index,
+def _test_index_wheels(package: str, variant: str = "cpu") -> dict[str, str]:
+    index_url = (
+        f"https://download.pytorch.org/whl/test/{variant}/{package}/"  # @lint-ignore
+    )
+    with urllib.request.urlopen(index_url, timeout=30) as response:
+        index = response.read().decode()
+    wheels: dict[str, str] = {}
+    for href in re.findall(
+        r'<a\s+href="([^"]+)"[^>]+data-(?:core|dist-info)-metadata=', index
+    ):
+        filename = unquote(html.unescape(href)).rsplit("/", 1)[-1]
+        match = re.match(
+            rf"{re.escape(package)}-([^-+]+)(?:\+[^-]+)?-",
+            filename,
         )
+        if match is None or not is_release_version(match.group(1)):
+            continue
+        version = match.group(1)
+        wheels.setdefault(
+            version,
+            urljoin(index_url, html.unescape(href).split("#", 1)[0]) + ".metadata",
+        )
+    return wheels
+
+
+def _test_index_versions(package: str, variant: str = "cpu") -> set[str]:
+    return set(_test_index_wheels(package, variant))
+
+
+def companion_release_for_torch(package: str, torch_version: str) -> str:
+    """Find the newest domain-library wheel that requires this Torch release."""
+    wheels = _test_index_wheels(package)
+    requirement = re.compile(
+        rf"^Requires-Dist:\s*torch\s*(?:\(\s*)?==\s*{re.escape(torch_version)}"
+        r"(?:\s*\))?(?:\s*;.*)?\s*$",
+        re.MULTILINE,
+    )
+    for version in sorted(wheels, key=release_key, reverse=True):
+        with urllib.request.urlopen(wheels[version], timeout=30) as response:
+            metadata = response.read().decode()
+        if requirement.search(metadata):
+            return version
+    raise RuntimeError(
+        f"PyTorch test index has no {package} release requiring torch=={torch_version}"
     )
 
 
@@ -143,23 +207,24 @@ def latest_torch_test_release(newer_than: str) -> str:
     )
 
 
-def require_companion_releases(torch_pin_path: Path, torch_version: str) -> None:
-    """Fail before mutation unless matching domain-library releases exist."""
-    config = runpy.run_path(str(torch_pin_path))
+def companion_releases_for_torch(torch_version: str) -> dict[str, str]:
+    """Resolve compatible CPU companions and require the cu134 release train."""
     expected = {
-        "torchvision": torchvision_version(torch_version),
-        "torchaudio": config["TORCHAUDIO_VERSION"],
+        package: companion_release_for_torch(package, torch_version)
+        for package in ("torchvision", "torchaudio")
     }
+    expected["torch"] = torch_version
     missing = [
-        f"{package}=={version}"
+        f"{package}=={version}+cu134"
         for package, version in expected.items()
-        if version not in _test_index_versions(package)
+        if version not in _test_index_versions(package, "cu134")
     ]
     if missing:
         raise RuntimeError(
-            "PyTorch companion releases are not available on the test index: "
+            "PyTorch cu134 releases are not available on the test index: "
             + ", ".join(missing)
         )
+    return expected
 
 
 def torch_version_for_release(torch_pin_path: Path, override: str = "") -> str:
@@ -167,6 +232,11 @@ def torch_version_for_release(torch_pin_path: Path, override: str = "") -> str:
     config = runpy.run_path(str(torch_pin_path))
     current = config["TORCH_VERSION"]
     if override:
+        if not is_release_version(override, allow_prerelease=False):
+            raise RuntimeError(
+                "Torch wheel versions on the test index must use final X.Y.Z form, "
+                f"received {override!r}"
+            )
         current_key = release_key(current)
         override_key = release_key(override)
         already_prepared = config.get("RELEASE_WHEEL") is True
@@ -187,12 +257,8 @@ def torch_version_for_release(torch_pin_path: Path, override: str = "") -> str:
 
 def test_infra_branch_for_torch(torch_version: str) -> str:
     """Return the test-infra release branch matching a PyTorch release."""
-    match = re.match(r"(\d+)\.(\d+)\.", torch_version)
-    if match is None:
-        raise RuntimeError(
-            f"could not derive a test-infra branch from Torch {torch_version!r}"
-        )
-    return f"release/{match.group(1)}.{match.group(2)}"
+    major, minor, _patch, _stage, _stage_number = release_key(torch_version)
+    return f"release/{major}.{minor}"
 
 
 def require_test_infra_branch(test_infra_branch: str) -> None:
@@ -216,16 +282,23 @@ def require_test_infra_branch(test_infra_branch: str) -> None:
         )
 
 
-def pytorch_commit_for_release(torch_version: str) -> str:
-    """Resolve the selected PyTorch release tag before changing the checkout."""
-    tag = torch_release_tag(torch_version)
+def pytorch_commit_for_release(
+    torch_version: str, release_candidate: bool = False
+) -> str:
+    """Resolve the final tag or newest RC tag for a wheel release version."""
+    base_version = release_base_version(torch_version)
+    tag = torch_release_tag(base_version)
+    reference_patterns = (
+        [f"refs/tags/{tag}-rc*"]
+        if release_candidate
+        else [f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"]
+    )
     result = subprocess.run(
         [
             "git",
             "ls-remote",
             "https://github.com/pytorch/pytorch.git",
-            f"refs/tags/{tag}",
-            f"refs/tags/{tag}^{{}}",
+            *reference_patterns,
         ],
         check=True,
         capture_output=True,
@@ -237,11 +310,21 @@ def pytorch_commit_for_release(torch_version: str) -> str:
             line.split("\t", 1) for line in result.stdout.splitlines() if "\t" in line
         )
     }
-    commit = references.get(f"refs/tags/{tag}^{{}}") or references.get(
-        f"refs/tags/{tag}"
-    )
+    if release_candidate:
+        candidates = []
+        pattern = re.compile(rf"refs/tags/{re.escape(tag)}-rc(\d+)" + r"(\^\{\})?$")
+        for reference, commit in references.items():
+            match = pattern.fullmatch(reference)
+            if match:
+                candidates.append((int(match.group(1)), bool(match.group(2)), commit))
+        commit = max(candidates)[2] if candidates else None
+    else:
+        commit = references.get(f"refs/tags/{tag}^{{}}") or references.get(
+            f"refs/tags/{tag}"
+        )
     if commit is None:
-        raise RuntimeError(f"PyTorch release tag {tag} does not exist")
+        qualifier = " release-candidate" if release_candidate else ""
+        raise RuntimeError(f"PyTorch{qualifier} tag for {tag} does not exist")
     return commit
 
 
@@ -266,25 +349,13 @@ def validate_release_build(torch_pin_path: Path) -> str:
         raise RuntimeError(f"{torch_pin_path} does not enable release wheel metadata")
 
     version = config.get("TORCH_VERSION")
-    if (
-        not isinstance(version, str)
-        or re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", version) is None
-    ):
+    if not is_release_version(version, allow_prerelease=False):
         raise RuntimeError(f"{torch_pin_path} has invalid TORCH_VERSION {version!r}")
-    expected_vision = torchvision_version(version)
-    if config.get("TORCHVISION_VERSION") != expected_vision:
-        raise RuntimeError(
-            f"{torch_pin_path} has TORCHVISION_VERSION="
-            f"{config.get('TORCHVISION_VERSION')!r}, expected {expected_vision!r}"
-        )
-    audio_version = config.get("TORCHAUDIO_VERSION")
-    if (
-        not isinstance(audio_version, str)
-        or re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", audio_version) is None
-    ):
-        raise RuntimeError(
-            f"{torch_pin_path} has invalid TORCHAUDIO_VERSION {audio_version!r}"
-        )
+    for name in ("TORCHVISION_VERSION", "TORCHAUDIO_VERSION"):
+        if not is_release_version(config.get(name), allow_prerelease=False):
+            raise RuntimeError(
+                f"{torch_pin_path} has invalid {name} {config.get(name)!r}"
+            )
     return torch_requirement(version, "cpu")
 
 
@@ -421,6 +492,7 @@ def prepare_release(
     release_version: str,
     test_infra_branch: str,
     torch_version: str,
+    companions: dict[str, str],
 ) -> str:
     """Apply every deterministic branch-cut edit and return the Torch requirement."""
     _validate_release_version(release_version)
@@ -430,7 +502,17 @@ def prepare_release(
     workflow_paths = sorted((repo_root / ".github/workflows").glob("*.yml"))
     documentation = documentation_paths(repo_root)
     set_torch_version(repo_root / "torch_pin.py", torch_version)
-    set_companion_versions(repo_root / "torch_pin.py", torch_version)
+    set_companion_versions(
+        repo_root / "torch_pin.py",
+        companions["torchvision"],
+        companions["torchaudio"],
+    )
+    set_cu134_versions(
+        repo_root / "install_requirements.py",
+        torch_version,
+        companions["torchvision"],
+        companions["torchaudio"],
+    )
     enable_release_wheel(repo_root / "torch_pin.py")
     release_full_version = configure_release_version(
         repo_root / "version.txt", release_version
@@ -478,7 +560,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--torch-version",
-        help="Torch RC version (defaults to the newest release on the test index)",
+        help="Torch wheel version (defaults to the newest release on the test index)",
     )
     parser.add_argument(
         "--repo-root", type=Path, default=Path(__file__).resolve().parents[2]
@@ -493,7 +575,6 @@ def main() -> None:
     if args.check:
         _validate_release_version(release_version)
         requirement = validate_release_build(repo_root / "torch_pin.py")
-        torch_version = runpy.run_path(str(repo_root / "torch_pin.py"))["TORCH_VERSION"]
         test_infra_branch = args.test_infra_branch or configured_test_infra_branch(
             workflow_paths
         )
@@ -510,13 +591,21 @@ def main() -> None:
         torch_version = torch_version_for_release(
             repo_root / "torch_pin.py", args.torch_version or ""
         )
-        require_companion_releases(repo_root / "torch_pin.py", torch_version)
+        companions = companion_releases_for_torch(torch_version)
         test_infra_branch = args.test_infra_branch or test_infra_branch_for_torch(
             torch_version
         )
         require_test_infra_branch(test_infra_branch)
-        pytorch_commit = pytorch_commit_for_release(torch_version)
-        prepare_release(repo_root, release_version, test_infra_branch, torch_version)
+        pytorch_commit = pytorch_commit_for_release(
+            torch_version, release_candidate=True
+        )
+        prepare_release(
+            repo_root,
+            release_version,
+            test_infra_branch,
+            torch_version,
+            companions,
+        )
         sync_pytorch_source(repo_root, pytorch_commit)
 
 

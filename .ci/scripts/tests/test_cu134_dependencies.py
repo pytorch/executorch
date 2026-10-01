@@ -96,6 +96,20 @@ class TestCu134Dependencies(unittest.TestCase):
                             "https://download.pytorch.org/whl/nightly/cpu", command
                         )
 
+        release_packages = [
+            "torch==2.15.0+cu134",
+            "torchvision==0.30.0+cu134",
+            "torchaudio==2.12.0+cu134",
+        ]
+        with (
+            patch.object(self.installer, "RELEASE_WHEEL", True),
+            patch.object(self.installer, "CU134_TORCH_PACKAGES", release_packages),
+        ):
+            commands = self.install_commands((13, 4))
+        for command in commands:
+            self.assertIn("https://download.pytorch.org/whl/test/cu134", command)
+        self.assertTrue(set(release_packages).issubset(commands[2]))
+
     def test_other_cuda_trains_keep_existing_pins(self):
         for cuda in ((12, 6), (13, 0), (13, 2)):
             for machine in ("x86_64", "aarch64"):
@@ -150,7 +164,7 @@ class TestCu134Dependencies(unittest.TestCase):
         self,
         function_name,
         *,
-        installed_torch="2.15.0rc1",
+        installed_torch="2.15.0",
         building_wheel=True,
         wheel_variant="cpu",
     ):
@@ -177,7 +191,7 @@ class TestCu134Dependencies(unittest.TestCase):
             "sys": sys,
             "install_utils": self.utils,
             "release_versions": self.release_versions,
-            "torch_pin": SimpleNamespace(RELEASE_WHEEL=True, TORCH_VERSION="2.15.0rc1"),
+            "torch_pin": SimpleNamespace(RELEASE_WHEEL=True, TORCH_VERSION="2.15.0"),
         }
         exec(
             compile(ast.Module(body=functions, type_ignores=[]), str(path), "exec"),
@@ -185,7 +199,7 @@ class TestCu134Dependencies(unittest.TestCase):
         )
         environment = (
             {
-                "EXECUTORCH_BUILDING_WHEEL": "1",
+                "EXECUTORCH_RELEASE_WHEEL_METADATA": "1",
                 "EXECUTORCH_WHEEL_VARIANT": wheel_variant,
             }
             if building_wheel
@@ -283,8 +297,8 @@ class TestCu134Dependencies(unittest.TestCase):
 
     def test_wheel_bounds_match_selected_train(self):
         for wheel_variant, installed_torch, expected_torch in (
-            ("cu132", "2.15.0rc1+cu132", "torch==2.15.0rc1+cu132"),
-            ("cpu", "2.15.0rc1", "torch>=2.15.0rc1,<2.16"),
+            ("cu132", "2.15.0+cu132", "torch==2.15.0+cu132"),
+            ("cpu", "2.15.0", "torch>=2.15.0,<2.16"),
         ):
             with self.subTest(wheel_variant=wheel_variant):
                 self.assertEqual(
@@ -299,7 +313,7 @@ class TestCu134Dependencies(unittest.TestCase):
                     expected_torch,
                 )
 
-        with self.assertRaisesRegex(RuntimeError, "for Torch 2.15.0rc1"):
+        with self.assertRaisesRegex(RuntimeError, "for Torch 2.15.0"):
             self.release_torch_requirement(
                 installed_torch="2.14.0.dev20260810+cu134",
                 wheel_variant="cu134",
