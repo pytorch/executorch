@@ -16,8 +16,9 @@ produces are meaningless. To classify something real, regenerate the header:
 python gen_input.py your_photo.jpg
 ```
 
-The script resizes to 256, centre-crops to 224x224, stores the result as uint8
-RGB in NCHW order, and records what float32 torchvision MobileNetV2 predicts.
+The script applies the same resize and centre-crop that torchvision's default
+MobileNetV2 weights expect, stores the result as uint8 RGB in NCHW order, and
+records what float32 torchvision MobileNetV2 predicts.
 Rebuild and reflash after regenerating.
 
 Two things are required for that recorded prediction to be a valid reference.

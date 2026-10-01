@@ -431,9 +431,9 @@ input header:
 python modules/lib/executorch/zephyr/samples/mv2-ethosu/gen_input.py your_photo.jpg
 ```
 
-The script resizes to 256, centre-crops to 224x224, and stores the result as
-uint8 RGB in NCHW order, matching the ImageNet normalisation the sample applies
-on device. It also records what float32 torchvision MobileNetV2 predicts for
+The script applies the resize and centre-crop that torchvision's default
+MobileNetV2 weights expect, and stores the result as uint8 RGB in NCHW order,
+matching the ImageNet normalisation the sample applies on device. It also records what float32 torchvision MobileNetV2 predicts for
 that image, so the device output has a reference to compare against.
 
 For that reference to mean anything, export with `--model_name=mv2` rather than
