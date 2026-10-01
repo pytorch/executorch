@@ -34,6 +34,10 @@ python -m executorch.backends.arm.scripts.aot_arm_compiler \
     --output=mv2_ethosu.pte
 ```
 
+`--calibration_data` takes a directory of `.pt` files, each holding one
+preprocessed input tensor of shape `[1, 3, 224, 224]`, produced with the same
+transform the model expects (`MobileNet_V2_Weights.DEFAULT.transforms()`).
+
 ImageNet has no "person" class, so portraits return an unrelated label with low
 confidence. Photographs of animals, objects, food and vehicles work well.
 

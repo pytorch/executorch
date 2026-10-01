@@ -12,10 +12,11 @@ this script at a photograph to get a header the device can actually classify:
 
     python gen_input.py cat.jpg
 
-The image is resized to 256, centre-cropped to 224x224 and stored as uint8 RGB
-in NCHW order, matching the normalisation main.cpp applies on device. The
-float32 torchvision prediction is recorded in a comment so the device output
-has a reference to be compared against.
+The image is resized and centre-cropped using the preset that ships with
+torchvision's default MobileNetV2 weights, then stored as uint8 RGB in NCHW
+order. The same weights produce the float32 prediction recorded in a comment,
+so the device output has a reference to be compared against. Normalisation is
+applied on device by main.cpp.
 
 Requires: pillow, torch, torchvision.
 """

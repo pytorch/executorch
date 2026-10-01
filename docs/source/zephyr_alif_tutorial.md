@@ -66,7 +66,7 @@ in its own source tree.
 Install the Zephyr SDK (compiler toolchain):
 
 ```bash
-west sdk install --gnu-toolchains arm-zephyr-eabi
+west sdk install --version 1.0.1 --toolchains arm-zephyr-eabi
 ```
 
 ## Step 3: Install ExecuTorch and Arm Tools
@@ -445,6 +445,23 @@ python -m executorch.backends.arm.scripts.aot_arm_compiler \
     --target=ethos-u55-256 --calibration_data=<dir-of-pt-tensors> \
     --output=mv2_ethosu.pte
 ```
+
+`--calibration_data` takes a directory of `.pt` files, each holding one
+preprocessed input tensor of shape `[1, 3, 224, 224]`. Produce them with the
+same transform the model expects, so the quantized ranges reflect real images:
+
+```python
+import torch, torchvision
+from PIL import Image
+
+weights = torchvision.models.MobileNet_V2_Weights.DEFAULT
+preprocess = weights.transforms()
+for i, path in enumerate(my_images):
+    x = preprocess(Image.open(path).convert("RGB")).unsqueeze(0)
+    torch.save(x, f"calib/{i:04d}.pt")
+```
+
+A few hundred images spread across classes is a reasonable starting point.
 
 Then rebuild and reflash as in Steps 5 and 6b.
 
