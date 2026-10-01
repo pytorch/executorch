@@ -48,7 +48,7 @@ struct TextRequest {
   batching::MetricsTime submitted = batching::MetricsClock::now();
   std::size_t start_position = 0;
   bool started = false;
-  bool clone_lane = false;
+  bool capture_lane = false;
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
 
   void emit(GenerationEvent event) {
@@ -723,12 +723,10 @@ struct ServingRuntime::Impl {
   }
 
   std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
-    if (!request->text || config_.prefix_cache_capacity == 0 ||
-        request->text->options.sampling.temperature != 0 || clone_lane_busy_) {
+    if (!request->text || config_.prefix_cache_capacity == 0) {
       return std::nullopt;
     }
-    clone_lane_busy_ = true;
-    request->text->clone_lane = true;
+    // A lookup clone uses the new request's reserved working-session slot.
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
@@ -741,7 +739,7 @@ struct ServingRuntime::Impl {
   }
 
   void finish_capture(const Request& request) {
-    if (!request->text || !request->text->clone_lane) {
+    if (!request->text || !request->text->capture_lane) {
       return;
     }
     // Generation has already finished on the dispatcher. collect() combines
@@ -760,8 +758,8 @@ struct ServingRuntime::Impl {
     }
 #endif
     request->text->prefix_capture.reset();
-    request->text->clone_lane = false;
-    clone_lane_busy_ = false;
+    request->text->capture_lane = false;
+    capture_lane_busy_ = false;
   }
 
   void generate(const Request& request) {
@@ -882,7 +880,11 @@ struct ServingRuntime::Impl {
             request->emit(update);
             schedule(request);
           };
-      if (request->text && request->text->clone_lane) {
+      if (opening && request->text && config_.prefix_cache_capacity != 0 &&
+          !capture_lane_busy_) {
+        // Only a capture needs an extra row beyond the working-session slots.
+        capture_lane_busy_ = true;
+        request->text->capture_lane = true;
 #if ET_HAS_EXCEPTIONS
         try {
 #endif
@@ -1331,7 +1333,7 @@ struct ServingRuntime::Impl {
   batching::PrefixCache prefix_cache_;
   // Control-thread policy; held through capture collection, including clone
   // refusal and cancellation. At most one transient snapshot can exist.
-  bool clone_lane_busy_ = false;
+  bool capture_lane_busy_ = false;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::condition_variable stopped_cv_;
