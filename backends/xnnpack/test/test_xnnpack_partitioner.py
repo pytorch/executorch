@@ -367,7 +367,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         )
         self.assertEqual(len(folded.constants), 0)
         (weight,) = folded.graph_signature.inputs_to_parameters.values()
-        self.assertRegex(weight, r"^w_prop_[0-9a-f]{8}$")
+        self.assertRegex(weight, r"^w_prop_[0-9a-f]{64}$")
 
         edge = to_edge_transform_and_lower(
             export(model, example_inputs), partitioner=[XnnpackPartitioner()]
@@ -620,7 +620,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         external_map = executorch._emitter_output.external_constant_map
         self.assertEqual(len(external_map["weights.ptd"]), 2)
         for name in external_map["weights.ptd"]:
-            self.assertRegex(name, r"^shared\.w_prop_[0-9a-f]{8}$")
+            self.assertRegex(name, r"^shared\.w_prop_[0-9a-f]{64}$")
         self.assertEqual(len(executorch._emitter_output.external_constant_buffer), 2)
         # The program reads the folded values from the .ptd. With one name
         # for both folds the second write replaced the first, and one method
@@ -670,7 +670,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         self.assertEqual(set(parameters[:-1]), {"conv.bias", "scale", "row"})
         self.assertRegex(
             parameters[-1],
-            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{8}$",
+            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{64}$",
         )
 
         edge = to_edge_transform_and_lower(
@@ -775,7 +775,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         targets = [n.target for n in folded.graph.nodes if n.op == "call_function"]
         self.assertEqual(targets, [torch.ops.aten.linear.default])
         (weight,) = folded.graph_signature.inputs_to_parameters.values()
-        self.assertRegex(weight, r"^weight_prop_[0-9a-f]{8}$")
+        self.assertRegex(weight, r"^weight_prop_[0-9a-f]{64}$")
 
         edge = to_edge_transform_and_lower(
             export(model, example_inputs), partitioner=[XnnpackPartitioner()]
@@ -865,7 +865,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
             self.assertNotIn(source, parameters)
             self.assertEqual(
                 sum(
-                    bool(re.match(rf"^{source}_prop_[0-9a-f]{{8}}$", p))
+                    bool(re.match(rf"^{source}_prop_[0-9a-f]{{64}}$", p))
                     for p in parameters
                 ),
                 outputs,
@@ -906,7 +906,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         )
         parameters = list(folded.graph_signature.inputs_to_parameters.values())
         self.assertEqual(parameters[0], "scale")
-        self.assertRegex(parameters[1], r"^weight_prop_[0-9a-f]{8}$")
+        self.assertRegex(parameters[1], r"^weight_prop_[0-9a-f]{64}$")
         self._assert_lowered_matches_eager(model, example_inputs)
 
     def test_pre_decomposition_folding_retraces_only_with_a_fold(self):
@@ -968,7 +968,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
         self.assertIsNot(folded, exported)
         self.assertRegex(
             list(folded.graph_signature.inputs_to_parameters.values())[-1],
-            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{8}$",
+            r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{64}$",
         )
 
     def test_pre_decomposition_folding_handles_a_deep_weight_chain(self):
@@ -996,7 +996,7 @@ class TestXnnpackPartitioner(unittest.TestCase):
             export(model, example_inputs)
         )
         (weight,) = folded.graph_signature.inputs_to_parameters.values()
-        self.assertRegex(weight, r"^w_prop_[0-9a-f]{8}$")
+        self.assertRegex(weight, r"^w_prop_[0-9a-f]{64}$")
 
         edge = to_edge_transform_and_lower(
             export(model, example_inputs), partitioner=[XnnpackPartitioner()]

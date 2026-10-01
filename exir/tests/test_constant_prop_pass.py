@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import hashlib
 import unittest
 
 import torch
@@ -140,7 +141,7 @@ class TestConstantPropPass(unittest.TestCase):
         names = list(new_ep.graph_signature.inputs_to_parameters.values())
         self.assertEqual(len(names), 2)
         for name in names:
-            self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+            self.assertRegex(name, r"^w_prop_[0-9a-f]{64}$")
         self.assertNotEqual(names[0], names[1])
         self.assertNotIn("w", new_ep.state_dict)
         self.assertEqual(len(new_ep.constants), 0)
@@ -173,7 +174,7 @@ class TestConstantPropPass(unittest.TestCase):
 
         buffers = list(new_ep.graph_signature.inputs_to_buffers.values())
         self.assertEqual(len(buffers), 1)
-        self.assertRegex(buffers[0], r"^scale_prop_[0-9a-f]{8}$")
+        self.assertRegex(buffers[0], r"^scale_prop_[0-9a-f]{64}$")
         self.assertEqual(len(new_ep.constants), 0)
         self.assertTrue(torch.equal(new_ep.module()(x), torch.tensor([2.0, 4.0])))
 
@@ -212,7 +213,7 @@ class TestConstantPropPass(unittest.TestCase):
         self.assertEqual(names["a"], names["b"])
         self.assertNotEqual(names["a"], names["c"])
         for name in names.values():
-            self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+            self.assertRegex(name, r"^w_prop_[0-9a-f]{64}$")
 
     def test_constant_prop_pass_describes_each_producer_once(self) -> None:
         """
@@ -220,7 +221,9 @@ class TestConstantPropPass(unittest.TestCase):
         once, so it grows with the number of producers, not with the number
         of paths through them: a chain of squarings, where each level uses
         its input twice, stays short. It is built without recursion, so a
-        deep chain does not reach the recursion limit.
+        deep chain does not reach the recursion limit. Each target appears
+        with its namespace, and the name of the folded value carries the
+        whole sha256 digest of the expression.
         """
 
         class Squaring(torch.nn.Module):
@@ -263,12 +266,20 @@ class TestConstantPropPass(unittest.TestCase):
             len(weight_expression(export(Chain(600), (x,), strict=True))), 100 * 600
         )
 
-        for module in (Squaring(16), Chain(600)):
+        for module, target in (
+            (Squaring(16), "aten.mul.Tensor"),
+            (Chain(600), "aten.add.Tensor"),
+        ):
             ep = export(module, (x,), strict=True)
             expected = ep.module()(x)
+            expression = weight_expression(ep)
+            self.assertIn(f"={target}(", expression)
             new_ep = constant_prop_pass(ep, register_like_source=True)
             (name,) = new_ep.graph_signature.inputs_to_parameters.values()
-            self.assertRegex(name, r"^w_prop_[0-9a-f]{8}$")
+            self.assertRegex(name, r"^w_prop_[0-9a-f]{64}$")
+            self.assertEqual(
+                name, "w_prop_" + hashlib.sha256(expression.encode()).hexdigest()
+            )
             self.assertTrue(torch.equal(new_ep.module()(x), expected))
 
     def test_constant_prop_pass_registers_folds_in_graph_order(self) -> None:
