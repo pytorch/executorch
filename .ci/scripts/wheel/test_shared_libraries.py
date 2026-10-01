@@ -2028,9 +2028,9 @@ def _names_a_build_directory(entry: str) -> bool:
     )
 
 
-# Absolute directories a shipped library may name. PyTorch's own is allowed because the wheel
-# neither declares nor bundles PyTorch, so an absolute path is the only way to reach it. The maths
-# library arch directories are allowed because a real installation spells them below a prefix, as
+# Absolute directories a shipped library may name. PyTorch's own is allowed because the wheel does
+# not bundle PyTorch, so an absolute path is the only way to reach it. The maths library arch
+# directories are allowed because a real installation spells them below a prefix, as
 # /opt/intel/mkl/lib/intel64, which the environment genuinely provides.
 #
 # Matched as a suffix. A substring test exempted any path merely CONTAINING one of these, so a

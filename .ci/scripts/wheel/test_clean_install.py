@@ -21,6 +21,7 @@ user, and names the package it wanted.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -45,9 +46,9 @@ REQUIRED_IMPORTS: List[str] = [
 
 # Distributions that are legitimately present without being declared.
 #
-# torch, because the wheel deliberately does not declare it: a consumer brings the build
-# matching their platform and accelerator. The rest are what torch itself requires, so they are
-# guaranteed alongside it.
+# torch, because only a release wheel declares it and this check also runs on nightlies, where a
+# consumer brings the build matching their platform and accelerator. The rest are what torch itself
+# requires, so they are guaranteed alongside it.
 ASSUMED_PRESENT: Set[str] = {"torch", "executorch"}
 
 
@@ -208,9 +209,50 @@ def run_tests(work_dir: Path) -> None:
         )
 
     _check_top_level_names()
+    test_release_declares_torch()
     print(
         f"All {len(REQUIRED_IMPORTS)} modules import with only declared dependencies, and the "
         f"metadata names only the package."
+    )
+
+
+def test_release_declares_torch() -> None:
+    """A release wheel must declare the torch it was built against, and torch must satisfy it.
+
+    The native code links torch's C++ library, so a release that declares no torch lets pip pair
+    it with any torch at all. 1.5.0 and 1.5.1 shipped that way.
+
+    Release means what it means to setup.py: BUILD_VERSION is a plain version. The installed
+    version cannot tell, because a local build without BUILD_VERSION is also a plain version
+    followed by its git hash.
+    """
+    import importlib.metadata as metadata
+
+    from packaging.requirements import Requirement
+
+    build_version = os.environ.get("BUILD_VERSION", "").strip()
+    if not re.fullmatch(r"\d+(\.\d+)*", build_version.split("+", 1)[0]):
+        print(
+            f"BUILD_VERSION {build_version!r} is not a release, so no torch is declared"
+        )
+        return
+
+    version = metadata.version("executorch")
+    declared = [
+        requirement
+        for requirement in map(Requirement, metadata.requires("executorch") or [])
+        if requirement.name == "torch"
+    ]
+    assert declared, (
+        f"executorch {version} is a release but declares no torch requirement, so pip will "
+        "pair it with a torch its native code was not built against"
+    )
+    installed = metadata.version("torch")
+    assert declared[0].specifier.contains(
+        installed, prereleases=True
+    ), f"executorch {version} requires {declared[0]}, but torch {installed} is installed"
+    print(
+        f"✓ release executorch {version} requires {declared[0]}, torch is {installed}"
     )
 
 

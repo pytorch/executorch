@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import functools
+import importlib.metadata
 import os
 import platform
 import re
@@ -294,6 +295,37 @@ def _normalize_cmake_bool(value: Optional[str], default: bool = False) -> bool:
     if value is None:
         return default
     return cmake_boolean_is_true(value)
+
+
+def release_torch_requirement(build_version: Optional[str]) -> Optional[str]:
+    """The torch requirement a release wheel declares, or None for any other build.
+
+    The native extensions link torch's C++ library, which has no stable ABI. With a wheel built on
+    2.14, torch 2.12 imports and then fails at runtime, and with 2.11 a shipped library fails to
+    load. So a release declares the minor it was built on. The cap matters as much as the floor:
+    an open range let a later torch break a release that had already shipped.
+
+    Only a release declares it. test-infra sets BUILD_VERSION to a plain version for a release or a
+    release candidate, such as 1.6.0+cu132, and to a .dev version for a nightly. A local build
+    leaves it unset.
+
+    The version comes from the torch installed in the build environment, because that is what the
+    native code compiles against. torch_pin.py is not what the installer reads, and on one release
+    branch it named 2.11 while the build installed 2.10.
+
+    The floor is a0 so that a torch built from source, which reports a version like
+    2.14.0a0+git0123abc, still satisfies it. A nightly snapshot such as 2.14.0.dev20260810 sorts
+    below a0, so a build on one uses that snapshot as the floor, or the range would exclude the
+    torch the wheel was built on.
+    """
+    public = (build_version or "").strip().split("+", 1)[0]
+    if not re.fullmatch(r"\d+(\.\d+)*", public):
+        return None
+    torch_version = importlib.metadata.version("torch").split("+", 1)[0]
+    major, minor = (int(part) for part in torch_version.split(".")[:2])
+    snapshot = re.fullmatch(rf"{major}\.{minor}\.0\.dev\d+", torch_version)
+    floor = snapshot.group(0) if snapshot else f"{major}.{minor}.0a0"
+    return f"torch>={floor},<{major}.{minor + 1}"
 
 
 def _cuda_version_to_pytorch_suffix(major, minor):
