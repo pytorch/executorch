@@ -1,38 +1,37 @@
 import unittest
 import torch
-from torch.testing._internal.common_utils import TestCase
-# Import the custom op so it registers in PyTorch
-from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+from executorch.backends.vulkan.test.utils import lower_module_and_test_output
 
-# Import Vulkan testing utilities (paths may vary slightly depending on ExecuTorch version)
-from executorch.backends.vulkan.test.utils import check_op_on_vulkan
+# Ensure the custom ops are registered in the PyTorch environment
+try:
+    torch.ops.llama.gated_delta_rule.default
+except AttributeError:
+    import executorch.extension.llm.custom_ops.custom_ops
 
-class TestGatedDeltaRule(TestCase):
+class TestGatedDeltaRule(unittest.TestCase):
     def test_gated_delta_rule_vulkan(self):
-        # TODO: 1. Define input shapes based on Kev's linear attention dimensions
-        batch_size, num_heads, head_k_dim, head_v_dim, seq_len = 1, 4, 32, 32, 16
+        # We will use small toy shapes for fast testing
+        # Based on logs: query is [Batch, Heads, Sequence, HeadDim]
+        B, H, S, D = 1, 2, 4, 16
         
-        # TODO: 2. Initialize random dummy tensors for q, k, v, decay, beta, state
-        q = torch.randn(batch_size, num_heads, seq_len, head_k_dim, dtype=torch.float32)
-        k = torch.randn(batch_size, num_heads, seq_len, head_k_dim, dtype=torch.float32)
-        v = torch.randn(batch_size, num_heads, seq_len, head_v_dim, dtype=torch.float32)
-        decay = torch.rand(batch_size, num_heads, seq_len, head_k_dim, dtype=torch.float32)
-        beta = torch.rand(batch_size, num_heads, seq_len, head_v_dim, dtype=torch.float32)
-        state = torch.zeros(batch_size, num_heads, head_k_dim, head_v_dim, dtype=torch.float32)
+        query = torch.randn(B, H, S, D, dtype=torch.float32)
+        key = torch.randn(B, H, S, D, dtype=torch.float32)
+        value = torch.randn(B, H, S, D, dtype=torch.float32)
+        decay = torch.randn(B, H, S, dtype=torch.float32)
+        beta = torch.randn(B, H, S, dtype=torch.float32)
+        initial_state = torch.randn(B, H, D, D, dtype=torch.float32)
 
-        # TODO: 3. Create a small nn.Module that wraps the custom operation
         class GatedDeltaRuleModule(torch.nn.Module):
-            def forward(self, q, k, v, decay, beta, state):
-                # This calls the CPU implementation defined in PyTorch/ExecuTorch
-                return torch.ops.llama.gated_delta_rule(q, k, v, decay, beta, state)
+            def forward(self, query, key, value, decay, beta, initial_state):
+                return torch.ops.llama.gated_delta_rule.default(
+                    query, key, value, decay, beta, initial_state
+                )
 
         model = GatedDeltaRuleModule().eval()
-        inputs = (q, k, v, decay, beta, state)
-
-        # TODO: 4. Check the operation on Vulkan. 
-        # This utility traces the graph, lowers it to Vulkan, runs the GPU shader, 
-        # runs the CPU reference, and compares the outputs using torch.allclose!
-        check_op_on_vulkan(model, inputs)
+        inputs = (query, key, value, decay, beta, initial_state)
+        
+        # This compiles the module for Vulkan, runs it on GPU, and compares with CPU via torch.allclose
+        lower_module_and_test_output(model, inputs)
 
 if __name__ == "__main__":
     unittest.main()
