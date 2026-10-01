@@ -151,8 +151,8 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
     if (stat.size > std::numeric_limits<size_t>::max()) {
       throw std::runtime_error("zip: member is too large: " + name);
     }
-    if (!entries_.emplace(name, Entry{index, static_cast<size_t>(stat.size)})
-             .second) {
+    const Entry entry{index, static_cast<size_t>(stat.size), std::nullopt};
+    if (!entries_.emplace(name, entry).second) {
       throw std::runtime_error("zip: duplicate member name: " + name);
     }
     names_.push_back(name);
@@ -163,9 +163,8 @@ ZipReader::ZipReader(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {
 }
 
 // libzip does not expose where member data starts, so walk the local headers.
-// Accepts only the layout zip writers produce by default, one stored member
-// after another in central-directory order, and otherwise leaves every offset
-// unset so reads go through libzip.
+// Accept only a simple layout: stored members contiguous from offset zero in
+// central-directory order. Otherwise leave offsets unset and read via libzip.
 void ZipReader::locate_member_data() {
   const ByteSpan archive = impl_->memory;
   std::vector<size_t> offsets;
@@ -198,7 +197,7 @@ void ZipReader::locate_member_data() {
     offsets.push_back(data);
     position = data + size;
   }
-  for (size_t i = 0; i < names_.size(); ++i) {
+  for (size_t i = 0; i < offsets.size(); ++i) {
     entries_.find(names_[i])->second.data_offset = offsets[i];
   }
 }

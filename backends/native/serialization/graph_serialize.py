@@ -216,7 +216,7 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    dim_order = [int(d) for d in dim_order_from_stride(strides)]
+    dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):
         # A size-1 dim only ever indexes 0, so its stride is arbitrary and need not
@@ -1077,7 +1077,7 @@ def _mark_torchao_q4_weights(
 
     A weight dequantize read only as the weight of `aten.linear` or
     `aten.embedding`, whose output dtype matches its scales and whose operands
-    are all lifted constants, is folded: the op reads the packed `AffineGroup`
+    are serialized state inputs, is folded: the op reads the packed `AffineGroup`
     weight directly and the dequantize is not serialized. A weight is packed only
     if every one of its readers is such a dequantize with the same parameters.
     Any other dequantize stays in the graph over the plain int8 weight, with
