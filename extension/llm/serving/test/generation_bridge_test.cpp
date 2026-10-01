@@ -14,11 +14,13 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <functional>
 #include <future>
 #include <mutex>
 #include <random>
 #include <set>
 #include <thread>
+#include <type_traits>
 
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
@@ -92,6 +94,9 @@ class Executor : public batching::testing::FakeExecutor {
   }
   bool execute(const batching::BatchInput& input, batching::BatchOutput& output)
       override {
+    if (on_execute) {
+      on_execute(input);
+    }
     std::set<batching::SessionId> sessions;
     for (const auto& item : input.inputs) {
       sessions.insert(item.sid);
@@ -113,6 +118,7 @@ class Executor : public batching::testing::FakeExecutor {
     subsequent.release();
   }
   std::thread::id engine_thread;
+  std::function<void(const batching::BatchInput&)> on_execute;
   Gate initializing;
   Gate opening;
   Gate executing;
@@ -244,6 +250,7 @@ class GenerationBridgeTest : public ::testing::Test {
     executor.release_all();
     sink_gate.release();
     other_sink_gate.release();
+    cleanup_gate.release();
     for (auto& caller : callback_callers) {
       if (caller.joinable()) {
         caller.join();
@@ -262,12 +269,79 @@ class GenerationBridgeTest : public ::testing::Test {
   Executor executor;
   Gate sink_gate;
   Gate other_sink_gate;
+  Gate cleanup_gate;
+  struct SmallCallbackState {
+    std::atomic<int> destructions{0};
+    std::atomic<int> terminals{0};
+  } small_callback_state;
   RequestHandle cleanup_handle;
   std::vector<std::thread> callback_callers;
   Gate test_finished;
   std::thread callback_watchdog;
   std::unique_ptr<ServingRuntime> runtime;
 };
+
+class GenerationFenceTest : public GenerationBridgeTest,
+                            public ::testing::WithParamInterface<bool> {
+ protected:
+  void fence(std::string key, serving::LifecycleCallback callback) {
+    if (GetParam()) {
+      runtime->reset_session_async(std::move(key), std::move(callback));
+    } else {
+      runtime->close_session_async(std::move(key), std::move(callback));
+    }
+  }
+
+  std::future<serving::LifecycleResult> fence(std::string key) {
+    return GetParam() ? runtime->reset_session_async(std::move(key))
+                      : runtime->close_session_async(std::move(key));
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    CloseAndReset,
+    GenerationFenceTest,
+    ::testing::Bool(),
+    [](const ::testing::TestParamInfo<bool>& info) {
+      return info.param ? "Reset" : "Close";
+    });
+
+TEST_F(GenerationBridgeTest, SmallUpdateCallbackDestructionCanReenterInfo) {
+  watch_callbacks();
+  executor.executing.hold();
+  start();
+  // Nothrow copying keeps this eligible for libc++'s inline function storage.
+  struct SmallCallback {
+    ServingRuntime* runtime;
+    SmallCallbackState* state;
+
+    ~SmallCallback() {
+      (void)runtime->info();
+      ++state->destructions;
+    }
+
+    void operator()(
+        const batching::GenerationUpdate& update,
+        const RequestHandle&) const {
+      if (update.finish_reason) {
+        ++state->terminals;
+      }
+    }
+  };
+  static_assert(sizeof(SmallCallback) == 2 * sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<SmallCallback>::value);
+  auto input = request("session", std::make_shared<Events>(), 1);
+  input.on_update = SmallCallback{runtime.get(), &small_callback_state};
+  auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  input = {};
+  ASSERT_TRUE(executor.executing.wait_for());
+  const auto before_cleanup = small_callback_state.destructions.load();
+  executor.executing.release();
+  completed(handle);
+  EXPECT_GT(small_callback_state.destructions.load(), before_cleanup);
+  EXPECT_EQ(small_callback_state.terminals.load(), 1);
+  EXPECT_FALSE(handle.error());
+}
 
 TEST_F(GenerationBridgeTest, DistinctSessionsReachOnePhysicalBatch) {
   start();
@@ -813,58 +887,353 @@ TEST_F(
   EXPECT_TRUE(events->updates.back().tokens.empty());
 }
 
-TEST_F(GenerationBridgeTest, ResetAndCloseFenceStaleCompletionFromReplacement) {
-  executor.subsequent.hold();
+TEST_P(GenerationFenceTest, AckWaitsForTokensTerminalAndCaptureCleanup) {
+  watch_callbacks();
   start();
+  opened("session");
+  opened("other");
+  const auto old_session = executor.opened().front();
+  const auto other_session = executor.opened().back();
+  auto acked = std::make_shared<std::atomic<bool>>(false);
+  executor.on_execute = [acked, old_session, other_session](const auto& batch) {
+    for (const auto& item : batch.inputs) {
+      if (item.sid != old_session && item.sid != other_session) {
+        EXPECT_TRUE(acked->load());
+      }
+    }
+  };
+  executor.subsequent.hold();
   sink_gate.hold();
+  other_sink_gate.hold();
+  cleanup_gate.hold();
+  auto cleaned = std::make_shared<std::atomic<bool>>(false);
+  auto capture = std::shared_ptr<int>(new int(0), [this, cleaned](int* value) {
+    (void)runtime->info();
+    EXPECT_FALSE(cleanup_handle.done());
+    cleanup_gate.arrive();
+    cleaned->store(true);
+    delete value;
+  });
   auto old_events = std::make_shared<Events>();
   auto input = request("session", old_events, 2);
-  input.on_update = [this, old_events](
+  input.on_update = [this, old_events, capture](
                         const batching::GenerationUpdate& update,
                         const RequestHandle&) {
-    if (!update.finish_reason) {
+    (void)capture;
+    old_events->record(update);
+    if (update.finish_reason) {
+      other_sink_gate.arrive();
+    } else {
       sink_gate.arrive();
     }
-    old_events->record(update);
   };
-  auto old = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  cleanup_handle =
+      accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  input = {};
+  capture.reset();
   ASSERT_TRUE(sink_gate.wait_for());
   ASSERT_TRUE(executor.subsequent.wait_for());
-  auto reset = runtime->reset_session_async("session");
-  executor.subsequent.release();
-  ASSERT_EQ(reset.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_FALSE(reset.get());
+
+  auto promise = std::make_shared<std::promise<serving::LifecycleResult>>();
+  auto ack = promise->get_future();
+  fence("session", [this, cleaned, acked, promise](auto error) {
+    EXPECT_TRUE(cleanup_handle.done());
+    EXPECT_TRUE(cleaned->load());
+    (void)runtime->info();
+    acked->store(true);
+    promise->set_value(std::move(error));
+  });
   auto replacement_events = std::make_shared<Events>();
-  auto replacement = accepted(GenerationBridge::submit(
-      *runtime, request("session", replacement_events, 1)));
-  opened("session"); // Control has bound the replacement before old delivery.
+  auto replacement_input = request("session", replacement_events, 1);
+  replacement_input.on_prepare_complete =
+      [acked, prepare = replacement_input.on_prepare_complete](
+          const GenerationCompletion& completion) {
+        EXPECT_TRUE(acked->load());
+        prepare(completion);
+      };
+  auto replacement = accepted(
+      GenerationBridge::submit(*runtime, std::move(replacement_input)));
+  executor.subsequent.release();
+  opened("other"); // Control must skip the fenced key, including its followup.
+  auto other_events = std::make_shared<Events>();
+  auto other = accepted(
+      GenerationBridge::submit(*runtime, request("other", other_events, 1)));
+  ASSERT_TRUE(wait_until([&] {
+    const auto seen = executor.seen();
+    return std::any_of(seen.begin(), seen.end(), [&](const auto& item) {
+      return item.session == other_session;
+    });
+  }));
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_FALSE(cleanup_handle.done());
+  EXPECT_FALSE(replacement.done());
+  EXPECT_EQ(runtime->info().active_sessions, GetParam() ? 2u : 1u);
+  EXPECT_EQ(executor.opened().size(), GetParam() ? 3u : 2u);
+  {
+    // Delivery is shared: unrelated execution progresses, not its blocked sink.
+    std::lock_guard<std::mutex> lock(other_events->mutex);
+    EXPECT_TRUE(other_events->updates.empty());
+  }
+
   sink_gate.release();
-  completed(replacement);
-  completed(old);
+  ASSERT_TRUE(other_sink_gate.wait_for());
+  opened("other"); // Finalizers must also run while the fence is pending.
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_FALSE(cleanup_handle.done());
   {
     std::lock_guard<std::mutex> lock(old_events->mutex);
     ASSERT_TRUE(old_events->completion);
     EXPECT_FALSE(old_events->completion->current_session);
     EXPECT_FALSE(old_events->completion->position);
+    EXPECT_EQ(old_events->terminals, 1);
   }
-  EXPECT_EQ(runtime->info().active_sessions, 1u);
-  EXPECT_EQ(executor.opened().size(), 2u);
+  other_sink_gate.release();
+  ASSERT_TRUE(cleanup_gate.wait_for());
+  opened("other");
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_FALSE(cleanup_handle.done());
+  EXPECT_FALSE(cleaned->load());
+  EXPECT_EQ(executor.opened().size(), GetParam() ? 3u : 2u);
+  cleanup_gate.release();
+  ASSERT_EQ(ack.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  EXPECT_TRUE(cleaned->load());
+  completed(cleanup_handle);
+  completed(replacement);
+  completed(other);
+  EXPECT_FALSE(replacement.error());
+  EXPECT_FALSE(other.error());
+  expect_terminal(replacement_events, batching::FinishReason::NewTokenLimit);
+  expect_terminal(other_events, batching::FinishReason::NewTokenLimit);
+  EXPECT_EQ(executor.opened().size(), 3u); // Apply each transition only once.
+}
 
-  executor.executing.hold();
-  const auto next_call = executor.calls.load() + 1;
-  auto closing_events = std::make_shared<Events>();
-  auto closing = accepted(GenerationBridge::submit(
-      *runtime, request("session", closing_events, 5)));
-  ASSERT_TRUE(executor.executing.wait_for(next_call));
-  auto closed = runtime->close_session_async("session");
+TEST_P(GenerationFenceTest, RetiringTerminalCanEnqueueFenceAndFollowup) {
+  watch_callbacks();
+  ServingRuntimeConfig config{2, 128, 16};
+  config.max_requests = 1;
+  start(config);
+  opened("other");
+  sink_gate.hold();
+  auto events = std::make_shared<Events>();
+  auto next_events = std::make_shared<Events>();
+  auto acked = std::make_shared<std::atomic<bool>>(false);
+  auto ack_promise = std::make_shared<std::promise<serving::LifecycleResult>>();
+  auto ack = ack_promise->get_future();
+  auto submitted = std::make_shared<std::promise<SubmissionResult>>();
+  auto followup = submitted->get_future();
+  auto input = request("session", events, 1);
+  input.on_update = [this, events, next_events, acked, ack_promise, submitted](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle& handle) {
+    events->record(update);
+    if (update.finish_reason) {
+      EXPECT_FALSE(handle.done());
+      (void)runtime->info();
+      // Neither the admission registry nor the active claim contains this
+      // request now. Submission from its terminal must remain nonblocking.
+      fence("session", [this, handle, acked, ack_promise](auto error) {
+        EXPECT_TRUE(handle.done());
+        (void)runtime->info();
+        acked->store(true);
+        ack_promise->set_value(std::move(error));
+      });
+      auto next = request("session", next_events, 1);
+      next.on_update = [next_events, acked](
+                           const batching::GenerationUpdate& next_update,
+                           const RequestHandle&) {
+        EXPECT_TRUE(acked->load());
+        next_events->record(next_update);
+      };
+      submitted->set_value(GenerationBridge::submit(*runtime, std::move(next)));
+      sink_gate.arrive();
+    }
+  };
+  auto old = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  ASSERT_TRUE(sink_gate.wait_for());
+  ASSERT_EQ(followup.wait_for(kTimeout), std::future_status::ready);
+  auto next = accepted(followup.get());
+  ASSERT_NE(next.id(), 0u);
+  opened("other");
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_EQ(executor.seen().size(), 1u);
+  EXPECT_FALSE(old.done());
+  EXPECT_FALSE(next.done());
+  sink_gate.release();
+  ASSERT_EQ(ack.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  completed(old);
+  completed(next);
+  EXPECT_FALSE(next.error());
+  expect_terminal(events, batching::FinishReason::NewTokenLimit);
+  expect_terminal(next_events, batching::FinishReason::NewTokenLimit);
+  const auto seen = executor.seen();
+  ASSERT_EQ(seen.size(), 2u);
+  EXPECT_NE(seen[0].session, seen[1].session);
+  EXPECT_EQ(seen[1].position, 0);
+}
+
+TEST_P(
+    GenerationFenceTest,
+    QueuedBusyPredecessorsAreFencedButLaterRequestIsNot) {
+  watch_callbacks();
+  start();
+  opened("session");
+  opened("other");
+  sink_gate.hold();
+  other_sink_gate.hold();
+  cleanup_gate.hold();
+  auto old_input = request("session", std::make_shared<Events>(), 1);
+  old_input.on_update =
+      [this](const batching::GenerationUpdate& update, const RequestHandle&) {
+        if (!update.finish_reason) {
+          sink_gate.arrive();
+        }
+      };
+  auto old = accepted(GenerationBridge::submit(*runtime, std::move(old_input)));
+  ASSERT_TRUE(sink_gate.wait_for());
+  auto predecessors = std::make_shared<std::vector<RequestHandle>>();
+  predecessors->push_back(old);
+  for (int i = 0; i < 2; ++i) {
+    auto busy = request("session", std::make_shared<Events>(), 1);
+    busy.on_update = [this](
+                         const batching::GenerationUpdate& update,
+                         const RequestHandle& handle) {
+      EXPECT_EQ(update.finish_reason, batching::FinishReason::Failed);
+      ASSERT_TRUE(handle.error());
+      EXPECT_EQ(handle.error()->code, ErrorCode::SessionBusy);
+      other_sink_gate.arrive();
+    };
+    predecessors->push_back(
+        accepted(GenerationBridge::submit(*runtime, std::move(busy))));
+  }
+  opened("other"); // Both Busy results precede the fence but await delivery.
+  for (std::size_t i = 1; i < predecessors->size(); ++i) {
+    ASSERT_TRUE((*predecessors)[i].error());
+    EXPECT_EQ((*predecessors)[i].error()->code, ErrorCode::SessionBusy);
+  }
+  auto promise = std::make_shared<std::promise<serving::LifecycleResult>>();
+  auto ack = promise->get_future();
+  fence("session", [predecessors, promise](auto error) {
+    for (const auto& handle : *predecessors) {
+      EXPECT_TRUE(handle.done());
+    }
+    promise->set_value(std::move(error));
+  });
+  auto later_input = request("session", std::make_shared<Events>(), 1);
+  later_input.on_update =
+      [this](const batching::GenerationUpdate& update, const RequestHandle&) {
+        if (update.finish_reason) {
+          cleanup_gate.arrive();
+        }
+      };
+  auto later =
+      accepted(GenerationBridge::submit(*runtime, std::move(later_input)));
+  auto closed_promise =
+      std::make_shared<std::promise<serving::LifecycleResult>>();
+  auto closed = closed_promise->get_future();
+  runtime->close_session_async("session", [later, closed_promise](auto error) {
+    EXPECT_TRUE(later.done());
+    closed_promise->set_value(std::move(error));
+  });
+  opened("other");
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_EQ(
+      closed.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  sink_gate.release();
+  ASSERT_TRUE(other_sink_gate.wait_for());
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  other_sink_gate.release();
+  ASSERT_EQ(ack.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  ASSERT_TRUE(cleanup_gate.wait_for());
+  opened("other");
+  EXPECT_FALSE(later.done());
+  EXPECT_EQ(
+      closed.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  cleanup_gate.release();
   ASSERT_EQ(closed.wait_for(kTimeout), std::future_status::ready);
   EXPECT_FALSE(closed.get());
-  EXPECT_EQ(runtime->info().active_sessions, 0u);
-  executor.executing.release();
-  completed(closing);
-  expect_terminal(closing_events, batching::FinishReason::Cancelled);
-  std::lock_guard<std::mutex> lock(closing_events->mutex);
-  EXPECT_FALSE(closing_events->completion->current_session);
+  for (const auto& handle : *predecessors) {
+    completed(handle);
+  }
+  completed(later);
+  EXPECT_FALSE(later.error());
+  EXPECT_EQ(runtime->info().active_sessions, 1u);
+}
+
+TEST_P(GenerationFenceTest, MissingKeyFenceRetainsPermitsThroughCleanup) {
+  watch_callbacks();
+  ServingRuntimeConfig config{1, 128, 2};
+  config.max_requests = 1;
+  start(config);
+  opened("resident");
+  sink_gate.hold();
+  other_sink_gate.hold();
+  auto capture = std::shared_ptr<int>(new int(0), [this](int* value) {
+    (void)runtime->info();
+    other_sink_gate.arrive();
+    delete value;
+  });
+  auto input = request("missing", std::make_shared<Events>(), 1);
+  input.on_update = [this, capture](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle& handle) {
+    (void)capture;
+    EXPECT_EQ(update.finish_reason, batching::FinishReason::Failed);
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::CapacityExceeded);
+    sink_gate.arrive();
+  };
+  auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  input = {};
+  capture.reset();
+  ASSERT_TRUE(sink_gate.wait_for());
+  auto ack = fence("missing");
+  opened(
+      "resident"); // The missing-key result is computed but not acknowledged.
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  auto later_close = runtime->close_session_async("missing");
+  auto rejected = runtime->open_session_async("resident");
+  ASSERT_EQ(rejected.wait_for(kTimeout), std::future_status::ready);
+  auto error = rejected.get();
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->code, ErrorCode::CapacityExceeded);
+  auto rejected_events = std::make_shared<Events>();
+  auto rejected_request = GenerationBridge::submit(
+      *runtime, request("resident", rejected_events, 1));
+  ASSERT_TRUE(std::holds_alternative<ServingError>(rejected_request));
+  EXPECT_EQ(
+      std::get<ServingError>(rejected_request).code,
+      ErrorCode::CapacityExceeded);
+  EXPECT_TRUE(rejected_events->updates.empty());
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  sink_gate.release();
+  ASSERT_TRUE(other_sink_gate.wait_for());
+  EXPECT_FALSE(handle.done());
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_EQ(
+      later_close.wait_for(std::chrono::seconds(0)),
+      std::future_status::timeout);
+  auto still_rejected = runtime->open_session_async("resident");
+  ASSERT_EQ(still_rejected.wait_for(kTimeout), std::future_status::ready);
+  error = still_rejected.get();
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->code, ErrorCode::CapacityExceeded);
+  other_sink_gate.release();
+  ASSERT_EQ(ack.wait_for(kTimeout), std::future_status::ready);
+  auto result = ack.get();
+  if (GetParam()) {
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result->code, ErrorCode::SessionNotFound);
+  } else {
+    EXPECT_FALSE(result);
+  }
+  ASSERT_EQ(later_close.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(later_close.get());
+  completed(handle);
+  opened("resident"); // Both pending-operation permits were returned.
+  EXPECT_EQ(executor.opened().size(), 1u);
 }
 
 TEST_F(GenerationBridgeTest, ShutdownSettlesHandlesAndWaitsForReturningSinks) {
@@ -939,6 +1308,21 @@ TEST_F(
   ASSERT_TRUE(sink_gate.wait_for());
   other_sink_gate.hold();
   capture.reset();
+  auto promise = std::make_shared<std::promise<serving::LifecycleResult>>();
+  auto closed = promise->get_future();
+  runtime->close_session_async("session", [this, cleaned, promise](auto error) {
+    EXPECT_TRUE(cleanup_handle.done());
+    EXPECT_TRUE(cleaned->load());
+    promise->set_value(std::move(error));
+  });
+  auto reset = runtime->reset_session_async("session");
+  auto barrier = runtime->close_session_async("other");
+  ASSERT_EQ(barrier.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(barrier.get());
+  EXPECT_EQ(
+      closed.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_EQ(
+      reset.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
   // This is the only request: terminal selection has emptied the registry.
   auto started = std::make_shared<std::atomic<int>>(0);
   auto stopped = std::make_shared<std::atomic<int>>(0);
@@ -967,9 +1351,19 @@ TEST_F(
   EXPECT_FALSE(waited->load());
   EXPECT_FALSE(cleanup_handle.done());
   EXPECT_FALSE(cleaned->load());
+  EXPECT_EQ(
+      closed.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  EXPECT_EQ(
+      reset.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
   other_sink_gate.release();
   ASSERT_TRUE(
       wait_until([&] { return stopped->load() == 2 && waited->load(); }));
+  for (auto* future : {&closed, &reset}) {
+    ASSERT_EQ(future->wait_for(kTimeout), std::future_status::ready);
+    auto error = future->get();
+    ASSERT_TRUE(error);
+    EXPECT_EQ(error->code, ErrorCode::NotReady);
+  }
   EXPECT_TRUE(cleaned->load());
   completed(cleanup_handle);
   EXPECT_FALSE(cleanup_handle.error());
@@ -1011,6 +1405,77 @@ TEST_F(
 }
 
 #if ET_HAS_EXCEPTIONS
+TEST_P(GenerationFenceTest, ThrowingSinkFenceDrainsCleanupDuringShutdown) {
+  watch_callbacks();
+  start();
+  opened("session");
+  opened("other");
+  sink_gate.hold();
+  other_sink_gate.hold();
+  auto cleaned = std::make_shared<std::atomic<bool>>(false);
+  auto calls = std::make_shared<std::atomic<int>>(0);
+  auto capture = std::shared_ptr<int>(new int(0), [this, cleaned](int* value) {
+    (void)runtime->info();
+    other_sink_gate.arrive();
+    cleaned->store(true);
+    delete value;
+  });
+  auto events = std::make_shared<Events>();
+  auto input = request("session", events, 1);
+  input.on_update = [this, capture, calls](
+                        const batching::GenerationUpdate& update,
+                        const RequestHandle&) {
+    (void)capture;
+    EXPECT_FALSE(update.finish_reason);
+    ++*calls;
+    sink_gate.arrive();
+    throw 1;
+  };
+  auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
+  input = {};
+  capture.reset();
+  ASSERT_TRUE(sink_gate.wait_for());
+  auto promise = std::make_shared<std::promise<serving::LifecycleResult>>();
+  auto ack = promise->get_future();
+  fence("session", [handle, cleaned, promise](auto error) {
+    EXPECT_TRUE(handle.done());
+    EXPECT_TRUE(cleaned->load());
+    promise->set_value(std::move(error));
+  });
+  opened("other");
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  sink_gate.release();
+  ASSERT_TRUE(other_sink_gate.wait_for());
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  EXPECT_FALSE(handle.done());
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  auto stopped = std::make_shared<std::atomic<bool>>(false);
+  callback_callers.emplace_back([this, stopped] {
+    runtime->shutdown();
+    stopped->store(true);
+  });
+  ASSERT_TRUE(wait_until([&] { return !runtime->info().ready; }));
+  EXPECT_FALSE(stopped->load());
+  EXPECT_EQ(ack.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+  other_sink_gate.release();
+  ASSERT_EQ(ack.wait_for(kTimeout), std::future_status::ready);
+  auto error = ack.get();
+  ASSERT_TRUE(error);
+  EXPECT_EQ(error->code, ErrorCode::NotReady);
+  ASSERT_TRUE(wait_until([&] { return stopped->load(); }));
+  completed(handle);
+  EXPECT_TRUE(cleaned->load());
+  EXPECT_EQ(calls->load(), 1); // A throwing sink suppresses terminal delivery.
+  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  std::lock_guard<std::mutex> lock(events->mutex);
+  ASSERT_TRUE(events->completion);
+  EXPECT_EQ(
+      events->completion->terminal.finish_reason,
+      batching::FinishReason::Failed);
+  EXPECT_FALSE(events->completion->current_session);
+}
+
 TEST_F(
     GenerationBridgeTest,
     ThrowingTerminalPreservesSuccessAndResidentSessionPosition) {

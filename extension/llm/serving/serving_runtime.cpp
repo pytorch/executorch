@@ -8,6 +8,7 @@
 
 #include <executorch/extension/llm/serving/serving_runtime.h>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -30,11 +31,8 @@ namespace detail {
 struct RequestState {
   enum class Delivery { Streaming, Settling, Finalizing };
 
-  RequestState(
-      RequestId id,
-      GenerationRequest request,
-      const ServingRuntimeConfig& limits)
-      : id(id),
+  RequestState(GenerationRequest&& request, const ServingRuntimeConfig& limits)
+      : fence_key(request.key),
         request(std::move(request)),
         event_limit(limits.max_events_per_request),
         token_limit(limits.max_tokens_per_request) {}
@@ -131,7 +129,10 @@ struct RequestState {
     handle.cancel();
   }
 
-  const RequestId id;
+  // Assigned once under admission locking, before publication.
+  RequestId id = 0;
+  // Remains immutable while delivery destroys the callback-owning request.
+  const std::optional<std::string> fence_key;
   GenerationRequest request;
   const std::size_t event_limit;
   const std::size_t token_limit;
@@ -180,6 +181,9 @@ struct ServingRuntime::Impl {
     // Queue transfers must not destroy user captures under mutex_.
     std::unique_ptr<LifecycleCallback> completion;
     Request request;
+    RequestId fence_through = 0;
+    bool processed = false;
+    LifecycleResult result = std::nullopt;
   };
 
   Impl(
@@ -271,6 +275,7 @@ struct ServingRuntime::Impl {
             ErrorCode::CapacityExceeded, "lifecycle operation limit reached"};
       }
       if (!error) {
+        command.fence_through = next_request_id_ - 1;
         inbox_.push_back(std::move(command));
         ++outstanding_;
       }
@@ -383,7 +388,12 @@ struct ServingRuntime::Impl {
   }
 
   detail::SubmissionResult submit(detail::GenerationRequest request) {
-    Request state;
+    // Even moving an inline std::function can copy a user callable. Construct
+    // and unwind callback ownership outside admission locking.
+    auto state =
+        std::make_shared<detail::RequestState>(std::move(request), config_);
+    Command command{
+        Operation::Generate, state->fence_key.value_or(""), {}, state};
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!valid_config_) {
@@ -395,8 +405,9 @@ struct ServingRuntime::Impl {
               batching::InitializationState::Failed) {
         return ServingError{ErrorCode::NotReady, "runtime is not ready"};
       }
-      if ((request.key && request.key->empty()) || request.delta.empty() ||
-          request.config.max_new_tokens <= 0) {
+      if ((state->fence_key && state->fence_key->empty()) ||
+          state->request.delta.empty() ||
+          state->request.config.max_new_tokens <= 0) {
         return ServingError{
             ErrorCode::InvalidArgument, "invalid generation request"};
       }
@@ -405,11 +416,19 @@ struct ServingRuntime::Impl {
         return ServingError{
             ErrorCode::CapacityExceeded, "request admission limit reached"};
       }
-      state = std::make_shared<detail::RequestState>(
-          next_request_id_++, std::move(request), config_);
+      state->id = next_request_id_++;
       state->completion.request_id = state->id;
       requests_.emplace(state->id, state);
-      inbox_.push_back(Command{Operation::Generate, {}, {}, state});
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        inbox_.push_back(std::move(command));
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        requests_.erase(state->id);
+        throw;
+      }
+#endif
       ++outstanding_;
     }
     cv_.notify_one();
@@ -688,6 +707,7 @@ struct ServingRuntime::Impl {
     // terminals still count, leaving at most max_requests plus this envelope.
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      retiring_ = request;
       requests_.erase(request->id);
     }
     cv_.notify_one();
@@ -711,6 +731,11 @@ struct ServingRuntime::Impl {
       request->done = true;
     }
     request->cv.notify_all();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      retiring_.reset();
+    }
+    cv_.notify_one();
   }
 
   void dispatch() {
@@ -736,22 +761,80 @@ struct ServingRuntime::Impl {
     }
   }
 
+  static bool is_fence(const Command& command) {
+    return command.operation == Operation::Close ||
+        command.operation == Operation::Reset;
+  }
+
+  static bool precedes(const Request& request, const Command& command) {
+    return request && request->fence_key &&
+        *request->fence_key == command.key &&
+        request->id <= command.fence_through;
+  }
+
+  // mutex_ held. Admission excludes the dispatcher's retiring envelope, but a
+  // lifecycle acknowledgement must include its terminal and capture cleanup.
+  bool fence_pending(const Command& command) const {
+    return precedes(retiring_, command) ||
+        std::any_of(requests_.begin(), requests_.end(), [&](const auto& entry) {
+             return precedes(entry.second, command);
+           });
+  }
+
+  void cancel_predecessors(const Command& command) {
+    std::vector<Request> cancelled;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      for (const auto& entry : requests_) {
+        if (precedes(entry.second, command)) {
+          cancelled.push_back(entry.second);
+        }
+      }
+      if (precedes(retiring_, command)) {
+        cancelled.push_back(retiring_);
+      }
+    }
+    for (const auto& request : cancelled) {
+      request->cancel();
+    }
+  }
+
+  // mutex_ held. A deferred fence blocks only subsequent commands for its key.
+  // Scanning this bounded inbox avoids another queue or a polling wakeup.
+  auto runnable_command() {
+    for (auto it = inbox_.begin(); it != inbox_.end(); ++it) {
+      if (!it->key.empty() &&
+          std::any_of(inbox_.begin(), it, [&](const Command& earlier) {
+            return earlier.key == it->key;
+          })) {
+        continue;
+      }
+      if (!it->processed || !fence_pending(*it)) {
+        return it;
+      }
+    }
+    return inbox_.end();
+  }
+
   void run() {
     for (;;) {
       Command command;
+      std::size_t command_index = 0;
       Request finalizer;
       {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] {
-          return !finalizers_.empty() || !inbox_.empty() ||
-              (lifecycle_ != Lifecycle::Running && requests_.empty());
+          return !finalizers_.empty() || runnable_command() != inbox_.end() ||
+              (lifecycle_ != Lifecycle::Running && inbox_.empty() &&
+               requests_.empty() && !retiring_);
         });
         if (!finalizers_.empty()) {
           finalizer = std::move(finalizers_.front());
           finalizers_.pop_front();
-        } else if (!inbox_.empty()) {
-          command = std::move(inbox_.front());
-          inbox_.pop_front();
+        } else if (auto it = runnable_command(); it != inbox_.end()) {
+          command_index = it - inbox_.begin();
+          command = std::move(*it);
+          inbox_.erase(it);
         } else {
           break;
         }
@@ -760,22 +843,34 @@ struct ServingRuntime::Impl {
         finalize(finalizer);
         continue;
       }
-      LifecycleResult result;
-      if (command.operation == Operation::Generate) {
-        generate(command.request);
-        schedule(command.request);
-      } else {
-        result = process(command);
+      if (!command.processed) {
+        if (command.operation == Operation::Generate) {
+          generate(command.request);
+          schedule(command.request);
+        } else {
+          if (is_fence(command)) {
+            cancel_predecessors(command);
+          }
+          command.result = process(command);
+        }
+        command.processed = true;
       }
       {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (is_fence(command) && fence_pending(command)) {
+          // Only control removes commands; concurrent submissions append, so
+          // this position still precedes every later command for the key.
+          inbox_.insert(inbox_.begin() + command_index, std::move(command));
+          continue;
+        }
         --outstanding_;
         if (command.operation != Operation::Generate &&
             lifecycle_ != Lifecycle::Running) {
-          result = ServingError{ErrorCode::NotReady, "runtime is stopping"};
+          command.result =
+              ServingError{ErrorCode::NotReady, "runtime is stopping"};
         }
       }
-      complete(std::move(command.completion), std::move(result));
+      complete(std::move(command.completion), std::move(command.result));
     }
     decltype(sessions_) retired;
     {
@@ -847,6 +942,7 @@ struct ServingRuntime::Impl {
   std::uint64_t next_incarnation_ = 1;
   RequestId next_request_id_ = 1;
   std::unordered_map<RequestId, Request> requests_;
+  Request retiring_;
   std::deque<Request> dispatch_queue_;
   std::deque<Request> finalizers_;
   std::condition_variable dispatch_cv_;

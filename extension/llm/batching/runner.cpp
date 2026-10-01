@@ -140,9 +140,11 @@ class TerminalCompletion {
       state->error_message = std::move(outcome.error_message);
       state->metrics = metrics;
       state->phase = CompletionPhase::Done;
-      on_settled.swap(state->on_settled);
     }
     state->cv.notify_all();
+    // Swapping an inline callable can destroy a copy whose captures reenter
+    // the handle. Only this finisher accesses on_settled after publication.
+    on_settled.swap(state->on_settled);
     if (on_settled) {
 #if ET_HAS_EXCEPTIONS
       try {

@@ -30,8 +30,8 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
   // Reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
-  // Queued plus executing lifecycle/generation-start operations, excluding
-  // completion callbacks. Must be non-zero.
+  // Queued, executing, and delivery-fenced lifecycle/generation-start
+  // operations, excluding completion callbacks. Must be non-zero.
   std::size_t max_pending_operations = 64;
   // Admission is retained until terminal dispatch, then released before the
   // sink runs. The shared dispatcher may retain one additional retiring
@@ -67,15 +67,23 @@ class ET_EXPERIMENTAL ServingRuntime {
   ServingRuntime(ServingRuntime&&) = delete;
   ServingRuntime& operator=(ServingRuntime&&) = delete;
 
-  // Any thread. Keys must be non-empty. Accepted operations run in admission
-  // order. Queue saturation reports CapacityExceeded without changing state.
+  // Any thread. Keys must be non-empty. Accepted operations begin in per-key
+  // admission order. A close/reset delivery fence defers later work for that
+  // key while other keys may progress. Queue saturation reports
+  // CapacityExceeded without changing state.
   // For all lifecycle operations, callbacks run once on control after
   // processing and admission release, or inline on the caller for immediate
   // rejection. They run without runtime locks and may race with submission's
   // return. Callbacks must do short, nonblocking work: no waits for runtime
   // work or runtime shutdown/destruction. Exceptions are logged, not retried.
   // An empty callback discards the result. Futures adapt this same completion
-  // path.
+  // path. Immediate rejection is outside accepted-operation ordering.
+  //
+  // Accepted close/reset acknowledgements follow all earlier admitted
+  // same-key generation callbacks (including terminal delivery unless the
+  // sink failed) and their capture destruction, even on failure or shutdown.
+  // Transports must preserve callback enqueue order for this wire guarantee.
+  // A blocked sink still stalls the shared delivery thread.
   //
   // Opens may queue during initialization; success means an empty session is
   // owned, or the key was already open. An initial open failure releases its
@@ -83,14 +91,15 @@ class ET_EXPERIMENTAL ServingRuntime {
   void open_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> open_session_async(std::string key);
 
-  // Idempotent, including absent keys. Success releases the logical slot and
-  // cancels its active request. Session closure is through RAII, not
-  // synchronous physical cleanup.
+  // Idempotent, including absent keys. Cancels prior same-key requests and
+  // releases the logical slot before acknowledging callback quiescence.
+  // Session closure is through RAII, not synchronous physical cleanup.
   void close_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> close_session_async(std::string key);
 
   // Cold replacement, retaining the key and logical slot throughout. Success
-  // means reopening completed. Failure destroys the old state and leaves the
+  // means reopening and old-response callback cleanup completed. Failure
+  // destroys the old state and leaves the
   // key unavailable, still reserving its slot until reset succeeds or close
   // releases it. A missing key returns SessionNotFound. Cancels the old
   // request; stale completion cannot claim the replacement. No prefix reuse.

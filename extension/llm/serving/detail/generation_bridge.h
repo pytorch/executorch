@@ -29,7 +29,7 @@ namespace detail {
 
 // Filled during preparation and control finalization, then fixed before
 // terminal dispatch. Delivery failure cannot revise this serving result.
-struct ET_EXPERIMENTAL GenerationCompletion {
+struct GenerationCompletion {
   RequestId request_id = 0;
   std::uint64_t incarnation = 0;
   // False for rejected requests or an owner retired by close/reset/shutdown.
@@ -40,7 +40,7 @@ struct ET_EXPERIMENTAL GenerationCompletion {
   std::optional<ServingError> error;
 };
 
-struct ET_EXPERIMENTAL GenerationRequest {
+struct GenerationRequest {
   // nullopt creates an independent ephemeral session. A named key may be opened
   // implicitly; an unavailable key must be explicitly reset before generation.
   std::optional<std::string> key;
@@ -81,8 +81,7 @@ struct ET_EXPERIMENTAL GenerationRequest {
 // obligation. Every admitted request has an immediate handle and exactly one
 // terminal outcome, including subsequent busy/engine rejection, cancellation,
 // overflow.
-using SubmissionResult ET_EXPERIMENTAL =
-    std::variant<RequestHandle, ServingError>;
+using SubmissionResult = std::variant<RequestHandle, ServingError>;
 
 // Internal delta boundary for the text layer and native tests. No Session owner
 // escapes. Admission is released immediately before terminal invocation;
@@ -90,7 +89,7 @@ using SubmissionResult ET_EXPERIMENTAL =
 // Callbacks share delivery capacity: transports must enqueue output and handle
 // I/O elsewhere. Sinks must not synchronously shut down or destroy the runtime,
 // or wait for any request serviced by it.
-struct ET_EXPERIMENTAL GenerationBridge {
+struct GenerationBridge {
   static SubmissionResult submit(
       ServingRuntime& runtime,
       GenerationRequest request);

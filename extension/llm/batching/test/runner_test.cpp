@@ -9,12 +9,15 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
+#include <future>
 #include <limits>
 #include <map>
 #include <memory>
@@ -436,6 +439,75 @@ TEST(SettlementTest, PublishesBeforeNotificationAndReleasesCaptures) {
   EXPECT_EQ(settled_calls.load(), 1);
   EXPECT_TRUE(retained.expired());
   EXPECT_TRUE(handle.valid());
+}
+
+TEST(SettlementTest, SmallCallbackDestructionCanReenterDone) {
+  executorch::runtime::runtime_init();
+  struct Watchdog {
+    std::promise<void> finished;
+    std::thread thread{[done = finished.get_future()]() mutable {
+      if (done.wait_for(kTimeout * 6) != std::future_status::ready) {
+        ADD_FAILURE() << "settlement callback test or teardown deadlocked";
+        std::abort();
+      }
+    }};
+
+    ~Watchdog() {
+      finished.set_value();
+      thread.join();
+    }
+  } watchdog;
+  struct State {
+    GenerationHandle handle;
+    std::atomic<bool> armed{false};
+    std::atomic<int> destructions{0};
+    int destructions_at_call = 0;
+    int calls = 0;
+    std::promise<void> settled;
+  } state;
+  auto notified = state.settled.get_future();
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  ASSERT_TRUE(session.valid());
+
+  // Destroy every callable copy, not just a final shared_ptr capture. libc++
+  // keeps this nothrow-copyable target inline and destroys a copy during swap.
+  struct SmallCallback {
+    State* state;
+
+    ~SmallCallback() {
+      if (state->armed.load()) {
+        EXPECT_TRUE(state->handle.done());
+        ++state->destructions;
+      }
+    }
+
+    void operator()() const {
+      EXPECT_TRUE(state->handle.done());
+      state->destructions_at_call = state->destructions.load();
+      ++state->calls;
+      state->settled.set_value();
+    }
+  };
+  static_assert(sizeof(SmallCallback) == sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<SmallCallback>::value);
+  state.handle =
+      session.generate_async(tokens(2), config(1), {}, SmallCallback{&state});
+  // Submission's temporary copies are gone and the handle is initialized
+  // before the held executor can reach generation completion.
+  state.armed.store(true);
+  executor.release();
+  EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+  fixture.runner.shutdown();
+  EXPECT_EQ(state.calls, 1);
+  EXPECT_GT(state.destructions.load(), 0);
+#if defined(_LIBCPP_VERSION) && !defined(_LIBCPP_ABI_OPTIMIZED_FUNCTION)
+  EXPECT_GT(state.destructions_at_call, 0)
+      << "the inline callable copy must be destroyed before invocation";
+#endif
+  EXPECT_EQ(state.handle.finish_reason(), FinishReason::NewTokenLimit);
 }
 
 TEST(SettlementTest, SynchronousRejectionsNotifyInlineAndReleaseCaptures) {
