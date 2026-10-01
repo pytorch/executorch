@@ -24,7 +24,11 @@ from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
     apply_enumerated_shapes,
 )
-from executorch.backends.apple.coreai.compiler.io_compat import assert_io_compatible
+from executorch.backends.apple.coreai.compiler.io_compat import (
+    _edge_io,
+    assert_io_compatible,
+    coreai_io_names,
+)
 from executorch.backends.apple.coreai.passes.replace_copy_ops import (
     ReplaceCopyOpsWithFunctionalPass,
 )
@@ -319,12 +323,22 @@ def _prepare_program_for_conversion(edge_program: ExportedProgram) -> ExportedPr
     return ep
 
 
-def _convert_to_aiprogram(edge_program: ExportedProgram):
+def _convert_to_aiprogram(
+    edge_program: ExportedProgram,
+    *,
+    input_names: Optional[List[str]] = None,
+    output_names: Optional[List[str]] = None,
+):
     from coreai_torch import TorchConverter
 
     aten_program = _prepare_program_for_conversion(edge_program)
     converter = TorchConverter()
-    converter.add_exported_program(aten_program)
+    converter.add_exported_program(
+        aten_program,
+        input_names=input_names,
+        output_names=output_names,
+        entrypoint_name=MAIN_ENTRYPOINT,
+    )
     return converter.to_coreai()
 
 
@@ -558,16 +572,33 @@ class CoreAIBackend(BackendDetails):
                     "build-time output directory (set it via coreai_sidecar_dir)"
                 )
 
-        program = _convert_to_aiprogram(edge_program)
+        edge_inputs, edge_outputs = _edge_io(edge_program)
+        input_names = [f"input_{i}" for i in range(len(edge_inputs))]
+        output_names = [f"output_{i}" for i in range(len(edge_outputs))]
+        program = _convert_to_aiprogram(
+            edge_program, input_names=input_names, output_names=output_names
+        )
         # Fail fast if the .aimodel boundary I/O won't match what ET feeds/reads.
-        assert_io_compatible(program, edge_program)
+        assert_io_compatible(
+            program, edge_program, input_names=input_names, output_names=output_names
+        )
+        # Enumerated shapes replace ``main`` with renamed clones, so read first.
+        bound_inputs, bound_outputs = coreai_io_names(program)
         raw_enum = _get_compile_spec(
             compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS
         )
         if raw_enum:
             apply_enumerated_shapes(
-                program, edge_program, json.loads(raw_enum.decode())
+                program,
+                edge_program,
+                json.loads(raw_enum.decode()),
+                input_names=input_names,
             )
+        bindings = {
+            "function": MAIN_ENTRYPOINT,
+            "input_names": bound_inputs,
+            "output_names": bound_outputs,
+        }
 
         # min-deployment-version is a single knob applied to whichever artifact
         # ships: for aot-compiled delivery the .aimodelc (via coreai-build
@@ -579,18 +610,19 @@ class CoreAIBackend(BackendDetails):
             _maybe_warn_sidecar_env_ignored()
         if aot_compiled:
             return CoreAIBackend._preprocess_aot_compiled(
-                program, _aot_compile_options(compile_specs), sidecar_dir
+                program, _aot_compile_options(compile_specs), sidecar_dir, bindings
             )
         return CoreAIBackend._preprocess_portable(
             program,
             _min_os_version(compile_specs),
             sidecar_dir,
+            bindings,
         )
 
     # Portable .aimodel delivery.
     @staticmethod
     def _preprocess_portable(
-        program, min_os, sidecar_dir: Optional[str]
+        program, min_os, sidecar_dir: Optional[str], bindings: Dict[str, Any]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
             model_hash = _save_and_hash(program, Path(tmp) / "model.aimodel", min_os)
@@ -599,6 +631,7 @@ class CoreAIBackend(BackendDetails):
                 model_hash,
                 AssetPackaging.SIDECAR if sidecar_dir else AssetPackaging.INLINE,
                 {
+                    **bindings,
                     # relative path the runtime resolves against its base
                     "path": f"{model_hash}/model.aimodel",
                     "min_deployment_version": _os_version_text(min_os),
@@ -609,7 +642,10 @@ class CoreAIBackend(BackendDetails):
     # AOT-compiled .aimodelc delivery (per architecture).
     @staticmethod
     def _preprocess_aot_compiled(
-        program, opts: Dict[str, Any], sidecar_dir: Optional[str]
+        program,
+        opts: Dict[str, Any],
+        sidecar_dir: Optional[str],
+        bindings: Dict[str, Any],
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
             model_hash, out = _compile_aot(program, opts, Path(tmp))
@@ -622,6 +658,7 @@ class CoreAIBackend(BackendDetails):
                     else AssetPackaging.AOT_COMPILED_INLINE
                 ),
                 {
+                    **bindings,
                     "platform": opts["platform"],
                     "min_deployment_version": opts["min_deployment_version"],
                     "archs": {
