@@ -342,7 +342,7 @@ class MultiplexedWorkerClient:
                 if written is not None and written != len(payload):
                     raise WorkerError("short write to worker stdin")
                 stdin.flush()
-        except BaseException as error:
+        except BaseException as error:  # noqa: B036 - settle thread failures
             # An interrupted partial frame is unrecoverable, never resume writing.
             with self._lock:
                 self._fail_locked(WorkerError(f"worker write failed: {error}"))
@@ -369,67 +369,75 @@ class MultiplexedWorkerClient:
         if "code" in msg and not isinstance(msg["code"], str):
             raise WorkerError("invalid worker error code")
         if kind == "done":
-            for key in (
-                "prompt_tokens",
-                "completion_tokens",
-                "reused_prompt_tokens",
-                "prefilled_prompt_tokens",
-            ):
-                if key in msg and (type(msg[key]) is not int or msg[key] < 0):
-                    raise WorkerError(f"invalid worker statistic: {key}")
-            for key in (
-                "prefill_ms",
-                "decode_ms",
-                "total_ms",
-                "prefill_tok_s",
-                "decode_tok_s",
-                "vision_encoder_ms",
-            ):
-                if key in msg and (
-                    type(msg[key]) not in (int, float)
-                    or not math.isfinite(msg[key])
-                    or msg[key] < 0
-                ):
-                    raise WorkerError(f"invalid worker statistic: {key}")
-            if "finish_reason" in msg and msg["finish_reason"] not in (
-                "stop",
-                "length",
-            ):
-                raise WorkerError("invalid worker finish_reason")
-            if "cancelled" in msg and type(msg["cancelled"]) is not bool:
-                raise WorkerError("invalid worker cancelled flag")
-            if msg.get("cancelled") and msg.get("finish_reason") != "stop":
-                raise WorkerError("cancelled completion must have finish_reason stop")
-            if "session_reset_reason" in msg and not isinstance(
-                msg["session_reset_reason"], str
-            ):
-                raise WorkerError("invalid worker session_reset_reason")
-            if "generated_token_ids" in msg and (
-                not isinstance(msg["generated_token_ids"], list)
-                or any(type(t) is not int or t < 0 for t in msg["generated_token_ids"])
-            ):
-                raise WorkerError("invalid worker generated_token_ids")
+            MultiplexedWorkerClient._validate_generation_terminal(msg)
         return kind
+
+    @staticmethod
+    def _validate_generation_terminal(msg):
+        for key in (
+            "prompt_tokens",
+            "completion_tokens",
+            "reused_prompt_tokens",
+            "prefilled_prompt_tokens",
+        ):
+            if key in msg and (type(msg[key]) is not int or msg[key] < 0):
+                raise WorkerError(f"invalid worker statistic: {key}")
+        for key in (
+            "prefill_ms",
+            "decode_ms",
+            "total_ms",
+            "prefill_tok_s",
+            "decode_tok_s",
+            "vision_encoder_ms",
+        ):
+            if key in msg and (
+                type(msg[key]) not in (int, float)
+                or not math.isfinite(msg[key])
+                or msg[key] < 0
+            ):
+                raise WorkerError(f"invalid worker statistic: {key}")
+        if "finish_reason" in msg and msg["finish_reason"] not in (
+            "stop",
+            "length",
+        ):
+            raise WorkerError("invalid worker finish_reason")
+        if "cancelled" in msg and type(msg["cancelled"]) is not bool:
+            raise WorkerError("invalid worker cancelled flag")
+        if msg.get("cancelled") and msg.get("finish_reason") != "stop":
+            raise WorkerError("cancelled completion must have finish_reason stop")
+        if "session_reset_reason" in msg and not isinstance(
+            msg["session_reset_reason"], str
+        ):
+            raise WorkerError("invalid worker session_reset_reason")
+        if "generated_token_ids" in msg and (
+            not isinstance(msg["generated_token_ids"], list)
+            or any(type(t) is not int or t < 0 for t in msg["generated_token_ids"])
+        ):
+            raise WorkerError("invalid worker generated_token_ids")
+
+    def _dispatch_cancel_locked(self, msg, kind):
+        request_id = msg["request_id"]
+        control = self._controls[request_id]
+        if not control.sending or kind not in ("cancelled", "error"):
+            raise WorkerError("unexpected cancellation response")
+        del self._controls[request_id]
+        target = self._requests.get(control.target_request_id)
+        if kind == "error" and target is not None and target.terminal is None:
+            target.tokens.clear()
+            target.terminal = WorkerError(msg["error"], code=msg.get("code"))
+            target.changed.notify_all()
+        # Pending cancellation is stored on the bounded request
+        # registry, not another queue. Retry as soon as ACK capacity frees.
+        for pending in self._requests.values():
+            if pending.cancel_pending and not pending.wire_done:
+                self._cancel_locked(pending)
+                if len(self._controls) >= self.max_inflight_requests:
+                    break
 
     def _dispatch_locked(self, msg, kind):
         request_id = msg["request_id"]
         if request_id in self._controls:
-            control = self._controls[request_id]
-            if not control.sending or kind not in ("cancelled", "error"):
-                raise WorkerError("unexpected cancellation response")
-            del self._controls[request_id]
-            target = self._requests.get(control.target_request_id)
-            if kind == "error" and target is not None and target.terminal is None:
-                target.tokens.clear()
-                target.terminal = WorkerError(msg["error"], code=msg.get("code"))
-                target.changed.notify_all()
-            # Pending cancellation is stored on the bounded request
-            # registry, not another queue. Retry as soon as ACK capacity frees.
-            for pending in self._requests.values():
-                if pending.cancel_pending and not pending.wire_done:
-                    self._cancel_locked(pending)
-                    if len(self._controls) >= self.max_inflight_requests:
-                        break
+            self._dispatch_cancel_locked(msg, kind)
             return
         state = self._requests.get(request_id)
         if state is None or not state.sending or state.wire_done:
@@ -473,7 +481,7 @@ class MultiplexedWorkerClient:
                     if self._terminal_error is not None:
                         return
                     self._dispatch_locked(msg, kind)
-        except BaseException as error:
+        except BaseException as error:  # noqa: B036 - settle thread failures
             with self._lock:
                 self._fail_locked(
                     error

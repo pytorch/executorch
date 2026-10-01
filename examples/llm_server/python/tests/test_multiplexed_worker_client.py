@@ -320,7 +320,16 @@ def test_slow_mailbox_overflow_only_fails_its_request(harness, monkeypatch):
         "send(requests[0], token=123)",
         "send(requests[0], done=True, token='conflict')",
         "send(requests[0], done=True, completion_tokens=True)",
+        "send(requests[0], done=True, prompt_tokens=-1)",
+        "send(requests[0], done=True, prefill_ms='slow')",
+        "send(requests[0], done=True, decode_ms=-1)",
+        "send(requests[0], done=True, finish_reason='unknown')",
+        "send(requests[0], done=True, cancelled=1)",
         "send(requests[0], done=True, cancelled=True, finish_reason='length')",
+        "send(requests[0], done=True, session_reset_reason=False)",
+        "send(requests[0], done=True, generated_token_ids={})",
+        "send(requests[0], done=True, generated_token_ids=[True])",
+        "send(requests[0], done=True, generated_token_ids=[-1])",
         "print(json.dumps(dict(request_id=True, done=True)), flush=True)",
         "print(json.dumps(dict(request_id=0, done=True)), flush=True)",
         "print(json.dumps(dict(request_id=2**64, done=True)), flush=True)",
@@ -550,9 +559,9 @@ def test_invalid_request_handles(harness, request_id):
 @pytest.mark.parametrize(
     "limits",
     [
-        dict(max_inflight_requests=0),
-        dict(max_inflight_requests=True),
-        dict(max_named_sessions=-1),
+        {"max_inflight_requests": 0},
+        {"max_inflight_requests": True},
+        {"max_named_sessions": -1},
     ],
 )
 def test_invalid_negotiated_limits_are_rejected(harness, limits):
@@ -774,6 +783,40 @@ class _GatedStdout(_GatedStdin):
         return self.stream.readline(limit)
 
 
+def test_interrupted_read_permanently_fails_all_requests(harness):
+    class InterruptedStdout(_GatedStdin):
+        def readline(self, limit):
+            self.entered.set()
+            assert self.release.wait(5)
+            raise KeyboardInterrupt("interrupted read")
+
+    start, pool = harness
+    client = start("pass", wrap_stdout=InterruptedStdout)
+    gate = client._proc.stdout
+    assert gate.entered.wait(5)
+    requests = [
+        client._submit({"op": "generate", "prompt": prompt}) for prompt in ("a", "b")
+    ]
+    requests.append(
+        client._submit({"op": "open", "session_id": "s"}, op="open", ack="opened")
+    )
+    operations = [pool.submit(client._consume, request) for request in requests]
+    gate.release.set()
+    errors = []
+    for operation in operations:
+        with pytest.raises(WorkerError, match="read failed: interrupted read") as error:
+            operation.result(timeout=5)
+        errors.append(error.value)
+    assert errors[0] is errors[1] is errors[2]
+    assert all(request.wire_done for request in requests)
+    assert client.failed and not client.healthy
+    with pytest.raises(WorkerError) as error:
+        client.reserve_request()
+    assert error.value is errors[0]
+    with client._lock:
+        assert not client._requests and not client._writes and not client._controls
+
+
 class _FlushThenGateStdin(_GatedStdin):
     def write(self, payload):
         written = self.stream.write(payload)
@@ -791,7 +834,7 @@ def test_unsent_cancellation_ack_is_a_protocol_failure(harness):
         wrap_stdout=_GatedStdout,
     )
     writer, reader = client._proc.stdin, client._proc.stdout
-    state = client._submit(dict(op="generate", prompt="a"))
+    state = client._submit({"op": "generate", "prompt": "a"})
     assert writer.entered.wait(5)
     try:
         assert client.cancel(state.request_id)
@@ -824,7 +867,7 @@ def test_reader_overflow_does_not_wait_for_blocked_writer(harness):
         wrap_stdin=_FlushThenGateStdin,
     )
     gate = client._proc.stdin
-    state = client._submit(dict(op="generate", prompt="a"))
+    state = client._submit({"op": "generate", "prompt": "a"})
     assert gate.entered.wait(5)
     try:
         with state.changed:
@@ -997,7 +1040,7 @@ def test_cancel_retries_after_delayed_acks_free_control_budget(harness, failure)
             )
     else:
         state = client._submit(
-            dict(op="generate", prompt="target"), request_id=target_id
+            {"op": "generate", "prompt": "target"}, request_id=target_id
         )
         with state.changed:
             if failure == "overflow":
