@@ -308,6 +308,8 @@ class LowerOffGraphKVPass:
     def _compile_storage(shape, dtype: torch.dtype, device):
         storage = torch.empty(shape, dtype=dtype, device=device)
         # AOTI needs the logical metadata, while the runtime supplies storage.
+        # Nothing can run on it, so lowering must keep AOTI's compile-time
+        # autotune (generated inputs) rather than the JIT pass on real constants.
         storage.untyped_storage().resize_(0)
         return storage
 
