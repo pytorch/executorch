@@ -21,6 +21,7 @@ fbcode_target(
         "passes/_utils.py",
         "passes/fuse_rope.py",
         "passes/reinplace.py",
+        "passes/remove_runtime_asserts.py",
         "passes/replace_copy_with_alias.py",
         "preprocess.py",
         "serialization/__init__.py",
