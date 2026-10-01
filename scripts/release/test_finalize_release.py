@@ -29,7 +29,7 @@ class FinalizeReleaseTest(unittest.TestCase):
             path.write_text(
                 'TORCH_VERSION = "2.15.0rc2"\n'
                 'TORCHVISION_VERSION = "0.30.0rc2"\n'
-                'TORCHAUDIO_VERSION = "2.15.0rc2"\n'
+                'TORCHAUDIO_VERSION = "2.11.0rc2"\n'
                 "RELEASE_WHEEL = True\n"
                 "RELEASE_DEPENDENCIES_FINALIZED = False\n"
             )
@@ -37,7 +37,7 @@ class FinalizeReleaseTest(unittest.TestCase):
             self.assertEqual(finalize_torch_release(path, "2.15.0"), 1)
             self.assertIn('TORCH_VERSION = "2.15.0"', path.read_text())
             self.assertIn('TORCHVISION_VERSION = "0.30.0"', path.read_text())
-            self.assertIn('TORCHAUDIO_VERSION = "2.15.0"', path.read_text())
+            self.assertIn('TORCHAUDIO_VERSION = "2.11.0"', path.read_text())
             self.assertIn("RELEASE_DEPENDENCIES_FINALIZED = True", path.read_text())
 
     def test_finalizes_dependency_text(self) -> None:

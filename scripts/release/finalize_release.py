@@ -21,7 +21,10 @@ from prepare_release import (  # type: ignore[import-not-found]
     _release_version_from_file,
     _TORCH_VERSION_PATTERN,
     _write_if_changed,
+    pytorch_commit_for_release,
+    sync_pytorch_source,
 )
+from release_versions import torchvision_version  # type: ignore[import-not-found]
 
 _VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 _TORCHVISION_VERSION_PATTERN = re.compile(
@@ -169,29 +172,28 @@ def planned_torch_release(torch_pin_path: Path, torch_version: str) -> str:
     )
     if version_count != 1:
         raise RuntimeError(f"expected one TORCH_VERSION assignment in {torch_pin_path}")
-    match = re.fullmatch(r"\d+\.(\d+)\.(\d+)", torch_version)
-    assert match is not None
-    expected_companions = {
-        _TORCHVISION_VERSION_PATTERN: f"0.{int(match.group(1)) + 15}.{match.group(2)}",
-        _TORCHAUDIO_VERSION_PATTERN: torch_version,
-    }
-    for pattern, expected in expected_companions.items():
-        current = pattern.search(updated)
-        if current is None:
-            raise RuntimeError(
-                f"expected companion version assignment in {torch_pin_path}"
-            )
-        if stable_base_version(current.group("version")) != expected:
-            raise RuntimeError(
-                f"companion release {current.group('version')!r} does not match "
-                f"Torch {torch_version}"
-            )
-        updated = pattern.sub(
-            lambda version_match: version_match.group(0).replace(
-                version_match.group("version"), expected
-            ),
-            updated,
+    vision = _TORCHVISION_VERSION_PATTERN.search(updated)
+    if vision is None:
+        raise RuntimeError(f"expected torchvision assignment in {torch_pin_path}")
+    expected_vision = torchvision_version(torch_version)
+    if stable_base_version(vision.group("version")) != expected_vision:
+        raise RuntimeError(
+            f"torchvision release {vision.group('version')!r} does not match "
+            f"Torch {torch_version}"
         )
+    updated = _TORCHVISION_VERSION_PATTERN.sub(
+        lambda match: match.group(0).replace(match.group("version"), expected_vision),
+        updated,
+    )
+
+    audio = _TORCHAUDIO_VERSION_PATTERN.search(updated)
+    if audio is None:
+        raise RuntimeError(f"expected torchaudio assignment in {torch_pin_path}")
+    expected_audio = stable_base_version(audio.group("version"))
+    updated = _TORCHAUDIO_VERSION_PATTERN.sub(
+        lambda match: match.group(0).replace(match.group("version"), expected_audio),
+        updated,
+    )
     updated, count = _FINALIZED_PATTERN.subn(
         "RELEASE_DEPENDENCIES_FINALIZED = True", updated
     )
@@ -399,6 +401,7 @@ def main() -> None:
     )
     tokenizers_version = args.tokenizers_version or f"{release_version}.0"
     torchcodec_version = args.torchcodec_version or latest_pypi_version("torchcodec")
+    pytorch_commit = pytorch_commit_for_release(torch_version)
 
     releases = (
         ("extension/llm/tokenizers", _SUBMODULE_RELEASES[0][1], tokenizers_version),
@@ -434,14 +437,26 @@ def main() -> None:
     prepared_submodules = prepare_submodule_tags(repo_root, releases)
     text_updates = {**dependency_updates, torch_pin_path: torch_pin_update}
     original_text = {path: path.read_text() for path in text_updates}
+    source_paths = [repo_root / ".ci/docker/ci_commit_pins/pytorch.txt"]
+    for relative in (
+        "runtime/core/portable_type/c10/c10",
+        "runtime/core/portable_type/c10/torch/headeronly",
+    ):
+        source_paths.extend(
+            path for path in (repo_root / relative).rglob("*") if path.is_file()
+        )
+    original_source = {path: path.read_bytes() for path in source_paths}
 
     try:
+        sync_pytorch_source(repo_root, pytorch_commit)
         update_submodule_tags(prepared_submodules)
         for path, updated in text_updates.items():
             _write_if_changed(path, updated)
     except Exception:
         for path, original in original_text.items():
             path.write_text(original)
+        for path, original in original_source.items():
+            path.write_bytes(original)
         for path, original, _target in reversed(prepared_submodules):
             subprocess.run(
                 ["git", "checkout", "--detach", original], cwd=path, check=False
@@ -451,8 +466,12 @@ def main() -> None:
     changed = sum(
         updated != original_text[path] for path, updated in text_updates.items()
     )
+    changed_source = sum(
+        path.read_bytes() != original for path, original in original_source.items()
+    )
     print(
-        f"Finalized release dependencies; changed {changed} text files and 2 submodules"
+        f"Finalized release dependencies; changed {changed} text files, "
+        f"{changed_source} PyTorch source files, and 2 submodules"
     )
     print(
         "Review and stage the resulting release-only changes with git add "
