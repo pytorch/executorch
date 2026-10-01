@@ -23,6 +23,7 @@ from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
     ModuleAddConstReturn,
+    ModuleAddScalar,
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
     ModuleChannelsLast,
@@ -76,6 +77,31 @@ class PybindingsTest(unittest.TestCase):
         output = executorch_module.forward([value.numpy() for value in inputs])[0]
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_default_numpy_integer_dtype_error_is_descriptive(self):
+        exported_program, _ = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaisesRegex(ValueError, "dtype Long.*expects Float"):
+            executorch_module(np.ones((2, 2), dtype=int))
+
+    def test_numpy_float_scalar_input(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module.forward([inputs[0], np.float64(inputs[1])])[0]
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+
+    def test_numpy_float_scalar_set_inputs(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+
+        method.set_inputs([inputs[0], np.float64(inputs[1])])
+        method.execute()
+
+        self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
 
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
@@ -562,7 +588,8 @@ class PybindingsTest(unittest.TestCase):
 
         executorch_program = self.load_prog_fn(exported_program.buffer)
         executorch_method = executorch_program.load_method("forward")
-        self.assertRaises(RuntimeError, executorch_method, inputs[0])
+        with self.assertRaisesRegex(ValueError, "has rank 5.*expects rank 4"):
+            executorch_method(inputs[0])
 
     def test_method_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()

@@ -222,8 +222,7 @@ class BufferTensor final {
 
   template <typename T>
   static bool has_format(const py::buffer_info& info) {
-    return info.itemsize == static_cast<py::ssize_t>(sizeof(T)) &&
-        info.format == py::format_descriptor<T>::format();
+    return info.item_type_is_equivalent_to<T>();
   }
 
   static executorch::aten::ScalarType scalar_type_from_buffer(
@@ -1099,6 +1098,14 @@ struct PyModule final {
 #endif
 
         cpp_inputs.push_back(evalue);
+      } else if (py::isinstance<py::none>(python_input)) {
+        cpp_inputs.push_back(EValue());
+      } else if (py::isinstance<py::bool_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
+      } else if (py::isinstance<py::int_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else if (py::isinstance<py::float_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
         if (saw_torch) {
           throw py::type_error(
@@ -1139,14 +1146,6 @@ struct PyModule final {
             torch::executor::TensorShapeDynamism::STATIC);
         cpp_inputs.emplace_back(torch::executor::Tensor(&input_tensors.back()));
 #endif
-      } else if (py::isinstance<py::none>(python_input)) {
-        cpp_inputs.push_back(EValue());
-      } else if (py::isinstance<py::bool_>(python_input)) {
-        cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
-      } else if (py::isinstance<py::int_>(python_input)) {
-        cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
-      } else if (py::isinstance<py::float_>(python_input)) {
-        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
         throw std::runtime_error(
             "Unsupported python type " + type_str +
@@ -1670,6 +1669,14 @@ struct PyMethod final {
 #endif
 
         cpp_inputs.push_back(evalue);
+      } else if (py::isinstance<py::none>(python_input)) {
+        cpp_inputs.push_back(EValue());
+      } else if (py::isinstance<py::bool_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
+      } else if (py::isinstance<py::int_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else if (py::isinstance<py::float_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else if (PyObject_CheckBuffer(python_input.ptr())) {
         if (saw_torch) {
           throw py::type_error(
@@ -1703,14 +1710,6 @@ struct PyMethod final {
         buffer_tensor_ptrs.push_back(std::move(tensor));
         cpp_inputs.emplace_back(buffer_tensor_ptrs.back());
 #endif
-      } else if (py::isinstance<py::none>(python_input)) {
-        cpp_inputs.push_back(EValue());
-      } else if (py::isinstance<py::bool_>(python_input)) {
-        cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
-      } else if (py::isinstance<py::int_>(python_input)) {
-        cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
-      } else if (py::isinstance<py::float_>(python_input)) {
-        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
         throw std::runtime_error(
             "Unsupported python type " + type_str +

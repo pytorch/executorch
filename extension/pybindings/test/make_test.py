@@ -99,6 +99,17 @@ class ModuleAddSingleInput(torch.nn.Module):
         return (torch.ones(2, 2),)
 
 
+class ModuleAddScalar(torch.nn.Module):
+    def forward(self, x, alpha: float):
+        return x + alpha
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.ones(2, 2), 3.0)
+
+
 class ModuleAddConstReturn(torch.nn.Module):
     """The module to serialize and execute."""
 
