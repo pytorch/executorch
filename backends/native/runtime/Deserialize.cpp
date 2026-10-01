@@ -179,6 +179,44 @@ TensorMeta build_tensor_meta(
       out.dim_order_hint.push_back(static_cast<int32_t>(dord->Get(i)));
     }
   }
+  if (const auto* quant = m->quant()) {
+    switch (quant->scheme_type()) {
+      case fbs::QuantScheme::AffineGroup: {
+        const fbs::AffineGroup* affine = quant->scheme_as_AffineGroup();
+        if (affine == nullptr) {
+          throw std::runtime_error(
+              "build_tensor_meta: " + name +
+              " has a malformed affine quant scheme");
+        }
+        out.quant = AffineGroupQuant{
+            .scale_data_key = str_of(affine->scale_data_key()),
+            .scale_dtype = map_scalar_type(affine->scale_dtype()),
+            .quant_min = affine->quant_min(),
+            .quant_max = affine->quant_max(),
+            .group_size = affine->group_size(),
+            .zero_point_data_key = str_of(affine->zero_point_data_key()),
+            .zero_point_dtype = map_scalar_type(affine->zero_point_dtype()),
+        };
+        break;
+      }
+      case fbs::QuantScheme::PackedQuant: {
+        const fbs::PackedQuant* packed = quant->scheme_as_PackedQuant();
+        if (packed == nullptr) {
+          throw std::runtime_error(
+              "build_tensor_meta: " + name +
+              " has a malformed packed quant scheme");
+        }
+        out.quant = PackedQuant{.codec = str_of(packed->codec())};
+        break;
+      }
+      case fbs::QuantScheme::NONE:
+        throw std::runtime_error(
+            "build_tensor_meta: " + name + " has an empty quant scheme");
+      default:
+        throw std::runtime_error(
+            "build_tensor_meta: " + name + " has an unsupported quant scheme");
+    }
+  }
   return out;
 }
 
