@@ -24,6 +24,11 @@ from executorch.backends.cuda.cuda_weight_collector import (
     CudaWeightCollector,
     trim_host_memory,
 )
+from executorch.backends.cuda.passes.lower_offgraph_kv import (
+    LowerOffGraphKVPass,
+    OFFGRAPH_KV_COMPILE_SPEC,
+    parse_offgraph_kv_manifest,
+)
 from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
     MoveCondPredicateToCpuPass,
 )
@@ -777,6 +782,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
+        for spec in compile_specs:
+            if spec.key == OFFGRAPH_KV_COMPILE_SPEC:
+                passes.append(
+                    LowerOffGraphKVPass(parse_offgraph_kv_manifest(spec.value))
+                )
         if triton_kernel_mode == "ON":
             passes.append(ReplaceEdgeOpWithTritonOpPass())
         return passes
