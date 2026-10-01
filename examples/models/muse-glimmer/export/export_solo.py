@@ -316,7 +316,6 @@ def _export_cuda(
                     # the runtime cannot recover the width from the graph; every
                     # method here takes input_pos second, shaped [T].
                     CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"1:0"),
-                    CompileSpec("autotune_at_compile_time", b"OFF"),
                 )
             )
         return CudaPartitioner(compile_specs)

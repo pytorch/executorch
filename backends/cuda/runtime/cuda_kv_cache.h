@@ -13,10 +13,9 @@
 #include <optional>
 #include <string_view>
 
-#include <cuda_runtime.h>
-
 #include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
