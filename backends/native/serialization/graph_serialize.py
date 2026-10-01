@@ -42,7 +42,8 @@ from typing import (
 import torch
 
 from executorch.backends.native.serialization.schema import (
-    AffineGroup,
+    AffineQuant,
+    AffineGranularity,
     Argument,
     ArgumentValue,
     BoolArg,
@@ -254,7 +255,7 @@ def _packed_tensor_meta(codec: str, sizes: tuple[int, ...]) -> TensorMeta:
 
 
 def _pack_signed_int4(weight: torch.Tensor) -> torch.Tensor:
-    """Pack signed int4 values as PTN AffineGroup qdata, even elements low."""
+    """Pack signed int4 values as PTN AffineQuant qdata, even elements low."""
     if weight.dtype != torch.int8 or weight.ndim != 2:
         raise ValueError("native q4 weights must be rank-2 int8 tensors before packing")
     if weight.shape[1] % 2 != 0:
@@ -940,7 +941,7 @@ def _extract_constants_and_mutable_buffers(
                 dtype=ScalarType.BYTE,
                 sizes=[_dim(s) for s in pq["sizes"]],
                 quant=QuantSpec(
-                    scheme=AffineGroup(
+                    scheme=AffineQuant(
                         scale_data_key=scale_data_key,
                         scale_dtype=pq["scale_dtype"],
                         zero_point_data_key=zero_point_data_key,
@@ -948,6 +949,8 @@ def _extract_constants_and_mutable_buffers(
                         quant_min=-8,
                         quant_max=7,
                         group_size=pq["group_size"],
+                        axis=-1,
+                        granularity=AffineGranularity.PER_GROUP,
                     )
                 ),
             )
@@ -1077,7 +1080,7 @@ def _mark_torchao_q4_weights(
 
     A weight dequantize read only as the weight of `aten.linear` or
     `aten.embedding`, whose output dtype matches its scales and whose operands
-    are serialized state inputs, is folded: the op reads the packed `AffineGroup`
+    are serialized state inputs, is folded: the op reads the packed `AffineQuant`
     weight directly and the dequantize is not serialized. A weight is packed only
     if every one of its readers is such a dequantize with the same parameters.
     Any other dequantize stays in the graph over the plain int8 weight, with
@@ -1205,6 +1208,18 @@ def _encode(o: object) -> object:
     requires the union type field to precede the value) and omits None-valued
     optional fields.
     """
+    if isinstance(o, AffineQuant):
+        if o.granularity == AffineGranularity.PER_TENSOR:
+            if o.axis != 0 or o.group_size != 0:
+                raise ValueError("per-tensor quantization cannot have an axis or group size")
+        elif o.granularity == AffineGranularity.PER_AXIS:
+            if o.group_size != 0:
+                raise ValueError("per-axis quantization cannot have a group size")
+        elif o.granularity == AffineGranularity.PER_GROUP:
+            if o.group_size <= 0:
+                raise ValueError("group quantization requires a positive group size")
+        else:
+            raise ValueError("unsupported affine quantization granularity")
     if is_dataclass(o):
         out: dict[str, object] = {}
         hints = get_type_hints(type(o))
@@ -1468,7 +1483,7 @@ def collect_data_keys(program: Program) -> set[str]:
     """Return every out-of-line data key the program references.
 
     Covers constant references (NamedTensorRef.data_key) plus the quant keys
-    (AffineGroup scale and zero-point) carried on any TensorMeta.quant, whether
+    (AffineQuant scale and zero-point) carried on any TensorMeta.quant, whether
     it is attached to a constant or to a graph value (intermediates and I/O),
     recursing into HOP subgraphs wherever a schema field carries a ``GraphArg``.
     PackedQuant carries no external keys.
@@ -1479,7 +1494,7 @@ def collect_data_keys(program: Program) -> set[str]:
         if meta is None or meta.quant is None:
             return
         scheme = meta.quant.scheme
-        if isinstance(scheme, AffineGroup):
+        if isinstance(scheme, AffineQuant):
             keys.add(scheme.scale_data_key)
             if scheme.zero_point_data_key:
                 keys.add(scheme.zero_point_data_key)

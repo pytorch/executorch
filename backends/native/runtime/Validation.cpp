@@ -10,10 +10,13 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/native/runtime/deserialize/CheckedMath.h>
@@ -47,11 +50,6 @@ void validate_tensor_meta(const TensorMeta& meta, const std::string& name) {
       }
       seen[dim] = true;
     }
-  }
-  if (meta.quant.has_value() && meta.dtype != ScalarType::Byte) {
-    throw std::runtime_error(
-        "native program: quantized tensor '" + name +
-        "' must use Byte storage");
   }
 }
 
@@ -93,9 +91,33 @@ size_t tensor_numel(const TensorMeta& meta, const std::string& name) {
   return tensor_nbytes(meta, name) / element_size(meta.dtype);
 }
 
-size_t affine_group_nbytes(
-    const TensorMeta& meta,
-    const AffineGroupQuant& quant,
+// Range of a dtype that stores affine q values directly, one per element.
+std::optional<std::pair<int64_t, int64_t>> dense_affine_range(
+    ScalarType dtype) {
+  switch (dtype) {
+    case ScalarType::Char:
+      return std::pair<int64_t, int64_t>{INT8_MIN, INT8_MAX};
+    case ScalarType::Short:
+      return std::pair<int64_t, int64_t>{INT16_MIN, INT16_MAX};
+    case ScalarType::Int:
+      return std::pair<int64_t, int64_t>{INT32_MIN, INT32_MAX};
+    case ScalarType::Byte:
+    case ScalarType::Long:
+    case ScalarType::Half:
+    case ScalarType::Float:
+    case ScalarType::Double:
+    case ScalarType::Bool:
+    case ScalarType::BFloat16:
+    case ScalarType::UInt16:
+    case ScalarType::UInt32:
+    case ScalarType::UInt64:
+      return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+size_t packed_affine_bits(
+    const AffineQuant& quant,
     const std::string& name) {
   const int64_t levels =
       static_cast<int64_t>(quant.quant_max) - quant.quant_min + 1;
@@ -108,8 +130,72 @@ size_t affine_group_nbytes(
   for (int64_t value = levels; value > 1; value >>= 1) {
     ++bits;
   }
+  return bits;
+}
+
+size_t affine_group_count(
+    const TensorMeta& meta,
+    const AffineQuant& quant,
+    const std::string& name) {
+  const auto rank = static_cast<int64_t>(meta.sizes.size());
+  const auto axis = quant.axis < 0 ? rank + quant.axis : quant.axis;
+  switch (quant.granularity) {
+    case AffineGranularity::PerTensor:
+      if (quant.group_size == 0 && quant.axis == 0) {
+        return 1;
+      }
+      break;
+    case AffineGranularity::PerAxis:
+      if (quant.group_size == 0 && axis >= 0 && axis < rank) {
+        return static_cast<size_t>(meta.sizes[static_cast<size_t>(axis)]);
+      }
+      break;
+    case AffineGranularity::PerGroup:
+      if (quant.group_size > 0 && rank > 0 && axis == rank - 1 &&
+          meta.sizes.back() % quant.group_size == 0) {
+        return tensor_numel(meta, name) / static_cast<size_t>(quant.group_size);
+      }
+      break;
+  }
+  throw std::runtime_error(
+      "native program: tensor '" + name +
+      "' has an invalid affine quantization granularity");
+}
+
+void validate_quant_storage(const TensorMeta& meta, const std::string& name) {
+  const auto* affine = std::get_if<AffineQuant>(&*meta.quant);
+  if (affine == nullptr) {
+    if (meta.dtype != ScalarType::Byte) {
+      throw std::runtime_error(
+          "native program: packed tensor '" + name + "' must use Byte storage");
+    }
+    return;
+  }
+  if (meta.dtype == ScalarType::Byte) {
+    static_cast<void>(packed_affine_bits(*affine, name));
+  } else if (const auto range = dense_affine_range(meta.dtype); !range ||
+             affine->quant_min >= affine->quant_max ||
+             affine->quant_min < range->first ||
+             affine->quant_max > range->second) {
+    throw std::runtime_error(
+        "native program: quantized tensor '" + name +
+        "' has a range that does not fit its storage dtype");
+  }
+  static_cast<void>(affine_group_count(meta, *affine, name));
+}
+
+size_t affine_nbytes(
+    const TensorMeta& meta,
+    const AffineQuant& quant,
+    const std::string& name) {
+  if (meta.dtype != ScalarType::Byte) {
+    return tensor_nbytes(meta, name);
+  }
   size_t bit_count = 0;
-  if (!detail::checked_mul(tensor_numel(meta, name), bits, bit_count)) {
+  if (!detail::checked_mul(
+          tensor_numel(meta, name),
+          packed_affine_bits(quant, name),
+          bit_count)) {
     throw std::runtime_error(
         "native program: tensor '" + name + "' packed byte size overflows");
   }
@@ -133,43 +219,45 @@ void validate_quant_parameter(
   }
 }
 
+void validate_affine_parameters(
+    const Package& package,
+    const TensorMeta& meta,
+    const AffineQuant& affine,
+    const std::string& name) {
+  if (affine.scale_data_key.empty()) {
+    throw std::runtime_error(
+        "native program: quantized tensor '" + name + "' has no scale");
+  }
+  const size_t groups = affine_group_count(meta, affine, name);
+  validate_quant_parameter(
+      package, affine.scale_data_key, affine.scale_dtype, groups, name);
+  if (!affine.zero_point_data_key.empty()) {
+    validate_quant_parameter(
+        package,
+        affine.zero_point_data_key,
+        affine.zero_point_dtype,
+        groups,
+        name);
+  }
+}
+
 void validate_quantized_constant(
     const TensorMeta& meta,
     const ConstantInfo& constant,
-    const Package& package,
     const std::string& key) {
-  if (constant.dtype != ScalarType::Byte) {
-    throw std::runtime_error(
-        "native package: packed constant '" + key + "' is not Byte");
-  }
-  if (const auto* affine = std::get_if<AffineGroupQuant>(&*meta.quant)) {
-    // group_size 0 is one group over the whole last axis.
-    const int64_t group_size = affine->group_size == 0 && !meta.sizes.empty()
-        ? meta.sizes.back()
-        : affine->group_size;
-    if (meta.sizes.empty() || affine->scale_data_key.empty() ||
-        group_size <= 0 || meta.sizes.back() % group_size != 0 ||
-        constant.nbytes != affine_group_nbytes(meta, *affine, key)) {
+  if (const auto* affine = std::get_if<AffineQuant>(&*meta.quant)) {
+    if (constant.sizes == nullptr || constant.dtype != meta.dtype ||
+        (meta.dtype != ScalarType::Byte && *constant.sizes != meta.sizes) ||
+        constant.nbytes != affine_nbytes(meta, *affine, key)) {
       throw std::runtime_error(
-          "native package: affine-packed constant '" + key +
+          "native package: affine-quantized constant '" + key +
           "' has incompatible metadata");
-    }
-    const size_t groups =
-        tensor_numel(meta, key) / static_cast<size_t>(group_size);
-    validate_quant_parameter(
-        package, affine->scale_data_key, affine->scale_dtype, groups, key);
-    if (!affine->zero_point_data_key.empty()) {
-      validate_quant_parameter(
-          package,
-          affine->zero_point_data_key,
-          affine->zero_point_dtype,
-          groups,
-          key);
     }
     return;
   }
   const auto* packed = std::get_if<PackedQuant>(&*meta.quant);
-  if (packed == nullptr || packed->codec.empty()) {
+  if (constant.dtype != ScalarType::Byte || packed == nullptr ||
+      packed->codec.empty()) {
     throw std::runtime_error(
         "native package: packed constant '" + key + "' has an invalid codec");
   }
@@ -199,7 +287,7 @@ void validate_quant_parameter_binding(
 void validate_quant_bindings(const Method& method, const Value& value) {
   const TensorMeta& meta = value.tensor_meta();
   const auto* affine = meta.quant.has_value()
-      ? std::get_if<AffineGroupQuant>(&*meta.quant)
+      ? std::get_if<AffineQuant>(&*meta.quant)
       : nullptr;
   if (affine == nullptr) {
     return;
@@ -286,6 +374,9 @@ void validate_method_structure(const Method& method) {
   for (const Value& value : method.graph.values) {
     if (value.is_tensor()) {
       validate_tensor_meta(value.tensor_meta(), value.name);
+      if (value.tensor_meta().quant.has_value()) {
+        validate_quant_storage(value.tensor_meta(), value.name);
+      }
       validate_quant_bindings(method, value);
     }
   }
@@ -391,13 +482,23 @@ void validate_method_constants(const Method& method, const Package& package) {
           "native package: missing constant '" + binding.key + "'");
     }
     if (meta.quant.has_value()) {
-      validate_quantized_constant(meta, *constant, package, binding.key);
+      validate_quantized_constant(meta, *constant, binding.key);
     } else if (
         constant->dtype != meta.dtype || *constant->sizes != meta.sizes ||
         constant->nbytes != tensor_nbytes(meta, binding.key)) {
       throw std::runtime_error(
           "native package: constant '" + binding.key +
           "' disagrees with its PTG binding");
+    }
+  }
+  for (const Value& value : method.graph.values) {
+    if (!value.is_tensor() || !value.tensor_meta().quant.has_value()) {
+      continue;
+    }
+    if (const auto* affine =
+            std::get_if<AffineQuant>(&*value.tensor_meta().quant)) {
+      validate_affine_parameters(
+          package, value.tensor_meta(), *affine, value.name);
     }
   }
 }

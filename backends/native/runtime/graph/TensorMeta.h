@@ -17,9 +17,15 @@
 
 namespace ptn {
 
-// See native_graph.fbs AffineGroup. As a direct op operand, a tensor carrying
+// See native_graph.fbs AffineQuant. As a direct op operand, a tensor carrying
 // this scheme denotes its decoded value, with dtype scale_dtype.
-struct AffineGroupQuant {
+enum class AffineGranularity : uint8_t {
+  PerTensor = 0,
+  PerAxis = 1,
+  PerGroup = 2,
+};
+
+struct AffineQuant {
   std::string scale_data_key;
   ScalarType scale_dtype = ScalarType::Float;
   int32_t quant_min = 0;
@@ -27,8 +33,10 @@ struct AffineGroupQuant {
   int32_t group_size = 0;
   std::string zero_point_data_key;
   ScalarType zero_point_dtype = ScalarType::Int;
+  int32_t axis = 0;
+  AffineGranularity granularity = AffineGranularity::PerTensor;
 
-  bool operator==(const AffineGroupQuant&) const = default;
+  bool operator==(const AffineQuant&) const = default;
 };
 
 struct PackedQuant {
@@ -37,9 +45,9 @@ struct PackedQuant {
   bool operator==(const PackedQuant&) const = default;
 };
 
-using QuantScheme = std::variant<AffineGroupQuant, PackedQuant>;
+using QuantScheme = std::variant<AffineQuant, PackedQuant>;
 
-// Logical tensor metadata: element type, bounded shape, and optional packed
+// Logical tensor metadata: element type, bounded shape, and optional
 // quantization scheme. `sizes` holds allocation upper bounds; `lower_bounds` is
 // empty for a static shape and holds corresponding lower bounds for a dynamic
 // shape.

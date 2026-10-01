@@ -25,7 +25,7 @@
 //   (2) Method-level bindings into the METHOD's top-level Graph (never a subgraph):
 //       NamedTensorRef.name, MutableBufferSpec.name, OutputSpec.name.
 //   (3) Data keys / fqns, the program-wide external-constant / cross-method
-//       namespace: NamedTensorRef.data_key, AffineGroup.scale_data_key /
+//       namespace: NamedTensorRef.data_key, AffineQuant.scale_data_key /
 //       zero_point_data_key, MutableBufferSpec.fqn.
 //   Not value references: NamedArgument.name (operator-schema parameter name),
 //   GraphArg.name (submodule attr label, debug only), Method.name (program-level).
@@ -106,35 +106,50 @@ enum OutputValueKind : byte {
 // means not quantized. dtype stays the storage dtype; the scheme says how to
 // interpret it. The scheme set is append-only.
 
-// Affine group-wise quant along the last (reduction) axis:
-//   value = scale * ((qdata + quant_min) - zero_point)
-// qdata is stored unsigned in [0, quant_max - quant_min], LSB-first when packed
-// sub-byte (two int4 nibbles per byte), so quant_min is also the unsigned-to-logical
-// storage offset (logical q = qdata + quant_min, e.g. -8 for int4). quant_min and
-// quant_max give the logical range, hence the bitwidth and signedness. group_size is
-// the block length along the last axis; 0 means per-channel (one group over the whole
-// axis). Scales (and, if asymmetric, zero-points) are shipped out-of-line via the
-// external constant file, keyed by data_key (empty zero_point_data_key means symmetric).
-// Their shapes derive from the weight shape and group_size, but their dtypes do not,
-// so they are recorded here. The qdata itself (the enclosing TensorMeta) uses
-// dtype=BYTE with logical sizes. Sub-byte packing is flat over the elements in
-// memory order with no per-row padding, so the packed byte length is
-// ceil(numel * bitwidth / 8), not prod(sizes). The scale and zero-point keys must
-// be read-only stored constants of every method that uses the quantized tensor,
-// whether that tensor is itself a constant or a graph value such as a user input.
+// Affine quant:
+//   value = scale * (q - zero_point)
+// Storage follows the enclosing TensorMeta.dtype. BYTE stores qdata unsigned in
+// [0, quant_max - quant_min], so logical q = qdata + quant_min (e.g. -8 for int4);
+// quant_max - quant_min + 1 must be a power of two no larger than 256, which gives the
+// bitwidth, and sub-byte values pack LSB-first (two int4 nibbles per byte), flat over
+// the elements in memory order with no per-row padding, so the packed byte length is
+// ceil(numel * bitwidth / 8), not prod(sizes). CHAR, SHORT, or INT stores each q
+// directly as one element of that type, and [quant_min, quant_max] must fit it.
+//
+// PER_TENSOR has one parameter set for the whole tensor. PER_AXIS has one set
+// per index of axis (e.g. per output channel); PER_GROUP has one set per
+// group_size consecutive elements along the last axis. The axis is a logical
+// dimension index, independent of memory layout; negative indices count from
+// the end, so -1 means the last dimension. For PER_TENSOR axis and group_size
+// must be 0; for PER_AXIS group_size must be 0; for PER_GROUP group_size must
+// be positive and axis must name the last dimension. PER_AXIS requires
+// sizes[axis] parameter sets; PER_GROUP requires numel/group_size. Scales
+// (and, if asymmetric, zero-points) are shipped out-of-line via the external
+// constant file, keyed by data_key (empty zero_point_data_key means symmetric).
+// Their dtypes are recorded here. The scale and zero-point keys must be
+// read-only stored constants of every method that uses the quantized tensor,
+// whether it is a constant or a graph value such as a user input.
 //
 // A quantized tensor may feed an explicit dequant op, whose output TensorMeta.dtype
 // gives the result dtype, or it may be a direct op operand. A direct operand denotes
 // its decoded value with dtype scale_dtype; an engine must lower the consuming op,
 // materialize the decode, or reject the program.
-table AffineGroup {
+enum AffineGranularity : byte {
+    PER_TENSOR = 0,
+    PER_AXIS = 1,
+    PER_GROUP = 2,
+}
+
+table AffineQuant {
     scale_data_key: string (required);
     scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable
     quant_min: int;
     quant_max: int;
-    group_size: int;                // 0 means per-channel (one group over the last axis)
+    group_size: int;                // Only meaningful for PER_GROUP
     zero_point_data_key: string;    // empty means symmetric
     zero_point_dtype: ScalarType;   // meaningful only when zero_point_data_key is set
+    axis: int;                      // PER_AXIS/PER_GROUP dimension
+    granularity: AffineGranularity; // explicit mode
 }
 
 // Opaque codec-defined packed layout (e.g. "gguf:q4k", "mxfp4", "nvfp4"). Block size,
@@ -148,7 +163,7 @@ table PackedQuant {
 
 // Append-only; new schemes go at the end.
 union QuantScheme {
-    AffineGroup,
+    AffineQuant,
     PackedQuant,
 }
 
@@ -171,8 +186,8 @@ table Dim {
     max: long = -1;
 }
 
-// sizes is the logical shape and dtype the element type. When quant is set the tensor
-// is stored packed: dtype is BYTE and the physical layout and byte length come from
+// sizes is the logical shape and dtype the element type. When quant is set and dtype
+// is BYTE the tensor is stored packed: the physical layout and byte length come from
 // the quant scheme and its external constant blob, not prod(sizes).
 table TensorMeta {
     dtype: ScalarType;

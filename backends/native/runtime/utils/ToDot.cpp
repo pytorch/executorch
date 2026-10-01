@@ -71,11 +71,21 @@ std::string quant_suffix(const fbs::QuantSpec* q) {
     return "";
   }
   switch (q->scheme_type()) {
-    case fbs::QuantScheme::AffineGroup: {
-      const auto* a = q->scheme_as_AffineGroup();
-      const int gs = a != nullptr ? a->group_size() : 0;
-      return std::string(" q:affine g=") +
-          (gs == 0 ? "perchan" : std::to_string(gs));
+    case fbs::QuantScheme::AffineQuant: {
+      const auto* a = q->scheme_as_AffineQuant();
+      if (a == nullptr) {
+        return " q:affine";
+      }
+      switch (a->granularity()) {
+        case fbs::AffineGranularity::PER_TENSOR:
+          return " q:affine pertensor";
+        case fbs::AffineGranularity::PER_AXIS:
+          return " q:affine axis=" + std::to_string(a->axis());
+        case fbs::AffineGranularity::PER_GROUP:
+          return " q:affine axis=" + std::to_string(a->axis()) +
+              " g=" + std::to_string(a->group_size());
+      }
+      return " q:affine invalid";
     }
     case fbs::QuantScheme::PackedQuant: {
       const auto* p = q->scheme_as_PackedQuant();
@@ -86,7 +96,7 @@ std::string quant_suffix(const fbs::QuantSpec* q) {
   }
 }
 
-// e.g. "FLOAT[16,16]" or "BYTE[8,16] q:affine g=32"
+// e.g. "FLOAT[16,16]" or "BYTE[8,16] q:affine axis=-1 g=32"
 std::string meta_label(const fbs::TensorMeta* m) {
   if (m == nullptr) {
     return "";

@@ -51,6 +51,21 @@ ScalarType map_scalar_type(fbs::ScalarType t) {
   return static_cast<ScalarType>(static_cast<int8_t>(t));
 }
 
+AffineGranularity map_affine_granularity(fbs::AffineGranularity granularity) {
+  switch (granularity) {
+    case fbs::AffineGranularity::PER_TENSOR:
+      return AffineGranularity::PerTensor;
+    case fbs::AffineGranularity::PER_AXIS:
+      return AffineGranularity::PerAxis;
+    case fbs::AffineGranularity::PER_GROUP:
+      return AffineGranularity::PerGroup;
+    default:
+      throw std::runtime_error(
+          "build_tensor_meta: unsupported AffineGranularity value " +
+          std::to_string(static_cast<int>(granularity)));
+  }
+}
+
 OpKind map_op_kind(fbs::OpKind k) {
   switch (k) {
     case fbs::OpKind::CALL_FUNCTION:
@@ -181,14 +196,14 @@ TensorMeta build_tensor_meta(
   }
   if (const auto* quant = m->quant()) {
     switch (quant->scheme_type()) {
-      case fbs::QuantScheme::AffineGroup: {
-        const fbs::AffineGroup* affine = quant->scheme_as_AffineGroup();
+      case fbs::QuantScheme::AffineQuant: {
+        const fbs::AffineQuant* affine = quant->scheme_as_AffineQuant();
         if (affine == nullptr) {
           throw std::runtime_error(
               "build_tensor_meta: " + name +
               " has a malformed affine quant scheme");
         }
-        out.quant = AffineGroupQuant{
+        out.quant = AffineQuant{
             .scale_data_key = str_of(affine->scale_data_key()),
             .scale_dtype = map_scalar_type(affine->scale_dtype()),
             .quant_min = affine->quant_min(),
@@ -196,6 +211,8 @@ TensorMeta build_tensor_meta(
             .group_size = affine->group_size(),
             .zero_point_data_key = str_of(affine->zero_point_data_key()),
             .zero_point_dtype = map_scalar_type(affine->zero_point_dtype()),
+            .axis = affine->axis(),
+            .granularity = map_affine_granularity(affine->granularity()),
         };
         break;
       }

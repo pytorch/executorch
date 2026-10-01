@@ -12,7 +12,8 @@ import torch.nn as nn
 from executorch.backends.native.serialization import deserialize_program
 from executorch.backends.native.serialization.graph_serialize import _pack_signed_int4
 from executorch.backends.native.serialization.schema import (
-    AffineGroup,
+    AffineQuant,
+    AffineGranularity,
     PackedQuant,
     ScalarType,
     TensorArg,
@@ -147,7 +148,7 @@ class TorchaoQ4LinearTest(unittest.TestCase):
     def _assert_linear_reads_packed_weight(self, method, constants):
         [weight] = [c for c in method.constants if c.meta.quant is not None]
         scheme = weight.meta.quant.scheme
-        self.assertIsInstance(scheme, AffineGroup)
+        self.assertIsInstance(scheme, AffineQuant)
         self.assertEqual(_weight_of(method), weight.name)
         self.assertEqual(weight.meta.dtype, ScalarType.BYTE)
         self.assertEqual([d.max for d in weight.meta.sizes], [self.N, self.K])
@@ -155,6 +156,8 @@ class TorchaoQ4LinearTest(unittest.TestCase):
             (scheme.quant_min, scheme.quant_max, scheme.group_size),
             (-8, 7, self.GROUP_SIZE),
         )
+        self.assertEqual(scheme.granularity, AffineGranularity.PER_GROUP)
+        self.assertEqual(scheme.axis, -1)
         self.assertEqual(scheme.scale_dtype, ScalarType.FLOAT)
         self.assertEqual(constants[weight.data_key].dtype, torch.uint8)
         self.assertEqual(constants[weight.data_key].numel(), self.N * self.K // 2)

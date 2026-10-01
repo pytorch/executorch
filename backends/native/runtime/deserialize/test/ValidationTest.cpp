@@ -44,7 +44,9 @@ Method make_method(
   Method method;
   method.name = "forward";
   method.graph.values.emplace_back(
-      "weight", TensorMeta{dtype, std::move(sizes), std::move(dim_order)});
+      "weight",
+      TensorMeta{
+          dtype, std::move(sizes), std::move(dim_order), {}, std::nullopt});
   method.data_bindings.push_back(DataBinding{
       /*value_id=*/0,
       ValueRole::Parameter,
@@ -264,7 +266,8 @@ TEST(ValidationTest, ValidateMethodConstants_InvalidDtype_Throws) {
   Method method;
   method.name = "forward";
   method.graph.values.emplace_back(
-      "input", TensorMeta{static_cast<ScalarType>(127), {2}, {}});
+      "input",
+      TensorMeta{static_cast<ScalarType>(127), {2}, {}, {}, std::nullopt});
 
   EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
 }
@@ -281,7 +284,8 @@ TEST(ValidationTest, ValidateMethodConstants_InvalidDimOrder_Throws) {
   const Package package = make_package();
   Method method;
   method.name = "forward";
-  method.graph.values.emplace_back("input", TensorMeta{kFloat, {1, 2}, {0, 0}});
+  method.graph.values.emplace_back(
+      "input", TensorMeta{kFloat, {1, 2}, {0, 0}, {}, std::nullopt});
 
   EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
 }
@@ -301,29 +305,33 @@ Package make_quantized_package() {
   })));
 }
 
-AffineGroupQuant weight_quant() {
-  return AffineGroupQuant{
+// An int4 [2, 8] weight in groups of 4, with its scale and zero-point tensors
+// bound as ordinary constants of the method.
+AffineQuant weight_quant() {
+  return AffineQuant{
       "weight_scales",
       kFloat,
       /*quant_min=*/-8,
       /*quant_max=*/7,
       /*group_size=*/4,
       "weight_zeros",
-      kInt};
+      kInt,
+      /*axis=*/-1,
+      AffineGranularity::PerGroup};
 }
 
 // An int4 [2, 8] weight in groups of 4, with its scale and zero-point tensors
 // bound as ordinary constants of the method.
-Method make_quantized_method(AffineGroupQuant quant = weight_quant()) {
+Method make_quantized_method(AffineQuant quant = weight_quant()) {
   Method method;
   method.name = "forward";
-  TensorMeta weight{kByte, {2, 8}, {}};
+  TensorMeta weight{kByte, {2, 8}, {}, {}, std::nullopt};
   weight.quant = std::move(quant);
   method.graph.values.emplace_back("weight", std::move(weight));
   method.graph.values.emplace_back(
-      "weight_scales", TensorMeta{kFloat, {2, 2}, {}});
+      "weight_scales", TensorMeta{kFloat, {2, 2}, {}, {}, std::nullopt});
   method.graph.values.emplace_back(
-      "weight_zeros", TensorMeta{kInt, {2, 2}, {}});
+      "weight_zeros", TensorMeta{kInt, {2, 2}, {}, {}, std::nullopt});
   for (ValueId id = 0; id < 3; ++id) {
     method.data_bindings.push_back(DataBinding{
         id,
@@ -350,7 +358,7 @@ TEST(ValidationTest, ValidateMethodConstants_QuantParameterBindingRejects) {
   unbound_scale.data_bindings.erase(unbound_scale.data_bindings.begin() + 1);
   Method unbound_zero_point = make_quantized_method();
   unbound_zero_point.data_bindings.pop_back();
-  AffineGroupQuant half_scale = weight_quant();
+  AffineQuant half_scale = weight_quant();
   half_scale.scale_dtype = kHalf;
   Method mutable_scale = make_quantized_method();
   mutable_scale.data_bindings[1].role = ValueRole::Buffer;
@@ -369,9 +377,9 @@ TEST(ValidationTest, ValidateMethodConstants_QuantParameterBindingRejects) {
   }
 }
 
-Method with_quantized_input(AffineGroupQuant quant) {
+Method with_quantized_input(AffineQuant quant) {
   Method method = make_quantized_method();
-  TensorMeta input{kByte, {2, 4}, {}};
+  TensorMeta input{kByte, {2, 8}, {}, {}, std::nullopt};
   input.quant = std::move(quant);
   method.graph.values.emplace_back("x", std::move(input));
   method.graph.values.back().role = ValueRole::UserInput;
@@ -382,7 +390,7 @@ Method with_quantized_input(AffineGroupQuant quant) {
 // only constants have their packed size checked against the package.
 TEST(ValidationTest, ValidateMethodConstants_QuantizedGraphValue) {
   const Package package = make_quantized_package();
-  AffineGroupQuant missing_scale = weight_quant();
+  AffineQuant missing_scale = weight_quant();
   missing_scale.scale_data_key = "missing";
   const Method bound = with_quantized_input(weight_quant());
   const Method unbound = with_quantized_input(missing_scale);
@@ -488,14 +496,13 @@ Method make_q4_method(
     QuantScheme quant,
     std::vector<int64_t> sizes = {2, 4},
     std::string key = "weight") {
-  TensorMeta meta;
-  meta.dtype = ScalarType::Byte;
-  meta.sizes = std::move(sizes);
+  TensorMeta meta{ScalarType::Byte, std::move(sizes), {}, {}, std::nullopt};
   meta.quant = std::move(quant);
   Method method = make_method();
   method.graph.values.clear();
   method.graph.values.emplace_back("weight", std::move(meta));
-  method.graph.values.emplace_back("scale", TensorMeta{kFloat, {2}, {}});
+  method.graph.values.emplace_back(
+      "scale", TensorMeta{kFloat, {2}, {}, {}, std::nullopt});
   method.data_bindings[0].key = std::move(key);
   method.data_bindings.push_back(DataBinding{
       /*value_id=*/1,
@@ -506,48 +513,230 @@ Method make_q4_method(
   return method;
 }
 
-AffineGroupQuant q4_scheme() {
-  AffineGroupQuant quant;
-  quant.scale_data_key = "scale";
-  quant.quant_min = -8;
-  quant.quant_max = 7;
-  quant.group_size = 4;
-  return quant;
+AffineQuant q4_scheme() {
+  return AffineQuant{
+      .scale_data_key = "scale",
+      .scale_dtype = kFloat,
+      .quant_min = -8,
+      .quant_max = 7,
+      .group_size = 4,
+      .zero_point_data_key = "",
+      .zero_point_dtype = kInt,
+      .axis = -1,
+      .granularity = AffineGranularity::PerGroup};
 }
 
-TEST(ValidationTest, ValidateMethodConstants_AffineGroup_Succeeds) {
+TEST(ValidationTest, ValidateMethodConstants_AffineQuant_Succeeds) {
   EXPECT_NO_THROW(validate_method_constants(
       make_q4_method(q4_scheme()), make_q4_package()));
 }
 
-TEST(ValidationTest, ValidateMethodConstants_PerChannelAffineGroup_Succeeds) {
-  AffineGroupQuant per_channel = q4_scheme();
+TEST(ValidationTest, ValidateMethodConstants_PerAxisAffineQuant_Succeeds) {
+  AffineQuant per_channel = q4_scheme();
   per_channel.group_size = 0;
+  per_channel.axis = 0;
+  per_channel.granularity = AffineGranularity::PerAxis;
   EXPECT_NO_THROW(validate_method_constants(
       make_q4_method(per_channel), make_q4_package()));
 }
 
-TEST(ValidationTest, ValidateMethodConstants_AffineGroupRejects) {
+TEST(ValidationTest, ValidateMethodConstants_PositiveLastGroupAxis_Succeeds) {
+  AffineQuant group = q4_scheme();
+  group.axis = 1;
+
+  EXPECT_NO_THROW(validate_method_constants(
+      make_q4_method(group), make_q4_package()));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_AffineQuantRejects) {
   const Package package = make_q4_package();
-  AffineGroupQuant indivisible = q4_scheme();
+  AffineQuant indivisible = q4_scheme();
   indivisible.group_size = 3;
-  AffineGroupQuant non_power_of_two = q4_scheme();
+  AffineQuant non_power_of_two = q4_scheme();
   non_power_of_two.quant_max = 6;
-  AffineGroupQuant scale_count = q4_scheme();
+  AffineQuant scale_count = q4_scheme();
   scale_count.group_size = 2;
-  AffineGroupQuant missing_zero_point = q4_scheme();
+  AffineQuant missing_zero_point = q4_scheme();
   missing_zero_point.zero_point_data_key = "missing";
-  AffineGroupQuant no_scale = q4_scheme();
+  AffineQuant no_scale = q4_scheme();
   no_scale.scale_data_key.clear();
+  AffineQuant group_on_first_axis = q4_scheme();
+  group_on_first_axis.axis = 0;
+  AffineQuant group_without_size = q4_scheme();
+  group_without_size.group_size = 0;
+  AffineQuant axis_with_size = q4_scheme();
+  axis_with_size.granularity = AffineGranularity::PerAxis;
+  AffineQuant axis_out_of_range = q4_scheme();
+  axis_out_of_range.granularity = AffineGranularity::PerAxis;
+  axis_out_of_range.group_size = 0;
+  axis_out_of_range.axis = -3;
+  AffineQuant tensor_with_size = q4_scheme();
+  tensor_with_size.granularity = AffineGranularity::PerTensor;
   const std::vector<std::pair<std::string, Method>> cases = {
       {"indivisible group", make_q4_method(indivisible)},
       {"non-power-of-two range", make_q4_method(non_power_of_two)},
       {"scale count", make_q4_method(scale_count)},
       {"missing zero point", make_q4_method(missing_zero_point)},
       {"no scale", make_q4_method(no_scale)},
+      {"group on first axis", make_q4_method(group_on_first_axis)},
+      {"group without size", make_q4_method(group_without_size)},
+      {"per-axis with group size", make_q4_method(axis_with_size)},
+      {"per-axis out of range", make_q4_method(axis_out_of_range)},
+      {"per-tensor with group size", make_q4_method(tensor_with_size)},
       {"packed byte count", make_q4_method(q4_scheme(), {2, 8})},
       {"non-Byte constant", make_q4_method(q4_scheme(), {2, 4}, "scale")},
       {"empty codec", make_q4_method(PackedQuant{})},
+  };
+  for (const auto& [name, method] : cases) {
+    SCOPED_TRACE(name);
+    EXPECT_THROW(
+        validate_method_constants(method, package), std::runtime_error);
+  }
+}
+
+Package make_dense_package() {
+  auto tensors = testing::make_safetensors(
+      R"({"weight":{"dtype":"I8","shape":[2,1,2,2],"data_offsets":[0,8]},)"
+      R"("scale":{"dtype":"F32","shape":[2],"data_offsets":[8,16]},)"
+      R"("act_scale":{"dtype":"F32","shape":[1],"data_offsets":[16,20]}})",
+      /*payload_size=*/20);
+  return Package::load(OwnedBytes::from_vector(testing::make_zip({
+      {kProgramEntry, {'N', 'P', 'T', 'G'}},
+      {kSafeTensorsEntry, std::move(tensors)},
+  })));
+}
+
+AffineQuant int8_per_channel() {
+  return AffineQuant{
+      .scale_data_key = "scale",
+      .scale_dtype = kFloat,
+      .quant_min = -127,
+      .quant_max = 127,
+      .group_size = 0,
+      .zero_point_data_key = "",
+      .zero_point_dtype = kInt,
+      .axis = 0,
+      .granularity = AffineGranularity::PerAxis};
+}
+
+AffineQuant int16_per_tensor() {
+  return AffineQuant{
+      .scale_data_key = "act_scale",
+      .scale_dtype = kFloat,
+      .quant_min = -32768,
+      .quant_max = 32767,
+      .group_size = 0,
+      .zero_point_data_key = "",
+      .zero_point_dtype = kInt,
+      .axis = 0,
+      .granularity = AffineGranularity::PerTensor};
+}
+
+// A dense int8 conv weight quantized per output channel and an unbound int16
+// activation quantized per tensor, each scaled by a bound constant.
+Method make_dense_method(
+    AffineQuant weight_quant = int8_per_channel(),
+    AffineQuant activation_quant = int16_per_tensor(),
+    ScalarType activation_dtype = kShort) {
+  TensorMeta weight{kChar, {2, 1, 2, 2}, {}, {}, std::nullopt};
+  weight.quant = std::move(weight_quant);
+  TensorMeta activation{activation_dtype, {1, 4}, {}, {}, std::nullopt};
+  activation.quant = std::move(activation_quant);
+  Method method;
+  method.name = "forward";
+  method.graph.values.emplace_back("weight", std::move(weight));
+  method.graph.values.emplace_back(
+      "scale", TensorMeta{kFloat, {2}, {}, {}, std::nullopt});
+  method.graph.values.emplace_back(
+      "act_scale", TensorMeta{kFloat, {1}, {}, {}, std::nullopt});
+  method.graph.values.emplace_back("activation", std::move(activation));
+  for (ValueId id = 0; id < 3; ++id) {
+    method.data_bindings.push_back(DataBinding{
+        id,
+        ValueRole::Parameter,
+        method.graph.values[id].name,
+        /*has_data=*/true,
+        /*mutated=*/false});
+  }
+  return method;
+}
+
+TEST(ValidationTest, ValidateMethodConstants_DenseAffine_Succeeds) {
+  EXPECT_NO_THROW(
+      validate_method_constants(make_dense_method(), make_dense_package()));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_NegativePerAxis_Succeeds) {
+  for (const int32_t axis : {-4, -1}) {
+    SCOPED_TRACE(axis);
+    AffineQuant per_axis = int8_per_channel();
+    per_axis.axis = axis;
+    EXPECT_NO_THROW(validate_method_constants(
+        make_dense_method(per_axis), make_dense_package()));
+  }
+}
+
+TEST(ValidationTest, ValidateMethodConstants_NonLeadingPerAxis_Succeeds) {
+  AffineQuant per_axis = int8_per_channel();
+  per_axis.axis = 2;
+
+  EXPECT_NO_THROW(validate_method_constants(
+      make_dense_method(per_axis), make_dense_package()));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_TransposedWeightPerAxis_Succeeds) {
+  auto tensors = testing::make_safetensors(
+      R"({"weight":{"dtype":"I8","shape":[4,2],"data_offsets":[0,8]},)"
+      R"("scale":{"dtype":"F32","shape":[2],"data_offsets":[8,16]},)"
+      R"("act_scale":{"dtype":"F32","shape":[1],"data_offsets":[16,20]}})",
+      /*payload_size=*/20);
+  const Package package = Package::load(OwnedBytes::from_vector(testing::make_zip({
+      {kProgramEntry, {'N', 'P', 'T', 'G'}},
+      {kSafeTensorsEntry, std::move(tensors)},
+  })));
+  AffineQuant per_axis = int8_per_channel();
+  per_axis.axis = 1;
+  Method method = make_dense_method(per_axis);
+  method.graph.values[0].tensor_meta().sizes = {4, 2};
+
+  EXPECT_NO_THROW(validate_method_constants(method, package));
+}
+
+TEST(ValidationTest, ValidateMethodConstants_DenseAffineRejects) {
+  const Package package = make_dense_package();
+  AffineQuant exceeds_int8 = int8_per_channel();
+  exceeds_int8.quant_max = 128;
+  AffineQuant axis_out_of_range = int8_per_channel();
+  axis_out_of_range.axis = 4;
+  AffineQuant negative_axis_out_of_range = int8_per_channel();
+  negative_axis_out_of_range.axis = -5;
+  AffineQuant group_with_axis = int8_per_channel();
+  group_with_axis.group_size = 2;
+  group_with_axis.axis = 1;
+  group_with_axis.granularity = AffineGranularity::PerGroup;
+  AffineQuant channel_scale_count = int8_per_channel();
+  channel_scale_count.axis = 1;
+  AffineQuant per_tensor_scale_count = int16_per_tensor();
+  per_tensor_scale_count.scale_data_key = "scale";
+  AffineQuant unbound_scale = int16_per_tensor();
+  unbound_scale.scale_data_key = "missing";
+  AffineQuant per_tensor_with_axis = int16_per_tensor();
+  per_tensor_with_axis.axis = -1;
+  const std::vector<std::pair<std::string, Method>> cases = {
+      {"range exceeds int8", make_dense_method(exceeds_int8)},
+      {"axis out of range", make_dense_method(axis_out_of_range)},
+      {"negative axis out of range",
+       make_dense_method(negative_axis_out_of_range)},
+      {"group on non-last axis", make_dense_method(group_with_axis)},
+      {"per-channel scale count", make_dense_method(channel_scale_count)},
+      {"per-tensor scale count",
+       make_dense_method(int8_per_channel(), per_tensor_scale_count)},
+      {"unbound activation scale",
+       make_dense_method(int8_per_channel(), unbound_scale)},
+      {"per-tensor with axis",
+       make_dense_method(int8_per_channel(), per_tensor_with_axis)},
+      {"non-integer storage",
+       make_dense_method(int8_per_channel(), int16_per_tensor(), kFloat)},
   };
   for (const auto& [name, method] : cases) {
     SCOPED_TRACE(name);

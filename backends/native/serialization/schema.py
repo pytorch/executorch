@@ -80,18 +80,26 @@ class OutputValueKind(IntEnum):
 # set is append-only and grows over time.
 
 
+class AffineGranularity(IntEnum):
+    PER_TENSOR = 0
+    PER_AXIS = 1
+    PER_GROUP = 2
+
+
 @dataclass
-class AffineGroup:
-    # Affine group-wise quant along the last axis. See native_graph.fbs for the full
-    # dequant and storage contract (unsigned qdata, quant_min offset, out-of-line
-    # scales, packed byte length).
+class AffineQuant:
+    # Affine quant, per-tensor, per-axis, or group-wise along the last axis. See
+    # native_graph.fbs for the full dequant and storage contract (BYTE packed with a
+    # quant_min offset or dense CHAR/SHORT/INT, out-of-line scales).
     scale_data_key: str
     scale_dtype: ScalarType
     quant_min: int
     quant_max: int
+    granularity: AffineGranularity
     group_size: int = 0
     zero_point_data_key: Optional[str] = None
     zero_point_dtype: ScalarType = ScalarType.INT
+    axis: int = 0
 
 
 @dataclass
@@ -103,7 +111,7 @@ class PackedQuant:
 
 # Append-only; keep in sync with the union in native_graph.fbs.
 QuantScheme = Union[
-    AffineGroup,
+    AffineQuant,
     PackedQuant,
 ]
 

@@ -33,7 +33,8 @@ from executorch.backends.native.serialization.graph_serialize import (
     serialize_operator,
 )
 from executorch.backends.native.serialization.schema import (
-    AffineGroup,
+    AffineQuant,
+    AffineGranularity,
     Argument,
     BoolArg,
     BoolListArg,
@@ -702,11 +703,12 @@ class SubgraphHOPTest(unittest.TestCase):
 
     def test_collect_data_keys_finds_graph_arg_in_any_node_field(self):
         quant = QuantSpec(
-            scheme=AffineGroup(
+            scheme=AffineQuant(
                 scale_data_key="nested.scale",
                 scale_dtype=ScalarType.HALF,
                 quant_min=-8,
                 quant_max=7,
+                granularity=AffineGranularity.PER_TENSOR,
                 zero_point_data_key="nested.zero_point",
             )
         )
@@ -850,8 +852,8 @@ class QuantSpecRoundTripTest(unittest.TestCase):
     def _roundtrip_meta(self, quant) -> TensorMeta:
         meta = TensorMeta(
             dtype=ScalarType.CHAR,
-            sizes=[Dim(min=4, max=4)],
-            dim_order=[0],
+            sizes=[Dim(min=4, max=4), Dim(min=32, max=32)],
+            dim_order=[0, 1],
             quant=quant,
         )
         graph = Graph(
@@ -865,8 +867,8 @@ class QuantSpecRoundTripTest(unittest.TestCase):
     def test_absent_quant_is_none(self):
         self.assertIsNone(self._roundtrip_meta(None).quant)
 
-    def test_affine_group_quant_roundtrips(self):
-        expected = AffineGroup(
+    def test_group_affine_quant_roundtrips(self):
+        expected = AffineQuant(
             scale_data_key="w.scale",
             scale_dtype=ScalarType.HALF,
             quant_min=-8,
@@ -874,6 +876,32 @@ class QuantSpecRoundTripTest(unittest.TestCase):
             group_size=32,
             zero_point_data_key="w.zp",
             zero_point_dtype=ScalarType.INT,
+            axis=-1,
+            granularity=AffineGranularity.PER_GROUP,
+        )
+        scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
+        self.assertEqual(scheme, expected)
+
+    def test_per_tensor_affine_quant_roundtrips(self):
+        expected = AffineQuant(
+            scale_data_key="x.scale",
+            scale_dtype=ScalarType.FLOAT,
+            quant_min=-128,
+            quant_max=127,
+            zero_point_data_key="x.zp",
+            granularity=AffineGranularity.PER_TENSOR,
+        )
+        scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
+        self.assertEqual(scheme, expected)
+
+    def test_per_axis_affine_quant_roundtrips(self):
+        expected = AffineQuant(
+            scale_data_key="w.scale",
+            scale_dtype=ScalarType.FLOAT,
+            quant_min=-127,
+            quant_max=127,
+            axis=-1,
+            granularity=AffineGranularity.PER_AXIS,
         )
         scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
         self.assertEqual(scheme, expected)
