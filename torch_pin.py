@@ -1,5 +1,7 @@
 # PyTorch release used by development installs and release-wheel metadata.
 TORCH_VERSION = "2.14.0"
+TORCHVISION_VERSION = "0.29.0"
+TORCHAUDIO_VERSION = "2.11.0"
 NIGHTLY_VERSION = "dev20260913"
 
 # Changed to True by scripts/release/apply-release-changes.sh. Release wheels

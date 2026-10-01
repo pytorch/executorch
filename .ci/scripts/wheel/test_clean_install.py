@@ -66,7 +66,7 @@ def test_release_pytorch_requirement() -> None:
     ci_refs = (
         os.environ.get("GITHUB_REF_NAME", ""),
         os.environ.get("GITHUB_BASE_REF", ""),
-        os.environ.get("GITHUB_REF", "").removeprefix("refs/heads/"),
+        os.environ.get("GITHUB_REF", ""),
     )
     release_ci = any(
         ref.startswith("release/")
@@ -85,10 +85,16 @@ def test_release_pytorch_requirement() -> None:
 
     if config["RELEASE_WHEEL"]:
         installed_torch = Version(metadata.version("torch"))
-        if installed_torch.local and "cu134" in installed_torch.local:
-            expected = f"=={installed_torch}"
+        if installed_torch.local and re.search(
+            r"(?:^|\.)cu\d+(?:\.|$)", installed_torch.local
+        ):
+            expected_requirement = Requirement(f"torch=={installed_torch}")
         else:
-            expected = f">={config['TORCH_VERSION']}"
+            major, minor, *_ = config["TORCH_VERSION"].split(".")
+            expected_requirement = Requirement(
+                f"torch>={config['TORCH_VERSION']},<{major}.{int(minor) + 1}"
+            )
+        expected = str(expected_requirement.specifier)
         assert len(torch_requirements) == 1, (
             "a release wheel must declare exactly one PyTorch dependency, but found "
             f"{[str(requirement) for requirement in torch_requirements]}"

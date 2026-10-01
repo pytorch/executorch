@@ -1094,17 +1094,9 @@ def _package_relative_depth(library: Path) -> int:
     return max(len(parts) - index - 2, 0)
 
 
-def _torchao_requirement() -> str:
-    """The torchao dependency, pinned to the series install_requirements.py installs.
-
-    Derived from that module rather than written out, so a nightly bump cannot move the
-    pin without moving this bound with it. A bump into the next series would otherwise
-    silently stop satisfying the lower bound, and installing this package over a
-    development checkout would replace the torchao that was just installed.
-
-    Loaded by path, the way install_utils is above, because setuptools executes this
-    file without the project directory on sys.path, so a plain import does not resolve.
-    """
+@functools.lru_cache(maxsize=1)
+def _load_install_requirements():
+    """Load release dependency pins once without relying on the checkout's sys.path."""
     path = Path(__file__).parent / "install_requirements.py"
     spec = importlib.util.spec_from_file_location("install_requirements", path)
     if spec is None or spec.loader is None:
@@ -1114,6 +1106,12 @@ def _torchao_requirement() -> str:
     # because that name is registered below.
     sys.modules.setdefault("install_utils", install_utils)
     spec.loader.exec_module(module)
+    return module
+
+
+def _torchao_requirement() -> str:
+    """The torchao dependency, pinned to the series development installs use."""
+    module = _load_install_requirements()
 
     version = module.TORCHAO_NIGHTLY_VERSION
     if (
@@ -1126,24 +1124,34 @@ def _torchao_requirement() -> str:
 
 
 def _release_torch_requirement() -> List[str]:
-    if not torch_pin.RELEASE_WHEEL:
+    if (
+        not torch_pin.RELEASE_WHEEL
+        or os.environ.get("EXECUTORCH_BUILDING_WHEEL") != "1"
+    ):
         return []
 
-    path = Path(__file__).parent / "install_requirements.py"
-    spec = importlib.util.spec_from_file_location("install_requirements", path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault("install_utils", install_utils)
-    spec.loader.exec_module(module)
+    from importlib import metadata
+
+    module = _load_install_requirements()
     torch_url = install_utils.determine_torch_url(module.TORCH_URL_BASE)
-    cu134_requirements = module.cu134_requirements(torch_url)
-    if cu134_requirements:
-        # The CUDA 13.4 build currently uses a PyTorch development wheel. A
-        # stable lower bound would reject and replace the binary it was built
-        # against, so this variant must retain its exact build-time dependency.
-        return [cu134_requirements[0]]
-    return [f"torch>={torch_pin.TORCH_VERSION}"]
+    variant = torch_url.rstrip("/").rsplit("/", 1)[-1]
+    if re.fullmatch(r"cu\d+", variant):
+        installed_version = metadata.version("torch")
+        if f"+{variant}" not in installed_version:
+            raise RuntimeError(
+                f"building a {variant} wheel with torch {installed_version}; "
+                "the installed torch build must use the same CUDA variant"
+            )
+        return [f"torch=={installed_version}"]
+
+    match = re.fullmatch(
+        r"(\d+)\.(\d+)\.\d+(?:(?:a|b|rc)\d+)?", torch_pin.TORCH_VERSION
+    )
+    if match is None:
+        raise RuntimeError(f"invalid release Torch version {torch_pin.TORCH_VERSION!r}")
+    return [
+        f"torch>={torch_pin.TORCH_VERSION},<{match.group(1)}.{int(match.group(2)) + 1}"
+    ]
 
 
 def _base_dependencies() -> List[str]:

@@ -38,20 +38,37 @@ fi
 # Read version.txt directly from viable/strict so the caller's starting branch
 # cannot influence which release is cut. This preserves all numeric components
 # (for example, 1.10 does not become 1.1).
-SOURCE_BRANCH="${GIT_REMOTE}/viable/strict"
-SOURCE_VERSION=$(git show "${SOURCE_BRANCH}:version.txt")
+VIABLE_BRANCH="${GIT_REMOTE}/viable/strict"
+SOURCE_VERSION=$(git show "${VIABLE_BRANCH}:version.txt")
 RELEASE_VERSION=${RELEASE_VERSION:-$(printf '%s\n' "${SOURCE_VERSION}" | cut -d'.' -f1-2)}
 RELEASE_BRANCH="release/${RELEASE_VERSION}"
 ORIGINAL_BRANCH="orig/${RELEASE_BRANCH}"
+ARM_MANIFEST="backends/arm/public_api_manifests/api_manifest_${RELEASE_VERSION//./_}.toml"
+
+# The API snapshot protects main against backwards-incompatible changes, so it
+# must be reviewed and merged there before the branch is cut. Creating it only
+# on the release branch leaves main unprotected and guarantees later conflicts.
+if git cat-file -e "${VIABLE_BRANCH}:${ARM_MANIFEST}" 2>/dev/null; then
+    :
+elif git cat-file -e "${VIABLE_BRANCH}:backends/arm/public_api_manifests/api_manifest_running.toml" 2>/dev/null; then
+    echo "Error: ${ARM_MANIFEST} must be merged into ${VIABLE_BRANCH} before the release cut."
+    exit 1
+fi
 
 if [[ ${DRY_RUN:-enabled} != "disabled" ]]; then
-    echo "Dry run: would preserve ${SOURCE_BRANCH} as ${ORIGINAL_BRANCH}"
+    echo "Dry run: would preserve ${VIABLE_BRANCH} as ${ORIGINAL_BRANCH}"
     echo "Dry run: would prepare, commit, and push ${RELEASE_BRANCH}"
     exit 0
 fi
 
-if ! git ls-remote --exit-code "${GIT_REMOTE}" "refs/heads/${ORIGINAL_BRANCH}" >/dev/null 2>&1; then
-    git push "${GIT_REMOTE}" "${SOURCE_BRANCH}:refs/heads/${ORIGINAL_BRANCH}"
+if git ls-remote --exit-code "${GIT_REMOTE}" "refs/heads/${ORIGINAL_BRANCH}" >/dev/null 2>&1; then
+    # A previous attempt already fixed the cut point. Always resume from it,
+    # even if viable/strict advanced after that attempt failed.
+    CUT_SOURCE="${GIT_REMOTE}/${ORIGINAL_BRANCH}"
+else
+    git push "${GIT_REMOTE}" "${VIABLE_BRANCH}:refs/heads/${ORIGINAL_BRANCH}"
+    git fetch "${GIT_REMOTE}" "${ORIGINAL_BRANCH}:refs/remotes/${GIT_REMOTE}/${ORIGINAL_BRANCH}"
+    CUT_SOURCE="${GIT_REMOTE}/${ORIGINAL_BRANCH}"
 fi
 
 if git show-ref --verify --quiet "refs/heads/${RELEASE_BRANCH}"; then
@@ -59,7 +76,7 @@ if git show-ref --verify --quiet "refs/heads/${RELEASE_BRANCH}"; then
 elif git ls-remote --exit-code "${GIT_REMOTE}" "refs/heads/${RELEASE_BRANCH}" >/dev/null 2>&1; then
     git checkout -b "${RELEASE_BRANCH}" "${GIT_REMOTE}/${RELEASE_BRANCH}"
 else
-    git checkout -b "${RELEASE_BRANCH}" "${SOURCE_BRANCH}"
+    git checkout -b "${RELEASE_BRANCH}" "${CUT_SOURCE}"
 fi
 
 (

@@ -11,3 +11,8 @@
 # Ensure that CMAKE_ARGS is defined before referencing it. Defaults to empty
 # if not defined.
 export CMAKE_ARGS="${CMAKE_ARGS:-}"
+
+# setup.py only adds release dependency metadata for artifacts built by the
+# binary wheel jobs. A source install on a release branch must preserve the
+# PyTorch build already installed by that checkout's CI job.
+export EXECUTORCH_BUILDING_WHEEL=1

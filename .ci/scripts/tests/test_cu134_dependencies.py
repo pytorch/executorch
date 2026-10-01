@@ -5,8 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import ast
+import functools
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -144,50 +146,51 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.installer.install_requirements(True)
         self.assertEqual(run.call_count, 1)
 
-    def torchao_requirement(self):
+    def setup_requirement(
+        self, function_name, *, installed_torch="2.15.0rc1", building_wheel=True
+    ):
         path = ROOT / "setup.py"
         tree = ast.parse(path.read_text())
-        function = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name == "_torchao_requirement"
-        )
-        namespace = {
-            "__file__": str(path),
-            "Path": Path,
-            "importlib": importlib,
-            "sys": sys,
-            "install_utils": self.utils,
-        }
-        exec(
-            compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
-            namespace,
-        )
-        return namespace["_torchao_requirement"]()
-
-    def release_torch_requirement(self):
-        path = ROOT / "setup.py"
-        tree = ast.parse(path.read_text())
-        function = next(
+        functions = [
             node
             for node in tree.body
             if isinstance(node, ast.FunctionDef)
-            and node.name == "_release_torch_requirement"
-        )
+            and node.name
+            in {
+                "_load_install_requirements",
+                "_torchao_requirement",
+                "_release_torch_requirement",
+            }
+        ]
         namespace = {
             "__file__": str(path),
             "Path": Path,
             "List": list,
+            "functools": functools,
             "importlib": importlib,
+            "os": os,
+            "re": re,
             "sys": sys,
             "install_utils": self.utils,
             "torch_pin": SimpleNamespace(RELEASE_WHEEL=True, TORCH_VERSION="2.15.0rc1"),
         }
         exec(
-            compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
+            compile(ast.Module(body=functions, type_ignores=[]), str(path), "exec"),
             namespace,
         )
-        return namespace["_release_torch_requirement"]()[0]
+        environment = {"EXECUTORCH_BUILDING_WHEEL": "1"} if building_wheel else {}
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch("importlib.metadata.version", return_value=installed_torch),
+        ):
+            return namespace[function_name]()
+
+    def torchao_requirement(self):
+        return self.setup_requirement("_torchao_requirement")
+
+    def release_torch_requirement(self, **kwargs):
+        requirements = self.setup_requirement("_release_torch_requirement", **kwargs)
+        return requirements[0] if requirements else None
 
     def test_package_install_preserves_source_pinned_torchao(self):
         with patch.dict(sys.modules, {"install_requirements": self.installer}):
@@ -267,10 +270,10 @@ class TestCu134Dependencies(unittest.TestCase):
                 self.assertIn("0.19.0+gitb7ac3aa", metadata.specifier)
 
     def test_wheel_bounds_match_selected_train(self):
-        for cuda, expected_torch in (
-            ((13, 4), "torch==2.14.0.dev20260810+cu134"),
-            ((13, 2), "torch>=2.15.0rc1"),
-            (None, "torch>=2.15.0rc1"),
+        for cuda, installed_torch, expected_torch in (
+            ((13, 4), "2.14.0.dev20260810+cu134", "torch==2.14.0.dev20260810+cu134"),
+            ((13, 2), "2.15.0rc1+cu132", "torch==2.15.0rc1+cu132"),
+            (None, "2.15.0rc1", "torch>=2.15.0rc1,<2.16"),
         ):
             self.utils.determine_torch_url.cache_clear()
             with (
@@ -286,7 +289,12 @@ class TestCu134Dependencies(unittest.TestCase):
                     self.torchao_requirement(),
                     "torchao>=0.19.0.dev20260907,<0.20",
                 )
-                self.assertEqual(self.release_torch_requirement(), expected_torch)
+                self.assertEqual(
+                    self.release_torch_requirement(installed_torch=installed_torch),
+                    expected_torch,
+                )
+
+        self.assertIsNone(self.release_torch_requirement(building_wheel=False))
 
 
 if __name__ == "__main__":
