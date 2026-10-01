@@ -44,6 +44,7 @@ class FinalizeReleaseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "install_requirements.py").write_text(
+                'TORCH_URL_BASE = "https://download.pytorch.org/whl/test"\n'
                 'TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"\n'
                 'ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"\n'
             )
@@ -86,6 +87,10 @@ class FinalizeReleaseTest(unittest.TestCase):
             )
             self.assertIn(
                 'ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0"',
+                (root / "install_requirements.py").read_text(),
+            )
+            self.assertIn(
+                'TORCH_URL_BASE = "https://download.pytorch.org/whl"',
                 (root / "install_requirements.py").read_text(),
             )
             self.assertIn(

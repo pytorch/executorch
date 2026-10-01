@@ -29,6 +29,15 @@ def is_release_version(version: object, allow_prerelease: bool = True) -> bool:
     return allow_prerelease or stage is None
 
 
+def release_base_version(version: str) -> str:
+    if ".dev" in version:
+        version, development = version.rsplit(".dev", 1)
+        if not development.isdigit():
+            raise RuntimeError(f"invalid release version {version!r}")
+    major, minor, patch, _stage, _stage_number = release_parts(version)
+    return f"{major}.{minor}.{patch}"
+
+
 def release_key(version: str) -> tuple[int, int, int, int, int]:
     major, minor, patch, stage, stage_number = release_parts(version)
     stage_rank = {"a": 0, "b": 1, "rc": 2, None: 3}

@@ -15,18 +15,21 @@ import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Match
 
 from prepare_release import (  # type: ignore[import-not-found]
     _release_version_from_file,
+    _test_index_versions,
     _TORCH_VERSION_PATTERN,
     _write_if_changed,
     pytorch_commit_for_release,
     sync_pytorch_source,
 )
-from release_versions import torchvision_version  # type: ignore[import-not-found]
+from release_versions import (  # type: ignore[import-not-found]
+    is_release_version,
+    release_base_version,
+)
 
-_VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
 _TORCHVISION_VERSION_PATTERN = re.compile(
     r'^TORCHVISION_VERSION\s*=\s*"(?P<version>[^"]+)"$', re.MULTILINE
 )
@@ -45,6 +48,10 @@ _ROCM_TORCHAO_ASSIGNMENT_PATTERN = re.compile(
 )
 _ROCM_VERSION_PATTERN = re.compile(
     r'^ROCM_VERSION="\$\{ROCM_VERSION:-(?P<version>\d+\.\d+)\}"$', re.MULTILINE
+)
+_TORCH_URL_BASE_PATTERN = re.compile(
+    r'^TORCH_URL_BASE\s*=\s*"https://download\.pytorch\.org/whl(?:/test)?"$',
+    re.MULTILINE,
 )
 _FINALIZED_PATTERN = re.compile(
     r"^RELEASE_DEPENDENCIES_FINALIZED\s*=\s*(?:True|False)$", re.MULTILINE
@@ -74,10 +81,7 @@ _SUBMODULE_RELEASES = (
 
 def stable_base_version(version: str) -> str:
     """Convert a development or prerelease version to its final base version."""
-    match = re.match(r"(\d+\.\d+\.\d+)", version)
-    if match is None:
-        raise RuntimeError(f"could not derive a stable version from {version!r}")
-    return match.group(1)
+    return release_base_version(version)
 
 
 def current_torchao_version(install_requirements_path: Path) -> str:
@@ -96,14 +100,14 @@ def latest_pypi_version(package: str) -> str:
         f"https://pypi.org/pypi/{package}/json", timeout=30
     ) as response:
         version = json.load(response)["info"]["version"]
-    if _VERSION_PATTERN.fullmatch(version) is None:
+    if not is_release_version(version, allow_prerelease=False):
         raise RuntimeError(f"latest {package} version is not stable: {version!r}")
     return version
 
 
 def require_pypi_release(package: str, version: str) -> None:
     """Fail before mutation if an expected stable package is unavailable."""
-    if _VERSION_PATTERN.fullmatch(version) is None:
+    if not is_release_version(version, allow_prerelease=False):
         raise RuntimeError(f"invalid {package} version {version!r}")
     try:
         with urllib.request.urlopen(
@@ -116,6 +120,19 @@ def require_pypi_release(package: str, version: str) -> None:
                 f"{package}=={version} is not published on PyPI"
             ) from error
         raise
+
+
+def require_stable_cuda_releases(versions: Iterable[tuple[str, str]]) -> None:
+    """Fail unless every final cu134 package is on the stable index."""
+    missing = [
+        f"{package}=={version}+cu134"
+        for package, version in versions
+        if version not in _test_index_versions(package, "cu134", channel="")
+    ]
+    if missing:
+        raise RuntimeError(
+            "stable PyTorch cu134 releases are unavailable: " + ", ".join(missing)
+        )
 
 
 def require_remote_tag(repository: str, version: str) -> None:
@@ -162,7 +179,7 @@ def require_rocm_torchao_release(repo_root: Path, version: str) -> None:
 
 def planned_torch_release(torch_pin_path: Path, torch_version: str) -> str:
     """Plan the RC-to-final pin update without changing the checkout."""
-    if _VERSION_PATTERN.fullmatch(torch_version) is None:
+    if not is_release_version(torch_version, allow_prerelease=False):
         raise RuntimeError(
             f"final PyTorch version must be X.Y.Z, got {torch_version!r}"
         )
@@ -172,28 +189,19 @@ def planned_torch_release(torch_pin_path: Path, torch_version: str) -> str:
     )
     if version_count != 1:
         raise RuntimeError(f"expected one TORCH_VERSION assignment in {torch_pin_path}")
-    vision = _TORCHVISION_VERSION_PATTERN.search(updated)
-    if vision is None:
-        raise RuntimeError(f"expected torchvision assignment in {torch_pin_path}")
-    expected_vision = torchvision_version(torch_version)
-    if stable_base_version(vision.group("version")) != expected_vision:
-        raise RuntimeError(
-            f"torchvision release {vision.group('version')!r} does not match "
-            f"Torch {torch_version}"
-        )
-    updated = _TORCHVISION_VERSION_PATTERN.sub(
-        lambda match: match.group(0).replace(match.group("version"), expected_vision),
-        updated,
-    )
+    for pattern, package in (
+        (_TORCHVISION_VERSION_PATTERN, "torchvision"),
+        (_TORCHAUDIO_VERSION_PATTERN, "torchaudio"),
+    ):
+        current = pattern.search(updated)
+        if current is None:
+            raise RuntimeError(f"expected {package} assignment in {torch_pin_path}")
+        expected = stable_base_version(current.group("version"))
 
-    audio = _TORCHAUDIO_VERSION_PATTERN.search(updated)
-    if audio is None:
-        raise RuntimeError(f"expected torchaudio assignment in {torch_pin_path}")
-    expected_audio = stable_base_version(audio.group("version"))
-    updated = _TORCHAUDIO_VERSION_PATTERN.sub(
-        lambda match: match.group(0).replace(match.group("version"), expected_audio),
-        updated,
-    )
+        def replace_version(match: Match[str], replacement: str = expected) -> str:
+            return match.group(0).replace(match.group("version"), replacement)
+
+        updated = pattern.sub(replace_version, updated)
     updated, count = _FINALIZED_PATTERN.subn(
         "RELEASE_DEPENDENCIES_FINALIZED = True", updated
     )
@@ -235,6 +243,11 @@ def plan_dependency_text(
     )
     if count != 1:
         raise RuntimeError(f"expected one ROCM_TORCHAO_NIGHTLY_VERSION in {path}")
+    updated, count = _TORCH_URL_BASE_PATTERN.subn(
+        'TORCH_URL_BASE = "https://download.pytorch.org/whl"', updated
+    )
+    if count != 1:
+        raise RuntimeError(f"expected one TORCH_URL_BASE in {path}")
     updates[path] = updated
 
     path = repo_root / "setup.py"
@@ -416,6 +429,13 @@ def main() -> None:
         ("torchcodec", torchcodec_version),
     ):
         require_pypi_release(package, version)
+    require_stable_cuda_releases(
+        (
+            ("torch", torch_version),
+            ("torchvision", torchvision_version),
+            ("torchaudio", torchaudio_version),
+        )
+    )
     for _path, repository, version in releases:
         require_remote_tag(repository, version)
     require_rocm_torchao_release(repo_root, torchao_version)

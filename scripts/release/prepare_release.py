@@ -313,11 +313,10 @@ def newest_torch_test_release(
 
 @lru_cache(maxsize=None)
 def _test_index_wheels(
-    package: str, variant: str = "cpu"
+    package: str, variant: str = "cpu", channel: str = "test"
 ) -> dict[str, list[WheelLink]]:
-    index_url = (
-        f"https://download.pytorch.org/whl/test/{variant}/{package}/"  # @lint-ignore
-    )
+    channel_path = f"{channel}/" if channel else ""
+    index_url = f"https://download.pytorch.org/whl/{channel_path}{variant}/{package}/"  # @lint-ignore
     try:
         with urllib.request.urlopen(index_url, timeout=30) as response:
             index = response.read().decode()
@@ -330,8 +329,10 @@ def _test_index_wheels(
     return parser.wheels
 
 
-def _test_index_versions(package: str, variant: str = "cpu") -> set[str]:
-    return set(_test_index_wheels(package, variant))
+def _test_index_versions(
+    package: str, variant: str = "cpu", channel: str = "test"
+) -> set[str]:
+    return set(_test_index_wheels(package, variant, channel))
 
 
 @lru_cache(maxsize=None)
