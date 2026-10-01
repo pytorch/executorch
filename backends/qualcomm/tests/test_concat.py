@@ -12,7 +12,14 @@ from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
     ConcatObserver,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import FakeQuantizeBase
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
+
+_CAT = torch.ops.aten.cat.default
 
 
 class DeepCat(torch.nn.Module):
@@ -29,17 +36,28 @@ class DeepCat(torch.nn.Module):
         return torch.cat([x, y], dim=1)
 
 
-def _prepare(module, example_inputs):
+class TwoRangeCat(torch.nn.Module):
+    def forward(self, x, y):
+        return torch.cat([x + 1.0, y * 4.0], dim=1)
+
+
+def _prepare(module, example_inputs, is_qat=False):
     quantizer = QnnQuantizer()
-    quantizer.set_default_quant_config(QuantDtype.use_8a8w, is_qat=False)
+    quantizer.set_default_quant_config(QuantDtype.use_8a8w, is_qat=is_qat)
     exported = torch.export.export(module, example_inputs, strict=True).module()
-    prepared = prepare_pt2e(exported, quantizer)
+    prepare = prepare_qat_pt2e if is_qat else prepare_pt2e
+    prepared = prepare(exported, quantizer)
     prepared(*example_inputs)
     return prepared
 
 
 def _named(module, cls):
     return [(n, m) for n, m in module.named_modules() if isinstance(m, cls)]
+
+
+def _only_cat(gm):
+    [cat] = [n for n in gm.graph.nodes if n.target == _CAT]
+    return cat
 
 
 class ConcatObserverDeepcopyTest(unittest.TestCase):
@@ -70,3 +88,35 @@ class ConcatObserverDeepcopyTest(unittest.TestCase):
         self.assertIs(copied_observer.concat_node, observer.concat_node)
         torch.testing.assert_close(copied_observer.min_val, observer.min_val)
         torch.testing.assert_close(copied_observer.max_val, observer.max_val)
+
+
+class ConcatQatTest(unittest.TestCase):
+    """Under QAT a cat must be one FakeQuantize shared by its inputs and output.
+
+    `ConcatObserver` is a plain observer, so it never fake-quantizes the cat
+    output, and it aligns input ranges by writing `min_val` onto the input
+    observers, which a FakeQuantize ignores.
+    """
+
+    def setUp(self):
+        self.example_inputs = (torch.randn(1, 4, 8), torch.randn(1, 4, 8))
+        self.prepared = _prepare(TwoRangeCat(), self.example_inputs, is_qat=True)
+
+    def _edge_modules(self):
+        cat = _only_cat(self.prepared)
+        edges = list(cat.args[0]) + list(cat.users)
+        return [self.prepared.get_submodule(n.target) for n in edges]
+
+    def test_inputs_and_output_share_one_fake_quant(self):
+        self.assertEqual(_named(self.prepared, ConcatObserver), [])
+        modules = self._edge_modules()
+        self.assertEqual(len(modules), 3)
+        self.assertEqual(len({id(m) for m in modules}), 1)
+        self.assertIsInstance(modules[0], FakeQuantizeBase)
+
+    def test_convert_gives_inputs_and_output_one_qparam(self):
+        converted = convert_pt2e(self.prepared)
+        cat = _only_cat(converted)
+        [quantize] = list(cat.users)
+        qparams = {tuple(n.args[1:3]) for n in list(cat.args[0]) + [quantize]}
+        self.assertEqual(len(qparams), 1, qparams)
