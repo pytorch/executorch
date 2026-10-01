@@ -293,6 +293,50 @@ class ExportLlamaLibTest(unittest.TestCase):
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
 
+    def test_xnnpack_extended_ops_defaults_on(self):
+        args = build_args_parser().parse_args([])
+        self.assertTrue(args.xnnpack_extended_ops)
+        self.assertTrue(LlmConfig.from_args(args).backend.xnnpack.extended_ops)
+
+    def test_no_xnnpack_extended_ops_opts_out(self):
+        args = build_args_parser().parse_args(["--no-xnnpack-extended-ops"])
+        self.assertFalse(args.xnnpack_extended_ops)
+        self.assertFalse(LlmConfig.from_args(args).backend.xnnpack.extended_ops)
+
+    def test_no_xnnpack_extended_ops_builds_dq_partitioner_only(self):
+        # Covers the multimethod path. _to_edge_and_lower_llama_xnnpack gates on
+        # the same flag and is exercised by the full-export tests in this file.
+        from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+            ConfigPrecisionType,
+        )
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackDynamicallyQuantizedPartitioner,
+        )
+
+        def build(argv):
+            args = build_args_parser().parse_args(["-X", *argv])
+            return export_llama_lib._get_xnnpack_partitioners(LlmConfig.from_args(args))
+
+        def precisions(partitioner):
+            return {
+                precision
+                for config in partitioner.target_partitioner_configs.values()
+                for precision in config.enabled_precision_types
+            }
+
+        dq_only = build(["--no-xnnpack-extended-ops"])
+        self.assertEqual(len(dq_only), 1)
+        self.assertIsInstance(dq_only[0], XnnpackDynamicallyQuantizedPartitioner)
+        self.assertEqual(precisions(dq_only[0]), {ConfigPrecisionType.DYNAMIC_QUANT})
+
+        # The default adds a second, general partitioner. It is not a subclass
+        # instance, and it enables precisions the dynamic-quant one cannot.
+        both = build([])
+        self.assertEqual(len(both), 2)
+        self.assertIsInstance(both[0], XnnpackDynamicallyQuantizedPartitioner)
+        self.assertNotIsInstance(both[1], XnnpackDynamicallyQuantizedPartitioner)
+        self.assertIn(ConfigPrecisionType.FP32, precisions(both[1]))
+
     def test_bf16_xnnpack_delegates_linears_when_enabled(self):
         parser = build_args_parser()
         args = parser.parse_args([])
