@@ -21,9 +21,10 @@ namespace ptn {
 // dim_order_hint is a permutation of dim indices, outermost first; empty means
 // contiguous ([0, 1, ..., n-1]). It is a hint only for a tensor with no stored
 // content — an activation — where an engine is free to pick its own physical
-// layout. For a tensor whose bytes are serialized it instead describes the
-// layout those bytes are actually in, and an engine that ignores it reads the
-// weight wrong.
+// layout. For a tensor whose bytes are serialized, and for a graph input or
+// user output whose bytes cross the engine interface, it instead describes the
+// layout those bytes are actually in, and an engine that ignores it reads them
+// wrong.
 struct TensorMeta {
   ScalarType dtype = ScalarType::Float;
   // Upper-bound extents used for allocation.
