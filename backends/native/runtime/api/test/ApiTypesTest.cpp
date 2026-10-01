@@ -269,6 +269,11 @@ TEST(ModelTest, PropagatesEngineExceptions) {
   EXPECT_THROW(model.create_session(host), std::runtime_error);
 }
 
+TEST(EngineExecutableTest, RejectsResizeByDefault) {
+  RunningExecutable executable;
+  EXPECT_THROW(executable.resize_input(0, {1}), std::runtime_error);
+}
+
 TEST(SessionTest, RunExecutesPreparedMethod) {
   Model model = Model::load_bytes(make_tensor_package());
   RunningHost host;

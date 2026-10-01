@@ -208,7 +208,9 @@ def _update_exported_program_graph_module(
             exported_program.graph_signature, gm
         ),
         state_dict=exported_program.state_dict,
-        range_constraints=_get_updated_range_constraints(gm),
+        range_constraints=_get_updated_range_constraints(
+            gm, exported_program.range_constraints
+        ),
         module_call_graph=copy.deepcopy(exported_program._module_call_graph),
         example_inputs=exported_program.example_inputs,
         constants=exported_program.constants,
