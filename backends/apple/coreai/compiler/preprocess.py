@@ -603,6 +603,12 @@ class CoreAIBackend(BackendDetails):
                     "build-time output directory (set it via coreai_sidecar_dir)"
                 )
 
+        mutated_inputs = edge_program.graph_signature.user_inputs_to_mutate
+        if mutated_inputs:
+            raise ValueError(
+                "Core AI delegates cannot mutate ExecuTorch-owned user inputs: "
+                f"{sorted(mutated_inputs.values())}"
+            )
         edge_inputs, edge_outputs = _edge_io(edge_program)
         input_names = [f"input_{i}" for i in range(len(edge_inputs))]
         output_names = [f"output_{i}" for i in range(len(edge_outputs))]
