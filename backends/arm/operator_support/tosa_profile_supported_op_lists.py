@@ -85,6 +85,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.relu.default,
     exir_ops.edge.aten.remainder.Scalar,
     exir_ops.edge.aten.remainder.Tensor,
+    exir_ops.edge.aten.roll.default,
     exir_ops.edge.aten.rsqrt.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.sub.Tensor,
@@ -133,6 +134,27 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.silu.default,
     exir_ops.edge.aten.detach_copy.default,
     exir_ops.edge.aten.round.default,
+    exir_ops.edge.aten.as_strided_copy.default,
+    exir_ops.edge.dim_order_ops._clone_dim_order.default,
+    exir_ops.edge.aten.convolution.default,
+    torch.ops.aten.conv_transpose2d.input,
+    exir_ops.edge.aten.embedding.default,
+    exir_ops.edge.aten.gather.default,
+    exir_ops.edge.aten.index_put.default,
+    exir_ops.edge.aten.index_select.default,
+    exir_ops.edge.aten.index.Tensor,
+    exir_ops.edge.aten.avg_pool2d.default,
+    exir_ops.edge.aten.max_pool2d_with_indices.default,
+    exir_ops.edge.aten.max_pool2d.default,
+    exir_ops.edge.aten.sum.dim_IntList,
+    exir_ops.edge.aten.bitwise_right_shift.Tensor,
+    exir_ops.edge.aten.__rshift__.Scalar,
+    exir_ops.edge.aten.slice_copy.Tensor,
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    exir_ops.edge.aten.unfold_copy.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
+    exir_ops.edge.aten.upsample_bilinear2d.vec,
+    exir_ops.edge.aten.where.self,
 }
 
 
@@ -226,6 +248,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.relu.default,
     exir_ops.edge.aten.remainder.Scalar,
     exir_ops.edge.aten.remainder.Tensor,
+    exir_ops.edge.aten.roll.default,
     exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.rsqrt.default,
@@ -278,10 +301,70 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.floor_divide.default,
     exir_ops.edge.aten.tan.default,
     exir_ops.edge.aten.detach_copy.default,
+    exir_ops.edge.aten.bitwise_and.Tensor,
+    exir_ops.edge.aten.bitwise_and.Scalar,
+    exir_ops.edge.aten.bitwise_or.Tensor,
+    exir_ops.edge.aten.bitwise_or.Scalar,
+    exir_ops.edge.aten.bitwise_xor.Tensor,
+    exir_ops.edge.aten.bitwise_xor.Scalar,
+    exir_ops.edge.aten.bitwise_not.default,
+    exir_ops.edge.aten.as_strided_copy.default,
+    exir_ops.edge.dim_order_ops._clone_dim_order.default,
+    exir_ops.edge.aten.convolution.default,
+    torch.ops.aten.conv_transpose2d.input,
+    exir_ops.edge.aten.embedding.default,
+    exir_ops.edge.aten.gather.default,
+    exir_ops.edge.aten.index_put.default,
+    exir_ops.edge.aten.index_select.default,
+    exir_ops.edge.aten.index.Tensor,
+    exir_ops.edge.aten.avg_pool2d.default,
+    exir_ops.edge.aten.max_pool2d_with_indices.default,
+    exir_ops.edge.aten.max_pool2d.default,
+    exir_ops.edge.aten.max.dim,
+    exir_ops.edge.aten.min.dim,
+    exir_ops.edge.aten.sum.dim_IntList,
+    exir_ops.edge.aten.bitwise_right_shift.Tensor,
+    exir_ops.edge.aten.__rshift__.Scalar,
+    exir_ops.edge.aten.slice_copy.Tensor,
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    exir_ops.edge.aten.unfold_copy.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
+    exir_ops.edge.aten.upsample_bilinear2d.vec,
+    exir_ops.edge.aten.where.self,
+}
+
+
+# EXT-CONTROLFLOW adds the two control-flow operators listed by the TOSA
+# profile-extension table. Submodule references are handled separately by the
+# partitioner support checks because they are not operators.
+TOSA_EXT_CONTROL_FLOW_SupportList: Final[Set] = {
+    torch.ops.higher_order.cond,
+    torch.ops.higher_order.while_loop,
+}
+
+
+# Compiler-side source operators rewritten to TOSA block-scaled operators when
+# the MXFP extension is enabled.
+TOSA_EXT_MXFP_SupportList: Final[Set] = {
+    exir_ops.edge.tosa_mxfp.conv2d.default,
+    exir_ops.edge.tosa_mxfp.linear.default,
+}
+
+
+TOSA_EXT_SHAPE_SupportList: Final[Set] = {
+    torch.ops.aten.sym_size.int,
+    operator.add,
+    operator.sub,
+    operator.mul,
+    operator.mod,
+    operator.floordiv,
 }
 
 
 __all__ = [
+    "TOSA_EXT_CONTROL_FLOW_SupportList",
+    "TOSA_EXT_MXFP_SupportList",
+    "TOSA_EXT_SHAPE_SupportList",
     "TOSA_PRO_INT_SupportList",
     "TOSA_PRO_MIXED_INT_SupportList",
     "TOSA_PRO_FP_SupportList",
