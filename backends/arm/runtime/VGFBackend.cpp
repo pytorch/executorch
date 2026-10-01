@@ -457,7 +457,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   bool is_available() const override {
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
-    ET_LOG(Info, "Checking VGFBackend is available");
+    ET_LOG(Debug, "Checking VGFBackend is available");
     self->ensure_initialized();
     const bool available =
         is_initialized_ && vkml_load_extensions(&vk_device) == VK_SUCCESS;
@@ -473,7 +473,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
-    ET_LOG(Info, "Entered VGF init");
+    ET_LOG(Debug, "Entered VGF init");
 
 #ifdef ET_EVENT_TRACER_ENABLED
     EventTracer* event_tracer = context.event_tracer();
@@ -589,7 +589,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     const size_t input_count = repr->model_input_count;
     const size_t output_count = repr->model_output_count;
     ET_LOG(
-        Info,
+        Debug,
         "VGF execute: args=%zu IOs=%zu inputs=%zu outputs=%zu",
         args.size(),
         repr->IOs.size(),
@@ -640,7 +640,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
       if (io_idx < 0) {
-        ET_LOG(Info, "Skipping eliminated VGF input %zu", input_arg_idx);
+        ET_LOG(Debug, "Skipping eliminated VGF input %zu", input_arg_idx);
         // See test_addmm_vgf_no_quant[beta_only]
         // two inputs are eliminated from the graph by the converter
         continue;
@@ -661,7 +661,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       Tensor* tensor = &args[input_arg_idx]->toTensor();
       IO* io = &repr->IOs[io_idx];
 
-      ET_LOG(Info, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
+      ET_LOG(Debug, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -774,7 +774,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       Tensor* tensor = &args[output_arg_idx]->toTensor();
       IO* io = &repr->IOs[io_idx];
 
-      ET_LOG(Info, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
+      ET_LOG(Debug, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
 #ifdef ET_EVENT_TRACER_ENABLED

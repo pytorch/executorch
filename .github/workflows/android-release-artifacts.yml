@@ -162,7 +162,8 @@ jobs:
 
         if [[ "$FLAVOR" == "qnn" || "$FLAVOR" == "all" ]]; then
           PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+          # build_android_library.sh builds the QNN runtime included in the AAR;
+          # the host-only PyQnnManagerAdaptor is not part of this artifact.
           export EXECUTORCH_BUILD_QNN=ON
           source backends/qualcomm/scripts/qnn_config.sh
           export QNN_SDK_ROOT="/tmp/qnn/${QNN_VERSION}"

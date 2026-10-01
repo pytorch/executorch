@@ -19,6 +19,7 @@ namespace ptn {
 // unit that includes the header.
 EngineExecutable::~EngineExecutable() = default;
 
+// NOLINTNEXTLINE(clang-diagnostic-missing-noreturn): overrides may return.
 void EngineExecutable::resize_input(size_t, const std::vector<int64_t>&) {
   throw std::runtime_error("engine does not support resizing inputs");
 }
