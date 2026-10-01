@@ -50,7 +50,7 @@ _ROCM_VERSION_PATTERN = re.compile(
     r'^ROCM_VERSION="\$\{ROCM_VERSION:-(?P<version>\d+\.\d+)\}"$', re.MULTILINE
 )
 _TORCH_URL_BASE_PATTERN = re.compile(
-    r'^TORCH_URL_BASE\s*=\s*"https://download\.pytorch\.org/whl(?:/test)?"$',
+    r'^TORCH_URL_BASE\s*=\s*"https://download\.pytorch\.org/whl(?:/test)?"$',  # @lint-ignore
     re.MULTILINE,
 )
 _FINALIZED_PATTERN = re.compile(
