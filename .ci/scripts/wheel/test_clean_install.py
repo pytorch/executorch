@@ -98,13 +98,6 @@ def test_release_pytorch_requirement() -> None:
             if specifier.operator == "=="
         ]
         configured_variant = os.environ.get("EXECUTORCH_WHEEL_VARIANT", "")
-        cuda_version = os.environ.get("CU_VERSION") or os.environ.get(
-            "DESIRED_CUDA", ""
-        )
-        if not configured_variant and cuda_version:
-            configured_variant = "cu" + "".join(
-                character for character in cuda_version if character.isdigit()
-            )
         if len(pins) == 1 and "+" in pins[0]:
             local_version = Version(pins[0]).local or ""
             variants = re.findall(r"(?:^|\.)(cu\d+)(?:\.|$)", local_version)

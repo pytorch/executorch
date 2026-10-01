@@ -60,12 +60,10 @@ class TestCu134Dependencies(unittest.TestCase):
             with self.subTest(machine=machine):
                 commands = self.install_commands((13, 4), machine)
                 self.assertEqual(len(commands), 4)
-                expected = {
-                    "torch==2.14.0.dev20260810+cu134",
-                    "torchvision==0.29.0.dev20260811+cu134",
-                    "torchaudio==2.11.0.dev20260811+cu134",
-                    f"torchao==0.19.0.dev20260907+{ao_variant}",
-                }
+                expected = set(self.installer.CU134_TORCH_PACKAGES)
+                expected.add(
+                    f"torchao=={self.installer.CU134_TORCHAO_NIGHTLY_VERSION}+{ao_variant}"
+                )
                 for index, command in enumerate(commands):
                     required = (
                         expected
@@ -84,17 +82,15 @@ class TestCu134Dependencies(unittest.TestCase):
                                 for arg in command
                             )
                         )
-                    self.assertIn(
-                        "https://download.pytorch.org/whl/nightly/cu134", command
+                    expected_base = (
+                        self.installer.TORCH_URL_BASE
+                        if self.installer.RELEASE_WHEEL
+                        else self.installer.TORCHAO_URL_BASE
                     )
-                    self.assertNotIn(
-                        "https://download.pytorch.org/whl/test/cu134", command
-                    )
+                    self.assertIn(f"{expected_base}/cu134", command)
                     self.assertNotIn("--no-deps", command)
                     if machine == "aarch64":
-                        self.assertIn(
-                            "https://download.pytorch.org/whl/nightly/cpu", command
-                        )
+                        self.assertIn(f"{self.installer.TORCHAO_URL_BASE}/cpu", command)
 
         release_packages = [
             "torch==2.15.0+cu134",
@@ -118,9 +114,15 @@ class TestCu134Dependencies(unittest.TestCase):
                         cuda, machine
                     )
                     self.assertIn(f"torch=={self.installer.TORCH_VERSION}", core)
-                    self.assertIn("torchao==0.19.0.dev20260907", core)
-                    self.assertIn("torchvision==0.29.0", domains)
-                    self.assertIn("torchaudio==2.11.0", domains)
+                    self.assertIn(
+                        f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core
+                    )
+                    self.assertIn(
+                        f"torchvision=={self.installer.TORCHVISION_VERSION}", domains
+                    )
+                    self.assertIn(
+                        f"torchaudio=={self.installer.TORCHAUDIO_VERSION}", domains
+                    )
                     self.assertFalse(any("==" in arg for arg in local))
                     self.assertFalse(any("==" in arg for arg in examples))
 
@@ -129,21 +131,21 @@ class TestCu134Dependencies(unittest.TestCase):
             with self.subTest(cuda=cuda):
                 core, _, domains, _ = self.install_commands(cuda, nightly=False)
                 self.assertIn("torch", core)
-                self.assertNotIn("torch==2.14.0.dev20260810+cu134", core)
+                self.assertNotIn(self.installer.CU134_TORCH_PACKAGES[0], core)
                 self.assertIn("torchvision", domains)
                 self.assertIn("torchaudio", domains)
 
     def test_no_cuda_keeps_default_pins(self):
         core, _, domains, _ = self.install_commands(None)
         self.assertIn(f"torch=={self.installer.TORCH_VERSION}", core)
-        self.assertIn("torchao==0.19.0.dev20260907", core)
-        self.assertIn("torchvision==0.29.0", domains)
+        self.assertIn(f"torchao=={self.installer.TORCHAO_NIGHTLY_VERSION}", core)
+        self.assertIn(f"torchvision=={self.installer.TORCHVISION_VERSION}", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 
     def test_windows_does_not_select_cu134(self):
         core, _, domains, _ = self.install_commands((13, 4), system="Windows")
         self.assertIn(f"torch=={self.installer.TORCH_VERSION}", core)
-        self.assertIn("torchvision==0.29.0", domains)
+        self.assertIn(f"torchvision=={self.installer.TORCHVISION_VERSION}", domains)
         self.assertIn("https://download.pytorch.org/whl/test/cpu", core)
 
     def test_failure_is_not_retried_with_another_cuda_train(self):

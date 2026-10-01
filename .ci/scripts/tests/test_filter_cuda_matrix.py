@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import runpy
 import subprocess
 import unittest
 from pathlib import Path
@@ -37,6 +38,7 @@ FILTER = _load_module(
     "filter_cuda_matrix", ROOT / ".github" / "scripts" / "filter_cuda_matrix.py"
 )
 INSTALL_UTILS = _load_module("install_utils", ROOT / "install_utils.py")
+RELEASE_WHEEL = runpy.run_path(str(ROOT / "torch_pin.py"))["RELEASE_WHEEL"]
 
 
 def _full_matrix():
@@ -284,7 +286,12 @@ class TestPublishedSets(unittest.TestCase):
     """
 
     def test_published_cuda_versions(self):
-        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu130", "cu132", "cu134"])
+        expected = {"cu130", "cu132", "cu134"}
+        if RELEASE_WHEEL:
+            self.assertTrue(FILTER.SUPPORTED_CUDA_VERSIONS)
+            self.assertLessEqual(set(FILTER.SUPPORTED_CUDA_VERSIONS), expected)
+        else:
+            self.assertEqual(set(FILTER.SUPPORTED_CUDA_VERSIONS), expected)
 
     def test_published_cuda_versions_are_documented(self):
         # The install table on the getting started page is the only place a user is told
@@ -297,11 +304,15 @@ class TestPublishedSets(unittest.TestCase):
         self.assertIn(heading, text, f"no Installation section in {page.name}")
         section = text.split(heading, 1)[1].split("\n## ", 1)[0]
         documented = set(re.findall(r"cu\d+", section))
-        self.assertEqual(
-            documented,
-            set(FILTER.SUPPORTED_CUDA_VERSIONS),
-            f"the install table in {page.name} lists {sorted(documented)}",
-        )
+        published = set(FILTER.SUPPORTED_CUDA_VERSIONS)
+        if RELEASE_WHEEL:
+            self.assertLessEqual(published, documented)
+        else:
+            self.assertEqual(
+                documented,
+                published,
+                f"the install table in {page.name} lists {sorted(documented)}",
+            )
 
     def test_published_cuda_versions_are_supported_by_the_installer(self):
         supported = {

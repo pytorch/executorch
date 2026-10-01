@@ -7,15 +7,16 @@
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from prepare_release import (  # type: ignore[import-not-found]
+    WheelLink,
+    _WheelIndexParser,
     companion_release_for_torch,
     configured_test_infra_branch,
     newest_torch_test_release,
     prepare_release,
-    pytorch_commit_for_release,
+    pytorch_commit_for_wheel,
     test_infra_branch_for_torch as _test_infra_branch_for_torch,
     torch_version_for_release,
 )
@@ -41,29 +42,50 @@ class PrepareReleaseTest(unittest.TestCase):
 
             self.assertEqual(torch_version_for_release(path), "2.15.0")
 
-            metadata = Path(directory) / "METADATA"
-            metadata.write_text("Requires-Dist: torch (==2.15.0)\r\n")
+            wheel = WheelLink(
+                "2.12.0", "2.12.0", "https://example/torchaudio.whl", None
+            )
             with patch(
                 "prepare_release._test_index_wheels",
-                return_value={"2.12.0": metadata.as_uri()},
+                return_value={"2.12.0": [wheel]},
+            ), patch(
+                "prepare_release._wheel_metadata",
+                return_value="Requires-Dist: torch (>=2.15.0,<2.16)\r\n",
             ):
                 self.assertEqual(
-                    companion_release_for_torch("torchaudio", "2.15.0"),
+                    companion_release_for_torch("torchaudio", "2.15.0", "2.15.0+cpu"),
                     "2.12.0",
                 )
 
-        tags = (
-            f'{"1" * 40}\trefs/tags/v2.15.0-rc2\n'
-            f'{"2" * 40}\trefs/tags/v2.15.0-rc10\n'
+        torch_wheel = WheelLink(
+            "2.15.0",
+            "2.15.0+cpu",
+            "https://example/torch.whl",
+            None,
         )
         with patch(
-            "prepare_release.subprocess.run",
-            return_value=SimpleNamespace(stdout=tags),
+            "prepare_release._test_index_wheels",
+            return_value={"2.15.0": [torch_wheel]},
+        ), patch(
+            "prepare_release._wheel_member",
+            return_value=(
+                "__version__ = '2.15.0+cpu'\n" f"git_version = '{'2' * 40}'\n"
+            ),
         ):
             self.assertEqual(
-                pytorch_commit_for_release("2.15.0", release_candidate=True),
+                pytorch_commit_for_wheel("2.15.0"),
                 "2" * 40,
             )
+
+        parser = _WheelIndexParser("https://example/simple/", "torch")
+        parser.feed(
+            '<a data-other="x" href="torch-2.15.0%2Bcpu-cp310-linux.whl">a</a>'
+            '<a data-core-metadata="x" class="pkg" '
+            'href="torch-2.15.0%2Bcpu-cp311-linux.whl">b</a>'
+        )
+        self.assertEqual(len(parser.wheels["2.15.0"]), 2)
+        self.assertIsNone(parser.wheels["2.15.0"][0].metadata_url)
+        self.assertIsNotNone(parser.wheels["2.15.0"][1].metadata_url)
 
     def test_prepares_complete_repository(self) -> None:
         """The top-level operation applies dependency, workflow, and docs edits."""
@@ -79,11 +101,19 @@ class PrepareReleaseTest(unittest.TestCase):
                 "RELEASE_WHEEL = False\n"
             )
             (root / "install_requirements.py").write_text(
+                'TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"\n'
+                'TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"\n'
+                'CU134_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"\n'
                 "CU134_TORCH_PACKAGES = [\n"
                 '    "torch==2.14.0.dev20260810+cu134",\n'
                 '    "torchvision==0.29.0.dev20260811+cu134",\n'
                 '    "torchaudio==2.11.0.dev20260811+cu134",\n'
                 "]\n"
+            )
+            (root / ".github/scripts").mkdir(parents=True)
+            cuda_filter = root / ".github/scripts/filter_cuda_matrix.py"
+            cuda_filter.write_text(
+                'SUPPORTED_CUDA_VERSIONS: List[str] = ["cu130", "cu134"]\n'
             )
             workflow = root / ".github/workflows/test.yml"
             workflow.write_text(
@@ -100,11 +130,25 @@ class PrepareReleaseTest(unittest.TestCase):
             )
             companions = {"torchvision": "0.30.0", "torchaudio": "2.12.0"}
             requirement = prepare_release(
-                root, "1.6", "release/2.15", "2.15.0", companions
+                root,
+                "1.6",
+                "release/2.15",
+                "2.15.0",
+                companions,
+                "0.20.0",
+                ["cu130", "cu134"],
+                verify_index=False,
             )
             (root / "version.txt").write_text("1.6.1\n")
             second_requirement = prepare_release(
-                root, "1.6", "release/2.15", "2.15.0", companions
+                root,
+                "1.6",
+                "release/2.15",
+                "2.15.0",
+                companions,
+                "0.20.0",
+                ["cu130", "cu134"],
+                verify_index=False,
             )
 
             self.assertEqual(requirement, "torch>=2.15.0,<2.16")
@@ -122,6 +166,8 @@ class PrepareReleaseTest(unittest.TestCase):
             self.assertIn('"torch==2.15.0+cu134"', requirements)
             self.assertIn('"torchvision==0.30.0+cu134"', requirements)
             self.assertIn('"torchaudio==2.12.0+cu134"', requirements)
+            self.assertIn('TORCHAO_NIGHTLY_VERSION = "0.20.0"', requirements)
+            self.assertIn("/whl/test", requirements)
             self.assertIn("@release/2.15", workflow.read_text())
             self.assertIn("test-infra-ref: release/2.15", workflow.read_text())
             self.assertEqual(configured_test_infra_branch([workflow]), "release/2.15")
