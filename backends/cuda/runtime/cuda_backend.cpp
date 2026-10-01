@@ -206,6 +206,13 @@ class ET_EXPERIMENTAL CudaBackend final
         res.ok() ? reinterpret_cast<name##Func>(res.get()) : nullptr; \
   } while (0)
 
+    {
+      auto res =
+          get_function(so_handle, "AOTInductorModelContainerRunSingleThreaded");
+      handle->run_single_threaded = res.ok()
+          ? reinterpret_cast<AOTInductorModelContainerRunFunc>(res.get())
+          : nullptr;
+    }
     LOAD_OPTIONAL_SYMBOL(
         get_num_constants, AOTInductorModelContainerGetNumConstants);
     LOAD_OPTIONAL_SYMBOL(
@@ -924,14 +931,19 @@ class ET_EXPERIMENTAL CudaBackend final
       end_capture_guard.arm(cuda_stream);
     }
 
-    AOTIRuntimeError error = handle->run(
-        handle->container_handle,
-        reinterpret_cast<Tensor**>(slim_inputs.data()),
-        n_inputs,
-        reinterpret_cast<Tensor**>(slim_outputs.data()),
-        n_outputs,
-        static_cast<void*>(cuda_stream),
-        nullptr);
+    const auto run =
+        handle->cuda_graph_state.phase != CudaGraphPhase::Disabled &&
+            handle->run_single_threaded != nullptr
+        ? handle->run_single_threaded
+        : handle->run;
+    AOTIRuntimeError error =
+        run(handle->container_handle,
+            reinterpret_cast<Tensor**>(slim_inputs.data()),
+            n_inputs,
+            reinterpret_cast<Tensor**>(slim_outputs.data()),
+            n_outputs,
+            static_cast<void*>(cuda_stream),
+            nullptr);
     run_called = true;
 
     // Delete orphaned pre-created outputs that run() replaced.
@@ -971,6 +983,7 @@ class ET_EXPERIMENTAL CudaBackend final
           Internal,
           "cudaGraphInstantiate failed: %s",
           cudaGetErrorString(gerr));
+      handle->cuda_graph_state.note_graph_allocations();
 
       // Record static output pointers (stable under graph replay). Releasing
       // them from slim_outputs here, before the copies below, keeps the cleanup
