@@ -133,7 +133,7 @@ def fetch_file_content(commit_hash, file_path):
         File content as bytes
     """
     raw_url = (
-        "https://raw.githubusercontent.com/pytorch/pytorch/"
+        "https://raw.githubusercontent.com/pytorch/pytorch/"  # @lint-ignore
         f"{quote(commit_hash, safe='')}/{quote(file_path)}"
     )
 
