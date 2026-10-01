@@ -281,6 +281,10 @@ std::tuple<Tensor&, Tensor&> choose_qparams_per_token_asymmetric_out(
     ScalarType dtype,
     Tensor& scale_out,
     Tensor& zero_point_out) {
+  ET_CHECK_MSG(
+      input.dim() >= 1,
+      "choose_qparams_per_token: input must have rank >= 1, got %zd",
+      input.dim());
   int64_t quant_min = -128;
   int64_t quant_max = 127;
   executorch::aten::SizesType output_sizes[kTensorDimensionLimit];

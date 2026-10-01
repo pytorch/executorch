@@ -103,9 +103,13 @@ VkResult vkml_allocate_basics(
     VkCommandPool* command_pool,
     uint32_t* queue_family_index,
     bool request_neural_statistics,
-    bool* neural_statistics_device_enabled);
+    bool* neural_statistics_device_enabled,
+    bool request_host_memory_import,
+    VgfHostMemoryImportCapabilities* host_memory_import_capabilities);
 
 // Helper functions to dump VGF Delegate Boundary Inputs
+constexpr const char* kVgfHostMemoryImportEnableEnv =
+    "EXECUTORCH_VGF_ENABLE_HOST_MEMORY_IMPORT";
 constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
 constexpr const char* kVgfDumpInputsAndExitEnv =
     "EXECUTORCH_VGF_DUMP_INPUTS_AND_EXIT";
@@ -418,8 +422,11 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
     VkResult result;
     neural_statistics_config_ = get_vgf_neural_statistics_runtime_config();
+    const bool request_host_memory_import =
+        env_flag_enabled(kVgfHostMemoryImportEnableEnv);
 
-    // Fetch basic vulkan objects once
+    // Fetch basic Vulkan objects once. Device extensions must be selected here,
+    // before vkCreateDevice; VgfRepr only receives already-created handles.
     result = vkml_allocate_basics(
         &vk_instance,
         &vk_physical_device,
@@ -428,7 +435,9 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         &vk_command_pool,
         &vk_queue_family_index,
         neural_statistics_config_.requested,
-        &neural_statistics_device_enabled_);
+        &neural_statistics_device_enabled_,
+        request_host_memory_import,
+        &host_memory_import_capabilities_);
     if (result != VK_SUCCESS) {
       ET_LOG(
           Error, "Failed to initialize the Vulkan device error 0x%08X", result);
@@ -457,7 +466,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   bool is_available() const override {
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
-    ET_LOG(Info, "Checking VGFBackend is available");
+    ET_LOG(Debug, "Checking VGFBackend is available");
     self->ensure_initialized();
     const bool available =
         is_initialized_ && vkml_load_extensions(&vk_device) == VK_SUCCESS;
@@ -473,7 +482,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override {
     auto* self = const_cast<VGFBackend*>(this);
     const std::lock_guard<std::mutex> lock(mutex_);
-    ET_LOG(Info, "Entered VGF init");
+    ET_LOG(Debug, "Entered VGF init");
 
 #ifdef ET_EVENT_TRACER_ENABLED
     EventTracer* event_tracer = context.event_tracer();
@@ -535,7 +544,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
         vk_queue_family_index,
         neural_statistics_config_.requested,
         neural_statistics_device_enabled_,
-        neural_statistics_config_.mode_index);
+        neural_statistics_config_.mode_index,
+        host_memory_import_capabilities_);
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
@@ -589,7 +599,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     const size_t input_count = repr->model_input_count;
     const size_t output_count = repr->model_output_count;
     ET_LOG(
-        Info,
+        Debug,
         "VGF execute: args=%zu IOs=%zu inputs=%zu outputs=%zu",
         args.size(),
         repr->IOs.size(),
@@ -640,7 +650,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
       if (io_idx < 0) {
-        ET_LOG(Info, "Skipping eliminated VGF input %zu", input_arg_idx);
+        ET_LOG(Debug, "Skipping eliminated VGF input %zu", input_arg_idx);
         // See test_addmm_vgf_no_quant[beta_only]
         // two inputs are eliminated from the graph by the converter
         continue;
@@ -661,7 +671,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       Tensor* tensor = &args[input_arg_idx]->toTensor();
       IO* io = &repr->IOs[io_idx];
 
-      ET_LOG(Info, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
+      ET_LOG(Debug, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -774,7 +784,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       Tensor* tensor = &args[output_arg_idx]->toTensor();
       IO* io = &repr->IOs[io_idx];
 
-      ET_LOG(Info, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
+      ET_LOG(Debug, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -865,6 +875,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     vk_queue_family_index = UINT32_MAX;
     neural_statistics_config_ = {};
     neural_statistics_device_enabled_ = false;
+    host_memory_import_capabilities_ = {};
     is_initialized_ = false;
     // Do not call volkFinalize(): the Vulkan backend shares the loader.
   }
@@ -879,6 +890,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   uint32_t vk_queue_family_index = UINT32_MAX;
   VgfNeuralStatisticsRuntimeConfig neural_statistics_config_{};
   bool neural_statistics_device_enabled_ = false;
+  VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
   bool is_initialized_ = false;
 };
 
@@ -896,11 +908,16 @@ VkResult vkml_allocate_basics(
     VkCommandPool* command_pool,
     uint32_t* queue_family_index,
     bool request_neural_statistics,
-    bool* neural_statistics_device_enabled) {
+    bool* neural_statistics_device_enabled,
+    bool request_host_memory_import,
+    VgfHostMemoryImportCapabilities* host_memory_import_capabilities) {
   VkResult result;
 
   if (neural_statistics_device_enabled != nullptr) {
     *neural_statistics_device_enabled = false;
+  }
+  if (host_memory_import_capabilities != nullptr) {
+    *host_memory_import_capabilities = {};
   }
 
   if (VK_SUCCESS != volkInitialize()) {
@@ -1156,6 +1173,59 @@ VkResult vkml_allocate_basics(
 
   vector<const char*> requested_exts;
 
+  bool enable_host_memory_import_device = false;
+#if defined(VK_EXT_external_memory_host)
+  const bool host_memory_import_advertised = std::any_of(
+      available.begin(), available.end(), [](const auto& ext_avail) {
+        return std::strcmp(
+                   VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME,
+                   ext_avail.extensionName) == 0;
+      });
+
+  VkDeviceSize min_imported_host_pointer_alignment = 0;
+  if (host_memory_import_advertised) {
+    VkPhysicalDeviceExternalMemoryHostPropertiesEXT host_memory_properties{
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT,
+        .pNext = nullptr,
+    };
+    VkPhysicalDeviceProperties2 properties_2{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &host_memory_properties,
+    };
+    vkGetPhysicalDeviceProperties2(*physical_device, &properties_2);
+    min_imported_host_pointer_alignment =
+        host_memory_properties.minImportedHostPointerAlignment;
+  }
+
+  if (host_memory_import_capabilities != nullptr) {
+    host_memory_import_capabilities->physical_device_advertised =
+        host_memory_import_advertised;
+    host_memory_import_capabilities->min_imported_host_pointer_alignment =
+        min_imported_host_pointer_alignment;
+  }
+
+  enable_host_memory_import_device = vgf_host_memory_import_should_be_enabled(
+      request_host_memory_import, host_memory_import_advertised);
+  if (enable_host_memory_import_device) {
+    requested_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
+  } else if (request_host_memory_import) {
+    ET_LOG(
+        Info,
+        "%s was requested but the Vulkan physical device does not expose %s",
+        kVgfHostMemoryImportEnableEnv,
+        VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
+  }
+#else
+  if (request_host_memory_import) {
+    ET_LOG(
+        Info,
+        "%s was requested but Vulkan headers do not expose "
+        "VK_EXT_external_memory_host",
+        kVgfHostMemoryImportEnableEnv);
+  }
+#endif
+
   const bool bfloat16_extension_available = std::any_of(
       available.begin(), available.end(), [](const auto& ext_avail) {
         return std::strcmp(
@@ -1263,12 +1333,36 @@ VkResult vkml_allocate_basics(
   // Load the device with volk and populate function pointers
   volkLoadDevice(*device);
 
+  if (host_memory_import_capabilities != nullptr) {
+    // Only a successful vkCreateDevice makes extension enablement
+    // authoritative. Physical-device advertisement alone is insufficient for
+    // later zero-copy code to use VK_EXT_external_memory_host device
+    // functionality.
+    host_memory_import_capabilities->logical_device_enabled =
+        enable_host_memory_import_device;
+    ET_LOG(
+        Info,
+        "VGF host memory import: requested=%d advertised=%d enabled=%d "
+        "minImportedHostPointerAlignment=%llu",
+        static_cast<int>(request_host_memory_import),
+        static_cast<int>(
+            host_memory_import_capabilities->physical_device_advertised),
+        static_cast<int>(
+            host_memory_import_capabilities->logical_device_enabled),
+        static_cast<unsigned long long>(
+            host_memory_import_capabilities
+                ->min_imported_host_pointer_alignment));
+  }
+
   vkGetDeviceQueue(*device, qf, 0, queue);
 
   VkCommandPoolCreateInfo poolInfo{
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       .pNext = nullptr,
-      .flags = 0,
+      // VGF records a persistent per-repr command buffer. Host-memory import
+      // may later rebind descriptors and re-record only that command buffer.
+      // Keep the legacy flags=0 behavior unless the extension is truly enabled.
+      .flags = vgf_command_pool_flags(enable_host_memory_import_device),
       .queueFamilyIndex = qf,
   };
   result = vkCreateCommandPool(*device, &poolInfo, nullptr, command_pool);
