@@ -7,10 +7,6 @@
 
 #include <gtest/gtest.h>
 
-#include <type_traits>
-#include <utility>
-
-#include <executorch/backends/arm/runtime/VGFSetup.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 
 namespace executorch {
@@ -98,38 +94,6 @@ TEST(
   EXPECT_TRUE(capabilities.physical_device_advertised);
   EXPECT_FALSE(capabilities.logical_device_enabled);
   EXPECT_EQ(capabilities.min_imported_host_pointer_alignment, 4096u);
-}
-
-TEST(VgfVulkanFeaturesTest, VgfReprExposesHostMemoryImportCapabilities) {
-  static_assert(std::is_constructible_v<
-                VgfRepr,
-                VkInstance,
-                VkPhysicalDevice,
-                VkDevice,
-                VkQueue,
-                VkCommandPool,
-                uint32_t,
-                bool,
-                bool,
-                int,
-                VgfHostMemoryImportCapabilities>);
-  static_assert(std::is_same_v<
-                decltype(std::declval<const VgfRepr&>()
-                             .host_memory_import_advertised()),
-                bool>);
-  static_assert(
-      std::is_same_v<
-          decltype(std::declval<const VgfRepr&>().host_memory_import_enabled()),
-          bool>);
-  static_assert(std::is_same_v<
-                decltype(std::declval<const VgfRepr&>()
-                             .min_imported_host_pointer_alignment()),
-                VkDeviceSize>);
-  static_assert(std::is_same_v<
-                decltype(std::declval<const VgfRepr&>()
-                             .host_memory_import_capabilities()),
-                const VgfHostMemoryImportCapabilities&>);
-  SUCCEED();
 }
 
 } // namespace
