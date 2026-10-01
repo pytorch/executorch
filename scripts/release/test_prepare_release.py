@@ -43,7 +43,10 @@ class PrepareReleaseTest(unittest.TestCase):
             self.assertEqual(torch_version_for_release(path), "2.15.0")
 
             wheel = WheelLink(
-                "2.12.0", "2.12.0", "https://example/torchaudio.whl", None
+                "2.12.0",
+                "2.12.0",
+                "https://example/torchaudio.whl",  # @lint-ignore
+                None,
             )
             with patch(
                 "prepare_release._test_index_wheels",
@@ -60,7 +63,7 @@ class PrepareReleaseTest(unittest.TestCase):
         torch_wheel = WheelLink(
             "2.15.0",
             "2.15.0+cpu",
-            "https://example/torch.whl",
+            "https://example/torch.whl",  # @lint-ignore
             None,
         )
         with patch(
@@ -77,7 +80,7 @@ class PrepareReleaseTest(unittest.TestCase):
                 "2" * 40,
             )
 
-        parser = _WheelIndexParser("https://example/simple/", "torch")
+        parser = _WheelIndexParser("https://example/simple/", "torch")  # @lint-ignore
         parser.feed(
             '<a data-other="x" href="torch-2.15.0%2Bcpu-cp310-linux.whl">a</a>'
             '<a data-core-metadata="x" class="pkg" '
