@@ -149,13 +149,22 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         # them to the optimizer through the gradient and parameter outputs.
         if exported_program.graph_signature.backward_signature is not None:
             return exported_program
+        # EXIR marks the constants another method of the program also reads.
+        # Their names survive the retrace below; the meta of a lifted
+        # constant does not.
+        fqns = self._constant_fqns(exported_program)
+        shared = {
+            fqns[node.name]
+            for node in exported_program.graph.find_nodes(op="placeholder")
+            if node.meta.get("shared_across_methods") and node.name in fqns
+        }
         # Decide on the graph as it is. A program with nothing to fold, such
         # as a quantized model whose weights arrive through a dequantize or a
         # linear whose weight is an input, leaves the hook without the
         # retrace below. The one shape this misses is a weight built with an
         # in-place op, which is impure here and pure only once
         # functionalized: it stays an op.
-        if not self._nodes_to_fold(exported_program):
+        if not self._nodes_to_fold(exported_program, shared):
             return exported_program
 
         # The program is not functionalized yet at this point: a KV-cache
@@ -167,12 +176,14 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         # no-op on a functional graph.
         exported_program = exported_program.run_decompositions({})
 
-        nodes_to_fold = self._nodes_to_fold(exported_program)
+        nodes_to_fold = self._nodes_to_fold(exported_program, shared)
         if not nodes_to_fold:
             return exported_program
-        # Buffers stay out of the fold. This hook sees one method at a time,
-        # and a buffer this method only reads can be written by another
-        # method of the same program.
+        # Buffers stay out of the fold, and so do the shared parameters and
+        # lifted constants. This hook sees one method at a time: a buffer
+        # this method only reads can be written by another method of the
+        # same program, and a parameter another method reads stays in the
+        # program, so its fold would be a second copy.
         return constant_prop_pass(
             exported_program,
             custom_skip_targets=self._constant_prop_skip_targets(exported_program),
@@ -227,19 +238,37 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                     computed.append(arg)
         return computed
 
+    @staticmethod
+    def _constant_fqns(exported_program: ExportedProgram) -> dict[str, str]:
+        """
+        Maps the placeholders of the parameters and lifted constants to their
+        fully qualified names.
+        """
+        signature = exported_program.graph_signature
+        return {
+            **signature.inputs_to_parameters,
+            **signature.inputs_to_lifted_tensor_constants,
+        }
+
     def _constant_only(
-        self, exported_program: ExportedProgram
+        self, exported_program: ExportedProgram, shared: set[str]
     ) -> Callable[[torch.fx.Node], bool]:
         """
         Returns a predicate for the nodes whose inputs are all parameters,
         lifted constants or such nodes, and that constant_prop_pass would
         fold: not a skipped target, not impure, and computed from sources
-        that agree on their custom meta.
+        that agree on their custom meta. The constants named in `shared`,
+        which another method also reads, do not count, like buffers.
         """
         skip_targets = self._constant_prop_skip_targets(exported_program)
-        constants: dict = dict.fromkeys(
-            get_constant_placeholder_dict(exported_program, fold_buffers=False)
-        )
+        fqns = self._constant_fqns(exported_program)
+        constants: dict = {
+            node: None
+            for node in get_constant_placeholder_dict(
+                exported_program, fold_buffers=False
+            )
+            if fqns[node.name] not in shared
+        }
         source_customs = {
             node: frozenset({custom_meta_key(node)}) for node in constants
         }
@@ -285,7 +314,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         return constant_only
 
     def _fold_groups(
-        self, exported_program: ExportedProgram
+        self, exported_program: ExportedProgram, shared: set[str]
     ) -> List[List[torch.fx.Node]]:
         """
         Returns the groups of nodes to fold: each computed weight or bias
@@ -295,7 +324,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         of a packed weight, brings every output with it: the pass
         materializes the outputs, one tensor each, never the op.
         """
-        constant_only = self._constant_only(exported_program)
+        constant_only = self._constant_only(exported_program, shared)
         groups = DSJ()
         for seed in self._computed_gemm_weights(exported_program):
             if not constant_only(seed):
@@ -319,7 +348,9 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                         groups.union(neighbour, seed)
         return groups.gen_groups()
 
-    def _nodes_to_fold(self, exported_program: ExportedProgram) -> set[torch.fx.Node]:
+    def _nodes_to_fold(
+        self, exported_program: ExportedProgram, shared: set[str]
+    ) -> set[torch.fx.Node]:
         """
         Returns the nodes to fold. A group of folds is applied only if it
         does not make the program larger: the folded tensors may not take
@@ -328,7 +359,7 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         a tied embedding read by one lookup and one transposed matmul is the
         common shape.
         """
-        groups = self._fold_groups(exported_program)
+        groups = self._fold_groups(exported_program, shared)
         folds = {node for group in groups for node in group if node.op != "placeholder"}
         position = {node: i for i, node in enumerate(exported_program.graph.nodes)}
         nodes_to_fold: set[torch.fx.Node] = set()
