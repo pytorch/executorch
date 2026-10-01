@@ -20,6 +20,7 @@
 #include <random>
 #include <set>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
@@ -271,7 +272,9 @@ class GenerationBridgeTest : public ::testing::Test {
   Gate other_sink_gate;
   Gate cleanup_gate;
   struct SmallCallbackState {
+    std::atomic<int> live_owners{0};
     std::atomic<int> destructions{0};
+    std::atomic<int> calls{0};
     std::atomic<int> terminals{0};
   } small_callback_state;
   RequestHandle cleanup_handle;
@@ -306,23 +309,294 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param ? "Reset" : "Close";
     });
 
+enum class InlineCallbackSlot { Update, PrepareComplete, Complete };
+enum class InlineCallbackBoundary { Wait, Close, Reset, Shutdown };
+using InlineCallbackParam =
+    std::tuple<InlineCallbackSlot, InlineCallbackBoundary>;
+
+class GenerationInlineCallbackTest
+    : public GenerationBridgeTest,
+      public ::testing::WithParamInterface<InlineCallbackParam> {
+ protected:
+  struct InlineCallbackState {
+    Gate* cleanup = nullptr;
+    Gate* terminal_gate = nullptr;
+    std::thread::id submitting_thread;
+    std::atomic<int> live_owners{0};
+    std::atomic<int> copies{0};
+    std::atomic<int> original_destructions{0};
+    std::atomic<int> copied_destructions{0};
+    std::atomic<int> terminals{0};
+    std::atomic<int> completion_calls{0};
+    std::atomic<bool> cleanup_entered{false};
+    std::promise<RequestHandle> terminal_handle;
+
+    void update(
+        const batching::GenerationUpdate& update,
+        const RequestHandle& handle) {
+      if (update.finish_reason) {
+        EXPECT_EQ(update.finish_reason, batching::FinishReason::NewTokenLimit);
+        EXPECT_TRUE(update.tokens.empty());
+        ++terminals;
+        terminal_handle.set_value(handle);
+        if (terminal_gate) {
+          terminal_gate->arrive();
+        }
+      }
+    }
+  } inline_callback_state;
+
+  struct Probe {
+    InlineCallbackState* state;
+    int depth = 0;
+
+    explicit Probe(InlineCallbackState* state) noexcept : state(state) {
+      ++state->live_owners;
+    }
+    Probe(const Probe& other) noexcept
+        : state(other.state), depth(other.depth + 1) {
+      if (state) {
+        ++state->live_owners;
+        ++state->copies;
+      }
+    }
+    Probe(Probe&& other) noexcept : state(other.state), depth(other.depth) {
+      other.state = nullptr;
+    }
+    ~Probe() {
+      if (!state) {
+        return;
+      }
+      if (depth == 0) {
+        ++state->original_destructions;
+      } else {
+        ++state->copied_destructions;
+        if (state->cleanup &&
+            std::this_thread::get_id() == state->submitting_thread) {
+          state->cleanup_entered.store(true);
+          state->cleanup->arrive();
+        }
+      }
+      --state->live_owners;
+    }
+    void operator()(
+        const batching::GenerationUpdate& update,
+        const RequestHandle& handle) const {
+      state->update(update, handle);
+    }
+    void operator()(const GenerationCompletion&) const noexcept {
+      ++state->completion_calls;
+    }
+  };
+  static_assert(sizeof(Probe) <= 2 * sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<Probe>::value);
+  static_assert(std::is_nothrow_move_constructible<Probe>::value);
+
+  static GenerationRequest inline_request(
+      InlineCallbackSlot slot,
+      InlineCallbackState& state) {
+    using Update = decltype(GenerationRequest::on_update);
+    using Completion = decltype(GenerationRequest::on_complete);
+    batching::GenConfig config;
+    config.max_new_tokens = 1;
+    config.seed = 42;
+    // Prvalue construction leaves no caller-owned function/request source.
+    return GenerationRequest{
+        "session",
+        {10, 11},
+        config,
+        slot == InlineCallbackSlot::Update
+            ? Update{Probe{&state}}
+            : Update{[state = &state](
+                         const batching::GenerationUpdate& update,
+                         const RequestHandle& handle) {
+                state->update(update, handle);
+              }},
+        slot == InlineCallbackSlot::PrepareComplete ? Completion{Probe{&state}}
+                                                    : Completion{},
+        slot == InlineCallbackSlot::Complete ? Completion{Probe{&state}}
+                                             : Completion{}};
+  }
+
+  static bool supports_inline_staging(InlineCallbackSlot slot) {
+    bool supported = true;
+    {
+      InlineCallbackState state;
+      {
+        auto incoming = inline_request(slot, state);
+        supported &= state.live_owners.load() == 1 && state.copies.load() == 0;
+        GenerationRequest parameter(std::move(incoming));
+        auto published =
+            std::make_shared<GenerationRequest>(std::move(parameter));
+        // The old bridge -> Impl -> RequestState path must not destroy a
+        // positive-depth copy before publication, where gating would deadlock.
+        supported &= state.live_owners.load() == 3 &&
+            state.copies.load() == 2 &&
+            state.original_destructions.load() == 0 &&
+            state.copied_destructions.load() == 0;
+      }
+      supported &= state.live_owners.load() == 0 &&
+          state.original_destructions.load() == 1 &&
+          state.copied_destructions.load() == 2;
+    }
+    {
+      InlineCallbackState state;
+      {
+        auto incoming = inline_request(slot, state);
+        auto published =
+            std::make_shared<GenerationRequest>(std::move(incoming));
+        incoming = {};
+        // The fixed path resets only the depth-zero bridge parameter before
+        // admission; the depth-one owner survives until dispatcher cleanup.
+        supported &= !incoming.on_update && !incoming.on_prepare_complete &&
+            !incoming.on_complete && state.live_owners.load() == 1 &&
+            state.copies.load() == 1 &&
+            state.original_destructions.load() == 1 &&
+            state.copied_destructions.load() == 0;
+      }
+      supported &= state.live_owners.load() == 0 &&
+          state.copied_destructions.load() == 1;
+    }
+    return supported;
+  }
+};
+
+TEST_P(
+    GenerationInlineCallbackTest,
+    BoundaryIncludesSubmittingThreadInlineCallbackOwners) {
+  const auto slot = std::get<0>(GetParam());
+  const auto boundary = std::get<1>(GetParam());
+  if (!supports_inline_staging(slot)) {
+    GTEST_SKIP() << "Requires inline std::function cloning on move and "
+                    "depth-zero-only source reset";
+  }
+  watch_callbacks();
+  start();
+  cleanup_gate.hold();
+  sink_gate.hold();
+  auto& state = inline_callback_state;
+  state.cleanup = &cleanup_gate;
+  state.terminal_gate = &sink_gate;
+  auto terminal = state.terminal_handle.get_future();
+  auto submitted = std::make_shared<std::promise<SubmissionResult>>();
+  auto returned = submitted->get_future();
+  callback_callers.emplace_back([this, slot, submitted] {
+    inline_callback_state.submitting_thread = std::this_thread::get_id();
+    // Finish the full expression, including parameter/temporary destruction,
+    // before reporting return. Probe's original temporary was moved empty.
+    auto result = GenerationBridge::submit(
+        *runtime, inline_request(slot, inline_callback_state));
+    submitted->set_value(std::move(result));
+  });
+  ASSERT_TRUE(wait_until([&] {
+    return returned.wait_for(std::chrono::seconds(0)) ==
+        std::future_status::ready ||
+        state.cleanup_entered.load();
+  }));
+  ASSERT_EQ(terminal.wait_for(kTimeout), std::future_status::ready);
+  const auto handle = terminal.get();
+  ASSERT_NE(handle.id(), 0u);
+  ASSERT_TRUE(sink_gate.wait_for());
+  EXPECT_FALSE(handle.done());
+
+  auto finished = std::make_shared<std::promise<int>>();
+  auto owners_at_boundary = finished->get_future();
+  callback_callers.emplace_back([this, boundary, handle, finished] {
+    switch (boundary) {
+      case InlineCallbackBoundary::Wait:
+        handle.wait();
+        break;
+      case InlineCallbackBoundary::Close:
+        EXPECT_FALSE(runtime->close_session_async("session").get());
+        break;
+      case InlineCallbackBoundary::Reset:
+        EXPECT_FALSE(runtime->reset_session_async("session").get());
+        break;
+      case InlineCallbackBoundary::Shutdown:
+        runtime->shutdown();
+        break;
+    }
+    finished->set_value(inline_callback_state.live_owners.load());
+  });
+  sink_gate.release();
+  ASSERT_EQ(owners_at_boundary.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_EQ(owners_at_boundary.get(), 0)
+      << "Completion boundary preceded a submitting-thread inline owner";
+  EXPECT_TRUE(handle.done());
+  EXPECT_EQ(state.live_owners.load(), 0);
+  EXPECT_EQ(state.terminals.load(), 1);
+  EXPECT_EQ(
+      state.completion_calls.load(),
+      slot == InlineCallbackSlot::Update ? 0 : 1);
+  EXPECT_FALSE(handle.error());
+
+  // On the old path the Impl parameter is held at depth one, with its own
+  // owner and the bridge parameter's owner still alive after this boundary.
+  cleanup_gate.release();
+  ASSERT_EQ(returned.wait_for(kTimeout), std::future_status::ready);
+  auto result = returned.get();
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  EXPECT_EQ(std::get<RequestHandle>(result).id(), handle.id());
+  for (auto& caller : callback_callers) {
+    caller.join();
+  }
+  EXPECT_EQ(state.live_owners.load(), 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllSlotsAndBoundaries,
+    GenerationInlineCallbackTest,
+    ::testing::Combine(
+        ::testing::Values(
+            InlineCallbackSlot::Update,
+            InlineCallbackSlot::PrepareComplete,
+            InlineCallbackSlot::Complete),
+        ::testing::Values(
+            InlineCallbackBoundary::Wait,
+            InlineCallbackBoundary::Close,
+            InlineCallbackBoundary::Reset,
+            InlineCallbackBoundary::Shutdown)),
+    ([](const ::testing::TestParamInfo<InlineCallbackParam>& info) {
+      const char* slots[] = {"Update", "PrepareComplete", "Complete"};
+      const char* boundaries[] = {"Wait", "Close", "Reset", "Shutdown"};
+      return std::string(slots[static_cast<int>(std::get<0>(info.param))]) +
+          boundaries[static_cast<int>(std::get<1>(info.param))];
+    }));
+
 TEST_F(GenerationBridgeTest, SmallUpdateCallbackDestructionCanReenterInfo) {
   watch_callbacks();
   executor.executing.hold();
-  start();
+  ServingRuntimeConfig config{4, 128, 16};
+  config.max_requests = 1;
+  start(config);
   // Nothrow copying keeps this eligible for libc++'s inline function storage.
   struct SmallCallback {
     ServingRuntime* runtime;
     SmallCallbackState* state;
 
+    SmallCallback(ServingRuntime* runtime, SmallCallbackState* state) noexcept
+        : runtime(runtime), state(state) {
+      ++state->live_owners;
+    }
+    SmallCallback(const SmallCallback& other) noexcept
+        : SmallCallback(other.runtime, other.state) {}
+    SmallCallback(SmallCallback&& other) noexcept
+        : runtime(other.runtime), state(other.state) {
+      other.state = nullptr;
+    }
     ~SmallCallback() {
+      if (!state) {
+        return;
+      }
       (void)runtime->info();
       ++state->destructions;
+      --state->live_owners;
     }
 
     void operator()(
         const batching::GenerationUpdate& update,
         const RequestHandle&) const {
+      ++state->calls;
       if (update.finish_reason) {
         ++state->terminals;
       }
@@ -335,10 +609,25 @@ TEST_F(GenerationBridgeTest, SmallUpdateCallbackDestructionCanReenterInfo) {
   auto handle = accepted(GenerationBridge::submit(*runtime, std::move(input)));
   input = {};
   ASSERT_TRUE(executor.executing.wait_for());
+  EXPECT_EQ(small_callback_state.live_owners.load(), 1);
+  const auto before_rejection = small_callback_state.destructions.load();
+  auto rejected_input = request("rejected", std::make_shared<Events>(), 1);
+  rejected_input.on_update =
+      SmallCallback{runtime.get(), &small_callback_state};
+  auto rejected = GenerationBridge::submit(*runtime, std::move(rejected_input));
+  rejected_input = {};
+  ASSERT_TRUE(std::holds_alternative<ServingError>(rejected));
+  EXPECT_EQ(std::get<ServingError>(rejected).code, ErrorCode::CapacityExceeded);
+  EXPECT_GT(small_callback_state.destructions.load(), before_rejection);
+  EXPECT_EQ(small_callback_state.live_owners.load(), 1);
+  EXPECT_EQ(small_callback_state.calls.load(), 0);
+  EXPECT_EQ(small_callback_state.terminals.load(), 0);
   const auto before_cleanup = small_callback_state.destructions.load();
   executor.executing.release();
   completed(handle);
   EXPECT_GT(small_callback_state.destructions.load(), before_cleanup);
+  EXPECT_EQ(small_callback_state.live_owners.load(), 0);
+  EXPECT_EQ(small_callback_state.calls.load(), 2);
   EXPECT_EQ(small_callback_state.terminals.load(), 1);
   EXPECT_FALSE(handle.error());
 }

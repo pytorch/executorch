@@ -35,7 +35,11 @@ struct RequestState {
       : fence_key(request.key),
         request(std::move(request)),
         event_limit(limits.max_events_per_request),
-        token_limit(limits.max_tokens_per_request) {}
+        token_limit(limits.max_tokens_per_request) {
+    // libc++ can retain inline callable copies after move. Empty the runtime
+    // staging request before admission so cleanup covers every owned callback.
+    request = {};
+  }
 
   void cancel() {
     batching::GenerationHandle handle;
@@ -387,7 +391,7 @@ struct ServingRuntime::Impl {
             : "session reopen failed; old state is gone and key is unavailable"};
   }
 
-  detail::SubmissionResult submit(detail::GenerationRequest request) {
+  detail::SubmissionResult submit(detail::GenerationRequest&& request) {
     // Even moving an inline std::function can copy a user callable. Construct
     // and unwind callback ownership outside admission locking.
     auto state =
