@@ -24,6 +24,12 @@ from prepare_release import (  # type: ignore[import-not-found]
 )
 
 _VERSION_PATTERN = re.compile(r"\d+\.\d+\.\d+")
+_TORCHVISION_VERSION_PATTERN = re.compile(
+    r'^TORCHVISION_VERSION\s*=\s*"(?P<version>[^"]+)"$', re.MULTILINE
+)
+_TORCHAUDIO_VERSION_PATTERN = re.compile(
+    r'^TORCHAUDIO_VERSION\s*=\s*"(?P<version>[^"]+)"$', re.MULTILINE
+)
 _TORCHCODEC_PATTERN = re.compile(r"torchcodec==\d+\.\d+\.\d+")
 _TOKENIZERS_REQUIREMENT_PATTERN = re.compile(
     r'(?m)^(?P<indent>\s*)"pytorch-tokenizers(?:>=\d+\.\d+\.\d+)?",$'
@@ -163,6 +169,29 @@ def planned_torch_release(torch_pin_path: Path, torch_version: str) -> str:
     )
     if version_count != 1:
         raise RuntimeError(f"expected one TORCH_VERSION assignment in {torch_pin_path}")
+    match = re.fullmatch(r"\d+\.(\d+)\.(\d+)", torch_version)
+    assert match is not None
+    expected_companions = {
+        _TORCHVISION_VERSION_PATTERN: f"0.{int(match.group(1)) + 15}.{match.group(2)}",
+        _TORCHAUDIO_VERSION_PATTERN: torch_version,
+    }
+    for pattern, expected in expected_companions.items():
+        current = pattern.search(updated)
+        if current is None:
+            raise RuntimeError(
+                f"expected companion version assignment in {torch_pin_path}"
+            )
+        if stable_base_version(current.group("version")) != expected:
+            raise RuntimeError(
+                f"companion release {current.group('version')!r} does not match "
+                f"Torch {torch_version}"
+            )
+        updated = pattern.sub(
+            lambda version_match: version_match.group(0).replace(
+                version_match.group("version"), expected
+            ),
+            updated,
+        )
     updated, count = _FINALIZED_PATTERN.subn(
         "RELEASE_DEPENDENCIES_FINALIZED = True", updated
     )
@@ -363,6 +392,8 @@ def main() -> None:
     torch_version = args.torch_version or stable_base_version(
         release_config["TORCH_VERSION"]
     )
+    torchvision_version = stable_base_version(release_config["TORCHVISION_VERSION"])
+    torchaudio_version = stable_base_version(release_config["TORCHAUDIO_VERSION"])
     torchao_version = args.torchao_version or stable_base_version(
         current_torchao_version(repo_root / "install_requirements.py")
     )
@@ -375,6 +406,8 @@ def main() -> None:
     )
     for package, version in (
         ("torch", torch_version),
+        ("torchvision", torchvision_version),
+        ("torchaudio", torchaudio_version),
         ("torchao", torchao_version),
         ("pytorch-tokenizers", tokenizers_version),
         ("torchcodec", torchcodec_version),
@@ -386,7 +419,8 @@ def main() -> None:
 
     print(
         "Release dependency artifacts are available: "
-        f"torch=={torch_version}, torchao=={torchao_version}, "
+        f"torch=={torch_version}, torchvision=={torchvision_version}, "
+        f"torchaudio=={torchaudio_version}, torchao=={torchao_version}, "
         f"pytorch-tokenizers=={tokenizers_version}, torchcodec=={torchcodec_version}"
     )
     if args.preflight_only:
