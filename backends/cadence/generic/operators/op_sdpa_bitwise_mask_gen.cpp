@@ -55,22 +55,26 @@ namespace native {
   const auto dtype = mask.dtype();
   const int64_t numel = mask.numel();
   if (dtype == ::executorch::aten::ScalarType::Bool) {
+    const bool* __restrict mask_data = mask.mutable_data_ptr<bool>();
+    uint8_t* __restrict out_data = out.mutable_data_ptr<uint8_t>();
     // Generate bitwise mask by iterating boolean tensor elements and inverting
     // each
     for (int64_t i = 0, out_index = 0; i < numel; i += 8, out_index++) {
       uint8_t packed_mask = 0;
       for (int64_t j = 0; j < 8; j++) {
-        packed_mask |= (!mask.mutable_data_ptr<bool>()[i + j]) << j;
+        packed_mask |= (!mask_data[i + j]) << j;
       }
-      out.mutable_data_ptr<uint8_t>()[out_index] = packed_mask;
+      out_data[out_index] = packed_mask;
     }
   } else if (dtype == ::executorch::aten::ScalarType::Float) {
+    const float* __restrict mask_data = mask.mutable_data_ptr<float>();
+    uint8_t* __restrict out_data = out.mutable_data_ptr<uint8_t>();
     for (int64_t i = 0, out_index = 0; i < numel; i += 8, out_index++) {
       uint8_t packed_mask = 0;
       for (int64_t j = 0; j < 8; j++) {
-        packed_mask |= (mask.mutable_data_ptr<float>()[i + j] < threshold) << j;
+        packed_mask |= (mask_data[i + j] < threshold) << j;
       }
-      out.mutable_data_ptr<uint8_t>()[out_index] = packed_mask;
+      out_data[out_index] = packed_mask;
     }
   } else {
     ET_KERNEL_CHECK(ctx, false, InvalidArgument, out);
