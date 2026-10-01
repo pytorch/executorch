@@ -138,7 +138,7 @@ def _shape_symbols(shape) -> Set[str]:
 
 def graph_input_names(program, entrypoint: str = MAIN_ENTRYPOINT) -> List[str]:
     """Names of the converted coreai graph's inputs (in argument order)."""
-    graph = program.get_graph(entrypoint)
+    graph = program._get_graph(entrypoint)
     names = []
     for attr in graph.arg_attrs:
         if "coreai.name" in attr:
