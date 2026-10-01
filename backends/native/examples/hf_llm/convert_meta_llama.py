@@ -4,8 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Convert a Meta-format Llama checkpoint (``consolidated.00.pth`` and
-``params.json``) to a HuggingFace model directory for ``export_hf_llm``."""
+"""Convert an original Llama checkpoint (``consolidated.00.pth`` and
+``params.json``) to a Hugging Face model directory for ``export_hf_llm``."""
 
 import argparse
 import json
@@ -80,7 +80,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--params", required=True)
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--output", required=True, help="HuggingFace model directory.")
+    parser.add_argument("--output", required=True, help="Hugging Face model directory.")
     args = parser.parse_args()
 
     with open(args.params) as f:
