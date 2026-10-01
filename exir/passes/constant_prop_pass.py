@@ -265,7 +265,8 @@ def _expression(exported_program: ExportedProgram, node: torch.fx.Node) -> str:
     Returns a string that identifies the expression `node` computes.
 
     Every producer of `node` is described once, as a numbered definition
-    that names its target and its arguments; an argument that is a producer
+    that names its target fully qualified, `aten.t.default` or
+    `_operator.getitem`, and its arguments; an argument that is a producer
     appears by its number and a placeholder by its fully qualified name. The
     same expression over the same parameters gives the same string in every
     method and export, whatever the node names are, and the string grows
@@ -296,10 +297,18 @@ def _expression(exported_program: ExportedProgram, node: torch.fx.Node) -> str:
                 if input_node.op != "placeholder" and input_node not in index:
                     stack.append((input_node, False))
             continue
-        target = getattr(current.target, "__name__", None) or repr(current.target)
+        target = current.target
+        if isinstance(target, EdgeOpOverload):
+            name = target.__name__
+        elif isinstance(target, torch._ops.OpOverload):
+            name = str(target)
+        else:
+            module = getattr(target, "__module__", None)
+            qualname = getattr(target, "__qualname__", None)
+            name = f"{module}.{qualname}" if module and qualname else repr(target)
         arguments = map_aggregate((current.args, current.kwargs), describe)
         index[current] = len(definitions)
-        definitions.append(f"%{index[current]}={target}{arguments!r}")
+        definitions.append(f"%{index[current]}={name}{arguments!r}")
     return ";".join(definitions)
 
 
@@ -314,17 +323,17 @@ def _folded_name(
     Returns the fully qualified name of a folded value.
 
     By default the name is `_prop_tensor_constant{N}`, numbered per program.
-    With `register_like_source` it derives from the first placeholder the
-    value is computed from and from the expression that computes it, for
-    example `w_prop_3f2a9c1e` for a value computed from the parameter `w`:
-    every method and export that folds the same expression over the same
-    parameters produces the same name, and two expressions over the same
-    parameter produce different ones. A tag function keyed on the name (the
-    lora / foundation split of external weights) sees the source in it.
+    With `register_like_source` it is the fully qualified name of the first
+    placeholder the value is computed from, `_prop_`, and the whole sha256
+    digest, 64 hex characters, of the expression that computes it: every
+    method and export that folds the same expression over the same
+    parameters produces the same name, and two expressions produce different
+    ones. A tag function keyed on the name (the lora / foundation split of
+    external weights) sees the source in it.
     """
     if register_like_source and source_fqn is not None:
         digest = hashlib.sha256(_expression(exported_program, node).encode())
-        base = f"{source_fqn}_prop_{digest.hexdigest()[:8]}"
+        base = f"{source_fqn}_prop_{digest.hexdigest()}"
         candidates = (base if i == 0 else f"{base}_{i}" for i in itertools.count())
     else:
         prefix = _PROP_TENSOR_CONSTANT_PREFIX
@@ -678,7 +687,8 @@ def constant_prop_pass(
             an op, and so do the nodes computed from it.
         register_like_source: Whether a folded value is registered like the first
             placeholder it is computed from: named after it and the expression,
-            `w_prop_3f2a9c1e` for a value computed from the parameter `w`, of its kind
+            `w_prop_` and the 64-character sha256 digest of the fully qualified
+            expression for a value computed from the parameter `w`, of its kind
             (a parameter's fold is a parameter, a buffer's a buffer) and with its
             custom meta. By default a folded value is a lifted tensor constant named
             `_prop_tensor_constant{N}`.
