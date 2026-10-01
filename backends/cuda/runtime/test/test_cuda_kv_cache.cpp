@@ -8,6 +8,7 @@
 
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
+#include <executorch/runtime/core/evalue.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -24,6 +25,7 @@ namespace aoti = ::executorch::backends::aoti;
 namespace slim = ::executorch::backends::aoti::slim;
 namespace slimc10 = ::executorch::backends::aoti::slim::c10;
 using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
 
 namespace {
 
@@ -654,6 +656,22 @@ TEST_F(CudaKVCacheTest, CacheOutlivesTheStreamItLastSteppedOn) {
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 }
 
+TEST(OffGraphKVRequirementTest, ReadFromTheProgramNotTheCaller) {
+  // A program lowered off-graph must not run without a cache even when the
+  // caller passed no key; one that is not must not be asked for one.
+  auto offgraph = flat_and_ring_container();
+  auto offgraph_handle = make_handle(offgraph);
+  const auto needs = cu::requires_offgraph_kv_storage(offgraph_handle);
+  ASSERT_TRUE(needs.ok());
+  EXPECT_TRUE(needs.get());
+
+  FakeContainer in_graph{{"weight"}, {"tok_embeddings.weight"}, {}, 0};
+  auto in_graph_handle = make_handle(in_graph);
+  const auto plain = cu::requires_offgraph_kv_storage(in_graph_handle);
+  ASSERT_TRUE(plain.ok());
+  EXPECT_FALSE(plain.get());
+}
+
 TEST_F(CudaKVCacheTest, RingLayersRequireMaxWrite) {
   auto cfg = config(32, 4, 4);
   cfg.max_write.reset();
@@ -742,4 +760,55 @@ TEST_F(CudaKVCacheTest, SupportedDenseDtypesControlStorageAndBindings) {
     EXPECT_EQ(copied, values);
     kv.forget_handle(&handle);
   }
+}
+
+TEST(OffGraphKVStepWidthTest, ParsesInputIndexAndDim) {
+  const auto parsed = cu::parse_offgraph_kv_step_width("12:3");
+  ASSERT_EQ(parsed.error(), Error::Ok);
+  EXPECT_EQ(parsed.get().input, 12);
+  EXPECT_EQ(parsed.get().dim, 3);
+
+  for (const char* bad : {"", "1", ":0", "1:", "a:0", "1:-1", "-1:0", "1:0x"}) {
+    SCOPED_TRACE(bad);
+    EXPECT_EQ(
+        cu::parse_offgraph_kv_step_width(bad).error(), Error::InvalidArgument);
+  }
+}
+
+TEST(OffGraphKVStepWidthTest, ReadsTheExtentOfTheNamedInput) {
+  namespace etensor = ::executorch::runtime::etensor;
+  etensor::TensorImpl::SizesType sizes[] = {1, 7};
+  etensor::TensorImpl::DimOrderType dim_order[] = {0, 1};
+  int64_t data[7] = {};
+  etensor::TensorImpl impl(
+      etensor::ScalarType::Long, 2, sizes, data, dim_order);
+  EValue scalar(static_cast<int64_t>(3));
+  EValue tensor{etensor::Tensor(&impl)};
+  EValue* inputs[] = {&scalar, &tensor};
+  const ::executorch::runtime::Span<EValue*> span(inputs, 2);
+
+  const auto width = cu::read_offgraph_kv_step_width({1, 1}, span);
+  ASSERT_EQ(width.error(), Error::Ok);
+  EXPECT_EQ(width.get(), 7);
+
+  // Wrong input, a non-tensor, a dim past the rank, and an empty step.
+  EXPECT_EQ(
+      cu::read_offgraph_kv_step_width({2, 0}, span).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      cu::read_offgraph_kv_step_width({0, 0}, span).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      cu::read_offgraph_kv_step_width({1, 2}, span).error(),
+      Error::InvalidArgument);
+  sizes[1] = 0;
+  etensor::TensorImpl empty(
+      etensor::ScalarType::Long, 2, sizes, data, dim_order);
+  EValue empty_tensor{etensor::Tensor(&empty)};
+  EValue* empty_inputs[] = {&scalar, &empty_tensor};
+  EXPECT_EQ(
+      cu::read_offgraph_kv_step_width(
+          {1, 1}, ::executorch::runtime::Span<EValue*>(empty_inputs, 2))
+          .error(),
+      Error::InvalidArgument);
 }
