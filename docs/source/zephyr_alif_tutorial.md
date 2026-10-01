@@ -66,7 +66,7 @@ in its own source tree.
 Install the Zephyr SDK (compiler toolchain):
 
 ```bash
-west sdk install --version 1.0.1 --toolchains arm-zephyr-eabi
+west sdk install --version 1.0.1 --gnu-toolchains arm-zephyr-eabi
 ```
 
 ## Step 3: Install ExecuTorch and Arm Tools
@@ -451,15 +451,24 @@ preprocessed input tensor of shape `[1, 3, 224, 224]`. Produce them with the
 same transform the model expects, so the quantized ranges reflect real images:
 
 ```python
-import torch, torchvision
+import glob
+import os
+
+import torch
+import torchvision
 from PIL import Image
+
+images = sorted(glob.glob("my_photos/*.jpg"))
+os.makedirs("calib", exist_ok=True)
 
 weights = torchvision.models.MobileNet_V2_Weights.DEFAULT
 preprocess = weights.transforms()
-for i, path in enumerate(my_images):
+for i, path in enumerate(images):
     x = preprocess(Image.open(path).convert("RGB")).unsqueeze(0)
     torch.save(x, f"calib/{i:04d}.pt")
 ```
+
+Then pass `--calibration_data=calib`.
 
 A few hundred images spread across classes is a reasonable starting point.
 

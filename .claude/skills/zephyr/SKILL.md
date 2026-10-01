@@ -92,7 +92,7 @@ cd ../../..
 ### 4. Install Zephyr SDK
 
 ```bash
-west sdk install --version 1.0.1 --toolchains arm-zephyr-eabi
+west sdk install --version 1.0.1 --gnu-toolchains arm-zephyr-eabi
 ```
 
 ### 5. Install Ethos-U tools (if targeting NPU boards)
