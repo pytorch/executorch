@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/llm/serving/prompt_preparer.h>
+#include <executorch/extension/llm/serving/detail/prompt_preparer.h>
 
 #include <gtest/gtest.h>
 
@@ -61,7 +61,7 @@ TEST(PromptPreparerTest, PreservesSegmentBoundariesAndExactIds) {
       make_text_input("b"),
       make_token_input({0, 42}),
   }};
-  auto result = serving::prepare_prompt(tokenizer, input);
+  auto result = serving::detail::prepare_prompt(tokenizer, input);
   ASSERT_TRUE(result.ok());
   EXPECT_EQ(result->tokens, (std::vector<uint64_t>{1, 2, 0, 42}));
   ASSERT_EQ(tokenizer.calls.size(), 2u);
@@ -78,14 +78,15 @@ TEST(PromptPreparerTest, RejectsEmptyPreparedPrompts) {
   RecordingTokenizer tokenizer;
   tokenizer.encodings = {{"", {}}};
   EXPECT_EQ(
-      serving::prepare_prompt(tokenizer, {}).error(), Error::InvalidArgument);
+      serving::detail::prepare_prompt(tokenizer, {}).error(),
+      Error::InvalidArgument);
   EXPECT_EQ(
-      serving::prepare_prompt(
+      serving::detail::prepare_prompt(
           tokenizer, serving::PromptInput{{make_text_input("")}})
           .error(),
       Error::InvalidArgument);
   EXPECT_EQ(
-      serving::prepare_prompt(
+      serving::detail::prepare_prompt(
           tokenizer, serving::PromptInput{{make_token_input({})}})
           .error(),
       Error::InvalidArgument);
@@ -104,7 +105,7 @@ TEST(PromptPreparerTest, RejectsUnsupportedModalitiesWithoutSkippingSegment) {
         make_token_input({2}),
     }};
     EXPECT_EQ(
-        serving::prepare_prompt(tokenizer, input).error(),
+        serving::detail::prepare_prompt(tokenizer, input).error(),
         Error::InvalidArgument);
   }
   EXPECT_TRUE(tokenizer.calls.empty());
@@ -116,7 +117,7 @@ TEST(PromptPreparerTest, RejectsEncodingFailureWithoutSkippingSegment) {
   const serving::PromptInput input{
       {make_text_input("missing"), make_text_input("ok")}};
   EXPECT_EQ(
-      serving::prepare_prompt(tokenizer, input).error(),
+      serving::detail::prepare_prompt(tokenizer, input).error(),
       Error::InvalidArgument);
   EXPECT_EQ(tokenizer.calls.size(), 1u);
 }
@@ -126,19 +127,19 @@ TEST(PromptPreparerTest, EnforcesTotalTokenLimitAcrossSegments) {
   tokenizer.encodings = {{"a", {1, 2}}};
   const serving::PromptInput input{
       {make_text_input("a"), make_token_input({3, 4})}};
-  EXPECT_TRUE(serving::prepare_prompt(tokenizer, input, 4).ok());
+  EXPECT_TRUE(serving::detail::prepare_prompt(tokenizer, input, 4).ok());
   EXPECT_EQ(
-      serving::prepare_prompt(tokenizer, input, 3).error(),
+      serving::detail::prepare_prompt(tokenizer, input, 3).error(),
       Error::InvalidArgument);
   EXPECT_EQ(
-      serving::prepare_prompt(tokenizer, input, 0).error(),
+      serving::detail::prepare_prompt(tokenizer, input, 0).error(),
       Error::InvalidArgument);
 }
 
 TEST(PromptPreparerTest, IdOnlyPromptsDoNotCallTokenizer) {
   RecordingTokenizer tokenizer;
   const serving::PromptInput input{{make_token_input({4, 2, 0})}};
-  auto result = serving::prepare_prompt(tokenizer, input);
+  auto result = serving::detail::prepare_prompt(tokenizer, input);
   ASSERT_TRUE(result.ok());
   EXPECT_EQ(result->tokens, (std::vector<uint64_t>{4, 2, 0}));
   EXPECT_TRUE(tokenizer.calls.empty());

@@ -21,9 +21,9 @@
 
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/serving/detail/generation_bridge.h>
+#include <executorch/extension/llm/serving/detail/prompt_preparer.h>
+#include <executorch/extension/llm/serving/detail/text_output.h>
 #include <executorch/extension/llm/serving/prompt_history.h>
-#include <executorch/extension/llm/serving/prompt_preparer.h>
-#include <executorch/extension/llm/serving/text_output.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch {
@@ -439,13 +439,13 @@ struct ServingRuntime::Impl {
 
   detail::SubmissionResult submit(
       detail::GenerationRequest&& request,
-      std::optional<detail::TextRequest> text = std::nullopt) {
+      std::shared_ptr<detail::TextRequest> text = {}) {
     // Even moving an inline std::function can copy a user callable. Construct
     // and unwind callback ownership outside admission locking.
     auto state =
         std::make_shared<detail::RequestState>(std::move(request), config_);
-    if (text) {
-      state->text = std::make_shared<detail::TextRequest>(std::move(*text));
+    state->text = std::move(text);
+    if (state->text) {
       wire_text(state);
     }
     Command command{
@@ -653,7 +653,8 @@ struct ServingRuntime::Impl {
     const auto context_limit = config_.max_context_length
         ? std::min(config_.max_context_length, position_limit)
         : position_limit;
-    auto prepared = prepare_prompt(*tokenizer_, text.input, context_limit);
+    auto prepared =
+        detail::prepare_prompt(*tokenizer_, text.input, context_limit);
     if (!prepared.ok()) {
       return ServingError{
           ErrorCode::InvalidArgument, "prompt preparation failed"};
@@ -1337,10 +1338,11 @@ GenerateResult ServingRuntime::generate(
     PromptInput prompt,
     GenerationOptions options,
     std::function<void(GenerationEvent)> on_event) {
-  detail::TextRequest text;
-  text.input = std::move(prompt);
-  text.options = std::move(options);
-  text.sink = std::move(on_event);
+  auto text = std::make_shared<detail::TextRequest>();
+  text->input = std::move(prompt);
+  text->options = std::move(options);
+  // Unlike move, swap leaves no inline callable copy in the incoming sink.
+  text->sink.swap(on_event);
   detail::GenerationRequest request;
   request.key = std::move(key);
   return impl_->submit(std::move(request), std::move(text));

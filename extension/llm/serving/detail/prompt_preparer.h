@@ -10,22 +10,22 @@
 
 #include <executorch/extension/llm/serving/types.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/platform/compiler.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <limits>
 #include <utility>
 
-namespace executorch::extension::llm::serving {
+namespace executorch::extension::llm::serving::detail {
 
-struct ET_EXPERIMENTAL PreparedPrompt {
+struct PreparedPrompt {
   std::vector<batching::Token> tokens;
 };
 
 // Preparation owns its result. A future multimodal preparer can add owned
 // embedding spans here without teaching callers about encoder lifetimes.
-ET_EXPERIMENTAL inline runtime::Result<PreparedPrompt> prepare_prompt(
+inline runtime::Result<PreparedPrompt> prepare_prompt(
     const tokenizers::Tokenizer& tokenizer,
     const PromptInput& input,
     std::size_t max_tokens = std::numeric_limits<batching::Position>::max()) {
@@ -59,4 +59,4 @@ ET_EXPERIMENTAL inline runtime::Result<PreparedPrompt> prepare_prompt(
   return prepared;
 }
 
-} // namespace executorch::extension::llm::serving
+} // namespace executorch::extension::llm::serving::detail

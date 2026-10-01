@@ -21,3 +21,15 @@ et_cxx_test(
   EXTRA_LIBS
   extension_llm_serving
 )
+
+# Match the tokenizer-dependent runner test's sanitizer link workarounds.
+if(APPLE)
+  target_sources(
+    extension_llm_serving_test
+    PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner/test/lsan_stub.cpp
+  )
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  target_link_options(extension_llm_serving_test PRIVATE --rtlib=compiler-rt)
+endif()

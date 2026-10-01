@@ -129,7 +129,10 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Admission never waits for tokenization; callbacks may race with return.
   // Preadmission errors have no callback. Accepted work delivers ordered text
   // and one terminal event off-engine. Invalid preparation leaves state intact.
-  // Same-key overlap is Busy. Exact strict prefixes continue; other histories
+  // Same-key execution overlap is Busy. Work admitted after close/reset waits
+  // for its acknowledgement before preparation or execution. That fence covers
+  // earlier rendered text (including final flush), terminal delivery, and sink
+  // capture cleanup. Exact strict prefixes continue; other histories
   // cold-replay without caching. Sinks share one delivery thread and must do
   // short, bounded work: no blocking I/O, waits for runtime work, or
   // synchronous shutdown/destruction of the runtime. A text/flush sink throw

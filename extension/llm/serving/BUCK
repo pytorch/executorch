@@ -17,8 +17,8 @@ fbcode_target(_kind = runtime.cxx_library,
     srcs = ["serving_runtime.cpp"],
     headers = [
         "detail/generation_bridge.h",
-        "prompt_preparer.h",
-        "text_output.h",
+        "detail/prompt_preparer.h",
+        "detail/text_output.h",
     ],
     exported_headers = [
         "request_handle.h",

@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/llm/serving/text_output.h>
+#include <executorch/extension/llm/serving/detail/text_output.h>
 
 #include <gtest/gtest.h>
 

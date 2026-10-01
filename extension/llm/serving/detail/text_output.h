@@ -11,9 +11,9 @@
 #include <executorch/extension/llm/batching/types.h>
 #include <executorch/extension/llm/runner/text_stream.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/runtime/platform/compiler.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <utility>
 
@@ -21,7 +21,7 @@ namespace executorch::extension::llm::serving::detail {
 
 // Per-request rendering state. The caller keeps the complete batching history
 // separately: string stops can hide part of a token or a speculative update.
-class ET_EXPERIMENTAL TextOutput {
+class TextOutput {
  public:
   TextOutput(
       const tokenizers::Tokenizer& tokenizer,

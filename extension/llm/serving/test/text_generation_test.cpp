@@ -23,6 +23,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <type_traits>
 
 using namespace executorch::extension::llm;
 using namespace executorch::extension::llm::serving;
@@ -169,7 +170,9 @@ struct Events {
   std::size_t terminals = 0;
   std::thread::id sink_thread;
   Gate blocked;
+  Gate terminal_blocked;
   bool block_first = false;
+  bool block_terminal = false;
   std::function<void()> on_text;
 
   void accept(GenerationEvent event) {
@@ -186,6 +189,9 @@ struct Events {
     } else {
       terminal = std::get<TerminalEvent>(std::move(event));
       ++terminals;
+      if (block_terminal) {
+        terminal_blocked.enter();
+      }
     }
   }
 };
@@ -237,6 +243,22 @@ class TextGenerationTest : public ::testing::Test {
   Tokenizer tokenizer;
   ServingRuntimeConfig config;
   Gate delivery_checkpoint;
+  Gate cleanup_checkpoint;
+  struct SmallSinkState {
+    std::atomic<int> destructions{0};
+    std::atomic<int> calls{0};
+  } small_sink_state;
+  struct InlineSinkState {
+    Gate* cleanup = nullptr;
+    std::thread::id submitting_thread;
+    std::atomic<int> live_owners{0};
+    std::atomic<int> copies{0};
+    std::atomic<int> original_destructions{0};
+    std::atomic<int> copied_destructions{0};
+    std::atomic<int> terminals{0};
+    std::atomic<bool> cleanup_entered{false};
+  } inline_sink_state;
+  std::thread submitting_caller;
   std::unique_ptr<ServingRuntime> runtime;
   std::vector<std::shared_ptr<Events>> events;
   std::promise<void> callbacks_finished;
@@ -270,6 +292,7 @@ class TextGenerationTest : public ::testing::Test {
   }
   void TearDown() override {
     delivery_checkpoint.release();
+    cleanup_checkpoint.release();
     tokenizer.encoding.release();
     executor.opening.release();
     executor.executing.release();
@@ -277,6 +300,10 @@ class TextGenerationTest : public ::testing::Test {
     executor.release();
     for (auto& event : events) {
       event->blocked.release();
+      event->terminal_blocked.release();
+    }
+    if (submitting_caller.joinable()) {
+      submitting_caller.join();
     }
     runtime.reset();
     EXPECT_EQ(executor.clones.load(), 0);
@@ -687,6 +714,55 @@ TEST_F(
   EXPECT_EQ(callbacks.load(), 0);
 }
 
+TEST_F(TextGenerationTest, SmallPublicSinkDestructionCanReenterInfo) {
+  watch_callbacks();
+  config.max_requests = 1;
+  tokenizer.encoding.hold();
+  start();
+  // Exercise libc++ inline callable moves as well as final capture cleanup.
+  struct SmallSink {
+    ServingRuntime* runtime;
+    SmallSinkState* state;
+
+    ~SmallSink() {
+      (void)runtime->info();
+      ++state->destructions;
+    }
+
+    void operator()(GenerationEvent) const {
+      ++state->calls;
+    }
+  };
+  static_assert(sizeof(SmallSink) == 2 * sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<SmallSink>::value);
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  auto result = runtime->generate(
+      "s",
+      PromptInput{{make_text_input("hello")}},
+      options,
+      SmallSink{runtime.get(), &small_sink_state});
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto handle = std::get<RequestHandle>(result);
+  ASSERT_TRUE(tokenizer.encoding.wait());
+  const auto before_rejection = small_sink_state.destructions.load();
+  auto rejected = runtime->generate(
+      "other",
+      ids({20, 21}),
+      options,
+      SmallSink{runtime.get(), &small_sink_state});
+  ASSERT_TRUE(std::holds_alternative<ServingError>(rejected));
+  EXPECT_EQ(std::get<ServingError>(rejected).code, ErrorCode::CapacityExceeded);
+  EXPECT_GT(small_sink_state.destructions.load(), before_rejection);
+  EXPECT_EQ(small_sink_state.calls.load(), 0);
+  const auto before_completion = small_sink_state.destructions.load();
+  tokenizer.encoding.release();
+  ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+  EXPECT_FALSE(handle.error());
+  EXPECT_GT(small_sink_state.destructions.load(), before_completion);
+  EXPECT_EQ(small_sink_state.calls.load(), 2); // Rendered text and terminal.
+}
+
 TEST_F(TextGenerationTest, QueuedCancellationSkipsPreparationAndSessionOpen) {
   tokenizer.encoding.hold();
   start();
@@ -728,13 +804,24 @@ TEST_F(TextGenerationTest, CancelledPartialPrefillIsNotFullPromptResidency) {
 }
 
 TEST_F(TextGenerationTest, CloseDuringPrefillPreservesPhysicalWorkStatistics) {
+  watch_callbacks();
   executor.second_step.hold();
   start(2, 3, 1);
   auto event = output();
   auto handle = submit(event, ids({10, 11, 12, 13, 14, 15}));
   ASSERT_TRUE(executor.second_step.wait());
-  EXPECT_FALSE(runtime->close_session_async("s").get());
+  auto closed = runtime->close_session_async("s");
+  // Logical retirement/cancellation precedes the delivery-lifetime ACK.
+  ASSERT_TRUE(wait_until([&] { return runtime->info().active_sessions == 0; }));
+  auto control = runtime->close_session_async("absent");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  EXPECT_EQ(closed.wait_for(0s), std::future_status::timeout);
+  EXPECT_FALSE(handle.done());
   executor.second_step.release();
+  ASSERT_EQ(closed.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(closed.get());
+  ASSERT_TRUE(handle.done());
   handle.wait();
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
@@ -773,65 +860,417 @@ TEST_F(TextGenerationTest, TextSinkHoldsNamedOwnershipUntilCommit) {
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
 }
 
-TEST_F(
-    TextGenerationTest,
-    StaleResetAndCloseCannotOverwriteReplacementHistory) {
-  for (bool reset : {true, false}) {
-    start();
-    auto slow = output();
-    auto replacement = output();
-    slow->block_first = true;
-    slow->blocked.hold();
-    delivery_checkpoint.hold();
-    slow->on_text = [this, replacement, count = 0]() mutable {
-      if (++count == 4) {
-        delivery_checkpoint.enter();
-      }
-      if (count == 5) {
-        // This old text turn precedes preparation and stale finalization.
-        EXPECT_EQ(replacement->terminals, 1u);
-      }
-    };
-    GenerationOptions options;
-    options.max_new_tokens = 6;
-    const auto expected_steps = executor.seen().size() + 6;
-    auto old = submit(slow, ids({10, 11}), options);
-    ASSERT_TRUE(slow->blocked.wait());
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    while (executor.seen().size() < expected_steps &&
-           std::chrono::steady_clock::now() < deadline) {
-      std::this_thread::yield();
-    }
-    ASSERT_EQ(executor.seen().size(), expected_steps);
-    // A fresh open fences engine publication of all six old token turns.
-    ASSERT_FALSE(runtime->open_session_async("engine-barrier").get());
-    ASSERT_FALSE(runtime->close_session_async("engine-barrier").get());
-    EXPECT_FALSE(
-        reset ? runtime->reset_session_async("s").get()
-              : runtime->close_session_async("s").get());
-    executor.executing.hold();
-    auto replacement_handle = submit(replacement, ids({20, 21}));
-    ASSERT_TRUE(executor.executing.wait());
-    executor.executing.release();
-    ASSERT_FALSE(runtime->open_session_async("engine-barrier").get());
-    slow->blocked.release();
-    ASSERT_TRUE(delivery_checkpoint.wait());
-    // FIFO delivery has posted replacement preparation before old turn four.
-    // Fence its control commit, then let its queued terminal precede turn five.
-    ASSERT_FALSE(runtime->open_session_async("s").get());
-    delivery_checkpoint.release();
-    old.wait();
-    replacement_handle.wait();
-    ASSERT_TRUE(slow->terminal);
-    EXPECT_EQ(slow->terminal->stats.completion_tokens, 6u);
-    ASSERT_TRUE(replacement->terminal);
-    EXPECT_EQ(replacement->terminal->stats.session_reset_reason, "new");
-    auto next = output();
-    submit(next, ids({20, 21, 100, 12})).wait();
-    EXPECT_EQ(next->terminal->stats.session_reset_reason, "exact_prefix");
-    runtime.reset();
+class TextGenerationFenceTest : public TextGenerationTest,
+                                public ::testing::WithParamInterface<bool> {
+ protected:
+  std::future<LifecycleResult> transition() {
+    return GetParam() ? runtime->reset_session_async("s")
+                      : runtime->close_session_async("s");
   }
+};
+
+TEST_P(TextGenerationFenceTest, AckIncludesSubmittingThreadInlineSinkOwners) {
+#if !defined(_LIBCPP_VERSION) || defined(_LIBCPP_ABI_OPTIMIZED_FUNCTION)
+  GTEST_SKIP() << "Requires libc++ inline std::function cloning on move";
+#else
+  struct InlineSink {
+    InlineSinkState* state;
+    int depth = 0;
+
+    explicit InlineSink(InlineSinkState* state) noexcept : state(state) {
+      ++state->live_owners;
+    }
+    InlineSink(const InlineSink& other) noexcept
+        : state(other.state), depth(other.depth + 1) {
+      ++state->live_owners;
+      ++state->copies;
+    }
+    InlineSink(InlineSink&& other) noexcept
+        : state(other.state), depth(other.depth) {
+      other.state = nullptr;
+    }
+    ~InlineSink() {
+      if (!state) {
+        return;
+      }
+      if (depth == 0) {
+        ++state->original_destructions;
+      } else {
+        ++state->copied_destructions;
+        if (state->cleanup &&
+            std::this_thread::get_id() == state->submitting_thread) {
+          state->cleanup_entered.store(true);
+          state->cleanup->enter();
+        }
+      }
+      --state->live_owners;
+    }
+    void operator()(GenerationEvent event) const {
+      if (std::holds_alternative<TerminalEvent>(event)) {
+        ++state->terminals;
+      }
+    }
+  };
+  static_assert(sizeof(InlineSink) <= 2 * sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<InlineSink>::value);
+  using Sink = std::function<void(GenerationEvent)>;
+  auto& state = inline_sink_state;
+  bool supported = true;
+  {
+    Sink incoming{InlineSink{&state}};
+    supported &= state.live_owners.load() == 1 && state.copies.load() == 0;
+    Sink local;
+    local = std::move(incoming);
+    supported &= incoming && local && state.live_owners.load() == 2 &&
+        state.copies.load() == 1;
+    std::optional<Sink> parameter(std::move(local));
+    auto published = std::make_shared<Sink>(std::move(*parameter));
+    // Probe the old move-assignment/optional/shared-object path. There must
+    // be no positive-depth destructor before publication, or gating could
+    // stop admission rather than expose a returning caller's retained owner.
+    supported &= local && *parameter && *published &&
+        state.live_owners.load() == 4 && state.copies.load() == 3 &&
+        state.original_destructions.load() == 0 &&
+        state.copied_destructions.load() == 0;
+  }
+  supported &= state.live_owners.load() == 0 &&
+      state.original_destructions.load() == 1 &&
+      state.copied_destructions.load() == 3;
+  state.copies = 0;
+  state.original_destructions = 0;
+  state.copied_destructions = 0;
+  {
+    Sink incoming{InlineSink{&state}};
+    Sink target;
+    target.swap(incoming);
+    // The fixed path empties incoming before publication. Only the original
+    // depth-zero owner is destroyed here, which the regression never gates.
+    supported &= !incoming && target && state.live_owners.load() == 1 &&
+        state.copies.load() == 1 && state.original_destructions.load() == 1 &&
+        state.copied_destructions.load() == 0;
+  }
+  supported &=
+      state.live_owners.load() == 0 && state.copied_destructions.load() == 1;
+  if (!supported) {
+    GTEST_SKIP() << "Unsupported std::function inline move/swap behavior";
+  }
+
+  watch_callbacks();
+  start();
+  cleanup_checkpoint.hold();
+  state.cleanup = &cleanup_checkpoint;
+  auto submitted = std::make_shared<std::promise<GenerateResult>>();
+  auto returned = submitted->get_future();
+  submitting_caller = std::thread([this, submitted] {
+    inline_sink_state.submitting_thread = std::this_thread::get_id();
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    // A prvalue function avoids a caller-owned source. Complete this full
+    // expression before reporting return, including parameter destruction.
+    auto result = runtime->generate(
+        "s", ids({10, 11}), options, Sink{InlineSink{&inline_sink_state}});
+    submitted->set_value(std::move(result));
+  });
+  ASSERT_TRUE(wait_until([&] {
+    return returned.wait_for(0s) == std::future_status::ready ||
+        state.cleanup_entered.load();
+  }));
+  // A copied-source destructor in the old implementation is now held before
+  // decrementing live_owners. Dispatcher destruction remains unblocked.
+  auto ack = transition();
+  ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  EXPECT_EQ(state.terminals.load(), 1);
+  EXPECT_EQ(state.live_owners.load(), 0)
+      << "ACK preceded destruction of an inline sink owner on the caller";
+
+  cleanup_checkpoint.release();
+  ASSERT_EQ(returned.wait_for(5s), std::future_status::ready);
+  auto result = returned.get();
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  EXPECT_TRUE(std::get<RequestHandle>(result).done());
+  submitting_caller.join();
+#endif
 }
+
+TEST_P(
+    TextGenerationFenceTest,
+    RenderedTextFlushTerminalAndCaptureCleanupPrecedeColdFollowup) {
+  watch_callbacks();
+  tokenizer.pieces[100] = "AEN";
+  tokenizer.encoding.hold();
+  start();
+  auto slow = output();
+  slow->block_first = true;
+  slow->blocked.hold();
+  slow->block_terminal = true;
+  slow->terminal_blocked.hold();
+  delivery_checkpoint.hold();
+  slow->on_text = [this, count = 0]() mutable {
+    if (++count == 2) {
+      delivery_checkpoint.enter();
+    }
+  };
+  auto cleaned = std::make_shared<std::atomic<bool>>(false);
+  auto capture = std::shared_ptr<int>(new int(0), [this, cleaned](int* value) {
+    cleanup_checkpoint.enter();
+    delete value;
+    cleaned->store(true);
+  });
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  options.stop_strings = {"END"};
+  auto result = runtime->generate(
+      "s", ids({10, 11}), options, [slow, capture](GenerationEvent update) {
+        (void)capture;
+        slow->accept(std::move(update));
+      });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto old = std::get<RequestHandle>(result);
+  ASSERT_TRUE(slow->blocked.wait());
+  cleanup_checkpoint.hold();
+  capture.reset();
+
+  auto ack = transition();
+  auto replacement = output();
+  // This would be an exact-prefix continuation without the cold transition.
+  const auto next = submit(
+      replacement,
+      PromptInput{{make_text_input("hello"), make_token_input({100, 12})}});
+  auto other_open = runtime->open_session_async("other");
+  ASSERT_EQ(other_open.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(other_open.get());
+  auto other = output();
+  const auto other_handle = submit(other, ids({20, 21}), {}, "other");
+  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 2; }));
+  // Control and execution progress, but the shared sink cannot deliver other.
+  EXPECT_FALSE(other_handle.done());
+  EXPECT_EQ(runtime->info().active_sessions, GetParam() ? 2u : 1u);
+  EXPECT_EQ(executor.opened().size(), GetParam() ? 3u : 2u);
+  const auto expect_pending = [&] {
+    EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+    EXPECT_FALSE(old.done());
+    EXPECT_FALSE(next.done());
+    EXPECT_EQ(tokenizer.encode_calls.load(), 0);
+    EXPECT_FALSE(cleaned->load());
+  };
+  expect_pending();
+
+  slow->blocked.release();
+  ASSERT_TRUE(delivery_checkpoint.wait());
+  auto control = runtime->open_session_async("other");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  // "A" was rendered; the stop lookbehind "EN" is in the final flush sink.
+  EXPECT_EQ(slow->text, "A");
+  EXPECT_EQ(slow->terminals, 0u);
+  expect_pending();
+  delivery_checkpoint.release();
+  ASSERT_TRUE(slow->terminal_blocked.wait());
+  control = runtime->open_session_async("other");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  ASSERT_TRUE(slow->terminal);
+  EXPECT_EQ(slow->text, "AEN");
+  EXPECT_EQ(slow->terminals, 1u);
+  const auto delivered = *slow->terminal;
+  // Engine Length was already published before close/reset was accepted.
+  EXPECT_EQ(delivered.finish_reason, FinishReason::Length);
+  EXPECT_EQ(delivered.stats.completion_tokens, 1u);
+  EXPECT_EQ(delivered.stats.generated_token_ids, (std::vector<Token>{100}));
+  expect_pending();
+  slow->terminal_blocked.release();
+  ASSERT_TRUE(cleanup_checkpoint.wait());
+  control = runtime->open_session_async("other");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  expect_pending();
+
+  cleanup_checkpoint.release();
+  ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  EXPECT_TRUE(old.done());
+  EXPECT_TRUE(cleaned->load());
+  expect_same_terminal(*slow->terminal, delivered);
+  // A later generation is outside the cutoff: its held preparation cannot
+  // prevent ACK, and preparation must not start on control before ACK.
+  ASSERT_TRUE(tokenizer.encoding.wait());
+  EXPECT_FALSE(next.done());
+  tokenizer.encoding.release();
+  ASSERT_TRUE(wait_until([&] { return next.done() && other_handle.done(); }));
+  EXPECT_FALSE(next.error());
+  EXPECT_FALSE(other_handle.error());
+  EXPECT_EQ(other->text, "AEN");
+  ASSERT_TRUE(replacement->terminal);
+  EXPECT_EQ(replacement->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(replacement->terminal->stats.session_reset_reason, "new");
+  EXPECT_EQ(replacement->terminal->stats.prompt_tokens, 4u);
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(replacement->terminal->stats.prefilled_prompt_tokens, 4u);
+  EXPECT_EQ(
+      replacement->terminal->stats.generated_token_ids,
+      (std::vector<Token>{100}));
+  EXPECT_EQ(executor.opened().size(), 3u);
+  ASSERT_EQ(executor.fed.size(), 3u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{10, 11, 100, 12}));
+
+  auto continued = output();
+  const auto continuation = submit(continued, ids({10, 11, 100, 12, 100, 13}));
+  ASSERT_TRUE(wait_until([&] { return continuation.done(); }));
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 4u);
+  EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 13}));
+  // Neither deferred fence polling nor old text finalization reopens again.
+  EXPECT_EQ(executor.opened().size(), 3u);
+}
+
+TEST_P(
+    TextGenerationFenceTest,
+    RetiringPublicTerminalCanEnqueueTransitionAndNextGeneration) {
+  watch_callbacks();
+  config.max_requests = 1;
+  tokenizer.encoding.hold();
+  start();
+  auto first = output();
+  auto replacement = output();
+  first->blocked.hold();
+  auto acknowledged = std::make_shared<std::promise<LifecycleResult>>();
+  auto ack = acknowledged->get_future();
+  auto submitted = std::make_shared<std::promise<GenerateResult>>();
+  auto followup = submitted->get_future();
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  options.stop_strings = {"END"};
+  auto result = runtime->generate(
+      "s",
+      ids({10, 11}),
+      options,
+      [service = runtime.get(),
+       first,
+       replacement,
+       acknowledged,
+       submitted,
+       reset = GetParam()](GenerationEvent update) {
+        const bool terminal = std::holds_alternative<TerminalEvent>(update);
+        first->accept(std::move(update));
+        if (!terminal) {
+          return;
+        }
+        LifecycleCallback on_ack = [acknowledged](LifecycleResult error) {
+          acknowledged->set_value(std::move(error));
+        };
+        if (reset) {
+          service->reset_session_async("s", std::move(on_ack));
+        } else {
+          service->close_session_async("s", std::move(on_ack));
+        }
+        GenerationOptions next_options;
+        next_options.max_new_tokens = 1;
+        submitted->set_value(service->generate(
+            "s",
+            PromptInput{
+                {make_text_input("hello"), make_token_input({100, 12})}},
+            next_options,
+            [replacement](GenerationEvent next) {
+              replacement->accept(std::move(next));
+            }));
+        first->blocked.enter();
+      });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto old = std::get<RequestHandle>(result);
+  ASSERT_TRUE(first->blocked.wait());
+  ASSERT_EQ(followup.wait_for(5s), std::future_status::ready);
+  auto next_result = followup.get();
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(next_result));
+  const auto next = std::get<RequestHandle>(next_result);
+  EXPECT_NE(old.id(), next.id());
+  // The old request no longer consumes admission, but must still fence ACK.
+  auto control = runtime->open_session_async("other");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+  EXPECT_EQ(tokenizer.encode_calls.load(), 0);
+  EXPECT_FALSE(old.done());
+  EXPECT_FALSE(next.done());
+  ASSERT_TRUE(first->terminal);
+  const auto delivered = *first->terminal;
+  EXPECT_EQ(first->text, "A");
+  EXPECT_EQ(delivered.finish_reason, FinishReason::Length);
+  first->blocked.release();
+  ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  EXPECT_TRUE(old.done());
+  ASSERT_TRUE(tokenizer.encoding.wait());
+  EXPECT_FALSE(next.done());
+  tokenizer.encoding.release();
+  ASSERT_TRUE(wait_until([&] { return next.done(); }));
+  EXPECT_FALSE(old.error());
+  EXPECT_FALSE(next.error());
+  EXPECT_EQ(first->terminals, 1u);
+  expect_same_terminal(*first->terminal, delivered);
+  ASSERT_TRUE(replacement->terminal);
+  EXPECT_EQ(replacement->terminal->finish_reason, FinishReason::Length);
+  EXPECT_EQ(replacement->terminal->stats.session_reset_reason, "new");
+  EXPECT_EQ(replacement->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(replacement->terminal->stats.prefilled_prompt_tokens, 4u);
+  EXPECT_EQ(executor.opened().size(), 3u);
+  ASSERT_EQ(executor.fed.size(), 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{10, 11, 100, 12}));
+}
+
+TEST_P(TextGenerationFenceTest, AckWaitsForEveryPriorPublicGeneration) {
+  watch_callbacks();
+  start();
+  auto first = output();
+  first->block_terminal = true;
+  first->terminal_blocked.hold();
+  const auto old = submit(first, ids({10, 11}));
+  ASSERT_TRUE(first->terminal_blocked.wait());
+  auto second = output();
+  second->block_terminal = true;
+  second->terminal_blocked.hold();
+  const auto prior = submit(second, ids({10, 11, 100, 12}));
+  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 2; }));
+  auto ack = transition();
+  auto control = runtime->open_session_async("other");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+  EXPECT_FALSE(old.done());
+  EXPECT_FALSE(prior.done());
+
+  first->terminal_blocked.release();
+  ASSERT_TRUE(second->terminal_blocked.wait());
+  ASSERT_TRUE(wait_until([&] { return old.done(); }));
+  control = runtime->open_session_async("other");
+  ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(control.get());
+  EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+  EXPECT_FALSE(prior.done());
+  ASSERT_TRUE(second->terminal);
+  EXPECT_EQ(second->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(second->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(second->terminal->stats.prefilled_prompt_tokens, 2u);
+  second->terminal_blocked.release();
+  ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  EXPECT_TRUE(old.done());
+  EXPECT_TRUE(prior.done());
+  EXPECT_EQ(first->terminals, 1u);
+  EXPECT_EQ(second->terminals, 1u);
+  EXPECT_EQ(runtime->info().active_sessions, GetParam() ? 2u : 1u);
+  EXPECT_EQ(executor.opened().size(), GetParam() ? 3u : 2u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CloseAndReset,
+    TextGenerationFenceTest,
+    ::testing::Bool(),
+    [](const ::testing::TestParamInfo<bool>& info) {
+      return info.param ? "Reset" : "Close";
+    });
 
 TEST_F(TextGenerationTest, UnsetAndExplicitBudgetsUseRemainingContext) {
   config.max_context_length = 5;
