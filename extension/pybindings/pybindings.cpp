@@ -425,8 +425,10 @@ class TorchTensorView final {
     }
     const auto device_type = py::str(owner_.attr("device").attr("type"));
     if (device_type.cast<std::string>() != "cpu") {
-      throw py::value_error(
-          "Portable bindings require CPU torch tensors until DLPack is enabled");
+      throw std::runtime_error(
+          "Torch tensor is on device " + device_type.cast<std::string>() +
+          ", and only CPU tensors can be passed to portable bindings until "
+          "DLPack is enabled.");
     }
     scalar_type_ = scalar_type_from_torch(py::str(owner_.attr("dtype")));
     sizes_ = checked_vector(owner_.attr("shape"), "dimension");
@@ -637,9 +639,12 @@ py::object portable_tensor_result(const executorch::aten::Tensor& tensor) {
     return torch_module.attr("empty")(
         result->shape(), py::arg("dtype") = dtype);
   }
-  return torch_module
-      .attr("frombuffer")(python_result, py::arg("dtype") = dtype)
-      .attr("as_strided")(result->shape(), result->element_strides());
+  const auto shape = result->shape();
+  const auto strides = result->element_strides();
+  py::object flat_buffer = py::cast(
+      std::make_shared<PyExecuTorchResultFlatBuffer>(std::move(result)));
+  return torch_module.attr("frombuffer")(flat_buffer, py::arg("dtype") = dtype)
+      .attr("as_strided")(shape, strides);
 }
 #endif
 
@@ -2418,6 +2423,13 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_property_readonly("dtype", &PyExecuTorchResult::dtype)
       .def_property_readonly("nbytes", &PyExecuTorchResult::nbytes)
       .def_buffer(&PyExecuTorchResult::buffer);
+#ifndef USE_ATEN_LIB
+  py::class_<
+      PyExecuTorchResultFlatBuffer,
+      std::shared_ptr<PyExecuTorchResultFlatBuffer>>(
+      m, "_ExecuTorchResultFlatBuffer", py::buffer_protocol())
+      .def_buffer(&PyExecuTorchResultFlatBuffer::buffer);
+#endif
 
   // Bind the verification enum to python.
   py::enum_<Program::Verification>(m, "Verification")
