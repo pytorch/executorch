@@ -139,6 +139,25 @@ Program make_program(const StateSpec& first, const StateSpec& second) {
   return Program::load(builder.GetBufferPointer(), builder.GetSize());
 }
 
+Node make_node(
+    std::string name,
+    OpKind op_kind,
+    std::vector<NamedArgument> inputs,
+    std::vector<ValueId> outputs,
+    std::string target = "") {
+  Node node;
+  node.name = std::move(name);
+  node.op_kind = op_kind;
+  node.target = std::move(target);
+  node.inputs = std::move(inputs);
+  for (const ValueId id : outputs) {
+    Output output;
+    output.value_id = id;
+    node.outputs.push_back(std::move(output));
+  }
+  return node;
+}
+
 // forward(x) = test.op(x, weight), with weight a bound parameter.
 Method make_op_method() {
   Method method;
@@ -150,25 +169,15 @@ Method make_op_method() {
   method.graph.values[0].role = ValueRole::Parameter;
   method.graph.values[1].role = ValueRole::UserInput;
   method.graph.nodes = {
-      Node{
-          .name = "weight",
-          .op_kind = OpKind::Placeholder,
-          .outputs = {{.value_id = 0}}},
-      Node{
-          .name = "x",
-          .op_kind = OpKind::Placeholder,
-          .outputs = {{.value_id = 1}}},
-      Node{
-          .name = "y",
-          .target = "test.op",
-          .inputs =
-              {{.name = "self", .arg = TensorArg{1}},
-               {.name = "other", .arg = TensorArg{0}}},
-          .outputs = {{.value_id = 2}}},
-      Node{
-          .name = "output",
-          .op_kind = OpKind::Output,
-          .inputs = {{.arg = TensorArg{2}}}},
+      make_node("weight", OpKind::Placeholder, {}, {0}),
+      make_node("x", OpKind::Placeholder, {}, {1}),
+      make_node(
+          "y",
+          OpKind::CallFunction,
+          {{"self", TensorArg{1}}, {"other", TensorArg{0}}},
+          {2},
+          "test.op"),
+      make_node("output", OpKind::Output, {{"", TensorArg{2}}}, {}),
   };
   method.graph.input_ids = {1};
   method.graph.output_ids = {2};
@@ -292,13 +301,8 @@ Package make_quantized_package() {
   })));
 }
 
-// An int4 [2, 8] weight in groups of 4, with its scale and zero-point tensors
-// bound as ordinary constants of the method.
-Method make_quantized_method() {
-  Method method;
-  method.name = "forward";
-  TensorMeta weight{kByte, {2, 8}, {}};
-  weight.quant = AffineGroupQuant{
+AffineGroupQuant weight_quant() {
+  return AffineGroupQuant{
       "weight_scales",
       kFloat,
       /*quant_min=*/-8,
@@ -306,6 +310,15 @@ Method make_quantized_method() {
       /*group_size=*/4,
       "weight_zeros",
       kInt};
+}
+
+// An int4 [2, 8] weight in groups of 4, with its scale and zero-point tensors
+// bound as ordinary constants of the method.
+Method make_quantized_method(AffineGroupQuant quant = weight_quant()) {
+  Method method;
+  method.name = "forward";
+  TensorMeta weight{kByte, {2, 8}, {}};
+  weight.quant = std::move(quant);
   method.graph.values.emplace_back("weight", std::move(weight));
   method.graph.values.emplace_back(
       "weight_scales", TensorMeta{kFloat, {2, 2}, {}});
@@ -332,29 +345,50 @@ TEST(ValidationTest, ValidateMethodConstants_QuantizedWeight_Succeeds) {
   EXPECT_EQ(find_data_binding(method, "missing"), nullptr);
 }
 
-TEST(ValidationTest, ValidateMethodConstants_UnboundScale_Throws) {
+TEST(ValidationTest, ValidateMethodConstants_QuantParameterBindingRejects) {
+  Method unbound_scale = make_quantized_method();
+  unbound_scale.data_bindings.erase(unbound_scale.data_bindings.begin() + 1);
+  Method unbound_zero_point = make_quantized_method();
+  unbound_zero_point.data_bindings.pop_back();
+  AffineGroupQuant half_scale = weight_quant();
+  half_scale.scale_dtype = kHalf;
+  Method mutable_scale = make_quantized_method();
+  mutable_scale.data_bindings[1].role = ValueRole::Buffer;
+  mutable_scale.data_bindings[1].mutated = true;
+  const std::vector<std::pair<std::string, Method>> cases = {
+      {"unbound scale", std::move(unbound_scale)},
+      {"unbound zero point", std::move(unbound_zero_point)},
+      {"scale dtype", make_quantized_method(half_scale)},
+      {"mutable scale", std::move(mutable_scale)},
+  };
   const Package package = make_quantized_package();
-  Method method = make_quantized_method();
-  method.data_bindings.erase(method.data_bindings.begin() + 1);
-
-  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+  for (const auto& [name, method] : cases) {
+    SCOPED_TRACE(name);
+    EXPECT_THROW(
+        validate_method_constants(method, package), std::runtime_error);
+  }
 }
 
-TEST(ValidationTest, ValidateMethodConstants_UnboundZeroPoint_Throws) {
-  const Package package = make_quantized_package();
+Method with_quantized_input(AffineGroupQuant quant) {
   Method method = make_quantized_method();
-  method.data_bindings.pop_back();
-
-  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+  TensorMeta input{kByte, {2, 4}, {}};
+  input.quant = std::move(quant);
+  method.graph.values.emplace_back("x", std::move(input));
+  method.graph.values.back().role = ValueRole::UserInput;
+  return method;
 }
 
-TEST(ValidationTest, ValidateMethodConstants_ScaleBindingDtypeMismatch_Throws) {
+// Quantized graph values (e.g. user I/O) also need bound parameters, though
+// only constants have their packed size checked against the package.
+TEST(ValidationTest, ValidateMethodConstants_QuantizedGraphValue) {
   const Package package = make_quantized_package();
-  Method method = make_quantized_method();
-  std::get<AffineGroupQuant>(*method.graph.values[0].tensor_meta().quant)
-      .scale_dtype = kHalf;
+  AffineGroupQuant missing_scale = weight_quant();
+  missing_scale.scale_data_key = "missing";
+  const Method bound = with_quantized_input(weight_quant());
+  const Method unbound = with_quantized_input(missing_scale);
 
-  EXPECT_THROW(validate_method_constants(method, package), std::runtime_error);
+  EXPECT_NO_THROW(validate_method_constants(bound, package));
+  EXPECT_THROW(validate_method_constants(unbound, package), std::runtime_error);
 }
 
 TEST(ValidationTest, ValidateProgramState_MatchingDefinitions_Succeeds) {
@@ -454,12 +488,14 @@ Method make_q4_method(
     QuantScheme quant,
     std::vector<int64_t> sizes = {2, 4},
     std::string key = "weight") {
-  TensorMeta meta{ScalarType::Byte, std::move(sizes)};
+  TensorMeta meta;
+  meta.dtype = ScalarType::Byte;
+  meta.sizes = std::move(sizes);
   meta.quant = std::move(quant);
   Method method = make_method();
   method.graph.values.clear();
   method.graph.values.emplace_back("weight", std::move(meta));
-  method.graph.values.emplace_back("scale", TensorMeta{kFloat, {2}});
+  method.graph.values.emplace_back("scale", TensorMeta{kFloat, {2}, {}});
   method.data_bindings[0].key = std::move(key);
   method.data_bindings.push_back(DataBinding{
       /*value_id=*/1,
@@ -471,11 +507,12 @@ Method make_q4_method(
 }
 
 AffineGroupQuant q4_scheme() {
-  return AffineGroupQuant{
-      .scale_data_key = "scale",
-      .quant_min = -8,
-      .quant_max = 7,
-      .group_size = 4};
+  AffineGroupQuant quant;
+  quant.scale_data_key = "scale";
+  quant.quant_min = -8;
+  quant.quant_max = 7;
+  quant.group_size = 4;
+  return quant;
 }
 
 TEST(ValidationTest, ValidateMethodConstants_AffineGroup_Succeeds) {
