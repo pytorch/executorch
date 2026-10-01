@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -55,6 +56,18 @@ class PyExecuTorchResult final {
         ndim,
         std::move(shape),
         std::move(byte_strides),
+        /*readonly=*/false);
+  }
+
+  py::buffer_info flat_buffer() {
+    const auto itemsize = executorch::runtime::elementSize(scalar_type_);
+    return py::buffer_info(
+        storage_.data(),
+        itemsize,
+        buffer_format(scalar_type_),
+        /*ndim=*/1,
+        {static_cast<py::ssize_t>(storage_.size() / itemsize)},
+        {static_cast<py::ssize_t>(itemsize)},
         /*readonly=*/false);
   }
 
@@ -211,6 +224,21 @@ class PyExecuTorchResult final {
   std::vector<executorch::aten::SizesType> sizes_;
   std::vector<executorch::aten::StridesType> strides_;
   executorch::aten::ScalarType scalar_type_;
+};
+
+/** Contiguous buffer facade used to construct a strided torch.Tensor result. */
+class PyExecuTorchResultFlatBuffer final {
+ public:
+  explicit PyExecuTorchResultFlatBuffer(
+      std::shared_ptr<PyExecuTorchResult> result)
+      : result_(std::move(result)) {}
+
+  py::buffer_info buffer() {
+    return result_->flat_buffer();
+  }
+
+ private:
+  std::shared_ptr<PyExecuTorchResult> result_;
 };
 
 } // namespace executorch::extension::pybindings

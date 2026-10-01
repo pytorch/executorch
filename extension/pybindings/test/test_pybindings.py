@@ -886,7 +886,7 @@ class PybindingsTest(unittest.TestCase):
         # Asserts the device is named as Python spells it, since an uppercased or
         # index-less name would not match what the caller passed.
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU and CUDA tensors", message)
+        self.assertIn("only CPU tensors", message)
 
     def test_method_accepts_a_cpu_input_after_the_device_check(self):
         # The rejection tests above pass for a change that throws on every input, so this
@@ -918,7 +918,7 @@ class PybindingsTest(unittest.TestCase):
             method.set_inputs([inputs[0].to("meta"), inputs[1]])
         message = str(caught.exception)
         self.assertIn("is on device meta", message)
-        self.assertIn("only CPU and CUDA tensors", message)
+        self.assertIn("only CPU tensors", message)
 
     def test_program_loads_when_one_method_is_device_planned(self):
         # Linking the CUDA backend registers a CUDA allocator at static init, and the
