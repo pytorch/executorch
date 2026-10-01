@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from prepare_release import (  # type: ignore[import-not-found]
-    WheelLink,
     _WheelIndexParser,
     companion_release_for_torch,
     configured_test_infra_branch,
@@ -19,6 +18,7 @@ from prepare_release import (  # type: ignore[import-not-found]
     pytorch_commit_for_wheel,
     test_infra_branch_for_torch as _test_infra_branch_for_torch,
     torch_version_for_release,
+    WheelLink,
 )
 
 

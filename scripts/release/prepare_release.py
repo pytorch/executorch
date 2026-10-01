@@ -563,6 +563,58 @@ def sync_pytorch_source(repo_root: Path, commit: str) -> None:
     )
 
 
+def _release_torchao_version(install_requirements_path: Path) -> tuple[str, str]:
+    requirements_text = install_requirements_path.read_text()
+    url_match = _TORCHAO_URL_PATTERN.search(requirements_text)
+    version_match = _TORCHAO_VERSION_PATTERN.search(requirements_text)
+    if url_match is None or "/whl/test" not in url_match.group(0):
+        raise RuntimeError("release TorchAO must come from the retained test index")
+    if version_match is None:
+        raise RuntimeError("release TorchAO pin is missing")
+    torchao_version = version_match.group(0).split('"')[1]
+    if not is_release_version(torchao_version, allow_prerelease=False):
+        raise RuntimeError("release TorchAO must use a non-nightly version")
+    return torchao_version, requirements_text
+
+
+def _validate_cuda_releases(
+    releases: dict[str, str],
+    requirements_text: str,
+    cuda_filter_path: Path,
+    verify_index: bool,
+) -> None:
+    variants = configured_cuda_variants(cuda_filter_path)
+    if verify_index:
+        missing = [
+            f"{package}=={package_version}+{variant}"
+            for variant in variants
+            for package, package_version in releases.items()
+            if package_version not in _test_index_versions(package, variant)
+        ]
+        if missing:
+            raise RuntimeError(
+                "configured CUDA trains are missing release packages: "
+                + ", ".join(missing)
+            )
+    if "cu134" not in variants:
+        return
+    expected = {
+        f"{package}=={package_version}+cu134"
+        for package, package_version in releases.items()
+        if package != "torchao"
+    }
+    actual = set(
+        re.findall(
+            r'"(torch(?:vision|audio)?==[^"]+\+cu134)"',
+            requirements_text,
+        )
+    )
+    if actual != expected:
+        raise RuntimeError(
+            f"cu134 pins {sorted(actual)!r} do not match {sorted(expected)!r}"
+        )
+
+
 def validate_release_build(
     torch_pin_path: Path,
     install_requirements_path: Path | None = None,
@@ -609,49 +661,11 @@ def validate_release_build(
                     f"{package} {config[name]} is not compatible with torch {installed}"
                 )
 
-    requirements_text = install_requirements_path.read_text()
-    url_match = _TORCHAO_URL_PATTERN.search(requirements_text)
-    torchao_match = _TORCHAO_VERSION_PATTERN.search(requirements_text)
-    if url_match is None or "/whl/test" not in url_match.group(0):
-        raise RuntimeError("release TorchAO must come from the retained test index")
-    if torchao_match is None:
-        raise RuntimeError("release TorchAO pin is missing")
-    torchao_version = re.search(r'"([^"]+)"', torchao_match.group(0))
-    if torchao_version is None or not is_release_version(
-        torchao_version.group(1), allow_prerelease=False
-    ):
-        raise RuntimeError("release TorchAO must use a non-nightly version")
-    releases["torchao"] = torchao_version.group(1)
-
-    variants = configured_cuda_variants(cuda_filter_path)
-    if verify_index:
-        missing = [
-            f"{package}=={package_version}+{variant}"
-            for variant in variants
-            for package, package_version in releases.items()
-            if package_version not in _test_index_versions(package, variant)
-        ]
-        if missing:
-            raise RuntimeError(
-                "configured CUDA trains are missing release packages: "
-                + ", ".join(missing)
-            )
-    if "cu134" in variants:
-        expected = {
-            f"{package}=={package_version}+cu134"
-            for package, package_version in releases.items()
-            if package != "torchao"
-        }
-        actual = set(
-            re.findall(
-                r'"(torch(?:vision|audio)?==[^"]+\+cu134)"',
-                requirements_text,
-            )
-        )
-        if actual != expected:
-            raise RuntimeError(
-                f"cu134 pins {sorted(actual)!r} do not match {sorted(expected)!r}"
-            )
+    torchao_version, requirements_text = _release_torchao_version(
+        install_requirements_path
+    )
+    releases["torchao"] = torchao_version
+    _validate_cuda_releases(releases, requirements_text, cuda_filter_path, verify_index)
     return torch_requirement(version, "cpu")
 
 
