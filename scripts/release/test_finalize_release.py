@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from finalize_release import (
+from finalize_release import (  # type: ignore[import-not-found]
     finalize_dependency_text,
     finalize_torch_release,
     plan_dependency_text,

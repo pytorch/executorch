@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 from typing import Iterable
 
-from prepare_release import (
+from prepare_release import (  # type: ignore[import-not-found]
     _release_version_from_file,
     _TORCH_VERSION_PATTERN,
     _write_if_changed,
