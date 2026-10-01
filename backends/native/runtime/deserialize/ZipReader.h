@@ -57,7 +57,9 @@ class ZipReader {
   ZipReader(const ZipReader&) = delete;
   ZipReader& operator=(const ZipReader&) = delete;
 
-  // Opens an archive without loading its member payloads.
+  // Opens an archive without loading its member payloads. Throws
+  // std::runtime_error if its records are inconsistent or it contains a
+  // compressed, encrypted, or oversized member.
   static ZipReader open(const std::string& path);
 
   // Opens an archive over caller-owned memory. `archive` must outlive this

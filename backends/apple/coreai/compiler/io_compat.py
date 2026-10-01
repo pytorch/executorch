@@ -18,7 +18,7 @@ from typing import Any, List, Sequence, Tuple
 import torch
 from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from torch.export.exported_program import ExportedProgram
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import InputKind, OutputKind
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +49,40 @@ def _coreai_io(program, entrypoint: str = MAIN_ENTRYPOINT):
     Ranked tensors -> (element_type_str, shape_tuple).  Any non-tensor coreai
     type is represented as (str(type), None) so the comparison can flag it,
     rather than assuming a tensor and crashing on ``.element_type`` / ``.shape``.
+
+    Mutated buffers the delegate owns are skipped: coreai-torch marks the state
+    argument with ``MutableBuffers.buffer_mutation`` naming its result, and
+    neither crosses the ExecuTorch boundary.
     """
     from coreai._compiler.ir import RankedTensorType
 
-    func_type = program.get_graph(entrypoint).function_type.value
+    graph = program._get_graph(entrypoint)
+    func_type = graph.function_type.value
 
     def _describe(t):
         if RankedTensorType.isinstance(t):
             return (str(t.element_type), tuple(t.shape))
         return (str(t), None)
 
-    inputs = [_describe(t) for t in func_type.inputs]
-    outputs = [_describe(t) for t in func_type.results]
+    arg_attrs = list(graph.arg_attrs or [])
+    res_attrs = list(graph.res_attrs or [])
+    state_results = {
+        attrs["MutableBuffers.buffer_mutation"].value
+        for attrs in arg_attrs
+        if "MutableBuffers.buffer_mutation" in attrs
+    }
+    inputs = [
+        _describe(t)
+        for i, t in enumerate(func_type.inputs)
+        if i >= len(arg_attrs) or "MutableBuffers.buffer_mutation" not in arg_attrs[i]
+    ]
+    outputs = [
+        _describe(t)
+        for i, t in enumerate(func_type.results)
+        if i >= len(res_attrs)
+        or "coreai.name" not in res_attrs[i]
+        or res_attrs[i]["coreai.name"].value not in state_results
+    ]
     return inputs, outputs
 
 
@@ -73,20 +95,20 @@ def _edge_io(edge_program: ExportedProgram):
     entries).
 
     Inputs walk ``graph_signature.input_specs``, which is ordered like the
-    placeholders. Mutated buffers are included alongside the user inputs,
-    mirroring ``TorchConverter._register_io``: a mutation is passed in and
-    handed back, so coreai gives it a graph argument.
+    placeholders, and outputs walk ``output_specs``, ordered like the output
+    node. Mutated buffers the delegate owns (``BUFFER`` inputs in
+    ``buffers_to_mutate`` and their ``BUFFER_MUTATION`` outputs) are skipped:
+    ExecuTorch never hands that state to the delegate. Mutated user inputs
+    stay, because ExecuTorch does pass those across.
     """
     placeholders = {
         n.name: n for n in edge_program.graph.nodes if n.op == "placeholder"
     }
     signature = edge_program.graph_signature
-    mutated = set(signature.buffers_to_mutate.values())
 
     inputs = []
     for spec in signature.input_specs:
-        is_mutated_buffer = spec.kind == InputKind.BUFFER and spec.target in mutated
-        if spec.kind != InputKind.USER_INPUT and not is_mutated_buffer:
+        if spec.kind != InputKind.USER_INPUT:
             continue
         node = placeholders.get(getattr(spec.arg, "name", None))
         # A non-tensor input carries its literal value on the spec instead.
@@ -96,7 +118,11 @@ def _edge_io(edge_program: ExportedProgram):
         else:
             inputs.append((type(val).__name__, None))
     outputs = []
-    for arg in edge_program.graph.output_node().args[0]:
+    for spec, arg in zip(
+        signature.output_specs, edge_program.graph.output_node().args[0]
+    ):
+        if spec.kind == OutputKind.BUFFER_MUTATION:
+            continue
         val = arg.meta.get("val") if hasattr(arg, "meta") else arg
         if hasattr(val, "dtype"):
             outputs.append((val.dtype, tuple(val.shape)))
