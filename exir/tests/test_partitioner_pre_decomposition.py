@@ -52,3 +52,64 @@ def test_partitioner_transforms_run_before_decomposition_in_order() -> None:
     assert calls == ["first", "second"]
     assert first.saw_sdpa
     assert second.saw_sdpa
+
+
+class _MarkRecordingPartitioner(Partitioner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.marked: set[str] = set()
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        parameters = exported_program.graph_signature.inputs_to_parameters
+        self.marked = {
+            parameters[node.name]
+            for node in exported_program.graph.find_nodes(op="placeholder")
+            if node.meta.get("shared_across_methods")
+        }
+        return exported_program
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        return PartitionResult(exported_program, {})
+
+
+class _TwoMethods(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.shared = torch.nn.Parameter(torch.ones(4))
+        self.only_a = torch.nn.Parameter(torch.ones(4))
+        self.only_b = torch.nn.Parameter(torch.ones(4))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.shared + self.only_a
+
+    def method_b(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.shared + self.only_b
+
+
+def test_constants_read_by_several_methods_are_marked_for_the_transforms() -> None:
+    """
+    A transform sees one method at a time, so EXIR marks the constants that
+    another method of the program also reads. A parameter a method lifts
+    but never uses, as a non-strict export of one module lifts them all, is
+    not a read; a program with one method has nothing to mark.
+    """
+    model = _TwoMethods()
+    x = torch.ones(4)
+    method_a = export(model, (x,))
+    model.forward = model.method_b
+    method_b = export(model, (x,))
+    recorders = {"a": _MarkRecordingPartitioner(), "b": _MarkRecordingPartitioner()}
+
+    to_edge_transform_and_lower(
+        {"a": method_a, "b": method_b},
+        partitioner={name: [recorder] for name, recorder in recorders.items()},
+    )
+
+    assert recorders["a"].marked == {"shared"}
+    assert recorders["b"].marked == {"shared"}
+
+    alone = _MarkRecordingPartitioner()
+    to_edge_transform_and_lower(export(_TwoMethods(), (x,)), partitioner=[alone])
+    assert alone.marked == set()
