@@ -121,9 +121,13 @@ _T = object()
 _Round = namedtuple("_Round", ["edge_ep", "method", "graph", "data", "constants"])
 
 
-def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
+def _roundtrip(
+    model, example_inputs, dynamic_shapes=None, annotate=None, extra_data_keys=()
+) -> _Round:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
     edge_ep = to_edge(ep).exported_program()
+    if annotate is not None:
+        annotate(edge_ep)
     data, constants = serialize_graph(
         edge_ep.graph_module,
         edge_ep.graph_signature,
@@ -136,7 +140,7 @@ def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
     # validated method rather than re-checking these individually.
     assert data[4:8] == b"NPTG", f"unexpected file identifier {data[4:8]!r}"
     assert method.graph.nodes, "deserialized graph has no nodes"
-    validate_method(method, set(constants.keys()))
+    validate_method(method, set(constants.keys()) | set(extra_data_keys))
     return _Round(edge_ep, method, method.graph, data, constants)
 
 
@@ -845,9 +849,8 @@ class MutableBufferTest(unittest.TestCase):
 
 
 class QuantSpecRoundTripTest(unittest.TestCase):
-    """The quant spec rides on TensorMeta. No producer sets it yet (the QDQ-fold
-    pass is future work), so these build the dataclasses directly and round-trip
-    them through flatc to lock the schema + optional-union wrapper."""
+    """The quant spec rides on TensorMeta. These build the dataclasses directly and
+    round-trip them through flatc to lock the schema + optional-union wrapper."""
 
     def _roundtrip_meta(self, quant) -> TensorMeta:
         meta = TensorMeta(
@@ -913,6 +916,48 @@ class QuantSpecRoundTripTest(unittest.TestCase):
         ).quant.scheme
         self.assertIsInstance(scheme, PackedQuant)
         self.assertEqual(scheme.codec, "gguf:q4k")
+
+
+class NativeQuantAnnotationTest(unittest.TestCase):
+    """Producers such as a QDQ-fold pass annotate edge FX nodes before
+    serialize_graph; the annotations must land on the emitted TensorMeta."""
+
+    _SCHEME = AffineQuant(
+        scale_data_key="x.scale",
+        scale_dtype=ScalarType.FLOAT,
+        quant_min=-128,
+        quant_max=127,
+        zero_point_data_key="x.zero_point",
+        zero_point_dtype=ScalarType.INT,
+        granularity=AffineGranularity.PER_TENSOR,
+    )
+
+    def test_native_quant_attaches_to_inputs_constants_and_node_outputs(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.ones(2, 3, dtype=torch.int8))
+
+            def forward(self, x):
+                return x * self.weight
+
+        def annotate(edge_ep):
+            for node in edge_ep.graph_module.graph.nodes:
+                if node.op != "output":
+                    node.meta["native_quant"] = QuantSpec(scheme=self._SCHEME)
+
+        r = _roundtrip(
+            Model(),
+            (torch.ones(2, 3, dtype=torch.int8),),
+            annotate=annotate,
+            extra_data_keys={"x.scale", "x.zero_point"},
+        )
+        values = {tv.name: tv.meta for tv in r.graph.tensor_values}
+        (mul,) = [n for n in r.graph.nodes if n.op_kind == OpKind.CALL_FUNCTION]
+        (constant,) = r.method.constants
+        self.assertEqual(values[r.graph.inputs[0]].quant.scheme, self._SCHEME)
+        self.assertEqual(values[mul.outputs[0].name].quant.scheme, self._SCHEME)
+        self.assertEqual(constant.meta.quant.scheme, self._SCHEME)
 
 
 class NonTensorInputTest(unittest.TestCase):

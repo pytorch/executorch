@@ -235,11 +235,12 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     return dim_order
 
 
-def _tensor_meta(t: torch.Tensor) -> TensorMeta:
+def _tensor_meta(t: torch.Tensor, quant: QuantSpec | None = None) -> TensorMeta:
     return TensorMeta(
         dtype=_scalar_type(t.dtype),
         sizes=[_dim(s) for s in t.shape],
         dim_order=_dim_order(t),
+        quant=quant,
     )
 
 
@@ -606,6 +607,7 @@ def _is_non_persistent_buffer(ispec: object) -> bool:
 def _tensor_values_from(
     val_by_name: dict[str, torch.Tensor],
     names: list[str],
+    quant_by_name: dict[str, QuantSpec],
     exclude: set[str] | None = None,
 ) -> list[TensorValue]:
     seen: set[str] = set()
@@ -619,7 +621,9 @@ def _tensor_values_from(
         if tensor is None:
             continue
         seen.add(name)
-        out.append(TensorValue(name=name, meta=_tensor_meta(tensor)))
+        out.append(
+            TensorValue(name=name, meta=_tensor_meta(tensor, quant_by_name.get(name)))
+        )
     return out
 
 
@@ -801,8 +805,8 @@ def _collect_fx_nodes(
             ):
                 continue
 
-        # Folded dequantize nodes are not emitted; the consuming op references the
-        # packed weight directly.
+        # Folded dequantize nodes (GGUF, QDQ) are not emitted; consumers reference
+        # the node named by native_serialize_as instead (see _node_to_arg_value).
         if fx_node.meta.get("native_skip_serialize"):
             continue
 
@@ -887,6 +891,7 @@ def _extract_constants_and_mutable_buffers(
     state_dict: dict[str, object],
     constants: dict[str, object] | None,
     mutated_fqns: set[str],
+    quant_by_name: dict[str, QuantSpec],
     packed_quant: dict[str, dict[str, object]] | None = None,
 ) -> tuple[list[NamedTensorRef], dict[str, torch.Tensor], list[MutableBufferSpec]]:
     constant_refs: list[NamedTensorRef] = []
@@ -923,7 +928,7 @@ def _extract_constants_and_mutable_buffers(
         # GGUF entries carry a codec; torchao q4 entries carry scale and
         # zero-point names.
         if pq is None:
-            meta = _tensor_meta(tensor)
+            meta = _tensor_meta(tensor, quant_by_name.get(name))
         elif "codec" in pq:
             meta = _packed_tensor_meta(pq["codec"], pq["sizes"])
         else:
@@ -973,6 +978,7 @@ def _build_subgraph(
     nodes: list[Node],
     val_by_name: dict[str, torch.Tensor],
     output_names: list[str],
+    quant_by_name: dict[str, QuantSpec],
 ) -> tuple[
     Graph,
     list[NamedTensorRef],
@@ -981,7 +987,9 @@ def _build_subgraph(
     dict[str, torch.Tensor],
 ]:
     user_inputs = [n.name for n in graph_module.graph.nodes if n.op == "placeholder"]
-    tensor_values = _tensor_values_from(val_by_name, list(val_by_name.keys()))
+    tensor_values = _tensor_values_from(
+        val_by_name, list(val_by_name.keys()), quant_by_name=quant_by_name
+    )
     graph = Graph(
         nodes=nodes,
         inputs=user_inputs or None,
@@ -999,6 +1007,7 @@ def _build_method_graph(
     graph_signature: object,
     state_dict: dict[str, object],
     constants: dict[str, object] | None,
+    quant_by_name: dict[str, QuantSpec],
 ) -> tuple[
     Graph,
     list[NamedTensorRef],
@@ -1015,13 +1024,19 @@ def _build_method_graph(
     }
     constant_refs, constant_data, mutable_buffers = (
         _extract_constants_and_mutable_buffers(
-            graph_signature, state_dict, constants, mutated_fqns, packed_quant
+            graph_signature,
+            state_dict,
+            constants,
+            mutated_fqns,
+            quant_by_name,
+            packed_quant,
         )
     )
     constant_names = {c.name for c in constant_refs}
     tensor_values = _tensor_values_from(
         val_by_name,
         [n for n in val_by_name if n not in constant_names],
+        quant_by_name=quant_by_name,
     )
     user_inputs = list(getattr(graph_signature, "user_inputs", []) or [])
     graph = Graph(
@@ -1179,11 +1194,18 @@ def _build_graph_body(
 ]:
     _fold_gguf_dequant(graph_module)
     _mark_torchao_q4_weights(graph_module, _lifted_constant_names(graph_signature))
+    quant_by_name = {
+        node.name: node.meta["native_quant"]
+        for node in graph_module.graph.nodes
+        if "native_quant" in node.meta
+    }
     subgraph_map = _subgraph_map(graph_module)
     nodes, val_by_name, output_names = _collect_fx_nodes(graph_module, subgraph_map)
 
     if graph_signature is None:
-        return _build_subgraph(graph_module, nodes, val_by_name, output_names)
+        return _build_subgraph(
+            graph_module, nodes, val_by_name, output_names, quant_by_name
+        )
 
     return _build_method_graph(
         graph_module,
@@ -1193,6 +1215,7 @@ def _build_graph_body(
         graph_signature,
         state_dict,
         constants,
+        quant_by_name,
     )
 
 
