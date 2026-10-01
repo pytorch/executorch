@@ -203,6 +203,8 @@ What the PR does (1 sentence), then the overall verdict.
 ### Recommendation
 **Approve** / **Request Changes** / **Needs Discussion**
 
+Confirmed unnecessary use of GitHub Actions storage (see the confirmation bar in [review-checklist.md](review-checklist.md)) always means **Request Changes**. Unconfirmed storage questions do not.
+
 [Brief justification — focus on what blocks approval, if anything]
 ```
 
@@ -217,7 +219,7 @@ What the PR does (1 sentence), then the overall verdict.
 7. **Performance**
 8. **Code Quality** — everything else
 
-State the finding's full consequence once, in its assigned section. When it genuinely spans categories, say so inline in that one bullet ("this is also a BC break for out-of-tree backends") rather than adding a second bullet under the other section.
+State the finding's full consequence once, in its assigned section. When it genuinely spans categories, say so inline in that one bullet ("this is also a BC break for out-of-tree backends") rather than adding a second bullet under the other section. GitHub Actions storage findings are **Infrastructure** findings. Confirmed waste must receive the same severity and visibility as a functional bug.
 
 This precedence governs the eight finding sections only. Summary and Recommendation are not finding buckets — see their rules in the template above. Neither is Specific Comments — see its rules below.
 
