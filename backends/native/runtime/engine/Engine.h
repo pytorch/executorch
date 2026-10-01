@@ -95,6 +95,9 @@ class EngineContext {
 
   // Compile the named Method and prepack its constants. Returns non-null or
   // throws std::runtime_error for an absent, invalid, or unsupported method.
+  // A method is unsupported if the engine cannot honor all of its semantics,
+  // including remaining assert ops, mutation writeback, and the dim_order of
+  // graph inputs and user outputs; engines reject rather than approximate.
   std::unique_ptr<EngineExecutable> compile(const std::string& method_name);
 
  private:
