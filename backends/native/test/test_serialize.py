@@ -33,7 +33,8 @@ from executorch.backends.native.serialization.graph_serialize import (
     serialize_operator,
 )
 from executorch.backends.native.serialization.schema import (
-    AffineGroup,
+    AffineQuant,
+    AffineGranularity,
     Argument,
     BoolArg,
     BoolListArg,
@@ -120,21 +121,26 @@ _T = object()
 _Round = namedtuple("_Round", ["edge_ep", "method", "graph", "data", "constants"])
 
 
-def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
+def _roundtrip(
+    model, example_inputs, dynamic_shapes=None, annotate=None, extra_data_keys=()
+) -> _Round:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
     edge_ep = to_edge(ep).exported_program()
+    if annotate is not None:
+        annotate(edge_ep)
     data, constants = serialize_graph(
         edge_ep.graph_module,
         edge_ep.graph_signature,
         edge_ep.state_dict,
         edge_ep.constants,
+        edge_ep.range_constraints,
     )
     method = deserialize_program(data).methods[0]
     # Baseline invariants asserted for every roundtrip so each test starts from a
     # validated method rather than re-checking these individually.
     assert data[4:8] == b"NPTG", f"unexpected file identifier {data[4:8]!r}"
     assert method.graph.nodes, "deserialized graph has no nodes"
-    validate_method(method, set(constants.keys()))
+    validate_method(method, set(constants.keys()) | set(extra_data_keys))
     return _Round(edge_ep, method, method.graph, data, constants)
 
 
@@ -511,6 +517,21 @@ class DynamicShapeTest(unittest.TestCase):
         self.assertTrue(any(r for r in il.refs))
         self.assertTrue(any(not r for r in il.refs))
 
+    def test_dynamic_dim_keeps_declared_min(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat([x, x]) * 2
+
+        graph = _roundtrip(
+            M(),
+            (torch.randn(4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("b", min=1, max=16)}},
+        ).graph
+        ranges = {
+            (d.min, d.max) for tv in graph.tensor_values or [] for d in tv.meta.sizes
+        }
+        self.assertEqual(ranges, {(1, 16), (2, 32)})
+
     def test_dynamic_dim_not_frozen_in_tensor_meta(self):
         # int(sym) would specialize to the hint and freeze the dim; TensorMeta must
         # keep it as a range (min != max), not a single concrete value.
@@ -686,11 +707,12 @@ class SubgraphHOPTest(unittest.TestCase):
 
     def test_collect_data_keys_finds_graph_arg_in_any_node_field(self):
         quant = QuantSpec(
-            scheme=AffineGroup(
+            scheme=AffineQuant(
                 scale_data_key="nested.scale",
                 scale_dtype=ScalarType.HALF,
                 quant_min=-8,
                 quant_max=7,
+                granularity=AffineGranularity.PER_TENSOR,
                 zero_point_data_key="nested.zero_point",
             )
         )
@@ -827,15 +849,14 @@ class MutableBufferTest(unittest.TestCase):
 
 
 class QuantSpecRoundTripTest(unittest.TestCase):
-    """The quant spec rides on TensorMeta. No producer sets it yet (the QDQ-fold
-    pass is future work), so these build the dataclasses directly and round-trip
-    them through flatc to lock the schema + optional-union wrapper."""
+    """The quant spec rides on TensorMeta. These build the dataclasses directly and
+    round-trip them through flatc to lock the schema + optional-union wrapper."""
 
     def _roundtrip_meta(self, quant) -> TensorMeta:
         meta = TensorMeta(
             dtype=ScalarType.CHAR,
-            sizes=[Dim(min=4, max=4)],
-            dim_order=[0],
+            sizes=[Dim(min=4, max=4), Dim(min=32, max=32)],
+            dim_order=[0, 1],
             quant=quant,
         )
         graph = Graph(
@@ -849,8 +870,8 @@ class QuantSpecRoundTripTest(unittest.TestCase):
     def test_absent_quant_is_none(self):
         self.assertIsNone(self._roundtrip_meta(None).quant)
 
-    def test_affine_group_quant_roundtrips(self):
-        expected = AffineGroup(
+    def test_group_affine_quant_roundtrips(self):
+        expected = AffineQuant(
             scale_data_key="w.scale",
             scale_dtype=ScalarType.HALF,
             quant_min=-8,
@@ -858,6 +879,32 @@ class QuantSpecRoundTripTest(unittest.TestCase):
             group_size=32,
             zero_point_data_key="w.zp",
             zero_point_dtype=ScalarType.INT,
+            axis=-1,
+            granularity=AffineGranularity.PER_GROUP,
+        )
+        scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
+        self.assertEqual(scheme, expected)
+
+    def test_per_tensor_affine_quant_roundtrips(self):
+        expected = AffineQuant(
+            scale_data_key="x.scale",
+            scale_dtype=ScalarType.FLOAT,
+            quant_min=-128,
+            quant_max=127,
+            zero_point_data_key="x.zp",
+            granularity=AffineGranularity.PER_TENSOR,
+        )
+        scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
+        self.assertEqual(scheme, expected)
+
+    def test_per_axis_affine_quant_roundtrips(self):
+        expected = AffineQuant(
+            scale_data_key="w.scale",
+            scale_dtype=ScalarType.FLOAT,
+            quant_min=-127,
+            quant_max=127,
+            axis=-1,
+            granularity=AffineGranularity.PER_AXIS,
         )
         scheme = self._roundtrip_meta(QuantSpec(scheme=expected)).quant.scheme
         self.assertEqual(scheme, expected)
@@ -869,6 +916,48 @@ class QuantSpecRoundTripTest(unittest.TestCase):
         ).quant.scheme
         self.assertIsInstance(scheme, PackedQuant)
         self.assertEqual(scheme.codec, "gguf:q4k")
+
+
+class NativeQuantAnnotationTest(unittest.TestCase):
+    """Producers such as a QDQ-fold pass annotate edge FX nodes before
+    serialize_graph; the annotations must land on the emitted TensorMeta."""
+
+    _SCHEME = AffineQuant(
+        scale_data_key="x.scale",
+        scale_dtype=ScalarType.FLOAT,
+        quant_min=-128,
+        quant_max=127,
+        zero_point_data_key="x.zero_point",
+        zero_point_dtype=ScalarType.INT,
+        granularity=AffineGranularity.PER_TENSOR,
+    )
+
+    def test_native_quant_attaches_to_inputs_constants_and_node_outputs(self):
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("weight", torch.ones(2, 3, dtype=torch.int8))
+
+            def forward(self, x):
+                return x * self.weight
+
+        def annotate(edge_ep):
+            for node in edge_ep.graph_module.graph.nodes:
+                if node.op != "output":
+                    node.meta["native_quant"] = QuantSpec(scheme=self._SCHEME)
+
+        r = _roundtrip(
+            Model(),
+            (torch.ones(2, 3, dtype=torch.int8),),
+            annotate=annotate,
+            extra_data_keys={"x.scale", "x.zero_point"},
+        )
+        values = {tv.name: tv.meta for tv in r.graph.tensor_values}
+        (mul,) = [n for n in r.graph.nodes if n.op_kind == OpKind.CALL_FUNCTION]
+        (constant,) = r.method.constants
+        self.assertEqual(values[r.graph.inputs[0]].quant.scheme, self._SCHEME)
+        self.assertEqual(values[mul.outputs[0].name].quant.scheme, self._SCHEME)
+        self.assertEqual(constant.meta.quant.scheme, self._SCHEME)
 
 
 class NonTensorInputTest(unittest.TestCase):

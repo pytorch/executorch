@@ -6,7 +6,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <executorch/backends/native/runtime/graph/Graph.h>
@@ -58,5 +60,19 @@ struct Method {
   std::vector<DataBinding> data_bindings;
   std::vector<OutputSpec> output_specs; // aligned to graph.output_ids by index
 };
+
+// Returns the binding that ships data under `key` (e.g. a quantized tensor's
+// scale_data_key), or nullptr.
+inline const DataBinding* find_data_binding(
+    const Method& method,
+    std::string_view key) {
+  const auto it = std::find_if(
+      method.data_bindings.begin(),
+      method.data_bindings.end(),
+      [key](const DataBinding& binding) {
+        return binding.has_data && binding.key == key;
+      });
+  return it == method.data_bindings.end() ? nullptr : &*it;
+}
 
 } // namespace ptn
