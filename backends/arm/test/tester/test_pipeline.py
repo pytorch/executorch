@@ -505,7 +505,7 @@ class TOSAPipeline(BasePipeline, Generic[T]):
         # Not all deployments of ET have the TOSA reference model available.
         # Make sure we don't try to use it if it's not available.
         try:
-            import tosa_reference_model  # type: ignore[import-not-found, import-untyped]
+            import tosa_reference_model  # type: ignore[import-untyped]
 
             # Check if the module has content
             return bool(dir(tosa_reference_model))
