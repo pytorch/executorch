@@ -154,9 +154,10 @@ table QuantSpec {
 // Tensor metadata
 // =============================================================================
 
-// A tensor dimension as a range. Static: min == max. Dynamic: min < max, or max < 0
-// for unbounded. No symbols; the runtime uses concrete shapes at invocation and
-// plans memory from max.
+// A tensor dimension as a range. Static: min == max. Dynamic: min < max;
+// max < 0 denotes an unbounded upper limit. The runtime uses concrete shapes
+// at invocation, plans bounded tensors from max, and rejects unbounded ranges.
+// A bounded input size is valid iff min <= size <= max.
 table Dim {
     min: long;
     max: long = -1;
