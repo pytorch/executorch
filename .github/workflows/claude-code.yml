@@ -10,6 +10,11 @@ jobs:
   claude-code:
     uses: pytorch/test-infra/.github/workflows/_claude-code.yml@main
     with:
+      additional_claude_args: --allowedTools Skill
+      append_system_prompt: |
+        When asked to review a PR, always use the /pr-review skill first.
+        Put the detailed review inside a GitHub collapsible section and a
+        one-sentence summary outside it.
       setup_script: |
         pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
         pip install -r requirements-lintrunner.txt
