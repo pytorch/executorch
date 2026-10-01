@@ -15,11 +15,25 @@ arrays or other dense objects implementing Python's buffer protocol. If
 PyTorch is installed, `torch.Tensor` inputs are inspected through their Python
 attributes instead of being cast to `at::Tensor`.
 
-When PyTorch is already loaded, portable bindings create output tensors through
-its public Python API. Otherwise tensor outputs are `ExecuTorchResult` objects;
-they expose shape, strides, dtype, and the Python buffer protocol so NumPy can
-read them without another copy. ATen-mode bindings continue to return native
-PyTorch tensors directly.
+For compatibility with the existing API, importing `portable_lib` imports
+PyTorch and portable bindings create output tensors through its public Python
+API. The extension itself does not link against ATen or PyTorch.
+
+To run without PyTorch, select `ExecuTorchResult` outputs before importing the
+bindings. The setting is fixed when the extension loads, so importing PyTorch
+later does not change the output type.
+
+```python
+import os
+
+os.environ["EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"] = "executorch"
+from executorch.extension.pybindings import portable_lib
+```
+
+`ExecuTorchResult` exposes shape, strides, dtype, and the Python buffer protocol
+so NumPy can read it without another copy. Without the environment setting,
+failure to import PyTorch raises an error explaining how to opt into these
+outputs. ATen-mode bindings continue to return native PyTorch tensors directly.
 
 ```python
 output = module.forward([numpy_input])[0]

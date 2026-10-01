@@ -179,8 +179,18 @@ jobs:
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py \
             PybindingsNoAtenTest.test_z_torch_tensor_uses_python_api
+        EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
+          EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          PYTHONPATH=cmake-out-no-aten:.. \
+          python extension/pybindings/test/test_pybindings_no_aten.py \
+            PybindingsNoAtenTest.test_executorch_output_is_sticky_after_torch_import
         python -m pip uninstall -y torch torchvision torchaudio
         EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
+          PYTHONPATH=cmake-out-no-aten:.. \
+          python extension/pybindings/test/test_pybindings_no_aten.py \
+            PybindingsNoAtenTest.test_torch_output_error_mentions_executorch_opt_out
+        EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch \
+          EXECUTORCH_PYBIND_TEST_PTE=cmake-out-no-aten/add.pte \
           PYTHONPATH=cmake-out-no-aten:.. \
           python extension/pybindings/test/test_pybindings_no_aten.py
         if ldd cmake-out-no-aten/_C*.so | grep -Eiq 'torch|aten|c10'; then

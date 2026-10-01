@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -115,6 +116,33 @@ namespace extension {
 namespace pybindings {
 
 namespace {
+
+#ifndef USE_ATEN_LIB
+constexpr char kTensorOutputEnvironmentVariable[] =
+    "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT";
+
+enum class PortableTensorOutput { Torch, ExecuTorch };
+
+PortableTensorOutput& portable_tensor_output() {
+  static PortableTensorOutput output = PortableTensorOutput::Torch;
+  return output;
+}
+
+void configure_portable_tensor_output() {
+  const char* value = std::getenv(kTensorOutputEnvironmentVariable);
+  if (value == nullptr || std::strcmp(value, "torch") == 0) {
+    portable_tensor_output() = PortableTensorOutput::Torch;
+    return;
+  }
+  if (std::strcmp(value, "executorch") == 0) {
+    portable_tensor_output() = PortableTensorOutput::ExecuTorch;
+    return;
+  }
+  throw py::value_error(
+      std::string(kTensorOutputEnvironmentVariable) +
+      " must be either 'torch' or 'executorch', but was '" + value + "'");
+}
+#endif
 
 #ifdef USE_ATEN_LIB
 executorch::aten::ScalarType runtime_scalar_type(const at::Tensor& tensor) {
@@ -498,9 +526,17 @@ py::sequence normalize_inputs(const py::object& inputs) {
 py::object portable_tensor_result(const executorch::aten::Tensor& tensor) {
   auto result = std::make_shared<PyExecuTorchResult>(tensor);
   py::object python_result = py::cast(result);
+  if (portable_tensor_output() == PortableTensorOutput::ExecuTorch) {
+    return python_result;
+  }
+
   const auto modules = py::module_::import("sys").attr("modules");
   if (!modules.contains("torch")) {
-    return python_result;
+    throw std::runtime_error(
+        "PyTorch tensor output was requested, but torch is not imported. "
+        "Import torch before executing the portable bindings or set "
+        "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT=executorch before importing "
+        "them to receive ExecuTorchResult outputs.");
   }
 
   const auto torch_module = modules["torch"];
@@ -2225,7 +2261,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
 #else
+  configure_portable_tensor_output();
   m.attr("_uses_aten") = false;
+  m.attr("_tensor_output") =
+      portable_tensor_output() == PortableTensorOutput::Torch ? "torch"
+                                                              : "executorch";
 #endif
   py::class_<PyExecuTorchResult, std::shared_ptr<PyExecuTorchResult>>(
       m, "ExecuTorchResult", py::buffer_protocol())
