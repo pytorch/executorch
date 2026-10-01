@@ -489,8 +489,12 @@ test_runtime_vgf() {
     # Build the VGF tests explicitly. This makes a missing/renamed target fail
     # the job instead of being hidden among unrelated C++ tests.
     cmake --build "${ctest_build_dir}" \
-        --target vgf_neural_statistics_test vgf_vulkan_features_test \
-        --parallel
+    --target \
+        vgf_neural_statistics_test \
+        vgf_vulkan_features_test \
+        vgf_execution_stats_enabled_test \
+        vgf_execution_stats_disabled_test \
+    --parallel
 
     # --no-tests=error is intentional: discovering zero VGF tests must fail CI.
     ctest \
