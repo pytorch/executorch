@@ -216,7 +216,7 @@ def _dim_order(t: torch.Tensor) -> list[int]:
     strides = tuple(t.stride())
     sizes = list(t.shape)
     # dim_order_from_stride handles symbolic strides and rejects stride-0 layouts.
-    dim_order = [int(d) for d in dim_order_from_stride(strides)]
+    dim_order = [int(d) for d in dim_order_from_stride(strides, tuple(sizes))]
     expected = stride_from_dim_order(sizes, dim_order)
     for i in range(ndim):
         # A size-1 dim only ever indexes 0, so its stride is arbitrary and need not
@@ -1057,9 +1057,8 @@ def _fold_gguf_dequant(graph_module: torch.fx.GraphModule) -> None:
 def _mark_torchao_q4_weights(graph_module: torch.fx.GraphModule) -> None:
     """Mark portable torchao q4 weights for packed PTN storage.
 
-    The q/dq nodes remain in the serialized graph. Native-VK recognizes and
-    fuses that portable pattern after loading, while the package avoids paying
-    one byte for every four-bit weight.
+    The q/dq nodes remain in the serialized graph; only the weight storage
+    changes, to two four-bit values per byte.
     """
     for node in graph_module.graph.nodes:
         op = _resolve_op_overload(node.target) if node.op == "call_function" else None

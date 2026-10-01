@@ -69,7 +69,7 @@ class Package {
   Package& operator=(const Package&) = delete;
 
   // Open and parse the .ptn at `path` without loading its weight payloads.
-  // Maps the file where the platform allows, falling back to reading it.
+  // Maps the file where supported; otherwise opens it through libzip.
   static Package load(const std::string& path);
 
   // Parse a .ptn image already in hand. Takes ownership rather than copying, so
