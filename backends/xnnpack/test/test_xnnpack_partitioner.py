@@ -22,6 +22,7 @@ from executorch.exir import (
     to_edge,
     to_edge_transform_and_lower,
 )
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.external_constants_pass import (
     delegate_external_constants_pass_unlifted,
@@ -826,6 +827,98 @@ class TestXnnpackPartitioner(unittest.TestCase):
                     atol=1e-5,
                 )
             )
+
+    def test_pre_decomposition_folding_keeps_parameters_shared_across_methods(self):
+        """
+        A parameter another method of the program reads stays out of the
+        fold, as a buffer does: that method keeps the original, so a fold
+        would store a second copy. A tied embedding read by a lookup in one
+        method and by a transposed matmul in another keeps the program its
+        size. A computed weight that only one method reads still folds, also
+        when the other method reads a parameter of the same module.
+        """
+
+        class Lookup(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, ids):
+                return self.embedding(ids)
+
+        class Project(Lookup):
+            def forward(self, hidden):
+                return hidden @ self.embedding.weight.t()
+
+        class Conv(torch.nn.Module):
+            def __init__(self, conv):
+                super().__init__()
+                self.conv = conv
+
+            def forward(self, x):
+                return self.conv(x)
+
+        class Bias(Conv):
+            def forward(self, x):
+                return x + self.conv.bias
+
+        def lower(models, inputs):
+            return to_edge_transform_and_lower(
+                {name: export(model, inputs[name]) for name, model in models.items()},
+                partitioner=[XnnpackPartitioner()],
+            )
+
+        def parameters(edge, method):
+            program = edge.exported_program(method)
+            names = list(program.graph_signature.inputs_to_parameters.values())
+            for module in program.graph_module.modules():
+                if isinstance(module, LoweredBackendModule):
+                    signature = module.original_module.graph_signature
+                    names += signature.inputs_to_parameters.values()
+            return names
+
+        embedding = torch.nn.Embedding(512, 128).eval()
+        models = {"lookup": Lookup(embedding), "project": Project(embedding)}
+        inputs = {
+            "lookup": (torch.tensor([[1, 2, 3]]),),
+            "project": (torch.randn(2, 128),),
+        }
+        edge = lower(models, inputs)
+        self.assertEqual(parameters(edge, "project"), ["embedding.weight"])
+        with_hook = edge.to_executorch()
+        with mock.patch.object(
+            XnnpackPartitioner,
+            "transform_for_pre_decomposition",
+            lambda self, exported_program: exported_program,
+        ):
+            without_hook = lower(models, inputs).to_executorch()
+        self.assertEqual(len(with_hook.buffer), len(without_hook.buffer))
+        executorch_module = _load_for_executorch_from_buffer(with_hook.buffer)
+        for name, model in models.items():
+            self.assertTrue(
+                torch.allclose(
+                    executorch_module.run_method(name, inputs[name])[0],
+                    model(*inputs[name]),
+                    rtol=1e-5,
+                    atol=1e-5,
+                ),
+                name,
+            )
+
+        conv = torch.nn.utils.parametrizations.weight_norm(torch.nn.Conv1d(4, 4, 3))
+        edge = lower(
+            {"conv": Conv(conv).eval(), "bias": Bias(conv).eval()},
+            {"conv": (torch.randn(1, 4, 8),), "bias": (torch.randn(4),)},
+        )
+        self.assertTrue(
+            any(
+                re.match(
+                    r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{64}$",
+                    name,
+                )
+                for name in parameters(edge, "conv")
+            )
+        )
 
     def test_pre_decomposition_folding_folds_through_a_scalar_item(self):
         """
