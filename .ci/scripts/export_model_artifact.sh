@@ -289,8 +289,8 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
     echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
     exit 1
   fi
-  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "dflash-image" ]; then
-    echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "solo-text-offgraph" ] && [ "$MODE" != "dflash-image" ]; then
+    echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph' or 'dflash-image'"
     exit 1
   fi
 fi
