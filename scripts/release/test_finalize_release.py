@@ -27,9 +27,9 @@ class FinalizeReleaseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "torch_pin.py"
             path.write_text(
-                'TORCH_VERSION = "2.15.0rc2"\n'
-                'TORCHVISION_VERSION = "0.30.0rc2"\n'
-                'TORCHAUDIO_VERSION = "2.11.0rc2"\n'
+                'TORCH_VERSION = "2.15.0"\n'
+                'TORCHVISION_VERSION = "0.30.0"\n'
+                'TORCHAUDIO_VERSION = "2.11.0"\n'
                 "RELEASE_WHEEL = True\n"
                 "RELEASE_DEPENDENCIES_FINALIZED = False\n"
             )
@@ -45,6 +45,7 @@ class FinalizeReleaseTest(unittest.TestCase):
             root = Path(directory)
             (root / "install_requirements.py").write_text(
                 'TORCH_URL_BASE = "https://download.pytorch.org/whl/test"\n'
+                'TORCHAO_URL_BASE = "https://download.pytorch.org/whl/test"\n'
                 'TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260907"\n'
                 'ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"\n'
             )
@@ -91,6 +92,10 @@ class FinalizeReleaseTest(unittest.TestCase):
             )
             self.assertIn(
                 'TORCH_URL_BASE = "https://download.pytorch.org/whl"',
+                (root / "install_requirements.py").read_text(),
+            )
+            self.assertIn(
+                'TORCHAO_URL_BASE = "https://download.pytorch.org/whl"',
                 (root / "install_requirements.py").read_text(),
             )
             self.assertIn(

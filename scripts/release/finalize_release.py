@@ -22,12 +22,13 @@ from prepare_release import (  # type: ignore[import-not-found]
     _test_index_versions,
     _TORCH_VERSION_PATTERN,
     _write_if_changed,
-    pytorch_commit_for_release,
+    configured_cuda_variants,
+    pytorch_commit_for_wheel,
     sync_pytorch_source,
 )
 from release_versions import (  # type: ignore[import-not-found]
     is_release_version,
-    release_base_version,
+    release_parts,
 )
 
 _TORCHVISION_VERSION_PATTERN = re.compile(
@@ -51,6 +52,10 @@ _ROCM_VERSION_PATTERN = re.compile(
 )
 _TORCH_URL_BASE_PATTERN = re.compile(
     r'^TORCH_URL_BASE\s*=\s*"https://download\.pytorch\.org/whl(?:/test)?"$',  # @lint-ignore
+    re.MULTILINE,
+)
+_TORCHAO_URL_BASE_PATTERN = re.compile(
+    r'^TORCHAO_URL_BASE\s*=\s*"https://download\.pytorch\.org/whl(?:/test)?"$',  # @lint-ignore
     re.MULTILINE,
 )
 _FINALIZED_PATTERN = re.compile(
@@ -81,7 +86,12 @@ _SUBMODULE_RELEASES = (
 
 def stable_base_version(version: str) -> str:
     """Convert a development or prerelease version to its final base version."""
-    return release_base_version(version)
+    if ".dev" in version:
+        version, development = version.rsplit(".dev", 1)
+        if not development.isdigit():
+            raise RuntimeError(f"invalid release version {version!r}")
+    major, minor, patch, _stage, _stage_number = release_parts(version)
+    return f"{major}.{minor}.{patch}"
 
 
 def current_torchao_version(install_requirements_path: Path) -> str:
@@ -122,16 +132,20 @@ def require_pypi_release(package: str, version: str) -> None:
         raise
 
 
-def require_stable_cuda_releases(versions: Iterable[tuple[str, str]]) -> None:
-    """Fail unless every final cu134 package is on the stable index."""
+def require_stable_cuda_releases(
+    versions: Iterable[tuple[str, str]], variants: Iterable[str]
+) -> None:
+    """Fail unless every retained CUDA train is on the stable index."""
+    releases = tuple(versions)
     missing = [
-        f"{package}=={version}+cu134"
-        for package, version in versions
-        if version not in _test_index_versions(package, "cu134", channel="")
+        f"{package}=={version}+{variant}"
+        for variant in variants
+        for package, version in releases
+        if version not in _test_index_versions(package, variant, channel="")
     ]
     if missing:
         raise RuntimeError(
-            "stable PyTorch cu134 releases are unavailable: " + ", ".join(missing)
+            "stable CUDA releases are unavailable: " + ", ".join(missing)
         )
 
 
@@ -248,6 +262,11 @@ def plan_dependency_text(
     )
     if count != 1:
         raise RuntimeError(f"expected one TORCH_URL_BASE in {path}")
+    updated, count = _TORCHAO_URL_BASE_PATTERN.subn(
+        'TORCHAO_URL_BASE = "https://download.pytorch.org/whl"', updated
+    )
+    if count != 1:
+        raise RuntimeError(f"expected one TORCHAO_URL_BASE in {path}")
     updates[path] = updated
 
     path = repo_root / "setup.py"
@@ -414,7 +433,7 @@ def main() -> None:
     )
     tokenizers_version = args.tokenizers_version or f"{release_version}.0"
     torchcodec_version = args.torchcodec_version or latest_pypi_version("torchcodec")
-    pytorch_commit = pytorch_commit_for_release(torch_version)
+    pytorch_commit = pytorch_commit_for_wheel(torch_version, channel="")
 
     releases = (
         ("extension/llm/tokenizers", _SUBMODULE_RELEASES[0][1], tokenizers_version),
@@ -434,7 +453,9 @@ def main() -> None:
             ("torch", torch_version),
             ("torchvision", torchvision_version),
             ("torchaudio", torchaudio_version),
-        )
+            ("torchao", torchao_version),
+        ),
+        configured_cuda_variants(repo_root / ".github/scripts/filter_cuda_matrix.py"),
     )
     for _path, repository, version in releases:
         require_remote_tag(repository, version)
