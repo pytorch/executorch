@@ -91,7 +91,7 @@ async def _session_op(
     return JSONResponse(ok)
 
 
-async def _create_stream(
+async def _create_with_disconnect(
     request: Request, serving: ServingChat, req: ChatCompletionRequest
 ):
     async def wait_disconnect():
@@ -106,7 +106,7 @@ async def _create_stream(
         disconnect.cancel()
         creation.cancel()
         result, _ = await asyncio.gather(creation, disconnect, return_exceptions=True)
-        if not transferred and not isinstance(result, BaseException):
+        if req.stream and not transferred and not isinstance(result, BaseException):
             await result.aclose()
 
     try:
@@ -164,11 +164,7 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
             req, x_executorch_session_id, session_id_header, x_session_affinity
         )
         try:
-            result = (
-                await _create_stream(request, serving, req)
-                if req.stream
-                else await serving.create(req)
-            )
+            result = await _create_with_disconnect(request, serving, req)
         except ClientDisconnect:
             return Response(status_code=499)
         except APIError as e:

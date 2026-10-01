@@ -597,6 +597,8 @@ def test_native_error_codes_survive_chat_adapter(code, status, operation):
                 assert chunks[-1] == "data: [DONE]\n\n"
                 body = json.loads(chunks[-2].removeprefix("data: "))
                 assert body["error"]["code"] == code
+            elif operation == "reset" and code == "session_not_found":
+                await serving.reset_session("s")
             else:
                 with pytest.raises(APIError) as error:
                     if operation in ("complete", "stream_preflight"):
@@ -639,6 +641,92 @@ def test_failed_multiplexed_reset_invalidates_old_transcript():
             assert not serving._transactions._entries
         finally:
             runtime.close_worker()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("multiplexed", [True, False])
+@pytest.mark.parametrize(
+    "code,status",
+    [("session_not_found", 200), ("internal", 500), ("session_busy", 409)],
+)
+def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
+    multiplexed, code, status
+):
+    import httpx
+    from executorch.examples.llm_server.python.server import build_app
+
+    class ResetWorker(_Worker):
+        supports_multiplexing = multiplexed
+
+        def reset_session(self, session_id):
+            self.calls.put(("reset", session_id))
+            raise WorkerError("reset failed", code=code)
+
+    async def scenario():
+        worker = ResetWorker()
+        runtime = SessionRuntime(worker)
+        serving = _chat(runtime)
+        serving._transcript.record_assistant_turn(
+            session_id="s",
+            content="reply",
+            tool_calls=None,
+            generated_token_ids=[1],
+            prior_turns=0,
+        )
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=build_app(serving, "test-model")),
+                base_url="http://test",
+            ) as client:
+                for _ in range(2):
+                    response = await client.post("/v1/sessions/s/reset")
+                    assert response.status_code == status
+                    if code == "session_not_found":
+                        assert response.json() == {"reset": True, "session_id": "s"}
+                    else:
+                        assert response.json()["error"]["code"] == code
+                    assert worker.calls.get_nowait() == ("reset", "s")
+                    assert ("s" not in serving._transcript._turns) == (
+                        multiplexed or code == "session_not_found"
+                    )
+                    assert not serving._transactions._entries
+                    assert not runtime._session_locks._entries
+                    assert runtime._admitted == 0
+        finally:
+            runtime.close_worker()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("stream", [True, False])
+def test_completed_response_racing_disconnect_only_closes_stream(stream):
+    from executorch.examples.llm_server.python.server import _create_with_disconnect
+    from starlette.requests import ClientDisconnect, Request
+
+    async def scenario():
+        completed = asyncio.Event()
+        closed = []
+
+        class Stream:
+            async def aclose(self):
+                closed.append(True)
+
+        async def create(_):
+            completed.set()
+            return Stream() if stream else object()
+
+        async def receive():
+            await completed.wait()
+            return {"type": "http.disconnect"}
+
+        with pytest.raises(ClientDisconnect):
+            await _create_with_disconnect(
+                Request({"type": "http"}, receive),
+                SimpleNamespace(create=create),
+                _request("s", stream=stream),
+            )
+        assert closed == ([True] if stream else [])
 
     asyncio.run(scenario())
 
