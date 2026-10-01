@@ -175,6 +175,51 @@ void validate_quantized_constant(
   }
 }
 
+// Quantization parameters must be available through method bindings for
+// constants and graph values alike.
+void validate_quant_parameter_binding(
+    const Method& method,
+    const std::string& key,
+    ScalarType dtype,
+    const std::string& tensor_key) {
+  const DataBinding* binding = find_data_binding(method, key);
+  if (binding == nullptr) {
+    throw std::runtime_error(
+        "native program: quantization parameter '" + key + "' for '" +
+        tensor_key + "' is not bound in method '" + method.name + "'");
+  }
+  const TensorMeta& meta = bound_value(method, *binding).tensor_meta();
+  if (binding->mutated || meta.quant.has_value() || meta.dtype != dtype) {
+    throw std::runtime_error(
+        "native program: quantization parameter '" + key + "' for '" +
+        tensor_key + "' has an incompatible binding");
+  }
+}
+
+void validate_quant_bindings(const Method& method, const Value& value) {
+  const TensorMeta& meta = value.tensor_meta();
+  const auto* affine = meta.quant.has_value()
+      ? std::get_if<AffineGroupQuant>(&*meta.quant)
+      : nullptr;
+  if (affine == nullptr) {
+    return;
+  }
+  if (affine->scale_data_key.empty()) {
+    throw std::runtime_error(
+        "native program: quantized tensor '" + value.name +
+        "' has no scale key");
+  }
+  validate_quant_parameter_binding(
+      method, affine->scale_data_key, affine->scale_dtype, value.name);
+  if (!affine->zero_point_data_key.empty()) {
+    validate_quant_parameter_binding(
+        method,
+        affine->zero_point_data_key,
+        affine->zero_point_dtype,
+        value.name);
+  }
+}
+
 ValueId storage_root(const Graph& graph, ValueId id) {
   while (valid(graph.value(id).alias_id)) {
     id = graph.value(id).alias_id;
@@ -241,6 +286,7 @@ void validate_method_structure(const Method& method) {
   for (const Value& value : method.graph.values) {
     if (value.is_tensor()) {
       validate_tensor_meta(value.tensor_meta(), value.name);
+      validate_quant_bindings(method, value);
     }
   }
   const auto id_is_out_of_bounds = [&method](const ValueId id) {

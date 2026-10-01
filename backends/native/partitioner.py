@@ -88,31 +88,7 @@ class NativeSupportedOperators(OperatorSupportBase):
         if isinstance(node.target, torch._ops.HigherOrderOperator):
             return False
         if node.target is operator.getitem:
-            # Tuple projections are folded into their producer during serialization.
-            if len(node.args) < 2:
-                return False
-            producer, index = node.args[:2]
-            if (
-                not isinstance(producer, Node)
-                or not isinstance(index, int)
-                or isinstance(index, bool)
-                or index < 0
-            ):
-                return False
-            values = producer.meta.get("val")
-            if not isinstance(values, (tuple, list)) or index >= len(values):
-                return False
-            if not self.is_node_supported(submodules, producer):
-                return False
-            return (
-                sum(
-                    user.target is operator.getitem
-                    and len(user.args) >= 2
-                    and user.args[1] == index
-                    for user in producer.users
-                )
-                == 1
-            )
+            return self._is_getitem_supported(submodules, node)
         if node.target in _SUPPORTED_SYMBOLIC_OPS:
             return True
 
@@ -126,6 +102,35 @@ class NativeSupportedOperators(OperatorSupportBase):
                 return True
             return torch.Tag.core in target.tags or torch.Tag.view_copy in target.tags
         return False
+
+    def _is_getitem_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: Node
+    ) -> bool:
+        # Tuple projections are folded into their producer during serialization.
+        if len(node.args) < 2:
+            return False
+        producer, index = node.args[:2]
+        if (
+            not isinstance(producer, Node)
+            or not isinstance(index, int)
+            or isinstance(index, bool)
+            or index < 0
+        ):
+            return False
+        values = producer.meta.get("val")
+        if not isinstance(values, (tuple, list)) or index >= len(values):
+            return False
+        if not self.is_node_supported(submodules, producer):
+            return False
+        return (
+            sum(
+                user.target is operator.getitem
+                and len(user.args) >= 2
+                and user.args[1] == index
+                for user in producer.users
+            )
+            == 1
+        )
 
 
 def _branch_graph_module(gm: GraphModule, node: Node) -> Optional[GraphModule]:

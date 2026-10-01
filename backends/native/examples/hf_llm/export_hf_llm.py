@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Export a HuggingFace decoder-only LM through the native backend.
+"""Export a supported Hugging Face decoder-only LM through the native backend.
 
-Builds the model with ``AutoModelForCausalLM`` from a HuggingFace model
-directory (or only its config, with random weights), wraps it with the static
-cache of ``transformers.integrations.executorch``, and exports the
+Builds the model with ``AutoModelForCausalLM`` from a Hugging Face model
+directory (or only its config, with random weights), wraps it with the cache
+adapter from ``transformers.integrations.executorch``, and exports the
 ``(input_ids [1, T], cache_position [T])`` signature. Reports which operators
 the native partitioner leaves behind.
 """
@@ -58,8 +58,7 @@ def _load(path: str, layers: int, random_weights: bool) -> PreTrainedModel:
 
 
 class LastTokenLM(nn.Module):
-    """The transformers static-cache module, returning only the last position's
-    logits; its own forward computes them for every prompt token."""
+    """Use the Transformers ExecuTorch cache wrapper and return last-position logits."""
 
     def __init__(self, model: PreTrainedModel, max_cache_len: int) -> None:
         super().__init__()
@@ -88,8 +87,8 @@ class LastTokenLM(nn.Module):
         ).logits
 
 
-# TEMPORARY: reproduces the ET-VK llama recipe (`-qmode 8da4w -G 128 -E 4,32`)
-# with torchao configs, until PTN export has its own quantization flow.
+# TEMPORARY: use torchao-based 8da4w quantization until PTN export has its own
+# quantization flow.
 def _quantize_8da4w(
     model: PreTrainedModel, group_size: int, embedding_group_size: int
 ) -> None:
@@ -126,7 +125,7 @@ def _histogram(gm: torch.fx.GraphModule) -> collections.Counter:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model", required=True, help="HuggingFace model directory or hub ID."
+        "--model", required=True, help="Hugging Face model directory or hub ID."
     )
     parser.add_argument(
         "--random_weights",
