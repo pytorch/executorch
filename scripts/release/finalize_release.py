@@ -476,6 +476,7 @@ def main() -> None:
     print(
         "Review and stage the resulting release-only changes with git add "
         "install_requirements.py setup.py torch_pin.py .ci/scripts/ "
+        ".ci/docker/ci_commit_pins/pytorch.txt runtime/core/portable_type/c10/ "
         "examples/models/moshi/mimi/install_requirements.sh "
         "extension/llm/tokenizers third-party/ao"
     )
