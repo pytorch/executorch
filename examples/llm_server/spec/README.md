@@ -118,8 +118,8 @@ reuse KV when the tokens match.
 ## Multiplexed Native Worker (Opt-In)
 
 This is a distinct text-only transport, not a capability of the legacy worker
-loop. It connects the Python request dispatcher to one `ServingRuntime`, which
-owns one batching Runner. The adapter owns only JSONL framing and wire request
+loop. It requires a multiplex-aware client and exposes one `ServingRuntime`,
+which owns one batching Runner. The adapter owns only JSONL framing and wire request
 identities; tokenization, decoding, stop handling, and session history belong to
 the runtime. Chat templates and OpenAI response presentation remain in Python.
 The legacy cancellation limitations above do not describe this opt-in path.
@@ -130,6 +130,9 @@ ID:
 ```json
 {"ready":true,"multiplexed":true,"max_named_sessions":4,"max_inflight_requests":64}
 ```
+
+Despite its legacy name, `max_named_sessions` reports the shared capacity for
+named and anonymous sessions; there is no additional reserved anonymous slot.
 
 Every subsequent request has an explicit `op` and positive uint64 `request_id`.
 Clients allocate IDs monotonically and guarantee lifetime uniqueness, but requests
@@ -172,10 +175,15 @@ include `invalid_argument`, `not_ready`, `session_not_found`, `session_busy`,
 
 Lifecycle commands are `open`, `close`, and `reset`, each with `session_id` and
 its own request ID. Their replies are respectively `opened:true`, `closed:true`,
-and `reset:true`, or a correlated error. They do not block the input reader;
-other generations and acknowledgements can interleave. Close acknowledges logical
-release, not physical executor cleanup. Reset acknowledges a cold replacement;
-a failed replacement does not restore the old state.
+and `reset:true`, or a correlated error. They do not block the input reader.
+An accepted close/reset fences its session: earlier generation text and terminals
+precede its ACK, and runtime-owned generation callbacks and captures are cleaned
+up before the ACK is enqueued. Later accepted same-session operations stay behind
+that ACK, including commands submitted before it. Other sessions can progress.
+Immediate validation/admission rejections and cancel replies are not covered by
+this ordering. Close acknowledges logical release, not physical executor cleanup.
+Reset acknowledges a cold replacement; a failed replacement does not restore the
+old state.
 
 Cancellation is in-band, not the legacy worker's separate FD pipe:
 

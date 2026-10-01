@@ -6,6 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// Cppcheck's default model cannot expand GoogleTest registration macros.
+// The CMake test target checks their C++ syntax and executes the tests.
+
+// cppcheck-suppress-file syntaxError
+
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker_test.h>
 
@@ -16,6 +21,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
+#include <cstdlib>
 #include <future>
 #include <limits>
 #include <map>
@@ -795,6 +801,212 @@ TEST_F(ProtocolTest, PublishedGenerationReusesWireIdBeforeCallbackReturns) {
   EXPECT_TRUE(handle.done());
   EXPECT_TRUE(replacement.done());
 }
+
+class LifecycleOrderingTest : public ProtocolTest,
+                              public ::testing::WithParamInterface<bool> {
+ protected:
+  void SetUp() override {
+    watchdog_ = std::thread([finished = finished_.get_future()] {
+      if (finished.wait_for(30s) != std::future_status::ready) {
+        ADD_FAILURE() << "lifecycle ordering test or teardown deadlocked";
+        std::abort();
+      }
+    });
+  }
+
+  void TearDown() override {
+    // Release every gate before joining the worker, including on ASSERT exit.
+    // Keep the watchdog alive through the base fixture's runtime shutdown.
+    ProtocolTest::TearDown();
+    finished_.set_value();
+    watchdog_.join();
+  }
+
+ private:
+  std::promise<void> finished_;
+  std::thread watchdog_;
+};
+
+TEST_P(
+    LifecycleOrderingTest,
+    CallbackFenceAndWriterFifoOrderPrequeuedReplacementAndHistory) {
+  auto old_callback = gate();
+  auto ack_enqueued = gate();
+  auto ack_newline = gate();
+  auto ack_published = gate();
+  auto open_enqueued = gate();
+  auto replacement_enqueued = gate();
+  auto old_handle = std::make_shared<std::promise<serving::RequestHandle>>();
+  auto next_handle = std::make_shared<std::promise<serving::RequestHandle>>();
+  auto old_bound = old_handle->get_future();
+  auto next_bound = next_handle->get_future();
+  hooks_.handle_bound = [old_handle, next_handle](
+                            uint64_t id, const serving::RequestHandle& handle) {
+    if (id == 1)
+      old_handle->set_value(handle);
+    if (id == 4)
+      next_handle->set_value(handle);
+  };
+  hooks_.checkpoint = [old_callback,
+                       ack_enqueued,
+                       ack_published,
+                       open_enqueued,
+                       replacement_enqueued](Checkpoint point, uint64_t id) {
+    if (point == Checkpoint::TerminalEnqueued) {
+      if (id == 1)
+        old_callback->pause();
+      if (id == 2)
+        ack_enqueued->signal();
+      if (id == 3)
+        open_enqueued->signal();
+      if (id == 4)
+        replacement_enqueued->signal();
+    }
+    if (point == Checkpoint::TerminalPublished && id == 2)
+      ack_published->signal();
+  };
+  hooks_.terminal_write_error = [ack_newline](uint64_t id) {
+    // This hook runs before the final-byte write acquires the worker mutex.
+    // Blocking here leaves both the reader and runtime callbacks runnable.
+    if (id == 2)
+      ack_newline->pause();
+    return 0;
+  };
+  executor_.stop_token =
+      1000; // Deterministic output, not a runtime stop token.
+  start();
+  auto first = generate(1, 1);
+  first["session_id"] = "owned";
+  send(first);
+  ASSERT_TRUE(old_callback->wait());
+  ASSERT_EQ(old_bound.wait_for(5s), std::future_status::ready);
+  const auto old = old_bound.get();
+  ASSERT_NE(old.id(), 0u);
+
+  const auto old_text = receive();
+  ASSERT_EQ(old_text.at("request_id"), 1);
+  ASSERT_EQ(old_text.at("token"), tokenizer_.piece);
+  const auto old_terminal = receive();
+  ASSERT_EQ(old_terminal.at("request_id"), 1);
+  ASSERT_TRUE(old_terminal.value("done", false)) << old_terminal;
+  EXPECT_EQ(old_terminal.at("finish_reason"), "length");
+  EXPECT_EQ(old_terminal.at("generated_token_ids"), Json::array({1000}));
+  EXPECT_FALSE(
+      old.done()); // Complete JSONL publication is not callback return.
+
+  send(
+      {{"op", GetParam() ? "reset" : "close"},
+       {"request_id", 2},
+       {"session_id", "owned"}});
+  send({{"op", "open"}, {"request_id", 3}, {"session_id", "owned"}});
+  auto replacement = generate(4, 1);
+  replacement["session_id"] = "owned";
+  replacement.erase("prompt");
+  // An extension of the old committed history must nevertheless start cold.
+  replacement["prompt_segments"] =
+      Json::array({{{"ids", {104, 105, 1000, 106}}}});
+  send(replacement);
+  ASSERT_EQ(next_bound.wait_for(5s), std::future_status::ready);
+  const auto next = next_bound.get();
+  ASSERT_NE(next.id(), 0u);
+  EXPECT_NE(next.id(), old.id());
+  EXPECT_FALSE(old.done());
+
+  // Unlike a cancel reply, this ACK witnesses runtime control-thread progress
+  // past the deferred fence and both later same-key submissions. Successful
+  // handle assignment above proves runtime acceptance, not just reader input.
+  send({{"op", "close"}, {"request_id", 5}, {"session_id", "unrelated"}});
+  const auto control = receive();
+  ASSERT_EQ(control.at("request_id"), 5);
+  ASSERT_TRUE(control.value("closed", false)) << control;
+  EXPECT_FALSE(old.done());
+  EXPECT_FALSE(next.done());
+  EXPECT_FALSE(ack_enqueued->wait(0ms));
+  EXPECT_FALSE(open_enqueued->wait(0ms));
+  EXPECT_FALSE(replacement_enqueued->wait(0ms));
+  EXPECT_EQ(executor_.seen().size(), 1u);
+
+  old_callback->release();
+  ASSERT_TRUE(ack_newline->wait());
+  ASSERT_TRUE(ack_enqueued->wait());
+  EXPECT_TRUE(old.done());
+  // The fence covers callback cleanup, not pipe I/O: later accepted work can
+  // finish enqueueing while the ACK still lacks its JSONL delimiter. FIFO must
+  // keep that work behind the ACK on the actual wire.
+  ASSERT_TRUE(open_enqueued->wait());
+  ASSERT_TRUE(replacement_enqueued->wait());
+  EXPECT_FALSE(ack_published->wait(0ms));
+  ack_newline->release();
+  const auto ack = receive();
+  ASSERT_EQ(ack.at("request_id"), 2);
+  ASSERT_TRUE(ack.value(GetParam() ? "reset" : "closed", false)) << ack;
+  const auto opened = receive();
+  ASSERT_EQ(opened.at("request_id"), 3);
+  ASSERT_TRUE(opened.value("opened", false)) << opened;
+  const auto next_text = receive();
+  ASSERT_EQ(next_text.at("request_id"), 4);
+  ASSERT_EQ(next_text.at("token"), tokenizer_.piece);
+  const auto next_terminal = receive();
+  ASSERT_EQ(next_terminal.at("request_id"), 4);
+  ASSERT_TRUE(next_terminal.value("done", false)) << next_terminal;
+  EXPECT_EQ(next_terminal.at("finish_reason"), "length");
+  EXPECT_FALSE(next_terminal.value("cancelled", false));
+  EXPECT_EQ(next_terminal.at("completion_tokens"), 1);
+  EXPECT_EQ(next_terminal.at("generated_token_ids"), Json::array({1000}));
+  EXPECT_EQ(next_terminal.at("session_reset_reason"), "new");
+  EXPECT_EQ(next_terminal.at("prompt_tokens"), 4);
+  EXPECT_EQ(next_terminal.at("reused_prompt_tokens"), 0);
+  EXPECT_EQ(next_terminal.at("prefilled_prompt_tokens"), 4);
+  const auto cold = executor_.seen();
+  ASSERT_EQ(cold.size(), 2u);
+  EXPECT_NE(cold[1].session, cold[0].session);
+  EXPECT_EQ(cold[1].effective_position(), 0);
+  EXPECT_EQ(cold[1].size, 4u);
+  EXPECT_EQ(executor_.opened().size(), 2u);
+  EXPECT_EQ(
+      executor_.closed(), (std::vector<batching::SessionId>{cold[0].session}));
+
+  // Also submit after observing the ACK: replacement history, including its
+  // pending generated token, must survive the old callback's late cleanup.
+  auto continuation = replacement;
+  continuation["request_id"] = 6;
+  continuation["prompt_segments"] =
+      Json::array({{{"ids", {104, 105, 1000, 106, 1000, 107}}}});
+  send(continuation);
+  const auto continued_text = receive();
+  ASSERT_EQ(continued_text.at("request_id"), 6);
+  ASSERT_EQ(continued_text.at("token"), tokenizer_.piece);
+  const auto continued = receive();
+  ASSERT_EQ(continued.at("request_id"), 6);
+  ASSERT_TRUE(continued.value("done", false)) << continued;
+  EXPECT_EQ(continued.at("finish_reason"), "length");
+  EXPECT_EQ(continued.at("session_reset_reason"), "exact_prefix");
+  EXPECT_EQ(continued.at("prompt_tokens"), 6);
+  EXPECT_EQ(continued.at("reused_prompt_tokens"), 4);
+  EXPECT_EQ(continued.at("prefilled_prompt_tokens"), 2);
+  const auto warm = executor_.seen();
+  ASSERT_GE(warm.size(), 3u);
+  EXPECT_EQ(warm[2].session, cold[1].session);
+  EXPECT_EQ(warm[2].effective_position(), 4);
+  EXPECT_EQ(executor_.opened().size(), 2u);
+  EXPECT_EQ(executor_.closed().size(), 1u);
+
+  send({{"op", "close"}, {"request_id", 7}, {"session_id", "unrelated"}});
+  const auto drained = receive();
+  ASSERT_EQ(drained.at("request_id"), 7);
+  ASSERT_TRUE(drained.value("closed", false)) << drained;
+  EXPECT_EQ(finish(), 0);
+  EXPECT_TRUE(old.done());
+  EXPECT_TRUE(next.done());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CloseAndReset,
+    LifecycleOrderingTest,
+    ::testing::Bool(),
+    [](const ::testing::TestParamInfo<bool>& info) {
+      return info.param ? "Reset" : "Close";
+    });
 
 TEST_F(ProtocolTest, TerminalPublishesBeforeBindButReaderWaitsForAssignment) {
   auto binding = gate();

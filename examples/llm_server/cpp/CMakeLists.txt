@@ -27,6 +27,16 @@ set(_json_include
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 if(NOT TARGET executorch)
   find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+  # Older tokenizer exports expose their internal headers as top-level includes,
+  # shadowing the POSIX regex.h used by GoogleTest. Use the public include root.
+  get_target_property(
+    _tokenizer_includes tokenizers::tokenizers INTERFACE_INCLUDE_DIRECTORIES
+  )
+  list(TRANSFORM _tokenizer_includes REPLACE "/pytorch/tokenizers/?$" "")
+  set_target_properties(
+    tokenizers::tokenizers PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
+                                      "${_tokenizer_includes}"
+  )
 endif()
 find_package(Threads REQUIRED)
 executorch_target_link_options_shared_lib(executorch)
