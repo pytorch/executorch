@@ -575,6 +575,82 @@ class TestXnnpackPartitioner(unittest.TestCase):
         )
         self.assertEqual(len(executorch._named_data.pte_data), 0)
 
+    def test_pre_decomposition_folding_keeps_adapter_and_base_weights_apart(self):
+        """
+        A merged adapter linear whose base weight is tagged for one external
+        file and whose adapter factors for another is not folded: the fold
+        would store one tensor in the base file and leave the adapter file
+        empty. Each file holds the data tagged for it, as without the hook.
+        """
+
+        class AdaptedLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.base = torch.nn.Parameter(torch.randn(3, 4))
+                self.lora_a = torch.nn.Parameter(torch.randn(2, 4))
+                self.lora_b = torch.nn.Parameter(torch.randn(3, 2))
+
+            def forward(self, x):
+                return F.linear(x, self.base + self.lora_b @ self.lora_a)
+
+        def gen_tag_fn(node):
+            return "lora.ptd" if "lora" in node.name else "foundation.ptd"
+
+        def sha256(tensor):
+            return hashlib.sha256(
+                tensor.detach().contiguous().numpy().tobytes()
+            ).hexdigest()
+
+        def tagged_program():
+            module = export(model, example_inputs).module()
+            delegate_external_constants_pass_unlifted(module, gen_tag_fn)
+            return export(module, example_inputs)
+
+        def lower():
+            return to_edge_transform_and_lower(
+                tagged_program(), partitioner=[XnnpackPartitioner()]
+            ).to_executorch(ExecutorchBackendConfig(external_constants=gen_tag_fn))
+
+        def files(executorch):
+            # The delegate's named data and the program's own constants.
+            contents = {
+                file: set(entries)
+                for file, entries in executorch._named_data.external_data.items()
+            }
+            output = executorch._emitter_output
+            for file, entries in output.external_constant_map.items():
+                contents.setdefault(file, set()).update(
+                    hashlib.sha256(
+                        bytes(output.external_constant_buffer[index])
+                    ).hexdigest()
+                    for index in entries.values()
+                )
+            return contents
+
+        model = AdaptedLinear().eval()
+        example_inputs = (torch.randn(2, 4),)
+        exported = tagged_program()
+        self.assertIs(
+            XnnpackPartitioner().transform_for_pre_decomposition(exported), exported
+        )
+
+        with_hook = lower()
+        self.assertEqual(
+            files(with_hook),
+            {
+                "foundation.ptd": {sha256(model.base)},
+                "lora.ptd": {sha256(model.lora_a), sha256(model.lora_b)},
+            },
+        )
+        with mock.patch.object(
+            XnnpackPartitioner,
+            "transform_for_pre_decomposition",
+            lambda self, exported_program: exported_program,
+        ):
+            without_hook = lower()
+        self.assertEqual(with_hook.buffer, without_hook.buffer)
+        self.assertEqual(files(with_hook), files(without_hook))
+
     def test_pre_decomposition_folding_names_folds_after_their_expression(self):
         """
         The external constant map is keyed by name and shared by the methods
