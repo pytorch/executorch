@@ -12,7 +12,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Callable, cast, Collection, Mapping, Optional
+from typing import Callable, cast, Collection, Hashable, Mapping, Optional
 
 import torch
 from executorch.exir import memory
@@ -134,6 +134,21 @@ def get_constant_placeholder_dict(
     return const_node_to_tensor
 
 
+def custom_meta_key(node: torch.fx.Node) -> Hashable:
+    """
+    Returns the custom meta of `node`, such as the external file a weight is
+    tagged for, in a form that compares and hashes by value; None when the
+    node has none.
+    """
+    custom = node.meta.get("custom")
+    key = tuple(sorted(custom.items())) if isinstance(custom, dict) else custom
+    try:
+        hash(key)
+    except TypeError:
+        return repr(key)
+    return key
+
+
 def get_propagated_const_tensor_dict(
     exported_program: ExportedProgram,
     custom_skip_targets: Optional[set[EdgeOpOverload]],
@@ -145,6 +160,10 @@ def get_propagated_const_tensor_dict(
     """
     # Initialize dict with all constant placeholders.
     const_node_to_tensor = get_constant_placeholder_dict(exported_program, fold_buffers)
+    # The custom meta of the placeholders each constant is computed from.
+    source_customs = {
+        node: frozenset({custom_meta_key(node)}) for node in const_node_to_tensor
+    }
 
     if custom_skip_targets is not None:
         all_skip_targets = custom_skip_targets
@@ -177,6 +196,16 @@ def get_propagated_const_tensor_dict(
             const_node_to_tensor,
         ):
             continue
+
+        # A folded value is one tensor with one custom meta. Sources that
+        # disagree on it, a weight and an adapter tagged for different
+        # external files, stay apart, and so do the nodes computed from them.
+        customs = frozenset().union(
+            *(source_customs[input_node] for input_node in node.all_input_nodes)
+        )
+        if len(customs) > 1:
+            continue
+        source_customs[node] = customs
 
         args_data, kwargs_data = pytree.tree_map(
             lambda x: get_data(x, exported_program, const_node_to_tensor),
@@ -245,18 +274,17 @@ def _source_placeholders(
 
 
 def _source_spec(
-    exported_program: ExportedProgram, source: Optional[torch.fx.Node]
+    exported_program: ExportedProgram, source: torch.fx.Node
 ) -> tuple[Optional[str], InputKind]:
     """Returns the fully qualified name and the kind of a source placeholder."""
     signature = exported_program.graph_signature
-    if source is not None:
-        for mapping, kind in (
-            (signature.inputs_to_parameters, InputKind.PARAMETER),
-            (signature.inputs_to_buffers, InputKind.BUFFER),
-            (signature.inputs_to_lifted_tensor_constants, InputKind.CONSTANT_TENSOR),
-        ):
-            if source.name in mapping:
-                return mapping[source.name], kind
+    for mapping, kind in (
+        (signature.inputs_to_parameters, InputKind.PARAMETER),
+        (signature.inputs_to_buffers, InputKind.BUFFER),
+        (signature.inputs_to_lifted_tensor_constants, InputKind.CONSTANT_TENSOR),
+    ):
+        if source.name in mapping:
+            return mapping[source.name], kind
     return None, InputKind.CONSTANT_TENSOR
 
 
@@ -323,8 +351,8 @@ def _folded_name(
     Returns the fully qualified name of a folded value.
 
     By default the name is `_prop_tensor_constant{N}`, numbered per program.
-    With `register_like_source` it is the fully qualified name of the first
-    placeholder the value is computed from, `_prop_`, and the whole sha256
+    With `register_like_source` it is the fully qualified name of the source
+    the value is registered like, `_prop_`, and the whole sha256
     digest, 64 hex characters, of the expression that computes it: every
     method and export that folds the same expression over the same
     parameters produces the same name, and two expressions produce different
@@ -403,9 +431,16 @@ def replace_with_constant_node(
     source_fqn, kind = None, InputKind.CONSTANT_TENSOR
     source = None
     if register_like_source:
-        sources = _source_placeholders(exported_program, node)
-        source = sources[0] if sources else None
-        source_fqn, kind = _source_spec(exported_program, source)
+        # A parameter if any source is one, else a buffer if any source is
+        # one, named after the first source of that kind in graph order.
+        kinds = [InputKind.PARAMETER, InputKind.BUFFER, InputKind.CONSTANT_TENSOR]
+        source = min(
+            _source_placeholders(exported_program, node),
+            key=lambda p: kinds.index(_source_spec(exported_program, p)[1]),
+            default=None,
+        )
+        if source is not None:
+            source_fqn, kind = _source_spec(exported_program, source)
     fqn = _folded_name(exported_program, node, source_fqn, taken, register_like_source)
     taken.add(fqn)
 
@@ -424,9 +459,10 @@ def replace_with_constant_node(
     for k, v in node.meta.items():
         const_placeholder_node.meta[k] = v
     if source is not None:
-        # The custom meta of the source placeholder, such as the external
-        # file a weight is tagged for, describes the data. Carry it forward
-        # from the source rather than from the arithmetic node.
+        # The custom meta of the sources, such as the external file a weight
+        # is tagged for, describes the data, and the sources of a fold agree
+        # on it. Carry it forward from them rather than from the arithmetic
+        # node.
         const_placeholder_node.meta.pop("custom", None)
         if "custom" in source.meta:
             const_placeholder_node.meta["custom"] = dict(source.meta["custom"])
@@ -676,6 +712,10 @@ def constant_prop_pass(
     This pass is for constant propagation for Exported Program with lifted parameters,
     as the parameters will not be shown up as `get_attr` but as `placeholder` to the graph.
 
+    Constants whose source placeholders disagree on their custom meta, such as a
+    weight and an adapter tagged for different external files, are not folded
+    together: each source keeps its data where it is tagged to go.
+
     Args:
         exported_program: The ExportedProgram to perform constant propagation on.
         custom_skip_targets: Optional set of EdgeOpOverload targets to skip during constant propagation.
@@ -685,13 +725,13 @@ def constant_prop_pass(
             and lifted tensor constants.
         nodes_to_fold: Optional allowlist of the nodes to fold. Any other node stays
             an op, and so do the nodes computed from it.
-        register_like_source: Whether a folded value is registered like the first
-            placeholder it is computed from: named after it and the expression,
-            `w_prop_` and the 64-character sha256 digest of the fully qualified
-            expression for a value computed from the parameter `w`, of its kind
-            (a parameter's fold is a parameter, a buffer's a buffer) and with its
-            custom meta. By default a folded value is a lifted tensor constant named
-            `_prop_tensor_constant{N}`.
+        register_like_source: Whether a folded value is registered like its sources:
+            a parameter if any of them is one, else a buffer if any is one, with
+            the custom meta they share, and named after the first source of that
+            kind and the expression, `w_prop_` and the 64-character sha256 digest
+            of the fully qualified expression for a value computed from the
+            parameter `w`. By default a folded value is a lifted tensor constant
+            named `_prop_tensor_constant{N}`.
 
     Returns:
         The modified ExportedProgram with constant propagation applied.

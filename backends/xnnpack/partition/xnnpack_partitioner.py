@@ -28,6 +28,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
 from executorch.exir.backend.partitioner import DelegationSpec
 from executorch.exir.passes.constant_prop_pass import (
     constant_prop_pass,
+    custom_meta_key,
     get_constant_placeholder_dict,
     is_const,
 )
@@ -232,12 +233,16 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         """
         Returns a predicate for the nodes whose inputs are all parameters,
         lifted constants or such nodes, and that constant_prop_pass would
-        fold: not a skipped target, not impure.
+        fold: not a skipped target, not impure, and computed from sources
+        that agree on their custom meta.
         """
         skip_targets = self._constant_prop_skip_targets(exported_program)
         constants: dict = dict.fromkeys(
             get_constant_placeholder_dict(exported_program, fold_buffers=False)
         )
+        source_customs = {
+            node: frozenset({custom_meta_key(node)}) for node in constants
+        }
         memo: dict = {}
 
         def constant_only(seed: torch.fx.Node) -> bool:
@@ -254,6 +259,11 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
                         and is_const(node.args, exported_program, constants)
                         and is_const(node.kwargs, exported_program, constants)
                     )
+                    if result:
+                        source_customs[node] = frozenset().union(
+                            *(source_customs[n] for n in node.all_input_nodes)
+                        )
+                        result = len(source_customs[node]) <= 1
                     if result:
                         constants[node] = None
                     memo[node] = result
