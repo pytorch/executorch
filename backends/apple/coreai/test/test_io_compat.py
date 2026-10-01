@@ -22,15 +22,41 @@ from executorch.backends.apple.coreai import (
     get_default_compile_config,
     get_default_passes,
 )
-from executorch.backends.apple.coreai.compiler.io_compat import io_mismatches
+from executorch.backends.apple.coreai.compiler.io_compat import (
+    assert_io_compatible,
+    io_mismatches,
+)
+from executorch.backends.apple.coreai.compiler.preprocess import _convert_to_aiprogram
 from executorch.backends.apple.coreai.partition.partitioner import CoreAIPartitioner
-from executorch.exir import to_edge_transform_and_lower
+from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir.lowered_backend_module import executorch_call_delegate
 from torch.export import Dim
 
 
 class _Sym:
     """Stand-in for a symbolic (dynamic) edge dim."""
+
+
+class OrderedNamesTest(unittest.TestCase):
+    def test_same_shaped_reordered_names_are_rejected(self):
+        """Dtype and shape checks can't tell same-shaped I/O apart; names can."""
+
+        class Subtract(nn.Module):
+            def forward(self, z, a):
+                return z - a, a - z
+
+        edge = to_edge(
+            torch.export.export(Subtract(), (torch.ones(2, 4), torch.zeros(2, 4)))
+        ).exported_program()
+        inputs = ["input_0", "input_1"]
+        outputs = ["output_0", "output_1"]
+        program = _convert_to_aiprogram(
+            edge, input_names=inputs[::-1], output_names=outputs
+        )
+        with self.assertRaisesRegex(ValueError, "input names mismatch"):
+            assert_io_compatible(
+                program, edge, input_names=inputs, output_names=outputs
+            )
 
 
 class IoMismatchesTest(unittest.TestCase):

@@ -56,7 +56,7 @@ pytestmark = skip_if_frozen_release("NSS")
 
 _NSS_HEIGHT = 8 * Dim("_nss_height", min=16, max=68)
 _NSS_WIDTH = 8 * Dim("_nss_width", min=16, max=120)
-_NSS_QUANTIZATION_DYNAMIC_SHAPES = ({2: _NSS_HEIGHT, 3: _NSS_WIDTH},)
+_NSS_DYNAMIC_SHAPES = ({2: _NSS_HEIGHT, 3: _NSS_WIDTH},)
 
 
 class NSS(torch.nn.Module):
@@ -113,7 +113,7 @@ def nss() -> AutoEncoderV1:
     return nss_model.auto_encoder
 
 
-def prequantized_nss(inputs: input_t) -> torch.fx.GraphModule:
+def prequantized_nss(inputs: input_t, dynamic_shapes=None) -> torch.fx.GraphModule:
     weights = hf_hub_download(  # nosec B615
         repo_id="Arm/neural-super-sampling",
         filename="nss_v1_0_1_high_int8.pt",
@@ -126,7 +126,9 @@ def prequantized_nss(inputs: input_t) -> torch.fx.GraphModule:
     assert all(key.startswith(prefix) for key in checkpoint)
     state_dict = {key.removeprefix(prefix): value for key, value in checkpoint.items()}
 
-    exported = torch.export.export(nss().eval(), inputs, strict=True).module()
+    exported = torch.export.export(
+        nss().eval(), inputs, dynamic_shapes=dynamic_shapes, strict=True
+    ).module()
     quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
     quantizer.set_global(
         get_symmetric_quantization_config(is_per_channel=True, is_qat=True)
@@ -174,7 +176,8 @@ def example_inputs():
 
 
 def random_inputs():
-    return (torch.rand((1, _NSS_INPUT_CHANNELS, 544, 960)),)
+    x = torch.rand((1, _NSS_INPUT_CHANNELS, 544, 960))
+    return (x.to(memory_format=torch.channels_last),)
 
 
 input_test_data = REAL_AND_RANDOM_DATA
@@ -184,7 +187,7 @@ is_qat_test_data = PTQ_AND_QAT_DATA
 def _set_nss_calibration_samples(pipeline):
     return pipeline.set_quantization_calibration(
         iter_nss_test_calibration_samples(),
-        dynamic_shapes=_NSS_QUANTIZATION_DYNAMIC_SHAPES,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
     )
 
 
@@ -353,6 +356,143 @@ def test_nss_prequantized_vgf_INT(use_real_data):
         quantize=True,
         tosa_version="TOSA-1.0+INT",
         qtol=12,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check,
+        ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+        suffix="prequant_nodes",
+    )
+    pipeline.run()
+
+
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_tosa_FP_dynamic_shapes(use_real_data):
+    pipeline = TosaPipelineFP[input_t](
+        nss().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+    )
+    if use_real_data:
+        pipeline.add_stage_after("export", pipeline.tester.dump_operator_distribution)
+    pipeline.run()
+
+
+@common.parametrize("is_qat", is_qat_test_data)
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_tosa_INT_dynamic_shapes(use_real_data, is_qat):
+    if is_qat:
+        pipeline_kwargs = {
+            # Frobenius norm & cosine theshold check disabled for QAT as smoke test has innacurate results and only checks flow functionality.
+            "frobenius_threshold": None,
+            "cosine_threshold": None,
+            "qtol": 12 if use_real_data else 8,
+        }
+    else:
+        pipeline_kwargs = (
+            {"frobenius_threshold": 0.32, "qtol": 12} if use_real_data else {"qtol": 7}
+        )
+    pipeline = TosaPipelineINT[input_t](
+        nss().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        is_qat=is_qat,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+        **pipeline_kwargs,
+    )
+    if use_real_data:
+        _set_nss_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_prequantized_tosa_INT_dynamic_shapes(use_real_data):
+    inputs = example_inputs() if use_real_data else random_inputs()
+    pipeline = TosaPipelineINT[input_t](
+        prequantized_nss(inputs, _NSS_DYNAMIC_SHAPES),
+        inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        qtol=12,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check,
+        ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+        suffix="prequant_nodes",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_vgf_FP_dynamic_shapes(use_real_data):
+    pipeline = VgfPipeline[input_t](
+        nss().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,
+        quantize=False,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("is_qat", is_qat_test_data)
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_vgf_INT_dynamic_shapes(use_real_data, is_qat):
+    pipeline = VgfPipeline[input_t](
+        nss().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        symmetric_io_quantization=True,
+        use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,
+        quantize=True,
+        is_qat=is_qat,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
+        tosa_version="TOSA-1.0+INT",
+        qtol=12,
+    )
+    if use_real_data:
+        _set_nss_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("use_real_data", input_test_data)
+def test_nss_prequantized_vgf_INT_dynamic_shapes(use_real_data):
+    inputs = example_inputs() if use_real_data else random_inputs()
+    pipeline = VgfPipeline[input_t](
+        prequantized_nss(inputs, _NSS_DYNAMIC_SHAPES),
+        inputs,
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,
+        quantize=True,
+        tosa_version="TOSA-1.0+INT",
+        qtol=12 if use_real_data else 8,
+        dynamic_shapes=_NSS_DYNAMIC_SHAPES,
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
