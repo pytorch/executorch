@@ -34,7 +34,7 @@ PassType: TypeAlias = Union[
 ]
 
 
-def _get_pass_name(fn: PassType) -> str:
+def _get_pass_name(fn: object) -> str:
     """Returns a human-readable name for a pass."""
     if hasattr(fn, "__name__"):
         return fn.__name__
