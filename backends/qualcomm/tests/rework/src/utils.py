@@ -633,3 +633,16 @@ class QAT:
             assert len(weight_fqs) > 0, "no int8-range weight FQ found for fp16a8w"
             # should complete without error
             __class__._get_converted_module(module, prepared, inputs)
+
+
+class LoweringWithExportedProgram:
+    @staticmethod
+    def test(compile_spec):
+        from unittest import mock
+
+        module = _UtilsModel()
+        inputs = (torch.randn(1, 4, 8, 8), torch.randn(1, 4, 8, 8))
+        exported = torch.export.export(module, inputs, strict=True)
+        with mock.patch("torch.export.export", wraps=torch.export.export) as export_spy:
+            to_edge_transform_and_lower_to_qnn(exported, None, compile_spec)
+            export_spy.assert_not_called()
