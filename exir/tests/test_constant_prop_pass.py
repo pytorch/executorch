@@ -345,3 +345,69 @@ class TestConstantPropPass(unittest.TestCase):
             list(new_ep.graph_signature.inputs_to_parameters.values()), ["w"]
         )
         self.assertTrue(torch.equal(new_ep.module()(x), x * 2 + 8))
+
+    def test_constant_prop_pass_keeps_sources_tagged_for_different_files(self) -> None:
+        """
+        A folded value is one tensor with one custom meta. In a merged
+        adapter weight whose base is tagged for one external file and whose
+        adapter factors for another, the sum is not folded: the base keeps
+        its data and its tag, and only the adapter product, whose sources
+        agree, folds into a value tagged like them. With one tag on all
+        three the whole weight folds and carries that tag.
+        """
+
+        class AdaptedLinear(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.base = torch.nn.Parameter(torch.randn(3, 4))
+                self.lora_a = torch.nn.Parameter(torch.randn(2, 4))
+                self.lora_b = torch.nn.Parameter(torch.randn(3, 2))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x @ (self.base + self.lora_b @ self.lora_a).t()
+
+        def tagged_program(model, base_file, lora_file):
+            ep = export(model, (x,), strict=True)
+            for node in ep.graph.find_nodes(op="placeholder"):
+                if node.name != "x":
+                    file = lora_file if "lora" in node.name else base_file
+                    node.meta["custom"] = {"delegate_constant_tag": file}
+            return ep
+
+        def parameter_tags(ep):
+            placeholders = {n.name: n for n in ep.graph.find_nodes(op="placeholder")}
+            return {
+                fqn: placeholders[name].meta["custom"]["delegate_constant_tag"]
+                for name, fqn in ep.graph_signature.inputs_to_parameters.items()
+            }
+
+        x = torch.randn(2, 4)
+        model = AdaptedLinear()
+        expected = model(x)
+
+        new_ep = constant_prop_pass(
+            tagged_program(model, "foundation.ptd", "lora.ptd"),
+            register_like_source=True,
+        )
+        new_ep._validate()
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertIn(torch.ops.aten.add.Tensor, targets)
+        tags = parameter_tags(new_ep)
+        self.assertEqual(tags.pop("base"), "foundation.ptd")
+        ((product, tag),) = tags.items()
+        self.assertRegex(product, r"^lora_[ab]_prop_[0-9a-f]{64}$")
+        self.assertEqual(tag, "lora.ptd")
+        self.assertTrue(
+            torch.allclose(new_ep.state_dict[product], model.lora_b @ model.lora_a)
+        )
+        self.assertTrue(torch.allclose(new_ep.module()(x), expected))
+
+        new_ep = constant_prop_pass(
+            tagged_program(model, "model.ptd", "model.ptd"), register_like_source=True
+        )
+        targets = [n.target for n in new_ep.graph.nodes if n.op == "call_function"]
+        self.assertEqual(targets, [torch.ops.aten.matmul.default])
+        ((weight, tag),) = parameter_tags(new_ep).items()
+        self.assertRegex(weight, r"^base_prop_[0-9a-f]{64}$")
+        self.assertEqual(tag, "model.ptd")
+        self.assertTrue(torch.allclose(new_ep.module()(x), expected))
