@@ -10,6 +10,7 @@
 
 #include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/backends/cadence/generic/operators/cadence_type_util.h>
+#include <executorch/backends/cadence/generic/operators/weight_zero_point.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 namespace impl {
@@ -20,6 +21,7 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
+using ::impl::generic::quantized::resolve_per_channel_weight_zero_point;
 
 /* This implements a generic 2d conv kernel that operates on raw pointers.
  * The quantized version handles quantized convolutions for 2D inputs.
@@ -1265,13 +1267,14 @@ Tensor& quantized_conv2d_nchw_out(
     IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
     ET_UNUSED const Tensor& out_multiplier,
     ET_UNUSED const Tensor& out_shift,
     Tensor& out) {
+  const auto wzp = resolve_per_channel_weight_zero_point(weight_zero_point);
   quantized_conv2d_nchw(
       input,
       weight,
@@ -1281,8 +1284,8 @@ Tensor& quantized_conv2d_nchw_out(
       dilation,
       groups,
       in_zero_point,
-      weight_zero_point.const_data_ptr<int32_t>(),
-      weight_zero_point.numel() > 1 ? 1 : 0,
+      wzp.data,
+      wzp.stride,
       bias_scale.const_data_ptr<float>(),
       bias_scale.numel() > 1 ? 1 : 0,
       output_scale,
@@ -1304,13 +1307,14 @@ Tensor& quantized_conv2d_nhwc_out(
     IntArrayRef dilation,
     int64_t groups,
     int64_t in_zero_point,
-    const Tensor& weight_zero_point,
+    const std::optional<Tensor>& weight_zero_point,
     const Tensor& bias_scale,
     double output_scale,
     int64_t output_zero_point,
     ET_UNUSED const Tensor& out_multiplier,
     ET_UNUSED const Tensor& out_shift,
     Tensor& out) {
+  const auto wzp = resolve_per_channel_weight_zero_point(weight_zero_point);
   quantized_conv2d_nhwc(
       input,
       weight,
@@ -1320,8 +1324,8 @@ Tensor& quantized_conv2d_nhwc_out(
       dilation,
       groups,
       in_zero_point,
-      weight_zero_point.const_data_ptr<int32_t>(),
-      weight_zero_point.numel() > 1 ? 1 : 0,
+      wzp.data,
+      wzp.stride,
       bias_scale.const_data_ptr<float>(),
       bias_scale.numel() > 1 ? 1 : 0,
       output_scale,
