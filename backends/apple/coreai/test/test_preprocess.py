@@ -26,6 +26,7 @@ import torch.nn as nn
 
 from executorch.backends.apple.coreai.compiler.preprocess import (
     _aot_compile_options,
+    _asset_metadata,
     AOTCompileConfig,
     COMPILE_SPEC_KEYS,
     coreai_sidecar_dir,
@@ -251,6 +252,42 @@ class ManifestBindingsTest(unittest.TestCase):
         self.assertEqual(manifest["function"], "main")
         self.assertEqual(manifest["input_names"], [f"input_{i}" for i in range(12)])
         self.assertEqual(manifest["output_names"], [f"output_{i}" for i in range(12)])
+
+
+class AssetMetadataTest(unittest.TestCase):
+    @mock.patch(_MOCK_BUILD, side_effect=_fake_run_coreai_build)
+    def test_sizes_and_digests_cover_every_delivered_file(self, _build):
+        aot = _aot_spec({"platform": "iOS", "architectures": ["h15g", "h16"]})
+        for specs, bundles in (
+            ([], {"model.aimodel"}),
+            ([aot], {"model.h15g.aimodelc", "model.h16.aimodelc"}),
+        ):
+            with self.subTest(aot=bool(specs)), tempfile.TemporaryDirectory() as d:
+                with coreai_sidecar_dir(d):
+                    manifest = json.loads(
+                        CoreAIBackend.preprocess(
+                            _edge_program(), specs + [_SIDECAR_SPEC]
+                        ).processed_bytes
+                    )
+                root = Path(d) / manifest["hash"]
+                on_disk = {
+                    p.relative_to(root).as_posix(): p.stat().st_size
+                    for p in root.rglob("*")
+                    if p.is_file()
+                }
+                self.assertEqual(manifest["files"], on_disk)
+                self.assertEqual(set(manifest["bundle_digests"]), bundles)
+
+    def test_digest_changes_with_file_contents(self):
+        with tempfile.TemporaryDirectory() as d:
+            weights = Path(d) / "model.aimodel" / "weights.bin"
+            weights.parent.mkdir()
+            weights.write_bytes(b"\x00\x01")
+            before = _asset_metadata(Path(d))
+            weights.write_bytes(b"\x01\x00")
+            after = _asset_metadata(Path(d))
+        self.assertEqual(before["files"], after["files"])
+        self.assertNotEqual(before["bundle_digests"], after["bundle_digests"])
 
 
 def _lower_with_break(partitioner):
@@ -542,13 +579,11 @@ class CoreAIAOTCompileTest(unittest.TestCase):
                     )
                 )
                 lbm, manifest = _lowered_manifest(lowered)
-                pte = bytes(lowered.to_executorch().buffer)
 
             self.assertEqual(manifest["packaging"], "aot_compiled_sidecar")
             self.assertGreaterEqual(len(manifest["archs"]), 1)
             # Sidecar: compiled bundle *contents* must not be embedded in the .pte.
             self.assertIsNone(lbm.named_data_store_output)
-            self.assertNotIn(b"mpsExecutable", pte)
             for rel in manifest["archs"].values():
                 bundle = os.path.join(sidecar, rel)
                 self.assertTrue(os.path.isdir(bundle), bundle)

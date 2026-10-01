@@ -9,6 +9,7 @@
 
 import contextlib
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -262,6 +263,35 @@ def _maybe_warn_sidecar_env_ignored() -> None:
         )
 
 
+def _asset_metadata(staging: Path) -> Dict[str, Any]:
+    """Per-file sizes and a SHA-256 digest per bundle under ``staging``.
+
+    Each bundle digest covers a fixed prefix, the file count, then per file (in
+    UTF-8 byte order) the path length, path, size and contents.
+    """
+    sizes: Dict[str, int] = {}
+    digests: Dict[str, str] = {}
+    for bundle in sorted(p for p in staging.iterdir() if p.is_dir()):
+        files = sorted(
+            (
+                (path.relative_to(staging).as_posix(), path)
+                for path in bundle.rglob("*")
+                if path.is_file()
+            ),
+            key=lambda item: item[0].encode("utf-8"),
+        )
+        digest = hashlib.sha256(b"ExecuTorch.CoreAI.raw-assets.sha256.v1\0")
+        digest.update(len(files).to_bytes(8, "big"))
+        for rel, path in files:
+            payload = path.read_bytes()
+            name = rel.encode("utf-8")
+            digest.update(len(name).to_bytes(8, "big") + name)
+            digest.update(len(payload).to_bytes(8, "big") + payload)
+            sizes[rel] = len(payload)
+        digests[bundle.name] = digest.hexdigest()
+    return {"files": sizes, "bundle_digests": digests}
+
+
 def _deliver(
     staging: Path,
     model_hash: str,
@@ -281,7 +311,12 @@ def _deliver(
     cannot leave a half-populated ``<hash>/`` behind for
     :func:`_reject_existing_asset_dir` to trip over on the next build.
     """
-    manifest = {"packaging": packaging.value, "hash": model_hash, **manifest_extra}
+    manifest = {
+        "packaging": packaging.value,
+        "hash": model_hash,
+        **manifest_extra,
+        **_asset_metadata(staging),
+    }
     if sidecar_dir is None:
         return _embed_dir_inline(staging, model_hash, manifest)
 
@@ -352,23 +387,19 @@ def _embed_dir_inline(
     bundles, never a bundle itself, so the bundle name survives into the keys
     and the asset reconstructs to the layout the sidecar routes write on disk.
 
-    Keys are ``coreai/{hash}/{relpath}``; the manifest lists the relpaths plus
-    any ``manifest_extra`` (packaging, archs, ...).
+    Keys are ``coreai/{hash}/{relpath}``; ``manifest_extra`` becomes the
+    manifest (packaging, files, archs, ...).
     """
     store = NamedDataStore()
-    files: List[str] = []
     for path in sorted(root_dir.rglob("*")):
         if path.is_file():
-            rel = path.relative_to(root_dir).as_posix()
-            files.append(rel)
             store.add_named_data(
-                _nds_key(model_hash, rel),
+                _nds_key(model_hash, path.relative_to(root_dir).as_posix()),
                 path.read_bytes(),
                 alignment=_ASSET_ALIGNMENT,
             )
-    manifest = {"files": files, **manifest_extra}
     return PreprocessResult(
-        processed_bytes=json.dumps(manifest).encode("utf-8"),
+        processed_bytes=json.dumps(manifest_extra).encode("utf-8"),
         data_store_output=store.get_named_data_store_output(),
     )
 
