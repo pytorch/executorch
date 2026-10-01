@@ -240,28 +240,37 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         )
         memo: dict = {}
 
-        def constant_only(node: torch.fx.Node) -> bool:
-            if node in memo:
-                return memo[node]
-            if node.op == "placeholder":
-                result = node in constants
-            elif (
-                node.op != "call_function"
-                or node.target in skip_targets
-                or node.is_impure()
-            ):
-                result = False
-            else:
-                result = all(
-                    constant_only(input_node) for input_node in node.all_input_nodes
-                ) and (
-                    is_const(node.args, exported_program, constants)
-                    and is_const(node.kwargs, exported_program, constants)
-                )
-                if result:
-                    constants[node] = None
-            memo[node] = result
-            return result
+        def constant_only(seed: torch.fx.Node) -> bool:
+            # Post-order over the producers, so that a deep chain does not
+            # reach the recursion limit: a node is decided after its inputs.
+            stack: list[tuple[torch.fx.Node, bool]] = [(seed, False)]
+            while stack:
+                node, inputs_done = stack.pop()
+                if node in memo:
+                    continue
+                if inputs_done:
+                    result = (
+                        all(memo[input_node] for input_node in node.all_input_nodes)
+                        and is_const(node.args, exported_program, constants)
+                        and is_const(node.kwargs, exported_program, constants)
+                    )
+                    if result:
+                        constants[node] = None
+                    memo[node] = result
+                elif node.op == "placeholder":
+                    memo[node] = node in constants
+                elif (
+                    node.op != "call_function"
+                    or node.target in skip_targets
+                    or node.is_impure()
+                ):
+                    memo[node] = False
+                else:
+                    stack.append((node, True))
+                    stack.extend(
+                        (input_node, False) for input_node in node.all_input_nodes
+                    )
+            return memo[seed]
 
         return constant_only
 

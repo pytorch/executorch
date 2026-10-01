@@ -970,3 +970,53 @@ class TestXnnpackPartitioner(unittest.TestCase):
             list(folded.graph_signature.inputs_to_parameters.values())[-1],
             r"^conv\.parametrizations\.weight\.original0_prop_[0-9a-f]{8}$",
         )
+
+    def test_pre_decomposition_folding_handles_a_deep_weight_chain(self):
+        """
+        The walk that decides which nodes are constant-only is iterative, so
+        a weight computed through a long chain of producers folds instead of
+        reaching the recursion limit, and the linear is delegated.
+        """
+
+        class Chain(torch.nn.Module):
+            def __init__(self, depth):
+                super().__init__()
+                self.depth = depth
+                self.w = torch.nn.Parameter(torch.randn(4, 4))
+
+            def forward(self, x):
+                w = self.w
+                for _ in range(self.depth):
+                    w = w + 1.0
+                return F.linear(x, w)
+
+        model = Chain(600).eval()
+        example_inputs = (torch.randn(2, 4),)
+        folded = XnnpackPartitioner().transform_for_pre_decomposition(
+            export(model, example_inputs)
+        )
+        (weight,) = folded.graph_signature.inputs_to_parameters.values()
+        self.assertRegex(weight, r"^w_prop_[0-9a-f]{8}$")
+
+        edge = to_edge_transform_and_lower(
+            export(model, example_inputs), partitioner=[XnnpackPartitioner()]
+        )
+        call_functions = [
+            node.target
+            for node in edge.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+        self.assertEqual(
+            call_functions[0], torch.ops.higher_order.executorch_call_delegate
+        )
+        self.assertEqual(len(call_functions), 2)
+        executorch = edge.to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(executorch.buffer)
+        self.assertTrue(
+            torch.allclose(
+                executorch_module.forward(example_inputs)[0],
+                model(*example_inputs),
+                rtol=1e-5,
+                atol=1e-5,
+            )
+        )
