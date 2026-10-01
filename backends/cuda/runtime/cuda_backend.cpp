@@ -203,6 +203,8 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_OPTIONAL_SYMBOL(
         get_constant_dtype, AOTInductorModelContainerGetConstantDtype);
     LOAD_OPTIONAL_SYMBOL(
+        get_constant_data_size, AOTInductorModelContainerGetConstantDataSize);
+    LOAD_OPTIONAL_SYMBOL(
         extract_constants_map, AOTInductorModelContainerExtractConstantsMap);
     LOAD_OPTIONAL_SYMBOL(
         update_user_managed_constant_buffer_pairs,
