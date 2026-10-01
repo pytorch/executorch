@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Real sockets: disconnect one SSE request without cancelling its worker peer."""
+"""Real sockets: disconnect one request without cancelling its worker peer."""
 
 import json
 import socket
@@ -45,10 +45,10 @@ for line in sys.stdin:
     if request['op'] == 'generate':
         session_id = request['session_id']
         active[session_id] = request_id
-        if sys.argv[3] == 'True' and session_id == 'a':
-            Path(sys.argv[1] + '.started').write_text('started')
-        else:
+        if not (sys.argv[3] == 'True' and session_id == 'a'):
             send(request_id, token='worker-token-visible-content')
+        if session_id == 'a':
+            Path(sys.argv[1] + '.started').write_text('started')
     elif request['op'] == 'cancel':
         assert set(active) == {'a', 'b'}
         assert request['target_request_id'] == active['a']
@@ -62,10 +62,13 @@ for line in sys.stdin:
 """
 
 
-@pytest.mark.parametrize("settles", [True, False])
-@pytest.mark.parametrize("preflight", [True, False])
+@pytest.mark.parametrize("settles", [True, False], ids=["settled", "unsettled"])
+@pytest.mark.parametrize(
+    "preflight", [True, False], ids=["before-first-token", "after-first-token"]
+)
+@pytest.mark.parametrize("stream", [True, False], ids=["stream", "nonstream"])
 def test_socket_disconnect_cancels_only_owning_multiplexed_request(
-    tmp_path, settles, preflight
+    tmp_path, settles, preflight, stream
 ):
     marker = tmp_path / "cancelled.json"
     worker = spawn_worker(
@@ -96,11 +99,11 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
     started_b = threading.Event()
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
 
-    def body(session_id):
+    def body(session_id, stream=True):
         return dict(
             model="test-model",
             session_id=session_id,
-            stream=True,
+            stream=stream,
             stream_options=dict(include_usage=True),
             messages=[dict(role="user", content="hi")],
             max_tokens=8,
@@ -124,8 +127,8 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
         assert server.started
         peer = pool.submit(consume_b)
         assert started_b.wait(5)
-        if preflight:
-            payload = json.dumps(body("a")).encode()
+        if preflight or not stream:
+            payload = json.dumps(body("a", stream=stream)).encode()
             with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
                 headers = (
                     f"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"

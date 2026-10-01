@@ -416,12 +416,19 @@ class ServingChat:
             async with self._transactions.hold(session_id):
                 try:
                     await self._runtime.reset(session_id)
-                except BaseException:
+                except BaseException as error:
+                    missing = (
+                        isinstance(error, WorkerError)
+                        and error.code == "session_not_found"
+                    )
+                    # Missing native state is already reset at the HTTP boundary.
                     # A failed cold replacement does not restore the old state.
-                    if self._multiplexed:
+                    if self._multiplexed or missing:
                         self._transcript.reset(session_id)
-                    raise
-                self._transcript.reset(session_id)
+                    if not missing:
+                        raise
+                else:
+                    self._transcript.reset(session_id)
         except WorkerError as e:
             raise self._generation_error(e)
 
