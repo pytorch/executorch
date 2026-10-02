@@ -236,6 +236,8 @@ class ET_EXPERIMENTAL Session {
   std::unique_ptr<SessionState> state_;
 };
 
+enum class ET_EXPERIMENTAL InitializationState { Pending, Ready, Failed };
+
 class ET_EXPERIMENTAL Runner {
  public:
   // Takes the scheduler, one per runner, which also supplies the prefill chunk
@@ -251,6 +253,11 @@ class ET_EXPERIMENTAL Runner {
 
   Runner(const Runner&) = delete;
   Runner& operator=(const Runner&) = delete;
+
+  // Any thread. Pending until executor initialization returns; Failed if it
+  // returns false or throws. The result is retained after shutdown, so Ready
+  // describes successful initialization, not whether work is still accepted.
+  InitializationState initialization_state() const noexcept;
 
   // Any thread; queued to the engine thread and acked.
   //
