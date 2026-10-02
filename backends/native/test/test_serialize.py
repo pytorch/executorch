@@ -128,6 +128,7 @@ def _roundtrip(model, example_inputs, dynamic_shapes=None) -> _Round:
         edge_ep.graph_signature,
         edge_ep.state_dict,
         edge_ep.constants,
+        edge_ep.range_constraints,
     )
     method = deserialize_program(data).methods[0]
     # Baseline invariants asserted for every roundtrip so each test starts from a
@@ -511,6 +512,21 @@ class DynamicShapeTest(unittest.TestCase):
         self.assertTrue(any(r for r in il.refs))
         self.assertTrue(any(not r for r in il.refs))
 
+    def test_dynamic_dim_keeps_declared_min(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return torch.cat([x, x]) * 2
+
+        graph = _roundtrip(
+            M(),
+            (torch.randn(4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("b", min=1, max=16)}},
+        ).graph
+        ranges = {
+            (d.min, d.max) for tv in graph.tensor_values or [] for d in tv.meta.sizes
+        }
+        self.assertEqual(ranges, {(1, 16), (2, 32)})
+
     def test_dynamic_dim_not_frozen_in_tensor_meta(self):
         # int(sym) would specialize to the hint and freeze the dim; TensorMeta must
         # keep it as a range (min != max), not a single concrete value.
@@ -571,10 +587,9 @@ class DimOrderTest(unittest.TestCase):
         self.assertEqual(_dim_order(t), [0, 2, 1])
 
     def test_channels_last_with_size_one_channel(self):
-        # channels-last leaves the size-1 channel with an arbitrary stride, which
-        # must not be treated as a non-expressible layout.
+        # A size-1 channel must not make channels-last non-expressible.
         t = torch.randn(2, 1, 3, 4).to(memory_format=torch.channels_last)
-        self.assertEqual(_dim_order(t), [0, 2, 1, 3])
+        self.assertEqual(_dim_order(t), [0, 2, 3, 1])
 
     def test_sliced_layout_raises(self):
         t = torch.randn(4, 8)[:, :4]

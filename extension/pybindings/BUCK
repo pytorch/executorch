@@ -68,7 +68,6 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["PUBLIC"],
     deps = [
         ":_C",
-        "//executorch/exir:_warnings",
     ],
 )
 

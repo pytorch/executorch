@@ -59,7 +59,9 @@ fbcode_target(
         "//executorch/backends/native:lib",
         "//executorch/backends/native/test:utils",
         "//executorch/exir:lib",
+        "//executorch/exir/native:native",
         "//executorch/extension/llm/export:gguf",
+        "//pytorch/ao:torchao",
     ],
 )
 

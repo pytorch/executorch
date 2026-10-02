@@ -9,7 +9,6 @@ import executorch.backends.arm.operator_support.convolution_support  # noqa: F40
 import executorch.backends.arm.operator_support.pool_2d_support  # noqa: F401
 import executorch.backends.arm.operator_support.reduce_sum_support  # noqa: F401
 
-import executorch.backends.arm.operator_support.sym_size_int_support  # noqa: F401
 import pytest
 import torch
 from executorch.backends.arm.operator_support.slice_copy_support import (
