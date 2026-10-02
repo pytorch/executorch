@@ -12,6 +12,8 @@ import asyncio
 import logging
 import threading
 
+import pytest
+
 from executorch.examples.llm_server.python import session_runtime as session_runtime_mod
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
@@ -518,6 +520,49 @@ def test_noncooperative_cancellation_aborts_and_fails_fast():
 
     import pytest
     from executorch.examples.llm_server.python.worker_client import WorkerError
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("phase", ["generate", "settle"])
+def test_thread_interruption_reaches_consumer_and_finalizes_bridge(phase):
+    from executorch.examples.llm_server.python.worker_client import WorkerError
+
+    class InterruptedWorker(_Worker):
+        supports_multiplexing = True
+        max_inflight_requests = 1
+
+        def reserve_request(self):
+            return 17
+
+        def generate(self, *args, **kwargs):
+            if phase == "generate":
+                raise KeyboardInterrupt(phase)
+
+        def wait_for_request(self, request_id):
+            self.waited = request_id
+            if phase == "settle":
+                raise KeyboardInterrupt(phase)
+
+        def cancel(self, request_id):
+            return True
+
+    async def scenario():
+        worker = InterruptedWorker()
+        runtime = SessionRuntime(worker)
+        generation = runtime.generate_stream("s", _text(), _OPTS)
+        try:
+            with pytest.raises(WorkerError, match=phase):
+                await asyncio.wait_for(anext(generation), 2)
+            assert worker.waited == 17
+            assert generation._bridge.worker_done.is_set()
+            assert generation._future.done()
+            assert runtime._admitted == 0
+            assert not runtime._session_locks._entries
+            assert runtime.healthy
+        finally:
+            await generation.aclose()
+            runtime.close_worker()
 
     asyncio.run(scenario())
 
