@@ -22,6 +22,7 @@ from executorch.backends.nxp.backend.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.tests.config_importer import test_config
 from executorch.backends.nxp.tests.dataset_creator import (
+    CopyDatasetCreator,
     create_quantized_variant_of_dataset,
     InputQuantizationSpec,
     RandomDatasetCreator,
@@ -111,7 +112,8 @@ def _run_delegated_executorch_program(
     use_neutron_for_format_conversion=True,
     operators_not_to_delegate: list[str] = None,
     remove_quant_io_ops: bool = False,
-) -> tuple[ExportedProgram, str]:
+) -> tuple[ExportedProgram, str, list[InputQuantizationSpec] | None]:
+    input_quant_spec = None
     try:
         if mocker:
             method = getattr(NeutronPartitioner, "partition")  # noqa B009
@@ -169,7 +171,7 @@ def _run_delegated_executorch_program(
 
     # Preparation of quantized dataset, requires quantization parameters from converted delegated model
     if remove_quant_io_ops:
-        dataset_dir_quant = os.path.join(test_dir, "dataset_quant")
+        dataset_dir_quant = os.path.join(test_dir, "model_dataset_quant")
         input_quant_spec = _parse_input_quant_params(input_spec, delegated_program)
         create_quantized_variant_of_dataset(
             testing_dataset_dir, dataset_dir_quant, input_quant_spec, input_spec
@@ -189,7 +191,7 @@ def _run_delegated_executorch_program(
         --output {npu_results_dir} --firmware {NSYS_FIRMWARE_PATH} --nsys {NSYS_PATH} --nsys_config {NSYS_CONFIG_PATH}"
     execute_cmd(delegated_cmd)
 
-    return exported_program, testing_dataset_dir
+    return exported_program, testing_dataset_dir, input_quant_spec
 
 
 def _run_non_delegated_executorch_program(
@@ -383,13 +385,14 @@ def assert_NSYS():
 
 def lower_run_compare(
     model: torch.nn.Module,
-    input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
+    model_input_spec: Iterable[ModelInputSpec] | tuple[int, ...],
     dlg_model_verifier: GraphVerifier,
     request: FixtureRequest,
     dataset_creator=None,
     output_comparator=None,
     mocker: MockerFixture = None,
     reference_model: ReferenceModel = ReferenceModel.QUANTIZED_EXECUTORCH_CPP,
+    reference_input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | None = None,
     use_qat: bool = False,
     train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
     use_profiling: bool = False,
@@ -411,6 +414,7 @@ def lower_run_compare(
     :param output_comparator: Comparator of results produced by NPU and CPU runs of the program.
     :param mocker: Mocker instance used by visualizer.
     :param reference_model: Version of the model which will be run to obtain reference output data.
+    :param reference_input_spec: Reference model input specification, in the same format as `input_spec`.
     :param use_qat: If True, applies quantization-aware training before conversion (without the QAT training).
     :param train_fn: Train/finetune function for QAT training. Is used only when `use_qat=True`.
     :param use_profiling: Enable profiling for neutron delegated model.
@@ -439,13 +443,37 @@ def lower_run_compare(
     shutil.rmtree(test_dir, ignore_errors=True)
     mkdir(test_dir)
 
-    dataset_dir = os.path.join(test_dir, "dataset")
-    mkdir(dataset_dir)
-    input_spec = to_model_input_spec(input_spec)
-
-    calibration_dataset_dir, testing_dataset_dir = dataset_creator.generate_samples(
-        dataset_dir, list(input_spec)
+    model_input_spec = to_model_input_spec(model_input_spec)
+    model_dataset_dir = os.path.join(test_dir, "model_dataset")
+    mkdir(model_dataset_dir)
+    model_calibration_dataset_dir, model_testing_dataset_dir = (
+        dataset_creator.generate_samples(model_dataset_dir, list(model_input_spec))
     )
+
+    if reference_input_spec is None:
+        ref_calibration_dataset_dir, ref_testing_dataset_dir = (
+            model_calibration_dataset_dir,
+            model_testing_dataset_dir,
+        )
+        reference_input_spec = model_input_spec
+    else:
+        reference_input_spec = to_model_input_spec(reference_input_spec)
+        assert (
+            len(reference_input_spec) == 1
+        ), "Customizing input specification for reference models is currently supported only for models with single input."
+        ref_dim_order = reference_input_spec[0].dim_order
+
+        ref_dataset_dir = os.path.join(test_dir, "ref_dataset")
+        mkdir(ref_dataset_dir)
+
+        # Calibration data is always channels-first. If channels-last data for reference testing is desired,
+        # the data is transposed in the dataset creator.
+        ref_dataset_creator = CopyDatasetCreator(model_calibration_dataset_dir)
+        ref_calibration_dataset_dir, ref_testing_dataset_dir = (
+            ref_dataset_creator.generate_samples(ref_dataset_dir, reference_input_spec)
+        )
+
+        model_to_not_delegate.to(memory_format=ref_dim_order)
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
@@ -454,29 +482,107 @@ def lower_run_compare(
         model_to_export_fp32,
         test_dir,
         test_name,
-        input_spec,
+        model_input_spec,
     )
 
-    delegated_program, testing_dataset_dir = _run_delegated_executorch_program(
-        model_to_delegate,
-        test_dir,
-        test_name,
-        calibration_dataset_dir,
-        testing_dataset_dir,
-        input_spec,
-        dlg_model_verifier,
-        npu_results_dir,
-        mocker,
-        use_qat=use_qat,
-        train_fn=train_fn,
-        use_profiling=use_profiling,
-        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
-        operators_not_to_delegate=operators_not_to_delegate,
-        remove_quant_io_ops=remove_quant_io_ops,
+    delegated_program, model_testing_dataset_dir, model_input_quant_spec = (
+        _run_delegated_executorch_program(
+            model_to_delegate,
+            test_dir,
+            test_name,
+            model_calibration_dataset_dir,
+            model_testing_dataset_dir,
+            model_input_spec,
+            dlg_model_verifier,
+            npu_results_dir,
+            mocker,
+            use_qat=use_qat,
+            train_fn=train_fn,
+            use_profiling=use_profiling,
+            use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+            operators_not_to_delegate=operators_not_to_delegate,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
     )
 
     output_spec = _get_program_output_spec(delegated_program)
 
+    # Create quantized version of reference dataset
+    if reference_input_spec is not None and remove_quant_io_ops:
+        ref_dataset_dir_quant = os.path.join(test_dir, "ref_dataset_quant")
+        create_quantized_variant_of_dataset(
+            ref_testing_dataset_dir,
+            ref_dataset_dir_quant,
+            model_input_quant_spec,
+            reference_input_spec,
+        )
+        ref_testing_dataset_dir = ref_dataset_dir_quant
+
+    _run_reference_model(
+        reference_model,
+        model,
+        model_to_not_delegate,
+        test_dir,
+        test_name,
+        ref_calibration_dataset_dir,
+        ref_testing_dataset_dir,
+        reference_input_spec,
+        output_spec,
+        cpu_results_dir,
+        npu_results_dir,
+        use_qat=use_qat,
+        train_fn=train_fn,
+        remove_quant_io_ops=remove_quant_io_ops,
+    )
+
+    if logging.root.isEnabledFor(logging.DEBUG):
+        _generate_txt_test_data(
+            model_calibration_dataset_dir,
+            model_testing_dataset_dir,
+            list(model_input_spec),
+        )
+        dump_debug_test_summary(test_name, test_dir)
+    npu_results_dir = os.path.join(test_dir, "results_npu")
+    cpu_results_dir = os.path.join(test_dir, "results_cpu")
+    output_comparator.compare_results(cpu_results_dir, npu_results_dir, output_spec)
+
+
+def _run_reference_model(
+    reference_model: ReferenceModel,
+    model: torch.nn.Module,
+    model_to_not_delegate: torch.nn.Module,
+    test_dir,
+    test_name,
+    calibration_dataset_dir,
+    testing_dataset_dir,
+    reference_input_spec: list[ModelInputSpec],
+    output_spec: list[torch.Tensor],
+    cpu_results_dir,
+    npu_results_dir,
+    use_qat: bool = False,
+    train_fn: Callable[[torch.fx.GraphModule], None] | None = None,
+    remove_quant_io_ops: bool = False,
+):
+    """
+    Run the selected reference model variant to produce the reference output data
+    stored in `cpu_results_dir`.
+
+    :param reference_model: Version of the model which will be run to obtain reference output data.
+    :param model: Original PyTorch model.
+    :param model_to_not_delegate: Copy of the model used for the non-delegated/reference runs.
+    :param test_dir: Directory for saving test artifacts.
+    :param test_name: Name of the test.
+    :param calibration_dataset_dir: Directory containing calibration data.
+    :param testing_dataset_dir: Directory containing testing data.
+    :param reference_input_spec: Input specification used for the reference model.
+    :param output_spec: List of output tensor specifications.
+    :param cpu_results_dir: Directory where reference (CPU) results will be stored.
+    :param npu_results_dir: Directory where NPU results are already stored.
+    :param use_qat: If True, applies quantization-aware training before conversion.
+    :param train_fn: Train/finetune function for QAT training. Used only when `use_qat=True`.
+    :param remove_quant_io_ops: If True, IO q-ops are removed and verification is done on quantized
+        version of dataset (quantized INT8 input samples).
+    """
     match reference_model:
         case ReferenceModel.QUANTIZED_EXECUTORCH_CPP:
             # Lower to quantized executorch program, export to `.pte` file and run in c++ using
@@ -487,7 +593,7 @@ def lower_run_compare(
                 test_name,
                 calibration_dataset_dir,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
                 cpu_results_dir,
                 use_qat=use_qat,
                 train_fn=train_fn,
@@ -499,7 +605,7 @@ def lower_run_compare(
             non_delegated_edge_program = (
                 to_quantized_edge_program(
                     model_to_not_delegate,
-                    input_spec,
+                    reference_input_spec,
                     get_calibration_inputs_fn=get_calibration_inputs_fn_from_dataset_dir(
                         calibration_dataset_dir
                     ),
@@ -516,13 +622,13 @@ def lower_run_compare(
             # model. When running in Python, the testing data are loaded from numpy tensors according to input spec.
             # There the testing data are in quantized int8 dtype.
             if remove_quant_io_ops:
-                for spec in input_spec:
+                for spec in reference_input_spec:
                     spec.dtype = torch.int8
 
             _run_python_program(
                 non_delegated_edge_program,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
                 output_spec,
                 cpu_results_dir,
                 npu_results_dir,
@@ -539,7 +645,7 @@ def lower_run_compare(
             _run_python_program(
                 model_to_not_delegate,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
                 output_spec,
                 cpu_results_dir,
                 npu_results_dir,
@@ -558,7 +664,7 @@ def lower_run_compare(
                 )
             if any(
                 spec.dim_order != torch.channels_last
-                for spec in input_spec
+                for spec in reference_input_spec
                 if len(spec.shape) == 4
             ):
                 raise ValueError(
@@ -574,7 +680,7 @@ def lower_run_compare(
                 test_name,
                 calibration_dataset_dir,
                 testing_dataset_dir,
-                input_spec,
+                reference_input_spec,
                 output_spec,
                 cpu_results_dir,
                 npu_results_dir,
@@ -582,15 +688,6 @@ def lower_run_compare(
 
         case _:
             raise ValueError(f"Unsupported reference model: `{reference_model}`.")
-
-    if logging.root.isEnabledFor(logging.DEBUG):
-        _generate_txt_test_data(
-            calibration_dataset_dir, testing_dataset_dir, list(input_spec)
-        )
-        dump_debug_test_summary(test_name, test_dir)
-    npu_results_dir = os.path.join(test_dir, "results_npu")
-    cpu_results_dir = os.path.join(test_dir, "results_cpu")
-    output_comparator.compare_results(cpu_results_dir, npu_results_dir, output_spec)
 
 
 def lower_run_compare_ptq_qat(
@@ -635,7 +732,7 @@ def lower_run_compare_ptq_qat(
     shutil.rmtree(test_dir, ignore_errors=True)
     mkdir(test_dir)
 
-    dataset_dir = os.path.join(test_dir, "dataset")
+    dataset_dir = os.path.join(test_dir, "model_dataset")
     mkdir(dataset_dir)
     if isinstance(input_spec, tuple):
         input_spec = [ModelInputSpec(input_spec)]
@@ -647,7 +744,7 @@ def lower_run_compare_ptq_qat(
     ptq_results_dir = os.path.join(test_dir, "results_ptq")
     qat_results_dir = os.path.join(test_dir, "results_qat")
 
-    delegated_program_ptq, _ = _run_delegated_executorch_program(
+    delegated_program_ptq, _, _ = _run_delegated_executorch_program(
         model_ptq,
         test_dir,
         test_name,
@@ -826,7 +923,7 @@ def _generate_txt_test_data(
         else [testing_dataset_dir]
     )
     for d_path in dataset_paths:
-        quant_dataset = d_path.endswith("dataset_quant")
+        quant_dataset = d_path.endswith("model_dataset_quant")
 
         # For multiple input tests, list each sample dir, for single input tests the input files are in d_path
         sample_dirs = [os.path.join(d_path, file) for file in os.listdir(d_path)]

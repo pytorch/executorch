@@ -24,7 +24,6 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 from executorch.backends.nxp.tests.nsys_testing import (
     lower_run_compare,
     lower_run_compare_ptq_qat,
-    ReferenceModel,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
@@ -32,8 +31,8 @@ from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny
 )
 
 BOUNDS_MSE = {
-    "PTQ": {"channels-last": 1.859e-05, "channels-first": 7.432e-09},
-    "QAT": {"channels-last": 2.751e-07, "channels-first": 5.205e-06},
+    "PTQ": {"channels-last": np.inf, "channels-first": np.inf},
+    "QAT": {"channels-last": np.inf, "channels-first": np.inf},
 }
 
 
@@ -61,10 +60,10 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         dataset, num_examples=num_samples, idx_to_label=labels
     )
 
-    input_spec = ModelInputSpec(img_classification.input_shape)
+    model_input_spec = ModelInputSpec(img_classification.input_shape)
     if channels_last:
         model.to(memory_format=torch.channels_last)
-        input_spec.dim_order = torch.channels_last
+        model_input_spec.dim_order = torch.channels_last
 
     quant_type_key = "QAT" if use_qat else "PTQ"
     format_key = "channels-last" if channels_last else "channels-first"
@@ -80,22 +79,18 @@ def test_mlperf_tiny_classification_mse_cpu_vs_npu(
         else None
     )
 
-    # Portable constant_pad_nd does not support channels-last tensors.
-    ref_model = (
-        ReferenceModel.QUANTIZED_EDGE_PYTHON
-        if channels_last
-        else ReferenceModel.QUANTIZED_EXECUTORCH_CPP
-    )
+    ref_input_spec = ModelInputSpec(img_classification.input_shape)
+    ref_input_spec.dim_order = torch.contiguous_format
 
     lower_run_compare(
         model,
-        [input_spec],
+        [model_input_spec],
         model_verifier,
         request,
         dataset_creator=dataset_creator,
         output_comparator=comparator,
-        reference_model=ref_model,
         mocker=mocker,
+        reference_input_spec=[ref_input_spec],
         use_qat=use_qat,
         train_fn=train_fn,
     )

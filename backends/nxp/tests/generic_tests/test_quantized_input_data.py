@@ -34,7 +34,7 @@ def test__single_quantized_inputs(mocker, request):
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000.bin").exists()
+    assert (OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000.bin").exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
@@ -59,7 +59,7 @@ def test__single_quantized_inputs_edge_python_reference(mocker, request):
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000.bin").exists()
+    assert (OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000.bin").exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
@@ -83,7 +83,9 @@ def test__multiple_quantized_inputs(mocker, request):
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000" / "00.bin").exists()
+    assert (
+        OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000" / "00.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
@@ -108,7 +110,9 @@ def test__multiple_quantized_inputs_edge_python_reference(mocker, request):
     )
 
     test_name = nsys_testing.get_test_name(request)
-    assert (OUTPUTS_DIR / test_name / "dataset_quant" / "0000" / "00.bin").exists()
+    assert (
+        OUTPUTS_DIR / test_name / "model_dataset_quant" / "0000" / "00.bin"
+    ).exists()
 
     # Check outputs are in quantized int8 format
     output_tensor_spec = output_tensor_spec_spy.spy_return
