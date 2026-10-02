@@ -1,7 +1,8 @@
 # Native Kev decision inference
 
-Embed [Kev](https://huggingface.co/jaredpalmer/kev-0.8b) in a C++ application
-with ExecuTorch's `Module` API, using XNNPACK on CPU or MLX on Apple GPUs.
+Embed [Kev](https://huggingface.co/jaredpalmer/kev-0.8b), a System One model,
+in a C++ application with ExecuTorch's `Module` API, using XNNPACK on CPU or
+MLX on Apple GPUs.
 Prefill a shared text once, then ask batches of questions from that snapshot.
 Inference uses the native binary, model, and tokenizer; Python is needed for
 export.
@@ -27,10 +28,10 @@ hf download jaredpalmer/kev-0.8b \
   --revision 54f4f8777356cd5bbbb6c6919c657f26e6f2f6d8 \
   --local-dir kev-checkpoint
 
-PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/kev/export.py \
+PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/systemone/kev/export.py \
   --checkpoint kev-checkpoint --backend xnnpack --dtype fp32 --output kev-cpu
 
-PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/kev/export.py \
+PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/systemone/kev/export.py \
   --checkpoint kev-checkpoint --backend mlx --dtype bf16 --output kev-mlx
 ```
 
@@ -44,7 +45,7 @@ The default limits are 384 prefix tokens and 1,024 tokens for the prefix plus
 one question. Set larger export bounds for longer documents:
 
 ```bash
-PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/kev/export.py \
+PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/systemone/kev/export.py \
   --checkpoint kev-checkpoint --backend mlx --dtype bf16 --output kev-mlx-long \
   --max-prefix 2048 --max-context 4096
 ```
@@ -63,7 +64,7 @@ returns the fitted temperature as a float; `get_checkpoint_id` returns
 From the ExecuTorch root, with submodules initialized:
 
 ```bash
-cmake -S examples/kev -B cmake-out/kev-cpu \
+cmake -S examples/systemone/kev -B cmake-out/kev-cpu \
   -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE="$(command -v python)"
 cmake --build cmake-out/kev-cpu --target kev_runner --parallel 8
 
@@ -73,7 +74,7 @@ cmake-out/kev-cpu/kev_runner kev-cpu/model.pte kev-cpu/tokenizer.json
 For MLX, use macOS 14+ with Xcode's Metal compiler installed:
 
 ```bash
-cmake -S examples/kev -B cmake-out/kev-mlx \
+cmake -S examples/systemone/kev -B cmake-out/kev-mlx \
   -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE="$(command -v python)" \
   -DEXECUTORCH_BUILD_MLX=ON
 cmake --build cmake-out/kev-mlx --target kev_runner --parallel 8
@@ -134,7 +135,7 @@ of the other medians. FP32 is faster on this CPU; all exports are unquantized.
 To reproduce the XNNPACK BF16 column with the CPU benchmark:
 
 ```bash
-PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/kev/export.py \
+PYTHONPATH="$HOME/kev:$PYTHONPATH" python examples/systemone/kev/export.py \
   --checkpoint kev-checkpoint --backend xnnpack --dtype bf16 --output kev-cpu-bf16
 
 cmake-out/kev-cpu/kev_benchmark kev-cpu-bf16/model.pte kev-cpu-bf16/tokenizer.json
@@ -142,11 +143,13 @@ cmake-out/kev-cpu/kev_benchmark kev-cpu-bf16/model.pte kev-cpu-bf16/tokenizer.js
 
 ## C++ API
 
-[api.h](api.h) defines the question and answer types and the virtual
-`SystemOne::system_one(state, questions)` interface, following
-[TypeSafe's SDK operation](https://docs.typesafe.ai/sdk/python/api/clients/sync).
-It returns ExecuTorch's `Result<Answers>`. [kev.h](kev.h) provides `Kev`,
-which implements this interface and borrows a `Module` and tokenizer.
+[../api.h](../api.h) is generic across System One models. It defines the
+question and answer types and the virtual `SystemOne::system_one(state,
+questions)` interface, following
+[TypeSafe's SDK operation](https://docs.typesafe.ai/sdk/python/api/clients/sync),
+in the `executorch::systemone` namespace. It returns ExecuTorch's
+`Result<Answers>`. [kev.h](kev.h) provides `Kev`, which implements this
+interface for the Kev model and borrows a `Module` and tokenizer.
 
 For explicit prefix reuse, `Kev` also provides `prefill(state)` and
 `evaluate(prefix, questions)`. `Prefix` owns its snapshot and must be used with
@@ -164,13 +167,14 @@ The question and answer types follow [TypeSafe's typed SDK](https://docs.typesaf
 and are not sent to the model.
 
 ```cpp
-kev::Questions questions{
-    {"department", kev::Choice{"Which team should handle this?",
+using namespace executorch::systemone;
+Questions questions{
+    {"department", Choice{"Which team should handle this?",
         {{"billing", "Invoices and refunds"}, {"technical", "Bugs and outages"}}}},
-    {"refund", kev::Noul{"Is a refund requested?",
-        {{kev::NoulOutcome::False, "No refund requested"},
-         {kev::NoulOutcome::True, "Explicitly asks for a refund"}}}},
-    {"urgency", kev::Score{"How urgent is this?",
+    {"refund", Noul{"Is a refund requested?",
+        {{NoulOutcome::False, "No refund requested"},
+         {NoulOutcome::True, "Explicitly asks for a refund"}}}},
+    {"urgency", Score{"How urgent is this?",
         {"Can wait", "This week", "Today"}}}};
 ```
 
@@ -178,7 +182,7 @@ With a loaded module and tokenizer, call through the interface:
 
 ```cpp
 kev::Kev model(module, tokenizer);
-kev::SystemOne& api = model;
+executorch::systemone::SystemOne& api = model;
 auto answers = api.system_one(state, questions);
 ```
 
@@ -195,7 +199,7 @@ if (!answers.ok()) {
   return 1;
 }
 auto followup = model.evaluate(*prefix, {
-    {"duplicate", kev::Noul{"Was the customer charged more than once?", {}}}});
+    {"duplicate", Noul{"Was the customer charged more than once?", {}}}});
 if (!followup.ok()) {
   return 1;
 }

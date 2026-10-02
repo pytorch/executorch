@@ -16,9 +16,9 @@
 #include "kev.h"
 
 using executorch::extension::Module;
-using kev::Choice;
-using kev::Noul;
-using kev::Questions;
+using executorch::systemone::Choice;
+using executorch::systemone::Noul;
+using executorch::systemone::Questions;
 
 int main(int argc, char** argv) {
   if (argc < 3 || argc > 4) {

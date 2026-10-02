@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <string>
 
-#include "api.h"
+#include "executorch/examples/systemone/api.h"
 
 namespace tokenizers {
 class Tokenizer;
@@ -47,22 +47,22 @@ class Prefix {
 
 // Borrows the Module and tokenizer, which must outlive it. All calls must be
 // serialized per Module. Multiple prefixes may coexist.
-class Kev final : public SystemOne {
+class Kev final : public executorch::systemone::SystemOne {
  public:
   Kev(executorch::extension::Module& module,
       const tokenizers::Tokenizer& tokenizer);
 
-  executorch::runtime::Result<Answers> system_one(
+  executorch::runtime::Result<executorch::systemone::Answers> system_one(
       const std::string& state,
-      const Questions& questions) override;
+      const executorch::systemone::Questions& questions) override;
 
   executorch::runtime::Result<Prefix> prefill(const std::string& state);
 
   // Uses a prefix from this instance, leaving it unchanged. Answers own their
   // values. Requests are split into the program's batch limit and retain order.
-  executorch::runtime::Result<Answers> evaluate(
+  executorch::runtime::Result<executorch::systemone::Answers> evaluate(
       const Prefix& prefix,
-      const Questions& questions);
+      const executorch::systemone::Questions& questions);
 
  private:
   executorch::extension::Module& module_;
