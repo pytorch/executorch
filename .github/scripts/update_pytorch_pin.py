@@ -166,7 +166,7 @@ def get_torchao_commit_hash(nightly_version):
     date = nightly_version.rsplit(".dev", 1)[-1]
     formatted_date = parse_nightly_version(f"dev{date}")
     url = (
-        "https://api.github.com/repos/pytorch/ao/actions/workflows/"
+        "https://api.github.com/repos/pytorch/ao/actions/workflows/"  # @lint-ignore
         "build_wheels_linux_x86.yml/runs?event=schedule&status=success&"
         f"created={formatted_date}&per_page=100"
     )
