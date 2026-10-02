@@ -8,6 +8,7 @@
 
 #include "coreai_filesystem_fixture.h"
 #include <unistd.h>
+#include <string>
 
 namespace executorch::backends::coreai::testing {
 
@@ -56,6 +57,27 @@ TestDirectory::~TestDirectory() {
     }
   }
   return ::testing::AssertionFailure() << "Backup flag did not settle: " << url.path.UTF8String;
+}
+
+BookmarkDirectory::BookmarkDirectory(NSString* parent) {
+  if (parent == nil) {
+    ADD_FAILURE() << "Bookmark directory requires a parent";
+    return;
+  }
+  std::string pattern =
+      std::string(parent.fileSystemRepresentation) + "/.coreai-bookmark-test-XXXXXX";
+  if (mkdtemp(pattern.data()) == nullptr) {
+    ADD_FAILURE() << "mkdtemp: " << strerror(errno);
+    return;
+  }
+  url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:pattern.c_str()] isDirectory:YES];
+}
+
+BookmarkDirectory::~BookmarkDirectory() {
+  if (url == nil) return;
+  EXPECT_TRUE([url.lastPathComponent hasPrefix:@".coreai-bookmark-test-"]);
+  if (![url.lastPathComponent hasPrefix:@".coreai-bookmark-test-"]) return;
+  EXPECT_TRUE([NSFileManager.defaultManager removeItemAtURL:url error:nil]);
 }
 
 }  // namespace executorch::backends::coreai::testing
