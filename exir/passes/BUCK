@@ -450,6 +450,7 @@ fbcode_target(_kind = runtime.python_library,
         "replace_slice_copy_with_slice_pass.py",
     ],
     deps = [
+        ":replace_view_copy_with_view_pass",
         "//caffe2:torch",
         "//executorch/exir:memory",
         "//executorch/exir:tensor",

@@ -1303,7 +1303,7 @@ class _Emitter(torch.fx.Interpreter):
     def _emit_slice(self, args: Tuple[_Argument, ...]) -> _EmitterValue:
         """Emit a statically memory-planned slice as a sub-buffer alias.
 
-        ``ReplaceSliceCopyWithSlicePass`` creates ``_SliceSpec`` values whose
+        ``ReplaceSliceCopyWithSlicePass`` creates ``_ViewSpec`` values whose
         ``mem_offset`` is the byte offset into their base allocation.  No kernel
         is needed for a static planned slice: the tensor value can be emitted
         directly from that specification.
