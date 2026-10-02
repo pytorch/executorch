@@ -16,6 +16,7 @@ import math
 import unittest
 
 from typing import Dict, List, Sequence
+from unittest.mock import patch
 
 from executorch.exir._serialize._flatbuffer_program import _flatbuffer_to_program
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
@@ -23,6 +24,7 @@ from executorch.exir._serialize._program import (
     _ExtendedHeader,
     _get_extended_header,
     _program_to_json,
+    _restore_segments,
     deserialize_pte_binary,
     PTEFile,
     serialize_pte_binary,
@@ -748,6 +750,32 @@ class TestProgram(unittest.TestCase):
         self.assert_programs_equal(program, deserialized.program)
         self.assertEqual(deserialized.mutable_data, None)
         self.assertEqual(deserialized.named_data, None)
+
+    def test_deserialize_restores_segments_from_a_view_of_the_input(self) -> None:
+        program = get_test_program()
+        blob = self.gen_blob_data(SEGMENT_ALIGNMENT * 4, b"\x10\x11\x01")
+        add_delegate_data(program, program.execution_plan[0], [blob])
+        pte_data = bytes(
+            serialize_pte_binary(
+                PTEFile(program=program),
+                extract_delegate_segments=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
+            )
+        )
+
+        with patch(
+            "executorch.exir._serialize._program._restore_segments",
+            wraps=_restore_segments,
+        ) as restore_segments:
+            deserialized = deserialize_pte_binary(pte_data)
+
+        # A copy of the segment data is as large as all the delegates together.
+        segment_data = restore_segments.call_args.kwargs["segment_data"]
+        self.assertIsInstance(segment_data, memoryview)
+        self.assertIs(segment_data.obj, pte_data)
+        restored = deserialized.program.backend_delegate_data[-1].data
+        self.assertIsInstance(restored, bytes)
+        self.assertEqual(restored, blob)
 
     def test_no_constants(self) -> None:
         program = get_test_program()

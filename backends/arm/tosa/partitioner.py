@@ -18,36 +18,31 @@ import operator
 from collections import deque
 from itertools import count
 from pathlib import Path
-from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, cast, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import torch
+
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
-from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
-    can_decompose_large_stride_maxpool2d,
+from executorch.backends.arm._passes.prepare_gather_indices_pass import (
+    is_safe_int32_to_int64_gather_boundary,
 )
-from executorch.backends.arm._passes.decompose_roll_pass import can_decompose_roll
-from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
-    is_exact_tosa_boundary_bilinear_downscale,
-)
-
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.type import ensure_type
-from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.operator_support.roll_support import (
+    is_decomposable_roll_node,
+)
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     CheckResolvedTensorShapes,
-    is_quantized,
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.specification import (
-    TosaLoweringContext,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa.specification import TosaLoweringContext
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -64,115 +59,6 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partit
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
-
-
-class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
-    """Accept U55 max-pool nodes that backend preprocessing can legalize.
-
-    Non-U55 profiles, including U85, use the standard max-pool support path.
-    This positive check is only for the U55 stride > 3 workaround.
-
-    """
-
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
-        self.tosa_spec = tosa_spec
-
-    def is_node_supported(
-        self,
-        submodules: Mapping[str, torch.nn.Module],
-        node: torch.fx.Node,
-    ) -> bool:
-        """Return True when backend preprocessing can legalize the max pool."""
-        del submodules
-        # The with_indices form is accepted because RemoveGetItemPass runs
-        # before backend preprocessing and canonicalizes value-only users to
-        # max_pool2d.default. If indices are used, RemoveGetItemPass rejects
-        # the node, matching the existing MaxPool2dSupported contract.
-        if not self.tosa_spec.is_U55_subset or node.target not in {
-            exir_ops.edge.aten.max_pool2d.default,
-            exir_ops.edge.aten.max_pool2d_with_indices.default,
-        }:
-            return False
-
-        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
-        return can_decompose_large_stride_maxpool2d(
-            node.args[1],
-            node.args[2] if len(node.args) >= 3 and node.args[2] else node.args[1],
-            node.args[3] if len(node.args) >= 4 else (0, 0),
-            node.args[4] if len(node.args) >= 5 else (1, 1),
-            node.args[5] if len(node.args) >= 6 else False,
-            input_shape,
-        )
-
-
-class DecomposableResizeSupported(OperatorSupportBase):
-    """Accept exact boundary bilinear downscales.
-
-    These are decomposed later.
-
-    """
-
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
-        """Initialize the check with the active TOSA specification."""
-        self.tosa_spec = tosa_spec
-
-    def is_node_supported(
-        self,
-        submodules: Mapping[str, torch.nn.Module],
-        node: torch.fx.Node,
-    ) -> bool:
-        """Return True when the resize matches the decomposable boundary case.
-
-        This keeps the node delegatable so a later pass can rewrite it.
-
-        """
-        del submodules
-        return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
-
-
-def _is_decomposable_roll_node(
-    node: torch.fx.Node, tosa_spec: TosaSpecification
-) -> bool:
-    """Return whether backend preprocessing can decompose a roll node."""
-    if node.target not in {
-        torch.ops.aten.roll.default,
-        exir_ops.edge.aten.roll.default,
-    }:
-        return False
-    if (
-        tosa_spec.support_integer()
-        and not tosa_spec.support_float()
-        and not is_quantized(node)
-    ):
-        return False
-    input_node = ensure_type(torch.fx.Node, node.args[0])
-    input_tensor = get_first_fake_tensor(input_node)
-    if not 0 < len(input_tensor.shape) <= MAX_RANK:
-        return False
-    if input_tensor.dtype not in {torch.float16, torch.float32} and not (
-        input_tensor.dtype == torch.bfloat16 and tosa_spec.support_extension("bf16")
-    ):
-        return False
-
-    dims = node.args[2] if len(node.args) > 2 else ()
-    return can_decompose_roll(input_tensor.shape, node.args[1], dims)
-
-
-class DecomposableRollSupported(OperatorSupportBase):
-    """Accept static rolls that backend preprocessing can decompose."""
-
-    def __init__(self, tosa_spec: TosaSpecification) -> None:
-        """Initialize the check with the active TOSA specification."""
-        self.tosa_spec = tosa_spec
-
-    def is_node_supported(
-        self,
-        submodules: Mapping[str, torch.nn.Module],
-        node: torch.fx.Node,
-    ) -> bool:
-        """Return True when backend preprocessing can decompose the roll."""
-        del submodules
-        return _is_decomposable_roll_node(node, self.tosa_spec)
 
 
 def _is_custom_partition_op(
@@ -424,6 +310,108 @@ def _find_connected_components(nodes: set[torch.fx.Node]) -> list[set[torch.fx.N
     return components
 
 
+def _detag_mixed_delegate_gather_boundaries(
+    nodes: Iterable[torch.fx.Node],
+) -> set[str]:
+    """Keep shared gather compatibility boundaries entirely portable.
+
+    Returns the delegation tags whose regions were changed.
+
+    """
+    affected_tags: set[str] = set()
+    for node in nodes:
+        node_tag = node.meta.get("delegation_tag")
+        if is_safe_int32_to_int64_gather_boundary(node) and any(
+            user.meta.get("delegation_tag") != node_tag for user in node.users
+        ):
+            if node_tag is not None:
+                affected_tags.add(node_tag)
+            node.meta.pop("delegation_tag", None)
+            for user in node.users:
+                user_tag = user.meta.get("delegation_tag")
+                if user_tag is not None:
+                    affected_tags.add(user_tag)
+                user.meta.pop("delegation_tag", None)
+    return affected_tags
+
+
+def _is_computation_free_partition(nodes: Iterable[torch.fx.Node]) -> bool:
+    """Return whether all nodes disappear during TOSA lowering."""
+    return all(
+        _is_noop_clone(node)
+        or _is_noop_alias_copy(node)
+        or _is_noop_expand(node)
+        or _is_noop_detach_copy(node)
+        or _is_noop_to_dim_order_copy(node)
+        or _is_noop_squeeze(node)
+        or _is_noop_flip(node)
+        or _is_noop_permute(node)
+        or _is_view_copy(node)
+        or _is_noop_as_strided_copy(node)
+        or node.target in Q_OPS
+        or node.target in DQ_OPS
+        for node in nodes
+    )
+
+
+def _retag_affected_partitions(
+    nodes: Iterable[torch.fx.Node],
+    affected_tags: set[str],
+    tags: set[str],
+    tag_iterator: count,
+    reporter: WhyNoPartitionReporter,
+) -> None:
+    """Replace affected tags with tags for valid surviving components.
+
+    Detagging a mixed gather boundary can disconnect a partition or make its
+    remaining nodes invalid to extract. Split each affected partition into
+    connected components and assign fresh tags to components that are valid
+    and contain computation. Rejected components remain portable.
+
+    Args:
+        nodes (Iterable[torch.fx.Node]): Nodes in the graph.
+        affected_tags (set[str]): Tags affected by boundary detagging.
+        tags (set[str]): Active delegation tags, updated in place.
+        tag_iterator (count): Counter used to generate fresh tags.
+        reporter (WhyNoPartitionReporter): Records rejection reasons.
+
+    """
+    affected_tag_nodes = [
+        {node for node in nodes if node.meta.get("delegation_tag") == tag}
+        for tag in affected_tags
+    ]
+    affected_nodes = set().union(*affected_tag_nodes)
+    tags.difference_update(affected_tags)
+    for node in affected_nodes:
+        node.meta.pop("delegation_tag", None)
+
+    components = [
+        component
+        for tag_nodes in affected_tag_nodes
+        for component in _find_connected_components(tag_nodes)
+    ]
+    for component in components:
+        if not _validate_partition(component):
+            for node in component:
+                reporter.report_reject(
+                    node,
+                    "Partition became invalid after detagging a mixed gather boundary.",
+                )
+            continue
+        if _is_computation_free_partition(component):
+            for node in component:
+                reporter.report_reject(
+                    node,
+                    "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
+                )
+            continue
+
+        new_tag = f"tag{next(tag_iterator)}"
+        tags.add(new_tag)
+        for node in component:
+            node.meta["delegation_tag"] = new_tag
+
+
 class TOSAPartitioner(Partitioner):
     """Partition an exported program into TOSA-delegable subgraphs.
 
@@ -459,7 +447,6 @@ class TOSAPartitioner(Partitioner):
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self._requires_resolved_tensor_shapes = False
-        self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
 
@@ -670,13 +657,15 @@ class TOSAPartitioner(Partitioner):
         )
         partition_list = capability_partitioner.propose_partitions()
 
+        tagged_partitions: list[tuple[Partition, str]] = []
         for partition in partition_list:
             tag = f"tag{next(tag_iterator)}"
             tags.add(tag)
-
             for node in partition.nodes:
                 node.meta["delegation_tag"] = tag
+            tagged_partitions.append((partition, tag))
 
+        for partition, tag in tagged_partitions:
             if self.tosa_spec.support_integer() and not self.tosa_spec.support_float():
                 # Detag boundary Q/DQ since we cannot handle them without float support
                 self._detag_boundary_nodes(
@@ -741,22 +730,7 @@ class TOSAPartitioner(Partitioner):
                     continue
 
                 # Check whether the partition contains only no-op or non-computational ops. Such partitions don't make sense to delegate, and in the worst case may be optimized away during lowering, which can break compilation.
-                is_nocompute_partition = all(
-                    _is_noop_clone(node)
-                    or _is_noop_alias_copy(node)
-                    or _is_noop_expand(node)
-                    or _is_noop_detach_copy(node)
-                    or _is_noop_to_dim_order_copy(node)
-                    or _is_noop_squeeze(node)
-                    or _is_noop_flip(node)
-                    or _is_noop_permute(node)
-                    or _is_view_copy(node)
-                    or _is_noop_as_strided_copy(node)
-                    or node.target in Q_OPS
-                    or node.target in DQ_OPS
-                    for node in nodes
-                )
-                if is_nocompute_partition:
+                if _is_computation_free_partition(nodes):
                     reject_partition(
                         "Partition contained only ops which are removed in the TOSA lowering, leading to an empty partition.",
                         Partition(nodes=nodes),
@@ -764,6 +738,15 @@ class TOSAPartitioner(Partitioner):
                     )
                     if active_tag in tags:
                         tags.remove(active_tag)
+        affected_tags = _detag_mixed_delegate_gather_boundaries(module.graph.nodes)
+        if affected_tags:
+            _retag_affected_partitions(
+                module.graph.nodes,
+                affected_tags,
+                tags,
+                tag_iterator,
+                reporter,
+            )
         return tags
 
     def _create_operator_support(
@@ -786,11 +769,6 @@ class TOSAPartitioner(Partitioner):
             containing_program,
             reporter,
             additional_checks=additional_checks,
-            additional_positive_checks=[
-                self._decomposable_resize_support,
-                DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
-                DecomposableRollSupported(self.tosa_spec),
-            ],
             additional_positive_overrides=positive_overrides,
         )
 
@@ -930,7 +908,7 @@ class TOSAPartitioner(Partitioner):
             ):
                 return False
             if node.target in ops_to_not_decompose_conditionally:
-                return _is_decomposable_roll_node(node, self.tosa_spec)
+                return is_decomposable_roll_node(node, self.tosa_spec)
             if (
                 self.tosa_spec.support_float()
                 and node.target in ops_to_not_decompose_if_fp

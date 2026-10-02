@@ -31,9 +31,9 @@ from executorch.backends.test.suite.flow import TestFlow
 # Tests known to fail on Neutron due to known bugs. Marked as xfail
 # (strict=True) so that an unexpected pass is also reported.
 _NEUTRON_XFAILS = [
-    "test_lstm",
-    "test_cat_different_shapes",
-    "test_cat_dimensions",
+    "test_lstm_return_hidden_states",  # Accuracy error.
+    "test_lstm_seq_lengths",  # Timeout.
+    "test_lstm_num_layers",  # Timeout.
 ]
 
 
