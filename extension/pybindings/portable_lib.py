@@ -17,21 +17,37 @@ import logging
 import os
 import sys
 import warnings as _warnings
-
-# A DeprecationWarning, like exir's ExperimentalWarning, without importing exir.
-# Importing it would load the exporter into a process that only runs programs.
-_warnings.warn(
-    "This API is experimental and subject to change without notice.",
-    DeprecationWarning,
-)
-
-# When installed as a pip wheel, we must import `torch` before trying to import
-# the pybindings shared library extension. This will load libtorch.so and
-# related libs, ensuring that the pybindings lib can resolve those runtime
-# dependencies.
-import torch as _torch
+from importlib import import_module as _import_module
 
 logger = logging.getLogger(__name__)
+
+
+class _LightweightExperimentalWarning(UserWarning):
+    pass
+
+
+_TENSOR_OUTPUT_ENV = "EXECUTORCH_PYBINDINGS_TENSOR_OUTPUT"
+_tensor_output = os.environ.get(_TENSOR_OUTPUT_ENV, "torch")
+if _tensor_output == "torch":
+    try:
+        # Preserve the existing API: importing portable_lib also imports Torch,
+        # and tensor outputs are torch.Tensor objects.
+        import torch as _torch
+    except ImportError as error:
+        raise ImportError(
+            "ExecuTorch portable pybindings return torch.Tensor outputs by "
+            "default, but PyTorch could not be imported. Install PyTorch or "
+            f"set {_TENSOR_OUTPUT_ENV}=executorch before importing "
+            "portable_lib to receive ExecuTorchResult outputs."
+        ) from error
+elif _tensor_output == "executorch":
+    _torch = None
+else:
+    raise ValueError(
+        f"{_TENSOR_OUTPUT_ENV} must be either 'torch' or 'executorch', "
+        f"but was {_tensor_output!r}"
+    )
+
 
 # Auto-discover the OpenVINO C library path from the pip-installed openvino
 # package so the C++ backend's dlopen("libopenvino_c.so") works without the
@@ -73,6 +89,21 @@ if sys.platform == "win32":
             e,
         )
 
+_bindings = _import_module("executorch.extension.pybindings._C")
+
+if _bindings._uses_aten:
+    import executorch.exir._warnings as _exir_warnings
+
+    _warning_category = _exir_warnings.ExperimentalWarning
+else:
+    _exir_warnings = None
+    _warning_category = _LightweightExperimentalWarning
+
+_warnings.warn(
+    "This API is experimental and subject to change without notice.",
+    _warning_category,
+)
+
 # Let users import everything from the C++ _C extension as if this
 # python file defined them. Although we could import these dynamically, it
 # wouldn't preserve the static type annotations.
@@ -95,10 +126,12 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     _reset_profile_results,  # noqa: F401
     _threadpool_get_thread_count,  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
+    _uses_aten,  # noqa: F401
     BundledModule,  # noqa: F401
     ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401
+    ExecuTorchResult,  # noqa: F401
     MethodMeta,  # noqa: F401
     TensorInfo,  # noqa: F401
     Verification,  # noqa: F401
@@ -106,5 +139,11 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
+del _bindings
+del _tensor_output
+del _TENSOR_OUTPUT_ENV
 del _torch
+del _warning_category
+del _import_module
+del _exir_warnings
 del _warnings

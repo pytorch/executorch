@@ -426,6 +426,7 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_PYBIND REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_required_options_on(
