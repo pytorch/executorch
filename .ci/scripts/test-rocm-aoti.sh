@@ -10,7 +10,6 @@ set -euo pipefail
 ROCM_VERSION="${ROCM_VERSION:-7.2}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
-TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
 ROCM_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
 mkdir -p "${ROCM_CI_TMP_ROOT}" 2>/dev/null || ROCM_CI_TMP_ROOT=/tmp
 ROCM_CI_TMPDIR="$(mktemp -d "${ROCM_CI_TMP_ROOT}/executorch-rocm-ci.XXXXXX")"
@@ -22,21 +21,19 @@ export CUDA_VISIBLE_DEVICES=0
 export TORCHINDUCTOR_CACHE_DIR="${ROCM_CI_TMPDIR}/inductor-cache"
 export TORCHINDUCTOR_COMPILE_THREADS=1
 
-read -r TORCH_VERSION TORCHAO_VERSION < <(
+read -r TORCH_VERSION TORCHAO_VERSION TORCHAO_INDEX < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
-from torch_pin import TORCH_VERSION
+from install_requirements import TORCHAO_INDEX_URL, TORCHAO_NIGHTLY_VERSION
+from torch_pin import ROCM_PYTORCH_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(ROCM_PYTORCH_VERSION, TORCHAO_NIGHTLY_VERSION, f"{TORCHAO_INDEX_URL}/cpu")
 PY
 )
-# TorchAO ROCm wheels are not exposed by the per-version pip index.
-TORCHAO_WHEEL="${TORCHAO_ROCM_WHEEL_BASE}/torchao-${TORCHAO_VERSION}"
-TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-cp310-abi3-manylinux_2_28_x86_64.whl"
 python -m pip install "torch==${TORCH_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
 python -m pip install -r requirements-dev.txt \
-  "${TORCHAO_WHEEL}"
+  "torchao==${TORCHAO_VERSION}" \
+  --extra-index-url "${TORCHAO_INDEX}"
 EXECUTORCH_BUILD_MINIMAL=1 \
   python -m pip install --editable . --no-build-isolation
 
@@ -54,7 +51,6 @@ import triton
 assert torch.version.hip is not None, "PyTorch is not a ROCm build"
 assert torch.version.cuda is None, "PyTorch unexpectedly reports a CUDA runtime"
 assert torch.cuda.is_available(), "No AMD GPU is visible through PyTorch"
-assert "+rocm" in torchao.__version__, "TorchAO is not a ROCm build"
 
 device = torch.cuda.get_device_properties(0)
 arch = device.gcnArchName.split(":", 1)[0]

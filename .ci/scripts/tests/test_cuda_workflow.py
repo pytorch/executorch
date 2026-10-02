@@ -32,11 +32,9 @@ def _model_quant(entry):
 
 
 class CudaWorkflowTest(unittest.TestCase):
-    def test_build_matrix_preserves_existing_cuda_versions(self):
+    def test_build_matrix_uses_supported_cuda_versions(self):
         job = WORKFLOW["jobs"]["test-cuda-builds"]
-        self.assertEqual(
-            job["strategy"]["matrix"]["cuda-version"], ["12.6", "13.0", "13.4"]
-        )
+        self.assertEqual(job["strategy"]["matrix"]["cuda-version"], ["13.0", "13.4"])
         self.assertEqual(job["with"]["gpu-arch-version"], "${{ matrix.cuda-version }}")
 
     def test_cuda_builds_take_the_node_driver_on_an_unpinned_v3(self):
@@ -56,9 +54,8 @@ class CudaWorkflowTest(unittest.TestCase):
         stubs = """
 conda() { printf 'CONDA %s\n' "$*"; return "$CONDA_STATUS"; }
 source() { printf 'BUILD %s\n' "$*"; }
-"""
+        """
         for version, conda_status in (
-            ("12.6", 0),
             ("13.0", 0),
             ("13.4", 0),
             ("13.4", 1),
