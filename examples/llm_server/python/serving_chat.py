@@ -664,9 +664,7 @@ class ServingChat:
             if self._multiplexed:
                 await generation.wait_ready()
             return _ChatStream(
-                self._stream(
-                    req, prompt_input, options, preamble, gen_stops, generation, stats
-                ),
+                self._stream(req, preamble, gen_stops, generation, stats),
                 lease,
                 generation,
             )
@@ -802,12 +800,10 @@ class ServingChat:
     async def _stream(
         self,
         req: ChatCompletionRequest,
-        prompt: PromptInput,
-        options: GenerationOptions,
-        preamble: str = "",
-        gen_stops: Optional[list[str]] = None,
-        generation: Optional[AsyncIterator[str]] = None,
-        stats: Optional[GenStats] = None,
+        preamble: str,
+        stops: list[str],
+        generation: AsyncIterator[str],
+        stats: GenStats,
     ) -> AsyncIterator[str]:
         cid = _new_id("chatcmpl")
 
@@ -826,23 +822,10 @@ class ServingChat:
         reasoning = None
         content = None
 
-        if stats is None:
-            stats = getattr(generation, "stats", None)
-        if stats is None:
-            stats = GenStats()
         stop_hit = [False]  # set when a stop boundary is reached (forces finish="stop")
         # Per-path stop set from create(): for plain chat this includes the broad
         # content specials, so _clean cuts a leaked special out of the stream (and
         # the worker, given the same set, halts + omits ids -> non-resumable turn).
-        stops = (
-            gen_stops
-            if gen_stops is not None
-            else self._stops + self._request_stops(req)
-        )
-        if generation is None:
-            generation = self._runtime.generate_stream(
-                req.session_id, prompt, options, stats
-            )
         try:
             if use_tools:
                 # Buffer the (usually short) tool response, parse once.

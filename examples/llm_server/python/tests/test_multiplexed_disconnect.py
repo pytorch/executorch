@@ -62,6 +62,28 @@ for line in sys.stdin:
 """
 
 
+def _disconnect_request(port, body, started, *, before_response):
+    if not before_response:
+        url = f"http://127.0.0.1:{port}/v1/chat/completions"
+        with httpx.stream("POST", url, json=body, timeout=5) as response:
+            assert response.status_code == 200
+            for line in response.iter_lines():
+                if "worker-token" in line:
+                    break
+        return
+    payload = json.dumps(body).encode()
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
+        headers = (
+            f"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+            f"Content-Type: application/json\r\nContent-Length: {len(payload)}\r\n\r\n"
+        ).encode()
+        connection.sendall(headers + payload)
+        deadline = time.monotonic() + 5
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert started.exists()
+
+
 @pytest.mark.parametrize("settles", [True, False], ids=["settled", "unsettled"])
 @pytest.mark.parametrize(
     "preflight", [True, False], ids=["before-first-token", "after-first-token"]
@@ -100,14 +122,14 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
 
     def body(session_id, stream=True):
-        return dict(
-            model="test-model",
-            session_id=session_id,
-            stream=stream,
-            stream_options=dict(include_usage=True),
-            messages=[dict(role="user", content="hi")],
-            max_tokens=8,
-        )
+        return {
+            "model": "test-model",
+            "session_id": session_id,
+            "stream": stream,
+            "stream_options": {"include_usage": True},
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 8,
+        }
 
     def consume_b():
         chunks = []
@@ -127,25 +149,12 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
         assert server.started
         peer = pool.submit(consume_b)
         assert started_b.wait(5)
-        if preflight or not stream:
-            payload = json.dumps(body("a", stream=stream)).encode()
-            with socket.create_connection(("127.0.0.1", port), timeout=5) as connection:
-                headers = (
-                    f"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
-                    f"Content-Type: application/json\r\nContent-Length: {len(payload)}\r\n\r\n"
-                ).encode()
-                connection.sendall(headers + payload)
-                started = marker.with_name(marker.name + ".started")
-                deadline = time.monotonic() + 5
-                while not started.exists() and time.monotonic() < deadline:
-                    time.sleep(0.01)
-                assert started.exists()
-        else:
-            with httpx.stream("POST", url, json=body("a"), timeout=5) as response:
-                assert response.status_code == 200
-                for line in response.iter_lines():
-                    if "worker-token" in line:
-                        break
+        _disconnect_request(
+            port,
+            body("a", stream=stream),
+            marker.with_name(marker.name + ".started"),
+            before_response=preflight or not stream,
+        )
         chunks = peer.result(timeout=5)
         assert chunks[-1] == "data: [DONE]"
         assert not any('"error"' in chunk for chunk in chunks)

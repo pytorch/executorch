@@ -216,7 +216,7 @@ class _GenerationBridge:
                 self.stats_cb,
                 **kwargs,
             )
-        except BaseException as error:
+        except BaseException as error:  # noqa: B036 - settle thread failures
             self.finish(
                 error if isinstance(error, Exception) else WorkerError(str(error))
             )
@@ -225,7 +225,7 @@ class _GenerationBridge:
             if self._request_id is not None and callable(settle):
                 try:
                     settle(self._request_id)
-                except BaseException as error:
+                except BaseException as error:  # noqa: B036 - settle thread failures
                     self.finish(
                         error
                         if isinstance(error, Exception)
