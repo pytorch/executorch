@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+
 import torch
 from executorch.backends.vulkan.test.utils import lower_module_and_test_output
 
@@ -14,12 +15,13 @@ try:
 except AttributeError:
     import executorch.extension.llm.custom_ops.custom_ops
 
+
 class TestGatedDeltaRule(unittest.TestCase):
     def test_gated_delta_rule_vulkan(self):
         # We will use small toy shapes for fast testing
         # Based on logs: query is [Batch, Heads, Sequence, HeadDim]
         B, H, S, D = 1, 2, 4, 16
-        
+
         query = torch.randn(B, H, S, D, dtype=torch.float32)
         key = torch.randn(B, H, S, D, dtype=torch.float32)
         value = torch.randn(B, H, S, D, dtype=torch.float32)
@@ -35,9 +37,10 @@ class TestGatedDeltaRule(unittest.TestCase):
 
         model = GatedDeltaRuleModule().eval()
         inputs = (query, key, value, decay, beta, initial_state)
-        
+
         # This compiles the module for Vulkan, runs it on GPU, and compares with CPU via torch.allclose
         lower_module_and_test_output(model, inputs)
+
 
 if __name__ == "__main__":
     unittest.main()
