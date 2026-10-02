@@ -227,6 +227,7 @@ def register_copy_op():
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.aten.log10.default,
+        exir_ops.edge.aten.log1p.default,
     ]
 )
 def register_unaryop_cpp_ops():

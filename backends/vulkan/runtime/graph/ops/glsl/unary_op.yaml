@@ -54,6 +54,8 @@ unary_op:
       OPERATOR: leaky_relu(X, A)
     - NAME: log10
       OPERATOR: log(X) * 0.4342944819
+    - NAME: log1p
+      OPERATOR: log(1.0 + X)
     - NAME: round
       OPERATOR: round(X)
     - NAME: bitwise_not_uint8
