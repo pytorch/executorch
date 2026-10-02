@@ -349,6 +349,10 @@ set(_aoti_cuda_backend_sources
     runtime/cuda_backend.cpp runtime/cuda_mutable_state.cpp
     runtime/cuda_weight_cache.cpp
 )
+# The off-graph KV cache builds on the LLM extension's neutral cache.
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp)
+endif()
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
   # symbols exported from aoti_cuda_shims.dll.
@@ -401,6 +405,12 @@ target_link_libraries(
   PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
          extension_cuda ${CMAKE_DL_LIBS}
 )
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  target_link_libraries(aoti_cuda_backend PUBLIC extension_llm_cache)
+  target_compile_definitions(
+    aoti_cuda_backend PRIVATE EXECUTORCH_BUILD_EXTENSION_LLM
+  )
+endif()
 
 if(_cuda_is_msvc_toolchain)
   # cuda_backend.cpp uses SlimTensor CUDA utilities (e.g. getCurrentCUDAStream)
