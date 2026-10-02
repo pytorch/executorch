@@ -95,6 +95,7 @@ if(TARGET vulkan_backend)
 
   # Define operator prototypes
   add_operator_prototype(test_add)
+  add_operator_prototype(test_gated_delta_rule)
   add_operator_prototype(test_q8csw_linear)
   add_operator_prototype(test_q8csw_conv2d)
   add_operator_prototype(test_q4gsw_linear)
