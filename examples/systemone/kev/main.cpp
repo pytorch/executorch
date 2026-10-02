@@ -56,12 +56,12 @@ int main(int argc, char** argv) {
       for (const auto& [name, probability] : choice->probabilities) {
         std::cout << "  " << name << ": " << probability << '\n';
       }
-    } else if (const auto* noul =
-                   std::get_if<executorch::systemone::NoulAnswer>(&answer)) {
+    } else if (
+        const auto* noul =
+            std::get_if<executorch::systemone::NoulAnswer>(&answer)) {
       std::cout << noul->noul << '\n';
     } else {
-      const auto& score =
-          std::get<executorch::systemone::ScoreAnswer>(answer);
+      const auto& score = std::get<executorch::systemone::ScoreAnswer>(answer);
       std::cout << score.score << " (confidence " << score.confidence << ")\n";
       for (size_t level = 0; level < score.probabilities.size(); ++level) {
         std::cout << "  " << level << " (" << score.legend.at(level)
