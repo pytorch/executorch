@@ -18,6 +18,8 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
+namespace executorch {
+namespace systemone {
 namespace kev {
 
 using executorch::aten::ScalarType;
@@ -25,7 +27,6 @@ using executorch::extension::from_blob;
 using executorch::extension::Module;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
-using namespace executorch::systemone;
 
 namespace {
 
@@ -357,3 +358,5 @@ Result<Answers> Kev::evaluate(
 }
 
 } // namespace kev
+} // namespace systemone
+} // namespace executorch

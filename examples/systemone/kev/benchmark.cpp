@@ -19,6 +19,7 @@ using executorch::extension::Module;
 using executorch::systemone::Choice;
 using executorch::systemone::Noul;
 using executorch::systemone::Questions;
+using executorch::systemone::kev::Kev;
 
 int main(int argc, char** argv) {
   if (argc < 3 || argc > 4) {
@@ -31,7 +32,7 @@ int main(int argc, char** argv) {
     std::cerr << "Cannot load tokenizer.json\n";
     return 1;
   }
-  kev::Kev model(module, tokenizer);
+  Kev model(module, tokenizer);
   const std::string state = argc == 4
       ? argv[3]
       : "I was charged twice for invoice 4411. Please refund the duplicate charge.";

@@ -148,8 +148,9 @@ question and answer types and the virtual `SystemOne::system_one(state,
 questions)` interface, following
 [TypeSafe's SDK operation](https://docs.typesafe.ai/sdk/python/api/clients/sync),
 in the `executorch::systemone` namespace. It returns ExecuTorch's
-`Result<Answers>`. [kev.h](kev.h) provides `Kev`, which implements this
-interface for the Kev model and borrows a `Module` and tokenizer.
+`Result<Answers>`. [kev.h](kev.h) provides `Kev` in `executorch::systemone::kev`,
+which implements this interface for the Kev model and borrows a `Module` and
+tokenizer.
 
 For explicit prefix reuse, `Kev` also provides `prefill(state)` and
 `evaluate(prefix, questions)`. `Prefix` owns its snapshot and must be used with
@@ -181,7 +182,7 @@ Questions questions{
 With a loaded module and tokenizer, call through the interface:
 
 ```cpp
-kev::Kev model(module, tokenizer);
+executorch::systemone::kev::Kev model(module, tokenizer);
 executorch::systemone::SystemOne& api = model;
 auto answers = api.system_one(state, questions);
 ```

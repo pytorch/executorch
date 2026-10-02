@@ -21,6 +21,8 @@ namespace tokenizers {
 class Tokenizer;
 }
 
+namespace executorch {
+namespace systemone {
 namespace kev {
 
 class Kev;
@@ -47,22 +49,22 @@ class Prefix {
 
 // Borrows the Module and tokenizer, which must outlive it. All calls must be
 // serialized per Module. Multiple prefixes may coexist.
-class Kev final : public executorch::systemone::SystemOne {
+class Kev final : public SystemOne {
  public:
   Kev(executorch::extension::Module& module,
       const tokenizers::Tokenizer& tokenizer);
 
-  executorch::runtime::Result<executorch::systemone::Answers> system_one(
+  executorch::runtime::Result<Answers> system_one(
       const std::string& state,
-      const executorch::systemone::Questions& questions) override;
+      const Questions& questions) override;
 
   executorch::runtime::Result<Prefix> prefill(const std::string& state);
 
   // Uses a prefix from this instance, leaving it unchanged. Answers own their
   // values. Requests are split into the program's batch limit and retain order.
-  executorch::runtime::Result<executorch::systemone::Answers> evaluate(
+  executorch::runtime::Result<Answers> evaluate(
       const Prefix& prefix,
-      const executorch::systemone::Questions& questions);
+      const Questions& questions);
 
  private:
   executorch::extension::Module& module_;
@@ -70,3 +72,5 @@ class Kev final : public executorch::systemone::SystemOne {
 };
 
 } // namespace kev
+} // namespace systemone
+} // namespace executorch

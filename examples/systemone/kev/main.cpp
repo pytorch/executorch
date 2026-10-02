@@ -15,6 +15,7 @@ using executorch::extension::Module;
 using executorch::systemone::Choice;
 using executorch::systemone::Noul;
 using executorch::systemone::Questions;
+using executorch::systemone::kev::Kev;
 
 int main(int argc, char** argv) {
   if (argc < 3 || argc > 4) {
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
        Noul{"Does the customer explicitly ask for a refund?", {}}},
       {"duplicate_charge",
        Noul{"Was the customer charged more than once?", {}}}};
-  kev::Kev model(module, tokenizer);
+  Kev model(module, tokenizer);
   auto answers = model.system_one(state, questions);
   if (!answers.ok()) {
     std::cerr << executorch::runtime::to_string(answers.error()) << '\n';
