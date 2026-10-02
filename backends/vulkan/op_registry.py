@@ -1103,6 +1103,7 @@ def register_sdpa_cpp_ops():
 # GatedDeltaRule.cpp
 # =============================================================================
 
+
 @update_features(
     [
         "llama::gated_delta_rule",
@@ -1113,7 +1114,9 @@ def register_gated_delta_rule():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         supports_highdim=True,
+        supports_resize=True,
     )
+
 
 # =============================================================================
 # SDPA.cpp (fused SDPA entry point)
