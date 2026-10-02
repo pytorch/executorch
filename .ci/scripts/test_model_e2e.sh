@@ -46,7 +46,7 @@ Arguments:
                 - vr-streaming: Voxtral Realtime streaming mode
                 - vr-offline: Voxtral Realtime offline mode
                 - solo-text: Muse Glimmer solo text mode
-                - solo-text-offgraph: Muse Glimmer solo text, runtime-owned KV cache
+                - solo-text-batching: Muse Glimmer batched text (run_solo_batching)
                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Environment:
@@ -112,7 +112,7 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
-    solo-text|solo-text-offgraph|dflash-image)
+    solo-text|solo-text-batching|dflash-image)
       if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
         echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
         echo "Provided model: $HF_MODEL"
@@ -121,7 +121,7 @@ if [ -n "$MODE" ]; then
       ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-offgraph, dflash-image"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, solo-text-batching, dflash-image"
       exit 1
       ;;
   esac
@@ -286,8 +286,13 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     case "$MODE" in
-      solo-text|solo-text-offgraph)
+      solo-text)
         RUNNER_TARGET="solo_runner"
+        EXPECTED_OUTPUT="Paris"
+        IMAGE_URL=""
+        ;;
+      solo-text-batching)
+        RUNNER_TARGET="run_solo_batching"
         EXPECTED_OUTPUT="Paris"
         IMAGE_URL=""
         ;;
@@ -297,7 +302,7 @@ case "$HF_MODEL" in
         IMAGE_URL="https://github.com/pytorch/hub/raw/master/images/dog.jpg"
         ;;
       *)
-        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-offgraph' or 'dflash-image'"
+        echo "Error: Muse Glimmer requires mode 'solo-text', 'solo-text-batching' or 'dflash-image'"
         exit 1
         ;;
     esac
@@ -447,18 +452,17 @@ EOF
     ;;
   muse_glimmer)
     PROMPT_FILE="${MODEL_DIR}/muse_glimmer_prompt.txt"
-    if [ "$MODE" = "solo-text" ] || [ "$MODE" = "solo-text-offgraph" ]; then
+    if [ "$MODE" = "solo-text" ] || [ "$MODE" = "solo-text-batching" ]; then
       printf '%s' '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' > "$PROMPT_FILE"
     else
       printf '%s' '<|start|>user<|message|>What animal is in this image? <img><|eot|><|start|>assistant' > "$PROMPT_FILE"
     fi
-    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\" --max_new_tokens 512"
-    if [ "$MODE" = "solo-text-offgraph" ]; then
-      # Exercise the same artifact on both decode paths: eager, then the
-      # captured CUDA graph, which is recaptured whenever the cache grows.
-      RUNNER_VARIANTS="--cuda_graph=false --cuda_graph"
+    RUNNER_ARGS="$RUNNER_ARGS --tokenizer_path ${MODEL_DIR}/$TOKENIZER_FILE --prompt_file \"$PROMPT_FILE\""
+    if [ "$MODE" = "solo-text-batching" ]; then
+      # The passes, and the reports they are checked by, are run below.
+      RUNNER_ARGS="$RUNNER_ARGS --max_new_tokens 128 --max_sessions 5 --max_session_tokens 2048"
     else
-      RUNNER_ARGS="$RUNNER_ARGS --cuda_graph"
+      RUNNER_ARGS="$RUNNER_ARGS --max_new_tokens 512 --cuda_graph"
     fi
     if [ "$MODE" = "dflash-image" ]; then
       RUNNER_ARGS="$RUNNER_ARGS --image_path ${MODEL_DIR}/test_image.jpg"
@@ -538,7 +542,36 @@ run_and_validate() {
   esac
 }
 
-if [ -z "${RUNNER_VARIANTS:-}" ]; then
+if [ "$MODEL_NAME" = "muse_glimmer" ] && [ "$MODE" = "solo-text-batching" ]; then
+  REPORTS="${MODEL_DIR}/batching_reports"
+  mkdir -p "$REPORTS"
+  # One prompt, on both decode paths: eager, then the captured CUDA graph,
+  # which is recaptured whenever the KV pool grows.
+  run_and_validate "--cuda_graph=false --report_json=${REPORTS}/single_eager.json"
+  run_and_validate "--cuda_graph=true --report_json=${REPORTS}/single_graph.json"
+  # Five prompts in one batch, the France prompt first: three more questions,
+  # the France prompt again, and one longer than a forward, so it prefills in
+  # slices beside the others' decodes.
+  BATCH_PROMPTS="${MODEL_DIR}/muse_glimmer_batch_prompts.txt"
+  NOTES=""
+  for _ in $(seq 1 60); do
+    NOTES="${NOTES}Note: the museum opens at nine and closes at five. "
+  done
+  printf '%s\n' \
+    '<|start|>user<|message|>What is the capital of Japan?<|eot|><|start|>assistant' \
+    '<|start|>user<|message|>What is the capital of Italy?<|eot|><|start|>assistant' \
+    '<|start|>user<|message|>What is the capital of France?<|eot|><|start|>assistant' \
+    "<|start|>user<|message|>${NOTES}Question: what is the capital of Germany?<|eot|><|start|>assistant" \
+    > "$BATCH_PROMPTS"
+  run_and_validate "--cuda_graph=true --prompts_file=${BATCH_PROMPTS} --report_json=${REPORTS}/batch.json"
+  echo "::group::Check batching reports"
+  python .ci/scripts/check_muse_glimmer_batching_report.py \
+    --single "${REPORTS}/single_eager.json" \
+    --single "${REPORTS}/single_graph.json" \
+    --batch "${REPORTS}/batch.json" \
+    --expect Paris Tokyo Rome Paris Berlin
+  echo "::endgroup::"
+elif [ -z "${RUNNER_VARIANTS:-}" ]; then
   run_and_validate ""
 else
   for VARIANT in $RUNNER_VARIANTS; do
