@@ -9,6 +9,7 @@
 #pragma once
 
 #import <Foundation/Foundation.h>
+#include <executorch/runtime/core/named_data_map.h>
 #include <executorch/runtime/core/result.h>
 
 namespace executorch::backends::coreai {
@@ -33,5 +34,12 @@ runtime::Result<Manifest> select_assets(
     const Manifest& manifest,
     NSString* device_architecture,
     NSString* platform);
+// Caller holds the key's disk lock and has prepared staging_root.
+// Inline bundles are atomically published at staging_root/key/bundle.
+runtime::Result<NSURL*> prepare_source_bundle(
+    const Manifest& manifest,
+    const runtime::NamedDataMap* named_data,
+    NSString* staging_root,
+    NSString* key);
 
 } // namespace executorch::backends::coreai
