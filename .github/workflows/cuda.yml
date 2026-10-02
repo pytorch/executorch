@@ -480,6 +480,9 @@ jobs:
         pip install gguf
         python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
+        # Muse Glimmer batched CUDA export on a tiny model
+        python -m pytest examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py -v -o "addopts="
+
   unittest-cuda-runtime:
     name: unittest-cuda-runtime
     needs: [changed-files, run-decision]
