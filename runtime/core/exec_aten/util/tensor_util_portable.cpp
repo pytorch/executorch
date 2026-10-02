@@ -27,6 +27,9 @@ Error get_dim_order(
     const torch::executor::Tensor& tensor,
     executorch::aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size) {
+  if (tensor.dim_order().data() == nullptr) {
+    return Error::InvalidArgument;
+  }
   ET_CHECK_OR_RETURN_ERROR(
       out_dim_order_size == tensor.dim_order().size(),
       InvalidArgument,
@@ -38,10 +41,6 @@ Error get_dim_order(
       tensor.dim_order().data(),
       tensor.dim_order().size() * sizeof(executorch::aten::DimOrderType));
   return Error::Ok;
-}
-
-bool tensor_has_dim_order(const torch::executor::Tensor& tensor) {
-  return tensor.dim() == 0 || tensor.dim_order().data() != nullptr;
 }
 
 bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
