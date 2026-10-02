@@ -100,7 +100,9 @@ def export_model(backbone, head, limits, metadata):
                 VulkanPartitioner,
             )
 
-            partitioner = VulkanPartitioner({"require_dynamic_shapes": True}) # TODO: Configure correctly based on failures
+            partitioner = VulkanPartitioner(
+                {"require_dynamic_shapes": True}
+            )  # TODO: Configure correctly based on failures
             passes = []
         else:
             from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -131,7 +133,9 @@ def main():
         description="Export Kev prefill and pointer scoring"
     )
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--backend", choices=("xnnpack", "mlx", "vulkan"), required=True)
+    parser.add_argument(
+        "--backend", choices=("xnnpack", "mlx", "vulkan"), required=True
+    )
     parser.add_argument("--dtype", choices=("fp32", "bf16"), default="bf16")
     parser.add_argument(
         "--max-prefix",
