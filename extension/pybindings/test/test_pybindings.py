@@ -453,6 +453,42 @@ class PybindingsTest(unittest.TestCase):
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
 
+    def test_program_keeps_buffer_alive(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        program_data = bytes(exported_program.buffer)
+        initial_refcount = sys.getrefcount(program_data)
+
+        program = self.load_prog_fn(program_data)
+
+        self.assertGreater(sys.getrefcount(program_data), initial_refcount)
+        del program_data
+        output = program.load_method("forward")(inputs)[0]
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[1]))
+
+    def test_method_preserves_unplanned_input_that_is_also_an_output(self):
+        class ReturnInputAndSum(torch.nn.Module):
+            def forward(self, x, y):
+                return x, x + y
+
+            def get_methods_to_export(self):
+                return ("forward",)
+
+            def get_inputs(self):
+                return (torch.ones(2, 2), torch.full((2, 2), 2.0))
+
+        exported_program, inputs = create_program(
+            ReturnInputAndSum(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+
+        outputs = method(inputs)
+
+        self.assertTrue(torch.equal(outputs[0], inputs[0]))
+        self.assertTrue(torch.equal(outputs[1], inputs[0] + inputs[1]))
+
     def test_failed_set_inputs_keeps_buffer_storage_alive(self):
         exported_program, inputs = create_program(
             ModuleAdd(),

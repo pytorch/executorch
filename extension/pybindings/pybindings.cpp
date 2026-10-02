@@ -374,7 +374,8 @@ void write_data_to_file(const std::string& path, void* buf, size_t size) {
 
 void setup_output_storage(
     Method& method,
-    const std::vector<Span<uint8_t>>& output_storages) {
+    const std::vector<Span<uint8_t>>& output_storages,
+    const std::vector<const void*>& input_data_ptrs) {
   if (output_storages.size() != method.outputs_size()) {
     THROW_IF_ERROR(
         Error::InvalidArgument,
@@ -386,6 +387,16 @@ void setup_output_storage(
     if (output_storages[i].size() == 0) {
       // Skip empty output storages, this would happen for non-tensor outputs
       // and memory planned outputs.
+      continue;
+    }
+    const void* output_data = method.get_output(i).toTensor().const_data_ptr();
+    if (output_data != nullptr &&
+        std::find(
+            input_data_ptrs.begin(), input_data_ptrs.end(), output_data) !=
+            input_data_ptrs.end()) {
+      // The graph can return an unplanned input directly. set_inputs() has
+      // already pointed that shared value at the caller's storage, so
+      // replacing the output pointer would also replace the input pointer.
       continue;
     }
     Error output_status = method.set_output_data_ptr(
@@ -625,6 +636,9 @@ struct PyBundledModule : public BundledModule {
 // Program points to DataLoader so bundle them up into a struct to ensure that
 // it stays alive.
 struct ProgramState final {
+  // BufferDataLoader borrows this storage. Declare its owner first so it is
+  // destroyed after the program and loaders that read from it.
+  std::optional<py::bytes> program_buffer_;
   std::unique_ptr<DataLoader> loader_;
   std::unique_ptr<Program> program_;
   // Owned here rather than by PyProgram, beside the loader it reads
@@ -637,8 +651,10 @@ struct ProgramState final {
       std::unique_ptr<DataLoader> loader,
       std::unique_ptr<Program> program,
       std::unique_ptr<DataLoader> data_map_loader = nullptr,
-      std::unique_ptr<FlatTensorDataMap> data_map = nullptr)
-      : loader_(std::move(loader)),
+      std::unique_ptr<FlatTensorDataMap> data_map = nullptr,
+      std::optional<py::bytes> program_buffer = std::nullopt)
+      : program_buffer_(std::move(program_buffer)),
+        loader_(std::move(loader)),
         program_(std::move(program)),
         data_map_loader_(std::move(data_map_loader)),
         data_map_(std::move(data_map)) {}
@@ -1338,7 +1354,8 @@ struct PyModule final {
 inline std::shared_ptr<ProgramState> load_program(
     std::unique_ptr<DataLoader> loader,
     Program::Verification program_verification,
-    std::optional<const std::string> data_path = std::nullopt) {
+    std::optional<const std::string> data_path = std::nullopt,
+    std::optional<py::bytes> program_buffer = std::nullopt) {
   Result<Program> res = Program::load(loader.get(), program_verification);
   THROW_IF_ERROR(
       res.error(),
@@ -1366,7 +1383,8 @@ inline std::shared_ptr<ProgramState> load_program(
       std::move(loader),
       std::make_unique<Program>(std::move(res.get())),
       std::move(data_map_loader),
-      std::move(data_map));
+      std::move(data_map),
+      std::move(program_buffer));
 }
 
 /// A wrapper/util class for executorch memory allocations/manager.
@@ -1721,6 +1739,13 @@ struct PyMethod final {
         cpp_inputs.data(), cpp_inputs.size());
 
     Error set_inputs_status = method_->set_inputs(input_evalue_list);
+    std::vector<const void*> input_data_ptrs;
+    input_data_ptrs.reserve(cpp_inputs.size());
+    for (const auto& input : cpp_inputs) {
+      if (input.isTensor() && input.toTensor().const_data_ptr() != nullptr) {
+        input_data_ptrs.push_back(input.toTensor().const_data_ptr());
+      }
+    }
     if (set_inputs_status != Error::Ok) {
       // set_inputs() installs values one at a time and does not roll back a
       // prefix when a later value is rejected. Retain both generations so any
@@ -1731,6 +1756,10 @@ struct PyMethod final {
           buffer_tensor_ptrs_.end(),
           buffer_tensor_ptrs.begin(),
           buffer_tensor_ptrs.end());
+      input_data_ptrs_.insert(
+          input_data_ptrs_.end(),
+          input_data_ptrs.begin(),
+          input_data_ptrs.end());
       THROW_IF_ERROR(
           set_inputs_status,
           "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
@@ -1739,6 +1768,7 @@ struct PyMethod final {
     }
     buffer_inputs_ = std::move(buffer_inputs);
     buffer_tensor_ptrs_ = std::move(buffer_tensor_ptrs);
+    input_data_ptrs_ = std::move(input_data_ptrs);
   }
 
   void execute() {
@@ -1762,7 +1792,7 @@ struct PyMethod final {
     c10::impl::ExcludeDispatchKeyGuard no_autograd(
         c10::autograd_dispatch_keyset);
 #endif
-    setup_output_storage(*method_, output_storage_spans);
+    setup_output_storage(*method_, output_storage_spans, input_data_ptrs_);
     Error execute_status = method_->execute();
     THROW_IF_ERROR(
         execute_status,
@@ -1829,6 +1859,7 @@ struct PyMethod final {
   // next successful set_inputs() call.
   std::vector<std::shared_ptr<BufferTensor>> buffer_inputs_;
   std::vector<TensorPtr> buffer_tensor_ptrs_;
+  std::vector<const void*> input_data_ptrs_;
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
@@ -1917,9 +1948,13 @@ struct PyProgram final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::Minimal,
-      std::optional<const std::string> data_path = std::nullopt)
-      : state_(
-            load_program(std::move(loader), program_verification, data_path)),
+      std::optional<const std::string> data_path = std::nullopt,
+      std::optional<py::bytes> program_buffer = std::nullopt)
+      : state_(load_program(
+            std::move(loader),
+            program_verification,
+            data_path,
+            std::move(program_buffer))),
         event_tracer_(std::move(tracer)),
         debug_buffer_size_(debug_buffer_size) {
     // Figure out the size of each non_const layer we need to support every
@@ -1982,7 +2017,8 @@ struct PyProgram final {
                       : nullptr,
         debug_buffer_size,
         program_verification,
-        data_path);
+        data_path,
+        buffer);
   }
 
   static std::unique_ptr<PyProgram> load_from_file(
