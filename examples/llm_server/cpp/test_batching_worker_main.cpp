@@ -13,6 +13,7 @@
 #include <pytorch/tokenizers/tokenizer.h>
 
 #include <unistd.h>
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <fstream>
@@ -175,10 +176,11 @@ class ByteTokenizer final : public tokenizers::Tokenizer {
 
   tokenizers::Result<std::vector<uint64_t>>
   encode(const std::string& text, int8_t, int8_t) const override {
-    std::vector<uint64_t> ids;
-    for (const unsigned char byte : text) {
-      ids.push_back(byte);
-    }
+    std::vector<uint64_t> ids(text.size());
+    std::transform(
+        text.begin(), text.end(), ids.begin(), [](unsigned char byte) {
+          return byte;
+        });
     return ids;
   }
 
