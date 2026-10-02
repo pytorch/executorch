@@ -480,6 +480,9 @@ jobs:
         pip install gguf
         python -m pytest examples/models/gemma4_31b/tests/ --ignore=examples/models/gemma4_31b/tests/test_mlx_pipeline.py -v -o "addopts="
 
+        # Muse Glimmer batched CUDA export on a tiny model
+        python -m pytest examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py -v -o "addopts="
+
   unittest-cuda-runtime:
     name: unittest-cuda-runtime
     needs: [changed-files, run-decision]
@@ -515,10 +518,22 @@ jobs:
           -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache test_cuda_guard test_cuda_stream_guard -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache test_cuda_kv_cache test_cuda_guard test_cuda_stream_guard test_step_plan test_cuda_executor -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_kv_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_step_plan --output-on-failure -V
+        # CudaExecutor end to end on a toy decoder, against its eager greedy
+        # output. The test skips without the model, so fail if it skipped.
+        export ET_CUDA_BATCHING_TOY_DIR="${RUNNER_TEMP:-/tmp}/cuda_batching_toy"
+        python -m executorch.backends.cuda.batching.test.export_toy_decoder --output-dir "${ET_CUDA_BATCHING_TOY_DIR}"
+        ctest --test-dir cmake-out -R test_cuda_executor --output-on-failure -V > /tmp/test_cuda_executor.log 2>&1 || { cat /tmp/test_cuda_executor.log; exit 1; }
+        cat /tmp/test_cuda_executor.log
+        if grep -q "SKIPPED" /tmp/test_cuda_executor.log; then
+          echo "::error::test_cuda_executor skipped"
+          exit 1
+        fi
         ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
 

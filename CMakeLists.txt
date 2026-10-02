@@ -1013,10 +1013,15 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions extension_llm_cache)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/batching)
   list(APPEND _executorch_extensions extension_llm_batching
-       extension_llm_batching_module
+       extension_llm_batching_util extension_llm_batching_module
   )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/serving)
   list(APPEND _executorch_extensions extension_llm_serving)
+  if(EXECUTORCH_BUILD_CUDA)
+    # The CUDA batching executor implements extension/llm/batching's seam, so
+    # it builds here rather than with backends/cuda.
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda/batching)
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
