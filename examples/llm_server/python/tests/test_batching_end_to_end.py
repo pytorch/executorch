@@ -101,7 +101,8 @@ async def native_http(native_worker):
     transport = httpx.ASGITransport(app=build_app(serving, "test-model"))
     try:
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver"
+            transport=transport,
+            base_url="http://testserver",  # @lint-ignore: in-process ASGI test URL
         ) as client:
             yield worker, runtime, serving, client
     finally:
@@ -194,7 +195,8 @@ async def test_openai_streaming_and_nonstreaming_share_native_runner(native_work
     transport = httpx.ASGITransport(app=build_app(serving, "test-model"))
     try:
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://testserver"
+            transport=transport,
+            base_url="http://testserver",  # @lint-ignore: in-process ASGI test URL
         ) as client:
             ordinary = {
                 "model": "test-model",
