@@ -245,7 +245,7 @@ class PybindingsTest(unittest.TestCase):
                 executorch_output = executorch_module(inputs)[0]  # noqa
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertIn("The length of given input array", str(out))
+                self.assertIn("must be less than the number of inputs", str(out))
 
     def test_quantized_ops(self):
         eager_module = ModuleAdd()
@@ -587,7 +587,7 @@ class PybindingsTest(unittest.TestCase):
                 executorch_output = executorch_method(inputs)[0]  # noqa
                 self.assertFalse(True)  # should be unreachable
             except Exception:
-                self.assertIn("The length of given input array", str(out))
+                self.assertIn("Invalid number of inputs provided", str(out))
 
     def test_method_quantized_ops(self):
         eager_module = ModuleAdd()
