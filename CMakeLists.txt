@@ -114,7 +114,18 @@ include(ExternalProject)
 include(GNUInstallDirs)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  # The vendored c10 is mirrored byte for byte from PyTorch, which builds at
+  # C++20, so it is free to use C++20 in headers we compile. safe_numerics.h
+  # reaches std::countl_zero and std::bit_width on the branch taken when
+  # __builtin_*_overflow is unavailable, which is MSVC only -- every other
+  # toolchain takes the builtin path and stays within C++17. Raising the
+  # standard on Windows alone keeps the embedded targets, where C++20 support is
+  # not a given, on C++17.
+  if(WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+  else()
+    set(CMAKE_CXX_STANDARD 17)
+  endif()
 endif()
 announce_configured_options(CMAKE_CXX_STANDARD)
 
@@ -231,15 +242,7 @@ if(EXECUTORCH_BUILD_SHARED)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
-# Enable ccache if available
-find_program(CCACHE_PROGRAM ccache)
-if(CCACHE_PROGRAM)
-  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  message(STATUS "ccache found and enabled for faster builds")
-else()
-  message(STATUS "ccache not found, builds will not be cached")
-endif()
+executorch_try_enabling_ccache()
 announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -652,6 +655,15 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   target_compile_definitions(executorch_core PUBLIC ET_LOG_ENABLED=0)
 endif()
 target_compile_options(executorch_core PUBLIC ${_common_compile_options})
+if(WIN32)
+  # This target carries the vendored c10 headers, and safe_numerics.h reaches
+  # std::countl_zero on the branch MSVC takes. Stating it as a compile feature
+  # rather than relying on CMAKE_CXX_STANDARD is what makes it reach every
+  # consumer: features raise a target's standard even where CMAKE_CXX_STANDARD
+  # says 17, and install(EXPORT) carries them into ExecuTorchTargets.cmake, so
+  # projects configured separately from this one pick it up too.
+  target_compile_features(executorch_core PUBLIC cxx_std_20)
+endif()
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
     executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
@@ -820,6 +832,9 @@ configure_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
+if(EXECUTORCH_BUILD_VULKAN OR EXECUTORCH_BUILD_VGF)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan_shared)
+endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL
    OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
@@ -1000,6 +1015,8 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions extension_llm_batching
        extension_llm_batching_module
   )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/serving)
+  list(APPEND _executorch_extensions extension_llm_serving)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -1075,6 +1092,32 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
+  # pip decides where the wheel lands, so the wheel's copy of this file locates
+  # everything relative to its own location.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    set(_executorch_pc_definitions "-DC10_USING_CUSTOM_GENERATED_MACROS")
+    if(EXECUTORCH_ENABLE_EVENT_TRACER)
+      string(APPEND _executorch_pc_definitions " -DET_EVENT_TRACER_ENABLED")
+    endif()
+    # Matches the CMake package, which adds both to the runtime whenever the
+    # thread pool ships. Without the definition, parallel_for runs serially.
+    set(_executorch_pc_libs "-lexecutorch")
+    if(TARGET extension_threadpool)
+      string(APPEND _executorch_pc_definitions " -DET_USE_THREADPOOL")
+      string(APPEND _executorch_pc_libs " -lexecutorch_threadpool")
+    endif()
+    # Separate arguments, because Meson only keeps a dependency's rpath at
+    # install when the argument starts with -Wl,-rpath.
+    if(APPLE)
+      set(_executorch_pc_rpath "-Wl,-rpath,\${libdir}")
+    else()
+      set(_executorch_pc_rpath "-Wl,--enable-new-dtags -Wl,-rpath,\${libdir}")
+    endif()
+    configure_file(
+      tools/cmake/executorch-wheel.pc.in
+      ${CMAKE_CURRENT_BINARY_DIR}/executorch-wheel.pc @ONLY
+    )
+  endif()
 endif()
 
 # The macro changes the layout of the tracer scope objects, so a consumer
@@ -1173,6 +1216,22 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     )
   endif()
 
+endif()
+
+if(TARGET cpublas
+   AND TARGET kleidiai
+   AND TARGET cpuinfo
+)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"
+     OR ANDROID_ABI STREQUAL "arm64-v8a"
+     OR CMAKE_OSX_ARCHITECTURES MATCHES "arm64"
+  )
+    target_compile_definitions(cpublas PRIVATE ET_BUILD_WITH_KLEIDIAI)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+      target_compile_definitions(cpublas PRIVATE ET_KLEIDIAI_DISABLE_NEON_BF16)
+    endif()
+    target_link_libraries(cpublas PRIVATE kleidiai)
+  endif()
 endif()
 
 # The shared build ships the profiler as one of its libraries, and the Python

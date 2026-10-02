@@ -454,6 +454,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:memory",
         "//executorch/exir:tensor",
         "//executorch/exir/dialects:lib",
+        "//executorch/exir/operator:convert",
     ],
 )
 

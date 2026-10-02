@@ -162,6 +162,25 @@ def test_fallback_ignores_kwargs_without_hf():
     assert "<|im_start|>user" in out and out.endswith("<|im_start|>assistant\n")
 
 
+@pytest.mark.parametrize("header", ["<|im_start|>assistant\n", ""])
+def test_generation_preamble_warns_once_for_missing_header(caplog, header):
+    template = ChatTemplate(allow_fallback=True, assistant_header=header)
+    template._hf = _FakeHF()
+    caplog.clear()
+    for kwargs in (None, None, {"enable_thinking": False}):
+        assert template.generation_preamble(kwargs) == ""
+    assert len(caplog.records) == 1
+    assert "Assistant header" in caplog.text
+    assert "--assistant-header" in caplog.text
+
+
+def test_generation_preamble_accepts_custom_header_without_warning(caplog):
+    template, _ = _template_with_gemma_tool_response_fake()
+    caplog.clear()
+    assert template.generation_preamble() == "<|channel>thought\n<channel|>"
+    assert not caplog.records
+
+
 def test_tool_response_generation_prompt_disabled_by_default():
     t, _ = _template_with_gemma_tool_response_fake(append=False)
     out = t.render([ChatMessage(role="tool", tool_call_id="c1", content="ok")])

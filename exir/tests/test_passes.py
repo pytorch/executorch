@@ -1690,6 +1690,32 @@ class TestPasses(unittest.TestCase):
             new_ep.graph_module.code
         )
 
+    def test_constant_prop_pass_avoids_state_dict_name_collision(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 3
+
+        edge = to_edge(
+            export(Add(), (torch.ones(1),), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+        exported_program = lift_constant_tensor_pass(edge.exported_program())
+
+        # A program re-entering this pass can already carry a
+        # `_prop_tensor_constant*` in state_dict from an earlier run.
+        # Emission resolves placeholders against state_dict before
+        # constants, so reusing the name lets the stale entry shadow the
+        # propagated tensor and the two disagree on size.
+        stale = torch.zeros(12)
+        exported_program.state_dict["_prop_tensor_constant0"] = stale
+
+        new_ep = constant_prop_pass(exported_program)
+
+        for name in new_ep.constants:
+            self.assertNotIn(name, new_ep.state_dict)
+        self.assertIs(new_ep.state_dict["_prop_tensor_constant0"], stale)
+
     def test_pass_no_user_inputs(self) -> None:
         class NoUserInputs(torch.nn.Module):
             def __init__(self):
@@ -1875,6 +1901,86 @@ class TestPasses(unittest.TestCase):
         self.assertNotIn("a", new_ep.state_dict)
         # No more slice copy.
         self.assertEqual(count_slice(new_ep.graph_module), 0)
+
+    def test_constant_prop_pass_for_memory_format_slice_scatter(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = torch.nn.Parameter(torch.arange(9, dtype=torch.float32))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                zeros = torch.full_like(
+                    self.bias[3:6],
+                    0,
+                    memory_format=torch.preserve_format,
+                )
+                return x + torch.slice_scatter(
+                    self.bias,
+                    zeros,
+                    dim=0,
+                    start=3,
+                    end=6,
+                )
+
+        model = M().eval()
+        inputs = (torch.randn(9),)
+        expected = model(*inputs)
+        edge = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        exported_program = edge.exported_program()
+        original_ops = collect_ops(exported_program.graph_module)
+        self.assertIn(exir_ops.edge.aten.full_like.default, original_ops)
+        self.assertIn(exir_ops.edge.aten.slice_scatter.default, original_ops)
+
+        new_ep = constant_prop_pass(exported_program)
+
+        propagated_ops = collect_ops(new_ep.graph_module)
+        self.assertNotIn(exir_ops.edge.aten.full_like.default, propagated_ops)
+        self.assertNotIn(exir_ops.edge.aten.slice_scatter.default, propagated_ops)
+        torch.testing.assert_close(new_ep.module()(*inputs), expected)
+
+    def test_constant_prop_pass_preserves_memory_format(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                value = torch.randn(2, 3, 4, 5).to(memory_format=torch.channels_last)
+                self.value = torch.nn.Parameter(value)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + self.value.clone(memory_format=torch.preserve_format)
+
+        model = M().eval()
+        inputs = (torch.randn(2, 3, 4, 5),)
+        expected = model(*inputs)
+        edge = to_edge(
+            export(model, inputs, strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        exported_program = edge.exported_program()
+        self.assertIn(
+            exir_ops.edge.aten.clone.default,
+            collect_ops(exported_program.graph_module),
+        )
+
+        new_ep = constant_prop_pass(exported_program)
+
+        self.assertNotIn(
+            exir_ops.edge.aten.clone.default,
+            collect_ops(new_ep.graph_module),
+        )
+        folded_constants = [
+            value
+            for name, value in new_ep.constants.items()
+            if name.startswith("_prop_tensor_constant")
+            and value.shape == model.value.shape
+        ]
+        self.assertEqual(len(folded_constants), 1)
+        self.assertTrue(
+            folded_constants[0].is_contiguous(memory_format=torch.channels_last)
+        )
+        torch.testing.assert_close(new_ep.module()(*inputs), expected)
 
     def test_constant_prop_pass_no_propagate(self) -> None:
         def count_placeholder(gm: torch.fx.GraphModule) -> int:
@@ -3013,6 +3119,42 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
 
         self.assertTrue(found_clone, "Should find a _clone_dim_order node in the graph")
 
+    def test_clone_non_contiguous_constant_is_normalized(self) -> None:
+        """
+        Verify that clone() normalizes a lifted constant with a dim order
+        that torch.memory_format cannot represent.
+        """
+
+        class CloneConstantModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.anchors = torch.arange(10).reshape(5, 2).T.unsqueeze(0).float()
+
+            def forward(self, x):
+                return self.anchors.clone() + x
+
+        model = CloneConstantModel()
+        self.assertEqual(tuple(model.anchors.dim_order()), (2, 0, 1))
+        inputs = (torch.randn(1, 2, 5),)
+        ep = torch.export.export(model, inputs)
+
+        # lifted constant          Edge constant         clone rewrite
+        # [2, 0, 1] --normalize--> [0, 1, 2] ----------> [0, 1, 2]
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_skip_dim_order=False))
+        edge_program = edge.exported_program()
+
+        anchors = edge_program.constants["anchors"]
+        self.assertTrue(anchors.is_contiguous())
+
+        # Find the clone rewrite and verify its normalized dim order.
+        clone_nodes = [
+            node
+            for node in edge_program.graph_module.graph.nodes
+            if node.op == "call_function" and "_clone_dim_order" in str(node.target)
+        ]
+        self.assertEqual(len(clone_nodes), 1)
+        self.assertEqual(tuple(clone_nodes[0].meta["val"].dim_order()), (0, 1, 2))
+
     def test_clone_contiguous_format_kwarg_stays_contiguous(self) -> None:
         """
         Regression guard: explicit contiguous_format should produce contiguous dim_order.
@@ -3115,6 +3257,64 @@ class TestMemoryFormatOpsPassPreserveFormat(unittest.TestCase):
                 break
 
         self.assertTrue(found_copy, "Should find a _to_dim_order_copy node")
+
+    def test_to_copy_non_contiguous_buffer_is_normalized(self) -> None:
+        """
+        Verify that folded anchor layouts are normalized for both buffer
+        storage modes without mutating the source ExportedProgram.
+        """
+
+        class ToCopyBufferModel(torch.nn.Module):
+            def __init__(self, persistent: bool) -> None:
+                super().__init__()
+                # Reproduce a folded detection-anchor layout that
+                # torch.memory_format cannot represent.
+                anchors = torch.arange(10).reshape(5, 2).T.unsqueeze(0).float()
+                self.register_buffer("anchors", anchors, persistent=persistent)
+
+            def forward(self, x):
+                return self.anchors.to(dtype=x.dtype) + x
+
+        # Test both persistent=True and False
+        #                  storage
+        # persistent=True  state_dict --\
+        #                                +--> to_edge --> Edge [0, 1, 2]
+        # persistent=False constants ---/          |
+        #                                          `--> source [2, 0, 1]
+        for persistent in (True, False):
+            with self.subTest(persistent=persistent):
+                model = ToCopyBufferModel(persistent)
+                self.assertEqual(tuple(model.anchors.dim_order()), (2, 0, 1))
+                inputs = (torch.randn(1, 2, 5, dtype=torch.float16),)
+                ep = torch.export.export(model, inputs)
+                source_anchors = dict(ep.named_buffers())["anchors"]
+
+                edge = to_edge(
+                    ep, compile_config=EdgeCompileConfig(_skip_dim_order=False)
+                )
+                edge_program = edge.exported_program()
+
+                # Lowering operates on a derived program. The caller-owned buffer
+                # must keep both its identity and unsupported source layout.
+                source_anchors_after = dict(ep.named_buffers())["anchors"]
+                self.assertIs(source_anchors_after, source_anchors)
+                self.assertEqual(tuple(source_anchors_after.dim_order()), (2, 0, 1))
+
+                # Both storage modes must produce the same normalized Edge buffer.
+                anchors = dict(edge_program.named_buffers())["anchors"]
+                self.assertTrue(anchors.is_contiguous())
+
+                # The preserve-format copy must use the normalized Edge layout.
+                copy_nodes = [
+                    node
+                    for node in edge_program.graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and "_to_dim_order_copy" in str(node.target)
+                ]
+                self.assertEqual(len(copy_nodes), 1)
+                self.assertEqual(
+                    tuple(copy_nodes[0].meta["val"].dim_order()), (0, 1, 2)
+                )
 
 
 class TestCSEPass(unittest.TestCase):

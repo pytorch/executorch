@@ -1642,6 +1642,102 @@ class Embedding(torch.nn.Module):
                     )
 
 
+class Empty(torch.nn.Module):
+    def __init__(self, shape=None, dtype=None, memory_format=torch.contiguous_format):
+        super().__init__()
+        self.shape = shape
+        self.dtype = dtype
+        self.memory_format = memory_format
+
+    def forward(self, x):
+        # zeros_like makes the uninitialized buffer deterministic for comparison.
+        # dtype is decoupled from the input to exercise the cast path.
+        empty = torch.empty(
+            x.shape if self.shape is None else self.shape,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+            memory_format=self.memory_format,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # Sweep dtypes/shapes/memory_formats that exercise the DecomposeEmpty cast path.
+        cases = [
+            ("dtype:float32", __class__(dtype=torch.float32), (4, 3)),
+            ("dtype:int32", __class__(dtype=torch.int32), (4, 3)),
+            # channels_last: layout is unobservable (uninitialized memory)
+            (
+                "memory_format:channels_last",
+                __class__(memory_format=torch.channels_last),
+                (1, 2, 3, 4),
+            ),
+            # degenerate ends of the shape handling
+            ("shape:0d", __class__(shape=()), (4, 3)),
+            ("shape:1d", __class__(shape=(4,)), (4,)),
+        ]
+        for msg, module, input_shape in cases:
+            with subtests.test(msg=msg):
+                with expected as metrics:
+                    export_and_verify(
+                        module=module,
+                        inputs=(torch.randn(*input_shape),),
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class EmptyStrided(torch.nn.Module):
+    def __init__(self, shape, strides, dtype=None):
+        super().__init__()
+        self.shape = shape
+        self.strides = strides
+        self.dtype = dtype
+
+    def forward(self, x):
+        # zeros_like makes the uninitialized buffer deterministic for comparison.
+        empty = torch.empty_strided(
+            self.shape,
+            self.strides,
+            dtype=x.dtype if self.dtype is None else self.dtype,
+        )
+        return torch.add(x, torch.zeros_like(empty).to(x.dtype))
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # A contiguous stride decomposes into full.default
+        with subtests.test(msg="stride:contiguous"):
+            with expected as metrics:
+                export_and_verify(
+                    module=__class__(shape=(2, 3), strides=(3, 1)),
+                    inputs=(torch.randn(2, 3),),
+                    qnn_config=qnn_config,
+                    quantizer=quantizer,
+                    compile_specs=compile_spec,
+                    metrics=metrics,
+                )
+
+    @staticmethod
+    @unpack_fixtures
+    def test_non_contiguous(qnn_config, quantizer, compile_spec, expected):
+        # Non-contiguous stride: still decomposes since uninitialized memory
+        # makes strides unobservable. Without the decomposition, empty_strided
+        # has no node visitor, so the partitioner falls back to CPU and the
+        # graph is no longer fully delegated.
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(shape=(2, 3), strides=(1, 2)),
+                inputs=(torch.randn(2, 3),),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
+
 class Equal(torch.nn.Module):
     def __init__(self, constant=None):
         super().__init__()
