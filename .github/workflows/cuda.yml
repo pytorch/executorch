@@ -2,7 +2,7 @@
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
 # across different CUDA versions (12.6, 13.0, 13.4) using the command:
 #   ./install_executorch.sh
-# 
+#
 # Intentionally skipped CUDA version 13.2 check due to ci image unsupported.
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
@@ -778,7 +778,7 @@ jobs:
           - variant: kquant-17gb
             mode: solo-text
           - variant: kquant-17gb
-            mode: solo-text-offgraph
+            mode: solo-text-batching
           - variant: kquant-17gb
             mode: dflash-image
           - variant: kquant-dynamic
