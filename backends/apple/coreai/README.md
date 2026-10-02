@@ -34,6 +34,34 @@ iteration order is not a binding contract. The `files` object maps relative
 filenames to byte sizes; `bundle_digests` maps each bundle basename to its
 export-time SHA-256 digest.
 
+The experimental `CoreAIBackend` runtime supports stateless FP32/FP16 tensor
+models in both formats.
+ExecuTorch tensors must be contiguous. Output shapes
+must fit the executor's declared resize and capacity constraints. Stateful
+functions, image values, other dtypes, and interleaved layouts are not supported.
+Calls on one session must be serialized by the caller.
+
+Backend `init` and `execute` block the calling thread until Core AI finishes,
+and that work runs on Swift's shared concurrency pool. Do not load or execute
+from Swift concurrency code (an `async` function or `Task`), because blocking
+those threads can starve the pool; call from a dedicated thread or dispatch
+queue instead.
+
+Supported inputs are borrowed directly from ExecuTorch storage through Core AI
+raw views. The bridge copies shape metadata, not tensor bytes, and does not
+allocate intermediate input `NSData`, `Data`, or `NDArray` buffers. Each call
+wraps `const_data_ptr()` and the current shape's `nbytes()`, not the allocation's
+maximum capacity. Outputs use the SDK's actual returned shape; the backend
+resizes them within ExecuTorch's declared bounds before copying only the logical
+result bytes. Unused capacity is neither wrapped as input nor written as output.
+The backend waits for inference and all input access to finish before returning
+from `execute`, including on errors. This uses ExecuTorch's normal input-lifetime
+contract; callers must not concurrently mutate, release, or rebind the input
+storage. Output data remains owned and is copied into validated ExecuTorch
+outputs after inference, so output/input aliases are not written during the
+borrow. This does not guarantee that Core AI itself avoids device transfers or
+internal copies.
+
 ### AOT architecture selection
 
 Configure AOT export with `AOTCompileConfig`, including the target `platform` and
@@ -42,12 +70,25 @@ architectures=["h17p"])` requests that compiler architecture; omitting the list
 lets the compiler emit its supported architectures for the target platform.
 These are Core AI architecture names, not CPU names such as `arm64`.
 
+At load time, the runtime queries `AIModel.deviceArchitectureName` and selects
+the exact matching entry in the manifest's `archs` map. No runtime architecture
+option is required, and there is no fallback to another architecture. Platform,
+deployment floor, and architecture checks happen before asset reads or storage
+creation. Missing-architecture errors identify the device architecture, list
+available architectures, and request a matching export. Missing selected files
+are reported separately from an absent architecture entry.
+
 Both formats can require device specialization. Every load first attempts SDK
 bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
 to source materialization and persistent specialization, then binds the requested
 function and ordered I/O on that same acquired model.
 
 ### Asset storage
+
+Backend initialization reads the string runtime spec `coreai_assets_dir`. If
+absent, it sets the directory to `executorch_coreai` beneath user-domain
+`NSCachesDirectory`. The coordinator and storage helpers always receive that
+explicit directory. It contains raw bookmarks, staged bundles and lock files.
 
 The assets root must be an absolute path. The application chooses it, should
 reserve it for this backend, and is trusted not to rename, replace or modify its
@@ -83,6 +124,17 @@ Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which cover
 everything beneath it. Ancestors are not modified. This is backup exclusion, not
 a control for iCloud Drive synchronization.
 
+Delegate construction and registration do not create storage directories or load
+models. Per-model initialization performs SDK acquisition and function loading,
+validating source assets only when recovery requires them. There is no synthetic
+zero-input inference at initialization. SDK specialization and function resource
+loading can still be substantial.
+
+The runtime always uses `AIModelCache.default` with persistent retention and
+stores an opaque bookmark for direct restoration. `coreai_assets_dir` does not
+choose the SDK artifact directory. The backend does not inspect SDK-private
+files, alter their backup flags, or use an App Group cache.
+
 Each partition derives a key from its selected export digest/bundle, platform,
 Core AI device architecture, default SDK cache namespace, versioned default
 options and persistent policy. Function bindings and delivery location are
@@ -107,6 +159,36 @@ different keys remain independent. Lock ownership is maintained by the OS, and
 acquiring a lock does not flush its file or directory. Lock files are not
 removed by the backend, including after process exit. Removing the assets root
 externally requires all loads, sessions and maintenance to stop.
+
+Automatic source removal is disabled. A durable bookmark and a live model pin
+do not prove source independence. The backend does not remove sources on method
+unload or delegate destruction; no runtime option enables automatic removal.
+Cache storage and SDK persistent entries may be purged, so retain or redeliver
+the original PTE and named data for reconstruction after a cache miss.
+Source-free inference, fresh-process SDK restoration and persistent-policy
+behavior require separate OS 27 hardware qualification.
+
+### Runtime options
+
+Pass options through the public `Module` API before loading. In an error-returning
+loader using the `executorch::runtime` namespace:
+
+```cpp
+BackendOptions<1> options;
+ET_CHECK_OK_OR_RETURN_ERROR(options.set_option("coreai_assets_dir", assets_dir));
+LoadBackendOptionsMap map;
+ET_CHECK_OK_OR_RETURN_ERROR(map.set_options("CoreAIBackend", options.view()));
+ET_CHECK_OK_OR_RETURN_ERROR(module.load(map));
+```
+
+No options are required when using the default assets root. `coreai_assets_dir`
+selects an application-chosen cache directory reserved for this backend. The
+supplied path is validated during preflight, but warm bookmark hits need no
+source.
+
+Use separate option maps to choose different storage roots for different models.
+The path is a root directory, not the bundle itself. ExecuTorch option strings
+have a 255-byte limit.
 
 ## SDK Bridge
 
@@ -140,6 +222,25 @@ Ninja builds use one architecture per build directory. Current runtime support
 covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
 `Float16` availability, and the tested iOS simulator SDKs do not contain Core AI.
 
+Enable `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER` for inference consumers.
+Link the CMake target `coreaidelegate`, not just its archive filename. Its
+transitive dependencies supply Swift and Foundation/CoreAI linkage, and its
+link interface retains static backend registration. With
+`EXECUTORCH_BUILD_SHARED=ON`, the delegate is a shared library linked to the
+single consolidated `executorch_shared` runtime. Otherwise it is static.
+Consumers of the shared delegate must use that same shared runtime.
+Installed CMake targets resolve framework and Swift runtime dependencies using
+the consumer's selected SDK and toolchain, not the producer's Xcode paths.
+Select the Apple SDK/toolchain when configuring the consumer project.
+SwiftPM and XCFramework distribution are not integrated yet.
+
+The `coreai_runtime_smoke` target checks final linkage of a C++ consumer,
+including Swift dependencies and backend registration retention. With
+`EXECUTORCH_BUILD_TESTS=ON` it is built and
+registered with CTest; otherwise it is excluded from the default build. On OS 27,
+running it checks registration and availability; it does not perform model
+inference. Do not execute SDK27 binaries on an older host.
+
 ## Host Tests
 
 `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON` registers the
@@ -159,3 +260,9 @@ cmake -S . -B <build-dir> -G Ninja \
 cmake --build <build-dir> --target coreai_host_test
 ctest --test-dir <build-dir> -R '^coreai_host_test$' --output-on-failure
 ```
+
+For a compile-only production smoke build, use a fresh build directory without
+`EXECUTORCH_BUILD_TESTS`, set `CMAKE_OSX_ARCHITECTURES=arm64`, and build
+`coreai_runtime_smoke`. For iOS also set `CMAKE_SYSTEM_NAME=iOS` and
+`CMAKE_OSX_SYSROOT=iphoneos`. Do not run the iOS binary on the host or install
+a simulator as part of this build.
