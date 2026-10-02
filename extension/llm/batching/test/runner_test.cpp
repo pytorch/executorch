@@ -9,12 +9,15 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
+#include <future>
 #include <limits>
 #include <map>
 #include <memory>
@@ -43,6 +46,7 @@ using executorch::extension::llm::batching::SamplingParams;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::Session;
 using executorch::extension::llm::batching::SessionId;
+using executorch::extension::llm::batching::stamped;
 using executorch::extension::llm::batching::Task;
 using executorch::extension::llm::batching::Token;
 using executorch::extension::llm::batching::testing::FakeExecutor;
@@ -385,6 +389,322 @@ TEST(GenerationHandleTest, MoveTransfersValidity) {
   moved.wait();
   EXPECT_TRUE(moved.done());
 }
+
+TEST(SettlementTest, PublishesBeforeNotificationAndReleasesCaptures) {
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  auto capture = std::make_shared<int>(42);
+  std::weak_ptr<int> retained = capture;
+  std::atomic<int> settled_calls{0};
+  bool terminal_returned = false;
+  std::promise<void> entered;
+  auto notified = entered.get_future();
+  std::promise<void> release;
+  auto released = release.get_future();
+  GenerationHandle handle = session.generate_async(
+      tokens(2),
+      config(1),
+      [&](const GenerationUpdate& update) {
+        EXPECT_TRUE(update.finish_reason.has_value());
+        EXPECT_FALSE(handle.done());
+        terminal_returned = true;
+      },
+      [&, capture = std::move(capture)] {
+        ++settled_calls;
+        EXPECT_EQ(*capture, 42);
+        EXPECT_TRUE(terminal_returned);
+        EXPECT_TRUE(handle.done());
+        EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+        EXPECT_TRUE(handle.error_message().empty());
+        const auto metrics = handle.metrics();
+        EXPECT_EQ(metrics.n_prompt_tokens, 2);
+        EXPECT_EQ(metrics.n_generated_tokens, 1);
+        EXPECT_EQ(metrics.n_prefill_steps, 1);
+        EXPECT_GE(metrics.t_end, metrics.t_first_token);
+        entered.set_value();
+        // Deliberately hold notification to test the weaker handle boundary.
+        EXPECT_EQ(released.wait_for(kTimeout), std::future_status::ready);
+      });
+  auto waiter = std::async(std::launch::async, [&] { handle.wait(); });
+  executor.release();
+
+  EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_TRUE(handle.done());
+  EXPECT_EQ(waiter.wait_for(kTimeout), std::future_status::ready);
+  EXPECT_FALSE(retained.expired());
+  release.set_value();
+  fixture.runner.shutdown();
+  EXPECT_EQ(settled_calls.load(), 1);
+  EXPECT_TRUE(retained.expired());
+  EXPECT_TRUE(handle.valid());
+}
+
+TEST(SettlementTest, SmallCallbackDestructionCanReenterDone) {
+  executorch::runtime::runtime_init();
+  struct Watchdog {
+    std::promise<void> finished;
+    std::thread thread{[done = finished.get_future()]() mutable {
+      if (done.wait_for(kTimeout * 6) != std::future_status::ready) {
+        ADD_FAILURE() << "settlement callback test or teardown deadlocked";
+        std::abort();
+      }
+    }};
+
+    ~Watchdog() {
+      finished.set_value();
+      thread.join();
+    }
+  } watchdog;
+  struct State {
+    GenerationHandle handle;
+    std::atomic<bool> armed{false};
+    std::atomic<int> destructions{0};
+    int destructions_at_call = 0;
+    int calls = 0;
+    std::promise<void> settled;
+  } state;
+  auto notified = state.settled.get_future();
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor);
+  Session session = open(fixture.runner);
+  ASSERT_TRUE(session.valid());
+
+  // Destroy every callable copy, not just a final shared_ptr capture. libc++
+  // keeps this nothrow-copyable target inline and destroys a copy during swap.
+  struct SmallCallback {
+    State* state;
+
+    ~SmallCallback() {
+      if (state->armed.load()) {
+        EXPECT_TRUE(state->handle.done());
+        ++state->destructions;
+      }
+    }
+
+    void operator()() const {
+      EXPECT_TRUE(state->handle.done());
+      state->destructions_at_call = state->destructions.load();
+      ++state->calls;
+      state->settled.set_value();
+    }
+  };
+  static_assert(sizeof(SmallCallback) == sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<SmallCallback>::value);
+  state.handle =
+      session.generate_async(tokens(2), config(1), {}, SmallCallback{&state});
+  // Submission's temporary copies are gone and the handle is initialized
+  // before the held executor can reach generation completion.
+  state.armed.store(true);
+  executor.release();
+  EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+  fixture.runner.shutdown();
+  EXPECT_EQ(state.calls, 1);
+  EXPECT_GT(state.destructions.load(), 0);
+#if defined(_LIBCPP_VERSION) && !defined(_LIBCPP_ABI_OPTIMIZED_FUNCTION)
+  EXPECT_GT(state.destructions_at_call, 0)
+      << "the inline callable copy must be destroyed before invocation";
+#endif
+  EXPECT_EQ(state.handle.finish_reason(), FinishReason::NewTokenLimit);
+}
+
+TEST(SettlementTest, SynchronousRejectionsNotifyInlineAndReleaseCaptures) {
+  FakeExecutor executor;
+  Fixture fixture(executor);
+  Session closed = open(fixture.runner);
+  Session empty;
+  fixture.runner.shutdown();
+  for (const Session* session : {&empty, &closed}) {
+    auto capture = std::make_shared<int>(42);
+    std::weak_ptr<int> retained = capture;
+    int update_calls = 0;
+    int settled_calls = 0;
+    const auto caller = std::this_thread::get_id();
+    auto handle = session->generate_async(
+        tokens(1),
+        config(1),
+        [&](const GenerationUpdate&) { ++update_calls; },
+        [&, capture = std::move(capture)] {
+          ++settled_calls;
+          EXPECT_EQ(*capture, 42);
+          EXPECT_EQ(update_calls, 1);
+          EXPECT_EQ(std::this_thread::get_id(), caller);
+        });
+    EXPECT_EQ(settled_calls, 1);
+    EXPECT_TRUE(handle.done());
+    EXPECT_EQ(
+        handle.finish_reason(),
+        session == &empty ? FinishReason::Failed : FinishReason::Cancelled);
+    EXPECT_EQ(
+        handle.error_message(),
+        session == &empty ? "session is not initialized" : "");
+    EXPECT_EQ(handle.metrics().n_generated_tokens, 0);
+    EXPECT_TRUE(retained.expired());
+  }
+}
+
+TEST(SettlementTest, ReportsStopAndExecutorFailureAfterPublication) {
+  for (bool fail : {false, true}) {
+    FakeExecutor executor;
+    executor.hold();
+    executor.fail_batches_from = fail ? 0 : -1;
+    executor.stop_token = 999;
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    auto generation_config = config(2);
+    generation_config.stop_tokens = {999};
+    std::atomic<int> settled_calls{0};
+    std::promise<void> settled;
+    auto notified = settled.get_future();
+    GenerationHandle handle =
+        session.generate_async(tokens(2), generation_config, {}, [&] {
+          ++settled_calls;
+          EXPECT_TRUE(handle.done());
+          EXPECT_EQ(
+              handle.finish_reason(),
+              fail ? FinishReason::Failed : FinishReason::StopToken);
+          EXPECT_EQ(
+              handle.error_message(),
+              fail ? "executor failed to execute the batch" : "");
+          EXPECT_EQ(handle.metrics().n_generated_tokens, fail ? 0 : 1);
+          EXPECT_TRUE(stamped(handle.metrics().t_end));
+          settled.set_value();
+        });
+    executor.release();
+    EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+    fixture.runner.shutdown();
+    EXPECT_EQ(settled_calls.load(), 1);
+  }
+}
+
+TEST(SettlementTest, CancellationClosureAndShutdownNotifyExactlyOnce) {
+  for (CloneStop stop :
+       {CloneStop::Cancel, CloneStop::Close, CloneStop::Shutdown}) {
+    FakeExecutor executor;
+    executor.hold();
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    std::atomic<int> settled_calls{0};
+    std::promise<void> settled;
+    auto notified = settled.get_future();
+    GenerationHandle handle = session.generate_async(
+        tokens(2),
+        config(2),
+        [&](const GenerationUpdate& update) {
+          if (!update.finish_reason) {
+            if (stop == CloneStop::Cancel) {
+              handle.cancel();
+            } else if (stop == CloneStop::Close) {
+              session = Session{};
+            } else {
+              fixture.runner.shutdown();
+            }
+          }
+        },
+        [&] {
+          ++settled_calls;
+          EXPECT_TRUE(handle.done());
+          EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
+          EXPECT_TRUE(handle.error_message().empty());
+          EXPECT_EQ(handle.metrics().n_generated_tokens, 1);
+          EXPECT_GE(handle.metrics().t_end, handle.metrics().t_first_token);
+          settled.set_value();
+        });
+    executor.release();
+    EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+    fixture.runner.shutdown();
+    EXPECT_EQ(settled_calls.load(), 1);
+  }
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST(SettlementTest, UpdateExceptionsPublishFailureBeforeNotification) {
+  for (int budget : {1, 2}) {
+    FakeExecutor executor;
+    executor.hold();
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    std::atomic<int> update_calls{0};
+    std::atomic<int> settled_calls{0};
+    std::promise<void> settled;
+    auto notified = settled.get_future();
+    GenerationHandle handle = session.generate_async(
+        tokens(2),
+        config(budget),
+        [&](const GenerationUpdate& update) {
+          ++update_calls;
+          EXPECT_EQ(update.finish_reason.has_value(), budget == 1);
+          throw std::runtime_error("update failed");
+        },
+        [&] {
+          ++settled_calls;
+          EXPECT_TRUE(handle.done());
+          EXPECT_EQ(handle.finish_reason(), FinishReason::Failed);
+          EXPECT_EQ(handle.error_message(), "update failed");
+          EXPECT_EQ(handle.metrics().n_generated_tokens, 1);
+          EXPECT_GE(handle.metrics().t_end, handle.metrics().t_first_token);
+          settled.set_value();
+        });
+    executor.release();
+    EXPECT_EQ(notified.wait_for(kTimeout), std::future_status::ready);
+    fixture.runner.shutdown();
+    EXPECT_EQ(update_calls.load(), 1);
+    EXPECT_EQ(settled_calls.load(), 1);
+  }
+}
+
+TEST(SettlementTest, NotificationExceptionsAreContainedAndCapturesReleased) {
+  for (bool standard_exception : {false, true}) {
+    FakeExecutor executor;
+    Fixture fixture(executor);
+    Session session = open(fixture.runner);
+    auto capture = std::make_shared<int>(42);
+    std::weak_ptr<int> retained = capture;
+    std::atomic<int> settled_calls{0};
+    auto handle = session.generate_async(
+        tokens(2), config(1), {}, [&, capture = std::move(capture)] {
+          ++settled_calls;
+          EXPECT_EQ(*capture, 42);
+          if (standard_exception) {
+            throw std::runtime_error("notification failed");
+          }
+          throw 7;
+        });
+    handle.wait();
+    auto updates = std::make_shared<Updates>();
+    auto next = generate(session, tokens(1), config(1), updates);
+    EXPECT_TRUE(updates->wait());
+    fixture.runner.shutdown();
+    EXPECT_EQ(handle.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_TRUE(handle.error_message().empty());
+    EXPECT_EQ(handle.metrics().n_generated_tokens, 1);
+    EXPECT_EQ(next.finish_reason(), FinishReason::NewTokenLimit);
+    EXPECT_EQ(settled_calls.load(), 1);
+    EXPECT_TRUE(retained.expired());
+  }
+
+  Session empty;
+  int settled_calls = 0;
+  GenerationHandle rejected;
+  EXPECT_NO_THROW(
+      rejected = empty.generate_async(
+          tokens(1),
+          config(1),
+          [](const GenerationUpdate&) {
+            throw std::runtime_error("inline update failed");
+          },
+          [&] {
+            ++settled_calls;
+            throw std::runtime_error("inline notification failed");
+          }));
+  EXPECT_EQ(settled_calls, 1);
+  EXPECT_TRUE(rejected.done());
+  EXPECT_EQ(rejected.finish_reason(), FinishReason::Failed);
+  EXPECT_EQ(rejected.error_message(), "inline update failed");
+}
+#endif
 
 TEST(SessionTest, DefaultSessionRejectsGenerationSynchronously) {
   Session session;

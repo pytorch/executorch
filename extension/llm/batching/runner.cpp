@@ -67,6 +67,7 @@ struct GenerationHandleState {
   std::optional<FinishReason> reason;
   std::string error_message;
   GenerationMetrics metrics;
+  std::function<void()> on_settled;
   std::atomic<bool> cancelled{false};
 };
 
@@ -131,6 +132,7 @@ class TerminalCompletion {
   void finish(TerminalOutcome outcome, const GenerationMetrics& metrics) {
     assert(state_);
     auto state = std::move(state_);
+    std::function<void()> on_settled;
     {
       std::lock_guard<std::mutex> lock(state->mutex);
       assert(state->phase == CompletionPhase::DeliveringCallback);
@@ -140,6 +142,20 @@ class TerminalCompletion {
       state->phase = CompletionPhase::Done;
     }
     state->cv.notify_all();
+    // Swapping an inline callable can destroy a copy whose captures reenter
+    // the handle. Only this finisher accesses on_settled after publication.
+    on_settled.swap(state->on_settled);
+    if (on_settled) {
+#if ET_HAS_EXCEPTIONS
+      try {
+        on_settled();
+      } catch (...) {
+        // Notification failure must not change the published outcome.
+      }
+#else
+      on_settled();
+#endif
+    }
   }
 
  private:
@@ -288,7 +304,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       SessionId session,
       std::vector<Token> delta,
       GenConfig config,
-      GenerationCallback on_update);
+      GenerationCallback on_update,
+      std::function<void()> on_settled);
 
   InitializationState initialization_state() const noexcept {
     return initialization_state_.load(std::memory_order_acquire);
@@ -604,9 +621,11 @@ Session::make_clone_request(Position upto) const {
 GenerationHandle Session::generate_async(
     std::vector<Token> delta,
     GenConfig config,
-    GenerationCallback on_update) const {
+    GenerationCallback on_update,
+    std::function<void()> on_settled) const {
   if (!state_) {
     auto handle_state = std::make_shared<GenerationHandleState>();
+    handle_state->on_settled = std::move(on_settled);
     GenerationHandle handle(handle_state);
     finalize_terminal(
         handle_state,
@@ -616,6 +635,7 @@ GenerationHandle Session::generate_async(
   }
   if (!state_->status->open.load(std::memory_order_acquire)) {
     auto handle_state = std::make_shared<GenerationHandleState>();
+    handle_state->on_settled = std::move(on_settled);
     GenerationHandle handle(handle_state);
     finalize_terminal(handle_state, on_update, TerminalOutcome::cancelled());
     return handle;
@@ -624,7 +644,8 @@ GenerationHandle Session::generate_async(
       state_->session,
       std::move(delta),
       std::move(config),
-      std::move(on_update));
+      std::move(on_update),
+      std::move(on_settled));
 }
 
 // --- lifecycle -------------------------------------------------------------
@@ -1276,8 +1297,10 @@ GenerationHandle RunnerImpl::generate_async(
     SessionId session,
     std::vector<Token> delta,
     GenConfig config,
-    GenerationCallback on_update) {
+    GenerationCallback on_update,
+    std::function<void()> on_settled) {
   auto state = std::make_shared<GenerationHandleState>();
+  state->on_settled = std::move(on_settled);
   GenerationRequest request;
   request.session = session;
   request.delta = std::make_shared<const std::vector<Token>>(std::move(delta));

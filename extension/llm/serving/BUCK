@@ -11,3 +11,20 @@ fbcode_target(_kind = runtime.cxx_library,
     header_namespace = "executorch/extension/llm/serving",
     visibility = ["PUBLIC"],
 )
+
+fbcode_target(_kind = runtime.cxx_library,
+    name = "serving_runtime",
+    srcs = ["serving_runtime.cpp"],
+    headers = ["detail/generation_bridge.h"],
+    exported_headers = [
+        "request_handle.h",
+        "serving_runtime.h",
+        "types.h",
+    ],
+    header_namespace = "executorch/extension/llm/serving",
+    exported_deps = [
+        "//executorch/extension/llm/batching:batching",
+        "//executorch/extension/llm/runner:multimodal_input",
+    ],
+    visibility = ["PUBLIC"],
+)
