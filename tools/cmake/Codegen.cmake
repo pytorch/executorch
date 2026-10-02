@@ -230,9 +230,20 @@ endfunction()
 # custom_ops_yaml.
 #
 # Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
-# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
+# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml [MANUAL_REGISTRATION] )
+function(validate_manual_registration_lib_name lib_name)
+  if(NOT "${lib_name}" MATCHES "^[A-Za-z_][A-Za-z0-9_]*$" OR "${lib_name}"
+                                                             STREQUAL "all"
+  )
+    message(
+      FATAL_ERROR
+        "Manual registration LIB_NAME must be a nonempty C++ identifier other than reserved name 'all': '${lib_name}'"
+    )
+  endif()
+endfunction()
+
 function(generate_bindings_for_kernels)
-  set(options ADD_EXCEPTION_BOUNDARY)
+  set(options ADD_EXCEPTION_BOUNDARY MANUAL_REGISTRATION)
   set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
@@ -241,8 +252,12 @@ function(generate_bindings_for_kernels)
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
+  message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
+  if(GEN_MANUAL_REGISTRATION)
+    validate_manual_registration_lib_name("${GEN_LIB_NAME}")
+  endif()
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
 
@@ -281,11 +296,23 @@ function(generate_bindings_for_kernels)
   if(GEN_ADD_EXCEPTION_BOUNDARY)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
+  if(GEN_MANUAL_REGISTRATION)
+    list(APPEND _gen_command --manual-registration
+         --manual-registration-lib-name=${GEN_LIB_NAME}
+    )
+  endif()
 
-  set(_gen_command_sources
-      ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-  )
+  if(GEN_MANUAL_REGISTRATION)
+    set(_gen_command_sources
+        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  else()
+    set(_gen_command_sources
+        ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  endif()
 
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
@@ -357,16 +384,37 @@ endfunction()
 # callers want the default static library, and only the one shipped in the wheel
 # needs to be shared so a process has a single copy of the kernels.
 function(gen_operators_lib)
-  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
-  cmake_parse_arguments(GEN "SHARED" "" "${multi_arg_names}" ${ARGN})
+  set(options SHARED MANUAL_REGISTRATION)
+  set(multi_arg_names KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
+  cmake_parse_arguments(
+    GEN "${options}" "LIB_NAME" "${multi_arg_names}" ${ARGN}
+  )
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
+  message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  if(GEN_MANUAL_REGISTRATION)
+    validate_manual_registration_lib_name("${GEN_LIB_NAME}")
+    set(_registration_source ${_out_dir}/RegisterKernelsEverything.cpp)
+  else()
+    set(_registration_source
+        ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+    )
+  endif()
+  get_source_file_property(
+    _registration_generated "${_registration_source}" GENERATED
+  )
+  if(NOT _registration_generated)
+    message(
+      FATAL_ERROR
+        "${GEN_LIB_NAME}: call generate_bindings_for_kernels() before gen_operators_lib() with matching MANUAL_REGISTRATION options on both calls"
+    )
+  endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
     set(_opvariant_h ${_out_dir}/selected_op_variants.h)
   endif()
@@ -383,14 +431,25 @@ function(gen_operators_lib)
     add_library(${GEN_LIB_NAME})
   endif()
 
-  set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-                 ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-  )
+  if(GEN_MANUAL_REGISTRATION)
+    set(_srcs_list
+        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  else()
+    set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+                   ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _srcs_list ${_opvariant_h})
   endif()
   target_sources(${GEN_LIB_NAME} PRIVATE ${_srcs_list})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  if(GEN_MANUAL_REGISTRATION)
+    target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_DEPS})
+  else()
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  endif()
   # Resolve the runtime from the shared library rather than from the static core
   # in GEN_DEPS. Linking the static core gives this library its own copy of the
   # operator table, so its static initializer registers into a table nothing
@@ -487,12 +546,29 @@ function(gen_operators_lib)
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  if(GEN_MANUAL_REGISTRATION)
+    list(APPEND _generated_headers ${_out_dir}/RegisterKernels.h)
+  endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _generated_headers ${_opvariant_h})
   endif()
-  set_target_properties(
-    ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
-  )
+  if(GEN_MANUAL_REGISTRATION)
+    include(GNUInstallDirs)
+    target_include_directories(
+      ${GEN_LIB_NAME}
+      INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/executorch>
+    )
+    # PUBLIC_HEADER flattens filenames, so two libraries would overwrite each
+    # other's generated headers when installed to the same destination.
+    install(FILES ${_generated_headers}
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/${GEN_LIB_NAME}
+    )
+  else()
+    set_target_properties(
+      ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
+    )
+  endif()
 endfunction()
 
 # Merge two kernel yaml files, prioritizing functions from FUNCTIONS_YAML and

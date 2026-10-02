@@ -77,4 +77,10 @@ This error can occur for a few reasons, but the most common is a missing backend
 
 ### Duplicate Kernel Registration Abort
 
-This manifests as a crash call stack including ExecuTorch kernel registration and failing with an `et_pal_abort`. This typically means there are multiple `gen_operators_lib` targets linked into the applications. There must be only one generated operator library per target, though each model can have its own `gen_selected_ops/generate_bindings_for_kernels` call.
+This manifests as a crash call stack including ExecuTorch kernel registration and failing with an `et_pal_abort`. Registering the same operator name and kernel key twice is not supported, even when the registrations come from libraries with different names. Register each kernel only once; naming a registration function does not isolate its kernels in a separate registry.
+
+Multiple generated operator libraries can be linked when their registrations do not overlap. For explicit registration, pass `MANUAL_REGISTRATION` to both `generate_bindings_for_kernels` and `gen_operators_lib`, using the same `LIB_NAME` in both calls. The library name must be a nonempty C++ identifier other than `all`. Call each generated `register_<lib_name>_kernels()` function once, before executing a model that uses its kernels. Do not also register those kernels through a statically initialized library.
+
+Link the generated CMake target to inherit its include directories, and include `<lib_name/RegisterKernels.h>`. Manual-registration headers are installed under `${CMAKE_INSTALL_INCLUDEDIR}/executorch/<lib_name>/` so separately named libraries do not overwrite one another's headers. The same library-qualified include works for build-tree and installed targets.
+
+For direct codegen, `--manual-registration --manual-registration-lib-name=<lib_name>` selects a named function. In Buck, use `manual_registration = True` with `manual_registration_lib_name = "<lib_name>"`. Omitting the optional name preserves `register_all_kernels()`; an explicitly empty name is invalid. Multiple unnamed manual-registration libraries still define the same symbol and must not be linked together.
