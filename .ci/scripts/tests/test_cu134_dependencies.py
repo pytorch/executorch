@@ -295,18 +295,26 @@ class TestCu134Dependencies(unittest.TestCase):
                         any(arg.startswith("torchao==") for arg in command)
                     )
                 self.assertIn("torch==2.14.0.dev20260810+cu134", commands[-1])
-                self.assertIn("0.19.0+gitb7ac3aa", metadata.specifier)
+                source_version = self.installer.TORCHAO_NIGHTLY_VERSION.partition(
+                    ".dev"
+                )[0]
+                source_commit = subprocess.run(
+                    ["git", "rev-parse", "HEAD:third-party/ao"],
+                    cwd=ROOT,
+                    capture_output=True,
+                    check=True,
+                    text=True,
+                ).stdout.strip()
+                self.assertIn(
+                    f"{source_version}+git{source_commit[:7]}", metadata.specifier
+                )
 
-    def test_wheel_bounds_match_selected_train(self):
+    def test_release_wheel_torch_bound_matches_selected_train(self):
         for wheel_variant, installed_torch, expected_torch in (
             ("cu132", "2.15.0+cu132", "torch==2.15.0+cu132"),
             ("cpu", "2.15.0", "torch>=2.15.0,<2.16"),
         ):
             with self.subTest(wheel_variant=wheel_variant):
-                self.assertEqual(
-                    self.torchao_requirement(),
-                    "torchao>=0.19.0.dev20260907,<0.20",
-                )
                 self.assertEqual(
                     self.release_torch_requirement(
                         installed_torch=installed_torch,
@@ -321,6 +329,27 @@ class TestCu134Dependencies(unittest.TestCase):
                 wheel_variant="cu134",
             )
         self.assertIsNone(self.release_torch_requirement(building_wheel=False))
+
+    def test_wheel_torchao_bound_matches_selected_train(self):
+        for cuda in ((13, 4), (13, 2), None):
+            version = (
+                self.installer.CU134_TORCHAO_NIGHTLY_VERSION
+                if cuda == (13, 4)
+                else self.installer.TORCHAO_NIGHTLY_VERSION
+            )
+            major, minor = (int(part) for part in version.split(".")[:2])
+            expected = f"torchao>={version},<{major}.{minor + 1}"
+            self.utils.determine_torch_url.cache_clear()
+            with (
+                patch.object(
+                    self.utils,
+                    "_get_cuda_version",
+                    return_value=cuda,
+                    side_effect=RuntimeError("no nvcc") if cuda is None else None,
+                ),
+                patch.object(self.installer.platform, "system", return_value="Linux"),
+            ):
+                self.assertEqual(self.torchao_requirement(), expected)
 
 
 if __name__ == "__main__":

@@ -4,10 +4,15 @@ import argparse
 import json
 import os
 import re
+import runpy
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
+
+
+TORCHAO_INDEX_URL = "https://download.pytorch.org/whl/nightly"
 
 
 def parse_nightly_version(nightly_version):
@@ -45,6 +50,16 @@ def get_torch_nightly_version():
     return match.group(1)
 
 
+def get_json(url):
+    req = urllib.request.Request(url)
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("User-Agent", "ExecuTorch-Bot")
+    if os.environ.get("GITHUB_TOKEN"):
+        req.add_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
+    with urllib.request.urlopen(req) as response:
+        return json.loads(response.read().decode())
+
+
 def get_commit_hash_for_nightly(date_str):
     """
     Fetch commit hash from PyTorch nightly branch for a given date.
@@ -59,15 +74,8 @@ def get_commit_hash_for_nightly(date_str):
     params = "?sha=nightly&per_page=50"
     url = api_url + params
 
-    req = urllib.request.Request(url)
-    req.add_header("Accept", "application/vnd.github.v3+json")
-    req.add_header("User-Agent", "ExecuTorch-Bot")
-    if os.environ.get("GITHUB_TOKEN"):
-        req.add_header("Authorization", f"Bearer {os.environ['GITHUB_TOKEN']}")
-
     try:
-        with urllib.request.urlopen(req) as response:
-            commits = json.loads(response.read().decode())
+        commits = get_json(url)
     except Exception as e:
         print(f"Error fetching commits: {e}", file=sys.stderr)
         sys.exit(1)
@@ -105,6 +113,105 @@ def update_pytorch_pin(commit_hash):
     with open(pin_file, "w") as f:
         f.write(f"{commit_hash}\n")
     print(f"Updated {pin_file} with commit hash: {commit_hash}")
+
+
+def get_supported_torchao_channels():
+    cuda_versions = runpy.run_path("install_utils.py")["SUPPORTED_CUDA_VERSIONS"]
+    return ["cpu", *(f"cu{major}{minor}" for major, minor in cuda_versions)]
+
+
+def get_torchao_versions(channel):
+    url = f"{TORCHAO_INDEX_URL}/{channel}/torchao/"
+    req = urllib.request.Request(url, headers={"User-Agent": "ExecuTorch-Bot"})
+    with urllib.request.urlopen(req) as response:
+        index_html = unquote(response.read().decode())
+
+    wheel_tags = {}
+    pattern = re.compile(
+        rf"^torchao-(\d+\.\d+\.\d+\.dev\d{{8}})\+{re.escape(channel)}-(.+)\.whl$"
+    )
+    for filename in re.findall(r'href="[^"]*/(torchao-[^"]+\.whl)"', index_html):
+        match = pattern.match(filename)
+        if match:
+            wheel_tags.setdefault(match.group(1), set()).add(match.group(2))
+
+    required_tags = ("py3-none-any", "aarch64") if channel == "cpu" else ("x86_64",)
+    return {
+        version
+        for version, tags in wheel_tags.items()
+        if all(any(required in tag for tag in tags) for required in required_tags)
+    }
+
+
+def get_latest_torchao_nightly(max_date):
+    common_versions = None
+    channels = get_supported_torchao_channels()
+    for channel in channels:
+        versions = get_torchao_versions(channel)
+        common_versions = (
+            versions if common_versions is None else common_versions & versions
+        )
+
+    candidates = [
+        version
+        for version in common_versions or []
+        if version.rsplit(".dev", 1)[-1] <= max_date
+    ]
+    if not candidates:
+        raise ValueError(
+            f"Could not find a TorchAO nightly on or before {max_date} for "
+            f"all supported channels: {', '.join(channels)}"
+        )
+    return max(candidates, key=lambda version: (version.rsplit(".dev", 1)[-1], version))
+
+
+def get_torchao_commit_hash(nightly_version):
+    date = nightly_version.rsplit(".dev", 1)[-1]
+    formatted_date = parse_nightly_version(f"dev{date}")
+    url = (
+        "https://api.github.com/repos/pytorch/ao/actions/workflows/"  # @lint-ignore
+        "build_wheels_linux_x86.yml/runs?event=schedule&status=success&"
+        f"created={formatted_date}&per_page=100"
+    )
+    runs = get_json(url).get("workflow_runs", [])
+    if not runs:
+        raise ValueError(
+            f"Could not find the successful TorchAO wheel build for {nightly_version}"
+        )
+    return runs[0]["head_sha"]
+
+
+def update_torchao_pins(nightly_version, commit_hash):
+    requirements_path = Path("install_requirements.py")
+    content = requirements_path.read_text()
+    content, replacements = re.subn(
+        r'^(?P<prefix>(?:CU\d+_)?TORCHAO_NIGHTLY_VERSION\s*=\s*["\'])[^"\']+(?P<suffix>["\'])$',
+        rf"\g<prefix>{nightly_version}\g<suffix>",
+        content,
+        flags=re.MULTILINE,
+    )
+    if not replacements:
+        raise ValueError(f"Could not find TorchAO nightly pins in {requirements_path}")
+    requirements_path.write_text(content)
+
+    for command in (
+        ["git", "submodule", "update", "--init", "third-party/ao"],
+        [
+            "git",
+            "-C",
+            "third-party/ao",
+            "fetch",
+            "--depth=1",
+            "origin",
+            commit_hash,
+        ],
+        ["git", "-C", "third-party/ao", "checkout", "--detach", commit_hash],
+    ):
+        subprocess.run(command, check=True)
+    print(
+        f"Updated TorchAO nightly pins to {nightly_version} and third-party/ao "
+        f"to {commit_hash}"
+    )
 
 
 def should_skip_file(filename):
@@ -267,9 +374,21 @@ def main():
         sync_c10_directories(commit_hash)
         update_pytorch_pin(commit_hash)
 
-        print(
-            "\n✅ Successfully updated PyTorch commit pin and synced c10 directories!"
-        )
+        if args.commit:
+            print("\n✅ Successfully updated PyTorch pin and synced c10 directories!")
+        else:
+            # Select the newest TorchAO nightly available for every supported CUDA
+            # channel and align the source submodule with the commit that built it.
+            max_torchao_date = date_str.replace("-", "")
+            torchao_version = get_latest_torchao_nightly(max_torchao_date)
+            print(f"Found TorchAO nightly version: {torchao_version}")
+            torchao_commit_hash = get_torchao_commit_hash(torchao_version)
+            print(f"Found TorchAO commit hash: {torchao_commit_hash}")
+            update_torchao_pins(torchao_version, torchao_commit_hash)
+            print(
+                "\n✅ Successfully updated PyTorch and TorchAO pins and synced "
+                "c10 directories!"
+            )
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
