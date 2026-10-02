@@ -1101,11 +1101,12 @@ jobs:
   test-qnn-direct-build-linux:
     needs: docker-image
     name: test-qnn-direct-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/v3-python-fallback
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: osdc/v3-python-fallback
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
@@ -1251,13 +1252,14 @@ jobs:
   test-qnn-python-imports-linux:
     needs: docker-image
     name: test-qnn-python-imports-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@osdc/v3-python-fallback
     permissions:
       id-token: write
       contents: read
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: osdc/v3-python-fallback
       runner: mt-l-x86iavx512-8-64
       docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-qnn-sdk-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: 'recursive'
