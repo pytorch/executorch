@@ -1246,28 +1246,22 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
         input_dim_order;
     const Error input_dim_order_error =
         get_dim_order(t_src, input_dim_order.data(), t_src.dim());
     if (input_dim_order_error == Error::Ok) {
-      std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
-          expected_dim_order;
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          get_dim_order(t_dst, expected_dim_order.data(), t_dst.dim()),
-          "Failed to read expected dim order for input %" ET_PRIsize_t,
-          input_idx);
       ET_CHECK_OR_RETURN_ERROR(
           std::equal(
               input_dim_order.begin(),
               input_dim_order.begin() + t_src.dim(),
-              expected_dim_order.begin()),
+              tensor_meta->dim_order().begin()),
           InvalidArgument,
           "Input %" ET_PRIsize_t
           " dim order does not match the method input dim order.",
           input_idx);
     }
-    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),
