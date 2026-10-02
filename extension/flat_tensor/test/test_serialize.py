@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import dataclasses
+import io
 import math
 import os
 import tempfile
@@ -37,6 +38,8 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
+    load_ptd,
+    save_ptd,
 )
 
 # The raw data stored in the serialized file segments.
@@ -394,3 +397,163 @@ class TestSerialize(unittest.TestCase):
         self._check_named_data_entries(
             output.external_data[external_tag], output2.external_data[external_tag]
         )
+
+
+class TestSaveLoadPtd(unittest.TestCase):
+    def _round_trip(self, tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        buffer = io.BytesIO()
+        save_ptd(buffer, tensors)
+        buffer.seek(0)
+        return load_ptd(buffer)
+
+    def _check_tensors_match(
+        self, expected: Dict[str, torch.Tensor], actual: Dict[str, torch.Tensor]
+    ) -> None:
+        self.assertEqual(expected.keys(), actual.keys())
+        for key, expected_tensor in expected.items():
+            actual_tensor = actual[key]
+            self.assertEqual(actual_tensor.dtype, expected_tensor.dtype, key)
+            self.assertEqual(actual_tensor.shape, expected_tensor.shape, key)
+            self.assertEqual(actual_tensor.stride(), expected_tensor.stride(), key)
+            self.assertTrue(torch.equal(actual_tensor, expected_tensor), key)
+
+    def test_round_trip_dtypes(self) -> None:
+        tensors = {
+            "float32": torch.rand(2, 3),
+            "float64": torch.rand(4, dtype=torch.float64),
+            "float16": torch.rand(2, 2).to(torch.float16),
+            "bfloat16": torch.rand(3, 3).to(torch.bfloat16),
+            "int64": torch.arange(6, dtype=torch.int64).reshape(3, 2),
+            "int8": torch.tensor([-1, 0, 1], dtype=torch.int8),
+            "uint8": torch.tensor([0, 128, 255], dtype=torch.uint8),
+            "bool": torch.tensor([True, False, True]),
+        }
+        self._check_tensors_match(tensors, self._round_trip(tensors))
+
+    def test_round_trip_shapes(self) -> None:
+        tensors = {
+            "scalar": torch.tensor(3.5),
+            "empty": torch.empty(0),
+            "empty_with_shape": torch.empty(0, 3),
+            "high_rank": torch.rand(2, 1, 3, 1, 2),
+        }
+        self._check_tensors_match(tensors, self._round_trip(tensors))
+
+    def test_round_trip_preserves_channels_last(self) -> None:
+        tensors = {
+            "channels_last": torch.rand(2, 3, 4, 5).to(
+                memory_format=torch.channels_last
+            )
+        }
+        loaded = self._round_trip(tensors)
+        self._check_tensors_match(tensors, loaded)
+        self.assertTrue(
+            loaded["channels_last"].is_contiguous(memory_format=torch.channels_last)
+        )
+
+    def test_round_trip_to_file(self) -> None:
+        tensors = {"weight": torch.rand(3, 4), "bias": torch.rand(4)}
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "params.ptd")
+            save_ptd(path, tensors)
+            self._check_tensors_match(tensors, load_ptd(path))
+
+    def test_round_trip_empty(self) -> None:
+        self.assertEqual(self._round_trip({}), {})
+
+    def test_save_detaches_parameters(self) -> None:
+        # named_parameters() and state_dict(keep_vars=True) hand back
+        # Parameters that require grad, and .numpy() raises on one of those
+        # unless it is detached first.
+        parameter = torch.nn.Parameter(torch.rand(2, 2))
+        loaded = self._round_trip({"weight": parameter})
+        self._check_tensors_match({"weight": parameter.detach()}, loaded)
+        self.assertFalse(loaded["weight"].requires_grad)
+
+    def test_tensor_alignment(self) -> None:
+        tensor_alignment = 256
+        buffer = io.BytesIO()
+        save_ptd(
+            buffer,
+            {"a": torch.rand(3), "b": torch.rand(5)},
+            tensor_alignment=tensor_alignment,
+        )
+        serialized_data = buffer.getvalue()
+
+        header = FlatTensorHeader.from_bytes(
+            serialized_data[8 : FlatTensorHeader.EXPECTED_LENGTH + 8]
+        )
+        self.assertTrue(header.is_valid())
+        self.assertEqual(header.segment_base_offset % tensor_alignment, 0)
+
+        flat_tensor = _deserialize_to_flat_tensor(
+            serialized_data[0 : header.flatbuffer_offset + header.flatbuffer_size]
+        )
+        self.assertEqual(len(flat_tensor.segments), 2)
+        for segment in flat_tensor.segments:
+            self.assertEqual(segment.offset % tensor_alignment, 0)
+
+    def test_save_rejects_invalid_alignment(self) -> None:
+        with self.assertRaises(ValueError):
+            save_ptd(io.BytesIO(), {"a": torch.rand(3)}, tensor_alignment=0)
+
+    def test_save_rejects_non_contiguous(self) -> None:
+        with self.assertRaises(ValueError):
+            save_ptd(io.BytesIO(), {"a": torch.rand(4, 4).t()})
+
+    def test_save_rejects_view_into_larger_storage(self) -> None:
+        # A channels-last slice is contiguous in its memory format, so nothing
+        # upstream rejects it, but its storage holds the whole base tensor.
+        base = torch.rand(4, 3, 4, 5).to(memory_format=torch.channels_last)
+        with self.assertRaises(ValueError):
+            save_ptd(io.BytesIO(), {"a": base[2:4]})
+
+        # .clone() preserves the memory format, so the copy that owns its
+        # storage still round trips as channels-last.
+        tensors = {"a": base[2:4].clone()}
+        self._check_tensors_match(tensors, self._round_trip(tensors))
+
+    def test_tied_tensors_share_one_buffer(self) -> None:
+        # One tensor under two keys, as with an embedding tied to the output
+        # projection, is stored once rather than copied per key.
+        shared = torch.rand(32, 4)
+        tied = io.BytesIO()
+        copied = io.BytesIO()
+        save_ptd(tied, {"embedding": shared, "output": shared})
+        save_ptd(copied, {"embedding": shared, "output": shared.clone()})
+        self.assertLess(len(tied.getvalue()), len(copied.getvalue()))
+
+        tied.seek(0)
+        self._check_tensors_match(
+            {"embedding": shared, "output": shared}, load_ptd(tied)
+        )
+
+    def test_save_rejects_non_tensor(self) -> None:
+        with self.assertRaises(TypeError):
+            save_ptd(io.BytesIO(), {"a": [1.0, 2.0]})
+
+    def test_load_skips_opaque_blobs(self) -> None:
+        # Backends store opaque data alongside tensors in the same file, and
+        # only the tensors belong in a tensor dict.
+        tensor = torch.rand(2, 2)
+        store = NamedDataStore()
+        store.add_named_data("blob", b"opaque", external_tag="model")
+        store.add_named_data("tensor", tensor, external_tag="model")
+        output = store.get_named_data_store_output()
+
+        serialized_data = FlatTensorSerializer(FlatTensorConfig()).serialize(
+            DataPayload(
+                buffers=output.buffers, named_data=output.external_data["model"]
+            )
+        )
+
+        loaded = load_ptd(io.BytesIO(bytes(serialized_data)))
+        self._check_tensors_match({"tensor": tensor}, loaded)
+
+    def test_loaded_tensors_do_not_alias(self) -> None:
+        # Equal data may share one segment in the file; the loaded tensors must
+        # still be independent, so writing to one is not seen through the other.
+        tensors = {"a": torch.zeros(4), "b": torch.zeros(4)}
+        loaded = self._round_trip(tensors)
+        loaded["a"][0] = 1.0
+        self.assertEqual(loaded["b"][0].item(), 0.0)
