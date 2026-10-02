@@ -287,6 +287,11 @@ class TestPublishedSets(unittest.TestCase):
 
     def test_published_cuda_versions(self):
         expected = {"cu130", "cu132", "cu134"}
+        self.assertEqual(set(FILTER.RELEASE_CUDA_CANDIDATES), expected)
+        self.assertLessEqual(
+            set(FILTER.SUPPORTED_CUDA_VERSIONS),
+            set(FILTER.RELEASE_CUDA_CANDIDATES),
+        )
         if RELEASE_WHEEL:
             self.assertTrue(FILTER.SUPPORTED_CUDA_VERSIONS)
             self.assertLessEqual(set(FILTER.SUPPORTED_CUDA_VERSIONS), expected)

@@ -89,8 +89,16 @@ else
 fi
 
 if git show-ref --verify --quiet "refs/heads/${RELEASE_BRANCH}"; then
+    if ! git merge-base --is-ancestor "${CUT_SOURCE}" "refs/heads/${RELEASE_BRANCH}"; then
+        echo "Error: local ${RELEASE_BRANCH} does not descend from preserved cut ${CUT_SOURCE}."
+        exit 1
+    fi
     git checkout "${RELEASE_BRANCH}"
 elif git ls-remote --exit-code "${GIT_REMOTE}" "refs/heads/${RELEASE_BRANCH}" >/dev/null 2>&1; then
+    if ! git merge-base --is-ancestor "${CUT_SOURCE}" "${GIT_REMOTE}/${RELEASE_BRANCH}"; then
+        echo "Error: remote ${RELEASE_BRANCH} does not descend from preserved cut ${CUT_SOURCE}."
+        exit 1
+    fi
     git checkout -b "${RELEASE_BRANCH}" "${GIT_REMOTE}/${RELEASE_BRANCH}"
 else
     git checkout -b "${RELEASE_BRANCH}" "${CUT_SOURCE}"

@@ -55,6 +55,9 @@ _CU134_TORCHAO_VERSION_PATTERN = re.compile(
 _SUPPORTED_CUDA_PATTERN = re.compile(
     r"^SUPPORTED_CUDA_VERSIONS: List\[str\] = \[[^\n]*\]$", re.MULTILINE
 )
+_RELEASE_CUDA_CANDIDATES_PATTERN = re.compile(
+    r"^RELEASE_CUDA_CANDIDATES: List\[str\] = \[[^\n]*\]$", re.MULTILINE
+)
 _TEST_INFRA_MAIN_PATTERN = re.compile(r"(pytorch/test-infra/[^\s\"']+)@main\b")
 _TEST_INFRA_REF_MAIN_PATTERN = re.compile(r"(test-infra-ref:\s*)main\b")
 _TEST_INFRA_BRANCH_PATTERN = re.compile(r"pytorch/test-infra/[^\s\"'@]+@([^\s\"']+)")
@@ -273,6 +276,14 @@ def configured_cuda_variants(filter_path: Path) -> list[str]:
     match = _SUPPORTED_CUDA_PATTERN.search(filter_path.read_text())
     if match is None:
         raise RuntimeError(f"could not read supported CUDA versions from {filter_path}")
+    return re.findall(r'"(cu\d+)"', match.group(0))
+
+
+def release_cuda_candidates(filter_path: Path) -> list[str]:
+    """Read every CUDA train that release preparation may select."""
+    match = _RELEASE_CUDA_CANDIDATES_PATTERN.search(filter_path.read_text())
+    if match is None:
+        raise RuntimeError(f"could not read release CUDA candidates from {filter_path}")
     return re.findall(r'"(cu\d+)"', match.group(0))
 
 
@@ -916,14 +927,14 @@ def main() -> None:
         print(f"Release configuration is valid: {requirement}")
     else:
         current_config = runpy.run_path(str(repo_root / "torch_pin.py"))
-        already_prepared = (
+        reuse_selected_dependencies = (
             current_config.get("RELEASE_WHEEL") is True and not args.torch_version
         )
         torch_version = torch_version_for_release(
             repo_root / "torch_pin.py", args.torch_version or ""
         )
         cuda_filter_path = repo_root / ".github/scripts/filter_cuda_matrix.py"
-        if already_prepared:
+        if reuse_selected_dependencies:
             companions = {
                 "torch": torch_version,
                 "torchvision": current_config["TORCHVISION_VERSION"],
@@ -934,21 +945,25 @@ def main() -> None:
             if torchao_match is None:
                 raise RuntimeError("release TorchAO pin is missing")
             torchao_version = torchao_match.group(0).split('"')[1]
-            cuda_variants = configured_cuda_variants(cuda_filter_path)
-            pytorch_commit = None
+            releases = dict(companions)
+            releases["torchao"] = torchao_version
+            cuda_variants = available_cuda_variants(
+                release_cuda_candidates(cuda_filter_path), releases
+            )
         else:
             companions = companion_releases_for_torch(torch_version)
             torchao_version = newest_torch_test_release(_test_index_versions("torchao"))
             releases = dict(companions)
             releases["torchao"] = torchao_version
             cuda_variants = available_cuda_variants(
-                configured_cuda_variants(cuda_filter_path), releases
+                release_cuda_candidates(cuda_filter_path), releases
             )
-            pytorch_commit = pytorch_commit_for_wheel(torch_version)
+        pytorch_commit = pytorch_commit_for_wheel(torch_version)
         test_infra_branch = args.test_infra_branch or test_infra_branch_for_torch(
             torch_version
         )
         require_test_infra_branch(test_infra_branch)
+        sync_pytorch_source(repo_root, pytorch_commit)
         prepare_release(
             repo_root,
             release_version,
@@ -957,10 +972,8 @@ def main() -> None:
             companions,
             torchao_version,
             cuda_variants,
-            verify_index=not already_prepared,
+            verify_index=True,
         )
-        if pytorch_commit is not None:
-            sync_pytorch_source(repo_root, pytorch_commit)
 
 
 if __name__ == "__main__":
