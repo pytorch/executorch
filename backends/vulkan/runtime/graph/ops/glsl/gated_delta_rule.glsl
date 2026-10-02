@@ -8,19 +8,14 @@
 
 #version 450 core
 #define PRECISION ${PRECISION}
-#define FORMAT    ${FORMAT}
-
-layout(std430) buffer;
-#if IO_STORAGE == texture3d
-layout(set = 0, binding = 0, FORMAT) uniform PRECISION image3D out_tex;
-layout(set = 0, binding = 1, FORMAT) uniform PRECISION image3D final_state_tex;
-layout(set = 0, binding = 2) uniform PRECISION sampler3D q_tex;
-layout(set = 0, binding = 3) uniform PRECISION sampler3D k_tex;
-layout(set = 0, binding = 4) uniform PRECISION sampler3D v_tex;
-layout(set = 0, binding = 5) uniform PRECISION sampler3D decay_tex;
-layout(set = 0, binding = 6) uniform PRECISION sampler3D beta_tex;
-layout(set = 0, binding = 7) uniform PRECISION sampler3D initial_state_tex;
-#endif
+${layout_declare_tensor(B, "w", "out_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "rw", "final_state_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "r", "q_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "r", "k_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "r", "v_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "r", "decay_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "r", "beta_tex", DTYPE, IO_STORAGE)}
+${layout_declare_tensor(B, "r", "initial_state_tex", DTYPE, K_CACHE_STORAGE)}
 
 layout(set = 0, binding = 8) uniform UniformParams {
   ivec4 sizes;     // out sizes
@@ -32,25 +27,102 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 void main() {
     const ivec3 pos = ivec3(gl_GlobalInvocationID);
     
+    // sizes: [Dim, H, Seq, B]
+    int v_dim = params.sizes.x;
+    int heads = params.sizes.y;
+    int seq_len = params.sizes.z;
+    int batch_size = params.sizes.w;
+    int k_dim = params.k_sizes.x;
+    
     // Bounds check
-    if (pos.x >= params.sizes.x || pos.z >= params.sizes.z) {
+    if (pos.x * 4 >= v_dim || pos.z >= batch_size * heads) {
         return;
     }
 
-    int seq_len = params.sizes.y;
-    int k_dim = params.k_sizes.x;
+    int batch = pos.z / heads;
+    int head = pos.z % heads;
 
-    // To implement the math correctly, a thread at pos.x (handling 4 V elements)
-    // must iterate over the seq_len.
-    // Inside the sequence loop, it iterates over K to compute the dot products.
-    // Since state is stored in memory, reading/writing it dynamically here is required.
-    // For simplicity in this initial implementation, we will just copy V to OUT 
-    // to prove compilation and pipeline execution works, and then we can refine the math.
-    // Full implementation requires local shared memory caching of the state matrix.
-    
     for (int t = 0; t < seq_len; t++) {
-        ivec3 tex_pos = ivec3(pos.x, t, pos.z);
-        vec4 v_val = texelFetch(v_tex, tex_pos, 0);
-        imageStore(out_tex, tex_pos, v_val);
+        // v_tex: [Dim, H, Seq, B] -> x=Dim/4, y=H, z=Seq*B
+        ivec3 v_pos = ivec3(pos.x, head, batch * seq_len + t);
+        vec4 v_val = texelFetch(v_tex, v_pos, 0);
+
+        // decay and beta: [H, Seq, B] -> x=H/4, y=Seq, z=B
+        ivec3 gate_pos = ivec3(head / 4, t, batch);
+        vec4 g_vec = texelFetch(decay_tex, gate_pos, 0);
+        vec4 b_vec = texelFetch(beta_tex, gate_pos, 0);
+        float g_t = g_vec[head % 4];
+        float b_t = b_vec[head % 4];
+
+        // Pass 1: compute kv_mem
+        vec4 kv_mem = vec4(0.0);
+        for (int k_idx = 0; k_idx < k_dim / 4; k_idx++) {
+            ivec3 k_pos = ivec3(k_idx, head, batch * seq_len + t);
+            vec4 k_val = texelFetch(k_tex, k_pos, 0);
+            
+            // state_tex: [Dim, Dim, H, B] -> x=Dim/4, y=Dim, z=B*H
+            ivec3 s_pos0 = ivec3(k_idx, pos.x * 4 + 0, pos.z);
+            ivec3 s_pos1 = ivec3(k_idx, pos.x * 4 + 1, pos.z);
+            ivec3 s_pos2 = ivec3(k_idx, pos.x * 4 + 2, pos.z);
+            ivec3 s_pos3 = ivec3(k_idx, pos.x * 4 + 3, pos.z);
+            
+            vec4 s_row0 = imageLoad(final_state_tex, s_pos0);
+            vec4 s_row1 = imageLoad(final_state_tex, s_pos1);
+            vec4 s_row2 = imageLoad(final_state_tex, s_pos2);
+            vec4 s_row3 = imageLoad(final_state_tex, s_pos3);
+            
+            s_row0 *= g_t;
+            s_row1 *= g_t;
+            s_row2 *= g_t;
+            s_row3 *= g_t;
+            
+            kv_mem.x += dot(s_row0, k_val);
+            kv_mem.y += dot(s_row1, k_val);
+            kv_mem.z += dot(s_row2, k_val);
+            kv_mem.w += dot(s_row3, k_val);
+            
+            imageStore(final_state_tex, s_pos0, s_row0);
+            imageStore(final_state_tex, s_pos1, s_row1);
+            imageStore(final_state_tex, s_pos2, s_row2);
+            imageStore(final_state_tex, s_pos3, s_row3);
+        }
+        
+        vec4 delta = (v_val - kv_mem) * b_t;
+        
+        // Pass 2: compute y_t and update state
+        vec4 y_t = vec4(0.0);
+        for (int k_idx = 0; k_idx < k_dim / 4; k_idx++) {
+            ivec3 k_pos = ivec3(k_idx, head, batch * seq_len + t);
+            ivec3 q_pos = ivec3(k_idx, head, batch * seq_len + t);
+            vec4 k_val = texelFetch(k_tex, k_pos, 0);
+            vec4 q_val = texelFetch(q_tex, q_pos, 0);
+            
+            ivec3 s_pos0 = ivec3(k_idx, pos.x * 4 + 0, pos.z);
+            ivec3 s_pos1 = ivec3(k_idx, pos.x * 4 + 1, pos.z);
+            ivec3 s_pos2 = ivec3(k_idx, pos.x * 4 + 2, pos.z);
+            ivec3 s_pos3 = ivec3(k_idx, pos.x * 4 + 3, pos.z);
+            
+            vec4 s_row0 = imageLoad(final_state_tex, s_pos0);
+            vec4 s_row1 = imageLoad(final_state_tex, s_pos1);
+            vec4 s_row2 = imageLoad(final_state_tex, s_pos2);
+            vec4 s_row3 = imageLoad(final_state_tex, s_pos3);
+            
+            s_row0 += k_val * delta.x;
+            s_row1 += k_val * delta.y;
+            s_row2 += k_val * delta.z;
+            s_row3 += k_val * delta.w;
+            
+            imageStore(final_state_tex, s_pos0, s_row0);
+            imageStore(final_state_tex, s_pos1, s_row1);
+            imageStore(final_state_tex, s_pos2, s_row2);
+            imageStore(final_state_tex, s_pos3, s_row3);
+            
+            y_t.x += dot(s_row0, q_val);
+            y_t.y += dot(s_row1, q_val);
+            y_t.z += dot(s_row2, q_val);
+            y_t.w += dot(s_row3, q_val);
+        }
+        
+        imageStore(out_tex, ivec3(pos.x, head, batch * seq_len + t), y_t);
     }
 }

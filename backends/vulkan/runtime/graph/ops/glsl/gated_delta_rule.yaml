@@ -14,8 +14,6 @@ gated_delta_rule:
       parameter_names: [IO_STORAGE, K_CACHE_STORAGE]
       combos:
         - parameter_values: [texture3d, texture3d]
-        - parameter_values: [buffer, texture3d]
-        - parameter_values: [buffer, buffer]
     DTYPE:
       - VALUE: float
       - VALUE: half

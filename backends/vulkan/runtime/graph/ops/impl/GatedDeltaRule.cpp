@@ -30,64 +30,65 @@ void resize_gated_delta_rule_node(
   graph->virtual_resize(final_state, final_state_sizes);
 }
 
+GlobalWorkGrid pick_gated_delta_rule_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  std::vector<int64_t> out_shape = graph->sizes_of(out);
+  uint32_t batch = out_shape[0];
+  uint32_t heads = out_shape[2];
+  uint32_t v_dim = out_shape[3];
+  return GlobalWorkGrid(
+      {vkcompute::utils::div_up(v_dim, 4u), 1u, batch * heads},
+      vkcompute::kExplicitWorkGrid);
+}
+
 void add_gated_delta_rule_node(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-    
-    // The Python signature has 6 inputs:
-    const ValueRef q = args[0];
-    const ValueRef k = args[1];
-    const ValueRef v = args[2];
-    const ValueRef decay = args[3];
-    const ValueRef beta = args[4];
-    const ValueRef initial_state = args[5];
-    
-    // The Partitioner appends 2 outputs:
-    const ValueRef out = args[6];
-    const ValueRef final_state = args[7];
+  // The Python signature has 6 inputs:
+  const ValueRef q = args[0];
+  const ValueRef k = args[1];
+  const ValueRef v = args[2];
+  const ValueRef decay = args[3];
+  const ValueRef beta = args[4];
+  const ValueRef initial_state = args[5];
 
-    std::string kernel_name = "gated_delta_rule";
-    add_dtype_suffix(kernel_name, graph.dtype_of(out));
-    add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  // The Partitioner appends 2 outputs:
+  const ValueRef out = args[6];
+  const ValueRef final_state = args[7];
 
-    // We calculate a custom 3D grid:
-    // X = D (div 4) for the Value dimension
-    // Y = 1 (We must process the sequence loop INSIDE the shader sequentially due to recurrence)
-    // Z = Batch * Heads
-    
-    std::vector<int64_t> out_shape = graph.sizes_of(out);
-    int batch = out_shape[0];
-    int heads = out_shape[1];
-    int seq_len = out_shape[2];
-    int v_dim = out_shape[3];
-    
-    utils::uvec3 gwg = {
-        utils::div_up(v_dim, 4),
-        1,
-        batch * heads
-    };
+  std::string kernel_name = "gated_delta_rule";
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(initial_state));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-    graph.execute_nodes().emplace_back(new DynamicDispatchNode(
-        graph,
-        VK_KERNEL_FROM_STR(kernel_name),
-        gwg,
-        default_pick_lwg,
-        // Inputs and Outputs (Format: Write, Read)
-        {{out, final_state}, {q, k, v, decay, beta, initial_state}},
-        // Shader param buffers (sizes)
-        {graph.sizes_ubo(out), graph.sizes_ubo(k)},
-        // Push Constants
-        {graph.logical_limits_pc_of(out)},
-        // Specialization Constants
-        {},
-        // Resize Args
-        {},
-        // Resizing Logic
-        resize_gated_delta_rule_node));
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      pick_gated_delta_rule_gwg,
+      default_pick_lwg,
+      // Inputs and Outputs (Format: Write, Read)
+      {{{out, final_state}, vkapi::kWrite},
+       {{q, k, v, decay, beta, initial_state}, vkapi::kRead}},
+      // Shader param buffers (sizes)
+      {graph.sizes_ubo(out), graph.sizes_ubo(k)},
+      // Push Constants
+      {graph.logical_limits_pc_of(out)},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_gated_delta_rule_node));
 }
 
 REGISTER_OPERATORS {
-    VK_REGISTER_OP(llama.gated_delta_rule.default, add_gated_delta_rule_node);
+  VK_REGISTER_OP(llama.gated_delta_rule.default, add_gated_delta_rule_node);
 }
 
 } // namespace vkcompute
