@@ -416,12 +416,14 @@ DEFINE_REDUCE_FN(sum, 4)
 DEFINE_REDUCE_FN(mean, 4)
 DEFINE_REDUCE_FN(amax, 3)
 DEFINE_REDUCE_FN(amin, 3)
+DEFINE_REDUCE_FN(any, 3)
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sum.dim_IntList, sum);
   VK_REGISTER_OP(aten.mean.dim, mean);
   VK_REGISTER_OP(aten.amax.default, amax);
   VK_REGISTER_OP(aten.amin.default, amin);
+  VK_REGISTER_OP(aten.any.dim, any);
 }
 
 } // namespace vkcompute

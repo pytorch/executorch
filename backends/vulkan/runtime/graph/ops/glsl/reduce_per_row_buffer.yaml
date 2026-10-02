@@ -40,3 +40,7 @@ reduce_per_row_buffer:
       MERGE_ACCUM_FN: merge_accum_amin
       OOB_INIT_MODE: first_element
       OUTPUT_IS_INDICES: true
+    - NAME: any_per_row_buffer
+      UPDATE_ACCUM_FN: update_accum_amax
+      MERGE_ACCUM_FN: merge_accum_amax
+      OOB_INIT_MODE: first_element

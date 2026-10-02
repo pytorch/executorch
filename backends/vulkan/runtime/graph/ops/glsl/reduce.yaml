@@ -27,3 +27,7 @@ reduce:
       INIT_ACCUM: first_val
       UPDATE_ACCUM: min(accum, new_val)
       POSTPROCESS: accum
+    - NAME: any
+      INIT_ACCUM: first_val
+      UPDATE_ACCUM: max(accum, new_val)
+      POSTPROCESS: accum
