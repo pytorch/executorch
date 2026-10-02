@@ -769,7 +769,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
 
         The Triton kernel replacement behavior can be controlled via compile_specs:
-        - triton_kernel_mode="ON": Always use Triton kernels
+        - triton_kernel_mode="ON": Use Triton kernels for the calls they support; other calls use the regular lowering
         - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
         """
         # Parse compile_specs for triton_kernel_mode
@@ -929,8 +929,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # Force any remaining PyTorch SDPA ops to use the MATH
                 # backend during compilation so AOTI can lower / decompose
                 # them. SDPA ops already replaced by Triton kernels via
-                # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
-                # only the fallback for the `triton_kernel_mode="OFF"` path.
+                # `ReplaceEdgeOpWithTritonOpPass` are unaffected.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 stack.enter_context(target_smem_context())
                 if low_memory_mode == "ON":
