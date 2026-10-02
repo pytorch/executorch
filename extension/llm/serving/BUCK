@@ -15,13 +15,22 @@ fbcode_target(_kind = runtime.cxx_library,
 fbcode_target(_kind = runtime.cxx_library,
     name = "serving_runtime",
     srcs = ["serving_runtime.cpp"],
-    headers = ["detail/generation_bridge.h"],
+    headers = [
+        "detail/generation_bridge.h",
+        "detail/prompt_preparer.h",
+        "detail/text_output.h",
+    ],
     exported_headers = [
         "request_handle.h",
         "serving_runtime.h",
         "types.h",
     ],
     header_namespace = "executorch/extension/llm/serving",
+    deps = [
+        ":prompt_history",
+        "//executorch/extension/llm/runner:stats",
+        "//executorch/runtime/core:core",
+    ],
     exported_deps = [
         "//executorch/extension/llm/batching:batching",
         "//executorch/extension/llm/runner:multimodal_input",

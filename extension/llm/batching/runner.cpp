@@ -1105,6 +1105,18 @@ bool RunnerImpl::execute_one_batch_() {
   if (ok) {
     metrics_.decode_tokens_total += decode_tokens;
     metrics_.prefill_tokens_total += prefill_tokens;
+    // Account the whole batch before any completion or shutdown can discard
+    // results. Initial input ends at the generation's first output, not at a
+    // scheduler-specific prefill/decode classification.
+    for (const auto& input : batch.inputs) {
+      auto session = sessions_.find(input.sid);
+      if (session != sessions_.end() && session->second.active_generation) {
+        auto& m = session->second.active_generation->m;
+        if (m.n_generated_tokens == 0) {
+          m.n_prefilled_tokens += input.size;
+        }
+      }
+    }
   }
   metrics_.step_latency_sum_us += latency;
   metrics_.step_latency_max_us =

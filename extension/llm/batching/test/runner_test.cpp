@@ -1245,6 +1245,7 @@ TEST(CloneTest, CopiesOnlyCommittedPrefixAndStartsIdleWithoutSampling) {
   EXPECT_EQ(branch.finish_reason(), FinishReason::NewTokenLimit);
   EXPECT_EQ(child->position(), 8);
   EXPECT_EQ(branch.metrics().n_prompt_tokens, 5);
+  EXPECT_EQ(branch.metrics().n_prefilled_tokens, 5);
   const auto seen = executor.seen();
   ASSERT_EQ(seen.size(), 4u);
   EXPECT_EQ(seen[2].session, child_id);
@@ -1706,6 +1707,7 @@ TEST(DeltaTest, ChunksUseDeltaBasePlusOffset) {
   EXPECT_EQ(seen[2].offset, 8u);
   EXPECT_EQ(seen[2].size, 2u);
   EXPECT_EQ(seen[2].effective_position(), 8);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 10);
 }
 
 // The session owns its position, so a later turn appends rather than
@@ -1736,6 +1738,12 @@ TEST(DeltaTest, SecondTurnContinuesWhereTheFirstEnded) {
   EXPECT_GT(seen.back().effective_position(), 0);
   EXPECT_EQ(seen.back().size, 2u)
       << "the delta carries the token the first turn emitted but never fed";
+  first.wait();
+  second.wait();
+  EXPECT_EQ(first.metrics().n_prefilled_tokens, 3);
+  EXPECT_EQ(first.metrics().n_decode_steps, 1);
+  EXPECT_EQ(second.metrics().n_prompt_tokens, 1);
+  EXPECT_EQ(second.metrics().n_prefilled_tokens, 2);
 }
 
 // Each open_session_async() gets its own position, so one session's progress
@@ -2145,6 +2153,8 @@ TEST(FailureTest, FailureOnLeadingPrefillChunksEndsGeneration) {
   ASSERT_EQ(seen.size(), 2u);
   EXPECT_EQ(seen[0].size, 4u);
   EXPECT_EQ(seen[1].size, 4u);
+  EXPECT_EQ(handle.metrics().n_prompt_tokens, 10);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 0);
 }
 
 TEST(FailureTest, ExecutorFailurePoisonsTheSession) {
@@ -2217,6 +2227,64 @@ TEST(CancelTest, CompletionObservesAllConsumedChunksInBatch) {
   EXPECT_EQ(handle.finish_reason(), FinishReason::Cancelled);
   EXPECT_EQ(position_in_terminal_callback, 4);
   EXPECT_EQ(session.position(), 4);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 4);
+}
+
+TEST(CancelTest, InterleavedPrefillCountsAllExecutedChunksBeforeCancellation) {
+  FakeExecutor executor;
+  executor.hold();
+  Fixture fixture(executor, 4, 2);
+  Session barrier = open(fixture.runner);
+  Session first = open(fixture.runner);
+  const auto first_id = last_opened(executor);
+  Session second = open(fixture.runner);
+  const auto second_id = last_opened(executor);
+  auto barrier_updates = std::make_shared<Updates>();
+  auto first_updates = std::make_shared<Updates>();
+  auto second_updates = std::make_shared<Updates>();
+  auto barrier_handle =
+      generate(barrier, tokens(2), config(1), barrier_updates);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  EXPECT_TRUE(executor.in_execute());
+
+  // Queue both prompts behind the barrier to force A, B, A, B in one batch.
+  GenerationHandle second_handle;
+  auto first_handle = first.generate_async(
+      tokens(4), config(1), [&](const GenerationUpdate& update) {
+        second_handle.cancel();
+        (*first_updates)(update);
+      });
+  second_handle = generate(second, tokens(6), config(1), second_updates);
+  executor.release();
+
+  ASSERT_TRUE(first_updates->wait());
+  ASSERT_TRUE(second_updates->wait());
+  first_handle.wait();
+  second_handle.wait();
+  EXPECT_EQ(first_handle.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(second_handle.finish_reason(), FinishReason::Cancelled);
+  EXPECT_EQ(first_handle.metrics().n_prefilled_tokens, 4);
+  EXPECT_EQ(second_handle.metrics().n_prompt_tokens, 6);
+  EXPECT_EQ(second_handle.metrics().n_prefilled_tokens, 4);
+  EXPECT_EQ(second_handle.metrics().n_generated_tokens, 0);
+  EXPECT_EQ(first_handle.metrics().n_prefill_steps, 1);
+  EXPECT_EQ(second_handle.metrics().n_prefill_steps, 1);
+  EXPECT_EQ(second.position(), 4);
+  EXPECT_TRUE(second_updates->tokens().empty());
+  EXPECT_EQ(second_updates->terminal_calls(), 1);
+  EXPECT_EQ(executor.batch_sizes(), (std::vector<int>{1, 4}));
+  const auto seen = executor.seen();
+  ASSERT_EQ(seen.size(), 5u);
+  EXPECT_EQ(seen[1].session, first_id);
+  EXPECT_EQ(seen[2].session, second_id);
+  EXPECT_EQ(seen[3].session, first_id);
+  EXPECT_EQ(seen[4].session, second_id);
+  EXPECT_EQ(seen[2].offset, 0u);
+  EXPECT_EQ(seen[4].offset, 2u);
 }
 
 // The callback runs on the engine thread while handle_output_ still holds a
@@ -2460,6 +2528,10 @@ TEST(ShutdownTest, DiscardsInFlightOutputAndCancelsGeneration) {
   EXPECT_EQ(updates->terminal_calls(), 1);
   EXPECT_EQ(executor.seen().size(), 1u);
   EXPECT_EQ(executor.open_count(), 0);
+  handle.wait();
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 2);
+  EXPECT_EQ(handle.metrics().n_generated_tokens, 0);
+  EXPECT_EQ(session.position(), 0);
 }
 
 TEST(ShutdownTest, ConcurrentCallersWaitForFullStop) {
@@ -2554,6 +2626,10 @@ TEST(ShutdownTest, CallbackShutdownStopsLaterOutputsInTheSameBatch) {
   EXPECT_EQ(first_updates->terminal_calls(), 1);
   EXPECT_EQ(second_updates->terminal_calls(), 1);
   EXPECT_EQ(executor.batch_sizes(), (std::vector<int>{1, 2}));
+  EXPECT_EQ(first_handle.metrics().n_prefilled_tokens, 2);
+  EXPECT_EQ(second_handle.metrics().n_prefilled_tokens, 2);
+  EXPECT_EQ(first_handle.metrics().n_generated_tokens, 1);
+  EXPECT_EQ(second_handle.metrics().n_generated_tokens, 0);
 }
 
 TEST(ShutdownTest, CallbackCanRequestShutdown) {
@@ -2694,6 +2770,7 @@ TEST(EngineMetricsTest, CountsStepsSequencesAndTokens) {
   // The prompt plus the tokens fed back. The last token delivered is still
   // pending, so it was never an input.
   EXPECT_EQ(m.model_input_tokens(), 12u);
+  EXPECT_EQ(handle.metrics().n_prefilled_tokens, 10);
   EXPECT_EQ(m.total_prompt_tokens, 10);
   EXPECT_EQ(m.total_generated_tokens, 3);
   EXPECT_EQ(m.ttft_count, 1u);
