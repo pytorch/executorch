@@ -10,6 +10,7 @@
 
 #include <c10/util/irange.h>
 #include <c10/util/safe_numerics.h>
+#include <algorithm>
 #include <array>
 #include <cinttypes> // @donotremove
 #include <cstdint>
@@ -1245,6 +1246,35 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
+#ifdef USE_ATEN_LIB
+    const bool input_has_layout_metadata = true;
+#else
+    const bool input_has_layout_metadata =
+        t_src.unsafeGetTensorImpl()->has_layout_metadata();
+#endif
+    if (input_has_layout_metadata) {
+      std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+          expected_dim_order;
+      std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+          input_dim_order;
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          get_dim_order(t_dst, expected_dim_order.data(), t_dst.dim()),
+          "Failed to read expected dim order for input %" ET_PRIsize_t,
+          input_idx);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          get_dim_order(t_src, input_dim_order.data(), t_src.dim()),
+          "Failed to read dim order for input %" ET_PRIsize_t,
+          input_idx);
+      ET_CHECK_OR_RETURN_ERROR(
+          std::equal(
+              input_dim_order.begin(),
+              input_dim_order.begin() + t_src.dim(),
+              expected_dim_order.begin()),
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          " dim order does not match the method input dim order.",
+          input_idx);
+    }
     auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(

@@ -342,6 +342,45 @@ TEST_F(MethodTest, SetInputRejectsOverflowingSizes) {
   EXPECT_NE(input_err, Error::Ok);
 }
 
+TEST_F(MethodTest, SetInputRejectsMismatchedDimOrder) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float data[8] = {};
+  int32_t sizes[2] = {2, 4};
+  uint8_t dim_order[2] = {1, 0};
+  int32_t strides[2] = {1, 2};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, data, dim_order, strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+
+  EXPECT_EQ(input_err, Error::InvalidArgument);
+}
+
+TEST_F(MethodTest, SetInputAcceptsMissingLayoutMetadata) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float data[8] = {};
+  int32_t sizes[2] = {2, 4};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      2,
+      sizes,
+      data,
+      /*dim_order=*/nullptr,
+      /*strides=*/nullptr);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+
+  EXPECT_EQ(input_err, Error::Ok);
+}
+
 TEST_F(MethodTest, ConstantSegmentTest) {
   // Execute model with constants stored in segment.
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
