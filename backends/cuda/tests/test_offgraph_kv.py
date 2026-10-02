@@ -13,6 +13,7 @@ import torch
 # The very functions the lowering pass traces and splices into the graph, so a
 # passing test cannot agree with a decomposition the pass does not emit.
 from executorch.backends.cuda.passes.lower_offgraph_kv import (
+    CheckOffGraphKVStepWidthPass,
     LowerOffGraphKVPass,
     OFFGRAPH_KV_FQN_PREFIX,
     offgraph_step,
@@ -317,6 +318,50 @@ class _Flat(torch.nn.Module):
         return torch.ops.kvcache.update_and_attend(
             q, k, v, position, 0, SCALE, torch.bfloat16
         )
+
+
+class CheckOffGraphKVStepWidthPassTest(unittest.TestCase):
+    """The runtime reads the step width where the spec says; it must be there."""
+
+    MAX_WRITE = 8
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _skip_if_no_cuda()
+
+    def _edge(self):
+        q, k, v, position = _inputs(0, self.MAX_WRITE)
+        t = torch.export.Dim("t", min=1, max=self.MAX_WRITE)
+        program = torch.export.export(
+            _FlatAndRing(),
+            (q, k, v, position.reshape(-1, 1)),
+            dynamic_shapes=({2: t}, {2: t}, {2: t}, {0: t}),
+            strict=False,
+        )
+        return to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        ).exported_program()
+
+    def test_accepts_the_position_input_and_its_length_dim(self) -> None:
+        edge = self._edge()
+        self.assertIs(CheckOffGraphKVStepWidthPass(b"3:0")(edge), edge)
+
+    def test_rejects_an_input_that_does_not_feed_position(self) -> None:
+        # Input 1 is k: its dim 2 is the step length, but it is not position.
+        with self.assertRaisesRegex(ValueError, "position comes from"):
+            CheckOffGraphKVStepWidthPass(b"1:2")(self._edge())
+
+    def test_rejects_a_dim_that_is_not_the_step_length(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not the step"):
+            CheckOffGraphKVStepWidthPass(b"3:1")(self._edge())
+
+    def test_rejects_an_input_past_the_delegate_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "the delegate takes 4"):
+            CheckOffGraphKVStepWidthPass(b"4:0")(self._edge())
+
+    def test_rejects_a_malformed_spec(self) -> None:
+        with self.assertRaisesRegex(ValueError, "input_index:dim"):
+            CheckOffGraphKVStepWidthPass(b"1")
 
 
 class LowerOffGraphKVPassTest(unittest.TestCase):

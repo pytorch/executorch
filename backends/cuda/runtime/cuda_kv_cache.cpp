@@ -23,6 +23,7 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -502,7 +503,25 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
     }
     metrics_.flat_capacity = new_rows;
     metrics_.growth_count++;
+    // Every program sharing this cache now points at freed storage: drop the
+    // bindings so each rebinds before its next run, and any captured CUDA
+    // graph so it is captured again against the new storage. prefill usually
+    // grows the cache while decode's graph sits idle, so this reaches every
+    // handle, not only the one stepping now.
+    //
+    // Rebinding also resets AOTI's constant-fold state, which must be run
+    // eagerly, so every graph-enabled handle gets at least one eager step
+    // before it captures -- including one that was about to capture for the
+    // first time, and without shortening a longer warmup still outstanding.
     bound_.clear();
+    for (auto& entry : descriptors_) {
+      CudaGraphState& graph = entry.first->cuda_graph_state;
+      if (graph.phase == CudaGraphPhase::Replay) {
+        graph.recapture();
+      } else if (graph.phase == CudaGraphPhase::Warmup) {
+        graph.warmup_remaining = std::max(graph.warmup_remaining, 1);
+      }
+    }
     ET_LOG(
         Info,
         "offgraph_kv: grew flat_capacity=%lld->%lld allocated_bytes=%lld "
@@ -728,5 +747,64 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
   }
   return std::make_shared<CudaSequenceKVCache>(geometry, cfg, storage_dtype);
 }
+
+runtime::Error attach_offgraph_kv_cache(
+    CudaDelegateHandle& handle,
+    const char* cache_key,
+    const std::optional<OffGraphKVStepWidth>& step_width) {
+  handle.kv_cache_shared = cache::CacheRegistry::global().get(cache_key);
+  ET_CHECK_OR_RETURN_ERROR(
+      handle.kv_cache_shared != nullptr,
+      InvalidArgument,
+      "init: cache_key '%s' is not installed in the CacheRegistry",
+      cache_key);
+  handle.kv_cache = handle.kv_cache_shared->as<CudaKVCache>();
+  ET_CHECK_OR_RETURN_ERROR(
+      handle.kv_cache != nullptr,
+      InvalidArgument,
+      "init: cache under key '%s' is not a CUDA cache",
+      cache_key);
+  auto serves = handle.kv_cache->note_handle(&handle);
+  ET_CHECK_OK_OR_RETURN_ERROR(serves.error());
+  if (!serves.get()) {
+    // An embedding or vision pass: it carries no KV storage, so it has no use
+    // for the cache and must not be asked to step it.
+    handle.kv_cache = nullptr;
+    handle.kv_cache_shared.reset();
+    return runtime::Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      step_width.has_value(),
+      InvalidArgument,
+      "off-graph KV cache needs an %s compile spec",
+      kOffGraphKVStepWidthSpec);
+  handle.kv_step_width = *step_width;
+  return runtime::Error::Ok;
+}
+
+namespace {
+
+// Publish this backend's off-graph KV cache layouts. A runner asks the factory
+// for (backend_id, kind) and gets back a neutral Cache it can install, without
+// naming any CUDA type. Lives beside the cache so a build without the LLM
+// extension, which drops this file, registers nothing.
+const bool cuda_cache_builders_registered = [] {
+  const auto error = cache::CacheFactory::global().register_builder(
+      kCudaBackendId,
+      cache::kind::kSingle,
+      [](const cache::CacheGeometry& geometry, const cache::CacheConfig& cfg) {
+        return make_cuda_sequence_kv_cache(geometry, cfg);
+      });
+  if (error != runtime::Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to register cache builder for %s:%s",
+        kCudaBackendId,
+        cache::kind::kSingle);
+  }
+  return true;
+}();
+
+} // namespace
 
 } // namespace executorch::backends::cuda

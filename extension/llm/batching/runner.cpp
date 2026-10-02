@@ -290,6 +290,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       GenConfig config,
       GenerationCallback on_update);
 
+  InitializationState initialization_state() const noexcept {
+    return initialization_state_.load(std::memory_order_acquire);
+  }
+
   // Engine-thread data, so only stable once that thread is joined.
   EngineMetrics metrics() const {
     return metrics_;
@@ -510,6 +514,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::condition_variable stopped_cv_;
   std::vector<Command> inbox_;
   std::atomic<Lifecycle> lifecycle_{Lifecycle::Running};
+  std::atomic<InitializationState> initialization_state_{
+      InitializationState::Pending};
   bool join_in_progress_ = false;
   std::thread::id engine_thread_id_;
 
@@ -636,6 +642,10 @@ void Runner::shutdown() {
   impl_->shutdown();
 }
 
+InitializationState Runner::initialization_state() const noexcept {
+  return impl_->initialization_state();
+}
+
 EngineMetrics Runner::metrics() const {
   return impl_->metrics();
 }
@@ -711,8 +721,21 @@ void RunnerImpl::run_() {
   // handed a session for an executor that did not come up, and so one-time
   // setup is not charged to whichever generation happened to go first.
   const MetricsTime init_start = MetricsClock::now();
-  const bool ready = executor_.initialize();
+  bool ready = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    ready = executor_.initialize();
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Use the same shutdown/drain path as an explicit initialization failure.
+  }
+#endif
   metrics_.init_us = us_between(init_start, MetricsClock::now());
+  // Publish the reason before a stopped Runner can refuse an open.
+  initialization_state_.store(
+      ready ? InitializationState::Ready : InitializationState::Failed,
+      std::memory_order_release);
   if (!ready) {
     // Stop without running work. The drain below still answers whatever was
     // queued while this was starting, so no caller is left waiting.
