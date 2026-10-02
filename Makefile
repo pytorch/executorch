@@ -492,6 +492,7 @@ muse-glimmer-cuda:
 	@echo ""
 	@echo "✓ Build complete!"
 	@echo "  Solo runner:   cmake-out/examples/models/muse-glimmer/solo_runner"
+	@echo "  Batched runner: cmake-out/examples/models/muse-glimmer/run_solo_batching"
 	@echo "  DFlash runner: cmake-out/examples/models/muse-glimmer/dflash_runner"
 	@echo "  Worker:        cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
 

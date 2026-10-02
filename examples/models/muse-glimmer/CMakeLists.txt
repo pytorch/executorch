@@ -189,3 +189,19 @@ if(TARGET mlxdelegate)
   executorch_target_copy_mlx_metallib(dflash_runner)
   executorch_target_copy_mlx_metallib(muse_glimmer_worker)
 endif()
+
+# Batched text generation on the batching extension (CUDA only): runs what
+# export/export_solo_batching.py writes.
+if(EXECUTORCH_BUILD_CUDA)
+  add_executable(run_solo_batching runtime/runners/run_solo_batching.cpp)
+  target_include_directories(
+    run_solo_batching PUBLIC ${_common_include_directories} ${_json_include}
+  )
+  target_link_libraries(
+    run_solo_batching PUBLIC ${link_libraries} cuda_batching Threads::Threads
+  )
+  # CUDA AOTI blobs resolve symbols from the host executable.
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(run_solo_batching PRIVATE "LINKER:--export-dynamic")
+  endif()
+endif()
