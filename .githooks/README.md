@@ -55,7 +55,7 @@ If the torch_pin hook fails:
 
 1. Check that Python 3 is available in your PATH
 2. Ensure you have internet connectivity to fetch commits from GitHub
-3. Verify that the `NIGHTLY_VERSION` in `torch_pin.py` is in the correct format (`devYYYYMMDD`)
+3. Verify that `PYTORCH_VERSION` in `torch_pin.py` is a full nightly wheel version
 
 If lintrunner fails:
 

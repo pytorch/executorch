@@ -12,7 +12,6 @@ ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
 EXPECTED_ROCM_ARCH="${EXPECTED_ROCM_ARCH:-gfx950}"
 EXPECTED_WARP_SIZE="${EXPECTED_WARP_SIZE:-64}"
 PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
-TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
 VOXTRAL_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
 if ! mkdir -p "${VOXTRAL_CI_TMP_ROOT}" 2>/dev/null ||
   [[ ! -w "${VOXTRAL_CI_TMP_ROOT}" ]]; then
@@ -33,37 +32,20 @@ mkdir -p "${HF_HOME}"
 HF_TOKEN="$(printf '%s' "${SECRET_EXECUTORCH_HF_TOKEN}" | tr -d '\r\n')"
 export HF_TOKEN
 
-read -r TORCH_VERSION TORCHAO_VERSION < <(
+read -r TORCH_VERSION TORCHAO_VERSION TORCHAO_INDEX < <(
   python - <<'PY'
-from install_requirements import ROCM_TORCHAO_NIGHTLY_VERSION
-from torch_pin import TORCH_VERSION
+from install_requirements import TORCHAO_INDEX_URL, TORCHAO_NIGHTLY_VERSION
+from torch_pin import ROCM_PYTORCH_VERSION
 
-print(TORCH_VERSION, ROCM_TORCHAO_NIGHTLY_VERSION)
+print(ROCM_PYTORCH_VERSION, TORCHAO_NIGHTLY_VERSION, f"{TORCHAO_INDEX_URL}/cpu")
 PY
 )
-# TorchAO ROCm wheels are not exposed by the per-version pip index.
-TORCHAO_WHEEL="${TORCHAO_ROCM_WHEEL_BASE}/torchao-${TORCHAO_VERSION}"
-TORCHAO_WHEEL+="%2Brocm${ROCM_VERSION}-cp310-abi3-manylinux_2_28_x86_64.whl"
 python -m pip install "torch==${TORCH_VERSION}" \
   --index-url "${PYTORCH_ROCM_INDEX}"
 python -m pip install -r requirements-dev.txt \
-  "${TORCHAO_WHEEL}"
-# ExecuTorch requires torchao>=TORCHAO_NIGHTLY_VERSION, which has no ROCm build, so
-# install its other dependencies separately to keep the ROCm TorchAO wheel in place.
-python -m pip install --editable . --no-build-isolation --no-deps
-python - <<'PY' >"${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
-from importlib.metadata import requires
-
-from packaging.requirements import Requirement
-
-for spec in requires("executorch") or []:
-    req = Requirement(spec)
-    if req.name == "torchao":
-        continue
-    if req.marker is None or req.marker.evaluate({"extra": ""}):
-        print(spec)
-PY
-python -m pip install -r "${VOXTRAL_CI_TMPDIR}/executorch-deps.txt"
+  "torchao==${TORCHAO_VERSION}" \
+  --extra-index-url "${TORCHAO_INDEX}"
+python -m pip install --editable . --no-build-isolation
 
 if ! command -v conda >/dev/null; then
   echo "The ROCm CI image must provide conda for its runtime libraries"
@@ -85,7 +67,6 @@ import torchao
 assert torch.version.hip is not None, "PyTorch is not a ROCm build"
 assert torch.version.cuda is None, "PyTorch unexpectedly reports a CUDA runtime"
 assert torch.cuda.is_available(), "No AMD GPU is visible through PyTorch"
-assert "+rocm" in torchao.__version__, "TorchAO is not a ROCm build"
 
 device = torch.cuda.get_device_properties(0)
 arch = device.gcnArchName.split(":", 1)[0]

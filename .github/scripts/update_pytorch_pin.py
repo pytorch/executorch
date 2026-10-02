@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import base64
 import json
 import re
@@ -11,42 +12,155 @@ from pathlib import Path
 from urllib.parse import unquote
 
 
-TORCHAO_INDEX_URL = "https://download.pytorch.org/whl/nightly"
+_DEPENDENCY_CONFIG = runpy.run_path("torch_pin.py")
+PYTORCH_INDEX_URL = _DEPENDENCY_CONFIG["PYTORCH_INDEX_URL"]
+TORCHAO_INDEX_URL = _DEPENDENCY_CONFIG["TORCHAO_INDEX_URL"]
+PYTORCH_PACKAGES = ("torch", "torchvision", "torchaudio")
+REQUIRED_PYTHON_TAG = "cp310"
+CPU_WHEEL_PLATFORMS = (
+    "manylinux_2_28_x86_64",
+    "manylinux_2_28_aarch64",
+    "macosx_14_0_arm64",
+    "win_amd64",
+)
+CUDA_WHEEL_PLATFORMS = ("manylinux_2_28_x86_64", "manylinux_2_28_aarch64")
 
 
-def parse_nightly_version(nightly_version):
+def parse_nightly_version(pytorch_version):
     """
-    Parse NIGHTLY_VERSION (e.g., 'dev20251004') to date string (e.g., '2025-10-04').
+    Parse a full nightly wheel version into its source-snapshot date.
 
     Args:
-        nightly_version: String in format 'devYYYYMMDD'
+        pytorch_version: Version such as '2.15.0.dev20251004'
 
     Returns:
         Date string in format 'YYYY-MM-DD'
     """
-    match = re.match(r"dev(\d{4})(\d{2})(\d{2})", nightly_version)
+    match = re.fullmatch(r"\d+\.\d+\.\d+\.dev(\d{4})(\d{2})(\d{2})", pytorch_version)
     if not match:
-        raise ValueError(f"Invalid NIGHTLY_VERSION format: {nightly_version}")
+        raise ValueError(f"Invalid PyTorch nightly version: {pytorch_version}")
 
+    return format_nightly_date("".join(match.groups()))
+
+
+def format_nightly_date(nightly_date):
+    match = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", nightly_date)
+    if not match:
+        raise ValueError(f"Invalid nightly date: {nightly_date}")
     year, month, day = match.groups()
     return f"{year}-{month}-{day}"
 
 
-def get_torch_nightly_version():
+def get_pytorch_version():
     """
-    Read NIGHTLY_VERSION from torch_pin.py.
+    Read the authoritative PyTorch wheel version from torch_pin.py.
 
     Returns:
-        NIGHTLY_VERSION string
+        PYTORCH_VERSION string
     """
     with open("torch_pin.py", "r") as f:
         content = f.read()
 
-    match = re.search(r'NIGHTLY_VERSION\s*=\s*["\']([^"\']+)["\']', content)
+    match = re.search(r'PYTORCH_VERSION\s*=\s*["\']([^"\']+)["\']', content)
     if not match:
-        raise ValueError("Could not find NIGHTLY_VERSION in torch_pin.py")
+        raise ValueError("Could not find PYTORCH_VERSION in torch_pin.py")
 
     return match.group(1)
+
+
+def get_pytorch_nightly_versions(max_date):
+    """Return one compatible nightly package set available on every wheel train."""
+    config = runpy.run_path("torch_pin.py")
+    channels = ["cpu", *config["CUDA_WHEEL_VERSIONS"]]
+    versions_by_package = {}
+    common_dates = None
+
+    for package in PYTORCH_PACKAGES:
+        package_versions = {}
+        package_dates = None
+        for channel in channels:
+            url = f"{PYTORCH_INDEX_URL}/{channel}/{package}/"
+            request = urllib.request.Request(
+                url, headers={"User-Agent": "ExecuTorch-Bot"}
+            )
+            with urllib.request.urlopen(request) as response:
+                index_html = unquote(response.read().decode())
+            wheels_by_date = {}
+            pattern = re.compile(
+                rf"^{re.escape(package)}-(\d+\.\d+\.\d+\.dev(\d{{8}}))"
+                rf"(?:\+[^-]+)?-{REQUIRED_PYTHON_TAG}-[^-]+-.*\.whl$"
+            )
+            for link in re.findall(r'href="([^"]+)"', index_html):
+                filename = link.rsplit("/", 1)[-1].split("#", 1)[0]
+                match = pattern.match(filename)
+                if match is None:
+                    continue
+                version, date = match.groups()
+                if date <= max_date:
+                    versions, filenames = wheels_by_date.setdefault(date, (set(), []))
+                    versions.add(version)
+                    filenames.append(filename)
+
+            required_platforms = (
+                CPU_WHEEL_PLATFORMS if channel == "cpu" else CUDA_WHEEL_PLATFORMS
+            )
+            by_date = {
+                date: versions
+                for date, (versions, filenames) in wheels_by_date.items()
+                if all(
+                    any(platform_name in filename for filename in filenames)
+                    for platform_name in required_platforms
+                )
+            }
+            package_dates = (
+                set(by_date) if package_dates is None else package_dates & set(by_date)
+            )
+            for date, versions in by_date.items():
+                package_versions.setdefault(date, set()).update(versions)
+
+        package_dates = package_dates or set()
+        versions_by_package[package] = {
+            date: next(iter(package_versions[date]))
+            for date in package_dates
+            if len(package_versions[date]) == 1
+        }
+        common_dates = (
+            set(versions_by_package[package])
+            if common_dates is None
+            else common_dates & set(versions_by_package[package])
+        )
+
+    if not common_dates:
+        raise ValueError(
+            f"Could not find a PyTorch nightly on or before {max_date} for "
+            f"{', '.join(PYTORCH_PACKAGES)} on {', '.join(channels)}"
+        )
+    selected_date = max(common_dates)
+    return {
+        package: versions_by_package[package][selected_date]
+        for package in PYTORCH_PACKAGES
+    }
+
+
+def update_pytorch_package_pins(versions):
+    """Update the wheel versions that form the one selected PyTorch nightly."""
+    config_path = Path("torch_pin.py")
+    content = config_path.read_text()
+    assignments = {
+        "PYTORCH_VERSION": versions["torch"],
+        "TORCHVISION_VERSION": versions["torchvision"],
+        "TORCHAUDIO_VERSION": versions["torchaudio"],
+    }
+    for name, version in assignments.items():
+        content, count = re.subn(
+            rf'^(?P<prefix>{name}\s*=\s*["\'])[^"\']+(?P<suffix>["\'])$',
+            rf"\g<prefix>{version}\g<suffix>",
+            content,
+            flags=re.MULTILINE,
+        )
+        if count != 1:
+            raise ValueError(f"Could not find one {name} assignment in {config_path}")
+    config_path.write_text(content)
 
 
 def get_json(url):
@@ -68,7 +182,7 @@ def get_commit_hash_for_nightly(date_str):
         Commit hash string
     """
     api_url = "https://api.github.com/repos/pytorch/pytorch/commits"
-    params = f"?sha=nightly&per_page=50"
+    params = "?sha=nightly&per_page=50"
     url = api_url + params
 
     try:
@@ -113,8 +227,8 @@ def update_pytorch_pin(commit_hash):
 
 
 def get_supported_torchao_channels():
-    cuda_versions = runpy.run_path("install_utils.py")["SUPPORTED_CUDA_VERSIONS"]
-    return ["cpu", *(f"cu{major}{minor}" for major, minor in cuda_versions)]
+    cuda_versions = runpy.run_path("torch_pin.py")["CUDA_WHEEL_VERSIONS"]
+    return ["cpu", *cuda_versions]
 
 
 def get_torchao_versions(channel):
@@ -164,7 +278,7 @@ def get_latest_torchao_nightly(max_date):
 
 def get_torchao_commit_hash(nightly_version):
     date = nightly_version.rsplit(".dev", 1)[-1]
-    formatted_date = parse_nightly_version(f"dev{date}")
+    formatted_date = format_nightly_date(date)
     url = (
         "https://api.github.com/repos/pytorch/ao/actions/workflows/"  # @lint-ignore
         "build_wheels_linux_x86.yml/runs?event=schedule&status=success&"
@@ -179,17 +293,17 @@ def get_torchao_commit_hash(nightly_version):
 
 
 def update_torchao_pins(nightly_version, commit_hash):
-    requirements_path = Path("install_requirements.py")
-    content = requirements_path.read_text()
-    content, replacements = re.subn(
-        r'^(?P<prefix>(?:CU\d+_)?TORCHAO_NIGHTLY_VERSION\s*=\s*["\'])[^"\']+(?P<suffix>["\'])$',
+    config_path = Path("torch_pin.py")
+    content = config_path.read_text()
+    content, default_replacements = re.subn(
+        r'^(?P<prefix>TORCHAO_NIGHTLY_VERSION\s*=\s*["\'])[^"\']+(?P<suffix>["\'])$',
         rf"\g<prefix>{nightly_version}\g<suffix>",
         content,
         flags=re.MULTILINE,
     )
-    if not replacements:
-        raise ValueError(f"Could not find TorchAO nightly pins in {requirements_path}")
-    requirements_path.write_text(content)
+    if default_replacements != 1:
+        raise ValueError(f"Could not find the TorchAO nightly pin in {config_path}")
+    config_path.write_text(content)
 
     for command in (
         ["git", "submodule", "update", "--init", "third-party/ao"],
@@ -350,13 +464,26 @@ def sync_c10_directories(commit_hash):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--nightly-date",
+        default="",
+        help="newest PyTorch nightly date to consider, in YYYYMMDD form",
+    )
+    args = parser.parse_args()
     try:
-        # Read NIGHTLY_VERSION from torch_pin.py
-        nightly_version = get_torch_nightly_version()
-        print(f"Found NIGHTLY_VERSION: {nightly_version}")
+        if args.nightly_date:
+            if re.fullmatch(r"\d{8}", args.nightly_date) is None:
+                raise ValueError("--nightly-date must use YYYYMMDD")
+            package_versions = get_pytorch_nightly_versions(args.nightly_date)
+            update_pytorch_package_pins(package_versions)
+            print(f"Selected PyTorch package versions: {package_versions}")
 
-        # Parse to date string
-        date_str = parse_nightly_version(nightly_version)
+        pytorch_version = get_pytorch_version()
+        print(f"Found PYTORCH_VERSION: {pytorch_version}")
+
+        # The wheel version is authoritative; derive its source snapshot date.
+        date_str = parse_nightly_version(pytorch_version)
         print(f"Parsed date: {date_str}")
 
         # Fetch commit hash from PyTorch nightly branch

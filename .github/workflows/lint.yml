@@ -48,12 +48,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          TORCH_VERSION=$(python -c "from torch_pin import TORCH_VERSION; print(TORCH_VERSION)")
+          read -r PYTORCH_VERSION TORCHVISION_VERSION TORCHAUDIO_VERSION PYTORCH_INDEX_URL < <(
+            python -c "from torch_pin import PYTORCH_VERSION, PYTORCH_INDEX_URL, TORCHVISION_VERSION, TORCHAUDIO_VERSION; print(PYTORCH_VERSION, TORCHVISION_VERSION, TORCHAUDIO_VERSION, PYTORCH_INDEX_URL)"
+          )
           pip install \
-            "torch==${TORCH_VERSION}" \
-            torchvision \
-            torchaudio \
-            --index-url https://download.pytorch.org/whl/cpu
+            "torch==${PYTORCH_VERSION}" \
+            "torchvision==${TORCHVISION_VERSION}" \
+            "torchaudio==${TORCHAUDIO_VERSION}" \
+            --index-url "${PYTORCH_INDEX_URL}/cpu"
           pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
