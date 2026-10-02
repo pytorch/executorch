@@ -20,10 +20,10 @@ stats and optional `generated_token_ids`; `open`/`close`/`reset` ops manage name
 sessions; failures return `{"error", "code"?}`. The shapes this client builds and
 parses are in generate()/_on_done() below.
 
-The worker's stdout carries ONLY protocol JSON; its logs go to stderr. One
-request at a time per worker; the caller (SessionRuntime) serializes. A worker
-hosts one engine and routes requests to per-session_id state (anonymous requests
-share a scratch session); execution is synchronous.
+The worker's stdout carries ONLY protocol JSON; its logs go to stderr.
+WorkerClient preserves the legacy one-request-at-a-time protocol and scratch
+session behavior. spawn_worker selects MultiplexedWorkerClient when advertised;
+that client supports bounded concurrency and independent anonymous sessions.
 """
 
 import errno
@@ -581,11 +581,25 @@ class WorkerClient:
         self._cleanup(WorkerError("worker client is closed"), failed=False)
 
 
+def _read_worker_readiness(proc: subprocess.Popen) -> dict:
+    if proc.stdout is None:
+        raise WorkerError("worker failed to start (no stdout pipe).")
+    line = proc.stdout.readline()
+    if not line:
+        raise WorkerError("worker failed to start (no output; check its stderr).")
+    msg = _decode_worker_json(line)
+    if not msg.get("ready"):
+        raise WorkerError(f"worker did not report ready: {msg}")
+    return msg
+
+
 def spawn_worker(
     cmd: Sequence[str],
     env: Optional[dict] = None,
     cwd: Optional[str] = None,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
+    *,
+    require_multiplexing: bool = False,
 ) -> Union[WorkerClient, "MultiplexedWorkerClient"]:
     """Start a worker and wait for its additive readiness negotiation.
 
@@ -594,6 +608,8 @@ def spawn_worker(
     only when readiness includes ``{"supports_cancel": true}``; old workers keep
     their original JSONL request shape and behavior. Explicit ``multiplexed``
     readiness selects the request-scoped client and closes the unused pipe.
+    require_multiplexing rejects and reaps workers without that capability;
+    its default preserves legacy fallback.
     """
     logger.info("Starting model worker: %s", cmd[0])
     control_read_fd: Optional[int] = None
@@ -626,14 +642,12 @@ def spawn_worker(
         _close_fd(control_read_fd)
 
     try:
-        if proc.stdout is None:
-            raise WorkerError("worker failed to start (no stdout pipe).")
-        line = proc.stdout.readline()
-        if not line:
-            raise WorkerError("worker failed to start (no output; check its stderr).")
-        msg = _decode_worker_json(line)
-        if not msg.get("ready"):
-            raise WorkerError(f"worker did not report ready: {msg}")
+        msg = _read_worker_readiness(proc)
+        if require_multiplexing and msg.get("multiplexed") is not True:
+            raise WorkerError(
+                "worker does not support required multiplexing",
+                code="unsupported_multiplexing",
+            )
         if msg.get("multiplexed") is True:
             from .multiplexed_worker_client import MultiplexedWorkerClient
 
