@@ -18,9 +18,8 @@ target_compile_options(cuda_batching PUBLIC ${_common_compile_options})
 target_compile_definitions(cuda_batching PRIVATE CUDA_AVAILABLE=1)
 target_link_libraries(
   cuda_batching
-  PUBLIC aoti_cuda_backend extension_llm_batching extension_llm_cache
-         extension_module extension_tensor
-  PRIVATE extension_llm_sampler
+  PUBLIC aoti_cuda_backend extension_llm_batching extension_llm_batching_util
+         extension_llm_cache extension_module extension_tensor
 )
 
 install(
