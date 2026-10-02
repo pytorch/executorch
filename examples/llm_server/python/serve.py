@@ -22,6 +22,28 @@ from .worker_client import spawn_worker
 _MAX_INT32 = (1 << 31) - 1
 
 
+def _validate_limits(parser, args) -> None:
+    for flag, value in (
+        ("--max-context", args.max_context),
+        ("--max-sessions", args.max_sessions),
+        ("--max-decode-sequences", args.max_decode_sequences),
+        ("--max-inflight-requests", args.max_inflight_requests),
+    ):
+        if not 1 <= value <= _MAX_INT32:
+            parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
+    if not 0 <= args.prefix_cache_entries <= _MAX_INT32:
+        parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
+    physical_sessions = (
+        args.max_sessions
+        + args.prefix_cache_entries
+        + (1 if args.prefix_cache_entries else 0)
+    )
+    if physical_sessions > _MAX_INT32:
+        parser.error("session and prefix-cache capacity exceeds the row limit")
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be between 1 and 65535")
+
+
 def _parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -57,25 +79,7 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
-    for flag, value in (
-        ("--max-context", args.max_context),
-        ("--max-sessions", args.max_sessions),
-        ("--max-decode-sequences", args.max_decode_sequences),
-        ("--max-inflight-requests", args.max_inflight_requests),
-    ):
-        if not 1 <= value <= _MAX_INT32:
-            parser.error(f"{flag} must be between 1 and {_MAX_INT32}")
-    if not 0 <= args.prefix_cache_entries <= _MAX_INT32:
-        parser.error(f"--prefix-cache-entries must be between 0 and {_MAX_INT32}")
-    physical_sessions = (
-        args.max_sessions
-        + args.prefix_cache_entries
-        + (1 if args.prefix_cache_entries else 0)
-    )
-    if physical_sessions > _MAX_INT32:
-        parser.error("session and prefix-cache capacity exceeds the row limit")
-    if not 1 <= args.port <= 65535:
-        parser.error("--port must be between 1 and 65535")
+    _validate_limits(parser, args)
 
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:

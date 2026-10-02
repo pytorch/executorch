@@ -352,6 +352,47 @@ def test_invalid_cache_headroom_and_ports(argv, launch, options):
     launch.stages["spawn"].assert_not_called()
 
 
+@pytest.mark.parametrize("port", [1, 65535])
+def test_numeric_limit_boundaries_are_inclusive(argv, port):
+    max_int32 = (1 << 31) - 1
+    args = serve._parse_args(
+        argv
+        + [
+            "--max-context",
+            str(max_int32),
+            "--max-sessions",
+            str(max_int32 - 2),
+            "--max-decode-sequences",
+            str(max_int32),
+            "--max-inflight-requests",
+            str(max_int32),
+            "--prefix-cache-entries",
+            "1",
+            "--port",
+            str(port),
+        ]
+    )
+    assert args.max_context == max_int32
+    assert args.max_sessions + args.prefix_cache_entries + 1 == max_int32
+    assert args.max_decode_sequences == args.max_inflight_requests == max_int32
+    assert args.port == port
+
+
+def test_numeric_errors_precede_path_checks(argv, launch, tmp_path, capsys):
+    with pytest.raises(SystemExit) as error:
+        serve.main(
+            argv + ["--model-path", str(tmp_path / "missing"), "--max-context", "0"]
+        )
+    assert error.value.code == 2
+    assert (
+        capsys.readouterr()
+        .err.rstrip()
+        .endswith("error: --max-context must be between 1 and 2147483647")
+    )
+    launch.stages["template"].assert_not_called()
+    launch.stages["spawn"].assert_not_called()
+
+
 def test_zero_cache_needs_no_extra_physical_row(argv):
     args = serve._parse_args(argv + ["--max-sessions", str((1 << 31) - 1)])
     assert args.max_sessions == (1 << 31) - 1
