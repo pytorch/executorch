@@ -670,7 +670,7 @@ TEST_F(
   ASSERT_TRUE(slow->terminal);
   EXPECT_EQ(slow->terminal->finish_reason, FinishReason::Length);
   for (auto& [event, handle] : later) {
-    ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+    ASSERT_TRUE(wait_until([&handle = handle] { return handle.done(); }));
     ASSERT_TRUE(event->terminal);
     EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
     EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 2u);
