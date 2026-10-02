@@ -11,6 +11,7 @@ on:
     paths:
       - .github/workflows/coreai.yml
       - backends/apple/coreai/**
+      - tools/cmake/ExecuTorchCoreAIDependencies.cmake
   workflow_dispatch:
 
 concurrency:

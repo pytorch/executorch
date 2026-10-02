@@ -94,6 +94,38 @@ acquiring a lock does not flush its file or directory. Lock files are not
 removed by the backend, including after process exit. Removing the assets root
 externally requires all loads, sessions and maintenance to stop.
 
+## SDK Bridge
+
+The private Swift module `CoreAIBridge` (`runtime/ETCoreAIModel.swift`) wraps
+the `CoreAI` framework behind the Objective-C protocols in
+`runtime/ETCoreAIBridge.h`. It restores models from bookmarks, specializes source
+bundles with the persistent default SDK cache and binds named functions with
+ordered inputs and outputs. Asynchronous SDK calls run in detached tasks and
+report through completion blocks; function binding completes synchronously.
+
+Inputs are borrowed from caller storage through Core AI raw views; only shape
+metadata is copied. Dense row-major outputs are copied with one `memcpy`, and
+padded or transposed outputs fall back to strided copies. Only FP16 and FP32
+NDArrays are supported.
+
+The Objective-C half of the bridge builds as the private `coreai_bridge_obj`
+object library, which production delegate targets absorb. Host tests substitute
+a fake bridge instead.
+
+`coreai_swift_bridge_test` runs the bridge's XCTests under `xctest` with
+`EXECUTORCH_BUILD_TESTS=ON`. It links CoreAI, so it runs only on macOS 27.
+
+## Building
+
+Core AI builds require an Apple SDK 27 or newer, Swift from Xcode 27, and CMake
+3.31 or newer with the Ninja or Xcode generator. Execution requires macOS 27 or
+iOS 27. `EXECUTORCH_BUILD_COREAI` defaults to `OFF`. Enabling it builds the
+private Swift implementation, module `CoreAIBridge`. Only Core AI targets get an
+OS 27 minimum; unrelated runtime targets keep the configured deployment target.
+Ninja builds use one architecture per build directory. Current runtime support
+covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
+`Float16` availability, and the tested iOS simulator SDKs do not contain Core AI.
+
 ## Host Tests
 
 `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON` registers the
