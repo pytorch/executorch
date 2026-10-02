@@ -206,4 +206,15 @@ std::shared_ptr<cache::Cache> make_cuda_sequence_kv_cache(
     const cache::CacheGeometry& geometry,
     const cache::CacheConfig& cfg);
 
+// Builder for cache::kind::kBatchedCell (and kBatched): many sequences over
+// one pool of per-token cells, for a program lowered in the cell layout.
+//
+// cfg.capacity is the program's max_cells and cfg.max_write its widest step;
+// both fix the shapes the program declared for its step buffers, so they must
+// match the export exactly. Pools start at cfg.initial_capacity rows and grow
+// geometrically up to cfg.capacity.
+std::shared_ptr<cache::Cache> make_cuda_cell_kv_cache(
+    const cache::CacheGeometry& geometry,
+    const cache::CacheConfig& cfg);
+
 } // namespace executorch::backends::cuda
