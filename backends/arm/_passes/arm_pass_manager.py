@@ -62,6 +62,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeExpm1Pass,
     DecomposeFlipPass,
     DecomposeFloorDividePass,
+    DecomposeGatedDeltaRulePass,
     DecomposeGeluPass,
     DecomposeGluPass,
     DecomposeGroupedConvPass,
@@ -798,6 +799,7 @@ class ArmPassManager(ExportedProgramPassManager):
             # Transformation passes (pre scalar -> tensor)
             self.add_passes(
                 [
+                    DecomposeGatedDeltaRulePass(tfa_pass=True),
                     DecomposeIndexCopyPass(tfa_pass=True),
                     DecomposeSelectScatterPass(tfa_pass=True),
                     DecomposeSliceScatterPass(tfa_pass=True),
