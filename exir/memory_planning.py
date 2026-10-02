@@ -787,14 +787,10 @@ def get_node_tensor_specs(
     attribute memory needs them.
     """
     # get tensor specs
-    if node.target == memory.view:
+    if node.target in (memory.view, memory.slice):
         base = node.args[0]
         assert isinstance(base, torch.fx.Node)
-        specs = base.meta.get("spec")
-    elif node.target == memory.slice:
-        base = node.args[0]
-        assert isinstance(base, torch.fx.Node)
-        specs = base.meta.get("spec")
+        return get_node_tensor_specs(base)
     else:
         specs = node.meta.get("spec")
 

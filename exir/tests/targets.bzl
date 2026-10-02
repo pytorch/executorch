@@ -469,7 +469,11 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:lib",
             "//executorch/exir:memory",
             "//executorch/exir/passes:lib",
+            "//executorch/exir/passes:normalize_view_copy_base_pass",
+            "//executorch/exir/passes:reinplace_pass",
             "//executorch/exir/passes:replace_slice_copy_with_slice_pass",
+            "//executorch/exir/passes:replace_view_copy_with_view_pass",
+            "//executorch/exir/passes:spec_prop_pass",
             "//executorch/extension/pybindings:portable_lib",  # @manual
         ],
     )
