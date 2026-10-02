@@ -8,15 +8,39 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <variant>
 #include <vector>
 
 #include <executorch/backends/native/runtime/graph/ScalarType.h>
 
 namespace ptn {
 
-// Logical tensor metadata: element type and bounded shape. No storage, no quant
-// scheme. `sizes` holds allocation upper bounds; `lower_bounds` is empty for a
-// static shape and holds corresponding lower bounds for a dynamic shape.
+struct AffineGroupQuant {
+  std::string scale_data_key;
+  ScalarType scale_dtype = ScalarType::Float;
+  int32_t quant_min = 0;
+  int32_t quant_max = 0;
+  int32_t group_size = 0;
+  std::string zero_point_data_key;
+  ScalarType zero_point_dtype = ScalarType::Int;
+
+  bool operator==(const AffineGroupQuant&) const = default;
+};
+
+struct PackedQuant {
+  std::string codec;
+
+  bool operator==(const PackedQuant&) const = default;
+};
+
+using QuantScheme = std::variant<AffineGroupQuant, PackedQuant>;
+
+// Logical tensor metadata: element type, bounded shape, and optional packed
+// quantization scheme. `sizes` holds allocation upper bounds; `lower_bounds` is
+// empty for a static shape and holds corresponding lower bounds for a dynamic
+// shape.
 //
 // dim_order_hint is a permutation of dim indices, outermost first; empty means
 // contiguous ([0, 1, ..., n-1]). It is a hint only for a tensor with no stored
@@ -32,6 +56,7 @@ struct TensorMeta {
   std::vector<int32_t> dim_order_hint;
   // Empty for static shapes. Otherwise one lower bound per extent in `sizes`.
   std::vector<int64_t> lower_bounds;
+  std::optional<QuantScheme> quant;
 
   size_t ndim() const {
     return sizes.size();

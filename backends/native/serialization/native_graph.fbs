@@ -119,7 +119,9 @@ enum OutputValueKind : byte {
 // so they are recorded here. The dequant result dtype is the op output value's
 // TensorMeta.dtype, not part of this scheme. The qdata itself (the enclosing
 // TensorMeta) uses dtype=BYTE with logical sizes; its packed byte length follows from
-// the logical shape and bitwidth, not prod(sizes).
+// the logical shape and bitwidth, not prod(sizes). The scale and zero-point keys must
+// be read-only stored constants of every method that uses the quantized tensor,
+// whether that tensor is itself a constant or a graph value such as a user input.
 table AffineGroup {
     scale_data_key: string (required);
     scale_dtype: ScalarType;        // FLOAT, HALF, or BFLOAT16; not derivable
