@@ -346,9 +346,29 @@ TEST_F(MethodTest, SetInputRejectsMismatchedDimOrder) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
+  const auto original_size = method->get_input(0).toTensor().size(0);
 
-  float data[8] = {};
-  int32_t sizes[2] = {2, 4};
+  float data[12] = {};
+  int32_t sizes[2] = {3, 4};
+  uint8_t dim_order[2] = {1, 0};
+  int32_t strides[2] = {1, 3};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, data, dim_order, strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+
+  EXPECT_EQ(input_err, Error::InvalidArgument);
+  EXPECT_EQ(method->get_input(0).toTensor().size(0), original_size);
+}
+
+TEST_F(MethodTest, SetInputRejectsMismatchedDimOrderWhenMemoryPlanned) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float data[4] = {};
+  int32_t sizes[2] = {2, 2};
   uint8_t dim_order[2] = {1, 0};
   int32_t strides[2] = {1, 2};
   executorch::aten::TensorImpl impl(
@@ -358,6 +378,24 @@ TEST_F(MethodTest, SetInputRejectsMismatchedDimOrder) {
       method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
 
   EXPECT_EQ(input_err, Error::InvalidArgument);
+}
+
+TEST_F(MethodTest, SetInputAcceptsEquivalentSingletonDimOrder) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  float data[4] = {};
+  int32_t sizes[2] = {1, 4};
+  uint8_t dim_order[2] = {1, 0};
+  int32_t strides[2] = {1, 1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float, 2, sizes, data, dim_order, strides);
+
+  auto input_err =
+      method->set_input(EValue(executorch::aten::Tensor(&impl)), 0);
+
+  EXPECT_EQ(input_err, Error::Ok);
 }
 
 TEST_F(MethodTest, SetInputAcceptsMissingLayoutMetadata) {

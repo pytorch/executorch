@@ -27,7 +27,7 @@ Error get_dim_order(
     const torch::executor::Tensor& tensor,
     executorch::aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size) {
-  if (tensor.dim_order().data() == nullptr) {
+  if (!tensor.unsafeGetTensorImpl()->has_layout_metadata()) {
     return Error::InvalidArgument;
   }
   ET_CHECK_OR_RETURN_ERROR(
