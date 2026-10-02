@@ -22,9 +22,13 @@ endforeach()
 enable_language(OBJCXX)
 
 set(_coreai_runtime_sources
-    runtime/coreai_backend.mm runtime/coreai_assets.mm
-    runtime/coreai_storage.mm runtime/coreai_bookmarks.mm
-    runtime/coreai_load_coordinator.mm runtime/coreai_pte.cpp
+    runtime/coreai_backend.mm
+    runtime/coreai_assets.mm
+    runtime/coreai_storage.mm
+    runtime/coreai_bookmarks.mm
+    runtime/coreai_load_coordinator.mm
+    runtime/coreai_pte.cpp
+    runtime/coreai_cache.mm
 )
 
 # Keep ARC and C++ exception settings away from the private Swift module.
@@ -61,6 +65,8 @@ if(EXECUTORCH_BUILD_TESTS)
     runtime/test/coreai_delegate_test.mm
     runtime/test/coreai_program_data_test.mm
     runtime/test/coreai_pte_fixture.mm
+    runtime/test/coreai_cache_test.mm
+    runtime/test/coreai_eviction_test.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
   )
@@ -70,12 +76,15 @@ if(EXECUTORCH_BUILD_TESTS)
   # The consolidated runtime target is created after this directory.
   if(EXECUTORCH_BUILD_SHARED)
     set(_coreai_host_runtime executorch_shared)
+    set(_coreai_host_data_loader "")
   else()
     set(_coreai_host_runtime executorch)
+    set(_coreai_host_data_loader extension_data_loader)
   endif()
   target_link_libraries(
-    coreai_host_test PRIVATE ${_coreai_host_runtime} program_schema
-                             GTest::gtest ${COREAI_FOUNDATION_FRAMEWORK}
+    coreai_host_test
+    PRIVATE ${_coreai_host_runtime} ${_coreai_host_data_loader} program_schema
+            GTest::gtest ${COREAI_FOUNDATION_FRAMEWORK}
   )
   add_test(NAME coreai_host_test COMMAND coreai_host_test)
   set_tests_properties(coreai_host_test PROPERTIES TIMEOUT 120)
@@ -330,6 +339,12 @@ coreai_require_os27(coreai_runtime_smoke)
 set_target_properties(coreai_runtime_smoke PROPERTIES LINKER_LANGUAGE CXX)
 target_link_libraries(
   coreai_runtime_smoke PRIVATE coreaidelegate ${_coreai_runtime}
+)
+
+install(
+  FILES runtime/coreai_cache.h
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreai/runtime
 )
 
 install(
