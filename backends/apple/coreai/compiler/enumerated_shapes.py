@@ -173,6 +173,8 @@ def apply_enumerated_shapes(
     program,
     edge_program: ExportedProgram,
     enumerations: Dict[str, Sequence[int]],
+    *,
+    input_names: Sequence[str],
 ) -> None:
     """Attach enumerated shapes to the coreai program (all delivery modes).
 
@@ -180,8 +182,8 @@ def apply_enumerated_shapes(
     :func:`resolve_input_enumerations`).  For each of this subgraph's user inputs
     we read its symbolic shape from ``edge_program`` and substitute every
     combination of the enumerated symbol values, then attach the resulting shapes
-    via ``set_static_shape_config``.  Inputs are matched to coreai graph inputs by
-    name (the converter names each coreai input after its edge placeholder).
+    via ``set_static_shape_config``. ``input_names`` are the names the converter
+    was given for the user inputs, in boundary order.
     """
     if not enumerations:
         return
@@ -198,17 +200,17 @@ def apply_enumerated_shapes(
     # (a batch dim, say) would not be held equal.
     boundary_inputs = []
     active_symbols = set()
-    for uname in user_inputs:
-        # Match edge user inputs to coreai graph inputs by name; skip anything
-        # that isn't a coreai tensor input (e.g. a taken-over constant).
-        if not isinstance(uname, str) or uname not in coreai_names:
+    for uname, converted_name in zip(user_inputs, input_names):
+        # Skip anything that isn't a coreai tensor input (e.g. a taken-over
+        # constant).
+        if not isinstance(uname, str) or converted_name not in coreai_names:
             continue
         node = placeholders.get(uname)
         val = node.meta.get("val") if node is not None else None
         if not hasattr(val, "shape"):
             continue
         dims = list(val.shape)
-        boundary_inputs.append((uname, dims))
+        boundary_inputs.append((converted_name, dims))
         active_symbols |= _shape_symbols(dims) & set(enumerations)
 
     if not active_symbols:

@@ -21,6 +21,7 @@ from executorch.backends.arm.scripts.neural_graphics_test_data import (
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.model_test_utils import (
+    download_model_weights,
     PTQ_AND_QAT_DATA,
     REAL_AND_RANDOM_DATA,
     skip_if_frozen_release,
@@ -34,10 +35,10 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from huggingface_hub import hf_hub_download
 from ng_model_gym.usecases.nfru.model.nfru_v1_nn import (  # type: ignore[import-not-found,import-untyped]
     NFRUAutoEncoder,
 )
+from torch.export import Dim
 from torchao.quantization.pt2e import (
     allow_exported_model_train_eval,
     move_exported_model_to_eval,
@@ -47,15 +48,17 @@ from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt
 input_t = Tuple[torch.Tensor]  # Input x
 
 pytestmark = skip_if_frozen_release("NFRU")
+_NFRU_HEIGHT = 2 * Dim("_nfru_height", min=16, max=135)
+_NFRU_WIDTH = 2 * Dim("_nfru_width", min=16, max=240)
+_NFRU_DYNAMIC_SHAPES = ({2: _NFRU_HEIGHT, 3: _NFRU_WIDTH},)
 
 
 def nfru() -> NFRUAutoEncoder:
     """Get an instance of NFRU with FP32 weights loaded."""
-    weights = hf_hub_download(  # nosec B615
+    weights = download_model_weights(
         repo_id="Arm/neural-frame-rate-upscaling",
         filename="nfru_v1_fp32.pt",
         revision="main",
-        cache_dir=os.environ.get("RUNNER_TEMP"),
     )
     checkpoint = torch.load(
         weights,
@@ -73,8 +76,8 @@ def nfru() -> NFRUAutoEncoder:
     return model
 
 
-def prequantized_nfru(inputs: input_t) -> torch.fx.GraphModule:
-    weights = hf_hub_download(  # nosec B615
+def prequantized_nfru(inputs: input_t, dynamic_shapes=None) -> torch.fx.GraphModule:
+    weights = download_model_weights(
         repo_id="Arm/neural-frame-rate-upscaling",
         filename="nfru_v1_int8.pt",
         revision="main",
@@ -88,7 +91,9 @@ def prequantized_nfru(inputs: input_t) -> torch.fx.GraphModule:
     assert all(key.startswith(prefix) for key in checkpoint)
     state_dict = {key.removeprefix(prefix): value for key, value in checkpoint.items()}
 
-    exported = torch.export.export(nfru().eval(), inputs, strict=True).module()
+    exported = torch.export.export(
+        nfru().eval(), inputs, dynamic_shapes=dynamic_shapes, strict=True
+    ).module()
     quantizer = TOSAQuantizer(TosaSpecification.create_from_string("TOSA-1.0+INT"))
     quantizer.set_global(
         get_symmetric_quantization_config(is_per_channel=False, is_qat=True)
@@ -141,7 +146,10 @@ is_qat_test_data = PTQ_AND_QAT_DATA
 
 
 def _set_nfru_calibration_samples(pipeline):
-    return pipeline.set_quantization_calibration(iter_nfru_test_calibration_samples())
+    return pipeline.set_quantization_calibration(
+        iter_nfru_test_calibration_samples(),
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+    )
 
 
 @common.parametrize("use_real_data", input_test_data)
@@ -302,6 +310,185 @@ def test_nfru_vgf_quant_a16w8(use_real_data):
         tosa_extensions=["int16"],
         symmetric_io_quantization=True,
         atol=0.2,
+    )
+    if use_real_data:
+        _set_nfru_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_tosa_FP_dynamic_shapes(use_real_data):
+    pipeline = TosaPipelineFP[input_t](
+        nfru().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("is_qat", is_qat_test_data)
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_tosa_INT_dynamic_shapes(use_real_data, is_qat):
+    pipeline_kwargs = (
+        {
+            "per_channel_quantization": False,
+            "use_to_edge_transform_and_lower": True,
+            "frobenius_threshold": None,
+            "cosine_threshold": None,
+        }
+        if is_qat
+        else {}
+    )
+    pipeline = TosaPipelineINT[input_t](
+        nfru().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        atol=0.2,
+        qtol=2 if use_real_data else 1,
+        is_qat=is_qat,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+        **pipeline_kwargs,
+    )
+    if use_real_data:
+        _set_nfru_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_prequantized_tosa_INT_dynamic_shapes(use_real_data):
+    inputs = example_inputs() if use_real_data else random_inputs()
+    pipeline = TosaPipelineINT[input_t](
+        prequantized_nfru(inputs, _NFRU_DYNAMIC_SHAPES),
+        inputs,
+        aten_op=[],
+        exir_op=[],
+        atol=0.2,
+        qtol=2 if use_real_data else 1,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check,
+        ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+        suffix="prequant_nodes",
+    )
+    pipeline.run()
+
+
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_tosa_INT_a16w8_dynamic_shapes(use_real_data):
+    pipeline = TosaPipelineINT[input_t](
+        nfru().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        tosa_extensions=["int16"],
+        atol=0.1,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_tosa_ref_model=False,
+    )
+    if use_real_data:
+        _set_nfru_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_vgf_no_quant_dynamic_shapes(use_real_data):
+    pipeline = VgfPipeline[input_t](
+        nfru().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        quantize=False,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("is_qat", is_qat_test_data)
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_vgf_quant_dynamic_shapes(use_real_data, is_qat):
+    pipeline_kwargs = (
+        {
+            "per_channel_quantization": False,
+            "use_to_edge_transform_and_lower": True,
+        }
+        if is_qat
+        else {}
+    )
+    pipeline = VgfPipeline[input_t](
+        nfru().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        symmetric_io_quantization=True,
+        quantize=True,
+        is_qat=is_qat,
+        atol=0.2,
+        qtol=2 if use_real_data else 1,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_vulkan_runtime=False,
+        **pipeline_kwargs,
+    )
+    if use_real_data:
+        _set_nfru_calibration_samples(pipeline)
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_prequantized_vgf_INT_dynamic_shapes(use_real_data):
+    inputs = example_inputs() if use_real_data else random_inputs()
+    pipeline = VgfPipeline[input_t](
+        prequantized_nfru(inputs, _NFRU_DYNAMIC_SHAPES),
+        inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        quantize=True,
+        atol=0.2,
+        qtol=2 if use_real_data else 1,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.add_stage_after(
+        "export",
+        pipeline.tester.check,
+        ["torch.ops.quantized_decomposed.dequantize_per_tensor.default"],
+        suffix="prequant_nodes",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("use_real_data", input_test_data)
+def test_nfru_vgf_quant_a16w8_dynamic_shapes(use_real_data):
+    pipeline = VgfPipeline[input_t](
+        nfru().eval(),
+        example_inputs() if use_real_data else random_inputs(),
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        tosa_extensions=["int16"],
+        symmetric_io_quantization=True,
+        atol=0.2,
+        dynamic_shapes=_NFRU_DYNAMIC_SHAPES,
+        run_on_vulkan_runtime=False,
     )
     if use_real_data:
         _set_nfru_calibration_samples(pipeline)
