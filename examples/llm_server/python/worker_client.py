@@ -580,6 +580,18 @@ class WorkerClient:
         self._cleanup(WorkerError("worker client is closed"), failed=False)
 
 
+def _read_worker_readiness(proc: subprocess.Popen) -> dict:
+    if proc.stdout is None:
+        raise WorkerError("worker failed to start (no stdout pipe).")
+    line = proc.stdout.readline()
+    if not line:
+        raise WorkerError("worker failed to start (no output; check its stderr).")
+    msg = _decode_worker_json(line)
+    if not msg.get("ready"):
+        raise WorkerError(f"worker did not report ready: {msg}")
+    return msg
+
+
 def spawn_worker(
     cmd: Sequence[str],
     env: Optional[dict] = None,
@@ -629,14 +641,7 @@ def spawn_worker(
         _close_fd(control_read_fd)
 
     try:
-        if proc.stdout is None:
-            raise WorkerError("worker failed to start (no stdout pipe).")
-        line = proc.stdout.readline()
-        if not line:
-            raise WorkerError("worker failed to start (no output; check its stderr).")
-        msg = _decode_worker_json(line)
-        if not msg.get("ready"):
-            raise WorkerError(f"worker did not report ready: {msg}")
+        msg = _read_worker_readiness(proc)
         if require_multiplexing and msg.get("multiplexed") is not True:
             raise WorkerError(
                 "worker does not support required multiplexing",

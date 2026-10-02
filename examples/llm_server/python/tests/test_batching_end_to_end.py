@@ -89,6 +89,25 @@ def native_worker(tmp_path):
         log.close()
 
 
+@pytest.fixture
+async def native_http(native_worker):
+    worker, _, _ = native_worker()
+    runtime = SessionRuntime(worker)
+    serving = ServingChat(
+        runtime,
+        ChatTemplate(hf_tokenizer_path=None, allow_fallback=True),
+        "test-model",
+    )
+    transport = httpx.ASGITransport(app=build_app(serving, "test-model"))
+    try:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            yield worker, runtime, serving, client
+    finally:
+        runtime.close_worker()
+
+
 def collect(
     client,
     prompt,
@@ -219,6 +238,81 @@ async def test_openai_streaming_and_nonstreaming_share_native_runner(native_work
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("stream", [False, True], ids=["nonstream", "stream"])
+async def test_http_anonymous_capacity_error_and_recovery(native_http, stream):
+    worker, runtime, _, client = native_http
+    assert worker.max_named_sessions > 0
+    for index in range(worker.max_named_sessions):
+        await asyncio.wait_for(runtime.open(f"resident-{index}"), 5)
+    body = {
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "max_tokens": 4,
+        "stream": stream,
+        "stream_options": {"include_usage": True},
+    }
+    response = await asyncio.wait_for(client.post("/v1/chat/completions", json=body), 5)
+    assert response.status_code == 429
+    assert response.headers["content-type"] == "application/json"
+    assert response.json()["error"]["code"] == "capacity_exhausted"
+
+    await asyncio.wait_for(runtime.close("resident-0"), 5)
+    # Only one shared slot is available; each anonymous request must release it.
+    for _ in range(2):
+        response = await asyncio.wait_for(
+            client.post("/v1/chat/completions", json=body), 5
+        )
+        assert response.status_code == 200
+        if stream:
+            assert response.headers["content-type"].startswith("text/event-stream")
+            records = [
+                line[6:]
+                for line in response.text.splitlines()
+                if line.startswith("data: ")
+            ]
+            assert records[-1] == "[DONE]"
+            chunks = [json.loads(record) for record in records[:-1]]
+            assert all("error" not in chunk for chunk in chunks)
+            assert chunks[-1]["usage"]["completion_tokens"] == 4
+        else:
+            assert len(response.json()["choices"][0]["message"]["content"]) == 4
+            assert response.json()["usage"]["completion_tokens"] == 4
+    assert runtime.healthy
+
+
+@pytest.mark.anyio
+async def test_http_missing_native_reset_clears_transcript_and_is_idempotent(
+    native_http,
+):
+    _, runtime, serving, client = native_http
+    body = {
+        "model": "test-model",
+        "session_id": "named",
+        "messages": [{"role": "user", "content": "Hello"}],
+        "max_tokens": 4,
+    }
+    response = await asyncio.wait_for(client.post("/v1/chat/completions", json=body), 5)
+    assert response.status_code == 200
+    assert serving._transcript._turns["named"]
+    # Bypass the HTTP adapter to leave its transcript stale after native close.
+    await asyncio.wait_for(runtime.close("named"), 5)
+    with pytest.raises(WorkerError) as missing:
+        await asyncio.wait_for(runtime.reset("named"), 5)
+    assert missing.value.code == "session_not_found"
+    assert serving._transcript._turns["named"]
+    for _ in range(2):
+        response = await asyncio.wait_for(client.post("/v1/sessions/named/reset"), 5)
+        assert response.status_code == 200
+        assert response.json() == {"reset": True, "session_id": "named"}
+        assert "named" not in serving._transcript._turns
+    response = await asyncio.wait_for(client.post("/v1/chat/completions", json=body), 5)
+    assert response.status_code == 200
+    assert response.json()["usage"]["completion_tokens"] == 4
+    assert serving._transcript._turns["named"]
+    assert runtime.healthy
+
+
+@pytest.mark.anyio
 async def test_runtime_prefix_cache_is_creation_only(native_worker):
     worker, _, _ = native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
@@ -271,6 +365,31 @@ def test_cancel_is_request_scoped(native_worker):
     assert cancelled.cancelled
     assert len(text) == completed.num_generated_tokens == 4
     assert not completed.cancelled
+
+
+def test_native_tokenizer_preserves_unsigned_utf8_bytes(native_worker):
+    client, pool, _ = native_worker()
+    prompt = "\x00\x7f\u0080\u00ff\u20ac"
+    encoded = list(prompt.encode("utf-8"))
+    _, first = pool.submit(collect, client, prompt, key="utf8", count=1).result(
+        timeout=10
+    )
+    assert first.num_prompt_tokens == len(encoded)
+    _, continued = pool.submit(
+        collect,
+        client,
+        "",
+        key="utf8",
+        count=1,
+        segments=[
+            {"ids": encoded + first.generated_token_ids},
+            {"text": "!"},
+        ],
+    ).result(timeout=10)
+    assert continued.session_reset_reason == "exact_prefix"
+    # The prior completion is still pending, so only the prompt was prefilled.
+    assert continued.reused_prompt_tokens == len(encoded)
+    assert continued.prefilled_prompt_tokens == 2
 
 
 def test_full_prompt_with_exact_completion_ids_continues_session(native_worker):
