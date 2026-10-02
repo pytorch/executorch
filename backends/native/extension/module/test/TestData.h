@@ -18,6 +18,61 @@
 namespace executorch::extension::native_module::testing {
 
 // cppcheck-suppress-begin useStlAlgorithm
+// Placeholders for input0..N-1, one opaque op producing output0..M-1 from them,
+// and the output node.
+inline flatbuffers::Offset<
+    flatbuffers::Vector<flatbuffers::Offset<native_backend::Node>>>
+make_signature_nodes(
+    flatbuffers::FlatBufferBuilder& builder,
+    size_t num_inputs,
+    size_t num_outputs) {
+  const auto tensor_arg = [&builder](const std::string& name) {
+    return native_backend::CreateNamedArgument(
+        builder,
+        /*name=*/0,
+        native_backend::CreateArgument(
+            builder,
+            native_backend::ArgumentValue::TensorArg,
+            native_backend::CreateTensorArgDirect(builder, name.c_str())
+                .Union()));
+  };
+  std::vector<flatbuffers::Offset<native_backend::Node>> nodes;
+  std::vector<flatbuffers::Offset<native_backend::NamedArgument>> op_inputs;
+  for (size_t i = 0; i < num_inputs; ++i) {
+    const std::string name = "input" + std::to_string(i);
+    const std::vector<flatbuffers::Offset<native_backend::Output>> outputs = {
+        native_backend::CreateOutputDirect(builder, name.c_str())};
+    nodes.push_back(native_backend::CreateNodeDirect(
+        builder,
+        name.c_str(),
+        native_backend::OpKind::PLACEHOLDER,
+        "",
+        nullptr,
+        &outputs));
+    op_inputs.push_back(tensor_arg(name));
+  }
+  std::vector<flatbuffers::Offset<native_backend::Output>> op_outputs;
+  std::vector<flatbuffers::Offset<native_backend::NamedArgument>> results;
+  for (size_t i = 0; i < num_outputs; ++i) {
+    const std::string name = "output" + std::to_string(i);
+    op_outputs.push_back(
+        native_backend::CreateOutputDirect(builder, name.c_str()));
+    results.push_back(tensor_arg(name));
+  }
+  if (num_outputs > 0) {
+    nodes.push_back(native_backend::CreateNodeDirect(
+        builder,
+        "op",
+        native_backend::OpKind::CALL_FUNCTION,
+        "test.op",
+        &op_inputs,
+        &op_outputs));
+  }
+  nodes.push_back(native_backend::CreateNodeDirect(
+      builder, "output", native_backend::OpKind::OUTPUT, "", &results));
+  return builder.CreateVector(nodes);
+}
+
 inline std::vector<uint8_t> make_tensor_package(
     const std::vector<std::string>& method_names,
     size_t num_inputs = 1,
@@ -95,8 +150,7 @@ inline std::vector<uint8_t> make_tensor_package(
     }
     const auto graph = native_backend::CreateGraph(
         builder,
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<native_backend::Node>>{}),
+        make_signature_nodes(builder, num_inputs, num_outputs),
         builder.CreateVector(input_names),
         builder.CreateVector(output_names),
         builder.CreateVector(tensor_values));
