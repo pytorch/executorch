@@ -6,14 +6,17 @@
 # LICENSE file in the root directory of this source tree.
 
 : '
-# Step 2 after branch cut is complete.
-#
-# Creates PR with release only changes.
+# Prepare an existing release branch. cut-release-branch.sh invokes this
+# automatically; it may also be rerun safely by itself.
 #
 # Usage (run from root of project):
 #   TEST_INFRA_BRANCH=release/2.3 ./scripts/release/apply-release-changes.sh
 #
-# TEST_INFRA_BRANCH: The release branch of test-infra that houses all reusable
+# TEST_INFRA_BRANCH: Optional override for the test-infra release branch. It
+# normally defaults to the release/X.Y branch matching the selected PyTorch RC.
+# The script also enables the PyTorch dependency for full release wheels.
+# TORCH_VERSION: Optional PyTorch RC version override. By default, the newest
+# release-form version available on the PyTorch test index is selected.
 '
 
 set -eou pipefail
@@ -21,43 +24,30 @@ set -eou pipefail
 GIT_TOP_DIR=$(git rev-parse --show-toplevel)
 RELEASE_VERSION=${RELEASE_VERSION:-$(cut -d'.' -f1-2 "${GIT_TOP_DIR}/version.txt")}
 RELEASE_BRANCH="release/${RELEASE_VERSION}"
+PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python3}
 
 # Check out to Release Branch
 
-if git ls-remote --exit-code origin ${RELEASE_BRANCH} >/dev/null 2>&1; then
+if git show-ref --verify --quiet "refs/heads/${RELEASE_BRANCH}"; then
+  echo "Check out local Release Branch '${RELEASE_BRANCH}'"
+  git checkout "${RELEASE_BRANCH}"
+elif git ls-remote --exit-code origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
   echo "Check out to Release Branch '${RELEASE_BRANCH}'"
-  git checkout ${RELEASE_BRANCH}
+  git checkout "${RELEASE_BRANCH}"
 else
   echo "Error: Remote branch '${RELEASE_BRANCH}' not found. Please run 'cut-release-branch.sh' first."
   exit 1
 fi
 
-# Change all GitHub Actions to reference the test-infra release branch
-# as opposed to main.
-echo "Applying release-only changes to workflows"
-for i in .github/workflows/*.yml; do
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' -e s#@main#@"${TEST_INFRA_BRANCH}"# $i;
-    sed -i '' -e s#test-infra-ref:[[:space:]]main#"test-infra-ref: ${TEST_INFRA_BRANCH}"# $i;
-  else
-    sed -i -e s#@main#@"${TEST_INFRA_BRANCH}"# $i;
-    sed -i -e s#test-infra-ref:[[:space:]]main#"test-infra-ref: ${TEST_INFRA_BRANCH}"# $i;
-  fi
-done
+PREPARE_ARGS=(
+  --release-version "${RELEASE_VERSION}"
+)
+if [[ -n "${TEST_INFRA_BRANCH:-}" ]]; then
+  PREPARE_ARGS+=(--test-infra-branch "${TEST_INFRA_BRANCH}")
+fi
+if [[ -n "${TORCH_VERSION:-}" ]]; then
+  PREPARE_ARGS+=(--torch-version "${TORCH_VERSION}")
+fi
+"${PYTHON_EXECUTABLE}" "${GIT_TOP_DIR}/scripts/release/prepare_release.py" "${PREPARE_ARGS[@]}"
 
-# Update documentation to use release branch instead of viable/strict
-echo "Updating documentation branch references"
-for doc in $(grep -rl "viable/strict" docs/); do
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' -e "s#-b viable/strict#-b ${RELEASE_BRANCH}#g" "$doc"
-  else
-    sed -i -e "s#-b viable/strict#-b ${RELEASE_BRANCH}#g" "$doc"
-  fi
-done
-
-echo "You'll need to manually commit the changes and create a PR. Here are the steps:"
-echo "1. Stage the changes:"
-echo "   git add .github/workflows/*.yml docs/"
-echo "2. Commit the changes:"
-echo "   git commit -m \"[RELEASE-ONLY CHANGES] Branch Cut for Release ${RELEASE_VERSION}\""
-echo "3. After committing, create a pull request to merge the changes."
+echo "Release changes are ready for review. This script does not commit or push them."

@@ -49,11 +49,13 @@ jobs:
       - name: Install dependencies
         run: |
           TORCH_VERSION=$(python -c "from torch_pin import TORCH_VERSION; print(TORCH_VERSION)")
+          TORCHVISION_VERSION=$(python -c "from torch_pin import TORCHVISION_VERSION; print(TORCHVISION_VERSION)")
+          TORCHAUDIO_VERSION=$(python -c "from torch_pin import TORCHAUDIO_VERSION; print(TORCHAUDIO_VERSION)")
           pip install \
             "torch==${TORCH_VERSION}" \
-            torchvision \
-            torchaudio \
-            --index-url https://download.pytorch.org/whl/cpu
+            "torchvision==${TORCHVISION_VERSION}" \
+            "torchaudio==${TORCHAUDIO_VERSION}" \
+            --index-url "https://download.pytorch.org/whl/test/cpu"
           pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           USE_CPP=0 pip install --no-build-isolation third-party/ao
@@ -104,6 +106,13 @@ jobs:
           pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
           pip install -r requirements-lintrunner.txt
           lintrunner init
+
+      - name: Test release preparation
+        run: python scripts/release/test_prepare_release.py
+
+      - name: Validate release configuration
+        if: startsWith(github.ref_name, 'release/') || startsWith(github.base_ref, 'release/')
+        run: python scripts/release/prepare_release.py --check
 
       - name: Run linters
         env:

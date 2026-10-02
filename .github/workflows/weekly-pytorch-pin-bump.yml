@@ -29,17 +29,27 @@ jobs:
           NIGHTLY_VERSION="dev${NIGHTLY_DATE}"
           echo "version=${NIGHTLY_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Read current TORCH_VERSION
-        id: torch
-        run: |
-          TORCH_VERSION=$(python -c "exec(open('torch_pin.py').read()); print(TORCH_VERSION)")
-          echo "version=${TORCH_VERSION}" >> "$GITHUB_OUTPUT"
-
       - name: Update torch_pin.py with new NIGHTLY_VERSION
+        env:
+          NIGHTLY_VERSION: ${{ steps.nightly.outputs.version }}
         run: |
-          printf 'TORCH_VERSION = "%s"\nNIGHTLY_VERSION = "%s"\n' \
-            "${{ steps.torch.outputs.version }}" \
-            "${{ steps.nightly.outputs.version }}" > torch_pin.py
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path("torch_pin.py")
+          updated, count = re.subn(
+              r'^NIGHTLY_VERSION\s*=\s*"[^"]+"$',
+              f'NIGHTLY_VERSION = "{os.environ["NIGHTLY_VERSION"]}"',
+              path.read_text(),
+              count=1,
+              flags=re.MULTILINE,
+          )
+          if count != 1:
+              raise RuntimeError("expected exactly one NIGHTLY_VERSION assignment")
+          path.write_text(updated)
+          PY
 
       - name: Run pin bump script
         run: python .github/scripts/update_pytorch_pin.py

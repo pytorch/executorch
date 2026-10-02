@@ -39,6 +39,11 @@ from typing import Any, Dict, List
 # not on that list is rejected whether or not it appears here.
 DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 
+# CUDA versions release preparation may publish, when the selected upstream
+# release provides every required package. This list stays intact on release
+# branches so a rerun can restore a train whose artifacts arrived late.
+RELEASE_CUDA_CANDIDATES: List[str] = ["cu130", "cu132", "cu134"]
+
 # CUDA versions to publish, when the generator offers them.
 #
 # Chosen so that every consumer row can find a matching wheel rather than by what is

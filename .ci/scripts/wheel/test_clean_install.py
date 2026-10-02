@@ -21,6 +21,8 @@ user, and names the package it wanted.
 
 import json
 import os
+import re
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -45,10 +47,92 @@ REQUIRED_IMPORTS: List[str] = [
 
 # Distributions that are legitimately present without being declared.
 #
-# torch, because the wheel deliberately does not declare it: a consumer brings the build
-# matching their platform and accelerator. The rest are what torch itself requires, so they are
-# guaranteed alongside it.
+# Development and minimal wheels deliberately do not declare torch: a consumer brings the build
+# matching their platform and accelerator. Release wheels also reach it through their declared
+# requirements. The rest are what torch itself requires, so they are guaranteed alongside it.
 ASSUMED_PRESENT: Set[str] = {"torch", "executorch"}
+
+
+def test_release_pytorch_requirement() -> None:
+    """Release wheels must declare the PyTorch release in torch_pin.py."""
+    import importlib.metadata as metadata
+
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+    from packaging.version import Version
+
+    repo_root = Path(__file__).resolve().parents[3]
+    config = runpy.run_path(str(repo_root / "torch_pin.py"))
+    release_versions = runpy.run_path(
+        str(repo_root / "scripts/release/release_versions.py")
+    )
+    ci_refs = (
+        os.environ.get("GITHUB_REF_NAME", ""),
+        os.environ.get("GITHUB_BASE_REF", ""),
+        os.environ.get("GITHUB_REF", ""),
+    )
+    release_ci = any(
+        ref.startswith("release/")
+        or re.fullmatch(r"refs/tags/v\d+\.\d+\.\d+(?:-rc\d+)?", ref)
+        for ref in ci_refs
+    )
+    assert not release_ci or config["RELEASE_WHEEL"], (
+        "this wheel is being built from a release ref, but torch_pin.py does not enable "
+        "release metadata; run scripts/release/apply-release-changes.sh"
+    )
+    torch_requirements = [
+        Requirement(raw)
+        for raw in metadata.requires("executorch") or []
+        if canonicalize_name(Requirement(raw).name) == "torch"
+    ]
+
+    if config["RELEASE_WHEEL"]:
+        assert len(torch_requirements) == 1, (
+            "a release wheel must declare exactly one PyTorch dependency, but found "
+            f"{[str(requirement) for requirement in torch_requirements]}"
+        )
+        requirement = torch_requirements[0]
+        pins = [
+            specifier.version
+            for specifier in requirement.specifier
+            if specifier.operator == "=="
+        ]
+        configured_variant = os.environ.get("EXECUTORCH_WHEEL_VARIANT", "")
+        if len(pins) == 1 and "+" in pins[0]:
+            local_version = Version(pins[0]).local or ""
+            variants = re.findall(r"(?:^|\.)(cu\d+)(?:\.|$)", local_version)
+            assert (
+                len(variants) == 1
+            ), f"release wheel has an invalid CUDA Torch pin: {requirement}"
+            assert configured_variant in (
+                "",
+                variants[0],
+            ), f"{configured_variant} wheel declares the {variants[0]} Torch build"
+            expected_raw = release_versions["torch_requirement"](
+                config["TORCH_VERSION"], variants[0], pins[0]
+            )
+        else:
+            assert not configured_variant.startswith(
+                "cu"
+            ), f"{configured_variant} wheel declares a generic CPU Torch requirement"
+            expected_raw = release_versions["torch_requirement"](
+                config["TORCH_VERSION"], "cpu"
+            )
+        expected = str(Requirement(expected_raw).specifier)
+        assert str(requirement.specifier) == expected, (
+            f"release wheel declares {requirement}, expected torch{expected} "
+            "from torch_pin.py"
+        )
+        installed_torch = Version(metadata.version("torch"))
+        assert requirement.specifier.contains(
+            installed_torch, prereleases=True
+        ), f"installed torch {installed_torch} does not satisfy {requirement}"
+        print(f"✓ release wheel declares torch{expected}")
+    else:
+        assert not torch_requirements, (
+            "a development wheel unexpectedly declares PyTorch; only release wheels should "
+            f"declare it, found {[str(requirement) for requirement in torch_requirements]}"
+        )
 
 
 def _normalise(name: str) -> str:
@@ -169,6 +253,7 @@ def _blocked_modules(allowed: Set[str]) -> Set[str]:
 
 
 def run_tests(work_dir: Path) -> None:
+    test_release_pytorch_requirement()
     allowed = _allowed_distributions()
     blocked = _blocked_modules(allowed)
     print(

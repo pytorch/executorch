@@ -78,6 +78,26 @@ if _spec.loader is None:
     raise ImportError(f"Module spec has no loader for {_install_utils_path}")
 _spec.loader.exec_module(install_utils)
 
+_torch_pin_path = Path(__file__).parent / "torch_pin.py"
+_spec = importlib.util.spec_from_file_location("torch_pin", _torch_pin_path)
+if _spec is None:
+    raise ImportError(f"Could not create module spec for {_torch_pin_path}")
+torch_pin = importlib.util.module_from_spec(_spec)
+if _spec.loader is None:
+    raise ImportError(f"Could not load {_torch_pin_path}")
+_spec.loader.exec_module(torch_pin)
+
+_release_versions_path = Path(__file__).parent / "scripts/release/release_versions.py"
+_spec = importlib.util.spec_from_file_location(
+    "release_versions", _release_versions_path
+)
+if _spec is None:
+    raise ImportError(f"Could not create module spec for {_release_versions_path}")
+release_versions = importlib.util.module_from_spec(_spec)
+if _spec.loader is None:
+    raise ImportError(f"Could not load {_release_versions_path}")
+_spec.loader.exec_module(release_versions)
+
 from setuptools import Distribution, Extension, find_namespace_packages, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
@@ -1085,17 +1105,9 @@ def _package_relative_depth(library: Path) -> int:
     return max(len(parts) - index - 2, 0)
 
 
-def _torchao_requirement() -> str:
-    """The torchao dependency, pinned to the series install_requirements.py installs.
-
-    Derived from that module rather than written out, so a nightly bump cannot move the
-    pin without moving this bound with it. A bump into the next series would otherwise
-    silently stop satisfying the lower bound, and installing this package over a
-    development checkout would replace the torchao that was just installed.
-
-    Loaded by path, the way install_utils is above, because setuptools executes this
-    file without the project directory on sys.path, so a plain import does not resolve.
-    """
+@functools.lru_cache(maxsize=1)
+def _load_install_requirements():
+    """Load release dependency pins once without relying on the checkout's sys.path."""
     path = Path(__file__).parent / "install_requirements.py"
     spec = importlib.util.spec_from_file_location("install_requirements", path)
     if spec is None or spec.loader is None:
@@ -1105,6 +1117,12 @@ def _torchao_requirement() -> str:
     # because that name is registered below.
     sys.modules.setdefault("install_utils", install_utils)
     spec.loader.exec_module(module)
+    return module
+
+
+def _torchao_requirement() -> str:
+    """The torchao dependency, pinned to the series development installs use."""
+    module = _load_install_requirements()
 
     version = module.TORCHAO_NIGHTLY_VERSION
     if (
@@ -1114,6 +1132,24 @@ def _torchao_requirement() -> str:
         version = module.CU134_TORCHAO_NIGHTLY_VERSION
     major, minor = (int(part) for part in version.split(".")[:2])
     return f"torchao>={version},<{major}.{minor + 1}"
+
+
+def _release_torch_requirement() -> List[str]:
+    if (
+        not torch_pin.RELEASE_WHEEL
+        or os.environ.get("EXECUTORCH_RELEASE_WHEEL_METADATA") != "1"
+    ):
+        return []
+
+    from importlib import metadata
+
+    variant = os.environ.get("EXECUTORCH_WHEEL_VARIANT", "")
+    installed_version = metadata.version("torch") if variant.startswith("cu") else ""
+    return [
+        release_versions.torch_requirement(
+            torch_pin.TORCH_VERSION, variant, installed_version
+        )
+    ]
 
 
 def _base_dependencies() -> List[str]:
@@ -1197,7 +1233,8 @@ def _minimal_dependencies() -> List[str]:
 
     Derived as the subset of _base_dependencies() that executorch.exir needs to
     lower and serialize a .pte, so version pins and markers stay in sync with the
-    full set. torch is intentionally absent from both (consumers bring their own).
+    full set. torch is intentionally absent from the minimal wheel, including on
+    release branches (consumers bring their own).
     mpmath is intentionally dropped too: it is pulled transitively by sympy, whose
     "mpmath<1.4" cap resolves to the same 1.3.0 the full wheel pins. Keep the name
     set below in sync with the `expected` set in .ci/scripts/test_minimal_wheel.sh.
@@ -2852,7 +2889,9 @@ else:
     setup_kwargs["packages"] = _full_packages()
     # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
     # carry it are declared here. A CPU wheel adds nothing.
-    setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
+    setup_kwargs["install_requires"] = (
+        _base_dependencies() + _release_torch_requirement() + _cuda_dependencies()
+    )
 
 
 setup(

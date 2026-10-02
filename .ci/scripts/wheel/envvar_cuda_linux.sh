@@ -9,6 +9,12 @@
 # any variables so that subprocesses will see them.
 
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
+source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
+
+if ! _executorch_cuda_variant="$(executorch_cuda_variant)"; then
+  exit 1
+fi
+export EXECUTORCH_WHEEL_VARIANT="${_executorch_cuda_variant}"
 
 # Ask for the CUDA delegate explicitly rather than letting the build detect a toolkit. A detected
 # build is fine locally, but a release row states what it is producing, and a row that silently
@@ -31,7 +37,6 @@ fi
 # Compile device code for the GPUs this release row claims, rather than for whichever GPU the
 # builder happens to have. A wheel built by detection alone installs on every machine the row covers
 # and then fails when a model runs on a different generation.
-source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
 # The status is checked rather than only the output, so an unrecognised row reports why it stopped.
 # A bare assignment would end the build on the lookup's own exit status with no message, since this
 # file is sourced into a shell that exits on a failing command.

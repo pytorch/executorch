@@ -73,6 +73,17 @@ _executorch_unknown_train() {
   return 64
 }
 
+# Normalize and validate the CUDA wheel variant once for every wheel script.
+executorch_cuda_variant() {
+  local raw="${CU_VERSION:-${DESIRED_CUDA:-}}"
+  local digits="${raw//[!0-9]/}"
+  if [[ ! "${digits}" =~ ^[0-9]{3}$ ]]; then
+    echo "CU_VERSION or DESIRED_CUDA must identify a CUDA wheel variant, got '${raw}'" >&2
+    return 64
+  fi
+  printf 'cu%s' "${digits}"
+}
+
 # The architectures for the current row, space separated in the dotted form PyTorch expects.
 executorch_cuda_arch_list() {
   local machine
@@ -97,8 +108,10 @@ executorch_cuda_arch_list() {
       ;;
   esac
   # The value arrives as cu130, while some callers pass 13.0 instead.
+  if ! train="$(executorch_cuda_variant)"; then
+    return 64
+  fi
   train="${train#cu}"
-  train="${train//./}"
 
   case "${machine}" in
     aarch64 | arm64)
