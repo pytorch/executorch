@@ -351,7 +351,9 @@ set(_aoti_cuda_backend_sources
 )
 # The off-graph KV cache builds on the LLM extension's neutral cache.
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
-  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp)
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp
+       runtime/cuda_kv_pool.cpp
+  )
 endif()
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
@@ -480,4 +482,12 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+
+  if(EXECUTORCH_BUILD_EXTENSION_LLM)
+    et_cxx_test(
+      test_cuda_kv_cache SOURCES runtime/test/test_cuda_kv_cache.cpp EXTRA_LIBS
+      aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_kv_cache PRIVATE CUDA_AVAILABLE=1)
+  endif()
 endif()
