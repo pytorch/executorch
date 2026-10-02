@@ -7,9 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
 
 if TYPE_CHECKING:
     from executorch.backends.arm.vgf.check_env import VgfEnvironmentReport

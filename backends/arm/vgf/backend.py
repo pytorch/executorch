@@ -31,30 +31,23 @@ from executorch.backends.arm._passes.arm_pass_manager import (
     PassInsertions,
     register_pass_insertions_before,
 )
-from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
+from executorch.backends.arm.tosa.backend import (
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf._passes import (
     FuseGridSamplerFlowOffsetPass,
     InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
-from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
-    VgfCompileSpec,
-)
-from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+from executorch.backends.arm.vgf.model_converter import (
     model_converter_env,
     require_model_converter_executable,
 )
-from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
-    BackendDetails,
-    PreprocessResult,
-)
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
-    CompileSpec,
-)
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_base import ExportPass
 from torch.export.exported_program import ExportedProgram
 
