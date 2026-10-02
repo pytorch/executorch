@@ -41,6 +41,9 @@ inline constexpr char kDecodeMethod[] = "decode";
 inline constexpr char kPrefillMethod[] = "prefill";
 // The cell layout's pool size, which fixes the shape of its step buffers.
 inline constexpr char kMaxCellsMethod[] = "get_offgraph_kv_max_cells";
+// Optional: the fewest tokens, and selected rows, prefill was exported for.
+// Narrower slices run as decodes. Defaults to 2.
+inline constexpr char kMinPrefillTokensMethod[] = "get_min_prefill_chunk";
 
 // Process-wide CUDA backend options create() sets before the methods load.
 struct CudaExecutorOptions {
@@ -106,7 +109,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       int max_session_tokens,
       std::string backend_id,
       std::int32_t vocab_size,
-      int max_step_tokens);
+      int max_step_tokens,
+      int min_prefill_tokens);
 
 
   // Ordered so the module dies first, releasing the delegates that resolved
@@ -118,6 +122,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::string backend_id_;
   std::int32_t vocab_size_;
   int max_step_tokens_;
+  int min_prefill_tokens_;
   llm_batching::util::SessionTable sessions_;
 };
 

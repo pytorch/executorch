@@ -43,7 +43,8 @@ namespace metadata = ::executorch::extension::llm;
 
 namespace {
 
-// A prefill forward carries at least this many tokens; one token is decode's.
+// The least a prefill forward may carry when the program names no bound: one
+// token is decode's.
 constexpr int kMinPrefillTokens = 2;
 
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
@@ -146,7 +147,8 @@ CudaExecutor::CudaExecutor(
     int max_session_tokens,
     std::string backend_id,
     std::int32_t vocab_size,
-    int max_step_tokens)
+    int max_step_tokens,
+    int min_prefill_tokens)
     : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<llm_cache::BatchControl>()),
@@ -154,6 +156,7 @@ CudaExecutor::CudaExecutor(
       backend_id_(std::move(backend_id)),
       vocab_size_(vocab_size),
       max_step_tokens_(max_step_tokens),
+      min_prefill_tokens_(min_prefill_tokens),
       sessions_(*ctl_, max_sessions, max_session_tokens, vocab_size) {}
 
 CudaExecutor::~CudaExecutor() = default;
@@ -206,14 +209,23 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       decode_width, step_width(decode_meta, kDecodeMethod));
   ET_ASSIGN_OR_RETURN(
       max_step_tokens, step_width(prefill_meta, kPrefillMethod));
+  // A program may export prefill from more than two tokens -- one whose
+  // kernels switch at a small width cannot trace narrower -- and say so here.
+  ET_ASSIGN_OR_RETURN(
+      declared_min_prefill,
+      metadata::detail::read_int_method(*module, kMinPrefillTokensMethod));
+  const int min_prefill_tokens = static_cast<int>(
+      declared_min_prefill.value_or(kMinPrefillTokens));
   ET_CHECK_OR_RETURN_ERROR(
-      decode_width == 1 && max_step_tokens >= kMinPrefillTokens &&
-          max_step_tokens <= max_cells,
+      decode_width == 1 && min_prefill_tokens >= kMinPrefillTokens &&
+          min_prefill_tokens <= max_step_tokens && max_step_tokens <= max_cells,
       InvalidProgram,
-      "CudaExecutor: decode must take one token and prefill [%d, max_cells]; "
-      "got %d and %d",
+      "CudaExecutor: decode must take one token and prefill [%d, max_cells] "
+      "tokens from at least %d; got %d, and [%d, %d]",
+      kMinPrefillTokens,
       kMinPrefillTokens,
       decode_width,
+      min_prefill_tokens,
       max_step_tokens);
   ET_ASSIGN_OR_RETURN(
       decode_vocab, logits_width(decode_meta, kDecodeMethod));
@@ -283,7 +295,8 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       max_session_tokens,
       std::move(backend_id),
       vocab_size,
-      max_step_tokens));
+      max_step_tokens,
+      min_prefill_tokens));
 }
 
 bool CudaExecutor::initialize() {
@@ -341,7 +354,7 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
   // input's logits row falls in exactly one slice.
   const int total = static_cast<int>(step->tokens.size());
   for (const StepSlice& slice :
-       plan_slices(total, max_step_tokens_, kMinPrefillTokens)) {
+       plan_slices(total, max_step_tokens_, min_prefill_tokens_)) {
     const int off = slice.offset;
     const int n = slice.length;
     const char* method =
@@ -362,6 +375,16 @@ bool CudaExecutor::execute(const BatchInput& batch, BatchOutput& out) {
         std::vector<std::int64_t>(
             step->positions.begin() + off, step->positions.begin() + off + n));
     auto selected = llm_batching::util::select_rows(*step, off, n);
+    if (slice.method == StepMethod::Prefill) {
+      // The selected-rows dimension shares the tokens' lower bound: the LM
+      // head runs over those rows. Extra rows repeat the last; nothing reads
+      // them.
+      selected.selector.resize(
+          std::max<std::size_t>(
+              selected.selector.size(),
+              static_cast<std::size_t>(min_prefill_tokens_)),
+          selected.selector.back());
+    }
     const int rows = static_cast<int>(selected.selector.size());
     auto selector = make_tensor_ptr({rows}, std::move(selected.selector));
 

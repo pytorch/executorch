@@ -6,11 +6,14 @@
 
 """Export the toy decoder the CudaExecutor GPU test runs.
 
-Writes ``model.pte`` and ``aoti_cuda_blob.ptd`` -- a two-layer decoder (one
-full-history layer, one sliding-window layer) exported as the ``decode`` and
-``prefill`` methods CudaExecutor drives, lowered in the cell layout -- plus
-``expected.txt``: one ``prompt;continuation`` line per prompt, the greedy
-continuation computed eagerly with the neutral reference cache.
+Writes two artifacts, ``min2/`` and ``min5/``, each ``model.pte`` and
+``aoti_cuda_blob.ptd`` -- a two-layer decoder (one full-history layer, one
+sliding-window layer) exported as the ``decode`` and ``prefill`` methods
+CudaExecutor drives, lowered in the cell layout. ``min2`` exports prefill from
+two tokens; ``min5`` from five, as a model whose kernels switch at a small
+width must, and publishes that bound. Each has ``expected.txt``: one
+``prompt;continuation`` line per prompt, the greedy continuation computed
+eagerly with the neutral reference cache.
 
 The residual stream carries each token's embedding at a large scale and the
 LM head maps it to a fixed successor, while attention adds a smaller term. The
@@ -140,7 +143,7 @@ def _greedy(model: ToyDecoder, prompt) -> list:
         REGISTRY.uninstall(key)
 
 
-def export(output_dir: str) -> None:
+def export(output_dir: str, min_prefill: int) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
     from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -170,8 +173,8 @@ def export(output_dir: str) -> None:
     expected = [_greedy(model, prompt) for prompt in PROMPTS]
 
     model = model.to(dtype=torch.bfloat16)
-    width = Dim("width", min=2, max=MAX_STEP)
-    rows = Dim("rows", min=1, max=MAX_STEP)
+    width = Dim("width", min=min_prefill, max=MAX_STEP)
+    rows = Dim("rows", min=1 if min_prefill == 2 else min_prefill, max=MAX_STEP)
     long = {"dtype": torch.long}
     with torch.no_grad():
         programs = {
@@ -216,6 +219,8 @@ def export(output_dir: str) -> None:
         ),
         "get_offgraph_kv_max_cells": MAX_CELLS,
     }
+    if min_prefill != 2:
+        constant_methods["get_min_prefill_chunk"] = min_prefill
     program = to_edge_transform_and_lower(
         programs,
         partitioner={name: [partitioner(name)] for name in programs},
@@ -246,7 +251,9 @@ def export(output_dir: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", required=True)
-    export(parser.parse_args().output_dir)
+    output_dir = parser.parse_args().output_dir
+    for min_prefill in (2, 5):
+        export(os.path.join(output_dir, f"min{min_prefill}"), min_prefill)
 
 
 if __name__ == "__main__":
