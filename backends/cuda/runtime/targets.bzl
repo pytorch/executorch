@@ -124,6 +124,7 @@ def define_common_targets(is_fbcode = False):
         srcs = [
             "cuda_backend.cpp",
             "cuda_kv_cache.cpp",
+            "cuda_kv_pool.cpp",
             "cuda_mutable_state.cpp",
             "cuda_weight_cache.cpp",
         ],
@@ -131,6 +132,7 @@ def define_common_targets(is_fbcode = False):
             "backend_options.h",
             "cuda_delegate_handle.h",
             "cuda_kv_cache.h",
+            "cuda_kv_pool.h",
             "cuda_mutable_state.h",
             "cuda_weight_cache.h",
         ],
