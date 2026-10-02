@@ -16,3 +16,16 @@ def define_common_targets():
             "//executorch/extension/llm/batching:batching",
         ],
     )
+
+    runtime.cxx_test(
+        name = "session_table_test",
+        srcs = [
+            "session_table_test.cpp",
+        ],
+        deps = [
+            "//executorch/extension/llm/batching:session_table",
+            "//executorch/extension/llm/cache:kv_cache",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
