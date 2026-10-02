@@ -30,6 +30,17 @@ def define_common_targets(is_fbcode = False):
         )
 
         python_unittest(
+            name = "test_vulkan_graph_builder",
+            srcs = ["test_vulkan_graph_builder.py"],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/serialization:lib",
+                "//executorch/backends/vulkan:vulkan_preprocess",
+                "//executorch/exir:lib",
+            ],
+        )
+
+        python_unittest(
             name = "test_vulkan_passes",
             srcs = [
                 "test_vulkan_passes.py",
