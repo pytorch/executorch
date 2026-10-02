@@ -56,6 +56,6 @@ jobs:
         cmake -S examples/llm_server/cpp -B cmake-out/examples/llm_server/cpp \
           -DCMAKE_PREFIX_PATH="${PWD}/cmake-out"
         cmake --build cmake-out/examples/llm_server/cpp \
-          --target test_worker_prefill_plan test_worker_loop \
+          --target test_worker_prefill_plan test_worker_loop test_multiplexed_worker \
           -j "$(nproc)"
         ctest --test-dir cmake-out/examples/llm_server/cpp --output-on-failure
