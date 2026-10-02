@@ -17,6 +17,7 @@
 #include <numeric>
 #include <stdexcept>
 
+#include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -2258,10 +2259,9 @@ py::bool_ is_available(const std::string& backend_name) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // Keep calls unredirected. pybind11's scoped ostream redirect mutates the
-  // process-wide std::cout/std::cerr buffers and is not thread-safe when a
-  // Python operation inside a binding releases the GIL.
-  auto call_guard = py::call_guard<>();
+  // Redirects cout and cerr for function calls this guards to the python env.
+  auto call_guard = py::
+      call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
@@ -2556,30 +2556,19 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
 namespace {
 
-// Forward runtime logs to Python's current sys.stderr without mutating the
-// process-wide std::cerr buffer. The latter is what scoped_estream_redirect
-// does, and pybind11 documents that redirect as not thread-safe.
+// Our logs work by writing to stderr. By default this is done through fprintf
+// (as defined in posix.cpp) which then does not show up in python environments.
+// Here we override the pal to use std::cerr which can be properly redirected by
+// scoped_estream_redirect.
 void emit_log_message(
-    ET_UNUSED et_timestamp_t timestamp,
-    ET_UNUSED et_pal_log_level_t level,
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
     const char* filename,
     ET_UNUSED const char* function,
     size_t line,
     const char* message,
-    size_t length) {
-  const std::string formatted_message = "[" + std::string(filename) + ":" +
-      std::to_string(line) + "] " + std::string(message, length) + "\n";
-  if (Py_IsInitialized()) {
-    try {
-      py::gil_scoped_acquire gil;
-      py::module_::import("sys").attr("stderr").attr("write")(
-          formatted_message);
-      return;
-    } catch (py::error_already_set& error) {
-      error.clear();
-    }
-  }
-  std::cerr << formatted_message << std::flush;
+    ET_UNUSED size_t length) {
+  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
 }
 
 runtime::PalImpl build_pal() {
