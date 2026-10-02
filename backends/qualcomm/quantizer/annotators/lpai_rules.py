@@ -13,7 +13,7 @@ import executorch.backends.qualcomm.builders.qnn_constants as QnnConstants
 import torch
 
 from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
-    ConcatObserver,
+    concat_observer_ctr,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     get_16a16w_qnn_ptq_config,
@@ -197,14 +197,13 @@ class Cat(GeneralOpDef):
             qscheme=quantization_config.output_activation.qscheme,
             quant_max=quantization_config.output_activation.quant_max,
             quant_min=quantization_config.output_activation.quant_min,
-            observer_or_fake_quant_ctr=ConcatObserver.with_args(
+            observer_or_fake_quant_ctr=concat_observer_ctr(
                 # we need to know the concat node in order to hack all the input observers' data range
                 # since deep copy of fake tensor (node.meta["val"]) is inhibited
                 # we could only ship grap & node name and perform postprocess inside observer currently
-                **{
-                    "node_name": node.name,
-                    "graph": node.graph,
-                }
+                node.name,
+                node.graph,
+                quantization_config.output_activation,
             ),
         )
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(

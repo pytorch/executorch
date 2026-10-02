@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import copy
 import operator
 import os
 import tempfile
@@ -816,6 +817,128 @@ class QAT:
             assert len(weight_fqs) > 0, "no int8-range weight FQ found for fp16a8w"
             # should complete without error
             __class__._get_converted_module(module, prepared, inputs)
+
+
+class ConcatObserverDeepcopy:
+    """copy.deepcopy of a prepared model, as done before convert_pt2e by
+    training frameworks, must not walk the graph through ConcatObserver's
+    fx.Node references.
+    """
+
+    class _DeepCat(torch.nn.Module):
+        """A cat at the end of a node chain long enough to exhaust the
+        default recursion limit if ConcatObserver's deepcopy walked the graph
+        recursively through its live fx.Node references.
+        """
+
+        def __init__(self, depth: int = 300):
+            super().__init__()
+            self.depth = depth
+
+        def forward(self, x, y):
+            for _ in range(self.depth):
+                x = x + 0.5
+            return torch.cat([x, y], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
+            ConcatObserver,
+        )
+
+        module = __class__._DeepCat()
+        inputs = (torch.randn(1, 4, 8), torch.randn(1, 4, 8))
+        q = make_quantizer(quant_dtype=QuantDtype.use_8a8w, soc_model="SM8650")
+        exported = torch.export.export(module, inputs, strict=True).module()
+        prepared = prepare_pt2e(exported, q)
+        prepared(*inputs)
+
+        with subtests.test(msg="deepcopy_and_convert"):
+            copied = copy.deepcopy(prepared)
+            convert_pt2e(copied)
+
+        with subtests.test(msg="copy_input_observers_point_into_the_copy"):
+            [(name, observer)] = [
+                (n, m)
+                for n, m in prepared.named_modules()
+                if isinstance(m, ConcatObserver)
+            ]
+            assert len(observer.input_observers) == 2
+            names = {id(m): n for n, m in prepared.named_modules() if n}
+            input_names = [names[id(obs)] for obs in observer.input_observers]
+
+            copied = copy.deepcopy(prepared)
+            copied_observer = copied.get_submodule(name)
+            for input_name, copied_input in zip(
+                input_names, copied_observer.input_observers
+            ):
+                assert copied_input is copied.get_submodule(input_name)
+            assert copied_observer.concat_node is observer.concat_node
+            torch.testing.assert_close(copied_observer.min_val, observer.min_val)
+            torch.testing.assert_close(copied_observer.max_val, observer.max_val)
+
+
+class QATConcat:
+    class _ConcatQatModel(torch.nn.Module):
+        """Two producers with clearly different ranges feeding one cat.
+
+        Catches both QAT bugs ConcatObserver has: the cat output must still
+        be fake-quantized (not a bare observer), and the shared range must
+        cover the union of every input's range (not just the first input's),
+        or the narrower input ends up clipping the wider one.
+        """
+
+        def forward(self, x, y):
+            return torch.cat([x + 1.0, y * 4.0], dim=1)
+
+    @staticmethod
+    def test(subtests):
+        from executorch.backends.qualcomm.quantizer.observers.concat_observer import (
+            ConcatObserver,
+        )
+        from torchao.quantization.pt2e import FakeQuantizeBase
+
+        module = __class__._ConcatQatModel()
+        x, y = torch.randn(1, 4, 8), torch.randn(1, 4, 8)
+        q = QAT._make_qat_quantizer(QuantDtype.use_8a8w)
+        exported = torch.export.export(module, (x, y), strict=True).module()
+        prepared = prepare_qat_pt2e(exported, q)
+        prepared(x, y)
+
+        [cat] = [
+            n for n in prepared.graph.nodes if n.target == torch.ops.aten.cat.default
+        ]
+        [output_node] = list(cat.users)
+        output_module = prepared.get_submodule(output_node.target)
+        input_modules = [prepared.get_submodule(n.target) for n in cat.args[0]]
+
+        with subtests.test(msg="output_is_fake_quantized_with_concat_observer"):
+            assert isinstance(output_module, FakeQuantizeBase)
+            assert isinstance(output_module.activation_post_process, ConcatObserver)
+            assert all(isinstance(m, FakeQuantizeBase) for m in input_modules)
+
+        with subtests.test(msg="shared_range_covers_every_input"):
+            # ConcatObserver observes the already fake-quantized cat output, so
+            # its range can be off from the raw floats by about one quant step.
+            actual_min = min((x + 1.0).min().item(), (y * 4.0).min().item())
+            actual_max = max((x + 1.0).max().item(), (y * 4.0).max().item())
+            concat_observer = output_module.activation_post_process
+            quant_step = (actual_max - actual_min) / 255
+            assert concat_observer.min_val.item() <= actual_min + quant_step
+            assert concat_observer.max_val.item() >= actual_max - quant_step
+
+        with subtests.test(msg="convert_gives_inputs_and_output_one_qparam"):
+            converted = convert_pt2e(prepared)
+
+            [cat] = [
+                n
+                for n in converted.graph.nodes
+                if n.target == torch.ops.aten.cat.default
+            ]
+            [dequant] = list(cat.users)
+            qparam_nodes = list(cat.args[0]) + [dequant]
+            qparams = {tuple(n.args[1:3]) for n in qparam_nodes}
+            assert len(qparams) == 1, qparams
 
 
 class LoweringWithExportedProgram:
