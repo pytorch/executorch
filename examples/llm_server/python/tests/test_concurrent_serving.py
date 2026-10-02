@@ -677,7 +677,7 @@ def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
         try:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=build_app(serving, "test-model")),
-                base_url="http://test",
+                base_url="http://test",  # @lint-ignore: in-process ASGI test URL
             ) as client:
                 for _ in range(2):
                     response = await client.post("/v1/sessions/s/reset")
@@ -746,7 +746,7 @@ def test_streaming_admission_failure_is_http_429_without_explicit_open():
         try:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=build_app(serving, "test-model")),
-                base_url="http://test",
+                base_url="http://test",  # @lint-ignore: in-process ASGI test URL
             ) as client:
                 response = await client.post(
                     "/v1/chat/completions",
