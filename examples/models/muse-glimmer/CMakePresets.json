@@ -43,7 +43,7 @@
             "name": "muse-glimmer-cuda",
             "displayName": "Build Muse Glimmer runner (CUDA)",
             "configurePreset": "muse-glimmer-cuda",
-            "targets": ["solo_runner", "dflash_runner", "muse_glimmer_worker"]
+            "targets": ["solo_runner", "run_solo_batching", "dflash_runner", "muse_glimmer_worker"]
         },
         {
             "name": "muse-glimmer-mlx",
