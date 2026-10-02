@@ -6,7 +6,7 @@
   },
   {
     "name": "v1.5.1 (stable)",
-    "version": "1.5.1",
+    "version": "1.5",
     "url": "https://docs.pytorch.org/executorch/1.5/",
     "preferred": true
   },
