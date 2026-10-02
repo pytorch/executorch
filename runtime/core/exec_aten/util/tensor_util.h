@@ -1261,6 +1261,11 @@ ET_NODISCARD Error get_dim_order(
     size_t out_dim_order_size);
 
 /**
+ * Returns whether a tensor provides a dimension order.
+ */
+bool tensor_has_dim_order(const executorch::aten::Tensor& tensor);
+
+/**
  * Checks whether a tensor has a valid dim order. If the dim order could not
  * be determined, then this function returns false by default.
  */

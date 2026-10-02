@@ -1246,13 +1246,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
-#ifdef USE_ATEN_LIB
-    const bool input_has_layout_metadata = true;
-#else
-    const bool input_has_layout_metadata =
-        t_src.unsafeGetTensorImpl()->has_layout_metadata();
-#endif
-    if (input_has_layout_metadata) {
+    if (tensor_has_dim_order(t_src)) {
       std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
           expected_dim_order;
       std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>

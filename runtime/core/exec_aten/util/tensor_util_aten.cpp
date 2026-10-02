@@ -34,6 +34,10 @@ Error get_dim_order(
       tensor.strides().data(), tensor.dim(), out_dim_order);
 }
 
+bool tensor_has_dim_order(const at::Tensor&) {
+  return true;
+}
+
 bool tensor_has_valid_dim_order(at::Tensor t) {
   executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
   ET_CHECK_OR_RETURN_FALSE(

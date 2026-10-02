@@ -40,6 +40,10 @@ Error get_dim_order(
   return Error::Ok;
 }
 
+bool tensor_has_dim_order(const torch::executor::Tensor& tensor) {
+  return tensor.dim() == 0 || tensor.dim_order().data() != nullptr;
+}
+
 bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
   if (!validate_dim_order(t.dim_order().data(), t.dim_order().size())) {
     ET_LOG(Error, "Tensor dim order is not valid:");
