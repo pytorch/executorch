@@ -18,11 +18,11 @@ import os
 import sys
 import warnings as _warnings
 
-import executorch.exir._warnings as _exir_warnings
-
+# A DeprecationWarning, like exir's ExperimentalWarning, without importing exir.
+# Importing it would load the exporter into a process that only runs programs.
 _warnings.warn(
     "This API is experimental and subject to change without notice.",
-    _exir_warnings.ExperimentalWarning,
+    DeprecationWarning,
 )
 
 # When installed as a pip wheel, we must import `torch` before trying to import
@@ -107,5 +107,4 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 # Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
 del _torch
-del _exir_warnings
 del _warnings
