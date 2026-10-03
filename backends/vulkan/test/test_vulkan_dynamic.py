@@ -687,6 +687,45 @@ class TestVulkanDynamic(unittest.TestCase):
                 edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
                 self._run(edge, model, [(x,)], atol=0, rtol=0)
 
+    def test_argreduce_dims(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op, dim, keepdim):
+                super().__init__()
+                self.op = op
+                self.dim = dim
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return self.op(x, dim=self.dim, keepdim=self.keepdim)
+
+        for op in (torch.argmax, torch.argmin):
+            for keepdim in (True, False):
+                for shape, dim, supported in (
+                    ((1, 8), None, False),
+                    ((3, 8), None, False),
+                    ((3, 8), 0, False),
+                    ((3, 8), -2, False),
+                    ((8,), None, True),
+                    ((3, 8), 1, True),
+                    ((3, 8), -1, True),
+                ):
+                    with self.subTest(op=op, keepdim=keepdim, shape=shape, dim=dim):
+                        x = ((torch.arange(math.prod(shape)) * 5 + 3) % 17).float()
+                        x = x.reshape(shape)
+                        model = Reduce(op, dim, keepdim)
+                        edge = self._lower(model, (x,), fully_delegated=supported)
+                        graphs = _vulkan_graphs(edge)
+                        if supported:
+                            (graph,) = graphs
+                            for value_id in graph.input_ids + graph.output_ids:
+                                self.assertEqual(
+                                    graph.values[value_id].value.storage_type,
+                                    VkStorageType.BUFFER,
+                                )
+                        else:
+                            self.assertEqual(len(graphs), 0)
+                        self._run(edge, model, [(x,)], atol=0, rtol=0)
+
     def test_unsupported_reduction_dims_fall_back(self):
         class Reduce(torch.nn.Module):
             def __init__(self, op, keepdim, dims):
