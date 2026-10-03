@@ -16,6 +16,7 @@ sdpa_kv_cache_update:
         - parameter_values: [texture3d, texture3d]
         - parameter_values: [texture3d, buffer]
         - parameter_values: [buffer, buffer]
+        - parameter_values: [buffer, texture3d]
     DTYPE:
       - VALUE: half
       - VALUE: float
