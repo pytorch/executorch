@@ -10,7 +10,7 @@ endif()
 
 enable_language(OBJCXX)
 
-set(_coreai_runtime_sources runtime/coreai_assets.mm)
+set(_coreai_runtime_sources runtime/coreai_assets.mm runtime/coreai_storage.mm)
 
 function(coreai_configure_objc_target target)
   target_include_directories(
@@ -32,7 +32,8 @@ if(EXECUTORCH_BUILD_TESTS)
   add_executable(
     coreai_host_test
     runtime/test/coreai_host_test.mm runtime/test/coreai_manifest_test.mm
-    ${_coreai_runtime_sources}
+    runtime/test/coreai_storage_test.mm
+    runtime/test/coreai_filesystem_fixture.mm ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
