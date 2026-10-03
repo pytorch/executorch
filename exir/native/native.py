@@ -388,7 +388,10 @@ def to_native(
     from executorch.backends.native.partitioner import NativePartitioner
     from executorch.backends.native.passes import get_default_passes
     from executorch.exir import to_edge_transform_and_lower
-    from executorch.exir.lowered_backend_module import get_lowered_submodules
+    from executorch.exir.lowered_backend_module import (
+        executorch_call_delegate,
+        get_lowered_submodules,
+    )
 
     edge = to_edge_transform_and_lower(
         method_programs,
@@ -408,13 +411,22 @@ def to_native(
         method_program = edge.exported_program(method_name)
         lowered = get_lowered_submodules(method_program.graph_module)
         if len(lowered) != 1:
+            residual_targets = sorted(
+                {
+                    str(node.target)
+                    for node in method_program.graph_module.graph.nodes
+                    if node.op == "call_function"
+                    and node.target not in (executorch_call_delegate, operator.getitem)
+                }
+            )
             raise ValueError(
                 f"to_native: method {method_name!r} lowered to {len(lowered)} "
                 f"native delegates; exactly one is required. A method must be "
                 f"wholly supported by the native backend: an identity method "
                 f"produces none, and disconnected supported regions produce "
-                f"several. See the README for this limitation of the current "
-                f"implementation."
+                "several. Residual operator targets: "
+                f"{residual_targets}. See the README for this limitation of "
+                "the current implementation."
             )
         module = lowered[0][1]
         _check_delegate_contract(
