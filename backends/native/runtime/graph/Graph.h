@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include <executorch/backends/native/runtime/graph/Ids.h>
@@ -37,9 +38,10 @@ namespace ptn {
 //
 // Node storage and node *order* are decoupled. `nodes` is append-only — a new
 // node lands at the end, out of dataflow position — so NodeIds stay stable.
-// `schedule` carries the execution order instead: reorder or insert there,
-// which moves no storage and invalidates no id. Nodes are never erased, since
-// dropping one would shift every later NodeId.
+// `schedule` carries the active nodes and their execution order instead:
+// reorder, insert, or erase there, which moves no storage and invalidates no
+// id. Nodes are never removed from `nodes`, since that would shift every later
+// NodeId.
 struct Graph {
   std::vector<Node> nodes; // node list, incl. placeholder / output nodes
   std::vector<NodeId> schedule; // execution / topological order over `nodes`
@@ -57,6 +59,15 @@ struct Graph {
   Graph& subgraph(GraphId id);
   const Graph& subgraph(GraphId id) const;
 
+  // Mutation primitives preserve stable ids and rebuild def-use metadata.
+  ValueId append_value(Value value);
+  NodeId insert_node_before(NodeId before, Node node);
+  NodeId insert_node_after(NodeId after, Node node);
+  size_t replace_input(NodeId node_id, ValueId from, ValueId to);
+  size_t
+  replace_all_uses(ValueId from, ValueId to, NodeId excluded_node = kInvalid);
+  void erase_node(NodeId node_id);
+
   // Set `schedule` to the identity order, which is the execution order exactly
   // when the nodes are already in dataflow position — as they are straight off
   // the wire, before any mutation. A graph is not executable until this runs:
@@ -67,11 +78,9 @@ struct Graph {
   // load-time step, not a reset.
   void initialize_schedule();
 
-  // Recompute every Value's producer / consumers from the nodes, clearing the
-  // existing wiring first: each node produces its output values and consumes
-  // its input_value_ids(). Independent of `schedule` — it walks `nodes`
-  // directly. Does NOT recurse into subgraphs, which have their own SSA
-  // namespaces; call it per graph.
+  // Recompute every Value's producer / consumers from the active nodes in
+  // schedule order, clearing the existing wiring first. Does NOT recurse into
+  // subgraphs, which have their own SSA namespaces; call it per graph.
   //
   // Throws std::runtime_error on an id that is set but does not address
   // `values`, which can only mean a corrupt graph. kInvalid is left alone: an

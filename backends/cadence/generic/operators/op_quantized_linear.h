@@ -21,7 +21,7 @@ namespace native {
     const ::executorch::aten::Tensor& weight,
     const ::executorch::aten::Tensor& bias,
     int64_t src_zero_point,
-    const ::executorch::aten::Tensor& weight_zero_point_t,
+    const std::optional<::executorch::aten::Tensor>& weight_zero_point_t,
     const ::executorch::aten::Tensor& out_multiplier,
     const ::executorch::aten::Tensor& out_shift,
     int64_t out_zero_point,

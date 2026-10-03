@@ -1,0 +1,116 @@
+name: Cadence Fork PR
+
+# Xtensa build and op tests for fork PRs that are not Meta exports (those run
+# from build-cadence-runner.yml). The jobs need the licensed toolchain, so they
+# run the fork's code with the Cadence artifacts role. That is limited to authors
+# who have contributed to the repository before (CONTRIBUTOR or above);
+# first-time contributors and unassociated authors get nothing.
+#
+# Self-contained on purpose: the shared reusable workflows check out the PR head
+# on pull_request_target, which actions/checkout refuses for fork code, and they
+# are used well beyond Cadence.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - backends/cadence/**
+      - examples/cadence/**
+      - .ci/scripts/setup-xtensa-tools.sh
+      - .ci/scripts/build-cadence-xtensa.sh
+      - .ci/scripts/test-cadence-xtensa.sh
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # The image comes from the base branch rather than the fork, so the fork
+  # cannot pick which image its code runs in.
+  docker-image:
+    if: >-
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'export-D') &&
+      !contains(github.event.pull_request.labels.*.name, 'meta-exported') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.hash.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: hash
+        run: |
+          set -eu
+          CI_DOCKER_HASH="$(git rev-parse HEAD:.ci/docker)"
+          echo "image=308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/ci-image:executorch-ubuntu-22.04-clang12-${CI_DOCKER_HASH}" >> "$GITHUB_OUTPUT"
+
+  xtensa:
+    name: ${{ matrix.name }}
+    needs: docker-image
+    # Same gate as docker-image, so the job that holds the role does not depend
+    # on needs-skip propagation alone.
+    if: >-
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      !startsWith(github.event.pull_request.head.ref, 'export-D') &&
+      !contains(github.event.pull_request.labels.*.name, 'meta-exported') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"]'), github.event.pull_request.author_association)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: hifi4
+            backend: hifi4
+            script: .ci/scripts/build-cadence-xtensa.sh --no-run
+          - name: hifi4 op tests
+            backend: hifi4
+            script: .ci/scripts/test-cadence-xtensa.sh
+          - name: vision
+            backend: vision
+            script: .ci/scripts/build-cadence-xtensa.sh --no-run
+    # Same runner as build-cadence-runner.yml: RJ-2025.5 xt-clang (vision) needs
+    # a pod hostname of 46 characters or fewer, i.e. a label of 18 or fewer.
+    runs-on: mt-l-x86iamx-8-64
+    container:
+      image: ${{ needs.docker-image.outputs.image }}
+    environment: cadence
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Fix workspace permissions
+        shell: bash
+        run: sudo chmod -R 777 "${GITHUB_WORKSPACE}" 2>/dev/null || true
+
+      - name: Check out the fork's head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: recursive
+          persist-credentials: false
+          allow-unsafe-pr-checkout: true
+
+      - name: Assume Cadence artifacts role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.CADENCE_CI_AWS_ROLE }}
+          aws-region: ${{ vars.CADENCE_CI_AWS_REGION }}
+
+      - name: Build and test
+        env:
+          BACKEND: ${{ matrix.backend }}
+          XTENSA_S3_BUCKET: ${{ vars.CADENCE_CI_S3_BUCKET }}
+        shell: bash
+        run: |
+          set -exo pipefail
+          eval "$(/opt/conda/bin/conda shell.bash hook)"
+          conda activate "$(conda env list --json | jq -r ".envs | .[-1]")"
+          ./install_requirements.sh > /dev/null
+          pip install --quiet awscli
+          if [ "${BACKEND}" != "vision" ]; then
+            backends/cadence/install_requirements.sh
+          fi
+          source .ci/scripts/setup-xtensa-tools.sh "${BACKEND}"
+          ${{ matrix.script }}
