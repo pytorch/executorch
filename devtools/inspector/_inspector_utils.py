@@ -394,7 +394,7 @@ def display_or_print_df(df: pd.DataFrame, file: IO[str] = sys.stdout):
         )
 
 
-def plot_metric(result: List[float], metric_name: str):
+def plot_metric(result: List[Optional[float]], metric_name: str):
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -402,8 +402,11 @@ def plot_metric(result: List[float], metric_name: str):
     plt.clf()
     plt.figure(figsize=(8, 6))
 
-    # Non-tensor outputs have no metric value (None); plot them as 0.
-    values = [v if v is not None else 0.0 for v in result]
+    # Non-tensor outputs have no metric value (None), and metrics can be
+    # non-finite (SNR is inf for identical tensors, NaN for all-zero ones).
+    # Plot these as 0; matplotlib cannot use inf/NaN as axis limits. The bar
+    # label still shows the actual value.
+    values = [v if v is not None and math.isfinite(v) else 0.0 for v in result]
     x_axis = np.arange(len(values))
     bars = plt.bar(x_axis, values, width=0.5)
     plt.grid(True, which="major", axis="y")
