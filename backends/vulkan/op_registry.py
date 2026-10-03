@@ -1374,7 +1374,7 @@ def register_expand_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
-        supports_resize=False,
+        supports_resize=True,
         supports_highdim=True,
     )
 
