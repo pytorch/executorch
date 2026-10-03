@@ -1,16 +1,14 @@
-# LLM server evaluations
+# Terminal-Bench (macOS)
 
-## Terminal-Bench (macOS)
-
-Prepare a worker, exported model, and [server environment](../python/README.md).
+Prepare a worker, exported model, and [server environment](../../python/README.md).
 From the repository root:
 
 ```bash
-cd examples/llm_server/evals
-bash terminal_bench/setup.sh
-cp configs/terminal-bench.example.toml configs/terminal-bench.local.toml
+cd examples/llm_server/evals/terminal_bench
+bash setup.sh
+cp ../configs/terminal-bench.example.toml ../configs/terminal-bench.local.toml
 # Edit the model paths and context limit in the local TOML.
-bash terminal_bench/run.sh --config configs/terminal-bench.local.toml
+bash run.sh --config ../configs/terminal-bench.local.toml
 ```
 
 Setup installs Colima (requires Homebrew) and Harbor, reusing Docker if available.
