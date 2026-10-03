@@ -670,7 +670,7 @@ def _restore_named_data(
     return named_data_store.get_named_data_store_output()
 
 
-def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
+def _restore_segments(program: Program, segment_data: memoryview) -> PTEFile:
     """Moves segments from `segment_data` into `program`.
 
     This should recreate the original Program that the segments were extracted
@@ -693,7 +693,9 @@ def _restore_segments(program: Program, segment_data: bytes) -> PTEFile:
             raise ValueError(
                 f"Segment {i} {segment} overflows data length {len(segment_data)}"
             )
-        segments.append(segment_data[segment.offset : segment.offset + segment.size])
+        segments.append(
+            bytes(segment_data[segment.offset : segment.offset + segment.size])
+        )
 
     # Restore delegate segments that weren't inlined previously.
     program = _restore_delegates(program, segments)
@@ -754,9 +756,11 @@ def deserialize_pte_binary(program_data: bytes) -> PTEFile:
     program: Program = _flatbuffer_to_program(program_data[:program_size])
 
     if segment_base_offset != 0:
-        # Move segment data back into the Program.
+        # A view, so the segment data is copied only once, when each segment is
+        # restored, rather than also as a whole before being split.
         return _restore_segments(
-            program=program, segment_data=program_data[segment_base_offset:]
+            program=program,
+            segment_data=memoryview(program_data)[segment_base_offset:],
         )
 
     return PTEFile(program=program, mutable_data=None, named_data=None)
