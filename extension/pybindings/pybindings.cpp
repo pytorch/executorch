@@ -978,8 +978,11 @@ struct PyModule final {
     if (enable_etdump && debug_buffer_size > 0) {
       debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
       debug_buffer_size_ = debug_buffer_size;
-      event_tracer->set_debug_buffer(
-          Span<uint8_t>(debug_buffer_.get(), debug_buffer_size));
+      THROW_IF_ERROR(
+          event_tracer->set_debug_buffer(
+              Span<uint8_t>(debug_buffer_.get(), debug_buffer_size))
+              .error(),
+          "Failed to set etdump debug buffer");
       event_tracer->set_event_tracer_debug_level(
           EventTracerDebugLogLevel::kIntermediateOutputs);
     }
@@ -1593,7 +1596,9 @@ struct PyProgram final {
       // If a debug buffer was requested for the ETDump, allocate it and make
       // sure its lifetime is as long as the event_tracer.
       debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
-      event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
+      THROW_IF_ERROR(
+          event_tracer_->set_debug_buffer(get_etdump_debug_buffer()).error(),
+          "Failed to set etdump debug buffer");
       event_tracer_->set_event_tracer_debug_level(
           EventTracerDebugLogLevel::kIntermediateOutputs);
     }
