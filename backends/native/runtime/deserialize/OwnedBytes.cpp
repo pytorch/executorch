@@ -7,11 +7,14 @@
 #include <executorch/backends/native/runtime/deserialize/OwnedBytes.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+
+#include <executorch/backends/native/runtime/deserialize/DeserializeError.h>
 
 #if !defined(_WIN32)
 #include <fcntl.h>
@@ -41,11 +44,31 @@ OwnedBytes OwnedBytes::from_vector(std::vector<uint8_t> bytes) {
   return OwnedBytes(std::move(bytes));
 }
 
-OwnedBytes OwnedBytes::from_file(const std::string& path, bool use_mmap) {
-  return use_mmap ? map_file(path) : read_file(path);
+OwnedBytes OwnedBytes::view(
+    std::shared_ptr<const OwnedBytes> owner,
+    ByteSpan bytes) {
+  if (owner == nullptr) {
+    throw std::invalid_argument("OwnedBytes::view: owner is null");
+  }
+  const ByteSpan whole = owner->span();
+  const auto begin = reinterpret_cast<uintptr_t>(whole.data());
+  const auto first = reinterpret_cast<uintptr_t>(bytes.data());
+  if (!bytes.empty() &&
+      (first < begin || first - begin > whole.size() ||
+       bytes.size() > whole.size() - (first - begin))) {
+    throw std::invalid_argument("OwnedBytes::view: bytes lie outside owner");
+  }
+  return OwnedBytes(SharedView{std::move(owner), bytes});
 }
 
-OwnedBytes OwnedBytes::read_file(const std::string& path) {
+OwnedBytes OwnedBytes::from_file(
+    const std::string& path,
+    bool use_mmap,
+    uint64_t max_size) {
+  return use_mmap ? map_file(path, max_size) : read_file(path, max_size);
+}
+
+OwnedBytes OwnedBytes::read_file(const std::string& path, uint64_t max_size) {
   std::error_code error;
   const std::filesystem::file_status status =
       std::filesystem::status(path, error);
@@ -63,6 +86,9 @@ OwnedBytes OwnedBytes::read_file(const std::string& path) {
       file_size >
           static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
     throw std::runtime_error("cannot read " + path + ": file is too large");
+  }
+  if (file_size > max_size) {
+    throw ResourceLimitError("file exceeds size limit: " + path);
   }
 
   std::ifstream file(path, std::ios::binary);
@@ -82,7 +108,7 @@ OwnedBytes OwnedBytes::read_file(const std::string& path) {
   return OwnedBytes(std::move(buffer));
 }
 
-OwnedBytes OwnedBytes::map_file(const std::string& path) {
+OwnedBytes OwnedBytes::map_file(const std::string& path, uint64_t max_size) {
 #if defined(_WIN32)
   // TODO: Implement Windows mappings with CreateFileMapping and MapViewOfFile.
   throw std::runtime_error("cannot mmap " + path + ": unsupported platform");
@@ -106,6 +132,10 @@ OwnedBytes OwnedBytes::map_file(const std::string& path) {
   if (st.st_size < 0) {
     ::close(fd);
     throw std::runtime_error("cannot mmap " + path + ": invalid file size");
+  }
+  if (static_cast<uint64_t>(st.st_size) > max_size) {
+    ::close(fd);
+    throw ResourceLimitError("file exceeds size limit: " + path);
   }
   if (static_cast<uintmax_t>(st.st_size) > std::numeric_limits<size_t>::max()) {
     ::close(fd);
@@ -148,11 +178,17 @@ ByteSpan OwnedBytes::span() const {
     return ByteSpan(
         static_cast<const uint8_t*>(mapped->get()), mapped->get_deleter().size);
   }
+  if (const SharedView* view = std::get_if<SharedView>(&storage_)) {
+    return view->bytes;
+  }
   const std::vector<uint8_t>& bytes = std::get<std::vector<uint8_t>>(storage_);
   return ByteSpan(bytes.data(), bytes.size());
 }
 
 bool OwnedBytes::is_mapped() const {
+  if (const SharedView* view = std::get_if<SharedView>(&storage_)) {
+    return view->owner->is_mapped();
+  }
   return std::holds_alternative<MappedFile>(storage_);
 }
 
