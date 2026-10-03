@@ -110,6 +110,11 @@ class TestValidation(unittest.TestCase):
 
 class TestValidConstruction(unittest.TestCase):
 
+    def test_8da8w_qmode(self):
+        qcfg = QuantizationConfig(qmode="8da8w")
+
+        self.assertEqual(qcfg.qmode, "8da8w")
+
     def test_valid_llm_config(self):
         LlmConfig(
             base=BaseConfig(

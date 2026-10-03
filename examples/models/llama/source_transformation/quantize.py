@@ -153,6 +153,18 @@ def quantize(  # noqa C901
                 return True
             return m.weight.shape[1] % group_size == 0
 
+        linear_quantization_decisions = [
+            filter_fn(module, fqn)
+            for fqn, module in model.named_modules()
+            if isinstance(module, nn.Linear)
+            and "lora_a" not in fqn.split(".")
+            and "lora_b" not in fqn.split(".")
+        ]
+        quantized_linear_count = sum(linear_quantization_decisions)
+        skipped_linear_count = (
+            len(linear_quantization_decisions) - quantized_linear_count
+        )
+
         weight_dtype = torch.int4 if qmode == "8da4w" else torch.int8
         quantize_(
             model,
@@ -169,6 +181,22 @@ def quantize(  # noqa C901
             ),
             filter_fn=filter_fn,
         )
+        if skipped_linear_count:
+            logging.warning(
+                "%s quantization: quantized %d linear layer(s), skipped %d linear "
+                "layer(s) because in_features is not divisible by group_size=%d.",
+                qmode,
+                quantized_linear_count,
+                skipped_linear_count,
+                group_size,
+            )
+        else:
+            logging.info(
+                "%s quantization: quantized %d linear layer(s), skipped 0 linear "
+                "layer(s).",
+                qmode,
+                quantized_linear_count,
+            )
         # TODO: deal with checkpoint / computation dtype decoupling.
 
         if verbose:
