@@ -252,7 +252,10 @@ void main() {
       gl_LocalInvocationID[reduce_dim],
       gl_LocalInvocationID[group_dim]);
 
-  const bool in_bounds = all(lessThan(scan_pos, tin_limits));
+  // Reducing an empty dimension still produces one output element.
+  ivec3 out_limits = tin_limits;
+  out_limits[reduce_dim] = 1;
+  const bool in_bounds = all(lessThan(scan_pos, out_limits));
 
   // reduce_dim and packed_dim are specialization constants, so this branch is
   // uniform across the work group and safe to take around a barrier.
