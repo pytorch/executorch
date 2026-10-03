@@ -329,7 +329,12 @@ def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
     return True
 
 
-@update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
+@update_features(
+    [
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.mul.Scalar,
+    ]
+)
 def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
