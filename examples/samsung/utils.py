@@ -19,15 +19,11 @@ def save_tensors(tensors, prefix: str, artifact_dir: str) -> None:
 
     def _collect(obj, path_parts):
         if isinstance(obj, torch.Tensor):
-            _save_tensor(
-                obj,
-                os.path.join(
-                    artifact_dir, prefix + "_" + "_".join(map(str, path_parts)) + ".bin"
-                ),
-            )
+            name = "_".join([prefix, *path_parts]) + ".bin"
+            _save_tensor(obj, os.path.join(artifact_dir, name))
         elif isinstance(obj, dict):
-            for key, value in obj.items():
-                _collect(value, path_parts + [key])
+            for i, value in enumerate(obj.values()):
+                _collect(value, path_parts + [str(i)])
         elif isinstance(obj, (list, tuple)):
             for i, value in enumerate(obj):
                 _collect(value, path_parts + [str(i)])
