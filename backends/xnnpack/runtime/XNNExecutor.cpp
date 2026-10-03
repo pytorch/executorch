@@ -130,7 +130,9 @@ ET_NODISCARD Error XNNExecutor::prepare_args(Span<EValue*> args) {
         static_cast<uint32_t>(args[ext_id]->tag));
 
     Tensor* tensor = &args[ext_id]->toTensor();
-    externals_[i].data = tensor->mutable_data_ptr<float>();
+    // Untyped: externals are void*, and a quantized subgraph's are int8, which
+    // the typed accessor rejects in ATen mode.
+    externals_[i].data = tensor->mutable_data_ptr();
 
     executorch::aten::DimOrderType dim_order[kTensorDimensionLimit];
 
@@ -300,8 +302,11 @@ ET_NODISCARD Error XNNExecutor::convert_outputs(Span<EValue*> args) const {
     // int64. This means that the data was put into this tensor
     // by XNNPACK as int32 and needs to be copied to int64 form
     if (out_tensor->scalar_type() == ScalarType::Long) {
-      int64_t* data_64 = out_tensor->mutable_data_ptr<int64_t>();
-      const int32_t* data_32 = out_tensor->const_data_ptr<int32_t>();
+      // Both views alias one Long buffer, so the int32 one cannot be asked for
+      // by scalar type: ATen mode rejects the mismatch.
+      void* data = out_tensor->mutable_data_ptr();
+      int64_t* data_64 = static_cast<int64_t*>(data);
+      const int32_t* data_32 = static_cast<const int32_t*>(data);
       for (ssize_t j = out_tensor->numel() - 1; j >= 0; --j) {
         data_64[j] = data_32[j];
       }
