@@ -344,7 +344,7 @@ class TestVulkanDynamic(unittest.TestCase):
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
 
-    def test_any_without_keepdim_preserves_texture_delegates(self):
+    def test_any_without_keepdim_uses_textures(self):
         class AnyDim(torch.nn.Module):
             def __init__(self, keepdim):
                 super().__init__()
@@ -356,7 +356,7 @@ class TestVulkanDynamic(unittest.TestCase):
                     reduced = torch.any(mask, dim=-1)
                 else:
                     reduced = torch.any(mask, dim=-1, keepdim=self.keepdim)
-                return torch.logical_not(reduced)
+                return torch.logical_not(reduced), torch.any(reduced, dim=-1)
 
         inputs = [
             ((torch.arange(2 * s * 5).reshape(2, s, 5) % 17).float() - 14,)
@@ -369,20 +369,6 @@ class TestVulkanDynamic(unittest.TestCase):
                     model,
                     inputs[0],
                     ({1: Dim("s", min=2, max=32)},),
-                    fully_delegated=False,
-                )
-                self.assertEqual(
-                    [
-                        node.target
-                        for node in edge.exported_program().graph.nodes
-                        if node.op == "call_function"
-                        and node.target != operator.getitem
-                    ],
-                    [
-                        torch.ops.higher_order.executorch_call_delegate,
-                        exir_ops.edge.aten.any.dim,
-                        torch.ops.higher_order.executorch_call_delegate,
-                    ],
                 )
                 for graph in _vulkan_graphs(edge):
                     for value in graph.values:
@@ -392,6 +378,51 @@ class TestVulkanDynamic(unittest.TestCase):
                                 tensor.storage_type, VkStorageType.TEXTURE_3D
                             )
                 self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_any_texture_without_keepdim_shapes(self):
+        class AnyDim(torch.nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+
+            def forward(self, x):
+                return torch.any(x, dim=self.dim)
+
+        for shape, dim, supported in (
+            ((7,), 0, True),
+            ((0,), 0, True),
+            ((3, 5), 0, True),
+            ((3, 5), -1, True),
+            ((0, 3), 0, True),
+            ((2, 0, 3), 1, True),
+            ((2, 0, 3), -1, True),
+            ((1, 3, 5, 7), 1, True),
+            ((1, 3, 5, 7), -2, True),
+            ((2, 3, 5, 7), -1, True),
+            ((2, 3, 5, 7), 2, True),
+            ((1, 3, 1, 7), 1, True),
+            ((1, 3, 5, 7), 0, False),
+            ((2, 3, 5, 7), 1, False),
+        ):
+            with self.subTest(shape=shape, dim=dim):
+                x = torch.zeros(shape, dtype=torch.bool)
+                if x.numel() > 0:
+                    x[tuple(size // 2 for size in shape)] = True
+                model = AnyDim(dim)
+                edge = self._lower(model, (x,), fully_delegated=supported)
+                if not supported:
+                    self.assertEqual(_vulkan_graphs(edge), [])
+                for graph in _vulkan_graphs(edge):
+                    for value_id in graph.input_ids + graph.output_ids:
+                        tensor = graph.values[value_id].value
+                        self.assertEqual(tensor.storage_type, VkStorageType.TEXTURE_3D)
+                self._run(
+                    edge,
+                    model,
+                    [(x,), (torch.zeros_like(x),), (torch.ones_like(x),)],
+                    atol=0,
+                    rtol=0,
+                )
 
     def test_dynamic_any_dim(self):
         class AnyDim(torch.nn.Module):
@@ -403,22 +434,26 @@ class TestVulkanDynamic(unittest.TestCase):
             def forward(self, x):
                 return torch.any(x, dim=self.dim, keepdim=self.keepdim)
 
-        for dim, keepdim in ((-1, True), (-1, False), (1, True)):
+        for dim, keepdim in (
+            (-1, True),
+            (-1, False),
+            (1, True),
+            (1, False),
+            (0, False),
+        ):
             for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
                 with self.subTest(dim=dim, keepdim=keepdim, storage=storage):
                     model = AnyDim(dim, keepdim)
                     inputs = []
-                    for s in (16, 3, 31, 2, 16):
+                    for s in (16, 3, 31, 2, 0, 16):
                         x = torch.zeros(2, s, 5, dtype=torch.bool)
-                        if s != 3:
+                        if s not in (0, 3):
                             x[0, s // 2, 1] = True
                             x[1, -1, 3] = True
                             x[1, 0, 4] = True
                         inputs.append((x,))
-                    seq = Dim("s", min=2, max=32)
-                    unsupported = not keepdim or (
-                        dim == 1 and storage == VkStorageType.BUFFER
-                    )
+                    seq = Dim("s", min=0, max=32)
+                    unsupported = dim != -1 and storage == VkStorageType.BUFFER
                     edge = self._lower(
                         model,
                         inputs[0],
