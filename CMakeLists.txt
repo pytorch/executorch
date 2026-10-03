@@ -825,6 +825,17 @@ elseif(EXECUTORCH_BUILD_CUDA)
          "find_dependency(CUDAToolkit)\n"
   )
 endif()
+if(EXECUTORCH_BUILD_COREAI)
+  string(
+    APPEND
+    _executorch_backend_dependencies
+    "include(\"\${CMAKE_CURRENT_LIST_DIR}/ExecuTorchCoreAIDependencies.cmake\")\n"
+    "executorch_coreai_dependencies()\n"
+  )
+  install(FILES tools/cmake/ExecuTorchCoreAIDependencies.cmake
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
+  )
+endif()
 configure_file(
   tools/cmake/executorch-backend-dependencies.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake @ONLY
