@@ -27,3 +27,9 @@ reduce:
       INIT_ACCUM: first_val
       UPDATE_ACCUM: min(accum, new_val)
       POSTPROCESS: accum
+    # any over a boolean tensor is a max over its uint8 representation.
+    - NAME: any_uint8
+      DTYPE: uint8
+      INIT_ACCUM: first_val
+      UPDATE_ACCUM: max(accum, new_val)
+      POSTPROCESS: accum

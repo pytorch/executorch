@@ -1876,6 +1876,19 @@ def register_logical_not():
     )
 
 
+@update_features(exir_ops.edge.aten.any.dim)
+def register_any_dim():
+    # Only the general (texture) reduce implementation is claimed: the buffer
+    # per-row shaders have no boolean variant. keepdim=True is required, which
+    # is what is_reduce_node_supported_by_general_impl checks.
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=is_reduce_node_supported_by_general_impl,
+    )
+
+
 @update_features("et_vk::adamw_step")
 def register_adamw_step():
     return OpFeatures(
