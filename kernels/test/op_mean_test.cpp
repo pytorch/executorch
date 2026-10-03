@@ -17,6 +17,8 @@
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 #include <cmath>
+#include <numeric>
+#include <vector>
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
@@ -289,6 +291,162 @@ TEST_F(OpMeanOutTest, BFloat16LargeDimAccumulatesInFloat) {
       x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
   Tensor expected = tf.full({1}, 1.0f);
   EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastSpatialReduction) {
+  TensorFactory<ScalarType::Float> tf;
+  std::vector<float> data(120);
+  std::iota(data.begin(), data.end(), 0.0f);
+  Tensor x = tf.channels_last_like(tf.make({2, 3, 4, 5}, data));
+  Tensor out = tf.zeros({2, 3});
+  const int64_t dims[] = {2, 3};
+
+  op_mean_out(x, ArrayRef<int64_t>(dims), false, {}, out);
+
+  EXPECT_TENSOR_CLOSE(
+      out, tf.make({2, 3}, {9.5, 29.5, 49.5, 69.5, 89.5, 109.5}));
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastReductionDimensions) {
+  TensorFactory<ScalarType::Float> tf;
+  std::vector<float> data(120);
+  std::iota(data.begin(), data.end(), 0.0f);
+  Tensor contiguous = tf.make({2, 3, 4, 5}, data);
+  Tensor channels_last = tf.channels_last_like(contiguous);
+
+  for (int mask = 0; mask < 16; ++mask) {
+    SCOPED_TRACE(mask);
+    std::vector<int64_t> dims;
+    for (int d = 3; d >= 0; --d) {
+      if (mask & (1 << d)) {
+        dims.push_back(d - 4);
+      }
+    }
+    const ArrayRef<int64_t> dim_list(dims.data(), dims.size());
+    for (bool keepdim : {false, true}) {
+      SCOPED_TRACE(keepdim);
+      std::vector<int32_t> sizes;
+      for (int d = 0; d < 4; ++d) {
+        if (mask == 0 || (mask & (1 << d))) {
+          if (keepdim) {
+            sizes.push_back(1);
+          }
+        } else {
+          sizes.push_back(contiguous.size(d));
+        }
+      }
+      Tensor expected = tf.zeros(sizes);
+      op_mean_out(contiguous, dim_list, keepdim, {}, expected);
+
+      Tensor out = tf.zeros(sizes);
+      op_mean_out(channels_last, dim_list, keepdim, {}, out);
+      EXPECT_TENSOR_CLOSE(out, expected);
+
+      if (keepdim) {
+        Tensor expected_channels_last = tf.channels_last_like(expected);
+        for (const Tensor& input : {contiguous, channels_last}) {
+          Tensor out_channels_last = tf.zeros_channels_last(sizes);
+          op_mean_out(input, dim_list, keepdim, {}, out_channels_last);
+          EXPECT_TENSOR_CLOSE(out_channels_last, expected_channels_last);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastAllDimensions) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor x =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {0, 1, 2, 3, 4, 5, 6, 7}));
+  Tensor out = tf.zeros({});
+  op_mean_out(x, {}, false, {}, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {3.5}));
+
+  op_mean_dtype_out(x, {}, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {3.5}));
+
+  Tensor out_keepdim = tf.zeros_channels_last({1, 1, 1, 1});
+  op_mean_out(x, {}, true, {}, out_keepdim);
+  EXPECT_TENSOR_CLOSE(out_keepdim, tf.make_channels_last({1, 1, 1, 1}, {3.5}));
+}
+
+TEST_F(OpMeanOutTest, ChannelsLast3d) {
+  TensorFactory<ScalarType::Float> tf;
+  std::vector<float> data(48);
+  std::iota(data.begin(), data.end(), 0.0f);
+  Tensor x = tf.make_with_dimorder({2, 3, 2, 2, 2}, data, {0, 2, 3, 4, 1});
+  Tensor out = tf.zeros({2, 3});
+  const int64_t dims[] = {2, 3, 4};
+  op_mean_out(x, ArrayRef<int64_t>(dims), false, {}, out);
+  EXPECT_TENSOR_CLOSE(
+      out, tf.make({2, 3}, {10.5, 11.5, 12.5, 34.5, 35.5, 36.5}));
+
+  Tensor out_keepdim = tf.make_with_dimorder(
+      {1, 3, 2, 2, 2}, std::vector<float>(24), {0, 2, 3, 4, 1});
+  op_mean_out(x, ArrayRef<int64_t>{0}, true, {}, out_keepdim);
+  std::vector<float> expected_data(24);
+  std::iota(expected_data.begin(), expected_data.end(), 12.0f);
+  EXPECT_TENSOR_CLOSE(
+      out_keepdim,
+      tf.make_with_dimorder({1, 3, 2, 2, 2}, expected_data, {0, 2, 3, 4, 1}));
+
+  Tensor out_4d = tf.zeros_channels_last({2, 3, 2, 2});
+  op_mean_out(x, ArrayRef<int64_t>{-1}, false, {}, out_4d);
+  EXPECT_TENSOR_CLOSE(
+      out_4d,
+      tf.make_channels_last(
+          {2, 3, 2, 2}, {1.5,  2.5,  3.5,  7.5,  8.5,  9.5,  13.5, 14.5,
+                         15.5, 19.5, 20.5, 21.5, 25.5, 26.5, 27.5, 31.5,
+                         32.5, 33.5, 37.5, 38.5, 39.5, 43.5, 44.5, 45.5}));
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastDTypeConversion) {
+  TensorFactory<ScalarType::Int> tf_in;
+  TensorFactory<ScalarType::Float> tf_out;
+  Tensor x = tf_in.channels_last_like(
+      tf_in.make({1, 2, 2, 2}, {0, 1, 2, 3, 4, 5, 6, 7}));
+  Tensor out = tf_out.zeros_channels_last({1, 2, 2, 1});
+  op_mean_out(x, ArrayRef<int64_t>{3}, true, ScalarType::Float, out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.channels_last_like(
+          tf_out.make({1, 2, 2, 1}, {0.5, 2.5, 4.5, 6.5})));
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastBFloat16AccumulatesInFloat) {
+  TensorFactory<ScalarType::BFloat16> tf;
+  Tensor x = tf.full_channels_last({1, 2, 16, 32}, 1);
+  Tensor out = tf.zeros({1, 2});
+  const int64_t dims[] = {2, 3};
+  op_mean_out(x, ArrayRef<int64_t>(dims), false, {}, out);
+  EXPECT_TENSOR_CLOSE(out, tf.ones({1, 2}));
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastEmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor x = tf.make_channels_last({2, 3, 0, 4}, {});
+  Tensor out = tf.zeros_channels_last({2, 3, 1, 4});
+  op_mean_out(x, ArrayRef<int64_t>{2}, true, {}, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full_channels_last({2, 3, 1, 4}, NAN));
+
+  Tensor empty_out = tf.make_channels_last({2, 3, 0, 1}, {});
+  op_mean_out(x, ArrayRef<int64_t>{3}, true, {}, empty_out);
+  EXPECT_TENSOR_CLOSE(empty_out, tf.make_channels_last({2, 3, 0, 1}, {}));
+
+  Tensor scalar_out = tf.zeros({});
+  op_mean_dtype_out(x, {}, scalar_out);
+  EXPECT_TENSOR_CLOSE(scalar_out, tf.make({}, {NAN}));
+}
+
+TEST_F(OpMeanOutTest, ChannelsLastDynamicOutput) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor x =
+      tf.channels_last_like(tf.make({1, 2, 2, 2}, {0, 1, 2, 3, 4, 5, 6, 7}));
+  Tensor out = tf.zeros_channels_last(
+      {2, 3, 4, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+  op_mean_out(x, ArrayRef<int64_t>{3}, true, {}, out);
+  EXPECT_TENSOR_CLOSE(
+      out, tf.channels_last_like(tf.make({1, 2, 2, 1}, {0.5, 2.5, 4.5, 6.5})));
 }
 
 TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
