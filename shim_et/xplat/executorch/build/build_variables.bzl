@@ -343,6 +343,7 @@ EXTENSION_EVALUE_UTIL_SRCS = [
 EXTENSION_FLAT_TENSOR_SRCS = [
     "extension/flat_tensor/flat_tensor_data_map.cpp",
     "extension/flat_tensor/serialize/flat_tensor_header.cpp",
+    "extension/flat_tensor/serialize/serialize.cpp",
 ]
 
 EXTENSION_MEMORY_ALLOCATOR_SRCS = [
@@ -393,8 +394,6 @@ EXTENSION_TRAINING_SRCS = [
 ]
 
 TRAIN_XOR_SRCS = [
-    # REVIEW: removing this breaks the build; where is it supposed to come from?
-    "extension/flat_tensor/serialize/serialize.cpp",
     "extension/training/examples/XOR/train.cpp",
 ]
 
