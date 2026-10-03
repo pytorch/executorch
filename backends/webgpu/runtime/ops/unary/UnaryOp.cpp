@@ -12,6 +12,9 @@
 
 #include <webgpu/webgpu.h>
 
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -28,6 +31,13 @@ struct UnaryParams {
   uint32_t _pad;
 };
 
+// Bit-copy exact i32 bounds into the f32 min/max slots, which the integer
+// shader variants read as i32.
+void set_int_bounds(UnaryParams* params, const UnaryIntBounds& b) {
+  std::memcpy(&params->min, &b.min, sizeof(int32_t));
+  std::memcpy(&params->max, &b.max, sizeof(int32_t));
+}
+
 } // namespace
 
 void add_unary_op(
@@ -38,16 +48,33 @@ void add_unary_op(
     uint32_t wg_size_x,
     const char* op_name,
     float min,
-    float max) {
+    float max,
+    const UnaryIntBounds* int_bounds) {
+  const bool int_variant = int_bounds != nullptr;
   WGPUDevice device = graph.device();
 
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
   // 4-byte (fp32) alignment guard on both operands (null + size checks too).
   utils::check_elementwise_fp32_io(in_tensor, out_tensor, op_name);
-  // fp32-only backend: reject int operands (would be read as f32).
-  if (in_tensor.is_int || out_tensor.is_int) {
+  // fp32-only backend: reject int operands (would be read as f32) unless the
+  // caller supplied an int32 shader variant.
+  if (!int_variant && (in_tensor.is_int || out_tensor.is_int)) {
     throw std::runtime_error(std::string(op_name) + ": int dtype unsupported");
+  }
+  if (int_variant) {
+    if (in_tensor.is_int != out_tensor.is_int) {
+      throw std::runtime_error(
+          std::string(op_name) + ": mixed int/fp32 operands");
+    }
+    // is_int also covers 1-byte (int8/bool) and 8-byte (int64) tensors.
+    // The shader binds array<i32> and derives the element count from
+    // nbytes / 4, so anything but a 4-byte element would be mis-strided.
+    if (in_tensor.elem_size != sizeof(int32_t) ||
+        out_tensor.elem_size != sizeof(int32_t)) {
+      throw std::runtime_error(
+          std::string(op_name) + ": int32 (4-byte) tensors required");
+    }
   }
 
   uint32_t num_elements =
@@ -66,6 +93,9 @@ void add_unary_op(
   params.num_elements = num_elements;
   params.min = min;
   params.max = max;
+  if (int_variant) {
+    set_int_bounds(&params, *int_bounds);
+  }
 
   WGPUBuffer uniform_buffer =
       utils::make_uniform(device, &params, sizeof(UnaryParams));
@@ -99,8 +129,16 @@ void add_unary_op(
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,
-      [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max](
-          WebGPUGraph& g) {
+      [in_id,
+       out_id,
+       wg_size,
+       dispatch_idx,
+       params_buf,
+       min,
+       max,
+       int_variant,
+       // By value: int_bounds points at the caller's local.
+       ib = int_variant ? *int_bounds : UnaryIntBounds{}](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const uint64_t numel = utils::numel_of(d);
         g.set_cur_dims(out_id, d);
@@ -108,6 +146,9 @@ void add_unary_op(
         p.num_elements = static_cast<uint32_t>(numel);
         p.min = min;
         p.max = max;
+        if (int_variant) {
+          set_int_bounds(&p, ib);
+        }
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         const utils::WgCount wgc = utils::compute_2d_workgroup_count(
             g.device(), static_cast<uint32_t>(numel), wg_size, "unary(resize)");

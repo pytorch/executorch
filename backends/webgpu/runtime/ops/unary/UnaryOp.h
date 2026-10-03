@@ -18,6 +18,12 @@ namespace executorch::backends::webgpu {
 inline constexpr float kUnaryDummyFloat = -1.0f;
 
 // Generic elementwise unary op; mirrors Vulkan add_unary_op_node.
+// Exact integer clamp bounds for the i32 shader variants.
+struct UnaryIntBounds {
+  int32_t min;
+  int32_t max;
+};
+
 void add_unary_op(
     WebGPUGraph& graph,
     int in_id,
@@ -26,6 +32,12 @@ void add_unary_op(
     uint32_t wg_size_x,
     const char* op_name,
     float min = kUnaryDummyFloat,
-    float max = kUnaryDummyFloat);
+    float max = kUnaryDummyFloat,
+    // Non-null selects an op's int32 shader variant and supplies the bounds
+    // exactly. Defaults null so every other unary op keeps rejecting int
+    // operands it would otherwise read as f32. Bounds are passed as i32
+    // rather than reusing min/max because float cannot represent every
+    // int32 exactly (16777217 would round to 16777216).
+    const UnaryIntBounds* int_bounds = nullptr);
 
 } // namespace executorch::backends::webgpu

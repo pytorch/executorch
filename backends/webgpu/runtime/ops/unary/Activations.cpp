@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/clamp_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
@@ -21,6 +22,7 @@
 #include <executorch/backends/webgpu/runtime/ops/unary/sqrt_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/tanh_wgsl.h>
 
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -43,6 +45,43 @@ float get_val_or_inf(WebGPUGraph& graph, int id, bool is_max) {
   }
   return is_max ? std::numeric_limits<float>::infinity()
                 : -std::numeric_limits<float>::infinity();
+}
+
+// Integer bound arg, or the int32 limit when None. Reads the scalar as an
+// integer and saturates, so large bounds survive exactly -- get_val_or_inf
+// would round anything above 2^24 on its way through float.
+int32_t get_int_bound_or_limit(WebGPUGraph& graph, int id, bool is_max) {
+  constexpr int32_t kMin = std::numeric_limits<int32_t>::min();
+  constexpr int32_t kMax = std::numeric_limits<int32_t>::max();
+  const auto t = graph.get_value_type(id);
+  if (t == WebGPUGraph::ValueType::Null) {
+    return is_max ? kMax : kMin;
+  }
+  if (t == WebGPUGraph::ValueType::Int) {
+    const int64_t v = graph.get_int(id);
+    if (v < kMin) {
+      return kMin;
+    }
+    return v > kMax ? kMax : static_cast<int32_t>(v);
+  }
+  if (t == WebGPUGraph::ValueType::Double) {
+    // Saturate in the double domain first: casting an out-of-range or
+    // non-finite double to an integer is undefined, so a range check after the
+    // cast would be too late.
+    const double d = graph.get_double(id);
+    if (std::isnan(d)) {
+      throw std::runtime_error("clamp bound must not be NaN");
+    }
+    if (d <= static_cast<double>(kMin)) {
+      return kMin;
+    }
+    if (d >= static_cast<double>(kMax)) {
+      return kMax;
+    }
+    // Round toward the interior so a fractional bound never widens the range.
+    return static_cast<int32_t>(is_max ? std::floor(d) : std::ceil(d));
+  }
+  throw std::runtime_error("clamp bound must be a scalar or None");
 }
 
 void abs_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -104,15 +143,24 @@ void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.clamp.default args: [in, min, max, out]; min/max None -> +/-inf.
   const float lo = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
   const float hi = get_val_or_inf(graph, args.at(2), /*is_max=*/true);
+  // Index arithmetic (e.g. ViT positional-encoding interpolation) clamps int
+  // tensors, so bind the i32 shader when the operands are integral.
+  const bool is_int = graph.get_tensor(args.at(0)).is_int;
+  UnaryIntBounds int_bounds{};
+  if (is_int) {
+    int_bounds.min = get_int_bound_or_limit(graph, args.at(1), false);
+    int_bounds.max = get_int_bound_or_limit(graph, args.at(2), true);
+  }
   add_unary_op(
       graph,
       args.at(0),
       args.at(3),
-      kClampWGSL,
-      kClampWorkgroupSizeX,
+      is_int ? kClampIntWGSL : kClampWGSL,
+      is_int ? kClampIntWorkgroupSizeX : kClampWorkgroupSizeX,
       "clamp",
       lo,
-      hi);
+      hi,
+      is_int ? &int_bounds : nullptr);
 }
 
 void hardtanh_impl(WebGPUGraph& graph, const std::vector<int>& args) {
