@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import math
 import tempfile
 import unittest
 from typing import Dict, Tuple
@@ -245,6 +246,18 @@ class TestInspectorUtils(unittest.TestCase):
                 self.assertEqual(len(values), 2)
                 self.assertIsNotNone(values[0])
                 self.assertIsNone(values[1])
+
+    def test_compare_results_plot_non_finite_metrics(self):
+        # SNR is inf for identical tensors and -inf when the reference is all
+        # zeros; plotting must not fail on non-finite axis limits.
+        import matplotlib
+
+        matplotlib.use("Agg")
+        a = torch.rand(4, 4)
+        zeros = torch.zeros(4, 4)
+        for ref, out, expected_snr in ((a, a.clone(), math.inf), (zeros, a, -math.inf)):
+            results = compare_results([ref], [out], plot=True)
+            self.assertEqual(results["snr"], [expected_snr])
 
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
