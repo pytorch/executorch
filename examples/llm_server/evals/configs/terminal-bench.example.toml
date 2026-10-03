@@ -1,0 +1,16 @@
+# Copy to terminal-bench.local.toml and set your model paths.
+[server]
+python = "/path/to/executorch-env/bin/python"
+worker_bin = "/path/to/model_worker"
+model_path = "/path/to/model.pte"
+tokenizer_path = "/path/to/tokenizer.json"
+hf_tokenizer = "/path/to/pinned-hf-tokenizer"
+model_id = "qwen3"
+max_context = 8192
+no_think = true
+
+[terminal_bench]
+tasks = ["fix-git"]
+max_output_tokens = 1024
+step_limit = 100
+attempts = 1
