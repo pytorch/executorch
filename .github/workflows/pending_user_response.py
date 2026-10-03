@@ -6,43 +6,55 @@ from github import Github
 REPO_NAME = "pytorch/executorch"
 LABEL = "need-user-input"
 REMINDER_MARKER = "<!-- executorch-auto-reminder -->"
-REMINDER_COMMENT = (
-    f"{REMINDER_MARKER}\nHi @{0}, this issue/PR has been marked as 'need-user-input'. "
-    "Please respond or provide input. If we don't hear back in 30 days, this will be closed."
-)
-CLOSE_COMMENT = (
-    f"{REMINDER_MARKER}\nClosing due to no response after 30 days. "
-    "If you still need help, feel free to re-open or comment again!"
-)
+
 DAYS_BEFORE_REMINDER = 30
 DAYS_BEFORE_CLOSE = 30
-REMINDER_COOLDOWN_DAYS = 7  # Don't post another reminder within 7 days
+REMINDER_COOLDOWN_DAYS = 7
+DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
+
+REMINDER_COMMENT = (
+    REMINDER_MARKER
+    + f"\nHi @{{0}}, this issue/PR has been marked as 'need-user-input'. "
+    + f"Please respond or provide input. If we don't hear back in {DAYS_BEFORE_REMINDER} days, this will be closed."
+)
+CLOSE_COMMENT = (
+    REMINDER_MARKER
+    + f"\nClosing due to no response after {DAYS_BEFORE_CLOSE} days. "
+    + "If you still need help, feel free to re-open or comment again!"
+)
 
 
 def main():
     g = Github(os.environ["GH_TOKEN"])
     repo = g.get_repo(REPO_NAME)
 
-    print("[VALIDATION] Would connect to Github and fetch repo:", REPO_NAME)
+    print(f"[DRY_RUN={DRY_RUN}] Fetching open issues with label '{LABEL}'.")
     issues = repo.get_issues(state="open", labels=[LABEL])
-    print(f"[VALIDATION] Would fetch open issues with label '{LABEL}'.")
 
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
     for issue in issues:
-        print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
-        comments = []  # Replace with mock comments if needed
-        last_comment = comments[-1] if comments else None
+        print(f"Processing issue/PR #{issue.number}: {issue.title}")
 
-        # Find automation comments
-        auto_comments = [c for c in comments if REMINDER_MARKER in c.body]
-        user_comments = [c for c in comments if REMINDER_MARKER not in c.body]
+        comments = sorted(
+            issue.get_comments(),
+            key=lambda comment: comment.created_at,
+        )
+
+        auto_comments = [
+            comment for comment in comments if REMINDER_MARKER in (comment.body or "")
+        ]
+        user_comments = [
+            comment for comment in comments if REMINDER_MARKER not in (comment.body or "")
+        ]
 
         # ---- REMINDER LOGIC ----
-        # Only remind if NO reminder in last 7 days
         recent_auto_reminder = any(
-            (now - c.created_at).days < REMINDER_COOLDOWN_DAYS for c in auto_comments
+            (now - comment.created_at).days < REMINDER_COOLDOWN_DAYS
+            for comment in auto_comments
         )
+
+        last_comment = comments[-1] if comments else None
 
         if not auto_comments:
             if (
@@ -50,32 +62,43 @@ def main():
                 and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER
             ):
                 user = issue.user.login
-                print(f"[VALIDATION] Would remind {user} on issue/PR #{issue.number}")
-        elif auto_comments and not recent_auto_reminder:
-            # Only post new reminder if last was > REMINDER_COOLDOWN_DAYS ago
+                message = REMINDER_COMMENT.format(user)
+                print(f"Posting first reminder for {user}")
+                if not DRY_RUN:
+                    issue.create_comment(message)
+        elif not recent_auto_reminder:
             last_auto = auto_comments[-1]
             user = issue.user.login
             if (now - last_auto.created_at).days >= REMINDER_COOLDOWN_DAYS:
-                print(
-                    f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}"
-                )
+                message = REMINDER_COMMENT.format(user)
+                print(f"Posting follow-up reminder for {user}")
+                if not DRY_RUN:
+                    issue.create_comment(message)
 
-        # ---- EXISTING CLOSE/REMOVE LABEL LOGIC ----
+        # ---- CLOSE / LABEL LOGIC ----
         if auto_comments:
-            last_auto = auto_comments[-1]
+            first_auto_comment = auto_comments[0]
+            days_since_first = (now - first_auto_comment.created_at).days
+
             user_responded = any(
-                c.created_at > last_auto.created_at and c.user.login == issue.user.login
-                for c in user_comments
+                comment.created_at > first_auto_comment.created_at
+                and comment.user.login == issue.user.login
+                for comment in user_comments
             )
-            if not user_responded:
-                if (now - last_auto.created_at).days >= DAYS_BEFORE_CLOSE:
-                    print(
-                        f"[VALIDATION] Would close issue/PR #{issue.number} due to inactivity."
-                    )
-            else:
+
+            if user_responded:
+                print(f"User responded; remove '{LABEL}' label")
+                if not DRY_RUN:
+                    issue.remove_from_labels(LABEL)
+            elif days_since_first >= DAYS_BEFORE_CLOSE:
                 print(
-                    f"[VALIDATION] Would remove label from issue/PR #{issue.number} after user response."
+                    f"Close issue/PR due to inactivity "
+                    f"({days_since_first} days since first reminder)"
                 )
+                if not DRY_RUN:
+                    issue.create_comment(CLOSE_COMMENT)
+                    issue.edit(state="closed")
+                    issue.remove_from_labels(LABEL)
 
 
 if __name__ == "__main__":
