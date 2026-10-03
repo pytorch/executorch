@@ -35,6 +35,8 @@ runtime::Error write_storage_file(
 runtime::Error publish_storage_data(int root_fd, NSString* name, NSData* data);
 runtime::Result<NSArray<NSString*>*> storage_children(
     int fd, bool skip_invalid_names = false);
+// With remove=false, only preflight the keyed tree without modifying it.
+runtime::Error remove_storage_staging(int root_fd, NSString* key, bool remove);
 
 enum class StorageOperation {
   Rename,
