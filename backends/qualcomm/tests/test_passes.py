@@ -140,6 +140,146 @@ class TestPasses(unittest.TestCase):
         # Must not raise.
         LiftConstantScalarOperands().call(gm)
 
+    def test_partitioner_falls_back_on_rank_above_htp_limit(self):
+        # The HTP backend rejects tensors with rank > 5 at graph-prepare; the
+        # partitioner must report such ops as unsupported so they fall back to CPU
+        # instead of aborting the whole context binary.
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x.unsqueeze(0) + 1  # rank-5 input -> rank-6 output
+
+        exported_program = torch.export.export(
+            Model(), (torch.randn(1, 1, 1, 1, 4),), strict=True
+        )
+        edge_program = to_edge(
+            {"forward": exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )._edge_programs["forward"]
+        rank6_nodes = [
+            node
+            for node in edge_program.graph.nodes
+            if node.op == "call_function"
+            and getattr(node.meta.get("val", None), "ndim", 0) == 6
+        ]
+        self.assertTrue(rank6_nodes, "expected a rank-6 node in the graph")
+
+        # Drive is_node_supported with a mock self. node_visitors is populated so
+        # the over-rank node passes the visitor-existence checks and reaches the
+        # rank guard; without the guard it would fall through to the (mocked) live
+        # backend and be reported supported.
+        support = MagicMock()
+        support.phase = "QnnPartitioner"
+        support.skip_node_id_set = set()
+        support.skip_node_op_set = set()
+        support.nodes_to_wrappers = {}
+        support.backend_type = QnnExecuTorchBackendType.kHtpBackend
+        support.node_visitors = {
+            node.target.__name__: MagicMock() for node in rank6_nodes
+        }
+        for node in rank6_nodes:
+            self.assertFalse(QnnOperatorSupport.is_node_supported(support, None, node))
+
+    def test_rank_guard_is_scoped_to_htp(self):
+        # QnnOperatorSupport is reused by the GPU partitioner and by
+        # LpaiPartitionFallbackSupport. The rank limit is HTP's, so an over-rank
+        # node must not be pushed to CPU on those backends.
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x.unsqueeze(0) + 1  # rank-5 input -> rank-6 output
+
+        exported_program = torch.export.export(
+            Model(), (torch.randn(1, 1, 1, 1, 4),), strict=True
+        )
+        edge_program = to_edge(
+            {"forward": exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )._edge_programs["forward"]
+        rank6_nodes = [
+            node
+            for node in edge_program.graph.nodes
+            if node.op == "call_function"
+            and getattr(node.meta.get("val", None), "ndim", 0) == 6
+        ]
+        self.assertTrue(rank6_nodes, "expected a rank-6 node in the graph")
+
+        for backend_type in (
+            QnnExecuTorchBackendType.kGpuBackend,
+            QnnExecuTorchBackendType.kLpaiBackend,
+        ):
+            with self.subTest(backend=backend_type):
+                support = MagicMock()
+                support.phase = "QnnPartitioner"
+                support.skip_node_id_set = set()
+                support.skip_node_op_set = set()
+                support.nodes_to_wrappers = {}
+                support.backend_type = backend_type
+                support.node_visitors = {
+                    node.target.__name__: MagicMock() for node in rank6_nodes
+                }
+                for node in rank6_nodes:
+                    # Reaches the backend's own support check rather than being
+                    # rejected by the HTP rank guard.
+                    self.assertTrue(
+                        QnnOperatorSupport.is_node_supported(support, None, node)
+                    )
+
+    def test_partitioner_falls_back_on_over_rank_input_nested_in_list(self):
+        # An over-rank tensor can reach the backend as an *input* nested inside a
+        # list argument, with a low-rank output: aten.index_put keeps its index
+        # tensors in args[1] and returns a tensor shaped like self. Walking
+        # node.args alone never descends into that list, so the node passes the
+        # guard and the rank is only rejected later, by the backend.
+        class Model(torch.nn.Module):
+            def forward(self, x, idx, v):
+                return x.index_put([idx], v)
+
+        exported_program = torch.export.export(
+            Model(),
+            (
+                torch.randn(8),
+                torch.zeros(1, 1, 1, 1, 1, 4, dtype=torch.long),  # rank 6
+                torch.randn(4),  # broadcasts; stays rank 1
+            ),
+            strict=True,
+        )
+        edge_program = to_edge(
+            {"forward": exported_program},
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )._edge_programs["forward"]
+
+        def _over_rank(node):
+            return getattr(node.meta.get("val", None), "ndim", 0) > 5
+
+        nested = [
+            node
+            for node in edge_program.graph.nodes
+            if node.op == "call_function"
+            and not _over_rank(node)
+            and not any(
+                isinstance(a, torch.fx.Node) and _over_rank(a) for a in node.args
+            )
+            and any(
+                isinstance(a, (list, tuple))
+                and any(isinstance(e, torch.fx.Node) and _over_rank(e) for e in a)
+                for a in node.args
+            )
+        ]
+        # Guard against a vacuous test: the over-rank tensor must be reachable
+        # only through the list argument, never through the output or a direct arg.
+        self.assertTrue(
+            nested, "expected an over-rank tensor only inside a list argument"
+        )
+
+        support = MagicMock()
+        support.phase = "QnnPartitioner"
+        support.skip_node_id_set = set()
+        support.skip_node_op_set = set()
+        support.nodes_to_wrappers = {}
+        support.backend_type = QnnExecuTorchBackendType.kHtpBackend
+        support.node_visitors = {node.target.__name__: MagicMock() for node in nested}
+        for node in nested:
+            self.assertFalse(QnnOperatorSupport.is_node_supported(support, None, node))
+
     def test_build_op_wrappers_returns_context_binary(self):
         op_name = "ctx_loader_build"
         ctx_bin = b"qnn_context_binary"
