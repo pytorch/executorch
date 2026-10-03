@@ -51,15 +51,13 @@ using namespace executorch::extension;
 using namespace torch::executor;
 
 namespace executorch::extension {
-class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
+class JTensor : public facebook::jni::JavaClass<JTensor> {
  public:
   constexpr static const char* kJavaDescriptor =
       "Lorg/pytorch/executorch/Tensor;";
 
-  explicit TensorHybrid(executorch::aten::Tensor tensor) {}
-
-  static facebook::jni::local_ref<TensorHybrid::javaobject>
-  newJTensorFromTensor(const executorch::aten::Tensor& tensor) {
+  static facebook::jni::local_ref<JTensor::javaobject> newJTensorFromTensor(
+      const executorch::aten::Tensor& tensor) {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
@@ -83,7 +81,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     jTensorShape->setRegion(
         0, tensor_shape_vec.size(), tensor_shape_vec.data());
 
-    static auto cls = TensorHybrid::javaClassStatic();
+    static auto cls = JTensor::javaClassStatic();
     // Note: this is safe as long as the data stored in tensor is valid; the
     // data won't go out of scope as long as the Method for the inference is
     // valid and there is no other inference call. Java layer picks up this
@@ -94,18 +92,16 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
 
     static const auto jMethodNewTensor =
-        cls->getStaticMethod<facebook::jni::local_ref<TensorHybrid::javaobject>(
+        cls->getStaticMethod<facebook::jni::local_ref<JTensor::javaobject>(
             facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
             facebook::jni::alias_ref<jlongArray>,
-            jint,
-            facebook::jni::alias_ref<jhybriddata>)>("nativeNewTensor");
-    return jMethodNewTensor(
-        cls, jTensorBuffer, jTensorShape, jdtype, makeCxxInstance(tensor));
+            jint)>("nativeNewTensor");
+    return jMethodNewTensor(cls, jTensorBuffer, jTensorShape, jdtype);
   }
 
   static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
-    static auto cls = TensorHybrid::javaClassStatic();
+      facebook::jni::alias_ref<JTensor::javaobject> jtensor) {
+    static auto cls = JTensor::javaClassStatic();
     static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
     jint jdtype = dtypeMethod(jtensor);
 
@@ -166,9 +162,6 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     return from_blob(
         jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
   }
-
- private:
-  friend HybridBase;
 };
 
 class JEValue : public facebook::jni::JavaClass<JEValue> {
@@ -187,10 +180,10 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
       static auto jMethodTensor =
           JEValue::javaClassStatic()
               ->getStaticMethod<facebook::jni::local_ref<JEValue>(
-                  facebook::jni::local_ref<TensorHybrid::javaobject>)>("from");
+                  facebook::jni::local_ref<JTensor::javaobject>)>("from");
       return jMethodTensor(
           JEValue::javaClassStatic(),
-          TensorHybrid::newJTensorFromTensor(evalue.toTensor()));
+          JTensor::newJTensorFromTensor(evalue.toTensor()));
     } else if (evalue.isInt()) {
       static auto jMethodTensor =
           JEValue::javaClassStatic()
@@ -234,10 +227,10 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     if (JEValue::kTypeCodeTensor == typeCode) {
       static const auto jMethodGetTensor =
           JEValue::javaClassStatic()
-              ->getMethod<facebook::jni::alias_ref<TensorHybrid::javaobject>()>(
+              ->getMethod<facebook::jni::alias_ref<JTensor::javaobject>()>(
                   "toTensor");
       auto jtensor = jMethodGetTensor(JEValue);
-      return TensorHybrid::newTensorFromJTensor(jtensor);
+      return JTensor::newTensorFromJTensor(jtensor);
     }
     std::stringstream ss;
     ss << "Unknown EValue typeCode: " << typeCode;
@@ -702,7 +695,6 @@ extern void register_natives_for_llm();
 // No op if we don't build LLM
 void register_natives_for_llm() {}
 #endif
-extern void register_natives_for_runtime();
 
 #ifdef EXECUTORCH_BUILD_EXTENSION_TRAINING
 extern void register_natives_for_training();
@@ -715,7 +707,6 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     executorch::extension::ExecuTorchJni::registerNatives();
     register_natives_for_llm();
-    register_natives_for_runtime();
     register_natives_for_training();
   });
 }

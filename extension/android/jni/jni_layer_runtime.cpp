@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <fbjni/fbjni.h>
 #include <jni.h>
 
 #include <executorch/runtime/backend/interface.h>
@@ -15,58 +14,88 @@
 namespace executorch_jni {
 namespace runtime = ::executorch::ET_RUNTIME_NAMESPACE;
 
-class AndroidRuntimeJni : public facebook::jni::JavaClass<AndroidRuntimeJni> {
- public:
-  constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/ExecuTorchRuntime;";
+namespace {
 
-  static void registerNatives() {
-    javaClassStatic()->registerNatives({
-        makeNativeMethod(
-            "getRegisteredOps", AndroidRuntimeJni::getRegisteredOps),
-        makeNativeMethod(
-            "getRegisteredBackends", AndroidRuntimeJni::getRegisteredBackends),
-    });
+jobjectArray new_string_array(JNIEnv* env, jsize size) {
+  jclass string_class = env->FindClass("java/lang/String");
+  if (string_class == nullptr) {
+    return nullptr;
   }
 
-  // Returns a string array of all registered ops
-  static facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
-  getRegisteredOps(facebook::jni::alias_ref<jclass>) {
-    auto kernels = runtime::get_registered_kernels();
-    auto result = facebook::jni::JArrayClass<jstring>::newArray(kernels.size());
+  jobjectArray result = env->NewObjectArray(size, string_class, nullptr);
+  env->DeleteLocalRef(string_class);
+  return result;
+}
 
-    for (size_t i = 0; i < kernels.size(); ++i) {
-      auto op = facebook::jni::make_jstring(kernels[i].name_);
-      result->setElement(i, op.get());
+bool set_string_array_element(
+    JNIEnv* env,
+    jobjectArray array,
+    jsize index,
+    const char* value) {
+  jstring string = env->NewStringUTF(value);
+  if (string == nullptr) {
+    return false;
+  }
+
+  env->SetObjectArrayElement(array, index, string);
+  env->DeleteLocalRef(string);
+  return !env->ExceptionCheck();
+}
+
+} // namespace
+
+jobjectArray get_registered_ops(JNIEnv* env) {
+  auto kernels = runtime::get_registered_kernels();
+  auto result = new_string_array(env, static_cast<jsize>(kernels.size()));
+  if (result == nullptr) {
+    return nullptr;
+  }
+
+  for (size_t i = 0; i < kernels.size(); ++i) {
+    if (!set_string_array_element(
+            env, result, static_cast<jsize>(i), kernels[i].name_)) {
+      return nullptr;
+    }
+  }
+
+  return result;
+}
+
+jobjectArray get_registered_backends(JNIEnv* env) {
+  const int num_backends = runtime::get_num_registered_backends();
+  auto result = new_string_array(env, static_cast<jsize>(num_backends));
+  if (result == nullptr) {
+    return nullptr;
+  }
+
+  for (int i = 0; i < num_backends; ++i) {
+    auto name_result = runtime::get_backend_name(i);
+    const char* name = "";
+
+    if (name_result.ok()) {
+      name = *name_result;
     }
 
-    return result;
-  }
-
-  // Returns a string array of all registered backends
-  static facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
-  getRegisteredBackends(facebook::jni::alias_ref<jclass>) {
-    int num_backends = runtime::get_num_registered_backends();
-    auto result = facebook::jni::JArrayClass<jstring>::newArray(num_backends);
-
-    for (int i = 0; i < num_backends; ++i) {
-      auto name_result = runtime::get_backend_name(i);
-      const char* name = "";
-
-      if (name_result.ok()) {
-        name = *name_result;
-      }
-
-      auto backend_str = facebook::jni::make_jstring(name);
-      result->setElement(i, backend_str.get());
+    if (!set_string_array_element(env, result, static_cast<jsize>(i), name)) {
+      return nullptr;
     }
-
-    return result;
   }
-};
+
+  return result;
+}
 
 } // namespace executorch_jni
 
-void register_natives_for_runtime() {
-  executorch_jni::AndroidRuntimeJni::registerNatives();
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_pytorch_executorch_ExecuTorchRuntime_getRegisteredOps(
+    JNIEnv* env,
+    jclass /* clazz */) {
+  return executorch_jni::get_registered_ops(env);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_pytorch_executorch_ExecuTorchRuntime_getRegisteredBackends(
+    JNIEnv* env,
+    jclass /* clazz */) {
+  return executorch_jni::get_registered_backends(env);
 }
