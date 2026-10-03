@@ -820,7 +820,9 @@ def register_any_dim():
         supports_resize=True,
         supports_highdim=True,
         are_node_inputs_supported_fn=lambda node: (
-            utils.ndim_of(node.args[0]) > 0 and is_reduce_node_supported(node)
+            utils.ndim_of(node.args[0]) > 0
+            and get_keepdim_setting(node)
+            and is_reduce_node_supported(node)
         ),
         pick_io_storage_fn=pick_storage_for_reduce,
     )
