@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.exir.sym_util import eval_shape
@@ -48,3 +48,16 @@ def view(base: torch.Tensor, size: List[int]) -> torch.Tensor:
     It is used to elide view_copy nodes.
     """
     return base.view(size)
+
+
+def slice(  # noqa: A001
+    base: torch.Tensor,
+    dim: int = 0,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    step: int = 1,
+) -> torch.Tensor:
+    """
+    Mimics ``aten.slice.Tensor`` for eliding contiguous ``slice_copy`` nodes.
+    """
+    return torch.ops.aten.slice.Tensor(base, dim, start, end, step)

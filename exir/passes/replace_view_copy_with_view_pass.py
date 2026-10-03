@@ -217,7 +217,9 @@ class _Guard:
 
 
 class _ViewSpec(TensorSpec):
-    def __init__(self, base: TensorSpec, shape: List[int]) -> None:
+    def __init__(
+        self, base: TensorSpec, shape: List[int], *, byte_offset: int = 0
+    ) -> None:
         """
         A _ViewSpec is TensorSpec that shares non-size related fields with its base.
         The size-related fields are: shape, stride, dim_order, and shape_dynamism.
@@ -228,7 +230,8 @@ class _ViewSpec(TensorSpec):
 
         A _ViewSpec can only be created from a non-sparse, strided TensorSpec.
         On creation, a _ViewSpec must be compatible with its base with respect to
-        shape_dynamism, dtype, and nbytes.
+        shape_dynamism and dtype. Its byte range must fit within the base.
+        byte_offset is relative to the base's memory-planned offset.
 
         A _ViewSpec contains _guards that are evaluated on every __getattribute__ call.
         The purpose of the guards is to make sure the _ViewSpec is still compatible
@@ -239,6 +242,7 @@ class _ViewSpec(TensorSpec):
         # Any attribute that is not in _self_fields or _base_fields will
         # raise an Exception.  If TensorSpec is extended with a new attribute,
         # we should explicitly decide how _ViewSpec will handle it.
+        self._byte_offset = byte_offset
         self._self_fields = [
             # We need to get the debug method from self
             # so that the object id it prints is correct.
@@ -348,11 +352,20 @@ class _ViewSpec(TensorSpec):
             _Guard("dtype", lambda view_spec: view_spec.dtype, base.dtype)
         )
 
-        # We do not guard nbytes because dynamic symints are replaced by upper bounds.
-        # We do guard on rank, though
-        if self.nbytes() != base.nbytes():
+        # Dynamic symints are replaced by upper bounds, so only retain a
+        # byte-range guard for static specs.
+        if byte_offset < 0 or byte_offset + self.nbytes() > base.nbytes():
             raise Exception(
-                f"_ViewSpec is incompatible with its base on creation.  It has nbytes={self.nbytes()}, but its base has nbytes={base.nbytes()}."
+                f"_ViewSpec byte range ({byte_offset}, {byte_offset + self.nbytes()}) exceeds base size {base.nbytes()}."
+            )
+        if self.is_static_shape_tensor:
+            self._guards.append(
+                _Guard(
+                    "byte_range",
+                    lambda view_spec: view_spec._byte_offset + view_spec.nbytes()
+                    <= view_spec._base.nbytes(),
+                    True,
+                )
             )
         self._guards.append(
             _Guard("rank", lambda view_spec: len(view_spec.shape), len(shape))
@@ -376,6 +389,7 @@ class _ViewSpec(TensorSpec):
             "_guards",
             "_unguarded_access",
             "_run_guards",
+            "_byte_offset",
         ]:
             return object.__getattribute__(self, name)
 
@@ -383,7 +397,9 @@ class _ViewSpec(TensorSpec):
         if name in self._self_fields:
             val = object.__getattribute__(self, name)
         elif name in self._base_fields:
-            val = object.__getattribute__(self._base, name)
+            val = self._base.__getattribute__(name)
+            if name == "mem_offset" and val is not None:
+                val += self._byte_offset
         else:
             if len(name) > 0 and name[0] != "_":
                 logger.warning(
@@ -404,6 +420,7 @@ class _ViewSpec(TensorSpec):
             "_guards",
             "_unguarded_access",
             "_run_guards",
+            "_byte_offset",
         ]:
             object.__setattr__(self, name, val)
             return
@@ -413,7 +430,11 @@ class _ViewSpec(TensorSpec):
             return
 
         if name in self._base_fields:
-            object.__setattr__(self._base, name, val)
+            if name == "mem_offset" and self._byte_offset:
+                raise ValueError(
+                    "Set the base allocation offset, not a sub-view offset."
+                )
+            self._base.__setattr__(name, val)
             return
 
         if len(name) > 0 and name[0] != "_":
