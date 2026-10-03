@@ -812,6 +812,15 @@ def register_reduce_cpp_ops():
 # =============================================================================
 
 
+def is_argreduce_node_supported(node: torch.fx.Node) -> bool:
+    ndim = utils.ndim_of(node.args[0])
+    assert ndim is not None
+    dim = node.args[1] if len(node.args) > 1 else None
+    if dim is None:
+        return ndim == 1
+    return ndim > 0 and utils.normalize_dims(dim, ndim) == ndim - 1
+
+
 @update_features(
     [
         exir_ops.edge.aten.argmax.default,
@@ -820,13 +829,12 @@ def register_reduce_cpp_ops():
 )
 def register_argreduce_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
         inputs_dtypes=utils.FP_T,
         outputs_dtypes=utils.INT_T,
         supports_resize=True,
         supports_highdim=True,
-        are_node_inputs_supported_fn=is_reduce_node_supported,
-        pick_io_storage_fn=pick_storage_for_reduce,
+        are_node_inputs_supported_fn=is_argreduce_node_supported,
     )
 
 
