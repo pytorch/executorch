@@ -12,6 +12,7 @@
 
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
@@ -24,6 +25,32 @@ namespace runtime {
  */
 class DataLoader {
  public:
+  /** A portion of the replacement data source. */
+  struct DataChunk {
+    enum class Source {
+      Loader,
+      Buffer,
+      Zero,
+    };
+
+    Source source;
+    size_t offset;
+    const void* data;
+    size_t size;
+
+    static DataChunk from_loader(size_t offset, size_t size) {
+      return {Source::Loader, offset, nullptr, size};
+    }
+
+    static DataChunk from_buffer(const void* data, size_t size) {
+      return {Source::Buffer, 0, data, size};
+    }
+
+    static DataChunk zero(size_t size) {
+      return {Source::Zero, 0, nullptr, size};
+    }
+  };
+
   /**
    * Describes the content of the segment.
    */
@@ -127,6 +154,21 @@ class DataLoader {
    * Returns the length of the underlying data source, typically the file size.
    */
   ET_NODISCARD virtual Result<size_t> size() const = 0;
+
+  /**
+   * Atomically replaces this loader's underlying data with the concatenation
+   * of `chunks`. Loader chunks copy ranges from the current snapshot, buffer
+   * chunks copy caller-provided bytes, and zero chunks emit zero-filled bytes.
+   *
+   * Existing readers must keep observing their original snapshot. Concurrent
+   * writers must not overwrite a replacement made after this loader was
+   * opened. Implementations that cannot provide these guarantees should
+   * return Error::NotSupported.
+   */
+  ET_NODISCARD virtual Error replace_data(Span<const DataChunk> chunks) {
+    (void)chunks;
+    return Error::NotSupported;
+  }
 };
 
 } // namespace runtime

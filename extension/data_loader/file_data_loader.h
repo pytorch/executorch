@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstddef>
+#include <mutex>
 
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/result.h>
@@ -16,6 +17,15 @@
 
 namespace executorch {
 namespace extension {
+
+namespace internal {
+executorch::runtime::Error replace_file_data(
+    int fd,
+    const char* file_name,
+    size_t file_size,
+    executorch::runtime::Span<
+        const executorch::runtime::DataLoader::DataChunk> chunks);
+} // namespace internal
 
 /**
  * A DataLoader that loads segments from a file, allocating the memory
@@ -78,6 +88,9 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
       ET_UNUSED const SegmentInfo& segment_info,
       void* buffer) const override;
 
+  ET_NODISCARD executorch::runtime::Error replace_data(
+      executorch::runtime::Span<const DataChunk> chunks) override;
+
  private:
   FileDataLoader(
       int fd,
@@ -98,6 +111,7 @@ class FileDataLoader final : public executorch::runtime::DataLoader {
   const size_t file_size_;
   const std::align_val_t alignment_;
   const int fd_; // Owned by the instance.
+  std::mutex replace_mutex_;
 };
 
 } // namespace extension
