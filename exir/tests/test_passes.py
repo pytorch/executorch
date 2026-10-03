@@ -8,6 +8,7 @@
 # pyre-strict
 import copy
 import itertools
+import operator
 import os
 import tempfile
 import unittest
@@ -73,6 +74,7 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
+from executorch.exir.passes.replace_sym_sum_pass import ReplaceSymSumPass
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -753,6 +755,18 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(len(spec[0].shape), 1)  # Should be rank 1
         upper_bound = eval_upper_bound(spec[0].shape[0])
         self.assertEqual(upper_bound, 20)  # Should match dynamic shape bound
+
+    def test_replace_sym_sum_pass(self) -> None:
+        graph = torch.fx.Graph()
+        a, b, c = (graph.placeholder(name) for name in "abc")
+        graph.output(graph.call_function(torch.sym_sum, ([a, b, c],)))
+        gm = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        gm = ReplaceSymSumPass()(gm).graph_module
+
+        targets = [n.target for n in gm.graph.nodes if n.op == "call_function"]
+        self.assertEqual(targets, [operator.add, operator.add])
+        self.assertEqual(gm(1, 2, 3), 6)
 
     def test_spec_prop_pass_while(self) -> None:
         class ModelWithWhile(torch.nn.Module):
