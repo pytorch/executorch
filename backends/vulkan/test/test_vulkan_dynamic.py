@@ -308,6 +308,31 @@ class TestVulkanDynamic(unittest.TestCase):
         edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
         self._run(edge, model, [(x,)], atol=0, rtol=0)
 
+    def test_fp16_reduction_halfway_rounding(self):
+        class Mean(torch.nn.Module):
+            def forward(self, x):
+                return torch.mean(x, dim=-1, keepdim=True)
+
+        # Adjacent half values produce ties at even/odd mantissas, an exponent
+        # carry, and the normal/subnormal boundary without rounding the inputs.
+        x = torch.tensor(
+            [
+                [1, 1 + 2**-10],
+                [1 + 2**-10, 1 + 2**-9],
+                [2 - 2**-10, 2],
+                [2**-14 - 2**-24, 2**-14],
+            ],
+            dtype=torch.float16,
+        )
+        x = torch.cat((x, -x))
+        model = Mean()
+        edge = self._lower(model, (x,), storage=VkStorageType.TEXTURE_3D)
+        (graph,) = _vulkan_graphs(edge)
+        output = graph.values[graph.output_ids[0]].value
+        self.assertEqual(output.datatype, VkDataType.FLOAT16)
+        self.assertEqual(output.storage_type, VkStorageType.TEXTURE_3D)
+        self._run(edge, model, [(x,)], atol=0, rtol=0)
+
     def test_argreduce_first_nan(self):
         class Reduce(torch.nn.Module):
             def __init__(self, op):
