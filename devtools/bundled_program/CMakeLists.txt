@@ -46,7 +46,7 @@ add_library(
 if(EXECUTORCH_BUILD_SHARED)
   target_link_libraries(bundled_program PUBLIC executorch_shared)
 else()
-  target_link_libraries(bundled_program PUBLIC executorch)
+  target_link_libraries(bundled_program PUBLIC prim_ops_lib)
 endif()
 target_include_directories(
   bundled_program
