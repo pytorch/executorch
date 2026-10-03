@@ -364,6 +364,19 @@ fbcode_target(_kind = runtime.python_test,
 )
 
 fbcode_target(_kind = runtime.python_test,
+    name = "test_op_backend",
+    srcs = [
+        "test_op_backend.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/transforms:utils",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:op_backend",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
     name = "test_utils",
     srcs = [
         "test_utils.py",
