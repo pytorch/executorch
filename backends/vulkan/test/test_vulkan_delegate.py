@@ -1275,6 +1275,48 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_grid_sampler_2d(self):
+        class GridSampler2d(torch.nn.Module):
+            def __init__(self, padding_mode, align_corners):
+                super().__init__()
+                self.padding_mode = padding_mode
+                self.align_corners = align_corners
+
+            def forward(self, x, grid):
+                return torch.nn.functional.grid_sample(
+                    x,
+                    grid,
+                    mode="bilinear",
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                )
+
+        # Deliberately push the grid past [-1, 1] on every side so the zeros
+        # and border paths actually diverge; an in-range grid is identical
+        # under both and would pass even with the padding branch broken.
+        grid = torch.stack(
+            torch.meshgrid(
+                torch.linspace(-1.6, 1.6, 7),
+                torch.linspace(-1.6, 1.6, 5),
+                indexing="ij",
+            )[::-1],
+            dim=-1,
+        ).unsqueeze(0)
+        sample_inputs = (
+            torch.rand(size=(1, 4, 6, 8), dtype=torch.float32),
+            grid.contiguous(),
+        )
+
+        for padding_mode in ("zeros", "border"):
+            for align_corners in (True, False):
+                with self.subTest(
+                    padding_mode=padding_mode, align_corners=align_corners
+                ):
+                    self.lower_module_and_test_output(
+                        GridSampler2d(padding_mode, align_corners),
+                        sample_inputs,
+                    )
+
     def test_vulkan_backend_minimum(self):
         class MinimumModule(torch.nn.Module):
             def __init__(self):
