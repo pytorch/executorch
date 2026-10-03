@@ -110,6 +110,5 @@ Reliability guidance:
 
 ## Evaluate with Terminal-Bench
 
-The [evaluation guide](evals/README.md) provides setup and run commands for
-Terminal-Bench, configuration templates in `evals/configs/`, and task and
-performance metrics on macOS.
+See [Terminal-Bench](evals/terminal_bench/README.md) for setup, configuration,
+and evaluation commands on macOS.
