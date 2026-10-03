@@ -63,3 +63,7 @@ def test_qat(subtests):
 
 def test_lowering_with_exported_program(compile_spec):
     LoweringWithExportedProgram.test(compile_spec)  # noqa: F405
+
+
+def test_non_float_activation_annotation(quantizer):
+    NonFloatActivationAnnotation.test(quantizer)  # noqa: F405
