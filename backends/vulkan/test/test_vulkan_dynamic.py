@@ -166,6 +166,34 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), storage=storage)
                         self._run(edge, model, [(x,)], atol=5e-6, rtol=5e-6)
 
+    def test_4d_reductions(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op, dim):
+                super().__init__()
+                self.op = op
+                self.dim = dim
+
+            def forward(self, x):
+                return self.op(x, dim=self.dim, keepdim=True)
+
+        for op in (torch.sum, torch.mean, torch.amax):
+            for batch, dim, supported in (
+                (1, 0, False),
+                (2, 0, False),
+                (2, 1, False),
+                (1, 1, True),
+                (2, 2, True),
+                (2, -1, True),
+            ):
+                with self.subTest(op=op, batch=batch, dim=dim):
+                    values = torch.arange(batch * 3 * 4 * 5).reshape(batch, 3, 4, 5)
+                    x = -((values * 37 + 11) % values.numel() + 1).float() / 7
+                    model = Reduce(op, dim)
+                    edge = self._lower(model, (x,), fully_delegated=supported)
+                    if not supported:
+                        self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, [(x,)])
+
     def test_buffer_reduction_range(self):
         class Reduce(torch.nn.Module):
             def __init__(self, op):
@@ -184,6 +212,73 @@ class TestVulkanDynamic(unittest.TestCase):
                 model = Reduce(op)
                 edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
                 self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_argreduce_dims(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op, dim, keepdim):
+                super().__init__()
+                self.op = op
+                self.dim = dim
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return self.op(x, dim=self.dim, keepdim=self.keepdim)
+
+        for op in (torch.argmax, torch.argmin):
+            for keepdim in (True, False):
+                for shape, dim, supported in (
+                    ((1, 8), None, False),
+                    ((3, 8), None, False),
+                    ((3, 8), 0, False),
+                    ((3, 8), -2, False),
+                    ((8,), None, True),
+                    ((3, 8), 1, True),
+                    ((3, 8), -1, True),
+                ):
+                    with self.subTest(op=op, keepdim=keepdim, shape=shape, dim=dim):
+                        x = ((torch.arange(math.prod(shape)) * 5 + 3) % 17).float()
+                        x = x.reshape(shape)
+                        model = Reduce(op, dim, keepdim)
+                        edge = self._lower(model, (x,), fully_delegated=supported)
+                        graphs = _vulkan_graphs(edge)
+                        if supported:
+                            (graph,) = graphs
+                            for value_id in graph.input_ids + graph.output_ids:
+                                self.assertEqual(
+                                    graph.values[value_id].value.storage_type,
+                                    VkStorageType.BUFFER,
+                                )
+                        else:
+                            self.assertEqual(len(graphs), 0)
+                        self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_unsupported_reduction_dims_fall_back(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op, keepdim, dims):
+                super().__init__()
+                self.op = op
+                self.keepdim = keepdim
+                self.dims = dims
+
+            def forward(self, x):
+                return self.op(x, dim=self.dims, keepdim=self.keepdim)
+
+        for op in (torch.sum, torch.mean, torch.amax, torch.amin):
+            for keepdim in (False, True):
+                for dims, shape in (
+                    ([], (8,)),
+                    ([], (2, 3, 5)),
+                    (None, (8, 3)),
+                    (None, (1, 8)),
+                ):
+                    if dims is None and op not in (torch.sum, torch.mean):
+                        continue
+                    with self.subTest(op=op, keepdim=keepdim, dims=dims, shape=shape):
+                        x = torch.linspace(-4, 3, math.prod(shape)).reshape(shape)
+                        model = Reduce(op, keepdim, dims)
+                        edge = self._lower(model, (x,), fully_delegated=False)
+                        self.assertEqual(_vulkan_graphs(edge), [])
+                        self._run(edge, model, [(x,)])
 
     def test_int32_buffer_reduction_shader_range(self):
         from executorch.extension.pybindings.portable_lib import (
