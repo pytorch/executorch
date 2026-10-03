@@ -72,7 +72,7 @@ class EnnPassManager(PassManager):
         self.add_pass(FoldQDQPass())
         self.add_pass(Conv1dToConv2d(exported_program))
         self.add_pass(FuseBatchNormWithConvPass(exported_program))
-        self.add_pass(AddmmToLinearTransform())
+        self.add_pass(AddmmToLinearTransform(exported_program))
         self.add_pass(ReplaceOpsWithScalar())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(InsertQDQPass(exported_program))
