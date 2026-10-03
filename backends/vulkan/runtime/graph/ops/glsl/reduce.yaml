@@ -17,6 +17,9 @@ reduce:
       - VALUE: float
   shader_variants:
     - NAME: sum
+    - NAME: any_uint8
+      DTYPE: uint8
+      UPDATE_ACCUM: max(accum, new_val)
     - NAME: mean
       POSTPROCESS: (accum / tin_sizes[reduce_dim])
     - NAME: amax
