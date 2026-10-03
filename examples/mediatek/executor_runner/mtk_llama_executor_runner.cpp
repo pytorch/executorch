@@ -339,11 +339,27 @@ int main(int argc, char** argv) {
 
   LlamaRuntime llama_runtime;
 
+  et_timestamp_t time_spent_loading = 0;
+
   // Initialize model
   ET_LOG(Info, "Begin model loading.");
   timer_init.Start();
+
+  const et_timestamp_t before_load = executorch::runtime::pal_current_ticks();
+
   const auto tokenizer = load_tokenizer();
   llama_runtime.Initialize(model_options, model_paths);
+
+  const et_timestamp_t after_load = executorch::runtime::pal_current_ticks();
+  time_spent_loading += after_load - before_load;
+  const auto tick_ratio = et_pal_ticks_to_ns_multiplier();
+  constexpr auto NANOSECONDS_PER_MILLISECOND = 1000000;
+  ET_LOG(
+      Info,
+      "Model initialized successfully in %f ms.",
+      static_cast<double>(time_spent_loading) * tick_ratio.numerator /
+          tick_ratio.denominator / NANOSECONDS_PER_MILLISECOND);
+
   timer_init.End();
 
   // Run model
