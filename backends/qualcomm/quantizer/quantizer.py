@@ -48,6 +48,7 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
 from torchao.quantization.pt2e.quantizer import Quantizer, SharedQuantizationSpec
 
+from .concat import annotate_cat_shared_qspec
 from .conv_bn import annotate_conv_bn_partitions
 
 from .qconfig import (
@@ -527,6 +528,10 @@ class QnnQuantizer(Quantizer):
                 # pass. PTQ is left alone: batchnorm is already folded into the
                 # conv by the time it is quantized there.
                 annotate_conv_bn_partitions(
+                    model, self._get_quant_config, self.discard_nodes
+                )
+                # ConcatObserver cannot drive FakeQuantize inputs; see concat.py.
+                annotate_cat_shared_qspec(
                     model, self._get_quant_config, self.discard_nodes
                 )
             self._annotate(model)
