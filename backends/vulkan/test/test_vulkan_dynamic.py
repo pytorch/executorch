@@ -17,7 +17,10 @@ import torch
 
 import torch.nn.functional as F
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+    parse_compile_options,
+    VulkanPartitioner,
+)
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkDataType,
@@ -30,7 +33,9 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     flatbuffer_to_vk_graph,
 )
 
-from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+
+from executorch.exir.backend.backend_api import to_backend
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -630,6 +635,50 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), fully_delegated=False)
                         self.assertEqual(_vulkan_graphs(edge), [])
                         self._run(edge, model, [(x,)])
+
+    def test_int32_buffer_reduction_shader_range(self):
+        from executorch.extension.pybindings.portable_lib import (
+            _load_for_executorch_from_buffer,
+        )
+
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        x = torch.tensor(
+            [[80000, 80001, 80002, 80003], [-80000, -80001, -80002, -80003]],
+            dtype=torch.int32,
+        )
+        for op in (torch.amax, torch.amin):
+            with self.subTest(op=op):
+                model = Reduce(op)
+                edge = to_edge(export(model, (x,)))
+                # Integer reductions are excluded by the partitioner.
+                lowered = to_backend(
+                    "VulkanBackend",
+                    edge.exported_program(),
+                    parse_compile_options(
+                        {
+                            "storage_type_override": VkStorageType.BUFFER,
+                            "texture_limits": (1, 1, 1),
+                        }
+                    ),
+                )
+                graph = flatbuffer_to_vk_graph(
+                    extract_vk_flatbuffer(lowered.processed_bytes)
+                )
+                for value_id in graph.input_ids + graph.output_ids:
+                    value = graph.values[value_id].value
+                    self.assertEqual(value.datatype, VkDataType.INT32)
+                    self.assertEqual(value.storage_type, VkStorageType.BUFFER)
+                program_buffer = lowered.buffer()
+                module = _load_for_executorch_from_buffer(program_buffer)
+                (actual,) = module.run_method("forward", (x,))
+                torch.testing.assert_close(actual, model(x), atol=0, rtol=0)
 
     def test_reduction_special_values(self):
         class Reduce(torch.nn.Module):
