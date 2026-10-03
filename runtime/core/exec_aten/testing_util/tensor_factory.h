@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cinttypes> // PRId32
 #include <cstdint>
 
 #include <c10/util/irange.h>
@@ -265,8 +266,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
@@ -310,8 +311,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
@@ -624,14 +625,15 @@ inline void validate_strides(
       if ((strides[i] == strides[j])) {
         ET_CHECK_MSG(
             false,
-            "Stride value and size dont comply at index %d."
-            " strides[%d]: %d, strides[%d] = %d, sizes[%d] = %d, sizes[%d] = %d",
-            static_cast<uint32_t>(i),
-            static_cast<uint32_t>(i),
+            "Stride value and size dont comply at index %zu."
+            " strides[%zu]: %" PRId32 ", strides[%" PRId32 "] = %" PRId32
+            ", sizes[%zu] = %" PRId32 ", sizes[%" PRId32 "] = %" PRId32,
+            i,
+            i,
             strides[i],
             j,
             strides[j],
-            static_cast<uint32_t>(i),
+            i,
             sizes[i],
             j,
             sizes[j]);
@@ -795,8 +797,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 
@@ -843,8 +845,8 @@ class TensorFactory {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
         expected_numel == data.size(),
-        "Number of data elements %zd "
-        "does not match expected number of elements %zd",
+        "Number of data elements %zu "
+        "does not match expected number of elements %zu",
         data.size(),
         expected_numel);
 

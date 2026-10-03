@@ -21,6 +21,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <cassert>
 #include <chrono>
+#include <cinttypes>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -501,7 +502,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     auto duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
             .count();
-    ET_LOG(Debug, "Execution time: %lld ms.", duration);
+    ET_LOG(Debug, "Execution time: %" PRId64 " ms.", duration);
 
 #else
     auto result = module_->execute(method, evalues);

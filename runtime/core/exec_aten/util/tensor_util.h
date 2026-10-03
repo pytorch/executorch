@@ -57,7 +57,7 @@
 #define ET_CHECK_NON_ZERO_DIM_SIZE(DIM, T)           \
   const size_t udim = ET_NORMALIZE_IX(DIM, T.dim()); \
   ET_CHECK_MSG(                                      \
-      T.size(udim) != 0, "Expected dim %zd to have non-zero size.", udim);
+      T.size(udim) != 0, "Expected dim %zu to have non-zero size.", udim);
 
 /**
  * Asserts that all tensors have the same shape.
@@ -248,13 +248,13 @@
     ET_CHECK_MSG(                                                             \
         strides[strides.size() - 1] == 1,                                     \
         "The stride of the last dimension shall be 1 for contiguous tensor, " \
-        "not %d",                                                             \
+        "not %" PRId32,                                                       \
         strides[strides.size() - 1]);                                         \
     for (size_t i = strides.size() - 1; i > 0; i--) {                         \
       ET_CHECK_MSG(                                                           \
           strides[i - 1] == strides[i] * sizes[i],                            \
           "The stride of the %zu-th dimension shall equal to "                \
-          "strides[%zu] * sizes[%zu], now is %d and %d",                      \
+          "strides[%zu] * sizes[%zu], now is %" PRId32 " and %" PRId32,       \
           i - 1,                                                              \
           i,                                                                  \
           i,                                                                  \
@@ -272,7 +272,7 @@
   do {                                                                         \
     ET_CHECK_MSG(                                                              \
         a__.dim() == b__.dim(),                                                \
-        "Two tensors shall have same number of strides, but not %zu and %zu.", \
+        "Two tensors shall have same number of strides, but not %zd and %zd.", \
         a__.dim(),                                                             \
         b__.dim());                                                            \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>          \
@@ -283,11 +283,11 @@
       ET_CHECK_MSG(                                                            \
           a_strides[i] == b_strides[i],                                        \
           "a.strides()[%zu] shall equal to b.strides()[%zu], "                 \
-          "but now is %d and %d.",                                             \
+          "but now is %" PRId32 " and %" PRId32 ".",                           \
           i,                                                                   \
           i,                                                                   \
-          (int32_t)a_strides[i],                                               \
-          (int32_t)b_strides[i]);                                              \
+          a_strides[i],                                                        \
+          b_strides[i]);                                                       \
     }                                                                          \
   } while (0)
 
@@ -301,7 +301,7 @@
     ET_CHECK_MSG(                                                       \
         a__.dim() == b__.dim() && b__.dim() == c__.dim(),               \
         "Three tensors shall have same number of strides, "             \
-        "but not %zu, %zu and %zu.",                                    \
+        "but not %zd, %zd and %zd.",                                    \
         a__.dim(),                                                      \
         b__.dim(),                                                      \
         c__.dim());                                                     \
@@ -315,13 +315,14 @@
       ET_CHECK_MSG(                                                     \
           a_strides[i] == b_strides[i] && b_strides[i] == c_strides[i], \
           "a_strides[%zu], b_strides[%zu] and c_strides[%zu] "          \
-          "shall share same value, but now is %d, %d and %d",           \
+          "shall share same value, but now is %" PRId32 ", %" PRId32    \
+          " and %" PRId32,                                              \
           i,                                                            \
           i,                                                            \
           i,                                                            \
-          (int32_t)a_strides[i],                                        \
-          (int32_t)b_strides[i],                                        \
-          (int32_t)c_strides[i]);                                       \
+          a_strides[i],                                                 \
+          b_strides[i],                                                 \
+          c_strides[i]);                                                \
     }                                                                   \
   } while (0)
 

@@ -76,13 +76,13 @@ Error EnnExecutor::eval(
   ET_CHECK_OR_RETURN_ERROR(
       inputs.size() == getInputSize(),
       InvalidArgument,
-      "Invalid number of inputs, expect %" PRIu32 " while get %ld",
+      "Invalid number of inputs, expect %" PRId32 " while get %zu",
       getInputSize(),
       inputs.size());
   ET_CHECK_OR_RETURN_ERROR(
       outputs.size() == getOutputSize(),
       InvalidArgument,
-      "Invalid number of outputs, expected %" PRIu32 " while get %ld",
+      "Invalid number of outputs, expected %" PRId32 " while get %zu",
       getOutputSize(),
       outputs.size());
 

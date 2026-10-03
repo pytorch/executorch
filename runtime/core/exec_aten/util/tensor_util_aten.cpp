@@ -101,7 +101,7 @@ bool tensors_have_same_dim_order(
     ET_CHECK_OR_RETURN_FALSE(
         get_dim_order(tensor_list[i], other_dim_order, tensor_list[i].dim()) ==
             Error::Ok,
-        "Failed to retrieve dim order from %zd-th input tensor!",
+        "Failed to retrieve dim order from %zu-th input tensor!",
         i);
 
     all_contiguous = all_contiguous &&
@@ -112,7 +112,7 @@ bool tensors_have_same_dim_order(
 
   ET_CHECK_OR_RETURN_FALSE(
       all_contiguous || all_channels_last,
-      "%zd input tensors have different dim orders",
+      "%zu input tensors have different dim orders",
       tensor_list.size());
 
   return all_contiguous || all_channels_last;

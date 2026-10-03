@@ -46,7 +46,7 @@ bool check_gather_args(
           "size of dimension %zd of index should be smaller than the size of that dimension of input if dimension %zd != dim %zd",
           d,
           d,
-          (size_t)dim);
+          dim);
     }
   }
   const long* index_data = index.const_data_ptr<long>();
@@ -54,7 +54,7 @@ bool check_gather_args(
     ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(in, dim),
         "Index is out of bounds for dimension %zd with size %zd",
-        (size_t)dim,
+        dim,
         nonempty_size(index, dim));
   }
 
@@ -96,7 +96,7 @@ bool check_index_select_args(
           "index[%zu] = %" PRId64 " is out of range [0, %zd)",
           i,
           index_ptr[i],
-          static_cast<size_t>(nonempty_size(in, dim)));
+          nonempty_size(in, dim));
     }
   } else {
     const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
@@ -106,7 +106,7 @@ bool check_index_select_args(
           "index[%zu] = %" PRId32 " is out of range [0, %zd)",
           i,
           index_ptr[i],
-          static_cast<size_t>(nonempty_size(in, dim)));
+          nonempty_size(in, dim));
     }
   }
 
@@ -138,9 +138,7 @@ bool check_nonzero_args(const Tensor& in, const Tensor& out) {
       toString(out.scalar_type()));
 
   ET_CHECK_OR_RETURN_FALSE(
-      out.dim() == 2,
-      "Expected out to be a 2d tensor received %zd",
-      ssize_t(out.dim()));
+      out.dim() == 2, "Expected out to be a 2d tensor received %zd", out.dim());
 
   return true;
 }
@@ -187,7 +185,7 @@ bool check_scatter_add_args(
           "size of dimension %zd of index should be smaller than the size of that dimension of self if dimension %zd != dim %zd",
           d,
           d,
-          (size_t)dim);
+          dim);
     }
   }
   const long* index_data = index.const_data_ptr<long>();
@@ -195,7 +193,7 @@ bool check_scatter_add_args(
     ET_CHECK_OR_RETURN_FALSE(
         index_data[i] >= 0 && index_data[i] < nonempty_size(self, dim),
         "Index is out of bounds for dimension %zd with size %zd",
-        (size_t)dim,
+        dim,
         nonempty_size(self, dim));
   }
   return true;
