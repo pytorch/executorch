@@ -10,11 +10,15 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -58,14 +62,20 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   fill_tensor_meta_broadcast(in1_tensor, out_ndim, &in1_meta);
   fill_tensor_meta_broadcast(in2_tensor, out_ndim, &in2_meta);
 
-  // fp32-only: nbytes must equal numel * 4 for every operand.
-  if (out_tensor.nbytes !=
-          static_cast<size_t>(out_meta.numel) * sizeof(float) ||
-      in1_tensor.nbytes !=
-          static_cast<size_t>(in1_meta.numel) * sizeof(float) ||
-      in2_tensor.nbytes !=
-          static_cast<size_t>(in2_meta.numel) * sizeof(float)) {
-    throw std::runtime_error("sub: non-fp32 operand (nbytes != numel * 4)");
+  const bool is_int = binary_operands_are_int(
+      in1_tensor, in2_tensor, out_tensor, in1_meta, in2_meta, out_meta, "sub");
+  // alpha becomes an i32 pipeline override, so it must be an exact int32.
+  // Checking in double keeps the bounds exact: (float)INT32_MAX rounds up to
+  // 2^31, which would let an overflowing alpha through. std::floor also
+  // leaves inf unchanged, so finiteness needs its own check.
+  if (is_int) {
+    const double a = static_cast<double>(alpha);
+    if (!std::isfinite(a) || a != std::floor(a) ||
+        a < static_cast<double>(std::numeric_limits<int32_t>::min()) ||
+        a > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+      throw std::runtime_error(
+          "sub: alpha must be an exact int32 with integer operands");
+    }
   }
 
   uint32_t wg_size =
@@ -89,7 +99,7 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
-      kBinarySubWGSL,
+      is_int ? kBinarySubIntWGSL : kBinarySubWGSL,
       {
           {0,
            WGPUBufferBindingType_ReadOnlyStorage,
