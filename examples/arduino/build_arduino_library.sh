@@ -222,7 +222,7 @@ if [ "${ALL_OPS:-0}" = "1" ]; then
   OPLIST_SELECTION=(--include_all_operators)
   echo "  Op set: every portable op (large - verify it fits your target)"
 else
-  OPLIST_SELECTION=(--root_ops="$ROOT_OPS")
+  OPLIST_SELECTION=(--select_ops_list="$ROOT_OPS")
   echo "  Op set: default ($(echo "$ROOT_OPS" | tr ',' '\n' | wc -l | tr -d ' ') root ops)"
 fi
 
