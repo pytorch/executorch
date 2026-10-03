@@ -53,6 +53,7 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.aten.tanh.default,
     exir_ops.edge.aten.round.default,
     exir_ops.edge.aten.neg.default,
+    exir_ops.edge.aten.hardsigmoid.default,
     exir_ops.edge.aten.hardswish.default,
     exir_ops.edge.aten.clamp.default,
     exir_ops.edge.aten.hardtanh.default,
