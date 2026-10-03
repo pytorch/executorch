@@ -34,6 +34,18 @@ def _get_attribute_or_constants(
     return constant_or_attribute
 
 
+def _replace_node(arg, old_node: torch.fx.Node, new_node: torch.fx.Node):
+    """Swap ``old_node`` for ``new_node`` inside a node argument.
+
+    An argument is not always the node itself: ops such as ``aten.cat`` take
+    their inputs as a list, so comparing the argument to the node directly
+    never matches and the user keeps pointing at the original.
+    """
+    if isinstance(arg, (list, tuple)):
+        return type(arg)([_replace_node(a, old_node, new_node) for a in arg])
+    return new_node if arg is old_node else arg
+
+
 # TODO: add other passes to duplicate call_function nodes
 def duplicate_constant_node(
     exported_program: ExportedProgram, candidate_node: str
@@ -98,20 +110,18 @@ def duplicate_constant_node(
                         constant_or_attribute_node.meta["val"]
                     )
                     new_args = tuple(
-                        [
-                            (
-                                arg
-                                if arg != constant_or_attribute_node
-                                else copied_constant_or_attribute_node
-                            )
-                            for arg in users[ith].args
-                        ]
+                        _replace_node(
+                            arg,
+                            constant_or_attribute_node,
+                            copied_constant_or_attribute_node,
+                        )
+                        for arg in users[ith].args
                     )
                     new_kwargs = {
-                        key: (
-                            value
-                            if value != constant_or_attribute_node
-                            else copied_constant_or_attribute_node
+                        key: _replace_node(
+                            value,
+                            constant_or_attribute_node,
+                            copied_constant_or_attribute_node,
                         )
                         for key, value in users[ith].kwargs.items()
                     }
