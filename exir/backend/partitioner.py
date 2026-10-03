@@ -128,6 +128,11 @@ class Partitioner(ABC):
         When multiple partitioners are used for a method, their transforms run
         sequentially in the order supplied to ``to_edge_transform_and_lower``.
 
+        The hook sees one method at a time. Before calling it, EXIR marks each
+        constant placeholder that another method of the program also reads
+        with ``meta["shared_across_methods"] = True``, so a transform that
+        folds or removes constants can leave those alone.
+
         Args:
             exported_program (ExportedProgram): The ATen-dialect program to
                 transform.

@@ -252,6 +252,19 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "constant_prop_pass",
+        srcs = [
+            "test_constant_prop_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/passes:constant_prop_pass",
+        ],
+    )
+
+    python_unittest(
         name = "pass_infra",
         srcs = [
             "test_pass_infra.py",

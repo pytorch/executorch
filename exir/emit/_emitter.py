@@ -392,9 +392,20 @@ class _Emitter(torch.fx.Interpreter):
         """
         # buffer data should be in the external_constant_buffer already.
         assert buffer_idx < len(self.program_state.external_constant_buffer)
-        if constant_tag not in self.program_state.external_constant_map:
-            self.program_state.external_constant_map[constant_tag] = {}
-        self.program_state.external_constant_map[constant_tag][fqn] = buffer_idx
+        fqn_to_index = self.program_state.external_constant_map.setdefault(
+            constant_tag, {}
+        )
+        # The map is shared by the methods of the program and the data is
+        # deduplicated by content, so a name that already points at other data
+        # is a second method writing a different tensor under the same name.
+        # The last write would be loaded for both methods.
+        if fqn_to_index.get(fqn, buffer_idx) != buffer_idx:
+            raise RuntimeError(
+                f"External constant '{fqn}' in '{constant_tag}' is written with "
+                "different data by two methods of the program. A constant shared "
+                "by name across methods has to hold the same tensor in each."
+            )
+        fqn_to_index[fqn] = buffer_idx
 
     def _save_new_const_tensor(
         self,
