@@ -13,6 +13,7 @@ fbcode_target(_kind = runtime.cxx_library,
     header_namespace = "executorch/examples/llm_server/cpp",
     exported_deps = [
         "//executorch/extension/llm/runner:runner_lib",
+        "//executorch/extension/llm/serving:prompt_history",
         "//pytorch/tokenizers:headers",
     ],
     external_deps = ["nlohmann_json"],
