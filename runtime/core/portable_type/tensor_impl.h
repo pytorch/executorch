@@ -146,6 +146,11 @@ class TensorImpl {
     return dim_;
   }
 
+  /// Returns true if non-scalar layout metadata has backing storage.
+  bool has_layout_metadata() const {
+    return dim_ == 0 || (dim_order_ != nullptr && strides_ != nullptr);
+  }
+
   /// Returns the number of elements in the tensor.
   ssize_t numel() const {
     return numel_;

@@ -6,6 +6,7 @@
 
 import operator
 import unittest
+from unittest.mock import patch
 
 import executorch.exir.tests.models as models
 
@@ -279,3 +280,23 @@ class TestBackendAPI(unittest.TestCase):
         self.assertEqual(gi0.args[1], 1)
         self.assertEqual(gi1.args[1], 0)
         self.assertEqual(gi2.args[1], 2)
+
+    def test_to_backend_copies_the_program_through_the_backend_hook(self):
+        # A backend overrides copy_exported_program_for_preprocess to avoid copying
+        # large constants, so to_backend must not deep-copy the program around it.
+        model = models.MLP()
+        edge_program = to_edge(
+            export(model, model.get_random_inputs(), strict=True)
+        ).exported_program()
+
+        with patch.object(
+            DemoBackend,
+            "copy_exported_program_for_preprocess",
+            return_value=edge_program,
+        ) as copy_hook, patch.object(
+            DemoBackend, "preprocess", wraps=DemoBackend.preprocess
+        ) as preprocess:
+            to_backend(DemoBackend.__name__, edge_program, [])
+
+        copy_hook.assert_called_once_with(edge_program, [])
+        self.assertIs(preprocess.call_args.args[0], edge_program)
