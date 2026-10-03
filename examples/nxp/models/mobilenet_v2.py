@@ -1,87 +1,148 @@
-# Copyright 2025 NXP
+# Copyright 2025-2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import itertools
-from typing import Iterator
+import logging
 
 import torch
 import torchvision
 
+from executorch.backends.nxp.tests.calibration_dataset import (
+    CalibrationDataset,
+    RandomCalibrationDataset,
+)
 from executorch.examples.models.mobilenet_v2 import MV2Model
-from torch.utils.data import DataLoader
+
+from executorch.examples.nxp.models.nxp_test_base_model import NXPTestBaseModel
+from torch.ao.nn.intrinsic.qat import freeze_bn_stats
+from torch.utils.data import DataLoader, Dataset
+from torchao.quantization.pt2e import disable_observer
 from torchvision import transforms
+from tqdm import tqdm
+
+log = logging.getLogger(__name__)
 
 
-class MobilenetV2(MV2Model):
+class MobileNetV2(NXPTestBaseModel):
+    """MobileNet V2 model."""
 
-    def __init__(self, use_random_dataset: bool = False):
-        super().__init__()
-        self.use_random_dataset = use_random_dataset
+    INPUT_SHAPE = (1, 3, 224, 224)
+    IDX_TO_LABEL = {
+        0: "bench703",
+        1: "English_springer217",
+        2: "cassette_player482",
+        3: "chain_saw491",
+        4: "church497",
+        5: "French_horn566",
+        6: "garbage_truck569",
+        7: "gas_pump571",
+        8: "golf_ball574",
+        9: "parachute701",
+    }
 
-    def get_calibration_inputs(
-        self, batch_size: int = 1
-    ) -> Iterator[tuple[torch.Tensor]]:
-        """
-        Returns an iterator for the Imagenette validation dataset, downloading it if necessary.
+    TRAIN_HYPERPARAMETERS = {
+        "num_epochs": 20,
+        "batch_size": 64,
+        "lr": 1e-4,
+        "momentum": 0.9,
+        "weight_decay": 1e-5,
+    }
 
-        Args:
-            batch_size (int): The batch size for the iterator.
+    @property
+    def input_shape(self):
+        return self.INPUT_SHAPE
 
-        Returns:
-            iterator: An iterator that yields batches of images from the Imagnetette validation dataset.
-        """
-        dataloader = self.get_dataset(batch_size)
+    @property
+    def labels(self):
+        return self.IDX_TO_LABEL
 
-        # Return the iterator
-        dataloader_iterable = itertools.starmap(
-            lambda data, label: (data,), iter(dataloader)
+    def _init_eager_model(self) -> torch.nn.Module:
+        return MV2Model().get_eager_model().eval()
+
+    def train_model_fn(
+        self, model, num_epochs=None, batch_size=None, channels_last=False
+    ):
+        hyperparameters = self.TRAIN_HYPERPARAMETERS
+        num_epochs = (
+            num_epochs if num_epochs is not None else hyperparameters["num_epochs"]
+        )
+        batch_size = (
+            batch_size if batch_size is not None else hyperparameters["batch_size"]
         )
 
-        # We want approximately 500 samples
-        batch_count = 500 // batch_size
-        return itertools.islice(dataloader_iterable, batch_count)
+        torch.manual_seed(42)
+        torch.use_deterministic_algorithms(True)
 
-    def get_dataset(self, batch_size):
-        if self.use_random_dataset:
-            # Create random data matching the expected format (224x224 RGB images, normalized)
-            num_samples = 10
-            random_data = torch.randn(num_samples, 3, 224, 224)
-            random_labels = torch.randint(
-                0, 10, (num_samples,)
-            )  # 10 classes in Imagenette
+        optimizer = torch.optim.SGD(
+            params=model.parameters(),
+            lr=hyperparameters["lr"],
+            momentum=hyperparameters["momentum"],
+            weight_decay=hyperparameters["weight_decay"],
+        )
+        loss_fn = torch.nn.CrossEntropyLoss()
 
-            dataset = torch.utils.data.TensorDataset(random_data, random_labels)
-            return torch.utils.data.DataLoader(
-                dataset,
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=0,  # Use 0 to avoid multiprocessing issues in tests
+        log.warning("Starting training...")
+
+        data = self.get_qat_train_inputs(batch_size=batch_size)
+        for nepoch in range(num_epochs):
+            for samples, labels in tqdm(data):
+                if channels_last:
+                    samples = samples.to(memory_format=torch.channels_last)
+
+                optimizer.zero_grad()
+                outputs = model(samples)
+                loss = loss_fn(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+            if nepoch >= 15:
+                model.apply(disable_observer)
+
+            # freeze BN stats
+            if nepoch >= 18:
+                model.apply(freeze_bn_stats)
+
+        return model
+
+    def _init_dataset(self) -> Dataset:
+        if self._use_random_dataset:
+            num_classes = len(self.labels)
+            sample_shape = tuple(self.input_shape)[1:]
+            return RandomCalibrationDataset(
+                self._num_samples, sample_shape, num_classes, self._balanced_dataset
             )
-
         else:
-            # Define data transformations
-            data_transforms = transforms.Compose(
-                [
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),  # ImageNet stats
-                ]
-            )
+            dataset = CalibrationDataset(self._dataset_path)
+            # Dataset was generated with batch size dim, but we need examples without it
+            dataset.examples = [
+                (data.squeeze(0), label) for (data, label) in dataset.examples
+            ]
+            return dataset
 
-            dataset = torchvision.datasets.Imagenette(
-                root="./data", split="val", transform=data_transforms, download=True
-            )
-            dataloader = torch.utils.data.DataLoader(
-                dataset,
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=1,
-            )
-            return dataloader
+
+def get_dataloader(batch_size):
+    # Define data transformations
+    data_transforms = transforms.Compose(
+        [
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),  # ImageNet stats
+        ]
+    )
+
+    dataset = torchvision.datasets.Imagenette(
+        root="./data", split="val", transform=data_transforms, download=True
+    )
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=1,
+    )
+    return dataloader
 
 
 def gather_samples_per_class_from_dataloader(
@@ -122,8 +183,10 @@ def gather_samples_per_class_from_dataloader(
 
 
 def generate_input_samples_file():
-    model = MobilenetV2()
-    dataloader = model.get_dataset(batch_size=1)
+    """Generate data for MobileNet V2 model from Imagenette dataset.
+    Generated file then can be passed as dataset_path parameter to MobileNetV2 model.
+    """
+    dataloader = get_dataloader(batch_size=1)
     samples = gather_samples_per_class_from_dataloader(
         dataloader, num_samples_per_class=2
     )
