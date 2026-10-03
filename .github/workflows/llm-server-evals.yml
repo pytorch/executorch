@@ -1,0 +1,92 @@
+name: LLM Server Evaluations
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Terminal-Bench task subset
+        type: choice
+        options: [smoke, nightly]
+        default: smoke
+
+permissions:
+  contents: read
+
+jobs:
+  terminal-bench:
+    if: ${{ vars.LLM_SERVER_EVAL_TARGETS != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(vars.LLM_SERVER_EVAL_TARGETS || '[{"name":"unconfigured","runner":"ubuntu-22.04"}]') }}
+    name: Terminal-Bench (${{ matrix.target.name }})
+    runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 180
+    concurrency:
+      group: llm-server-evals-${{ matrix.target.name }}
+      cancel-in-progress: false
+    env:
+      EVAL_CONFIG: ${{ matrix.target.config }}
+      EVAL_PREPARE: ${{ matrix.target.prepare }}
+      EVAL_SUITE: ${{ inputs.suite || 'nightly' }}
+      EVAL_TARGET: ${{ matrix.target.name }}
+    steps:
+      - name: Initialize artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          EVAL_ARTIFACTS="${RUNNER_TEMP}/llm-server-evals-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${EVAL_TARGET}"
+          mkdir -p "${EVAL_ARTIFACTS}"
+          echo "EVAL_ARTIFACTS=${EVAL_ARTIFACTS}" >> "${GITHUB_ENV}"
+          if [[ "${EVAL_CONFIG}" != /* ]]; then
+            EVAL_CONFIG="${GITHUB_WORKSPACE}/${EVAL_CONFIG}"
+          fi
+          echo "EVAL_CONFIG=${EVAL_CONFIG}" >> "${GITHUB_ENV}"
+          printf '%s\n' "${GITHUB_SHA}" "${RUNNER_OS}" "${RUNNER_ARCH}" > "${EVAL_ARTIFACTS}/ci.txt"
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare the current checkout and model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${EVAL_ARTIFACTS}"
+          test -f "${EVAL_PREPARE}"
+          cp "${EVAL_PREPARE}" "${EVAL_ARTIFACTS}/prepare.sh"
+          bash "${EVAL_PREPARE}" "${GITHUB_WORKSPACE}" "${EVAL_CONFIG}" 2>&1 | tee "${EVAL_ARTIFACTS}/prepare.log"
+          test -f "${EVAL_CONFIG}"
+          cp "${EVAL_CONFIG}" "${EVAL_ARTIFACTS}/model.toml"
+      - name: Set up Terminal-Bench
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash examples/llm_server/evals/setup.sh terminal-bench --ci 2>&1 | tee "${EVAL_ARTIFACTS}/setup.log"
+      - name: Evaluate
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash examples/llm_server/evals/run.sh terminal-bench \
+            --config "${EVAL_CONFIG}" --suite "${EVAL_SUITE}" \
+            --executorch-root "${GITHUB_WORKSPACE}" \
+            --run-dir "${EVAL_ARTIFACTS}/run" 2>&1 | tee "${EVAL_ARTIFACTS}/evaluation.log"
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "${EVAL_ARTIFACTS}/run/summary.md" ]]; then
+            cat "${EVAL_ARTIFACTS}/run/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo 'Evaluation did not produce a summary; inspect preparation and setup logs.' >> "${GITHUB_STEP_SUMMARY}"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: terminal-bench-${{ matrix.target.name }}
+          path: ${{ env.EVAL_ARTIFACTS }}
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,27 @@
+# Copy to terminal-bench.local.toml and adjust paths (relative to this file).
+# setup.sh downloads the tasks for the named suites.
+suite = "smoke"
+worker_bin = "/path/to/model_worker"
+model_path = "/path/to/model.pte"
+tokenizer_path = "/path/to/tokenizer.json"
+hf_tokenizer = "/path/to/pinned-hf-tokenizer"
+server_python = "/path/to/executorch-env/bin/python"
+model_id = "qwen3"
+
+max_context = 2048
+max_output_tokens = 512
+step_limit = 100
+attempts = 1
+# Enable only when the worker advertises named-session support.
+session_affinity = false
+# Optional model-specific launcher; it must accept the common server flags.
+# server_module = "executorch.examples.llm_server.python.server"
+# server_arg = ["--assistant-header=<|im_start|>assistant\n"]
+thinking = false
+
+host = "0.0.0.0"
+port = 8000
+# run.sh chooses the Docker/Colima host route. Override for custom networking:
+# agent_base_url = "http://host.docker.internal:8000/v1"
+# Results default to the evaluation cache. Override if desired:
+# output_root = "/path/to/evaluation-results"

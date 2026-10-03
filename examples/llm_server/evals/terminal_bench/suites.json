@@ -1,0 +1,10 @@
+{
+  "dataset": {
+    "repository": "https://huggingface.co/datasets/harborframework/terminal-bench-2.0",
+    "revision": "f2e8c75e23add71613117eecc9498f53bcd7e04e"
+  },
+  "suites": {
+    "smoke": ["fix-git"],
+    "nightly": ["fix-git", "openssl-selfsigned-cert"]
+  }
+}

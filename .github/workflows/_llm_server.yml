@@ -44,6 +44,7 @@ jobs:
 
         python -m pytest -q \
           examples/llm_server/python/tests \
+          examples/llm_server/evals/terminal_bench/tests \
           examples/models/muse-glimmer/tests/test_serve.py
 
         cmake -S . -B cmake-out \

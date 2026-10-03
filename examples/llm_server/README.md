@@ -8,6 +8,7 @@ examples/llm_server/
   spec/          # language-neutral OpenAI contract ExecuTorch targets
   conformance/   # one test suite every language server must pass
   python/        # Python server implementation (current)
+  evals/         # task accuracy and performance through the server
   # cpp/         # future: no-Python single-binary server
 ```
 
@@ -106,3 +107,9 @@ Reliability guidance:
   `tools` were included in the request.
 - If a request fails with `unsupported_parameter`, remove or disable that
   OpenAI knob in your pi/client config.
+
+## Evaluate with Terminal-Bench
+
+The [evaluation guide](evals/README.md) provides setup and run commands for
+Terminal-Bench, configuration templates in `evals/configs/`, recorded task and
+performance metrics, and periodic CI on provisioned Linux GPU and macOS runners.
