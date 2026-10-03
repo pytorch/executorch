@@ -13,9 +13,10 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional
+from typing import ClassVar, Dict, List, Literal, Optional, Set, Union
 
 import executorch.extension.flat_tensor.serialize as serialize_package
+import torch
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
@@ -28,6 +29,9 @@ from executorch.exir._serialize.data_serializer import (
     DataSerializer,
 )
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
+from executorch.exir.scalar_type import ScalarType
+from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
+from executorch.exir.tensor_layout import TensorLayout
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
     DataSegment,
     FlatTensor,
@@ -47,6 +51,50 @@ _FLATBUFFER_ALIGNMENT: int = 16
 # //executorch/extension/flat_tensor/flat_tensor_data_map.h, which is the
 # highest version the runtime agrees to load.
 _FLAT_TENSOR_VERSION: int = 0
+
+# Keep in sync with scalar_type.fbs, which excludes complex types.
+_PTD_TO_TORCH_DTYPE_NAME: Dict[ScalarType, str] = {
+    ScalarType.BYTE: "uint8",
+    ScalarType.CHAR: "int8",
+    ScalarType.SHORT: "int16",
+    ScalarType.INT: "int32",
+    ScalarType.LONG: "int64",
+    ScalarType.HALF: "float16",
+    ScalarType.FLOAT: "float32",
+    ScalarType.DOUBLE: "float64",
+    ScalarType.BOOL: "bool",
+    ScalarType.QINT8: "qint8",
+    ScalarType.QUINT8: "quint8",
+    ScalarType.QINT32: "qint32",
+    ScalarType.BFLOAT16: "bfloat16",
+    ScalarType.QUINT4x2: "quint4x2",
+    ScalarType.QUINT2x4: "quint2x4",
+    ScalarType.BITS16: "bits16",
+    ScalarType.FLOAT8E5M2: "float8_e5m2",
+    ScalarType.FLOAT8E4M3FN: "float8_e4m3fn",
+    ScalarType.FLOAT8E5M2FNUZ: "float8_e5m2fnuz",
+    ScalarType.FLOAT8E4M3FNUZ: "float8_e4m3fnuz",
+    ScalarType.UINT16: "uint16",
+    ScalarType.UINT32: "uint32",
+    ScalarType.UINT64: "uint64",
+}
+# Resolved by name to skip dtypes that the installed torch build lacks.
+_PTD_TO_TORCH_DTYPE: Dict[ScalarType, torch.dtype] = {
+    scalar_type: getattr(torch, name)
+    for scalar_type, name in _PTD_TO_TORCH_DTYPE_NAME.items()
+    if hasattr(torch, name)
+}
+_TORCH_DTYPE_TO_PTD: Dict[torch.dtype, ScalarType] = {
+    dtype: scalar_type for scalar_type, dtype in _PTD_TO_TORCH_DTYPE.items()
+}
+# PTD tensor layouts do not encode quantization parameters.
+_QUANTIZED_SCALAR_TYPES: Set[ScalarType] = {
+    ScalarType.QINT8,
+    ScalarType.QUINT8,
+    ScalarType.QINT32,
+    ScalarType.QUINT4x2,
+    ScalarType.QUINT2x4,
+}
 
 
 def _serialize_to_flatbuffer(flat_tensor: FlatTensor) -> Cord:
@@ -449,3 +497,119 @@ class FlatTensorSerializer(DataSerializer):
             pte_data={},
             external_data={name: data_payload.named_data},
         )
+
+
+def save_ptd(
+    path: Union[str, os.PathLike[str]], tensor_map: Dict[str, torch.Tensor]
+) -> None:
+    """Saves a dictionary of tensors to a PTD file.
+
+    Tensors that are neither contiguous nor `torch.channels_last` are saved in
+    contiguous form, so they load with the same shape and values but contiguous
+    strides.
+
+    Args:
+        path: Path to the output PTD file.
+        tensor_map: Mapping from tensor names to supported strided CPU tensors.
+    """
+    config = FlatTensorConfig()
+    buffers: List[bytes] = []
+    named_data: Dict[str, DataEntry] = {}
+    for name, tensor in tensor_map.items():
+        if tensor.device.type != "cpu":
+            raise ValueError(
+                f"Tensor '{name}' must be on CPU, received {tensor.device}."
+            )
+        if tensor.dtype not in _TORCH_DTYPE_TO_PTD or tensor.is_quantized:
+            raise ValueError(f"Unsupported tensor dtype {tensor.dtype} for PTD files.")
+        if tensor.layout != torch.strided:
+            raise ValueError(f"Tensor '{name}' must use a strided layout.")
+
+        tensor_to_save = tensor.detach().resolve_neg()
+        if 0 in tensor_to_save.stride():
+            tensor_to_save = tensor_to_save.clone(memory_format=torch.contiguous_format)
+        elif not (
+            tensor_to_save.is_contiguous()
+            or tensor_to_save.is_contiguous(memory_format=torch.channels_last)
+        ):
+            tensor_to_save = tensor_to_save.contiguous()
+        if tensor_to_save.nbytes != tensor_to_save.untyped_storage().nbytes():
+            tensor_to_save = tensor_to_save.clone(memory_format=torch.preserve_format)
+        tensor_layout = TensorLayout(
+            scalar_type=_TORCH_DTYPE_TO_PTD[tensor_to_save.dtype],
+            sizes=list(tensor_to_save.shape),
+            dim_order=list(dim_order_from_stride(tensor_to_save.stride())),
+        )
+
+        buffer_index = len(buffers)
+        buffers.append(bytes(tensor_to_save.untyped_storage()))
+        named_data[name] = DataEntry(
+            buffer_index=buffer_index,
+            alignment=config.segment_alignment,
+            tensor_layout=tensor_layout,
+        )
+
+    data_payload = DataPayload(buffers=buffers, named_data=named_data)
+    serialized_data = FlatTensorSerializer(config).serialize(data_payload)
+    with open(path, "wb") as file:
+        file.write(bytes(serialized_data))
+
+
+def load_ptd(path: Union[str, os.PathLike[str]]) -> Dict[str, torch.Tensor]:
+    """Loads a dictionary of tensors from a PTD file.
+
+    Args:
+        path: Path to the PTD file.
+
+    Returns:
+        A mapping from tensor names to mutable CPU tensors.
+    """
+    with open(path, "rb") as file:
+        data_payload = FlatTensorSerializer().deserialize(Cord(file.read()))
+
+    tensor_map: Dict[str, torch.Tensor] = {}
+    for name, data_entry in data_payload.named_data.items():
+        if not 0 <= data_entry.buffer_index < len(data_payload.buffers):
+            raise ValueError(
+                f"Tensor '{name}' references invalid buffer index "
+                f"{data_entry.buffer_index}."
+            )
+
+        tensor_layout = data_entry.tensor_layout
+        if tensor_layout is None:
+            raise ValueError(f"Named data '{name}' does not contain a tensor layout.")
+
+        try:
+            dtype = _PTD_TO_TORCH_DTYPE[tensor_layout.scalar_type]
+        except KeyError as error:
+            raise ValueError(
+                f"Unsupported scalar type {tensor_layout.scalar_type} for tensor "
+                f"'{name}'."
+            ) from error
+        if tensor_layout.scalar_type in _QUANTIZED_SCALAR_TYPES:
+            raise ValueError(f"Unsupported tensor dtype {dtype} for PTD files.")
+
+        strides = stride_from_dim_order(tensor_layout.sizes, tensor_layout.dim_order)
+        numel = math.prod(tensor_layout.sizes)
+        buffer = data_payload.buffers[data_entry.buffer_index]
+        expected_nbytes = (
+            numel * torch.empty((), dtype=dtype, device="cpu").element_size()
+        )
+        if len(buffer) < expected_nbytes:
+            raise ValueError(
+                f"Tensor '{name}' requires {expected_nbytes} bytes, but its buffer "
+                f"contains {len(buffer)} bytes."
+            )
+        if numel == 0:
+            tensor = torch.empty_strided(
+                tensor_layout.sizes, strides, dtype=dtype, device="cpu"
+            )
+        else:
+            tensor = torch.frombuffer(
+                bytearray(buffer),
+                dtype=dtype,
+                count=numel,
+            ).as_strided(tensor_layout.sizes, strides)
+        tensor_map[name] = tensor
+
+    return tensor_map
