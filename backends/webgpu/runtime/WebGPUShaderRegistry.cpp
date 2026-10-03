@@ -13,6 +13,8 @@
 #include <executorch/backends/webgpu/runtime/ops/adamw/adamw_step_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/addmm/addmm_tiled_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/arange/arange_int_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/arange/arange_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/avg_pool2d/avg_pool2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/batch_norm/batch_norm_wgsl.h>
@@ -153,7 +155,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 137> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -195,6 +197,20 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kApplyRotaryEmbInterleavedWorkgroupSizeX,
         kApplyRotaryEmbInterleavedWorkgroupSizeY,
         kApplyRotaryEmbInterleavedWorkgroupSizeZ,
+    },
+    {
+        "arange",
+        kArangeWGSL,
+        kArangeWorkgroupSizeX,
+        kArangeWorkgroupSizeY,
+        kArangeWorkgroupSizeZ,
+    },
+    {
+        "arange_int",
+        kArangeIntWGSL,
+        kArangeIntWorkgroupSizeX,
+        kArangeIntWorkgroupSizeY,
+        kArangeIntWorkgroupSizeZ,
     },
     {
         "arg_reduce",

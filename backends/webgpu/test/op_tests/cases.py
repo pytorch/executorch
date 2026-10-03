@@ -30,6 +30,7 @@ from executorch.backends.webgpu.test.ops.test_add import (
     AddModule,
     AddSelfModule,
 )
+from executorch.backends.webgpu.test.ops.test_arange import ArangeModule
 from executorch.backends.webgpu.test.ops.test_argmax import (
     argmax_tie_gen,
     ArgmaxModule,
@@ -2196,4 +2197,36 @@ def _argmin_suite() -> WebGPUTestSuite:
             Case(name="tie", inputs=(InputSpec(shape=(3, 6), gen=argmin_tie_gen),)),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("arange")
+def _arange_suite() -> WebGPUTestSuite:
+    # Numeric coverage for aten.arange.start_step. The int32 case pins the i32
+    # shader variant; the no-dtype case traces as int64 and exercises the
+    # downcast path that models actually hit.
+    return WebGPUTestSuite(
+        module_factory=ArangeModule,
+        cases=[
+            Case(
+                name="float",
+                construct={"start": 0.0, "end": 16.0, "step": 1.0},
+                inputs=((16,),),
+            ),
+            Case(
+                name="float_step",
+                construct={"start": 3.0, "end": 35.0, "step": 2.0},
+                inputs=((16,),),
+            ),
+            Case(
+                name="int32",
+                construct={"start": 0, "end": 16, "step": 1, "dtype": torch.int32},
+                inputs=((16,),),
+            ),
+            Case(
+                name="int_default",
+                construct={"start": 0, "end": 16, "step": 1},
+                inputs=((16,),),
+            ),
+        ],
     )
