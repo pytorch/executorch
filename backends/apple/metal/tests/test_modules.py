@@ -304,6 +304,179 @@ MODULE_REGISTRY["linear_bias_batch1"] = {
 
 
 # -------------------------------------------------------------------------
+# Views with a storage offset. The chunks below are views into the first
+# linear's output; the second chunk starts partway into that buffer. The cat
+# variants also write through such views.
+# -------------------------------------------------------------------------
+class LinearChunkLastDim(nn.Module):
+    """Chunking the last dim gives a non-packed view (its row stride is still
+    the parent's). It stays in the parent's buffer, and the linear reads it
+    through a packed copy."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(8, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_last_dim"] = {
+    "model_class": LinearChunkLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second last-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkLastDimOutput(nn.Module):
+    """Returns a non-packed view: the backend copies the model's outputs out
+    of the GPU buffers, and has to copy this one by its real strides."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(7, 16, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear(x).chunk(2, dim=-1)
+        return second
+
+
+MODULE_REGISTRY["linear_chunk_last_dim_output"] = {
+    "model_class": LinearChunkLastDimOutput,
+    "input_shapes": [(12, 7)],
+    "description": "Linear whose last-dim chunk is the model's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkFirstDim(nn.Module):
+    """Chunking the first dim gives a packed view that only differs from its
+    parent by the storage offset."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_first_dim"] = {
+    "model_class": LinearChunkFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second first-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkCatLastDim(nn.Module):
+    """Inductor builds the cat result by writing through views of it, then the
+    second linear reads the whole buffer."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(24, 5, bias=False)
+
+    def forward(self, x):
+        first, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(
+            torch.cat([first, second, torch.relu(second) * 2.0], dim=-1)
+        )
+
+
+MODULE_REGISTRY["linear_chunk_cat_last_dim"] = {
+    "model_class": LinearChunkCatLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a last-dim cat assembled from chunks of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class PointwiseC2f(nn.Module):
+    """The C2f block of the YOLO models, with 1x1 convs so that it only needs
+    matmuls. Inductor lays the activations out channels-last, where a chunk
+    along C is a view that is not densely packed, and fills the cat by writing
+    through four such views of it. With two inner blocks, generated kernels both
+    read and write views like that."""
+
+    class Inner(nn.Module):
+        def __init__(self, channels: int):
+            super().__init__()
+            self.conv1 = nn.Conv2d(channels, channels, kernel_size=1)
+            self.conv2 = nn.Conv2d(channels, channels, kernel_size=1)
+
+        def forward(self, x):
+            return x + self.conv2(torch.relu(self.conv1(x)))
+
+    def __init__(self):
+        super().__init__()
+        self.conv_in = nn.Conv2d(16, 16, kernel_size=1)
+        self.inner = nn.ModuleList(PointwiseC2f.Inner(8) for _ in range(2))
+        self.conv_out = nn.Conv2d(32, 16, kernel_size=1)
+
+    def forward(self, x):
+        parts = list(self.conv_in(x).chunk(2, dim=1))
+        for block in self.inner:
+            parts.append(block(parts[-1]))
+        return self.conv_out(torch.cat(parts, dim=1))
+
+
+MODULE_REGISTRY["pointwise_c2f"] = {
+    "model_class": PointwiseC2f,
+    "input_shapes": [(2, 16, 8, 8)],
+    "description": "C2f block whose cat is filled through non-packed channels-last views",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkCatFirstDim(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        first, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(torch.cat([first, second, torch.relu(second) * 2.0], dim=0))
+
+
+MODULE_REGISTRY["linear_chunk_cat_first_dim"] = {
+    "model_class": LinearChunkCatFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a first-dim cat assembled from chunks of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearNestedChunk(nn.Module):
+    """A view of a view: the last quarter of the first linear's output, taken
+    as the second chunk of its second chunk."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        _, last = second.chunk(2, dim=0)
+        return self.linear2(last)
+
+
+MODULE_REGISTRY["linear_nested_chunk"] = {
+    "model_class": LinearNestedChunk,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a chunk of a chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
 class LinearNoBiasInt4(nn.Module):
     def __init__(self):
         super().__init__()
@@ -922,14 +1095,13 @@ MODULE_REGISTRY["sdpa_head_dim_256"] = {
 
 
 # -------------------------------------------------------------------------
-# Narrow (non-packed reinterpret_tensor materialization)
+# Narrow (non-packed views)
 # -------------------------------------------------------------------------
 
 
 class NarrowLastDim(nn.Module):
     """Splits the last dimension into two halves via narrow, producing
-    non-packed strided views that the Metal backend must materialize
-    into contiguous buffers."""
+    non-packed strided views."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         half = x.shape[-1] // 2
