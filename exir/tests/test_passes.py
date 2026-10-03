@@ -2271,6 +2271,54 @@ class TestPasses(unittest.TestCase):
         output_args = gm.graph.output_node().args[0]
         self.assertEqual([output_args[0], output_args[1]], copies)
 
+    def test_mutable_buffers_write_back_after_storage_sharing_reads(self) -> None:
+        class StorageSharingReadModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x):
+                # maximum's schema says its output aliases nothing, but a
+                # _share_alloc_with_arg_idx annotation (the mark reinplace_pass
+                # leaves on an annotation-only rewrite) makes the memory
+                # planner place that output on the buffer's storage. The
+                # write-back must then wait for the read of that output, not
+                # just for the reads the schema can see.
+                shared = torch.maximum(self.state, x)
+                self.state.add_(x)
+                return shared.sum() + x
+
+        model = to_edge(
+            export(StorageSharingReadModule(), (torch.zeros(4),), strict=True)
+        )
+        ep = model.exported_program()
+        shared = [
+            node
+            for node in ep.graph.nodes
+            if node.op == "call_function" and "maximum" in str(node.target)
+        ]
+        self.assertEqual(len(shared), 1)
+        self.assertEqual(shared[0].args[0].op, "placeholder")
+        shared[0].meta["_share_alloc_with_arg_idx"] = 0
+        gm, _ = insert_write_back_for_buffers_pass(ep)
+
+        node_order = {node: i for i, node in enumerate(gm.graph.nodes)}
+        copies = [
+            node
+            for node in gm.graph.nodes
+            if node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copies), 1)
+        copy = copies[0]
+        # Every reader of the storage-sharing output stays before the
+        # write-back.
+        readers = [
+            user for user in shared[0].users if user is not copy and user.op != "output"
+        ]
+        self.assertTrue(readers)
+        for user in readers:
+            self.assertLess(node_order[user], node_order[copy])
+
     def test_mutable_buffers_write_back_no_inputs(self) -> None:
         class NoInputModule(torch.nn.Module):
             def forward(self):

@@ -90,23 +90,39 @@ def _schemaless_aliasing_inputs(
     return None
 
 
+def _storage_sharing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
+    """
+    The input whose storage node's value will share. reinplace_pass marks an
+    annotation-only rewrite with _share_alloc_with_arg_idx, and the memory
+    planner then allocates the output on top of that argument, so the two are
+    aliases whatever the op's schema says (ReplaceViewCopyWithViewPass reads
+    the same edge in _alias_source).
+    """
+    share_idx = node.meta.get("_share_alloc_with_arg_idx")
+    if isinstance(share_idx, int) and 0 <= share_idx < len(node.args):
+        return _fx_nodes_in(node.args[share_idx])
+    return []
+
+
 def _aliasing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
     """
     The subset of node's FX inputs that the value produced by node may alias.
     When we cannot tell (no schema, getitem, submodule calls, etc.) we
     conservatively answer all inputs; for schema-annotated ops we answer only
     the inputs whose alias set is shared with a return, so that e.g. the
-    shape-supplying argument of expand_as does not count as an alias.
+    shape-supplying argument of expand_as does not count as an alias. An input
+    that reinplace_pass marked as sharing the output's storage always counts.
     """
+    shared = _storage_sharing_inputs(node)
     special = _schemaless_aliasing_inputs(node)
     if special is not None:
-        return special
+        return special + shared
     schema = node.target._schema  # pyre-ignore[16]
     ret_sets: Set[str] = set()
     for ret in schema.returns:
         ret_sets |= _alias_sets(ret.alias_info)
     if not ret_sets:
-        return []
+        return shared
     if "*" in ret_sets:
         # A wildcard return may alias any input.
         return list(node.all_input_nodes)
@@ -115,7 +131,7 @@ def _aliasing_inputs(node: torch.fx.Node) -> List[torch.fx.Node]:
         arg_sets = _alias_sets(schema_arg.alias_info)
         if arg_sets & ret_sets or "*" in arg_sets:
             aliasing.extend(_fx_nodes_in(arg))
-    return aliasing
+    return aliasing + shared
 
 
 def _contains_node(value: object, input_node: torch.fx.Node) -> bool:
@@ -130,18 +146,10 @@ def _contains_node(value: object, input_node: torch.fx.Node) -> bool:
     return False
 
 
-def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
-    """
-    Whether this node may mutate the value passed to it as input_node. When we
-    cannot tell we conservatively answer True.
-    """
-    if node.op == "output":
-        return False
-    if node.op != "call_function":
-        return True
-    schema = getattr(node.target, "_schema", None)
-    if schema is None or not _schema_is_trusted(schema):
-        return True
+def _schema_writes_input(
+    node: torch.fx.Node, schema: torch.FunctionSchema, input_node: torch.fx.Node
+) -> bool:
+    """Whether schema marks any argument position holding input_node as written."""
     for i, arg in enumerate(node.args):
         if _contains_node(arg, input_node) and i < len(schema.arguments):
             alias_info = schema.arguments[i].alias_info
@@ -154,6 +162,24 @@ def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
             if alias_info is not None and alias_info.is_write:
                 return True
     return False
+
+
+def _mutates_input(node: torch.fx.Node, input_node: torch.fx.Node) -> bool:
+    """
+    Whether this node may mutate the value passed to it as input_node. When we
+    cannot tell we conservatively answer True.
+    """
+    if node.op == "output":
+        return False
+    if any(shared is input_node for shared in _storage_sharing_inputs(node)):
+        # The output is written into input_node's storage.
+        return True
+    if node.op != "call_function":
+        return True
+    schema = getattr(node.target, "_schema", None)
+    if schema is None or not _schema_is_trusted(schema):
+        return True
+    return _schema_writes_input(node, schema, input_node)
 
 
 class _AliasIndex:
