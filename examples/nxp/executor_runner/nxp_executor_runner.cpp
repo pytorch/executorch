@@ -196,7 +196,7 @@ Error saveOutputs(
       return Error::AccessFailed;
     }
     fwrite(
-        values[i].toTensor().data_ptr(),
+        values[i].toTensor().const_data_ptr(),
         1,
         values[i].toTensor().nbytes(),
         datasetFile);

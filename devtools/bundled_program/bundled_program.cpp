@@ -426,8 +426,8 @@ ET_NODISCARD ErrorStats compute_method_output_error_stats(
         }
 
         // we assume float32 here; adapt for other dtypes as needed
-        const float* e_data = expected.data_ptr<float>();
-        const float* a_data = method_output_tensor.data_ptr<float>();
+        const float* e_data = expected.const_data_ptr<float>();
+        const float* a_data = method_output_tensor.const_data_ptr<float>();
 
         for (int64_t k = 0; k < nelem; ++k) {
           double abs_err = std::abs(a_data[k] - e_data[k]);

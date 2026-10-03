@@ -66,8 +66,8 @@ Tensor& quantized_add_out(
   int32_t out_zp = static_cast<int32_t>(output_zero_point);
   int32_t output_mult = static_cast<int32_t>(output_multiplier);
   int output_shift_val = static_cast<int>(output_shift);
-  int8_t* input1_ptr = input1_int8.data_ptr<int8_t>();
-  int8_t* input2_ptr = input2_int8.data_ptr<int8_t>();
+  const int8_t* input1_ptr = input1_int8.const_data_ptr<int8_t>();
+  const int8_t* input2_ptr = input2_int8.const_data_ptr<int8_t>();
 
   // Left shift to maximize precision
   const int32_t left_shift = 20;
@@ -99,7 +99,7 @@ Tensor& quantized_add_out(
       std::swap<int32_t>(zp1, zp2);
       std::swap<int32_t>(input1_mult, input2_mult);
       std::swap<int>(input1_shift_val, input2_shift_val);
-      std::swap<int8_t*>(input1_ptr, input2_ptr);
+      std::swap(input1_ptr, input2_ptr);
     }
     adds_per_loop = input1_int8.size(1);
   } else {
