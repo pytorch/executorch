@@ -7,7 +7,7 @@
 # pyre-strict
 
 import operator
-from typing import Any
+from typing import Any, Optional
 
 import torch
 from executorch.backends.cadence.aot.pass_utils import get_arg, replace_with_op
@@ -84,6 +84,28 @@ def resolve_constant(gm: fx.GraphModule, node: object) -> torch.Tensor | None:
     if is_lifted_tensor_constant(ep, node):
         return get_lifted_tensor_constant(ep, node)
     return None
+
+
+def weight_zero_point_arg(
+    gm: fx.GraphModule,
+    dq_weight: fx.Node,
+    like_node: fx.Node,
+) -> Optional[fx.Node]:
+    """The weight_zero_point operand for a per-channel op, or None if it is zero.
+
+    A symmetric weight has a zero point of zero in every channel, so
+    materializing it costs one int32 per output channel to say nothing. The
+    schema takes ``Tensor?`` precisely so that case can be omitted instead, and
+    the kernels read an absent operand as zero.
+
+    An affine weight still has its real zero points emitted: only an
+    all-zero vector is dropped, so this cannot silently discard a value the
+    kernel needs.
+    """
+    zero_point = get_weight_zero_point(gm, dq_weight)
+    if isinstance(zero_point, torch.Tensor) and not bool(zero_point.any()):
+        return None
+    return add_constant_placeholder(gm, zero_point, like_node, "wzp")
 
 
 def add_constant_placeholder(
@@ -320,9 +342,7 @@ def fuse_conv(
         # qparams as constant tensors, which is what per-channel needs. This runs
         # after depthwise selection so that it swaps whichever base op was chosen.
         replacement_op = tensor_qparam_overload(replacement_op)
-        kwargs["weight_zero_point"] = add_constant_placeholder(
-            gm, get_weight_zero_point(gm, dq_weight), conv_node, "wzp"
-        )
+        kwargs["weight_zero_point"] = weight_zero_point_arg(gm, dq_weight, conv_node)
         kwargs["bias_scale"] = add_constant_placeholder(
             gm, bias_scale.to(torch.float32), conv_node, "bias_scale"
         )
@@ -392,9 +412,7 @@ def fuse_linear(
         # which is what per-channel needs. quantized_linear has no bias_scale
         # arg, so the scale only survives through out_multiplier/out_shift.
         replacement_op = tensor_qparam_overload(replacement_op)
-        kwargs["weight_zero_point"] = add_constant_placeholder(
-            gm, get_weight_zero_point(gm, dq_weight), op_node, "wzp"
-        )
+        kwargs["weight_zero_point"] = weight_zero_point_arg(gm, dq_weight, op_node)
         kwargs["out_multiplier"] = add_constant_placeholder(
             gm, out_multiplier.to(torch.int32), op_node, "out_multiplier"
         )

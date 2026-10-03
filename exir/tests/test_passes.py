@@ -1690,6 +1690,32 @@ class TestPasses(unittest.TestCase):
             new_ep.graph_module.code
         )
 
+    def test_constant_prop_pass_avoids_state_dict_name_collision(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 3
+
+        edge = to_edge(
+            export(Add(), (torch.ones(1),), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+        exported_program = lift_constant_tensor_pass(edge.exported_program())
+
+        # A program re-entering this pass can already carry a
+        # `_prop_tensor_constant*` in state_dict from an earlier run.
+        # Emission resolves placeholders against state_dict before
+        # constants, so reusing the name lets the stale entry shadow the
+        # propagated tensor and the two disagree on size.
+        stale = torch.zeros(12)
+        exported_program.state_dict["_prop_tensor_constant0"] = stale
+
+        new_ep = constant_prop_pass(exported_program)
+
+        for name in new_ep.constants:
+            self.assertNotIn(name, new_ep.state_dict)
+        self.assertIs(new_ep.state_dict["_prop_tensor_constant0"], stale)
+
     def test_pass_no_user_inputs(self) -> None:
         class NoUserInputs(torch.nn.Module):
             def __init__(self):
