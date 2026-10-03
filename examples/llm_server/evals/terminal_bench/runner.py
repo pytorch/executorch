@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Start the LLM server, run Terminal-Bench through Harbor, and save the logs."""
+"""Run Terminal-Bench through Harbor against a local LLM server on macOS."""
 
 import argparse
 import json
@@ -80,7 +80,7 @@ def commands(config, output):
         ).strip()
         agent_host = (
             "host.lima.internal"
-            if sys.platform == "darwin" and context.startswith("colima")
+            if context.startswith("colima")
             else "host.docker.internal"
         )
     url = f"http://{agent_host}:{server['port']}"
@@ -122,30 +122,20 @@ def commands(config, output):
     ]
     for task in options["tasks"]:
         harbor.extend(["--include-task-name", task])
-    probe = ["docker", "run", "--rm", "--name", f"executorch-eval-{os.getpid()}"]
-    if sys.platform == "linux" and agent_host == "host.docker.internal":
-        (output / "host-gateway.yaml").write_text(
-            json.dumps(
-                {
-                    "services": {
-                        "main": {"extra_hosts": ["host.docker.internal:host-gateway"]}
-                    }
-                }
-            )
-        )
-        harbor.extend(["--extra-docker-compose", str(output / "host-gateway.yaml")])
-        probe.extend(["--add-host", "host.docker.internal:host-gateway"])
-    probe.extend(
-        [
-            "curlimages/curl:8.12.1",
-            "--noproxy",
-            "*",
-            "--fail",
-            "--max-time",
-            "15",
-            url + "/health",
-        ]
-    )
+    probe = [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        f"executorch-eval-{os.getpid()}",
+        "curlimages/curl:8.12.1",
+        "--noproxy",
+        "*",
+        "--fail",
+        "--max-time",
+        "15",
+        url + "/health",
+    ]
     return serve, harbor, probe
 
 
@@ -300,6 +290,8 @@ def main(argv=None):
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if sys.platform != "darwin":
+        parser.error("Terminal-Bench evaluations currently support macOS only.")
     try:
         config = load_config(args.config.expanduser().resolve())
         if args.task:

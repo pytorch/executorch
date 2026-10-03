@@ -112,4 +112,4 @@ Reliability guidance:
 
 The [evaluation guide](evals/README.md) provides setup and run commands for
 Terminal-Bench, configuration templates in `evals/configs/`, and task and
-performance metrics on Linux and macOS.
+performance metrics on macOS.

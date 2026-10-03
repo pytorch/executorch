@@ -1,6 +1,6 @@
 # LLM server evaluations
 
-## Terminal-Bench
+## Terminal-Bench (macOS)
 
 Prepare a worker, exported model, and [server environment](../python/README.md).
 From the repository root:
@@ -13,7 +13,7 @@ cp configs/terminal-bench.example.toml configs/terminal-bench.local.toml
 bash terminal_bench/run.sh --config configs/terminal-bench.local.toml
 ```
 
-Setup installs Docker on Ubuntu or Colima on macOS (requires Homebrew), plus Harbor.
+Setup installs Colima (requires Homebrew) and Harbor, reusing Docker if available.
 Harbor downloads Terminal-Bench 2.0 tasks and runs mini-SWE-agent in containers.
 
 The TOML selects the model, tasks, attempts, and token budgets. `max_context` must
