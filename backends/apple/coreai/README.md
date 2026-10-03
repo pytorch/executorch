@@ -42,6 +42,11 @@ architectures=["h17p"])` requests that compiler architecture; omitting the list
 lets the compiler emit its supported architectures for the target platform.
 These are Core AI architecture names, not CPU names such as `arm64`.
 
+Both formats can require device specialization. Every load first attempts SDK
+bookmark restoration. A missing bookmark or SDK-confirmed cache miss falls back
+to source materialization and persistent specialization, then binds the requested
+function and ordered I/O on that same acquired model.
+
 ### Asset storage
 
 The assets root must be an absolute path. The application chooses it, should
@@ -85,6 +90,15 @@ excluded. No model bytes are hashed at runtime. Each key determines a raw
 bookmark in the `bookmarks` subdirectory, a bundle directory in `staging`, and an
 empty coordination file in `locks`. There is no PTE-wide bookmark list or
 serialized lifecycle record.
+
+A healthy bookmark hit does not inspect staging or consult NDS; the acquired SDK
+model is retained through function binding. On a missing bookmark or confirmed
+SDK miss, the runtime materializes the source, specializes it and atomically
+writes the returned bookmark bytes. There is no secondary source-URL cache
+lookup. SDK errors, unreadable bookmarks and publication failures fail loading
+without automatic cache deletion. If publication fails after specialization, the
+SDK entry and source remain; the next load retries the ordinary flow. The
+backend does not track historical or unrecorded SDK entries.
 
 Raw bookmarks have an 8 MiB backend allocation limit, not an asserted SDK format
 maximum, and are published atomically because losing one orphans an SDK entry.
