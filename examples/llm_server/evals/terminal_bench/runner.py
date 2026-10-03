@@ -44,6 +44,7 @@ def load_config(path):
         "attempts": 1,
         "step_limit": 100,
         "max_output_tokens": 512,
+        "temperature": 0.0,
         "agent_host": None,
     }
     options = config.get("terminal_bench", {})
@@ -56,6 +57,8 @@ def load_config(path):
         )
     if min(options["attempts"], options["step_limit"]) < 1 or not options["tasks"]:
         raise ValueError("Choose tasks and positive attempt/step limits")
+    if not 0 <= options["temperature"] <= 2:
+        raise ValueError("temperature must be between 0 and 2")
     return config
 
 
@@ -131,10 +134,23 @@ def commands(config, output):
         "curlimages/curl:8.12.1",
         "--noproxy",
         "*",
-        "--fail",
+        "--silent",
+        "--show-error",
+        "--fail-with-body",
         "--max-time",
-        "15",
-        url + "/health",
+        "90",
+        "--header",
+        "Content-Type: application/json",
+        "--data",
+        json.dumps(
+            {
+                "model": server["model_id"],
+                "messages": [{"role": "user", "content": "Hello."}],
+                "max_tokens": min(8, options["max_output_tokens"]),
+                "temperature": options["temperature"],
+            }
+        ),
+        url + "/v1/chat/completions",
     ]
     return serve, harbor, probe
 
@@ -173,9 +189,9 @@ def stop(process, stop_signal=signal.SIGTERM):
         process.wait(timeout=10)
 
 
-def metrics(path, context, reserve):
+def metrics(log, context, reserve):
     turns = []
-    for line in path.read_text(errors="replace").splitlines():
+    for line in log.splitlines():
         if "llm_turn_stats " in line:
             turns.append(
                 dict(
@@ -205,14 +221,40 @@ def metrics(path, context, reserve):
     return result
 
 
+def summarize(harbor_dir):
+    for path in sorted(harbor_dir.glob("*/result.json")):
+        trial = json.loads(path.read_text())
+        error = trial.get("exception_info")
+        reward = ((trial.get("verifier_result") or {}).get("rewards") or {}).get(
+            "reward"
+        )
+        outcome = f"error={error['exception_type']}" if error else f"reward={reward}"
+        agent_exit = tool_calls = "unknown"
+        trajectory = path.parent / "agent/mini-swe-agent.trajectory.json"
+        if trajectory.exists():
+            data = json.loads(trajectory.read_text())
+            agent_exit = data.get("info", {}).get("exit_status", "unknown")
+            tool_calls = sum(
+                len(message.get("tool_calls") or [])
+                for message in data.get("messages", [])
+                if message.get("role") == "assistant"
+            )
+        print(
+            f"{trial['trial_name']}: {outcome}, "
+            f"agent_exit={agent_exit}, tool_calls={tool_calls}",
+            flush=True,
+        )
+
+
 def run(config, output, serve, harbor, probe):
     server = config["server"]
     process = job = None
+    metrics_start = None
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-    with (output / "server.log").open("w") as server_log, (output / "harbor.log").open(
-        "w"
-    ) as harbor_log:
+    with (output / "server.log").open("w+", errors="replace") as server_log, (
+        output / "harbor.log"
+    ).open("w") as harbor_log:
         try:
             with socket.socket() as port:
                 port.bind((server["host"], server["port"]))
@@ -233,6 +275,24 @@ def run(config, output, serve, harbor, probe):
                         check=True,
                         timeout=120,
                     )
+                response = json.loads((output / "connection.log").read_text())
+                if (
+                    response["object"] != "chat.completion"
+                    or response["choices"][0]["message"]["role"] != "assistant"
+                    or response["usage"]["completion_tokens"] < 1
+                ):
+                    raise ValueError("Invalid chat completion response")
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                IndexError,
+                TypeError,
+                subprocess.SubprocessError,
+            ) as error:
+                raise RuntimeError(
+                    "Generation preflight failed; see connection.log and server.log"
+                ) from error
             finally:
                 subprocess.run(
                     ["docker", "rm", "--force", probe[probe.index("--name") + 1]],
@@ -240,13 +300,17 @@ def run(config, output, serve, harbor, probe):
                     stderr=subprocess.DEVNULL,
                     timeout=20,
                 )
+            metrics_start = server_log.tell()
+            print("Generation preflight passed.", flush=True)
             job = subprocess.Popen(
                 harbor,
                 stdout=harbor_log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-            if job.wait():
+            returncode = job.wait()
+            summarize(output / "harbor")
+            if returncode:
                 raise RuntimeError("Harbor failed; see harbor.log")
             result = json.loads((output / "harbor/result.json").read_text())
             stats = result["stats"]
@@ -258,13 +322,13 @@ def run(config, output, serve, harbor, probe):
                 raise RuntimeError(
                     "Harbor reported incomplete or errored trials; see harbor/result.json"
                 )
-            print(json.dumps(stats, indent=2))
         finally:
             stop(job, signal.SIGINT)
             stop(process)
             server_log.flush()
+            server_log.seek(metrics_start or 0)
             timing = metrics(
-                output / "server.log",
+                server_log.read() if metrics_start is not None else "",
                 server["max_context"],
                 config["terminal_bench"]["max_output_tokens"],
             )
@@ -303,7 +367,11 @@ def main(argv=None):
             json.dumps(
                 {
                     "agent": {"step_limit": config["terminal_bench"]["step_limit"]},
-                    "model": {"model_kwargs": {"temperature": 0}},
+                    "model": {
+                        "model_kwargs": {
+                            "temperature": config["terminal_bench"]["temperature"]
+                        }
+                    },
                 }
             )
         )

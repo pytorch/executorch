@@ -12,5 +12,6 @@ no_think = true
 [terminal_bench]
 tasks = ["fix-git"]
 max_output_tokens = 1024
+temperature = 0.0
 step_limit = 100
 attempts = 1
