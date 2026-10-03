@@ -8,8 +8,11 @@ import unittest
 from unittest.mock import MagicMock
 
 import torch
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+)
 
-from executorch.backends.qualcomm.genai_pipeline.datasets.default_training_data_adapter import (
+from executorch.backends.qualcomm.genai_pipeline.datasets.training.default_training_data_adapter import (
     DefaultTrainingDataAdapter,
 )
 
@@ -25,7 +28,7 @@ class TestGenerateTrainingData(unittest.TestCase):
         result = self.adapter.generate_training_data(
             self.tokenizer, extra_options={"training_data": training_data}
         )
-        self.assertIs(result, training_data)
+        self.assertIs(result[ARTIFACT_TEXT_DECODER], training_data)
 
     def test_accepts_a_dataloader(self):
         dataloader = torch.utils.data.DataLoader(
@@ -34,7 +37,7 @@ class TestGenerateTrainingData(unittest.TestCase):
         result = self.adapter.generate_training_data(
             self.tokenizer, extra_options={"training_data": dataloader}
         )
-        self.assertIs(result, dataloader)
+        self.assertIs(result[ARTIFACT_TEXT_DECODER], dataloader)
 
     def test_raises_when_no_training_data_supplied(self):
         # Labelled data cannot be synthesized, so QAT must fail loudly rather
