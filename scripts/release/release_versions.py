@@ -35,12 +35,6 @@ def release_key(version: str) -> tuple[int, int, int, int, int]:
     return major, minor, patch, stage_rank[stage], stage_number
 
 
-def torch_release_tag(torch_version: str) -> str:
-    major, minor, patch, stage, stage_number = release_parts(torch_version)
-    suffix = f"-{stage}{stage_number}" if stage else ""
-    return f"v{major}.{minor}.{patch}{suffix}"
-
-
 def torch_requirement(
     torch_version: str, wheel_variant: str, installed_version: str = ""
 ) -> str:

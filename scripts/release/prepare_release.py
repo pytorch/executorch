@@ -324,11 +324,10 @@ def newest_torch_test_release(
 
 @lru_cache(maxsize=None)
 def _test_index_wheels(
-    package: str, variant: str = "cpu"
+    package: str, variant: str = "cpu", channel: str = "test"
 ) -> dict[str, list[WheelLink]]:
-    index_url = (
-        f"https://download.pytorch.org/whl/test/{variant}/{package}/"  # @lint-ignore
-    )
+    channel_path = f"{channel}/" if channel else ""
+    index_url = f"https://download.pytorch.org/whl/{channel_path}{variant}/{package}/"  # @lint-ignore
     try:
         with urllib.request.urlopen(index_url, timeout=30) as response:
             index = response.read().decode()
@@ -341,8 +340,10 @@ def _test_index_wheels(
     return parser.wheels
 
 
-def _test_index_versions(package: str, variant: str = "cpu") -> set[str]:
-    return set(_test_index_wheels(package, variant))
+def _test_index_versions(
+    package: str, variant: str = "cpu", channel: str = "test"
+) -> set[str]:
+    return set(_test_index_wheels(package, variant, channel))
 
 
 @lru_cache(maxsize=None)
@@ -392,10 +393,13 @@ def companion_release_for_torch(
 
 
 def companion_release_supports_torch(
-    package: str, package_version: str, torch_installed_version: str
+    package: str,
+    package_version: str,
+    torch_installed_version: str,
+    channel: str = "test",
 ) -> bool:
     """Whether any wheel for a companion release accepts the selected Torch build."""
-    for wheel in _test_index_wheels(package).get(package_version, []):
+    for wheel in _test_index_wheels(package, channel=channel).get(package_version, []):
         metadata = Parser().parsestr(_wheel_metadata(wheel))
         for raw_requirement in metadata.get_all("Requires-Dist", []):
             match = re.match(
@@ -539,9 +543,9 @@ def require_test_infra_branch(test_infra_branch: str) -> None:
         )
 
 
-def pytorch_commit_for_wheel(torch_version: str) -> str:
+def pytorch_commit_for_wheel(torch_version: str, channel: str = "test") -> str:
     """Read the exact source commit embedded in the selected binary wheel."""
-    wheels = _test_index_wheels("torch").get(torch_version, [])
+    wheels = _test_index_wheels("torch", channel=channel).get(torch_version, [])
     if not wheels:
         raise RuntimeError(f"PyTorch test index has no torch {torch_version} wheel")
     version_module = _wheel_member(_preferred_wheel(wheels).url, "torch/version.py")
@@ -574,12 +578,15 @@ def sync_pytorch_source(repo_root: Path, commit: str) -> None:
     )
 
 
-def _release_torchao_version(install_requirements_path: Path) -> tuple[str, str]:
+def _release_torchao_version(
+    install_requirements_path: Path, finalized: bool
+) -> tuple[str, str]:
     requirements_text = install_requirements_path.read_text()
     url_match = _TORCHAO_URL_PATTERN.search(requirements_text)
     version_match = _TORCHAO_VERSION_PATTERN.search(requirements_text)
-    if url_match is None or "/whl/test" not in url_match.group(0):
-        raise RuntimeError("release TorchAO must come from the retained test index")
+    expected_index = "/whl" if finalized else "/whl/test"
+    if url_match is None or not url_match.group(0).endswith(f'{expected_index}"'):
+        raise RuntimeError(f"release TorchAO must come from the {expected_index} index")
     if version_match is None:
         raise RuntimeError("release TorchAO pin is missing")
     torchao_version = version_match.group(0).split('"')[1]
@@ -593,6 +600,7 @@ def _validate_cuda_releases(
     requirements_text: str,
     cuda_filter_path: Path,
     verify_index: bool,
+    channel: str,
 ) -> None:
     variants = configured_cuda_variants(cuda_filter_path)
     if verify_index:
@@ -600,7 +608,8 @@ def _validate_cuda_releases(
             f"{package}=={package_version}+{variant}"
             for variant in variants
             for package, package_version in releases.items()
-            if package_version not in _test_index_versions(package, variant)
+            if package_version
+            not in _test_index_versions(package, variant, channel=channel)
         ]
         if missing:
             raise RuntimeError(
@@ -658,8 +667,10 @@ def validate_release_build(
         package_version = config[name]
         releases[package] = package_version
 
+    finalized = config.get("RELEASE_DEPENDENCIES_FINALIZED") is True
+    channel = "" if finalized else "test"
     if verify_index:
-        torch_wheels = _test_index_wheels("torch").get(version, [])
+        torch_wheels = _test_index_wheels("torch", channel=channel).get(version, [])
         if not torch_wheels:
             raise RuntimeError(f"test index no longer contains torch {version}")
         installed = _preferred_wheel(torch_wheels).installed_version
@@ -667,16 +678,20 @@ def validate_release_build(
             ("torchvision", "TORCHVISION_VERSION"),
             ("torchaudio", "TORCHAUDIO_VERSION"),
         ):
-            if not companion_release_supports_torch(package, config[name], installed):
+            if not companion_release_supports_torch(
+                package, config[name], installed, channel=channel
+            ):
                 raise RuntimeError(
                     f"{package} {config[name]} is not compatible with torch {installed}"
                 )
 
     torchao_version, requirements_text = _release_torchao_version(
-        install_requirements_path
+        install_requirements_path, finalized
     )
     releases["torchao"] = torchao_version
-    _validate_cuda_releases(releases, requirements_text, cuda_filter_path, verify_index)
+    _validate_cuda_releases(
+        releases, requirements_text, cuda_filter_path, verify_index, channel
+    )
     return torch_requirement(version, "cpu")
 
 
