@@ -15,7 +15,10 @@ import unittest
 
 import torch
 
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+    parse_compile_options,
+    VulkanPartitioner,
+)
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkDataType,
@@ -28,7 +31,9 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     flatbuffer_to_vk_graph,
 )
 
-from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+
+from executorch.exir.backend.backend_api import to_backend
 
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 
@@ -160,6 +165,164 @@ class TestVulkanDynamic(unittest.TestCase):
                         x = torch.linspace(-6, 6, math.prod(shape)).reshape(shape)
                         edge = self._lower(model, (x,), storage=storage)
                         self._run(edge, model, [(x,)], atol=5e-6, rtol=5e-6)
+
+    def test_buffer_reduction_range(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        for op in (torch.sum, torch.mean, torch.amax):
+            with self.subTest(op=op):
+                width, value = (20000, 4) if op == torch.sum else (8, 80000)
+                x = torch.tensor([value, -value], dtype=torch.float32)[:, None].repeat(
+                    1, width
+                )
+                model = Reduce(op)
+                edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
+                self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_int32_buffer_reduction_shader_range(self):
+        from executorch.extension.pybindings.portable_lib import (
+            _load_for_executorch_from_buffer,
+        )
+
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        x = torch.tensor(
+            [[80000, 80001, 80002, 80003], [-80000, -80001, -80002, -80003]],
+            dtype=torch.int32,
+        )
+        for op in (torch.amax, torch.amin):
+            with self.subTest(op=op):
+                model = Reduce(op)
+                edge = to_edge(export(model, (x,)))
+                # Integer reductions are excluded by the partitioner.
+                lowered = to_backend(
+                    "VulkanBackend",
+                    edge.exported_program(),
+                    parse_compile_options(
+                        {
+                            "storage_type_override": VkStorageType.BUFFER,
+                            "texture_limits": (1, 1, 1),
+                        }
+                    ),
+                )
+                graph = flatbuffer_to_vk_graph(
+                    extract_vk_flatbuffer(lowered.processed_bytes)
+                )
+                for value_id in graph.input_ids + graph.output_ids:
+                    value = graph.values[value_id].value
+                    self.assertEqual(value.datatype, VkDataType.INT32)
+                    self.assertEqual(value.storage_type, VkStorageType.BUFFER)
+                program_buffer = lowered.buffer()
+                module = _load_for_executorch_from_buffer(program_buffer)
+                (actual,) = module.run_method("forward", (x,))
+                torch.testing.assert_close(actual, model(x), atol=0, rtol=0)
+
+    def test_reduction_special_values(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        for dtype in (torch.float32, torch.float16):
+            x = torch.tensor(
+                [
+                    [40000] * 9,
+                    [-40000] * 9,
+                    [1, torch.nan, 2, 3, torch.nan, 4, 5, 6, 7],
+                ],
+                dtype=dtype,
+            )
+            for op in (torch.sum, torch.mean, torch.amax, torch.amin):
+                for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                    with self.subTest(dtype=dtype, op=op, storage=storage):
+                        model = Reduce(op)
+                        edge = self._lower(model, (x,), storage=storage)
+                        self._run(edge, model, [(x,)], atol=0, rtol=0, equal_nan=True)
+
+        x = torch.tensor([4, -4], dtype=torch.float16)[:, None].repeat(1, 70000)
+        model = Reduce(torch.mean)
+        edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
+        self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_fp16_reduction_halfway_rounding(self):
+        class Mean(torch.nn.Module):
+            def forward(self, x):
+                return torch.mean(x, dim=-1, keepdim=True)
+
+        # Adjacent half values produce ties at even/odd mantissas, an exponent
+        # carry, and the normal/subnormal boundary without rounding the inputs.
+        x = torch.tensor(
+            [
+                [1, 1 + 2**-10],
+                [1 + 2**-10, 1 + 2**-9],
+                [2 - 2**-10, 2],
+                [2**-14 - 2**-24, 2**-14],
+                [0, 2**-24],
+                [2**-24, 2**-23],
+            ],
+            dtype=torch.float16,
+        )
+        x = torch.cat((x, -x))
+        model = Mean()
+        edge = self._lower(model, (x,), storage=VkStorageType.TEXTURE_3D)
+        (graph,) = _vulkan_graphs(edge)
+        output = graph.values[graph.output_ids[0]].value
+        self.assertEqual(output.datatype, VkDataType.FLOAT16)
+        self.assertEqual(output.storage_type, VkStorageType.TEXTURE_3D)
+        self._run(edge, model, [(x,)], atol=0, rtol=0, check_signed_zero=True)
+
+    def test_fp16_reduction_overflow_rounding(self):
+        class Sum(torch.nn.Module):
+            def forward(self, x):
+                return torch.sum(x, dim=-1, keepdim=True)
+
+        x = torch.tensor([[65504, 15], [65504, 16], [65504, 17]], dtype=torch.float16)
+        x = torch.cat((x, -x))
+        model = Sum()
+        edge = self._lower(model, (x,), storage=VkStorageType.TEXTURE_3D)
+        (graph,) = _vulkan_graphs(edge)
+        output = graph.values[graph.output_ids[0]].value
+        self.assertEqual(output.datatype, VkDataType.FLOAT16)
+        self.assertEqual(output.storage_type, VkStorageType.TEXTURE_3D)
+        self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    def test_argreduce_first_nan(self):
+        class Reduce(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, dim=-1, keepdim=True)
+
+        for dtype in (torch.float32, torch.float16):
+            x = torch.tensor(
+                [
+                    [1, torch.nan, 2, torch.nan, 3, 4, 5],
+                    [1, 2, 3, 4, 5, torch.nan, torch.nan],
+                ],
+                dtype=dtype,
+            )
+            for op in (torch.argmax, torch.argmin):
+                with self.subTest(dtype=dtype, op=op):
+                    model = Reduce(op)
+                    edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
+                    self._run(edge, model, [(x,)], atol=0, rtol=0)
 
 
 if __name__ == "__main__":
