@@ -48,9 +48,13 @@ class ShortConv(nn.Module):
 
         self.out_proj = nn.Linear(dim, dim, bias=bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, input_pos: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         batch_size, seqlen, dim = x.size()
         assert batch_size == 1, "batch_size must be 1"
+
+        self._maybe_reset_state(input_pos)
 
         B = self.B_proj(x).transpose(-1, -2)  # (batch_size, dim, seq_len)
         C = self.C_proj(x).transpose(-1, -2)  # (batch_size, dim, seq_len)
@@ -82,6 +86,14 @@ class ShortConv(nn.Module):
         y = self.out_proj(y)  # (batch_size, seq_len, dim)
         return y
 
+    def _maybe_reset_state(self, input_pos: Optional[torch.Tensor]) -> None:
+        # Without input_pos every call is a whole sequence.
+        if input_pos is None:
+            self.conv_state.zero_()
+            return
+        keep = 1.0 - (input_pos[0] == 0).to(self.conv_state.dtype)
+        self.conv_state.mul_(keep)
+
     def reset_cache(self):
         self.conv_state.zero_()
 
@@ -101,9 +113,10 @@ class ShortConvBlock(nn.Module):
         x,
         freqs_cos=None,
         freqs_sin=None,
-        _unused_attn_options: Optional[ForwardOptions] = None,
+        attn_options: Optional[ForwardOptions] = None,
     ):  # x: 1xN
-        h = self.conv.forward(self.attention_norm(x))
+        input_pos = attn_options.get("input_pos") if attn_options else None
+        h = self.conv.forward(self.attention_norm(x), input_pos)
         h = x + h
         out = h + self.feed_forward(self.ffn_norm(h))
         return out, None
