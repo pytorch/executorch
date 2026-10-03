@@ -481,11 +481,28 @@ class TestVulkanDynamic(unittest.TestCase):
                 [1 + 2**-10, 1 + 2**-9],
                 [2 - 2**-10, 2],
                 [2**-14 - 2**-24, 2**-14],
+                [0, 2**-24],
+                [2**-24, 2**-23],
             ],
             dtype=torch.float16,
         )
         x = torch.cat((x, -x))
         model = Mean()
+        edge = self._lower(model, (x,), storage=VkStorageType.TEXTURE_3D)
+        (graph,) = _vulkan_graphs(edge)
+        output = graph.values[graph.output_ids[0]].value
+        self.assertEqual(output.datatype, VkDataType.FLOAT16)
+        self.assertEqual(output.storage_type, VkStorageType.TEXTURE_3D)
+        self._run(edge, model, [(x,)], atol=0, rtol=0, check_signed_zero=True)
+
+    def test_fp16_reduction_overflow_rounding(self):
+        class Sum(torch.nn.Module):
+            def forward(self, x):
+                return torch.sum(x, dim=-1, keepdim=True)
+
+        x = torch.tensor([[65504, 15], [65504, 16], [65504, 17]], dtype=torch.float16)
+        x = torch.cat((x, -x))
+        model = Sum()
         edge = self._lower(model, (x,), storage=VkStorageType.TEXTURE_3D)
         (graph,) = _vulkan_graphs(edge)
         output = graph.values[graph.output_ids[0]].value
