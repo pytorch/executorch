@@ -21,7 +21,7 @@ using executorch::runtime::FreeableBuffer;
 struct FreeCallArgs {
   size_t calls;
   std::variant<const void*, uint64_t> data;
-  size_t size;
+  uint64_t size;
 };
 
 void RecordFree(void* context, void* data, size_t size) {
@@ -31,7 +31,14 @@ void RecordFree(void* context, void* data, size_t size) {
   call->size = size;
 }
 
-void RecordInt64Free(void* context, uint64_t data, size_t size) {
+void RecordInt64Free(void* context, uint64_t data, uint64_t size) {
+  auto* call = reinterpret_cast<FreeCallArgs*>(context);
+  call->calls++;
+  call->data = data;
+  call->size = size;
+}
+
+void RecordLegacyInt64Free(void* context, uint64_t data, size_t size) {
   auto* call = reinterpret_cast<FreeCallArgs*>(context);
   call->calls++;
   call->data = data;
@@ -249,6 +256,44 @@ TEST(FreeableBufferTest, MoveTest) {
   EXPECT_EQ(call2.calls, 1);
   EXPECT_EQ(call2.size, sizeof(i64));
 }
+
+TEST(FreeableBufferTest, UInt64SizeTest) {
+  constexpr uint64_t kSize = (uint64_t{1} << 32) + 1;
+  FreeCallArgs call = {};
+  FreeableBuffer fb(
+      /*data_uint64=*/uint64_t{0x900000000},
+      /*size=*/kSize,
+      /*free_fn=*/RecordInt64Free,
+      /*free_fn_context=*/&call);
+
+  EXPECT_EQ(fb.size_uint64(), kSize);
+
+  fb.Free();
+  EXPECT_EQ(call.size, kSize);
+  EXPECT_EQ(fb.size_uint64(), 0);
+}
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+TEST(FreeableBufferTest, LegacySizeTFreeFnTest) {
+  const uint64_t i64 = 0x900000000;
+  FreeCallArgs call = {};
+  FreeableBuffer fb(
+      /*data_uint64=*/i64,
+      /*size=*/sizeof(i64),
+      /*free_fn=*/RecordLegacyInt64Free,
+      /*free_fn_context=*/&call);
+
+  fb.Free();
+  EXPECT_EQ(call.calls, 1);
+  EXPECT_EQ(std::get<uint64_t>(call.data), i64);
+  EXPECT_EQ(call.size, sizeof(i64));
+}
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 TEST(FreeableBufferTest, APIMisuseDeathTest) {
   executorch::runtime::pal_init();
