@@ -26,7 +26,7 @@ void layer_norm(
     IntArrayRef normalized_shape,
     const optional<Tensor>& weight,
     const optional<Tensor>& bias,
-    CTYPE eps,
+    double eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {

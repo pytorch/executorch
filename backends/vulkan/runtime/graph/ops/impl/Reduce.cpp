@@ -119,7 +119,9 @@ uint32_t reduce_nworkers(
   while (nworkers * 2u <= cap && nworkers < extent) {
     nworkers *= 2u;
   }
-  return nworkers;
+  // Some Adreno drivers skip alternating work groups for an 8x4 local size.
+  // Keep short reductions on the portable four-worker geometry.
+  return nworkers == 8u ? 4u : nworkers;
 }
 
 GlobalWorkGrid reduce_gwg_impl(
