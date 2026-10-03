@@ -36,6 +36,7 @@ using executorch::extension::llm::batching::FinishReason;
 using executorch::extension::llm::batching::GenConfig;
 using executorch::extension::llm::batching::GenerationHandle;
 using executorch::extension::llm::batching::GenerationUpdate;
+using executorch::extension::llm::batching::InitializationState;
 using executorch::extension::llm::batching::Position;
 using executorch::extension::llm::batching::Runner;
 using executorch::extension::llm::batching::SamplingParams;
@@ -2668,19 +2669,189 @@ TEST(InitializeTest, FailureStopsTheRunnerAndRefusesSessions) {
       << "a session must not be opened on an executor that failed to start";
 }
 
-// Opens queued while the engine was starting still have to be answered, or a
-// caller blocked on the future would hang.
-TEST(InitializeTest, FailureDoesNotStrandAQueuedOpen) {
-  FakeExecutor executor;
-  executor.fail_initialize = true;
+namespace {
+
+enum class InitializeOutcome {
+  Success,
+  Failure,
+#if ET_HAS_EXCEPTIONS
+  Exception,
+  NonStandardException,
+#endif
+};
+
+class GatedInitializeExecutor : public FakeExecutor {
+ public:
+  explicit GatedInitializeExecutor(InitializeOutcome outcome)
+      : outcome_(outcome) {
+    fail_initialize = outcome_ == InitializeOutcome::Failure;
+  }
+
+  bool initialize() override {
+    const bool ready = FakeExecutor::initialize();
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      entered_ = true;
+      cv_.notify_all();
+      cv_.wait(lock, [this] { return released_; });
+    }
+#if ET_HAS_EXCEPTIONS
+    if (outcome_ == InitializeOutcome::Exception) {
+      throw std::runtime_error("initialize failed");
+    }
+    if (outcome_ == InitializeOutcome::NonStandardException) {
+      throw 7;
+    }
+#endif
+    return ready;
+  }
+
+  bool wait_for_initialize() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return cv_.wait_for(lock, kTimeout, [this] { return entered_; });
+  }
+
+  void release_initialize() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      released_ = true;
+    }
+    cv_.notify_all();
+  }
+
+ private:
+  const InitializeOutcome outcome_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  bool entered_ = false;
+  bool released_ = false;
+};
+
+class InitializeStateTest : public ::testing::TestWithParam<InitializeOutcome> {
+};
+
+} // namespace
+
+TEST_P(InitializeStateTest, PendingSettlesQueuedOpensAndRetainsResult) {
+  GatedInitializeExecutor executor(GetParam());
   Fixture fixture(executor);
+  // Keep assertions nonfatal until the gate is released so teardown can join.
+  EXPECT_TRUE(executor.wait_for_initialize());
+  EXPECT_EQ(
+      fixture.runner.initialization_state(), InitializationState::Pending);
 
   std::vector<std::future<std::optional<Session>>> opens;
   for (int i = 0; i < 4; ++i) {
     opens.push_back(fixture.runner.open_session_async());
+    EXPECT_EQ(
+        opens.back().wait_for(std::chrono::seconds(0)),
+        std::future_status::timeout);
   }
+  EXPECT_TRUE(executor.opened().empty());
+  EXPECT_EQ(
+      fixture.runner.initialization_state(), InitializationState::Pending);
+  executor.release_initialize();
+
+  const bool succeeds = GetParam() == InitializeOutcome::Success;
+  const auto expected =
+      succeeds ? InitializationState::Ready : InitializationState::Failed;
   for (auto& opened : opens) {
     ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
-    EXPECT_FALSE(opened.get().has_value());
+    auto session = opened.get();
+    EXPECT_EQ(session.has_value(), succeeds);
+    EXPECT_EQ(fixture.runner.initialization_state(), expected);
+    if (session) {
+      EXPECT_TRUE(session->valid());
+    }
   }
+  if (!succeeds) {
+    auto refused = fixture.runner.open_session_async();
+    ASSERT_EQ(
+        refused.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_FALSE(refused.get());
+  }
+
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.initialization_state(), expected);
+  fixture.runner.shutdown();
+  EXPECT_EQ(fixture.runner.initialization_state(), expected);
+  auto refused = fixture.runner.open_session_async();
+  ASSERT_EQ(
+      refused.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+  EXPECT_FALSE(refused.get());
+  EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_FALSE(executor.called_before_initialize());
+  EXPECT_EQ(executor.opened().size(), succeeds ? 4u : 0u);
+  EXPECT_EQ(executor.closed().size(), executor.opened().size());
+  EXPECT_EQ(executor.open_count(), 0);
+  EXPECT_EQ(fixture.runner.metrics().steps, 0u);
 }
+
+TEST_P(
+    InitializeStateTest,
+    ShutdownWhilePendingStillRetainsInitializationResult) {
+  GatedInitializeExecutor executor(GetParam());
+  Fixture fixture(executor);
+  EXPECT_TRUE(executor.wait_for_initialize());
+  std::vector<std::future<std::optional<Session>>> opens;
+  opens.push_back(fixture.runner.open_session_async());
+  EXPECT_EQ(
+      opens.back().wait_for(std::chrono::seconds(0)),
+      std::future_status::timeout);
+
+  std::thread stopping([&] { fixture.runner.shutdown(); });
+  bool stopped_admission = false;
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    auto probe = fixture.runner.open_session_async();
+    if (probe.wait_for(std::chrono::milliseconds(1)) ==
+        std::future_status::ready) {
+      stopped_admission = !probe.get();
+      break;
+    }
+    opens.push_back(std::move(probe));
+  }
+  EXPECT_TRUE(stopped_admission);
+  EXPECT_EQ(
+      fixture.runner.initialization_state(), InitializationState::Pending);
+  executor.release_initialize();
+  stopping.join();
+
+  for (auto& opened : opens) {
+    ASSERT_EQ(opened.wait_for(kTimeout), std::future_status::ready);
+    EXPECT_FALSE(opened.get());
+  }
+  EXPECT_EQ(
+      fixture.runner.initialization_state(),
+      GetParam() == InitializeOutcome::Success ? InitializationState::Ready
+                                               : InitializationState::Failed);
+  EXPECT_EQ(executor.initialize_calls(), 1);
+  EXPECT_TRUE(executor.opened().empty());
+  EXPECT_EQ(fixture.runner.metrics().steps, 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    InitializeTest,
+    InitializeStateTest,
+    ::testing::Values(
+        InitializeOutcome::Success,
+#if ET_HAS_EXCEPTIONS
+        InitializeOutcome::Exception,
+        InitializeOutcome::NonStandardException,
+#endif
+        InitializeOutcome::Failure),
+    [](const ::testing::TestParamInfo<InitializeOutcome>& info) {
+      switch (info.param) {
+        case InitializeOutcome::Success:
+          return "Success";
+        case InitializeOutcome::Failure:
+          return "Failure";
+#if ET_HAS_EXCEPTIONS
+        case InitializeOutcome::Exception:
+          return "Exception";
+        case InitializeOutcome::NonStandardException:
+          return "NonStandardException";
+#endif
+      }
+      return "Unknown";
+    });

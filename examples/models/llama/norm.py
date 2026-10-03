@@ -55,7 +55,7 @@ class ScalelessRMSNorm(torch.nn.Module):
 
 
 class RMSNormCoreML(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6, add_unit_offset: bool = False):
         """
         CoreML-friendly RMSNorm — uses `torch.linalg.vector_norm` so the op is
         preserved in the CoreML graph for numerical stability.
@@ -78,6 +78,7 @@ class RMSNormCoreML(torch.nn.Module):
         )
         self.dim = dim
         self.eps = eps
+        self.add_unit_offset = add_unit_offset
         self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
@@ -99,7 +100,7 @@ class RMSNormCoreML(torch.nn.Module):
 
     def forward(self, x):
         output = self._norm(x)
-        return output * self.weight
+        return output * (1.0 + self.weight if self.add_unit_offset else self.weight)
 
 
 class RMSNormWithInputScale(torch.nn.Module):
