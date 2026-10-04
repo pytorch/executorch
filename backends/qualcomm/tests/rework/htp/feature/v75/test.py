@@ -110,3 +110,39 @@ def test_spill_fill(request, kwargs):
 )
 def test_tensor_dump(request, kwargs):
     TensorDump.test(request, kwargs)  # noqa: F405
+
+
+def test_fcb_compiler_spec_preserves_targets(fcb_compile_specs):
+    Fcb.compiler_spec_preserves_targets(fcb_compile_specs)  # noqa: F405
+
+
+def test_fcb_manager_cache_is_keyed_by_soc(monkeypatch):
+    Fcb.manager_cache_is_keyed_by_soc(monkeypatch)  # noqa: F405
+
+
+def test_fcb_dlc_handle_enforces_lifetime_and_owner(fcb_compile_specs):
+    Fcb.dlc_handle_enforces_lifetime_and_owner(fcb_compile_specs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"expected": Tolerance()}, id="e2e"),
+    ],
+)
+def test_fcb_e2e(request, kwargs):
+    Fcb.e2e(request, kwargs)  # noqa: F405
+
+
+def test_fcb_reference_weight_sharing_reduces_pte_size(request):
+    Fcb.reference_weight_sharing_reduces_pte_size(request, {})  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"expected": Tolerance()}, id="e2e"),
+    ],
+)
+def test_fcb_reference_weight_sharing_e2e(request, kwargs):
+    Fcb.reference_weight_sharing_e2e(request, kwargs)  # noqa: F405

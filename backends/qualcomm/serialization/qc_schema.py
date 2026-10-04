@@ -297,6 +297,24 @@ class QnnExecuTorchOpPackageOptions:
 
 
 @dataclass
+class QnnExecuTorchTarget:
+    """Backend configurations for one SoC target.
+
+    Currently, we support exactly one backend option per SoC.
+    """
+
+    soc_info: SocInfo
+    backend_options: List[QnnExecuTorchBackendOptions] = field(default_factory=list)
+
+
+@dataclass
+class QnnExecuTorchTargetOptions:
+    targets: List[QnnExecuTorchTarget] = field(default_factory=list)
+    # Applies only while appending host-AOT contexts to an FCB DLC.
+    fcb_reference_weight_sharing: bool = True
+
+
+@dataclass
 class QnnExecuTorchOptions:
     soc_info: SocInfo
     backend_options: QnnExecuTorchBackendOptions
@@ -313,3 +331,4 @@ class QnnExecuTorchOptions:
         default_factory=QnnExecuTorchOpPackageOptions
     )
     use_mha2sha: bool = False
+    target_options: Optional[QnnExecuTorchTargetOptions] = None

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from functools import partial
 from multiprocessing.connection import Listener
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
@@ -40,6 +41,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchHtpPerformanceMode,
 )
+from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
+    flatbuffer_to_option,
+)
 
 from executorch.backends.qualcomm.tests.utils import (
     convert_pt2e,
@@ -50,6 +54,7 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
+from executorch.backends.qualcomm.utils import qnn_manager_lifecycle
 from executorch.backends.qualcomm.utils.check_qnn_version import (
     is_qnn_sdk_version_greater_than,
     is_qnn_sdk_version_less_than,
@@ -79,7 +84,6 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
-
 import os
 import random
 
@@ -89,6 +93,12 @@ from typing import List
 from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
+from executorch.backends.qualcomm.tests.rework.src.fcb_utils import (
+    fcb_target_socs,
+    lower_fcb_weight_sharing_model,
+    make_fcb_weight_sharing_model,
+    make_fcb_weight_sharing_specs,
+)
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
@@ -11471,6 +11481,93 @@ class TestUtilsScript(TestQNN):
             subprocess.run(cmds, stdout=subprocess.DEVNULL)
             self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
 
+    def test_cli_fcb(self):
+        if get_backend_type(self.backend) != QnnExecuTorchBackendType.kHtpBackend:
+            self.skipTest("FCB is only supported on HTP")
+        if self.enable_x86_64:
+            self.skipTest("FCB execution requires an Android HTP target")
+        if is_qnn_sdk_version_less_than("2.48"):
+            self.skipTest("FCB requires QNN SDK 2.48")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sample_input = torch.randn(1, 2, 3, 4)
+            ep = torch.export.export(Relu(), (sample_input,))  # noqa: F405
+            torch.export.save(ep, f"{tmp_dir}/relu.pt2")
+            torch.save(sample_input, f"{tmp_dir}/input_0_0.pt")
+            with open(f"{tmp_dir}/input_list", "w") as f:
+                f.write(f"{tmp_dir}/input_0_0.pt\n")
+
+            soc_models = [
+                model.name
+                for model in fcb_target_socs(self.chipset_table[TestQNN.soc_model])
+            ]
+            subprocess.run(
+                [
+                    "python",
+                    "-m",
+                    "executorch.examples.qualcomm.util_scripts.cli",
+                    "quantize",
+                    "--artifact",
+                    f"{tmp_dir}/relu.pt2",
+                    "--output_folder",
+                    f"{tmp_dir}/q_out",
+                    "--input_list",
+                    f"{tmp_dir}/input_list",
+                    "--soc_model",
+                    *soc_models,
+                    "--backend",
+                    self.backend,
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                [
+                    "python",
+                    "-m",
+                    "executorch.examples.qualcomm.util_scripts.cli",
+                    "compile",
+                    "--artifact",
+                    f"{tmp_dir}/q_out/relu_quantized.pt2",
+                    "--output_folder",
+                    f"{tmp_dir}/c_out",
+                    "--soc_model",
+                    *soc_models,
+                    "--backend",
+                    self.backend,
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/c_out/relu_quantized.pte"))
+
+            cmds = [
+                "python",
+                "-m",
+                "executorch.examples.qualcomm.util_scripts.cli",
+                "execute",
+                "--artifact",
+                f"{tmp_dir}/c_out/relu_quantized.pte",
+                "--output_folder",
+                f"{tmp_dir}/e_out",
+                "--build_folder",
+                self.build_folder,
+                "--input_list",
+                f"{tmp_dir}/input_list",
+                "--soc_model",
+                self.soc_model,
+                "--target",
+                self.target,
+                "--device",
+                self.device,
+                "--backend",
+                self.backend,
+            ]
+            if self.host:
+                cmds.extend(["--host", self.host])
+            subprocess.run(cmds, check=True, stdout=subprocess.DEVNULL)
+            self.assertTrue(os.path.isfile(f"{tmp_dir}/e_out/Result_0/output_0.pt"))
+
     def test_cli_with_input_list_assignment(self):
         # TODO: Add gpu support in cli.py
         if get_backend_type(self.backend) == QnnExecuTorchBackendType.kGpuBackend:
@@ -12018,6 +12115,89 @@ class TestUtilsScript(TestQNN):
                         f"Generated recipe file has syntax error: {e}\n{py_content}"
                     )
                 self.assertIn("HOW TO USE THESE RECIPES", py_content)
+
+
+class TestQNNFcb(TestQNN):
+    def test_fcb_compiler_spec_preserves_targets(self):
+        options = [
+            generate_htp_compiler_spec(use_fp16=False),
+            generate_htp_compiler_spec(use_fp16=True),
+        ]
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=[QcomChipset.SM8650, QcomChipset.SM8750],
+            backend_options=options,
+        )
+        option = flatbuffer_to_option(compiler_specs[0].value)
+
+        self.assertEqual(
+            [target.soc_info.soc_model for target in option.target_options.targets],
+            [QcomChipset.SM8650, QcomChipset.SM8750],
+        )
+
+    def test_fcb_manager_cache_is_keyed_by_soc(self):
+        managers = [Mock(), Mock(), Mock()]
+        for manager in managers:
+            manager.InitBackend.return_value = Mock(value=0)
+
+        with (
+            patch.object(qnn_manager_lifecycle, "setup_qnn_sdk"),
+            patch.object(qnn_manager_lifecycle, "disable_mkldnn_on_amd"),
+            patch.object(
+                qnn_manager_lifecycle.PyQnnManager,
+                "QnnManager",
+                side_effect=managers,
+            ) as create,
+        ):
+            registry = qnn_manager_lifecycle.QnnManagerRegistry()
+            first = registry.get_or_create_qnn_manager(
+                QnnExecuTorchBackendType.kHtpBackend, b"first", QcomChipset.SM8650
+            )
+            second = registry.get_or_create_qnn_manager(
+                QnnExecuTorchBackendType.kHtpBackend, b"second", QcomChipset.SM8750
+            )
+            third = registry.get_or_create_qnn_manager(
+                QnnExecuTorchBackendType.kHtpBackend, b"third", QcomChipset.SM8650
+            )
+
+        self.assertEqual(create.call_count, 2)
+        self.assertEqual(len(registry._registry), 2)
+        self.assertIsNot(first, second)
+        self.assertIs(first, third)
+
+    def _get_weight_sharing_model(self):
+        if self.enable_x86_64:
+            self.skipTest("FCB reference-weight sharing requires an Android HTP target")
+        if is_qnn_sdk_version_less_than("2.48"):
+            self.skipTest("FCB reference-weight sharing requires QNN SDK 2.48")
+
+        module, inputs = make_fcb_weight_sharing_model()
+        soc_models = fcb_target_socs(self.chipset_table[TestQNN.soc_model])
+        return module, inputs, soc_models
+
+    def test_fcb_reference_weight_sharing_reduces_pte_size(self):
+        module, inputs, soc_models = self._get_weight_sharing_model()
+        shared = lower_fcb_weight_sharing_model(
+            module,
+            inputs,
+            make_fcb_weight_sharing_specs(soc_models, True),
+        )
+        unshared = lower_fcb_weight_sharing_model(
+            module,
+            inputs,
+            make_fcb_weight_sharing_specs(soc_models, False),
+        )
+
+        self.assertLess(len(shared.buffer), len(unshared.buffer))
+
+    def test_fcb_reference_weight_sharing_e2e(self):
+        module, inputs, soc_models = self._get_weight_sharing_model()
+        executorch_program = lower_fcb_weight_sharing_model(
+            module,
+            inputs,
+            make_fcb_weight_sharing_specs(soc_models, True),
+        )
+
+        self.verify_output(module, inputs, executorch_program)
 
 
 def setup_environment():
