@@ -4,51 +4,109 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Request-scoped JSONL transport for explicitly multiplexed workers.
+"""Async request-scoped JSONL transport for explicitly multiplexed workers.
 
-Only the reader consumes stdout and only the writer touches stdin. Neither runs
-user callbacks. A reservation is a handle that can be cancelled before submitting
-``generate`` to an executor; ``generate`` drains its own bounded mailbox on the
-calling thread. Terminal delivery has a separate slot, independent of token
-capacity. A locally failed request remains registered until its wire terminal
-arrives, so late messages cannot be mistaken for another request.
+One reader task dispatches stdout into bounded token mailboxes; one writer task
+serializes stdin. Neither invokes consumer callbacks. Local consumption and wire
+completion have separate lifetimes: abandoning a stream cannot release a request
+that the worker still owns. All operations run on the client's startup loop.
 """
 
+import asyncio
 import json
+import logging
 import math
-import subprocess
-import threading
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Sequence
 
 from .worker_client import (
     _decode_worker_json,
-    _shutdown_process,
+    _PROCESS_WAIT_TIMEOUT_SECONDS,
     _UINT64_MAX,
-    WorkerClient,
     WorkerError,
+    WorkerStats,
 )
 
 
-# Match the native worker's fixed default, independently of inbound limits.
+logger = logging.getLogger(__name__)
 _MAX_REQUEST_BYTES = 1024 * 1024
+_MAX_MESSAGE_BYTES = 1024 * 1024
+
+
+def _validate_limits(**limits):
+    for name, value in limits.items():
+        if type(value) is not int or value < (0 if name == "max_named_sessions" else 1):
+            raise WorkerError(f"invalid {name}: {value!r}")
+
+
+async def _read_message(stdout, max_message_bytes):
+    try:
+        line = await stdout.readline()
+    except (ValueError, asyncio.LimitOverrunError) as error:
+        raise WorkerError("worker response is oversized or incomplete") from error
+    if not line:
+        raise WorkerError("worker exited mid-request")
+    if len(line) > max_message_bytes or not line.endswith(b"\n"):
+        raise WorkerError("worker response is oversized or incomplete")
+    try:
+        return _decode_worker_json(line.decode("utf-8"))
+    except UnicodeDecodeError as error:
+        raise WorkerError("invalid worker UTF-8") from error
+
+
+async def _drain_and_wait(proc):
+    # Drain in bounded pieces so a paused stdout pipe cannot prevent reaping.
+    if proc.stdout is not None:
+        try:
+            while await proc.stdout.read(64 * 1024):
+                pass
+        except (OSError, ValueError):
+            pass
+    await proc.wait()
+
+
+async def _shutdown_async_process(proc):
+    if proc.stdin is not None:
+        proc.stdin.close()
+    for signal in (proc.terminate, proc.kill):
+        if proc.returncode is None:
+            try:
+                signal()
+            except ProcessLookupError:
+                pass
+        try:
+            await asyncio.wait_for(
+                _drain_and_wait(proc), timeout=_PROCESS_WAIT_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            continue
+        if proc.stdin is not None:
+            try:
+                await asyncio.wait_for(
+                    proc.stdin.wait_closed(), timeout=_PROCESS_WAIT_TIMEOUT_SECONDS
+                )
+            except (OSError, asyncio.TimeoutError):
+                pass
+        return
+    raise WorkerError("worker could not be reaped after termination")
 
 
 @dataclass
 class _Request:
     request_id: int
     op: str
-    changed: threading.Condition
+    completion: asyncio.Future
     ack: str = "done"
+    changed: asyncio.Event = field(default_factory=asyncio.Event)
     submitted: bool = False
     sending: bool = False
-    wire_done: bool = False
     consumed: bool = False
     cancel_requested: bool = False
     cancel_pending: bool = False
-    tokens: deque = field(default_factory=deque)
-    terminal: Optional[object] = None
+    tokens: deque[str] = field(default_factory=deque)
+    token_chars: int = 0
+    local_error: Optional[WorkerError] = None
 
 
 @dataclass
@@ -57,13 +115,86 @@ class _Cancellation:
     sending: bool = False
 
 
-class MultiplexedWorkerClient:
-    """Synchronous compatibility surface with concurrent request-scoped I/O.
+class WorkerGeneration:
+    """A single-consumer token stream with independently awaitable wire completion.
 
-    ``max_inflight_requests`` bounds reservations, queued work, and unconsumed
-    completions. There is a separate, equally bounded budget for cancellation
-    operations. ``cancel`` never waits for pipe I/O or a worker acknowledgement.
-    ``stop`` is only a compatibility helper and refuses ambiguous cancellation.
+    ``generate`` reserves and enqueues immediately. Iterate to consume tokens and
+    use ``wait`` for terminal statistics. ``aclose`` abandons buffered output and
+    requests cancellation, but does not wait for native settlement. Callers that
+    stop consuming must close the stream and retain their session lease until
+    ``wait`` finishes, including when that wait reports a transport failure.
+    """
+
+    def __init__(self, client, state):
+        self._client = client
+        self._state = state
+        self._reading = False
+
+    @property
+    def request_id(self) -> int:
+        return self._state.request_id
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> str:
+        self._client._check_loop()
+        if self._reading:
+            raise WorkerError("generation already has an active token reader")
+        self._reading = True
+        state = self._state
+        try:
+            while not state.consumed:
+                if state.tokens:
+                    token = state.tokens.popleft()
+                    state.token_chars -= len(token)
+                    return token
+                if state.local_error is not None:
+                    self._client._abandon(state)
+                    raise state.local_error
+                if state.completion.done():
+                    result = state.completion.result()
+                    self._client._abandon(state)
+                    if isinstance(result, WorkerError):
+                        raise result
+                    break
+                state.changed.clear()
+                await state.changed.wait()
+            raise StopAsyncIteration
+        except asyncio.CancelledError:
+            self._client._abandon(state)
+            raise
+        finally:
+            self._reading = False
+
+    def cancel(self) -> bool:
+        """Request cancellation without abandoning tokens or waiting for an ACK."""
+        return self._client.cancel(self.request_id)
+
+    async def aclose(self) -> None:
+        self._client._check_loop()
+        self._client._abandon(self._state)
+
+    async def wait(self) -> WorkerStats:
+        """Wait for wire completion, unaffected by cancellation of another waiter.
+
+        Local overflow/consumer errors are reported by iteration, not substituted
+        for the worker's actual terminal result here.
+        """
+        self._client._check_loop()
+        result = await asyncio.shield(self._state.completion)
+        if isinstance(result, WorkerError):
+            raise result
+        return result
+
+
+class MultiplexedWorkerClient:
+    """Event-loop-owned, bounded native transport; use spawn_multiplexed_worker.
+
+    Reservations, queued work, and unconsumed completions share the request
+    budget. Cancellation operations have an independent, equally bounded budget.
+    A supplied process must have binary pipes and a stdout stream limit at least
+    max_message_bytes. The factory configures those pipes before readiness.
     """
 
     supports_multiplexing = True
@@ -71,103 +202,108 @@ class MultiplexedWorkerClient:
 
     def __init__(
         self,
-        proc: subprocess.Popen,
+        proc: asyncio.subprocess.Process,
         max_named_sessions: int = 0,
         max_inflight_requests: int = 64,
         mailbox_capacity: int = 64,
-        max_message_chars: int = 1024 * 1024,
+        max_buffered_chars: int = 1024 * 1024,
+        max_message_bytes: int = _MAX_MESSAGE_BYTES,
     ):
-        for name, value in (
-            ("max_named_sessions", max_named_sessions),
-            ("max_inflight_requests", max_inflight_requests),
-            ("mailbox_capacity", mailbox_capacity),
-            ("max_message_chars", max_message_chars),
-        ):
-            if type(value) is not int or value < (
-                0 if name == "max_named_sessions" else 1
-            ):
-                raise WorkerError(f"invalid {name}: {value!r}")
+        _validate_limits(
+            max_named_sessions=max_named_sessions,
+            max_inflight_requests=max_inflight_requests,
+            mailbox_capacity=mailbox_capacity,
+            max_buffered_chars=max_buffered_chars,
+            max_message_bytes=max_message_bytes,
+        )
+        if proc.stdin is None or proc.stdout is None:
+            raise WorkerError("worker requires stdin and stdout pipes")
+        self._loop = asyncio.get_running_loop()
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
         self._mailbox_capacity = mailbox_capacity
-        self._max_message_chars = max_message_chars
+        self._max_buffered_chars = max_buffered_chars
+        self._max_message_bytes = max_message_bytes
         self._proc = proc
-        self._streams = (proc.stdin, proc.stdout)
-        self._lock = threading.RLock()
-        self._write_ready = threading.Condition(self._lock)
-        self._requests = {}
-        self._controls = {}
-        self._writes = deque()
+        self._write_ready = asyncio.Event()
+        self._requests: dict[int, _Request] = {}
+        self._controls: dict[int, _Cancellation] = {}
+        self._writes: deque[tuple[int, bytes]] = deque()
         self._next_request_id = 1
-        self._terminal_error = None
+        self._terminal_error: Optional[WorkerError] = None
         self._failed = False
         self._closed = False
-        self._cleanup_lock = threading.Lock()
-        self._reaped = False
-        self._reader = threading.Thread(
-            target=self._read_loop, name="worker-reader", daemon=True
-        )
-        self._writer = threading.Thread(
-            target=self._write_loop, name="worker-writer", daemon=True
-        )
-        self._writer.start()
-        self._reader.start()
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._writer = self._loop.create_task(self._write_loop(), name="worker-writer")
+        self._reader = self._loop.create_task(self._read_loop(), name="worker-reader")
 
     @property
     def healthy(self) -> bool:
-        """Whether the transport can accept work without a known failure."""
-        with self._lock:
-            return self._terminal_error is None and self._proc.poll() is None
+        return self._terminal_error is None and self._proc.returncode is None
 
     @property
     def failed(self) -> bool:
-        """Whether a permanent transport failure has occurred."""
-        with self._lock:
-            return self._failed
+        return self._failed
 
     @property
     def closed(self) -> bool:
-        """Whether normal shutdown has been requested."""
-        with self._lock:
-            return self._closed
+        return self._closed
 
-    def _ensure_usable_locked(self):
+    def _check_loop(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not self._loop:
+            raise WorkerError("worker client must be used on its startup event loop")
+
+    def _ensure_usable(self):
+        self._check_loop()
         if self._terminal_error is not None:
             raise self._terminal_error
 
-    def _fail_locked(self, error, failed=True):
+    def _fail(self, error, failed=True):
         if self._terminal_error is None:
             self._terminal_error = error
             self._failed = failed
         for state in self._requests.values():
-            state.wire_done = True
-            if state.terminal is None:
+            if not state.completion.done():
                 state.tokens.clear()
-                state.terminal = self._terminal_error
-            state.changed.notify_all()
+                state.token_chars = 0
+                # Store errors as values: abandoned requests need not retrieve a
+                # future exception merely to let the transport settle them.
+                state.completion.set_result(self._terminal_error)
+            state.changed.set()
         self._requests.clear()
         self._controls.clear()
         self._writes.clear()
-        self._write_ready.notify()
+        self._write_ready.set()
+        if self._cleanup_task is None or (
+            self._cleanup_task.done()
+            and not self._cleanup_task.cancelled()
+            and not self._cleanup_task.result()
+        ):
+            self._cleanup_task = self._loop.create_task(
+                self._cleanup(), name="worker-cleanup"
+            )
 
-    def _allocate_id_locked(self):
-        self._ensure_usable_locked()
+    def _allocate_id(self):
+        self._ensure_usable()
         if self._next_request_id > _UINT64_MAX:
-            self._fail_locked(WorkerError("worker request ids exhausted"))
+            self._fail(WorkerError("worker request ids exhausted"))
             raise self._terminal_error
         request_id = self._next_request_id
         self._next_request_id += 1
         return request_id
 
-    def _reserve_locked(self, op="generate", ack="done"):
-        self._ensure_usable_locked()
+    def _reserve(self, op="generate", ack="done"):
+        self._ensure_usable()
         if len(self._requests) >= self.max_inflight_requests:
             raise WorkerError(
                 "worker request capacity exhausted", code="capacity_exhausted"
             )
-        request_id = self._allocate_id_locked()
-        state = _Request(request_id, op, threading.Condition(self._lock), ack)
-        self._requests[request_id] = state
+        state = _Request(self._allocate_id(), op, self._loop.create_future(), ack)
+        self._requests[state.request_id] = state
         return state
 
     @staticmethod
@@ -176,62 +312,68 @@ class MultiplexedWorkerClient:
             raise WorkerError("request_id must be in [1, UINT64_MAX]")
 
     def reserve_request(self) -> int:
-        """Allocate a cancellable handle before executor submission."""
-        with self._lock:
-            return self._reserve_locked().request_id
+        """Reserve a cancellable ID before constructing/submitting a generation."""
+        return self._reserve().request_id
 
     def release_request(self, request_id: int) -> bool:
-        """Release an unused reservation after failed executor submission."""
+        """Release a reservation that was never submitted."""
+        self._ensure_usable()
         self._validate_id(request_id)
-        with self._lock:
-            self._ensure_usable_locked()
-            state = self._requests.get(request_id)
-            if state is None or state.submitted:
-                return False
-            state.wire_done = True
-            state.changed.notify_all()
-            del self._requests[request_id]
-            return True
+        state = self._requests.get(request_id)
+        if state is None or state.submitted:
+            return False
+        state.consumed = True
+        self._complete(state, WorkerError("worker request reservation released"))
+        return True
 
-    def wait_for_request(self, request_id: int) -> None:
-        """Wait for wire settlement, even after the local consumer has failed.
+    async def wait_for_request(self, request_id: int) -> None:
+        """Wait for settlement, including after local failure or stream abandonment.
 
-        Retired IDs are already settled. Transport failure or shutdown settles
-        every waiter without retaining a history of completed requests.
+        Retired IDs are already settled. No completed-request history is kept.
         """
+        self._check_loop()
         self._validate_id(request_id)
-        with self._lock:
-            state = self._requests.get(request_id)
-            if state is not None:
-                state.changed.wait_for(lambda: state.wire_done)
+        state = self._requests.get(request_id)
+        if state is not None:
+            await asyncio.shield(state.completion)
 
-    def _retire_locked(self, state):
-        if state.consumed and state.wire_done:
+    def _retire(self, state):
+        if state.consumed and state.completion.done():
             self._requests.pop(state.request_id, None)
 
-    def _cancel_locked(self, state):
+    def _complete(self, state, result):
+        if not state.completion.done():
+            state.completion.set_result(result)
+        state.changed.set()
+        self._retire(state)
+
+    def _abandon(self, state):
+        if state.consumed:
+            return
+        state.tokens.clear()
+        state.token_chars = 0
+        state.consumed = True
+        if state.op == "generate" and not state.completion.done():
+            self._cancel(state)
+        state.changed.set()
+        self._retire(state)
+
+    def _cancel(self, state):
         if state.cancel_requested:
             return True
-        if state.wire_done:
+        if state.completion.done():
             return False
         if not state.sending:
             self._writes = deque(
                 item for item in self._writes if item[0] != state.request_id
             )
             state.cancel_requested = True
-            state.wire_done = True
-            if state.terminal is None:
-                state.terminal = {
-                    "done": True,
-                    "cancelled": True,
-                    "finish_reason": "stop",
-                }
-            state.changed.notify_all()
+            self._complete(state, WorkerStats(finish_reason="stop", cancelled=True))
             return True
         if len(self._controls) >= self.max_inflight_requests:
             state.cancel_pending = True
             return True
-        cancel_id = self._allocate_id_locked()
+        cancel_id = self._allocate_id()
         payload = self._encode_request(
             {
                 "op": "cancel",
@@ -243,94 +385,83 @@ class MultiplexedWorkerClient:
         self._controls[cancel_id] = _Cancellation(state.request_id)
         state.cancel_requested = True
         self._writes.append((cancel_id, payload))
-        self._write_ready.notify()
+        self._write_ready.set()
         return True
 
     def cancel(self, request_id: int) -> bool:
-        """Latch cancellation, returning False if inactive or unavailable.
+        """Latch cancellation, without waiting for pipe I/O or a worker ACK.
 
-        True means accepted locally, not acknowledged by the worker. If the
-        control budget is full, bounded per-request intent is retried when an
-        ACK frees capacity. Completion still arrives through the owning generate
-        call. Cancellation before the writer starts completes locally without
-        sending generation to the worker.
+        A full control budget retains per-request intent until an ACK frees a
+        slot. Once sending starts, only the generation terminal (not cancel ACK)
+        settles the generation. Unsent cancellation completes locally.
         """
+        self._check_loop()
         self._validate_id(request_id)
-        with self._lock:
-            if self._terminal_error is not None:
-                return False
-            state = self._requests.get(request_id)
-            if state is None or state.op != "generate":
-                return False
-            return self._cancel_locked(state)
+        if self._terminal_error is not None:
+            return False
+        state = self._requests.get(request_id)
+        if state is None or state.op != "generate":
+            return False
+        return self._cancel(state)
 
     def stop(self) -> bool:
-        """Cancel the sole active generation; never choose among concurrent ones."""
-        with self._lock:
-            active = [
-                s
-                for s in self._requests.values()
-                if s.op == "generate" and not s.wire_done
-            ]
-            if self._terminal_error is not None or len(active) != 1:
-                return False
-            return self._cancel_locked(active[0])
+        """Cancel the sole active generation, refusing ambiguous cancellation."""
+        self._check_loop()
+        active = [
+            s
+            for s in self._requests.values()
+            if s.op == "generate" and not s.completion.done()
+        ]
+        if self._terminal_error is not None or len(active) != 1:
+            return False
+        return self._cancel(active[0])
 
     def reset(self) -> None:
-        """Legacy no-op; persistent state is reset with reset_session."""
-        with self._lock:
-            self._ensure_usable_locked()
+        """Legacy no-op; reset_session performs persistent-state replacement."""
+        self._ensure_usable()
 
     @staticmethod
     def _encode_request(request):
-        payload = json.dumps(request, allow_nan=False, ensure_ascii=True) + "\n"
-        if len(payload.encode("utf-8")) > _MAX_REQUEST_BYTES:
+        payload = (
+            json.dumps(request, allow_nan=False, ensure_ascii=True) + "\n"
+        ).encode("utf-8")
+        if len(payload) > _MAX_REQUEST_BYTES:
             raise WorkerError(
                 "worker request exceeds the 1 MiB frame limit", code="invalid_argument"
             )
         return payload
 
     def _submit(self, request, request_id=None, op="generate", ack="done"):
-        with self._lock:
-            self._ensure_usable_locked()
-            if request_id is None:
-                state = self._reserve_locked(op, ack)
-            else:
-                self._validate_id(request_id)
-                state = self._requests.get(request_id)
-                if state is None or state.op != op or state.submitted:
-                    raise WorkerError(f"request id {request_id} is not reserved")
-            state.submitted = True
+        self._ensure_usable()
+        if request_id is None:
+            state = self._reserve(op, ack)
+        else:
+            self._validate_id(request_id)
+            state = self._requests.get(request_id)
+            if state is None or state.op != op or state.submitted:
+                raise WorkerError(f"request id {request_id} is not reserved")
+        state.submitted = True
         try:
-            # Encoding and pipe I/O stay outside the dispatcher lock.
             payload = self._encode_request(dict(request, request_id=state.request_id))
-            with self._lock:
-                self._ensure_usable_locked()
-                if not state.wire_done:
-                    self._writes.append((state.request_id, payload))
-                    self._write_ready.notify()
+            if not state.completion.done():
+                self._writes.append((state.request_id, payload))
+                self._write_ready.set()
         except BaseException:
-            with self._lock:
-                state.wire_done = state.consumed = True
-                state.changed.notify_all()
-                self._retire_locked(state)
+            state.consumed = True
+            self._complete(state, WorkerError("worker request encoding failed"))
             raise
         return state
 
-    def _write_loop(self):
+    async def _write_loop(self):
         try:
-            stdin = self._streams[0]
-            while True:
-                with self._write_ready:
-                    self._write_ready.wait_for(
-                        lambda: self._writes or self._terminal_error is not None
-                    )
-                    if self._terminal_error is not None:
-                        return
+            dispatched = 0
+            while self._terminal_error is None:
+                await self._write_ready.wait()
+                while self._writes and self._terminal_error is None:
                     request_id, payload = self._writes.popleft()
                     state = self._requests.get(request_id)
                     if state is not None:
-                        if state.wire_done:
+                        if state.completion.done():
                             continue
                         state.sending = True
                     else:
@@ -338,14 +469,21 @@ class MultiplexedWorkerClient:
                         if control is None:
                             continue
                         control.sending = True
-                written = stdin.write(payload)
-                if written is not None and written != len(payload):
-                    raise WorkerError("short write to worker stdin")
-                stdin.flush()
-        except BaseException as error:  # noqa: B036 - settle thread failures
-            # An interrupted partial frame is unrecoverable, never resume writing.
-            with self._lock:
-                self._fail_locked(WorkerError(f"worker write failed: {error}"))
+                    written = self._proc.stdin.write(payload)
+                    if written is not None and written != len(payload):
+                        raise WorkerError("short write to worker stdin")
+                    await self._proc.stdin.drain()
+                    dispatched += 1
+                    if dispatched == 32:
+                        dispatched = 0
+                        await asyncio.sleep(0)
+                self._write_ready.clear()
+        except asyncio.CancelledError:
+            if self._terminal_error is None:
+                self._fail(WorkerError("worker writer interrupted"))
+            raise
+        except BaseException as error:  # noqa: B036 - settle transport failures
+            self._fail(WorkerError(f"worker write failed: {error}"))
 
     @staticmethod
     def _validate_message(msg):
@@ -396,10 +534,7 @@ class MultiplexedWorkerClient:
                 or msg[key] < 0
             ):
                 raise WorkerError(f"invalid worker statistic: {key}")
-        if "finish_reason" in msg and msg["finish_reason"] not in (
-            "stop",
-            "length",
-        ):
+        if "finish_reason" in msg and msg["finish_reason"] not in ("stop", "length"):
             raise WorkerError("invalid worker finish_reason")
         if "cancelled" in msg and type(msg["cancelled"]) is not bool:
             raise WorkerError("invalid worker cancelled flag")
@@ -415,172 +550,233 @@ class MultiplexedWorkerClient:
         ):
             raise WorkerError("invalid worker generated_token_ids")
 
-    def _dispatch_cancel_locked(self, msg, kind):
-        request_id = msg["request_id"]
-        control = self._controls[request_id]
+    def _dispatch_cancel(self, msg, kind):
+        control = self._controls[msg["request_id"]]
         if not control.sending or kind not in ("cancelled", "error"):
             raise WorkerError("unexpected cancellation response")
-        del self._controls[request_id]
+        del self._controls[msg["request_id"]]
         target = self._requests.get(control.target_request_id)
-        if kind == "error" and target is not None and target.terminal is None:
+        if (
+            kind == "error"
+            and target is not None
+            and not target.completion.done()
+            and target.local_error is None
+        ):
             target.tokens.clear()
-            target.terminal = WorkerError(msg["error"], code=msg.get("code"))
-            target.changed.notify_all()
-        # Pending cancellation is stored on the bounded request
-        # registry, not another queue. Retry as soon as ACK capacity frees.
+            target.token_chars = 0
+            target.local_error = WorkerError(msg["error"], code=msg.get("code"))
+            target.changed.set()
         for pending in self._requests.values():
-            if pending.cancel_pending and not pending.wire_done:
-                self._cancel_locked(pending)
+            if pending.cancel_pending and not pending.completion.done():
+                self._cancel(pending)
                 if len(self._controls) >= self.max_inflight_requests:
                     break
 
-    def _dispatch_locked(self, msg, kind):
+    def _mailbox_full(self, state, token):
+        return (
+            len(state.tokens) >= self._mailbox_capacity
+            or state.token_chars + len(token) > self._max_buffered_chars
+        )
+
+    def _dispatch(self, msg, kind):
         request_id = msg["request_id"]
         if request_id in self._controls:
-            self._dispatch_cancel_locked(msg, kind)
+            self._dispatch_cancel(msg, kind)
             return
         state = self._requests.get(request_id)
-        if state is None or not state.sending or state.wire_done:
+        if state is None or not state.sending or state.completion.done():
             raise WorkerError(f"response for inactive request {request_id}")
         if kind == "token" and state.op == "generate":
-            if state.terminal is not None:
+            if state.local_error is not None or state.consumed:
                 return
-            if len(state.tokens) == self._mailbox_capacity:
+            token = msg["token"]
+            if self._mailbox_full(state, token):
                 state.tokens.clear()
-                state.terminal = WorkerError(
+                state.token_chars = 0
+                state.local_error = WorkerError(
                     "worker token mailbox overflow", code="slow_consumer"
                 )
-                self._cancel_locked(state)
+                self._cancel(state)
             else:
-                state.tokens.append(msg["token"])
+                state.tokens.append(token)
+                state.token_chars += len(token)
+            state.changed.set()
         elif kind in (state.ack, "error"):
-            state.wire_done = True
-            if state.terminal is None:
-                state.terminal = (
-                    WorkerError(msg["error"], code=msg.get("code"))
-                    if kind == "error"
-                    else msg
-                )
-            self._retire_locked(state)
+            result = (
+                WorkerError(msg["error"], code=msg.get("code"))
+                if kind == "error"
+                else WorkerStats.from_message(msg) if state.op == "generate" else None
+            )
+            self._complete(state, result)
         else:
             raise WorkerError(f"unexpected response for {state.op}: {kind}")
-        state.changed.notify_all()
 
-    def _read_loop(self):
+    async def _read_loop(self):
         try:
-            stdout = self._streams[1]
-            while True:
-                line = stdout.readline(self._max_message_chars + 1)
-                if not line:
-                    raise WorkerError("worker exited mid-request")
-                if len(line) > self._max_message_chars or not line.endswith("\n"):
-                    raise WorkerError("worker response is oversized or incomplete")
-                msg = _decode_worker_json(line)
+            dispatched = 0
+            while self._terminal_error is None:
+                msg = await _read_message(self._proc.stdout, self._max_message_bytes)
                 kind = self._validate_message(msg)
-                with self._lock:
+                state = self._requests.get(msg["request_id"])
+                if (
+                    kind == "token"
+                    and state is not None
+                    and state.tokens
+                    and not state.completion.done()
+                    and self._mailbox_full(state, msg["token"])
+                ):
+                    # Buffered reads need not yield. Give an already-runnable
+                    # consumer one turn before declaring it slow; never wait
+                    # for mailbox space or for that consumer to finish.
+                    await asyncio.sleep(0)
                     if self._terminal_error is not None:
                         return
-                    self._dispatch_locked(msg, kind)
-        except BaseException as error:  # noqa: B036 - settle thread failures
-            with self._lock:
-                self._fail_locked(
-                    error
-                    if isinstance(error, WorkerError)
-                    else WorkerError(f"worker read failed: {error}")
-                )
-
-    def _consume(self, state, token_callback=None, stats_callback=None):
-        try:
-            while True:
-                with state.changed:
-                    state.changed.wait_for(
-                        lambda: state.tokens or state.terminal is not None
-                    )
-                    token = state.tokens.popleft() if state.tokens else None
-                    terminal = state.terminal if token is None else None
-                if token is not None:
-                    if token_callback is not None:
-                        token_callback(token)
-                elif isinstance(terminal, WorkerError):
-                    raise terminal
-                else:
-                    if state.op == "generate":
-                        WorkerClient._on_done(terminal, stats_callback)
-                    return
-        finally:
-            with self._lock:
-                if (
-                    state.op == "generate"
-                    and not state.wire_done
-                    and self._terminal_error is None
-                ):
-                    if state.terminal is None:
-                        state.terminal = WorkerError("request consumer interrupted")
-                    self._cancel_locked(state)
-                state.tokens.clear()
-                state.consumed = True
-                self._retire_locked(state)
-
-    def generate(
-        self, prompt, config, token_callback=None, stats_callback=None, request_id=None
-    ):
-        """Drain one request's mailbox, invoking callbacks on the calling thread."""
-        request = {
-            "op": "generate",
-            "max_new_tokens": getattr(config, "max_new_tokens", -1),
-            "temperature": getattr(config, "temperature", 0.0),
-            "top_p": getattr(config, "top_p", 1.0),
-            "top_k": getattr(config, "top_k", 0),
-            "seed": getattr(config, "seed", 0),
-            "stop": list(getattr(config, "stop", []) or []),
-        }
-        segments = getattr(config, "prompt_segments", None)
-        request["prompt_segments" if segments is not None else "prompt"] = (
-            segments if segments is not None else prompt
-        )
-        session_id = getattr(config, "session_id", None)
-        if session_id:
-            request["session_id"] = session_id
-        state = self._submit(request, request_id=request_id)
-        self._consume(state, token_callback, stats_callback)
-
-    def _op(self, op, session_id, ack):
-        state = self._submit({"op": op, "session_id": session_id}, op=op, ack=ack)
-        self._consume(state)
-
-    def open_session(self, session_id: str) -> None:
-        """Wait for a named session's admission acknowledgement."""
-        self._op("open", session_id, "opened")
-
-    def reset_session(self, session_id: str) -> None:
-        """Wait for the named session's replacement acknowledgement."""
-        self._op("reset", session_id, "reset")
-
-    def close_session(self, session_id: str) -> None:
-        """Wait for the named session's logical close acknowledgement."""
-        self._op("close", session_id, "closed")
-
-    def _cleanup(self, failed):
-        with self._lock:
-            if not failed:
-                self._closed = True
-            self._fail_locked(
-                WorkerError(
-                    "worker client aborted" if failed else "worker client is closed"
-                ),
-                failed,
+                self._dispatch(msg, kind)
+                dispatched += 1
+                if dispatched == min(32, self._mailbox_capacity):
+                    dispatched = 0
+                    await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            if self._terminal_error is None:
+                self._fail(WorkerError("worker reader interrupted"))
+            raise
+        except BaseException as error:  # noqa: B036 - settle transport failures
+            self._fail(
+                error
+                if isinstance(error, WorkerError)
+                else WorkerError(f"worker read failed: {error}")
             )
-        with self._cleanup_lock:
-            if not self._reaped:
-                self._reaped = _shutdown_process(self._proc, self._streams)
-            if self._reaped:
-                self._reader.join(timeout=5)
-                self._writer.join(timeout=5)
 
-    def abort(self) -> None:
+    def generate(self, prompt, config, request_id=None) -> WorkerGeneration:
+        """Enqueue a generation and return its async token stream, without I/O waits."""
+        self._ensure_usable()
+        if request_id is not None:
+            self._validate_id(request_id)
+        try:
+            request = {
+                "op": "generate",
+                "max_new_tokens": getattr(config, "max_new_tokens", -1),
+                "temperature": getattr(config, "temperature", 0.0),
+                "top_p": getattr(config, "top_p", 1.0),
+                "top_k": getattr(config, "top_k", 0),
+                "seed": getattr(config, "seed", 0),
+                "stop": list(getattr(config, "stop", []) or []),
+            }
+            segments = getattr(config, "prompt_segments", None)
+            request["prompt_segments" if segments is not None else "prompt"] = (
+                segments if segments is not None else prompt
+            )
+            session_id = getattr(config, "session_id", None)
+            if session_id:
+                request["session_id"] = session_id
+            return WorkerGeneration(self, self._submit(request, request_id=request_id))
+        except BaseException:
+            if request_id is not None and self._terminal_error is None:
+                self.release_request(request_id)
+            raise
+
+    async def _op(self, op, session_id, ack):
+        state = self._submit({"op": op, "session_id": session_id}, op=op, ack=ack)
+        try:
+            result = await asyncio.shield(state.completion)
+            if isinstance(result, WorkerError):
+                raise result
+        finally:
+            self._abandon(state)
+
+    async def open_session(self, session_id: str) -> None:
+        """Wait for a named session's admission acknowledgement."""
+        await self._op("open", session_id, "opened")
+
+    async def reset_session(self, session_id: str) -> None:
+        """Wait for the named session's replacement acknowledgement."""
+        await self._op("reset", session_id, "reset")
+
+    async def close_session(self, session_id: str) -> None:
+        """Wait for the named session's logical close acknowledgement."""
+        await self._op("close", session_id, "closed")
+
+    async def _cleanup(self):
+        self._reader.cancel()
+        self._writer.cancel()
+        await asyncio.gather(self._reader, self._writer, return_exceptions=True)
+        try:
+            await _shutdown_async_process(self._proc)
+        except Exception:  # noqa: BLE001 - observe background cleanup failures
+            logger.exception("Model worker could not be reaped after termination")
+            return False
+        return True
+
+    async def abort(self) -> None:
         """Fail outstanding operations and terminate/reap the worker."""
-        self._cleanup(True)
+        self._check_loop()
+        self._fail(WorkerError("worker client aborted"))
+        if not await asyncio.shield(self._cleanup_task):
+            raise WorkerError("worker could not be reaped after termination")
 
-    def close(self) -> None:
-        """Settle outstanding operations and shut down the worker idempotently."""
-        self._cleanup(False)
+    async def close(self) -> None:
+        """Settle operations and reap idempotently; caller cancellation cannot stop cleanup."""
+        self._check_loop()
+        self._closed = True
+        self._fail(WorkerError("worker client is closed"), failed=False)
+        if not await asyncio.shield(self._cleanup_task):
+            raise WorkerError("worker could not be reaped after termination")
+
+
+async def spawn_multiplexed_worker(
+    cmd: Sequence[str],
+    env: Optional[dict] = None,
+    cwd: Optional[str] = None,
+    *,
+    mailbox_capacity: int = 64,
+    max_buffered_chars: int = 1024 * 1024,
+    max_message_bytes: int = _MAX_MESSAGE_BYTES,
+) -> MultiplexedWorkerClient:
+    """Start a native worker on the caller's loop, requiring explicit multiplexing.
+
+    Use from async application startup and await client.close() at shutdown.
+    Sequential workers continue to use the synchronous spawn_worker factory.
+    """
+    _validate_limits(
+        mailbox_capacity=mailbox_capacity,
+        max_buffered_chars=max_buffered_chars,
+        max_message_bytes=max_message_bytes,
+    )
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        env=env,
+        cwd=cwd,
+        limit=max_message_bytes,
+    )
+    try:
+        msg = await _read_message(proc.stdout, max_message_bytes)
+        if msg.get("ready") is not True:
+            raise WorkerError(f"worker did not report ready: {msg}")
+        if msg.get("multiplexed") is not True:
+            raise WorkerError(
+                "worker does not support required multiplexing",
+                code="unsupported_multiplexing",
+            )
+        return MultiplexedWorkerClient(
+            proc,
+            max_named_sessions=msg.get("max_named_sessions", 0),
+            max_inflight_requests=msg.get("max_inflight_requests", 64),
+            mailbox_capacity=mailbox_capacity,
+            max_buffered_chars=max_buffered_chars,
+            max_message_bytes=max_message_bytes,
+        )
+    except BaseException:
+        cleanup = asyncio.create_task(_shutdown_async_process(proc))
+        while True:
+            try:
+                await asyncio.shield(cleanup)
+                break
+            except asyncio.CancelledError:
+                if cleanup.cancelled():
+                    raise
+                # No client was returned to own this child. Finish bounded
+                # cleanup even if the startup caller cancels repeatedly.
+                continue
+        raise
