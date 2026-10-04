@@ -21,9 +21,9 @@ reduce:
       POSTPROCESS: (accum / tin_sizes[reduce_dim])
     - NAME: amax
       INIT_ACCUM: first_val
-      UPDATE_ACCUM: max(accum, new_val)
+      UPDATE_ACCUM: max_propagate_nan(accum, new_val)
       POSTPROCESS: accum
     - NAME: amin
       INIT_ACCUM: first_val
-      UPDATE_ACCUM: min(accum, new_val)
+      UPDATE_ACCUM: min_propagate_nan(accum, new_val)
       POSTPROCESS: accum
