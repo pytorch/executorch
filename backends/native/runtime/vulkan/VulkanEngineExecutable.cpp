@@ -32,6 +32,7 @@
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
+#include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -277,6 +278,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         materializations_(materializations),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
+    vulkan::insert_prepack_nodes(method_);
     validate_graph(method_.graph);
     validate_supported_method(method_);
     nodes_ = method_.graph.schedule;
