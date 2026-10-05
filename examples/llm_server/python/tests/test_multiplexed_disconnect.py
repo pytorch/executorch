@@ -6,18 +6,23 @@
 
 """Real sockets: disconnect one request without cancelling its worker peer."""
 
+import asyncio
 import json
 import socket
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 import httpx
 import pytest
 import uvicorn
 
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    spawn_multiplexed_worker,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
@@ -25,6 +30,7 @@ from executorch.examples.llm_server.python.session_runtime import (
     PromptInput,
     SessionRuntime,
 )
+from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 from executorch.examples.llm_server.python.worker_client import spawn_worker
 
 
@@ -45,10 +51,10 @@ for line in sys.stdin:
     if request['op'] == 'generate':
         session_id = request['session_id']
         active[session_id] = request_id
-        if not (sys.argv[3] == 'True' and session_id == 'a'):
-            send(request_id, token='worker-token-visible-content')
-        if session_id == 'a':
-            Path(sys.argv[1] + '.started').write_text('started')
+        if not (sys.argv[3] == 'before-first-token' and session_id == 'a'):
+            token = '<tool_call>{"name":' if sys.argv[3] == 'tools' and session_id == 'a' else 'worker-token-visible-content'
+            send(request_id, token=token)
+        Path(sys.argv[1] + '.' + session_id + '.started').write_text('started')
     elif request['op'] == 'cancel':
         assert set(active) == {'a', 'b'}
         assert request['target_request_id'] == active['a']
@@ -62,12 +68,50 @@ for line in sys.stdin:
 """
 
 
-def _disconnect_request(port, body, started, *, before_response):
+@asynccontextmanager
+async def _socket_serving(resources, marker, settles, mode):
+    loop = asyncio.get_running_loop()
+    worker = await spawn_multiplexed_worker(
+        [sys.executable, "-u", "-c", _WORKER, str(marker), str(settles), mode],
+        mailbox_capacity=8,
+        max_buffered_chars=1024,
+    )
+    resources["worker"] = worker
+    runtime = None
+    try:
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
+        resources["runtime"] = runtime
+        yield ServingChat(
+            runtime,
+            ChatTemplate(hf_tokenizer_path=None, allow_fallback=True),
+            "test-model",
+            tool_detector_cls=HermesDetector,
+            content_filter=(lambda text: text) if mode == "filter" else None,
+            reasoning_extractor=(
+                (lambda text: (None, text)) if mode == "reasoning" else None
+            ),
+        )
+    finally:
+        if runtime is None:
+            await worker.close()
+        else:
+            await runtime.aclose_worker()
+        assert worker._proc.returncode is not None
+        assert worker._reader.done() and worker._writer.done()
+        assert asyncio.get_running_loop() is loop
+        if runtime is not None:
+            assert not runtime._settlements
+        resources["closed"] = True
+
+
+def _disconnect_request(port, body, started, *, before_response, buffered=False):
     if not before_response:
         url = f"http://127.0.0.1:{port}/v1/chat/completions"
         with httpx.stream("POST", url, json=body, timeout=5) as response:
             assert response.status_code == 200
             for line in response.iter_lines():
+                if '"role":"assistant"' in line and buffered:
+                    break
                 if "worker-token" in line:
                     break
         return
@@ -86,20 +130,15 @@ def _disconnect_request(port, body, started, *, before_response):
 
 @pytest.mark.parametrize("settles", [True, False], ids=["settled", "unsettled"])
 @pytest.mark.parametrize(
-    "preflight", [True, False], ids=["before-first-token", "after-first-token"]
+    "mode", ["before-first-token", "after-first-token", "tools", "filter", "reasoning"]
 )
 @pytest.mark.parametrize("stream", [True, False], ids=["stream", "nonstream"])
 def test_socket_disconnect_cancels_only_owning_multiplexed_request(
-    tmp_path, settles, preflight, stream
+    tmp_path, settles, mode, stream
 ):
     marker = tmp_path / "cancelled.json"
-    worker = spawn_worker(
-        [sys.executable, "-u", "-c", _WORKER, str(marker), str(settles), str(preflight)]
-    )
-    runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
-    serving = ServingChat(
-        runtime, ChatTemplate(hf_tokenizer_path=None, allow_fallback=True), "test-model"
-    )
+    resources = {}
+
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", 0))
@@ -107,9 +146,15 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
     port = listener.getsockname()[1]
     server = uvicorn.Server(
         uvicorn.Config(
-            build_app(serving, "test-model"),
+            build_app(
+                None,
+                "test-model",
+                serving_factory=lambda: _socket_serving(
+                    resources, marker, settles, mode
+                ),
+            ),
             log_level="error",
-            lifespan="off",
+            lifespan="on",
             loop="asyncio",
         )
     )
@@ -118,11 +163,10 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
     )
     thread.start()
     pool = ThreadPoolExecutor(max_workers=1)
-    started_b = threading.Event()
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
 
     def body(session_id, stream=True):
-        return {
+        request = {
             "model": "test-model",
             "session_id": session_id,
             "stream": stream,
@@ -130,14 +174,17 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
             "messages": [{"role": "user", "content": "hi"}],
             "max_tokens": 8,
         }
+        if mode == "tools" and session_id == "a":
+            request["tools"] = [
+                {"type": "function", "function": {"name": "lookup", "parameters": {}}}
+            ]
+        return request
 
     def consume_b():
         chunks = []
         with httpx.stream("POST", url, json=body("b"), timeout=5) as response:
             assert response.status_code == 200
             for line in response.iter_lines():
-                if "worker-token" in line:
-                    started_b.set()
                 if line:
                     chunks.append(line)
         return chunks
@@ -148,12 +195,17 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
             time.sleep(0.01)
         assert server.started
         peer = pool.submit(consume_b)
-        assert started_b.wait(5)
+        started_b = marker.with_name(marker.name + ".b.started")
+        deadline = time.monotonic() + 5
+        while not started_b.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert started_b.exists()
         _disconnect_request(
             port,
             body("a", stream=stream),
-            marker.with_name(marker.name + ".started"),
-            before_response=preflight or not stream,
+            marker.with_name(marker.name + ".a.started"),
+            before_response=mode == "before-first-token" or not stream,
+            buffered=mode in ("tools", "filter", "reasoning"),
         )
         chunks = peer.result(timeout=5)
         assert chunks[-1] == "data: [DONE]"
@@ -161,6 +213,7 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
         assert any('"completion_tokens":1' in chunk for chunk in chunks)
         observed = json.loads(marker.read_text())
         assert observed["cancelled"] != observed["unaffected"]
+        runtime = resources["runtime"]
         if not settles:
             deadline = time.monotonic() + 2
             while not runtime._settlements and time.monotonic() < deadline:
@@ -172,12 +225,12 @@ def test_socket_disconnect_cancels_only_owning_multiplexed_request(
             httpx.get(f"http://127.0.0.1:{port}/health", timeout=5).status_code == 200
         )
     finally:
-        runtime.close_worker()
         server.should_exit = True
         thread.join(timeout=5)
         listener.close()
         pool.shutdown(wait=True)
         assert not thread.is_alive()
+        assert resources.get("closed") is True
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX cancellation pipe")
@@ -303,11 +356,8 @@ for _ in sys.stdin:
     pass
 """
 
-    def abandon_seed(_):
-        raise ValueError("seed cancellation")
-
     async def scenario():
-        worker = spawn_worker([sys.executable, "-u", "-c", script])
+        worker = await spawn_multiplexed_worker([sys.executable, "-u", "-c", script])
         runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
         serving = ServingChat(
             runtime,
@@ -332,11 +382,12 @@ for _ in sys.stdin:
 
         try:
             for _ in range(2):
-                with pytest.raises(ValueError, match="seed cancellation"):
-                    await asyncio.to_thread(
-                        worker.generate, "seed", SimpleNamespace(), abandon_seed
-                    )
-            await asyncio.to_thread(worker.open_session, "seed_barrier")
+                seed = worker.generate("seed", SimpleNamespace())
+                assert await anext(seed) == "seed"
+                assert seed.cancel()
+                await seed.aclose()
+                assert (await seed.wait()).cancelled
+            await worker.open_session("seed_barrier")
             request = ChatCompletionRequest(
                 model="test-model",
                 session_id="s",
@@ -355,41 +406,42 @@ for _ in sys.stdin:
             await asyncio.wait_for(body_started.wait(), 2)
             disconnected.set()
             await asyncio.wait_for(response_task, 2)
-            with worker._lock:
-                state = worker._requests[target.request_id]
-                assert (
-                    state.cancel_pending
-                    and not state.cancel_requested
-                    and not state.wire_done
-                )
-                assert len(worker._controls) == 2
+            state = worker._requests[target.request_id]
+            assert (
+                state.cancel_pending
+                and not state.cancel_requested
+                and not state.completion.done()
+            )
+            assert len(worker._controls) == 2
             assert runtime._admitted == 1 and len(runtime._settlements) == 1
             successor = asyncio.create_task(collect_successor())
             await asyncio.sleep(0)
             assert runtime._session_locks._entries["s"].users == 2
-            await asyncio.to_thread(worker.open_session, "release_acks")
-            await asyncio.to_thread(worker.open_session, "cancel_seen")
-            with worker._lock:
-                assert (
-                    state.cancel_requested
-                    and not state.cancel_pending
-                    and not state.wire_done
-                )
+            await worker.open_session("release_acks")
+            await worker.open_session("cancel_seen")
+            assert (
+                state.cancel_requested
+                and not state.cancel_pending
+                and not state.completion.done()
+            )
             assert not successor.done() and not target._future.done()
             assert runtime._session_locks._entries["s"].users == 2
-            await asyncio.to_thread(worker.open_session, "release_terminal")
+            await worker.open_session("release_terminal")
             assert await asyncio.wait_for(successor, 2) == ["next"]
             assert (await target.result()).cancelled
             await asyncio.sleep(0)
             assert runtime._admitted == 0 and not runtime._session_locks._entries
             assert runtime.healthy
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
+            assert worker._proc.returncode is not None
+            assert worker._reader.done() and worker._writer.done()
+            assert not runtime._settlements
 
     asyncio.run(scenario())
 
 
-def test_local_callback_failure_keeps_session_lease_until_wire_terminal():
+def test_native_mailbox_overflow_keeps_session_lease_until_wire_terminal():
     import asyncio
 
     from executorch.examples.llm_server.python.worker_client import WorkerError
@@ -424,10 +476,12 @@ for line in sys.stdin:
 """
 
     async def scenario():
-        worker = spawn_worker([sys.executable, "-u", "-c", script])
-        runtime = SessionRuntime(
-            worker, max_buffered_chars=16, cancel_grace_seconds=0.01
+        worker = await spawn_multiplexed_worker(
+            [sys.executable, "-u", "-c", script],
+            mailbox_capacity=2,
+            max_buffered_chars=16,
         )
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
 
         async def collect(session_id):
             async with runtime.generate_stream(
@@ -452,6 +506,9 @@ for line in sys.stdin:
             assert not runtime._session_locks._entries
             assert runtime.healthy
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
+            assert worker._proc.returncode is not None
+            assert worker._reader.done() and worker._writer.done()
+            assert not runtime._settlements
 
     asyncio.run(scenario())

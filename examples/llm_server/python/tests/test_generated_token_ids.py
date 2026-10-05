@@ -8,10 +8,14 @@
 
 import json
 import sys
+from contextlib import asynccontextmanager
 
 import pytest
 
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    spawn_multiplexed_worker,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
@@ -66,27 +70,47 @@ for line in sys.stdin:
 def test_empty_visible_completion_preserves_id_presence_through_http_runtime_transcript(
     monkeypatch, multiplexed, stream, completion
 ):
-    worker = spawn_worker(
-        [sys.executable, "-u", "-c", _WORKER, str(multiplexed), completion]
-    )
-    runtime = SessionRuntime(worker)
-    serving = ServingChat(
-        runtime,
-        ChatTemplate(hf_tokenizer_path=None, allow_fallback=True),
-        "test-model",
-    )
+    command = [sys.executable, "-u", "-c", _WORKER, str(multiplexed), completion]
+    runtime = None
+    serving = None
     generations = []
-    generate_stream = runtime.generate_stream
 
-    def observe_generation(*args, **kwargs):
-        generation = generate_stream(*args, **kwargs)
-        generations.append(generation)
-        return generation
+    def configure(worker):
+        nonlocal runtime, serving
+        runtime = SessionRuntime(worker)
+        serving = ServingChat(
+            runtime,
+            ChatTemplate(hf_tokenizer_path=None, allow_fallback=True),
+            "test-model",
+        )
+        generate_stream = runtime.generate_stream
 
-    monkeypatch.setattr(runtime, "generate_stream", observe_generation)
+        def observe_generation(*args, **kwargs):
+            generation = generate_stream(*args, **kwargs)
+            generations.append(generation)
+            return generation
+
+        monkeypatch.setattr(runtime, "generate_stream", observe_generation)
+        return serving
+
+    @asynccontextmanager
+    async def native_serving():
+        worker = await spawn_multiplexed_worker(command)
+        try:
+            yield configure(worker)
+        finally:
+            if runtime is not None:
+                await runtime.aclose_worker()
+            else:
+                await worker.close()
+
+    if multiplexed:
+        app = build_app(None, "test-model", serving_factory=native_serving)
+    else:
+        app = build_app(configure(spawn_worker(command)), "test-model")
     try:
         assert GenStats().generated_token_ids is None
-        with TestClient(build_app(serving, "test-model")) as client:
+        with TestClient(app) as client:
             messages = [{"role": "user", "content": "hi"}]
             response = client.post(
                 "/v1/chat/completions",
@@ -136,4 +160,5 @@ def test_empty_visible_completion_preserves_id_presence_through_http_runtime_tra
             assert successor.json()["choices"][0]["message"]["content"] == "next"
             assert runtime.healthy
     finally:
-        runtime.close_worker()
+        if not multiplexed:
+            runtime.close_worker()

@@ -13,8 +13,8 @@ model execution and session state (KV/recurrent, resident token ids, warm-resume
 prefix logic). The Python server never loads a model, links a backend, or imports
 a runtime pybind.
 
-A SessionRuntime owns exactly one worker, bridging blocking generate() into
-request-scoped async token streams. Explicitly multiplexed workers permit bounded
+A SessionRuntime owns exactly one worker, using native async streams directly or
+bridging legacy blocking generate(). Explicitly multiplexed workers permit bounded
 concurrency across sessions; legacy workers retain single-in-flight execution.
 Named-session operations remain ordered. Multi-worker scheduling is out of scope.
 """
@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
+from .multiplexed_worker_client import MultiplexedWorkerClient
 from .worker_client import WorkerError
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,23 @@ class _WorkerRequest:
     stop: list[str]
     session_id: Optional[str]
     prompt_segments: Optional[list]
+
+
+def _copy_stats(stats: GenStats, s) -> None:
+    stats.prompt_tokens = s.num_prompt_tokens
+    stats.completion_tokens = s.num_generated_tokens
+    stats.finish_reason = getattr(s, "finish_reason", None)
+    stats.reused_prompt_tokens = getattr(s, "reused_prompt_tokens", 0)
+    stats.prefilled_prompt_tokens = getattr(s, "prefilled_prompt_tokens", 0)
+    stats.session_reset_reason = getattr(s, "session_reset_reason", None)
+    stats.prefill_ms = getattr(s, "prefill_ms", 0.0)
+    stats.decode_ms = getattr(s, "decode_ms", 0.0)
+    stats.total_ms = getattr(s, "total_ms", 0.0)
+    stats.prefill_tok_s = getattr(s, "prefill_tok_s", 0.0)
+    stats.decode_tok_s = getattr(s, "decode_tok_s", 0.0)
+    stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
+    stats.cancelled = getattr(s, "cancelled", False)
+    stats.generated_token_ids = getattr(s, "generated_token_ids", None)
 
 
 class _GenerationBridge:
@@ -189,20 +207,7 @@ class _GenerationBridge:
                 raise self._terminal
 
     def stats_cb(self, s) -> None:
-        self._stats.prompt_tokens = s.num_prompt_tokens
-        self._stats.completion_tokens = s.num_generated_tokens
-        self._stats.finish_reason = getattr(s, "finish_reason", None)
-        self._stats.reused_prompt_tokens = getattr(s, "reused_prompt_tokens", 0)
-        self._stats.prefilled_prompt_tokens = getattr(s, "prefilled_prompt_tokens", 0)
-        self._stats.session_reset_reason = getattr(s, "session_reset_reason", None)
-        self._stats.prefill_ms = getattr(s, "prefill_ms", 0.0)
-        self._stats.decode_ms = getattr(s, "decode_ms", 0.0)
-        self._stats.total_ms = getattr(s, "total_ms", 0.0)
-        self._stats.prefill_tok_s = getattr(s, "prefill_tok_s", 0.0)
-        self._stats.decode_tok_s = getattr(s, "decode_tok_s", 0.0)
-        self._stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
-        self._stats.cancelled = getattr(s, "cancelled", False)
-        self._stats.generated_token_ids = getattr(s, "generated_token_ids", None)
+        _copy_stats(self._stats, s)
 
     def run(self) -> None:
         try:
@@ -299,6 +304,7 @@ class _SessionLocks:
 @dataclass
 class _RuntimeOperation:
     future: Optional[asyncio.Future] = None
+    released: Optional[asyncio.Future] = None
 
 
 class Generation:
@@ -306,6 +312,8 @@ class Generation:
 
     def __init__(self, runtime, session_id, prompt, options, stats):
         self.stats = stats if stats is not None else GenStats()
+        self._runtime = runtime
+        self._stream = None
         self._bridge = None
         self._future = None
         self._prefetch = None
@@ -319,6 +327,8 @@ class Generation:
     @property
     def request_id(self):
         """Return the wire ID after lazy admission, or None before it starts."""
+        if self._stream is not None:
+            return self._stream.request_id
         return self._bridge._request_id if self._bridge is not None else None
 
     def cancel(self) -> bool:
@@ -326,6 +336,8 @@ class Generation:
         if self._closed:
             return False
         self._cancel_requested = True
+        if self._stream is not None:
+            return self._stream.cancel()
         return self._bridge.cancel() if self._bridge is not None else True
 
     def __aiter__(self):
@@ -338,6 +350,8 @@ class Generation:
             raise StopAsyncIteration
         if self._reader is not None:
             raise RuntimeError("generation already has an active reader")
+        if self._runtime._native:
+            self._runtime._generations.add(self)
         self._reader = asyncio.current_task()
         self._read_done = asyncio.get_running_loop().create_future()
         try:
@@ -347,6 +361,7 @@ class Generation:
             return await self._iterator.__anext__()
         except BaseException:
             self._closed = True
+            self._runtime._generations.discard(self)
             raise
         finally:
             self._reader = None
@@ -361,11 +376,16 @@ class Generation:
         if self._closed:
             return
         if self._prefetch is None:
+            if self._runtime._native:
+                self._runtime._generations.add(self)
             self._prefetch = asyncio.create_task(self._iterator.__anext__())
+            if self._runtime._native:
+                self._runtime._own_task(self._prefetch)
         try:
             await asyncio.shield(self._prefetch)
         except StopAsyncIteration:
             self._closed = True
+            self._runtime._generations.discard(self)
         except BaseException:
             await self.aclose()
             raise
@@ -390,13 +410,18 @@ class Generation:
                 await SessionRuntime._finish_cleanup(prefetch)
             except (asyncio.CancelledError, Exception):
                 pass  # The preflight/consumer owns delivery of its failure.
-        await self._iterator.aclose()
+        try:
+            await self._iterator.aclose()
+        finally:
+            self._runtime._generations.discard(self)
 
     async def aclose(self):
         """Cancel and join an active read before releasing this generation."""
         self._closed = True
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._close())
+            if self._runtime._native:
+                self._runtime._own_task(self._close_task)
         await SessionRuntime._finish_cleanup(self._close_task)
 
     async def result(self) -> GenStats:
@@ -414,6 +439,9 @@ class SessionRuntime:
     Legacy cancellation timeout aborts the worker. Multiplexed timeout retains
     only that request's admission and session lease until settlement or shutdown;
     unrelated requests are never aborted to clean up a disconnected consumer.
+
+    mailbox_capacity and max_buffered_chars configure only the legacy bridge.
+    Configure native mailboxes when constructing spawn_multiplexed_worker instead.
     """
 
     def __init__(
@@ -429,6 +457,7 @@ class SessionRuntime:
         if cancel_grace_seconds < 0.0 or abort_timeout_seconds <= 0.0:
             raise ValueError("cancellation timeouts must be nonnegative and positive")
         self._worker = worker
+        self._native = isinstance(worker, MultiplexedWorkerClient)
         self.supports_multiplexing = (
             getattr(worker, "supports_multiplexing", False) is True
         )
@@ -445,12 +474,18 @@ class SessionRuntime:
         self.max_concurrent_requests = capacity
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
-        self._executor = ThreadPoolExecutor(max_workers=capacity)
+        self._executor = (
+            None if self._native else ThreadPoolExecutor(max_workers=capacity)
+        )
         self._lock = asyncio.Lock()
         self._session_locks = _SessionLocks()
         self._admitted = 0
         self._settlements = set()
         self._bridges = set()
+        self._generations = set()
+        self._native_tasks = set()
+        self._operations = set()
+        self._shutdown_task = None
         self._cancel_grace_seconds = cancel_grace_seconds
         self._abort_timeout_seconds = abort_timeout_seconds
         self._failure: Optional[WorkerError] = None
@@ -488,14 +523,30 @@ class SessionRuntime:
         """Destroy a named session and free its state and capacity slot."""
         await self._session_op("close_session", session_id)
 
+    def _own_task(self, task):
+        self._native_tasks.add(task)
+
+        def finished(done):
+            self._native_tasks.discard(done)
+            if not done.cancelled():
+                done.exception()
+
+        task.add_done_callback(finished)
+        return task
+
+    def _release_admission(self, operation):
+        self._admitted -= 1
+        if operation.released is not None:
+            operation.released.set_result(None)
+
     async def _release_operation(self, operation, lease) -> None:
         try:
-            await asyncio.shield(operation.future)
-        except Exception:
+            await self._finish_cleanup(operation.future)
+        except (asyncio.CancelledError, Exception):
             pass  # A disconnected caller no longer consumes lifecycle errors.
         finally:
             await lease.__aexit__(None, None, None)
-            self._admitted -= 1
+            self._release_admission(operation)
 
     @asynccontextmanager
     async def _operation(self, session_id):
@@ -511,6 +562,10 @@ class SessionRuntime:
                 "worker request capacity exhausted", code="capacity_exhausted"
             )
         self._admitted += 1
+        if self._native:
+            operation.released = asyncio.get_running_loop().create_future()
+            self._operations.add(operation.released)
+            operation.released.add_done_callback(self._operations.discard)
         lease = self._session_locks.hold(session_id)
         entered = False
         try:
@@ -525,10 +580,12 @@ class SessionRuntime:
                 )
                 self._settlements.add(settlement)
                 settlement.add_done_callback(self._settlements.discard)
+                if self._native:
+                    self._own_task(settlement)
             else:
                 if entered:
                     await lease.__aexit__(None, None, None)
-                self._admitted -= 1
+                self._release_admission(operation)
 
     async def _session_op(self, method: str, session_id: str) -> None:
         op = getattr(self._worker, method, None)
@@ -537,7 +594,11 @@ class SessionRuntime:
         self._ensure_healthy()
         loop = asyncio.get_running_loop()
         async with self._operation(session_id) as operation:
-            operation.future = loop.run_in_executor(self._executor, op, session_id)
+            operation.future = (
+                self._own_task(asyncio.create_task(op(session_id)))
+                if self._native
+                else loop.run_in_executor(self._executor, op, session_id)
+            )
             await asyncio.shield(operation.future)
 
     def stop(self) -> bool:
@@ -617,6 +678,50 @@ class SessionRuntime:
                 continue
         await cleanup
 
+    async def _native_terminal(self, stream, stats):
+        # Wire completion owns the lease, but must not discard unread tokens.
+        _copy_stats(stats, await stream.wait())
+
+    async def _close_native_generation(self, stream, future):
+        try:
+            await stream.aclose()
+        finally:
+            await self._wait_for_worker(future, self._cancel_grace_seconds)
+
+    @asynccontextmanager
+    async def _native_generation(
+        self, prompt, request, generation, operation, request_id
+    ):
+        try:
+            if generation._cancel_requested:
+                self._worker.cancel(request_id)
+            stream = self._worker.generate(
+                prompt.text or "", request, request_id=request_id
+            )
+        except BaseException:
+            try:
+                self._worker.release_request(request_id)
+            except Exception:  # noqa: BLE001 - preserve submission failure
+                logger.debug("Failed to release unused reservation", exc_info=True)
+            raise
+        generation._stream = stream
+        future = self._own_task(
+            asyncio.create_task(self._native_terminal(stream, generation.stats))
+        )
+        operation.future = generation._future = future
+        try:
+            yield stream
+            await asyncio.shield(future)
+        except BaseException:
+            cleanup = self._own_task(
+                asyncio.create_task(self._close_native_generation(stream, future))
+            )
+            try:
+                await self._finish_cleanup(cleanup)
+            except Exception:  # noqa: BLE001 - preserve the primary read error
+                logger.debug("Native generation cleanup failed", exc_info=True)
+            raise
+
     def generate_stream(
         self,
         session_id: Optional[str],
@@ -646,6 +751,14 @@ class SessionRuntime:
             release = getattr(self._worker, "release_request", None)
             uses_reservation = callable(reserve)
             request_id = reserve() if uses_reservation else None
+            if self._native:
+                async with self._native_generation(
+                    prompt, request, generation, operation, request_id
+                ) as stream:
+                    async for item in stream:
+                        yield item
+                return
+
             bridge = _GenerationBridge(
                 self._worker,
                 prompt.text or "",
@@ -694,8 +807,61 @@ class SessionRuntime:
                     )
                     await self._finish_cleanup(cleanup)
 
+    async def _shutdown_native(self):
+        generations = tuple(self._generations)
+        try:
+            await self._worker.close()
+        finally:
+            results = await asyncio.gather(
+                *(generation.aclose() for generation in generations),
+                return_exceptions=True,
+            )
+            while self._native_tasks or self._operations:
+                await asyncio.gather(
+                    *tuple(self._native_tasks | self._operations),
+                    return_exceptions=True,
+                )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+
+    async def aclose_worker(self) -> None:
+        """Join shutdown despite caller cancellation; retry a failed native reap."""
+        if self._native:
+            self._worker._check_loop()
+        self._mark_failed("model worker is closed")
+        if self._shutdown_task is None or (
+            self._shutdown_task.done()
+            and (
+                self._shutdown_task.cancelled()
+                or self._shutdown_task.exception() is not None
+            )
+        ):
+            self._shutdown_task = asyncio.create_task(
+                self._shutdown_native()
+                if self._native
+                else asyncio.to_thread(self.close_worker)
+            )
+            self._shutdown_task.add_done_callback(
+                lambda done: done.exception() if not done.cancelled() else None
+            )
+        shutdown = self._shutdown_task
+        cancelled = False
+        while not shutdown.done():
+            try:
+                await asyncio.shield(shutdown)
+            except asyncio.CancelledError:
+                cancelled = True
+        await shutdown
+        if cancelled:
+            raise asyncio.CancelledError
+
     def close_worker(self) -> None:
-        """Shut down the worker process and executor during server shutdown."""
+        """Shut down a legacy worker; native runtimes require aclose_worker()."""
+        if self._native:
+            raise WorkerError(
+                "native worker shutdown requires await runtime.aclose_worker()"
+            )
         error = self._mark_failed("model worker is closed")
         for bridge in tuple(self._bridges):
             bridge.drop_tokens.set()

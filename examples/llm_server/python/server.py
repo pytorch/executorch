@@ -29,8 +29,9 @@ import argparse
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
-from typing import Awaitable, Callable, Optional
+from typing import AsyncContextManager, Awaitable, Callable, Optional
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -132,12 +133,60 @@ class _ClosingStreamingResponse(StreamingResponse):
             )
 
 
-def build_app(serving: ServingChat, model_id: str) -> FastAPI:
-    app = FastAPI(title="ExecuTorch LLM Server")
+def _create_serving_app(serving, serving_factory):
+    if (serving is None) == (serving_factory is None):
+        raise ValueError("exactly one of serving or serving_factory must be supplied")
+    if serving_factory is not None and not callable(serving_factory):
+        raise TypeError("serving_factory must be an async context manager factory")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            async with serving_factory() as serving:
+                if serving is None:
+                    raise RuntimeError("serving_factory yielded no serving adapter")
+                app.state.serving = serving
+                try:
+                    yield
+                finally:
+                    app.state.serving = None
+        finally:
+            app.state.serving = None
+
+    if serving_factory is None:
+        app = FastAPI(title="ExecuTorch LLM Server")
+    else:
+        app = FastAPI(title="ExecuTorch LLM Server", lifespan=lifespan)
+    app.state.serving = serving
+    return app
+
+
+def _current_serving(app: FastAPI) -> ServingChat:
+    serving = app.state.serving
+    if serving is None:
+        raise RuntimeError(
+            "serving adapter is unavailable; run the application lifespan "
+            "before requests and do not use it after shutdown"
+        )
+    return serving
+
+
+def build_app(
+    serving: Optional[ServingChat],
+    model_id: str,
+    *,
+    serving_factory: Optional[Callable[[], AsyncContextManager[ServingChat]]] = None,
+) -> FastAPI:
+    """Build an app with either an injected adapter or a lifespan-owned factory.
+
+    The factory owns partial-startup cleanup and awaited runtime shutdown. Direct
+    instances retain FastAPI's default lifespan and are not closed by this app.
+    """
+    app = _create_serving_app(serving, serving_factory)
 
     @app.get("/health")
     async def health():
-        if not serving.healthy:
+        if not _current_serving(app).healthy:
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ok"}
 
@@ -164,7 +213,7 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
             req, x_executorch_session_id, session_id_header, x_session_affinity
         )
         try:
-            result = await _create_with_disconnect(request, serving, req)
+            result = await _create_with_disconnect(request, _current_serving(app), req)
         except ClientDisconnect:
             return Response(status_code=499)
         except APIError as e:
@@ -177,7 +226,7 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     async def close_session(session_id: str):
         # Free a named session's state + capacity slot (vendor extension).
         return await _session_op(
-            serving.close_session,
+            _current_serving(app).close_session,
             session_id,
             {"closed": True, "session_id": session_id},
         )
@@ -186,7 +235,7 @@ def build_app(serving: ServingChat, model_id: str) -> FastAPI:
     async def reset_session(session_id: str):
         # Replace a named session's context under its public ID (vendor extension).
         return await _session_op(
-            serving.reset_session,
+            _current_serving(app).reset_session,
             session_id,
             {"reset": True, "session_id": session_id},
         )

@@ -7,13 +7,18 @@
 """Concurrent session/runtime contracts without models or accelerator state."""
 
 import asyncio
+import json
 import queue
 import threading
 from types import SimpleNamespace
 
 import pytest
 
+from executorch.examples.llm_server.python import session_runtime as runtime_module
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    MultiplexedWorkerClient,
+)
 from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
@@ -22,6 +27,9 @@ from executorch.examples.llm_server.python.session_runtime import (
     GenStats,
     PromptInput,
     SessionRuntime,
+)
+from executorch.examples.llm_server.python.tests.test_multiplexed_worker_client import (
+    _AsyncProc,
 )
 from executorch.examples.llm_server.python.worker_client import WorkerError, WorkerStats
 
@@ -122,7 +130,101 @@ class _Worker:
             self.lifecycle_gate.set()
 
 
+class _NativeWorker(MultiplexedWorkerClient):
+    """Real async transport with a deterministic JSONL worker on the pipe side."""
+
+    def __init__(
+        self,
+        cooperative=True,
+        pair=False,
+        tokens=("reply",),
+        errors=None,
+        ack_cancel=True,
+        **limits,
+    ):
+        proc = _AsyncProc()
+        super().__init__(
+            proc, max_inflight_requests=limits.pop("max_inflight_requests", 4), **limits
+        )
+        self.calls = asyncio.Queue()
+        self.cancelled = []
+        self.cancel_frames = asyncio.Queue()
+        self.ack_cancel = ack_cancel
+        self._active = set()
+        self._cooperative = cooperative
+        self._pair = pair
+        self.tokens = tokens
+        self.errors = errors or {}
+        self.hold_lifecycle = False
+        self._lifecycle = []
+        self._write_pipe = proc.stdin.write
+        proc.stdin.write = self._respond
+
+    def _respond(self, payload):
+        self._write_pipe(payload)
+        frame = json.loads(payload)
+        request_id, op = frame["request_id"], frame["op"]
+        if op == "cancel":
+            target = frame["target_request_id"]
+            self.cancelled.append(target)
+            self.cancel_frames.put_nowait(frame)
+            if self.ack_cancel:
+                self._proc.send(request_id, cancelled=True)
+            if self._cooperative:
+                self.finish(target)
+            return
+        if op == "generate":
+            config = SimpleNamespace(**{"session_id": None, **frame})
+            self.calls.put_nowait((op, request_id, config))
+            self._active.add(request_id)
+            for token in self.tokens:
+                self._proc.send(request_id, token=token)
+        else:
+            self.calls.put_nowait((op, frame["session_id"]))
+        if op in self.errors:
+            message, code = self.errors[op]
+            self._proc.send(
+                request_id,
+                error=message,
+                **({"code": code} if code is not None else {}),
+            )
+            self._active.discard(request_id)
+        elif op == "generate":
+            if self._pair and len(self._active) == 2:
+                for active_id in tuple(self._active):
+                    self.finish(active_id)
+        elif self.hold_lifecycle:
+            self._lifecycle.append(frame)
+        else:
+            self._ack_lifecycle(frame)
+
+    def _ack_lifecycle(self, frame):
+        ack = {"open": "opened", "reset": "reset", "close": "closed"}[frame["op"]]
+        self._proc.send(frame["request_id"], **{ack: True})
+
+    def release_lifecycle(self):
+        self.hold_lifecycle = False
+        for frame in self._lifecycle:
+            self._ack_lifecycle(frame)
+        self._lifecycle.clear()
+
+    def finish(self, request_id, **metadata):
+        self._active.remove(request_id)
+        fields = {
+            "done": True,
+            "prompt_tokens": 3,
+            "completion_tokens": len(self.tokens),
+            "generated_token_ids": [request_id],
+            "cancelled": request_id in self.cancelled,
+            "finish_reason": "stop",
+        }
+        fields.update(metadata)
+        self._proc.send(request_id, **fields)
+
+
 async def _call(worker):
+    if isinstance(worker, MultiplexedWorkerClient):
+        return await asyncio.wait_for(worker.calls.get(), 2)
     return await asyncio.to_thread(worker.calls.get, True, 2)
 
 
@@ -154,7 +256,7 @@ def _request(session_id, *, stream=False, continuation=False):
 @pytest.mark.parametrize("session_ids", [("a", "b"), (None, None)])
 def test_worker_requires_b_admission_before_a_can_finish(session_ids):
     async def scenario():
-        worker = _Worker(pair=True)
+        worker = _NativeWorker(pair=True)
         runtime = SessionRuntime(worker)
         try:
             results = await asyncio.wait_for(
@@ -169,14 +271,14 @@ def test_worker_requires_b_admission_before_a_can_finish(session_ids):
             assert not runtime._session_locks._entries
             assert runtime._admitted == 0
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_targeted_cancellation_keeps_other_generation_running():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         a = runtime.generate_stream("a", PromptInput(text="a"), _OPTIONS)
         b = runtime.generate_stream("b", PromptInput(text="b"), _OPTIONS)
@@ -197,30 +299,32 @@ def test_targeted_cancellation_keeps_other_generation_running():
         finally:
             await a.aclose()
             await b.aclose()
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_cancel_before_iteration_is_latched():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         generation = runtime.generate_stream(None, PromptInput(text="hi"), _OPTIONS)
         try:
             assert generation.cancel()
             stats = await generation.result()
             assert stats.cancelled
-            assert worker.cancelled == [generation.request_id]
+            assert generation.request_id is not None
+            assert worker.calls.empty() and worker.cancel_frames.empty()
+            assert not worker._requests
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_same_session_generation_and_lifecycle_are_serialized():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         try:
             a = asyncio.create_task(_collect(runtime, "s"))
@@ -248,14 +352,14 @@ def test_same_session_generation_and_lifecycle_are_serialized():
             assert not runtime._session_locks._entries
             assert runtime._admitted == 0
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_cancel_timeout_retains_bounded_admission_until_real_completion():
     async def scenario():
-        worker = _Worker(cooperative=False)
+        worker = _NativeWorker(cooperative=False)
         runtime = SessionRuntime(
             worker, max_concurrent_requests=2, cancel_grace_seconds=0.01
         )
@@ -266,12 +370,19 @@ def test_cancel_timeout_retains_bounded_admission_until_real_completion():
             await a.aclose()
             assert runtime.healthy and runtime._admitted == 1
             assert len(runtime._settlements) == 1
+            assert not worker._controls
+            assert a.request_id in worker._requests
+            peer = asyncio.create_task(_collect(runtime, "peer"))
+            peer_call = await _call(worker)
+            worker.finish(peer_call[1])
+            assert await peer == ["reply"]
+            assert runtime.healthy and runtime._admitted == 1
             successor = asyncio.create_task(_collect(runtime, "s"))
             await asyncio.sleep(0)
             with pytest.raises(WorkerError, match="capacity"):
                 await _collect(runtime, "other")
             assert worker.calls.empty()
-            assert len(runtime._executor._threads) <= 2
+            assert runtime._executor is None
             worker.finish(first[1])
             second = await _call(worker)
             worker.finish(second[1])
@@ -281,15 +392,15 @@ def test_cancel_timeout_retains_bounded_admission_until_real_completion():
             assert not runtime._session_locks._entries
             assert runtime._admitted == 0
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_cancelled_lifecycle_keeps_same_session_exclusion():
     async def scenario():
-        worker = _Worker()
-        worker.lifecycle_gate = threading.Event()
+        worker = _NativeWorker()
+        worker.hold_lifecycle = True
         runtime = SessionRuntime(worker)
         try:
             reset = asyncio.create_task(runtime.reset("s"))
@@ -300,19 +411,20 @@ def test_cancelled_lifecycle_keeps_same_session_exclusion():
             generation = asyncio.create_task(_collect(runtime, "s"))
             await asyncio.sleep(0)
             assert worker.calls.empty()
-            worker.lifecycle_gate.set()
+            assert [state.op for state in worker._requests.values()] == ["reset"]
+            worker.release_lifecycle()
             call = await _call(worker)
             worker.finish(call[1])
             await generation
             assert not runtime._session_locks._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("overflow", ["count", "characters"])
-def test_cross_thread_mailbox_bounds_tokens_and_scheduled_wakeups(
+def test_legacy_cross_thread_mailbox_bounds_tokens_and_scheduled_wakeups(
     monkeypatch, overflow
 ):
     async def scenario():
@@ -363,7 +475,7 @@ def test_cross_thread_mailbox_bounds_tokens_and_scheduled_wakeups(
     asyncio.run(scenario())
 
 
-def test_terminal_has_reserved_capacity():
+def test_legacy_terminal_has_reserved_capacity():
     async def scenario():
         bridge = _GenerationBridge(
             _Worker(), "hi", SimpleNamespace(), GenStats(), 1, mailbox_capacity=2
@@ -378,14 +490,14 @@ def test_terminal_has_reserved_capacity():
 
 def test_shutdown_settles_every_active_stream():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         operations = [
             asyncio.create_task(_collect(runtime, sid)) for sid in ("a", "b", None)
         ]
         for _ in operations:
             await _call(worker)
-        runtime.close_worker()
+        await runtime.aclose_worker()
         results = await asyncio.gather(*operations, return_exceptions=True)
         assert all(isinstance(result, WorkerError) for result in results)
         assert not runtime.healthy
@@ -397,7 +509,7 @@ def test_shutdown_settles_every_active_stream():
 
 def test_chat_transaction_covers_prepare_generation_commit_and_reset(monkeypatch):
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         events = []
@@ -443,14 +555,14 @@ def test_chat_transaction_covers_prepare_generation_commit_and_reset(monkeypatch
             assert not serving._transactions._entries
             assert not runtime._session_locks._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_unstarted_chat_stream_close_releases_transaction():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
@@ -465,63 +577,71 @@ def test_unstarted_chat_stream_close_releases_transaction():
             await close
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
-def test_slow_runtime_mailbox_cancels_only_its_owner():
-    class BurstWorker(_Worker):
-        def __init__(self):
-            super().__init__()
-            self.burst = threading.Event()
-
-        def generate(self, prompt, config, token_callback, stats_callback, request_id):
-            def emit(token):
-                token_callback(token)
-                if config.session_id == "slow":
-                    assert self.burst.wait(5)
-                    for _ in range(1000):
-                        token_callback("spam")
-
-            super().generate(prompt, config, emit, stats_callback, request_id)
-
+@pytest.mark.parametrize("overflow", ["count", "characters"])
+def test_native_mailbox_overflow_holds_lease_until_terminal_and_isolates_peer(overflow):
     async def scenario():
-        worker = BurstWorker()
-        runtime = SessionRuntime(worker, mailbox_capacity=2)
+        limits = (
+            {"mailbox_capacity": 2}
+            if overflow == "count"
+            else {"max_buffered_chars": 8}
+        )
+        worker = _NativeWorker(cooperative=False, **limits)
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
         slow = runtime.generate_stream("slow", PromptInput(text="hi"), _OPTIONS)
         try:
             assert await anext(slow) == "reply"
+            first = await _call(worker)
             fast = asyncio.create_task(_collect(runtime, "fast"))
             peer = await _call(worker)
             assert peer[2].session_id == "fast"
-            worker.burst.set()
+            for token in ["x"] * 3 if overflow == "count" else ["x" * 9]:
+                worker._proc.send(first[1], token=token)
+            cancel = await asyncio.wait_for(worker.cancel_frames.get(), 2)
+            assert cancel["target_request_id"] == first[1]
             worker.finish(peer[1])
             assert await fast == ["reply"]
-            with pytest.raises(WorkerError, match="mailbox overflow"):
+            with pytest.raises(WorkerError, match="mailbox overflow") as error:
                 await slow.result()
+            assert error.value.code == "slow_consumer"
             assert worker.cancelled == [slow.request_id]
-            assert runtime.healthy
+            assert not worker._controls  # ACK has arrived; generation has not settled.
+            assert runtime._admitted == 1
+            assert slow.request_id in worker._requests
+            successor = asyncio.create_task(_collect(runtime, "slow"))
+            await asyncio.sleep(0)
+            assert worker.calls.empty() and not successor.done()
+            assert list(worker._requests) == [first[1]]
+            worker.finish(first[1])
+            second = await _call(worker)
+            worker.finish(second[1])
+            assert await successor == ["reply"]
+            assert not worker._requests
+            assert not runtime._session_locks._entries
+            assert runtime._admitted == 0 and runtime.healthy
         finally:
-            worker.burst.set()
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("path", ["reasoning", "tools", "filter"])
+@pytest.mark.parametrize("path", ["reasoning", "tools", "filter", "stop"])
 def test_buffered_chat_disconnect_cancels_own_generation(path):
     from executorch.examples.llm_server.python.tool_parsers import HermesDetector
 
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         kwargs = {}
         if path == "reasoning":
             kwargs["reasoning_extractor"] = lambda text: (None, text)
         elif path == "tools":
             kwargs["tool_detector_cls"] = HermesDetector
-        else:
+        elif path == "filter":
             kwargs["content_filter"] = lambda text: text
         serving = ServingChat(
             runtime,
@@ -530,6 +650,8 @@ def test_buffered_chat_disconnect_cancels_own_generation(path):
             **kwargs,
         )
         request = _request("s", stream=True)
+        if path == "stop":
+            request.stop = ["replytail"]
         if path == "tools":
             request.tools = [
                 {
@@ -540,8 +662,10 @@ def test_buffered_chat_disconnect_cancels_own_generation(path):
         try:
             stream = await serving.create(request)
             assert '"role":"assistant"' in await anext(stream)
-            pending = asyncio.create_task(anext(stream))
             generation = await _call(worker)
+            pending = asyncio.create_task(anext(stream))
+            await asyncio.sleep(0)
+            assert stream._reader is pending and not pending.done()
             pending.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await pending
@@ -549,7 +673,7 @@ def test_buffered_chat_disconnect_cancels_own_generation(path):
             assert not serving._transactions._entries
             assert runtime.healthy
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
@@ -575,20 +699,12 @@ def test_native_error_codes_survive_chat_adapter(code, status, operation):
 
     from executorch.examples.llm_server.python.errors import APIError
 
-    class RejectedWorker(_Worker):
-        def generate(self, *args, **kwargs):
-            if operation == "stream":
-                args[2]("prefix")
-            raise WorkerError("rejected", code=code)
-
-        def reset_session(self, session_id):
-            raise WorkerError("rejected", code=code)
-
-        def close_session(self, session_id):
-            raise WorkerError("rejected", code=code)
-
     async def scenario():
-        runtime = SessionRuntime(RejectedWorker())
+        worker = _NativeWorker(
+            tokens=("prefix",) if operation == "stream" else (),
+            errors={op: ("rejected", code) for op in ("generate", "reset", "close")},
+        )
+        runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
             if operation == "stream":
@@ -611,7 +727,7 @@ def test_native_error_codes_survive_chat_adapter(code, status, operation):
                 assert error.value.code == code
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
@@ -619,12 +735,8 @@ def test_native_error_codes_survive_chat_adapter(code, status, operation):
 def test_failed_multiplexed_reset_invalidates_old_transcript():
     from executorch.examples.llm_server.python.errors import GenerationError
 
-    class FailedReset(_Worker):
-        def reset_session(self, session_id):
-            raise WorkerError("replacement failed")
-
     async def scenario():
-        worker = FailedReset()
+        worker = _NativeWorker(errors={"reset": ("replacement failed", None)})
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         serving._transcript.record_assistant_turn(
@@ -640,7 +752,7 @@ def test_failed_multiplexed_reset_invalidates_old_transcript():
             assert "s" not in serving._transcript._turns
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
@@ -657,14 +769,18 @@ def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
     from executorch.examples.llm_server.python.server import build_app
 
     class ResetWorker(_Worker):
-        supports_multiplexing = multiplexed
+        supports_multiplexing = False
 
         def reset_session(self, session_id):
             self.calls.put(("reset", session_id))
             raise WorkerError("reset failed", code=code)
 
     async def scenario():
-        worker = ResetWorker()
+        worker = (
+            _NativeWorker(errors={"reset": ("reset failed", code)})
+            if multiplexed
+            else ResetWorker()
+        )
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         serving._transcript.record_assistant_turn(
@@ -686,7 +802,7 @@ def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
                         assert response.json() == {"reset": True, "session_id": "s"}
                     else:
                         assert response.json()["error"]["code"] == code
-                    assert worker.calls.get_nowait() == ("reset", "s")
+                    assert await _call(worker) == ("reset", "s")
                     assert ("s" not in serving._transcript._turns) == (
                         multiplexed or code == "session_not_found"
                     )
@@ -694,7 +810,10 @@ def test_http_reset_missing_session_is_idempotent_but_preserves_real_errors(
                     assert not runtime._session_locks._entries
                     assert runtime._admitted == 0
         finally:
-            runtime.close_worker()
+            if multiplexed:
+                await runtime.aclose_worker()
+            else:
+                runtime.close_worker()
 
     asyncio.run(scenario())
 
@@ -735,12 +854,10 @@ def test_streaming_admission_failure_is_http_429_without_explicit_open():
     import httpx
     from executorch.examples.llm_server.python.server import build_app
 
-    class FullWorker(_Worker):
-        def generate(self, *args, **kwargs):
-            raise WorkerError("full", code="capacity_exhausted")
-
     async def scenario():
-        worker = FullWorker()
+        worker = _NativeWorker(
+            tokens=(), errors={"generate": ("full", "capacity_exhausted")}
+        )
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
@@ -754,21 +871,18 @@ def test_streaming_admission_failure_is_http_429_without_explicit_open():
                 )
             assert response.status_code == 429
             assert response.json()["error"]["code"] == "capacity_exhausted"
+            assert (await _call(worker))[0] == "generate"
             assert worker.calls.empty()
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_cancelling_stream_preflight_cancels_own_worker_request():
-    class SilentWorker(_Worker):
-        def generate(self, prompt, config, token_callback, stats_callback, request_id):
-            super().generate(prompt, config, lambda _: None, stats_callback, request_id)
-
     async def scenario():
-        worker = SilentWorker()
+        worker = _NativeWorker(tokens=())
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
@@ -783,7 +897,7 @@ def test_cancelling_stream_preflight_cancels_own_worker_request():
             assert runtime._admitted == 0
             assert runtime.healthy
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
@@ -792,7 +906,7 @@ def test_stream_preflight_keeps_first_raw_token_for_consumption():
     import json
 
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
@@ -812,14 +926,14 @@ def test_stream_preflight_keeps_first_raw_token_for_consumption():
             )
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_generation_close_joins_active_read_without_cancelling_peer():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         generation = runtime.generate_stream("s", PromptInput(text="hi"), _OPTIONS)
         try:
@@ -841,20 +955,20 @@ def test_generation_close_joins_active_read_without_cancelling_peer():
             assert runtime.healthy
             assert runtime._admitted == 0
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_chat_close_joins_active_read_before_releasing_transaction():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
             stream = await serving.create(_request("s", stream=True))
             first = await _call(worker)
-            await anext(stream)
+            await anext(stream)  # Role chunk; stop filtering retains the short reply.
             reader = asyncio.create_task(anext(stream))
             await asyncio.sleep(0)
             assert stream._reader is reader
@@ -870,7 +984,7 @@ def test_chat_close_joins_active_read_before_releasing_transaction():
             assert not serving._transactions._entries
             assert "s" not in serving._transcript._turns
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
@@ -880,7 +994,7 @@ def test_sse_header_send_failure_closes_unstarted_transaction():
     from starlette.requests import ClientDisconnect
 
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         stream = await serving.create(_request("s", stream=True))
@@ -902,14 +1016,190 @@ def test_sse_header_send_failure_closes_unstarted_transaction():
             assert worker.cancelled == [first[1]]
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("ack_first", [True, False])
+def test_cancel_ack_order_does_not_control_same_session_lease(ack_first):
+    async def scenario():
+        worker = _NativeWorker(cooperative=False, ack_cancel=False)
+        runtime = SessionRuntime(worker, cancel_grace_seconds=0.01)
+        generation = runtime.generate_stream("s", PromptInput(text="hi"), _OPTIONS)
+        try:
+            assert await anext(generation) == "reply"
+            first = await _call(worker)
+            await generation.aclose()
+            cancel = await asyncio.wait_for(worker.cancel_frames.get(), 2)
+            if ack_first:
+                worker._proc.send(cancel["request_id"], cancelled=True)
+            successor = asyncio.create_task(_collect(runtime, "s"))
+            # A lifecycle round trip flushes prior frames without settling s.
+            await worker.open_session("barrier")
+            assert await _call(worker) == ("open", "barrier")
+            assert worker.calls.empty() and not successor.done()
+            assert runtime._admitted == 2
+            worker.finish(first[1])
+            second = await _call(worker)
+            worker.finish(second[1])
+            assert await successor == ["reply"]
+            assert runtime._admitted == 0
+            if not ack_first:
+                assert cancel["request_id"] in worker._controls
+                worker._proc.send(cancel["request_id"], cancelled=True)
+            await worker.open_session("barrier")
+            assert not worker._controls and not worker._requests
+            assert runtime.healthy
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+def test_native_generation_and_lifecycle_never_construct_bridge_or_executor(
+    monkeypatch,
+):
+    async def scenario():
+        def forbidden(*args, **kwargs):
+            raise AssertionError("native serving must remain on the owner loop")
+
+        monkeypatch.setattr(runtime_module, "_GenerationBridge", forbidden)
+        monkeypatch.setattr(runtime_module, "ThreadPoolExecutor", forbidden)
+        monkeypatch.setattr(asyncio.get_running_loop(), "run_in_executor", forbidden)
+        monkeypatch.setattr(threading.Thread, "start", forbidden)
+        worker = _NativeWorker(pair=True)
+        runtime = SessionRuntime(worker)
+        try:
+            assert runtime._executor is None
+            assert await asyncio.wait_for(
+                asyncio.gather(_collect(runtime, "a"), _collect(runtime, "b")), 2
+            ) == [["reply"], ["reply"]]
+            generation = runtime.generate_stream("c", PromptInput(text="hi"), _OPTIONS)
+            assert await anext(generation) == "reply"
+            await generation.aclose()
+            assert worker.cancelled == [generation.request_id]
+            await runtime.open("a")
+            await runtime.reset("a")
+            await runtime.close("a")
+            assert runtime.healthy
+        finally:
+            await runtime.aclose_worker()
+        assert worker._proc.reaped
+        assert worker._reader.done() and worker._writer.done()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("prefetched", [True, False])
+def test_terminal_while_consumer_paused_then_close_releases_native_capacity(prefetched):
+    async def scenario():
+        worker = _NativeWorker(max_inflight_requests=1)
+        runtime = SessionRuntime(worker)
+        generation = runtime.generate_stream("s", PromptInput(text="hi"), _OPTIONS)
+        try:
+            if prefetched:
+                await generation.wait_ready()
+            else:
+                assert await anext(generation) == "reply"
+            first = await _call(worker)
+            worker._proc.send(first[1], token="unread")
+            worker.finish(first[1])
+            await worker.wait_for_request(first[1])
+            with pytest.raises(WorkerError) as full:
+                worker.reserve_request()
+            assert full.value.code == "capacity_exhausted"
+            await generation.aclose()
+            assert not worker._requests
+            assert not worker.cancelled
+            assert not runtime._session_locks._entries
+            assert runtime._admitted == 0
+            replacement = asyncio.create_task(_collect(runtime, "s"))
+            second = await _call(worker)
+            worker.finish(second[1])
+            assert await replacement == ["reply"]
+        finally:
+            await runtime.aclose_worker()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("first_token", ["", "first"])
+@pytest.mark.parametrize("generated_ids", [None, [], [7, 8]])
+def test_native_prefetch_preserves_tokens_and_final_metadata(
+    first_token, generated_ids
+):
+    async def scenario():
+        worker = _NativeWorker(tokens=(first_token,), mailbox_capacity=4)
+        # Runtime bridge limits must not constrain the native client's mailbox.
+        runtime = SessionRuntime(worker, mailbox_capacity=1, max_buffered_chars=1)
+        stats = GenStats()
+        generation = runtime.generate_stream(
+            "s",
+            PromptInput(segments=[{"text": "hi"}, {"ids": [1, 2]}]),
+            GenerationOptions(max_new_tokens=8, top_p=0.75, top_k=24, seed=456),
+            stats,
+        )
+        try:
+            assert generation.request_id is None and worker.calls.empty()
+            await generation.wait_ready()
+            await generation.wait_ready()
+            call = await _call(worker)
+            assert call[2].prompt_segments == [{"text": "hi"}, {"ids": [1, 2]}]
+            assert (call[2].top_p, call[2].top_k, call[2].seed) == (0.75, 24, 456)
+            worker._proc.send(call[1], token="second")
+            worker._proc.send(call[1], token="third")
+            metadata = {
+                "done": True,
+                "prompt_tokens": 3,
+                "completion_tokens": 3,
+                "finish_reason": "length",
+                "reused_prompt_tokens": 1,
+                "prefilled_prompt_tokens": 2,
+                "session_reset_reason": "exact_prefix",
+                "prefill_ms": 4.0,
+                "decode_ms": 5.0,
+                "total_ms": 10.0,
+                "prefill_tok_s": 750.0,
+                "decode_tok_s": 400.0,
+                "vision_encoder_ms": 123.5,
+            }
+            if generated_ids is not None:
+                metadata["generated_token_ids"] = generated_ids
+            worker._proc.send(call[1], **metadata)
+            await worker.wait_for_request(call[1])
+            assert [token async for token in generation] == [
+                first_token,
+                "second",
+                "third",
+            ]
+            assert await generation.result() is stats
+            assert stats == GenStats(
+                prompt_tokens=3,
+                completion_tokens=3,
+                finish_reason="length",
+                reused_prompt_tokens=1,
+                prefilled_prompt_tokens=2,
+                session_reset_reason="exact_prefix",
+                prefill_ms=4.0,
+                decode_ms=5.0,
+                total_ms=10.0,
+                prefill_tok_s=750.0,
+                decode_tok_s=400.0,
+                vision_encoder_ms=123.5,
+                generated_token_ids=generated_ids,
+            )
+            assert not worker._requests and runtime._admitted == 0
+        finally:
+            await generation.aclose()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
 
 
 def test_chat_cancelled_waiter_does_not_delete_an_owned_lock():
     async def scenario():
-        worker = _Worker()
+        worker = _NativeWorker()
         runtime = SessionRuntime(worker)
         serving = _chat(runtime)
         try:
@@ -925,6 +1215,6 @@ def test_chat_cancelled_waiter_does_not_delete_an_owned_lock():
             await stream.aclose()
             assert not serving._transactions._entries
         finally:
-            runtime.close_worker()
+            await runtime.aclose_worker()
 
     asyncio.run(scenario())
