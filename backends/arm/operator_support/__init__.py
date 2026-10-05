@@ -24,6 +24,7 @@ from . import (  # noqa
     slice_copy_support,
     symint_arithmetic_support,
     to_dim_order_copy_support,
+    topk_support,
     tosa_supported_operators,
     unfold_copy_support,
     upsample_support,
