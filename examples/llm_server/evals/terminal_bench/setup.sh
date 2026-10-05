@@ -30,10 +30,19 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker info >/dev/null
 if ! docker compose version >/dev/null 2>&1; then
+  if ! command -v brew >/dev/null; then
+    echo "Install Docker Compose or Homebrew, then rerun setup." >&2
+    exit 2
+  fi
   brew install docker-compose
   plugin_dir="${DOCKER_CONFIG:-${HOME}/.docker}/cli-plugins"
   mkdir -p "${plugin_dir}"
-  ln -s "$(brew --prefix)/bin/docker-compose" "${plugin_dir}/docker-compose"
+  plugin="${plugin_dir}/docker-compose"
+  if [[ -e "${plugin}" && ! -L "${plugin}" ]]; then
+    echo "Docker Compose failed; repair the existing plugin at ${plugin}, then rerun setup." >&2
+    exit 2
+  fi
+  ln -sfn "$(brew --prefix)/bin/docker-compose" "${plugin}"
 fi
 docker compose version
 command -v git >/dev/null

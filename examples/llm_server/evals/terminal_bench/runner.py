@@ -28,12 +28,24 @@ HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 def load_config(path):
     config = tomllib.loads(path.read_text())
+    if "server" not in config:
+        raise ValueError("Missing required [server] section")
     server = config["server"]
+    for key in ("worker_bin", "model_path", "tokenizer_path", "max_context"):
+        if key not in server:
+            raise ValueError(f"Missing required [server].{key}")
+    if "hf_tokenizer" not in server and not server.get("allow_chatml_fallback", False):
+        raise ValueError(
+            "Set [server].hf_tokenizer or explicitly enable allow_chatml_fallback"
+        )
+    server.setdefault("model_id", "executorch")
     server.setdefault("python", str(CACHE / "server-venv/bin/python"))
     server.setdefault("module", "executorch.examples.llm_server.python.server")
     server.setdefault("host", "0.0.0.0")
     server.setdefault("port", 8000)
     for key in ("worker_bin", "model_path", "tokenizer_path", "hf_tokenizer", "python"):
+        if key not in server:
+            continue
         value = server[key]
         if key in {"worker_bin", "model_path", "tokenizer_path"} or value.startswith(
             ("/", "~", ".")
@@ -316,9 +328,12 @@ def run(config, output, serve, harbor, probe):
                 start_new_session=True,
             )
             returncode = job.wait()
-            summarize(output / "harbor")
             if returncode:
                 raise RuntimeError("Harbor failed; see harbor.log")
+            try:
+                summarize(output / "harbor")
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                print(f"Could not summarize Harbor trials: {error}", file=sys.stderr)
             result = json.loads((output / "harbor/result.json").read_text())
             stats = result["stats"]
             if (
@@ -332,14 +347,24 @@ def run(config, output, serve, harbor, probe):
         finally:
             stop(job, signal.SIGINT)
             stop(process)
-            server_log.flush()
-            server_log.seek(metrics_start or 0)
-            timing = metrics(
-                server_log.read() if metrics_start is not None else "",
-                server["max_context"],
-                config["terminal_bench"]["max_output_tokens"],
-            )
-            (output / "metrics.json").write_text(json.dumps(timing, indent=2) + "\n")
+            evaluation_failed = sys.exc_info()[0] is not None
+            try:
+                server_log.flush()
+                server_log.seek(metrics_start or 0)
+                timing = metrics(
+                    server_log.read() if metrics_start is not None else "",
+                    server["max_context"],
+                    config["terminal_bench"]["max_output_tokens"],
+                )
+                (output / "metrics.json").write_text(
+                    json.dumps(timing, indent=2) + "\n"
+                )
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                if not evaluation_failed:
+                    raise RuntimeError(
+                        "Could not write metrics; see server.log"
+                    ) from error
+                print(f"Could not write metrics: {error}", file=sys.stderr)
     if not timing["requests"] or timing["context_violations"]:
         raise RuntimeError(
             "Missing server metrics or context limit exceeded; see metrics.json"
@@ -368,8 +393,8 @@ def main(argv=None):
         if args.task:
             config["terminal_bench"]["tasks"] = args.task
         output = args.output.expanduser().resolve()
-        output.mkdir(parents=True, exist_ok=False)
         serve, harbor, probe = commands(config, output)
+        output.mkdir(parents=True, exist_ok=False)
         (output / "agent.yaml").write_text(
             json.dumps(
                 {
