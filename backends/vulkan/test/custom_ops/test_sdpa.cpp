@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,11 @@ static bool decode_only_mode() {
   return v != nullptr && v[0] == '1';
 }
 
+static bool gemma_only_mode() {
+  const char* v = std::getenv("SDPA_GEMMA_ONLY");
+  return v != nullptr && v[0] == '1';
+}
+
 // LLM SDPA (llama.custom_sdpa) shape:
 //   q:       [1, S,           n_heads,    head_dim]  (DHSB, width-packed)
 //   k/v cache:[1, context_len, n_kv_heads, head_dim]
@@ -54,6 +60,8 @@ struct SDPAConfig {
   int64_t context_len; // total KV length (kv_len)
   std::string model; // label only
   std::string regime; // "decode" / "prefill", label only
+  std::optional<float> scale;
+  int64_t input_pos = -1;
 };
 
 static std::vector<float> as_float_data(const ValueSpec& spec) {
@@ -87,10 +95,15 @@ static TestCase create_sdpa_test_case(
       std::to_string(config.n_heads) + " Hkv" +
       std::to_string(config.n_kv_heads) + " S" +
       std::to_string(config.seq_len) + " C" +
-      std::to_string(config.context_len);
+      std::to_string(config.context_len) + " P" +
+      std::to_string(config.input_pos >= 0
+                         ? config.input_pos
+                         : config.context_len - config.seq_len);
 
-  const std::string suffix =
-      "[" + config.model + " " + config.regime + " " + impl + "]";
+  const std::string suffix = "[" + config.model + " " + config.regime + " " +
+      impl + " scale=" +
+      (config.scale.has_value() ? std::to_string(*config.scale) : "default") +
+      "]";
 
   test_case.set_name(make_test_label(
       prefix, dtype_str, dtype_str, shape, storage_str, suffix));
@@ -117,7 +130,29 @@ static TestCase create_sdpa_test_case(
       storage_type,
       utils::kWidthPacked,
       DataGenType::RANDOM);
+  ValueSpec k_projected(
+      {1, config.seq_len, config.n_kv_heads, config.head_dim},
+      dtype,
+      storage_type,
+      utils::kWidthPacked,
+      DataGenType::RANDOM);
+  ValueSpec v_projected(
+      {1, config.seq_len, config.n_kv_heads, config.head_dim},
+      dtype,
+      storage_type,
+      utils::kWidthPacked,
+      DataGenType::RANDOM);
+  const int64_t input_pos = config.input_pos >= 0
+      ? config.input_pos
+      : config.context_len - config.seq_len;
+  ValueSpec input_pos_spec(utils::safe_downcast<int32_t>(input_pos));
 
+  ValueSpec scale;
+  if (config.scale.has_value()) {
+    scale = ValueSpec(*config.scale);
+  } else {
+    scale.set_none(true);
+  }
   ValueSpec impl_selector = ValueSpec::make_string(impl);
 
   // out: [1, S, n_heads, head_dim]
@@ -131,6 +166,10 @@ static TestCase create_sdpa_test_case(
   test_case.add_input_spec(q);
   test_case.add_input_spec(k_cache);
   test_case.add_input_spec(v_cache);
+  test_case.add_input_spec(k_projected);
+  test_case.add_input_spec(v_projected);
+  test_case.add_input_spec(input_pos_spec);
+  test_case.add_input_spec(scale);
   test_case.add_input_spec(impl_selector);
   test_case.add_output_spec(output);
 
@@ -150,7 +189,7 @@ static TestCase create_sdpa_test_case(
 }
 
 // Reference: causal SDPA over the KV cache.
-//   q:[1,S,H,D], k/v cache:[1,C,Hkv,D], input_pos = C - S.
+//   q:[1,S,H,D], k/v cache:[1,C,Hkv,D], input_pos + S <= C.
 //   For query row s (absolute position input_pos + s), attends to cache
 //   positions [0, input_pos + s]. GQA: head h maps to kv head h / (H/Hkv).
 static void sdpa_reference_impl(TestCase& test_case) {
@@ -167,17 +206,38 @@ static void sdpa_reference_impl(TestCase& test_case) {
   const int64_t C = k_sizes[1];
   const int64_t Hkv = k_sizes[2];
 
-  if (C > kRefContextLenLimit) {
+  if (C > 512 || (C > kRefContextLenLimit && S > 18)) {
     throw std::invalid_argument("sdpa reference: perf shape, skipping");
   }
 
-  const int64_t input_pos = C - S;
+  const int64_t input_pos = test_case.inputs()[5].get_int_value();
+  const int64_t context_len = input_pos + S;
+  if (input_pos < 0 || context_len > C) {
+    throw std::invalid_argument("sdpa reference: invalid input_pos");
+  }
   const int64_t heads_per_kv = H / Hkv;
-  const float scale = 1.0f / std::sqrt(static_cast<float>(D));
+  const ValueSpec& scale_spec = test_case.inputs()[6];
+  const float scale = scale_spec.is_none()
+      ? 1.0f / std::sqrt(static_cast<float>(D))
+      : scale_spec.get_float_value();
 
   const auto q_data = as_float_data(q);
-  const auto k_data = as_float_data(k);
-  const auto v_data = as_float_data(v);
+  auto k_data = as_float_data(k);
+  auto v_data = as_float_data(v);
+  if (test_case.inputs()[7].get_string_value() == "fused") {
+    const auto k_projected_data = as_float_data(test_case.inputs()[3]);
+    const auto v_projected_data = as_float_data(test_case.inputs()[4]);
+    for (int64_t s = 0; s < S; ++s) {
+      for (int64_t hk = 0; hk < Hkv; ++hk) {
+        for (int64_t d = 0; d < D; ++d) {
+          const int64_t projected_idx = (s * Hkv + hk) * D + d;
+          const int64_t cache_idx = ((input_pos + s) * Hkv + hk) * D + d;
+          k_data[cache_idx] = k_projected_data[projected_idx];
+          v_data[cache_idx] = v_projected_data[projected_idx];
+        }
+      }
+    }
+  }
 
   ValueSpec& output = test_case.outputs()[0];
   auto& ref = output.get_ref_float_data();
@@ -191,7 +251,7 @@ static void sdpa_reference_impl(TestCase& test_case) {
     return (c * Hkv + hk) * D + d;
   };
 
-  std::vector<float> scores(C);
+  std::vector<float> scores(context_len);
   for (int64_t s = 0; s < S; ++s) {
     const int64_t attend_len = input_pos + s + 1; // causal
     for (int64_t h = 0; h < H; ++h) {
@@ -240,6 +300,38 @@ static int64_t sdpa_flop_calculator(const TestCase& test_case) {
 
 static std::vector<TestCase> generate_sdpa_test_cases() {
   std::vector<TestCase> test_cases;
+  test_cases.reserve(64);
+
+  const std::vector<SDPAConfig> gemma_cases = {
+      {256, 8, 1, 1, 32, "Gemma-4-E2B", "sliding_decode", 1.0f},
+      {512, 8, 1, 1, 16, "Gemma-4-E2B", "full_decode", 1.0f},
+      {64, 8, 2, 1, 32, "default_scale", "decode", std::nullopt},
+  };
+  for (const auto& config : gemma_cases) {
+    test_cases.push_back(create_sdpa_test_case(
+        config, vkapi::kFloat, utils::kTexture3D, "production"));
+  }
+  for (size_t i = 0; i < 2; ++i) {
+    for (const auto& impl : {"gqa_tile2", "gqa_base", "non_gqa"}) {
+      test_cases.push_back(create_sdpa_test_case(
+          gemma_cases[i], vkapi::kFloat, utils::kTexture3D, impl));
+    }
+  }
+  const std::vector<SDPAConfig> fused_scale_cases = {
+      {256, 8, 1, 4, 4, "Gemma-4-E2B", "sliding_prefill", 1.0f},
+      {512, 8, 1, 4, 4, "Gemma-4-E2B", "full_prefill", 1.0f},
+      {256, 8, 1, 18, 512, "Gemma-4-E2B", "sliding_prefill_real", 1.0f, 0},
+      {512, 8, 1, 18, 512, "Gemma-4-E2B", "full_prefill_real", 1.0f, 0},
+      {256, 8, 1, 1, 512, "Gemma-4-E2B", "sliding_decode_prefix", 1.0f, 17},
+      {512, 8, 1, 1, 512, "Gemma-4-E2B", "full_decode_prefix", 1.0f, 17},
+  };
+  for (const auto& config : fused_scale_cases) {
+    test_cases.push_back(create_sdpa_test_case(
+        config, vkapi::kFloat, utils::kTexture3D, "fused"));
+  }
+  if (gemma_only_mode()) {
+    return test_cases;
+  }
 
   struct ModelDims {
     std::string name;
@@ -312,14 +404,14 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
     // Cover D=64 (D4=16) and D=128 (D4=32) with the vendor-default GQA and the
     // per-query-head shaders, across texture + buffer.
     const std::vector<SDPAConfig> decs = {
-        {64, 8, 2, 1, 32, "accu", "decode"},
-        {128, 8, 2, 1, 32, "accu_d128", "decode"},
+        {64, 8, 2, 1, 32, "accu", "decode", std::nullopt},
+        {128, 8, 2, 1, 32, "accu_d128", "decode", std::nullopt},
     };
     for (const auto& dec : decs) {
-      for (const auto& storage : {utils::kTexture3D, utils::kBuffer}) {
+      for (const auto& storage_type : {utils::kTexture3D, utils::kBuffer}) {
         for (const auto& impl : decode_impls) {
           test_cases.push_back(
-              create_sdpa_test_case(dec, vkapi::kFloat, storage, impl));
+              create_sdpa_test_case(dec, vkapi::kFloat, storage_type, impl));
         }
       }
     }
@@ -329,18 +421,18 @@ static std::vector<TestCase> generate_sdpa_test_cases() {
     // coverage on any device: D=64/128 give even D4 (fast path); D=4 gives D4=1
     // (odd), exercising the partial-tile checked load.
     const std::vector<SDPAConfig> tile2_decs = {
-        {64, 8, 2, 1, 32, "accu_tile2", "decode"},
-        {128, 8, 2, 1, 32, "accu_tile2_d128", "decode"},
-        {4, 8, 2, 1, 32, "accu_tile2_d4", "decode"},
+        {64, 8, 2, 1, 32, "accu_tile2", "decode", std::nullopt},
+        {128, 8, 2, 1, 32, "accu_tile2_d128", "decode", std::nullopt},
+        {4, 8, 2, 1, 32, "accu_tile2_d4", "decode", std::nullopt},
     };
     for (const auto& dec : tile2_decs) {
-      for (const auto& storage : {utils::kTexture3D, utils::kBuffer}) {
-        test_cases.push_back(
-            create_sdpa_test_case(dec, vkapi::kFloat, storage, "gqa_tile2"));
+      for (const auto& storage_type : {utils::kTexture3D, utils::kBuffer}) {
+        test_cases.push_back(create_sdpa_test_case(
+            dec, vkapi::kFloat, storage_type, "gqa_tile2"));
       }
     }
 
-    SDPAConfig pre{64, 8, 2, 16, 16, "accu", "prefill"};
+    SDPAConfig pre{64, 8, 2, 16, 16, "accu", "prefill", std::nullopt};
     test_cases.push_back(create_sdpa_test_case(
         pre, vkapi::kFloat, utils::kTexture3D, "default"));
   }
@@ -355,7 +447,7 @@ int main(int argc, char* argv[]) {
   set_debugging(false);
   set_print_output(false);
   set_print_latencies(false);
-  set_use_gpu_timestamps(true);
+  set_use_gpu_timestamps(!gemma_only_mode());
 
   print_performance_header();
   std::cout << "SDPA (llama.custom_sdpa) Benchmark" << std::endl;
