@@ -475,4 +475,13 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_weight_cache PRIVATE CUDA_AVAILABLE=1)
+  # sort.cu and rand.cu are compiled only under this condition (see
+  # _aoti_cuda_shim_sources), so the test that calls them is too.
+  if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
+    et_cxx_test(
+      test_cuda_sort_rand SOURCES runtime/test/test_cuda_sort_rand.cpp
+      EXTRA_LIBS aoti_cuda_backend
+    )
+    target_compile_definitions(test_cuda_sort_rand PRIVATE CUDA_AVAILABLE=1)
+  endif()
 endif()
