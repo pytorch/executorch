@@ -696,7 +696,6 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(
       graph.val_is_none(dropout_p) ||
       graph.extract_scalar<double>(dropout_p) == 0);
-  VK_CHECK_COND(graph.val_is_none(scale));
   // is_causal is assumed to be true in the current implementation.
   VK_CHECK_COND(
       graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
@@ -763,7 +762,9 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       utils::kWidthPacked);
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
@@ -817,10 +818,18 @@ void sdpa_with_kv_cache_impl(
   (void)sequence_len;
 
   utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
@@ -856,7 +865,6 @@ void compute_attn_weight_with_kv_cache_impl(
   const ValueRef is_causal = args[arg_idx++];
   (void)is_causal;
   const ValueRef scale = args[arg_idx++];
-  (void)scale;
 
   // Output tensors
   const ValueRef out = args[arg_idx++];
@@ -864,16 +872,26 @@ void compute_attn_weight_with_kv_cache_impl(
   (void)sequence_len;
 
   const utils::StorageType cache_storage = graph.storage_type_of(q_projected);
-  const ValueRef k_cache =
-      graph.add_tensor_like(k_cache_data, cache_storage, utils::kWidthPacked);
-  const ValueRef v_cache =
-      graph.add_tensor_like(v_cache_data, cache_storage, utils::kWidthPacked);
+  const ValueRef k_cache = prepack_standard(
+      graph,
+      k_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
+  const ValueRef v_cache = prepack_standard(
+      graph,
+      v_cache_data,
+      cache_storage,
+      utils::kWidthPacked,
+      /*passthrough=*/true);
 
   update_cache_impl(graph, {k_projected, k_cache, input_pos_symint, -1});
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
