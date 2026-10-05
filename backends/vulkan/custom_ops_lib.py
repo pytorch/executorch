@@ -1068,14 +1068,31 @@ def embedding_q4gsw_impl(
         unpacked = torch.stack([low, high], dim=-1).reshape(weight.shape[0], -1)
     else:
         unpacked = torch.stack([high, low], dim=-1).reshape(weight.shape[0], -1)
-    # Dequantize using per-group scales
-    num_groups = weight_scales.shape[1] if weight_scales.dim() > 1 else 1
+    # The runtime shader indexes scales as [vocab_size, groups_per_row].
+    vocab_size = weight.shape[0]
+    if weight_scales.dim() == 1:
+        if weight_scales.shape[0] != vocab_size:
+            raise ValueError(
+                "embedding_q4gsw weight_scales must contain one scale per row"
+            )
+        num_groups = 1
+        scales = weight_scales.reshape(vocab_size, 1, 1)
+    elif weight_scales.dim() == 2:
+        if weight_scales.shape[0] != vocab_size:
+            raise ValueError(
+                "embedding_q4gsw weight_scales first dimension must match weight rows"
+            )
+        num_groups = weight_scales.shape[1]
+        scales = weight_scales.unsqueeze(-1)
+    else:
+        raise ValueError("embedding_q4gsw weight_scales must be 1-D or 2-D")
+
+    if group_size <= 0 or num_groups * group_size != unpacked.shape[1]:
+        raise ValueError(
+            "embedding_q4gsw group_size and weight_scales must tile embedding rows"
+        )
+
     unpacked_groups = unpacked.reshape(weight.shape[0], num_groups, group_size)
-    scales = (
-        weight_scales.unsqueeze(-1)
-        if weight_scales.dim() > 1
-        else weight_scales.reshape(1, 1, 1)
-    )
     dequantized = unpacked_groups.float() * scales.float()
     dequantized = dequantized.reshape(weight.shape[0], -1)
     return torch.nn.functional.embedding(indices, dequantized)

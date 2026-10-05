@@ -63,13 +63,36 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "test_vulkan_passes.py",
             ],
+            preload_deps = [
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            ],
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
                 "//executorch/backends/vulkan:vulkan_preprocess",
                 "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+                "//executorch/extension/pybindings:portable_lib",  # @manual
+                "//executorch/kernels/portable:custom_ops_generated_lib",
                 "//pytorch/ao:torchao",  # @manual
             ]
+        )
+
+        python_unittest(
+            name = "test_sdpa_patterns",
+            srcs = ["test_sdpa_patterns.py"],
+            preload_deps = [
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/patterns:vulkan_patterns",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+                "//executorch/extension/pybindings:portable_lib",  # @manual
+                "//executorch/kernels/portable:custom_ops_generated_lib",
+            ],
         )
 
         python_unittest(

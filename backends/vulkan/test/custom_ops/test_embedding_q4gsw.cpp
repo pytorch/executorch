@@ -8,6 +8,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "utils.h"
@@ -26,6 +27,7 @@ struct EmbeddingConfig {
   vkapi::ScalarType scales_dtype = vkapi::kHalf;
   utils::StorageType storage_type = utils::kBuffer;
   bool is_linear_weight = false;
+  bool per_row_scales_1d = false;
 };
 
 // CPU reference: unpack 4-bit weights, dequantize, and perform embedding lookup
@@ -48,7 +50,8 @@ void embedding_4bit_reference(TestCase& tc) {
 
   int64_t packed_dim = weight_spec.sizes[1];
   int64_t embed_dim = packed_dim * 2;
-  int64_t groups_per_row = scales_spec.sizes[1];
+  int64_t groups_per_row =
+      scales_spec.sizes.size() == 1 ? 1 : scales_spec.sizes[1];
 
   int64_t num_indices = 1;
   for (auto s : indices_spec.sizes) {
@@ -157,10 +160,14 @@ TestCase create_test_case(const EmbeddingConfig& config) {
   weight.set_constant(true);
   test_case.add_input_spec(weight);
 
-  // Weight scales: [vocab_size, groups_per_row]
+  // Weight scales: [vocab_size] for per-row, otherwise
+  // [vocab_size, groups_per_row].
   int64_t groups_per_row = config.embed_dim / config.group_size;
+  std::vector<int64_t> scales_shape = config.per_row_scales_1d
+      ? std::vector<int64_t>{config.vocab_size}
+      : std::vector<int64_t>{config.vocab_size, groups_per_row};
   ValueSpec weight_scales(
-      {config.vocab_size, groups_per_row},
+      scales_shape,
       config.scales_dtype,
       utils::kBuffer,
       utils::kWidthPacked,
@@ -202,8 +209,36 @@ TestCase create_test_case(const EmbeddingConfig& config) {
   return test_case;
 }
 
-std::vector<TestCase> generate_test_cases() {
+std::vector<TestCase> generate_test_cases(const bool gemma_only) {
   std::vector<TestCase> test_cases;
+
+  for (const auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
+    test_cases.push_back(create_test_case(
+        {.vocab_size = 16,
+         .embed_dim = 1536,
+         .group_size = 1536,
+         .indices_shape = {1, 4},
+         .test_case_name = "gemma4_token_embedding_per_row",
+         .dtype = vkapi::kFloat,
+         .scales_dtype = vkapi::kFloat,
+         .storage_type = storage_type,
+         .is_linear_weight = true,
+         .per_row_scales_1d = true}));
+    test_cases.push_back(create_test_case(
+        {.vocab_size = 16,
+         .embed_dim = 8960,
+         .group_size = 8960,
+         .indices_shape = {1, 4},
+         .test_case_name = "gemma4_ple_embedding_per_row",
+         .dtype = vkapi::kFloat,
+         .scales_dtype = vkapi::kFloat,
+         .storage_type = storage_type,
+         .is_linear_weight = true,
+         .per_row_scales_1d = true}));
+  }
+  if (gemma_only) {
+    return test_cases;
+  }
 
   // --- is_linear_weight = true ---
 
@@ -528,8 +563,23 @@ std::vector<TestCase> generate_test_cases() {
 }
 
 int main(int argc, char** argv) {
+  bool gemma_only = false;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg(argv[i]);
+    if (arg == "--gemma-only") {
+      gemma_only = true;
+    } else {
+      std::cerr << "Unknown argument: " << arg << std::endl;
+      return 2;
+    }
+  }
+
+  const auto test_case_generator = [gemma_only]() {
+    return generate_test_cases(gemma_only);
+  };
+
   auto results = execute_test_cases(
-      generate_test_cases,
+      test_case_generator,
       "embedding_q4gsw",
       /*warmup_runs = */ 1,
       /*benchmark_runs = */ 1,
