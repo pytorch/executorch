@@ -21,7 +21,7 @@ reduce:
       DTYPE: uint8
       UPDATE_ACCUM: max(accum, new_val)
     - NAME: mean
-      POSTPROCESS: (accum / tin_sizes[reduce_dim])
+      POSTPROCESS: (accum / safe_idx(tin_sizes, reduce_dim))
     - NAME: amax
       INIT_ACCUM: first_val
       UPDATE_ACCUM: max_propagate_nan(accum, new_val)
