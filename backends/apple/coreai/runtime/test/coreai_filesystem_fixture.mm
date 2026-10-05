@@ -7,6 +7,7 @@
  */
 
 #include "coreai_filesystem_fixture.h"
+#include <sys/stat.h>
 #include <unistd.h>
 #include <string>
 
@@ -78,6 +79,81 @@ BookmarkDirectory::~BookmarkDirectory() {
   EXPECT_TRUE([url.lastPathComponent hasPrefix:@".coreai-bookmark-test-"]);
   if (![url.lastPathComponent hasPrefix:@".coreai-bookmark-test-"]) return;
   EXPECT_TRUE([NSFileManager.defaultManager removeItemAtURL:url error:nil]);
+}
+
+::testing::AssertionResult asset_tree_snapshot(NSURL* root, NSDictionary* __strong& result) {
+  result = nil;
+  if (root == nil) return ::testing::AssertionFailure() << "Missing snapshot root";
+  NSFileManager* manager = NSFileManager.defaultManager;
+  NSError* error = nil;
+  NSArray<NSString*>* children = [manager subpathsOfDirectoryAtPath:root.path error:&error];
+  if (children == nil || error != nil) {
+    return ::testing::AssertionFailure() << "Cannot list " << root.path.UTF8String;
+  }
+  NSMutableDictionary* snapshot = [NSMutableDictionary dictionary];
+  for (NSString* path in [@[ @"" ] arrayByAddingObjectsFromArray:children]) {
+    NSURL* url = path.length == 0 ? root : [root URLByAppendingPathComponent:path];
+    struct stat info;
+    if (lstat(url.fileSystemRepresentation, &info) != 0) {
+      return ::testing::AssertionFailure() << "Cannot stat " << url.path.UTF8String;
+    }
+    NSMutableDictionary* item = [@{
+      @"inode" : @(info.st_ino),
+      @"device" : @(info.st_dev),
+      @"mode" : @(info.st_mode),
+      @"size" : @(info.st_size),
+      @"mtime_seconds" : @(info.st_mtimespec.tv_sec),
+      @"mtime_nanos" : @(info.st_mtimespec.tv_nsec)
+    } mutableCopy];
+    error = nil;
+    if (S_ISREG(info.st_mode)) {
+      NSData* bytes = [NSData dataWithContentsOfURL:url options:0 error:&error];
+      if (bytes == nil || error != nil) {
+        return ::testing::AssertionFailure() << "Cannot read " << url.path.UTF8String;
+      }
+      item[@"bytes"] = bytes;
+    } else if (S_ISLNK(info.st_mode)) {
+      NSString* destination = [manager destinationOfSymbolicLinkAtPath:url.path error:&error];
+      if (destination == nil || error != nil) {
+        return ::testing::AssertionFailure() << "Cannot read link " << url.path.UTF8String;
+      }
+      item[@"link"] = destination;
+    }
+    snapshot[path] = item;
+  }
+  result = snapshot;
+  return ::testing::AssertionSuccess();
+}
+
+::testing::AssertionResult snapshot_matches(NSURL* root, NSDictionary* expected) {
+  if (expected == nil) return ::testing::AssertionFailure() << "Missing expected snapshot";
+  NSDictionary* actual = nil;
+  auto read = asset_tree_snapshot(root, actual);
+  if (!read) return read;
+  return [actual isEqual:expected] ? ::testing::AssertionSuccess()
+                                   : ::testing::AssertionFailure()
+                                         << "Filesystem snapshot changed: " << root.path.UTF8String;
+}
+
+NSArray<NSURL*>* staging_directories(NSURL* root) {
+  if (root == nil) {
+    ADD_FAILURE() << "Missing staging root";
+    return nil;
+  }
+  NSError* error = nil;
+  NSArray<NSURL*>* children = [NSFileManager.defaultManager contentsOfDirectoryAtURL:root
+                                                          includingPropertiesForKeys:nil
+                                                                             options:0
+                                                                               error:&error];
+  if (children == nil || error != nil) {
+    ADD_FAILURE() << "Cannot list staging directories: " << root.path.UTF8String;
+    return nil;
+  }
+  NSMutableArray<NSURL*>* staging = [NSMutableArray array];
+  for (NSURL* child in children) {
+    if ([child.lastPathComponent hasPrefix:@".staging-"]) [staging addObject:child];
+  }
+  return staging;
 }
 
 }  // namespace executorch::backends::coreai::testing
