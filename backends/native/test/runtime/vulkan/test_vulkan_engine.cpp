@@ -212,10 +212,13 @@ std::vector<uint8_t> make_add_program(
 // With `alias_first`, the alias value is serialized ahead of its source.
 std::vector<uint8_t> make_alias_program(
     fbs::ScalarType alias_dtype = fbs::ScalarType::FLOAT,
+    const std::vector<int64_t>& lower_bounds = {},
     bool alias_first = false) {
   flatbuffers::FlatBufferBuilder builder;
-  const auto meta = create_tensor_meta(builder, fbs::ScalarType::FLOAT);
-  const auto alias_meta = create_tensor_meta(builder, alias_dtype);
+  const auto meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4}, lower_bounds);
+  const auto alias_meta =
+      create_tensor_meta(builder, alias_dtype, {4}, lower_bounds);
   std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(builder, "input", meta),
       fbs::CreateTensorValueDirect(builder, "alias", alias_meta),
@@ -744,6 +747,99 @@ std::vector<uint8_t> make_dynamic_view_mm_program() {
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "product")});
 }
 
+// index.Tensor keeps its operands in buffer storage, so `rows` is a zero-copy
+// buffer view of `input`, and gathering along dim 1 sizes the output by it.
+std::vector<uint8_t> make_dynamic_buffer_view_index_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto input_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {4, 2}, {1, 2});
+  const auto rows_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 4}, {1, 4});
+  const auto index_meta =
+      create_tensor_meta(builder, fbs::ScalarType::LONG, {2});
+  const auto gathered_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 2}, {1, 2});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", input_meta),
+      fbs::CreateTensorValueDirect(builder, "index", index_meta),
+      fbs::CreateTensorValueDirect(builder, "rows", rows_meta),
+      fbs::CreateTensorValueDirect(builder, "gathered", gathered_meta),
+  };
+
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> index_outputs = {
+      fbs::CreateOutputDirect(builder, "index")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> view_outputs = {
+      fbs::CreateOutputDirect(builder, "rows", "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> gathered_outputs = {
+      fbs::CreateOutputDirect(builder, "gathered")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> view_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "size", create_int_list_arg(builder, {-1, 4})),
+  };
+  const auto indices = fbs::CreateOptionalTensorListArg(
+      builder,
+      create_strings(builder, {"", "index"}),
+      builder.CreateVector(std::vector<uint8_t>{0, 1}));
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> index_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "rows")),
+      fbs::CreateNamedArgumentDirect(
+          builder,
+          "indices",
+          fbs::CreateArgument(
+              builder,
+              fbs::ArgumentValue::OptionalTensorListArg,
+              indices.Union())),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "gathered"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "index",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &index_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "view",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.view.default",
+          &view_inputs,
+          &view_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "gather",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.index.Tensor",
+          &index_inputs,
+          &gathered_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input", "index"}),
+      create_strings(builder, {"gathered"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "gathered")});
+}
+
 // Values of the int4 [4, 8] weight in groups of 4 used by the program below.
 constexpr int64_t kQ4Out = 4;
 constexpr int64_t kQ4In = 8;
@@ -1066,7 +1162,7 @@ TEST(VulkanEngineTest, ExecutesMetadataOnlyAliasAfterAliasLowering) {
 
 TEST(VulkanEngineTest, ExecutesAliasSerializedBeforeItsSource) {
   CompiledProgram compiled = compile_program(
-      make_alias_program(fbs::ScalarType::FLOAT, /*alias_first=*/true));
+      make_alias_program(fbs::ScalarType::FLOAT, {}, /*alias_first=*/true));
   const std::vector<float> input = {1.0f, 2.0f, 3.0f, 4.0f};
   compiled.executable->set_input(
       0, input.data(), input.size(), ScalarType::Float);
@@ -1124,6 +1220,18 @@ TEST(VulkanEngineTest, RejectsAliasWithDifferentDtypeFromSource) {
   } catch (const std::runtime_error& e) {
     EXPECT_NE(
         std::string(e.what()).find("alias must match its source dtype"),
+        std::string::npos)
+        << e.what();
+  }
+}
+
+TEST(VulkanEngineTest, RejectsNonViewAliasOfDynamicSource) {
+  try {
+    compile_program(make_alias_program(fbs::ScalarType::FLOAT, {1}));
+    FAIL() << "expected the dynamic alias to be rejected";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(
+        std::string(e.what()).find("only aten.view can alias"),
         std::string::npos)
         << e.what();
   }
@@ -1245,6 +1353,34 @@ TEST(VulkanEngineTest, ResizesWidthPackedViewOfWidthPackedInput) {
       0, output.data(), output.size(), ScalarType::Float);
   EXPECT_EQ(output, (std::vector<float>{12.0f, 34.0f}));
 }
+
+TEST(VulkanEngineTest, ResizesBufferViewWithItsSource) {
+  CompiledProgram compiled =
+      compile_program(make_dynamic_buffer_view_index_program());
+  compiled.executable->resize_input(0, {2, 2});
+
+  const std::vector<float> input = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<int64_t> index = {3, 0};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, index.data(), index.size(), ScalarType::Long);
+  compiled.executable->execute();
+
+  EXPECT_EQ(compiled.executable->output_sizes(0), (std::vector<int64_t>{1, 2}));
+  std::vector<float> output(2);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{4.0f, 1.0f}));
+}
+
+TEST(VulkanEngineTest, RejectsBufferViewResizeThatDoesNotDivide) {
+  CompiledProgram compiled =
+      compile_program(make_dynamic_buffer_view_index_program());
+  compiled.executable->resize_input(0, {3, 2});
+  EXPECT_THROW(compiled.executable->execute(), std::runtime_error);
+}
+
 TEST(VulkanEngineTest, ExecutesLinearOnDirectlyQuantizedWeight) {
   CompiledProgram compiled = compile_program(
       make_direct_q4_linear_program(), make_direct_q4_linear_tensors());
