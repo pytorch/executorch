@@ -12,9 +12,10 @@
 #include "kev.h"
 
 using executorch::extension::Module;
-using kev::Choice;
-using kev::Noul;
-using kev::Questions;
+using executorch::systemone::Choice;
+using executorch::systemone::Noul;
+using executorch::systemone::Questions;
+using executorch::systemone::kev::Kev;
 
 int main(int argc, char** argv) {
   if (argc < 3 || argc > 4) {
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
        Noul{"Does the customer explicitly ask for a refund?", {}}},
       {"duplicate_charge",
        Noul{"Was the customer charged more than once?", {}}}};
-  kev::Kev model(module, tokenizer);
+  Kev model(module, tokenizer);
   auto answers = model.system_one(state, questions);
   if (!answers.ok()) {
     std::cerr << executorch::runtime::to_string(answers.error()) << '\n';
@@ -49,16 +50,19 @@ int main(int argc, char** argv) {
   }
   for (const auto& [id, answer] : *answers) {
     std::cout << id << ": ";
-    if (const auto* choice = std::get_if<kev::ChoiceAnswer>(&answer)) {
+    if (const auto* choice =
+            std::get_if<executorch::systemone::ChoiceAnswer>(&answer)) {
       std::cout << choice->choice << " (confidence " << choice->confidence
                 << ")\n";
       for (const auto& [name, probability] : choice->probabilities) {
         std::cout << "  " << name << ": " << probability << '\n';
       }
-    } else if (const auto* noul = std::get_if<kev::NoulAnswer>(&answer)) {
+    } else if (
+        const auto* noul =
+            std::get_if<executorch::systemone::NoulAnswer>(&answer)) {
       std::cout << noul->noul << '\n';
     } else {
-      const auto& score = std::get<kev::ScoreAnswer>(answer);
+      const auto& score = std::get<executorch::systemone::ScoreAnswer>(answer);
       std::cout << score.score << " (confidence " << score.confidence << ")\n";
       for (size_t level = 0; level < score.probabilities.size(); ++level) {
         std::cout << "  " << level << " (" << score.legend.at(level)

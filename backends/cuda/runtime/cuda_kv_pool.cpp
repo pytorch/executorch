@@ -47,6 +47,14 @@ std::vector<int64_t> contiguous_strides(const std::vector<int64_t>& sizes) {
   return strides;
 }
 
+std::string shape_string(const std::vector<int64_t>& sizes) {
+  std::string out = "[";
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    out += (i == 0 ? "" : ", ") + std::to_string(sizes[i]);
+  }
+  return out + "]";
+}
+
 // Makes the pool's device current for a scope. The backend runs on one
 // device, so this is normally a no-op, but event and stream calls act on the
 // current device and a caller may have switched it.
@@ -212,6 +220,12 @@ size_t CudaKVPool::side_buffer_bytes(size_t index) const {
 size_t CudaKVPool::row_bytes(const Layer& layer) const {
   return static_cast<size_t>(layer.n_kv_heads) *
       static_cast<size_t>(layer.head_dim) * slimc10::elementSize(storage_dtype_);
+}
+
+// BSHD at the declared rows: no stride depends on the rows, so the storage
+// behind it may hold fewer.
+std::vector<int64_t> CudaKVPool::layer_sizes(const Layer& layer) {
+  return {1, layer.declared_rows, layer.n_kv_heads, layer.head_dim};
 }
 
 Error CudaKVPool::allocate_layer(
@@ -464,13 +478,12 @@ Error CudaKVPool::build_descriptors(CudaDelegateHandle* handle) {
       if (it == compiled.end()) {
         continue;
       }
-      const Layer& layer = layers_[index];
       ET_CHECK_OK_OR_RETURN_ERROR(check_compiled(
           handle,
           it->second.index,
           name,
           storage_dtype_,
-          row_bytes(layer) * static_cast<size_t>(layer.declared_rows)));
+          layer_sizes(layers_[index])));
       ++found;
       descriptors.push_back(Descriptor{it->second.internal_name, slot, index});
       found_fqns.push_back(name);
@@ -485,11 +498,7 @@ Error CudaKVPool::build_descriptors(CudaDelegateHandle* handle) {
     const auto it = compiled.find(spec.fqn);
     if (it != compiled.end()) {
       ET_CHECK_OK_OR_RETURN_ERROR(check_compiled(
-          handle,
-          it->second.index,
-          spec.fqn,
-          spec.dtype,
-          side_buffer_bytes(index)));
+          handle, it->second.index, spec.fqn, spec.dtype, spec.sizes));
       ++found_side;
       descriptors.push_back(
           Descriptor{it->second.internal_name, Slot::Side, index});
@@ -522,23 +531,42 @@ Error CudaKVPool::build_descriptors(CudaDelegateHandle* handle) {
 
 // The program's kernels address its storage with the shape and dtype it was
 // compiled with, and AOTI binds external buffers without checking either. So
-// the pool's idea of each constant -- dtype, and bytes (heads x head dim x
-// declared rows for a layer, the declared shape for a side buffer) -- must
-// match what the program declared, or a step could write past the allocation.
+// the pool's idea of each constant -- dtype, and shape (BSHD at the declared
+// rows for a layer, the declared shape for a side buffer) -- must match what
+// the program declared exactly, or a step could index past the allocation, or
+// wrap a ring at another window than the cache does.
 //
-// AOTI reports a constant's storage bytes, rounded up to a multiple of 64
-// when the program also holds CPU constants (cpp_wrapper_cpu.py), so either
-// form matches; the rounding never exceeds 63 bytes and never shrinks.
+// AOTI exposes no constant shapes, so the shape comes from the FQN-weight
+// metadata serialized alongside the program. The bytes AOTI reports only
+// cross-check that metadata against the library: they are rounded up to a
+// multiple of 64 when the program also holds CPU constants
+// (cpp_wrapper_cpu.py), so they cannot tell nearby shapes apart on their own.
 Error CudaKVPool::check_compiled(
     CudaDelegateHandle* handle,
     size_t constant_index,
     const std::string& name,
     slimc10::ScalarType dtype,
-    size_t bytes) const {
+    const std::vector<int64_t>& sizes) const {
   ET_CHECK_OR_RETURN_ERROR(
       handle->get_constant_dtype && handle->get_constant_data_size,
       NotSupported,
       "offgraph_kv: AOTI constant metadata APIs are unavailable");
+  const auto compiled_sizes = handle->offgraph_kv_sizes.find(name);
+  ET_CHECK_OR_RETURN_ERROR(
+      compiled_sizes != handle->offgraph_kv_sizes.end(),
+      InvalidProgram,
+      "offgraph_kv: %s has no compiled shape in the program's FQN-weight "
+      "metadata",
+      name.c_str());
+  ET_CHECK_OR_RETURN_ERROR(
+      compiled_sizes->second == sizes,
+      InvalidProgram,
+      "offgraph_kv: %s is compiled with shape %s but the cache declares %s; "
+      "the cache's capacity, max_write, window or head geometry does not "
+      "match the program",
+      name.c_str(),
+      shape_string(compiled_sizes->second).c_str(),
+      shape_string(sizes).c_str());
   int32_t compiled_dtype = 0;
   size_t compiled_bytes = 0;
   ET_CHECK_OK_OR_RETURN_ERROR(handle->get_constant_dtype(
@@ -553,15 +581,16 @@ Error CudaKVPool::check_compiled(
       static_cast<int>(compiled_dtype),
       static_cast<int>(dtype));
   constexpr size_t kAotiConstantAlignment = 64;
+  const size_t bytes =
+      static_cast<size_t>(numel(sizes)) * slimc10::elementSize(dtype);
   const size_t aligned =
       (bytes + kAotiConstantAlignment - 1) / kAotiConstantAlignment *
       kAotiConstantAlignment;
   ET_CHECK_OR_RETURN_ERROR(
       compiled_bytes == bytes || compiled_bytes == aligned,
       InvalidProgram,
-      "offgraph_kv: %s is compiled with %zu bytes but the cache declares %zu; "
-      "the cache's capacity, max_write, window or head geometry does not "
-      "match the program",
+      "offgraph_kv: %s is compiled with %zu bytes but its serialized shape "
+      "spans %zu; the program's metadata does not match its library",
       name.c_str(),
       compiled_bytes,
       bytes);
@@ -607,7 +636,7 @@ Error CudaKVPool::bind(CudaDelegateHandle* handle) {
           static_cast<long long>(allocation.rows),
           static_cast<long long>(layer.declared_rows));
       data = descriptor.slot == Slot::Value ? allocation.v : allocation.k;
-      sizes = {1, layer.declared_rows, layer.n_kv_heads, layer.head_dim};
+      sizes = layer_sizes(layer);
     }
     const std::vector<int64_t> strides = contiguous_strides(sizes);
     auto tensor = std::make_unique<SlimTensor>(from_blob(

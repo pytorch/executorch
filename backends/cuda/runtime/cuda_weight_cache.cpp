@@ -488,6 +488,17 @@ Error CudaWeightCache::acquire_storage(
   return Error::Ok;
 }
 
+std::unordered_map<std::string, std::vector<int64_t>>
+CudaWeightCache::offgraph_kv_sizes(const Metadata& metadata) {
+  std::unordered_map<std::string, std::vector<int64_t>> sizes;
+  for (const Entry& entry : metadata.entries) {
+    if (is_offgraph_kv_fqn(entry.fqn)) {
+      sizes.emplace(entry.fqn, entry.sizes);
+    }
+  }
+  return sizes;
+}
+
 Error CudaWeightCache::load(
     CudaDelegateHandle* handle,
     const NamedDataMap* named_data_map,

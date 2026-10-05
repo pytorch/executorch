@@ -9,6 +9,7 @@
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 
 #include <algorithm>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -299,7 +300,16 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   CudaCellCache(CudaCellCache&&) = delete;
   CudaCellCache& operator=(CudaCellCache&&) = delete;
 
-  ~CudaCellCache() override = default;
+  // The staging may still be read by the last step's uploads.
+  ~CudaCellCache() override {
+    if (staged_ != nullptr) {
+      (void)cudaEventSynchronize(staged_);
+      (void)cudaEventDestroy(staged_);
+    }
+    if (staging_ != nullptr) {
+      (void)cudaFreeHost(staging_);
+    }
+  }
 
   // -- CacheControl / BatchControl, serialized against the delegate. Keeps the
   // storage: a reset reuses the grown pools.
@@ -312,8 +322,9 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 
   bool declare_step(const std::vector<int32_t>& seq_ids) override {
     std::lock_guard<std::recursive_mutex> guard(mutex_);
+    // A rejected declaration leaves an earlier accepted one standing, as the
+    // base does.
     if (!cache::CellCache::declare_step(seq_ids)) {
-      step_seq_ids_.clear();
       return false;
     }
     step_seq_ids_ = seq_ids;
@@ -411,14 +422,15 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
 
     // Grow before placing, to where placement could reach at most, so a
     // failed allocation leaves the table as it was. Lowest-free placement
-    // never takes a cell past used_end + width.
-    const int live = used_end();
+    // fills holes first, so the step reaches past used_end only once every
+    // cell below it is occupied: at most occupied + width.
+    const int64_t live = used_end();
+    const int64_t occupied = capacity() - free_cells();
     ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
-        std::min<int64_t>(capacity(), static_cast<int64_t>(live) + width),
-        live,
-        stream));
+        std::max<int64_t>(live, occupied + width), live, stream));
 
-    const cache::CellStep* first = nullptr;
+    std::vector<const cache::CellStep*> steps;
+    steps.reserve(windows_.size());
     for (size_t index = 0; index < windows_.size(); ++index) {
       const cache::CellStep* step =
           place_step(window_layers_[index], positions_.data(), width);
@@ -426,13 +438,9 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
           step != nullptr,
           InvalidArgument,
           "offgraph_kv: the declared step does not place");
-      if (first == nullptr) {
-        first = step;
-        ET_CHECK_OK_OR_RETURN_ERROR(write_placement(*step, stream));
-      }
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          write_mask(kFirstMaskBuffer + index, *step, stream));
+      steps.push_back(step);
     }
+    ET_CHECK_OK_OR_RETURN_ERROR(upload_step(steps, stream));
     step_seq_ids_.clear();
     return Error::Ok;
   }
@@ -499,52 +507,133 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     return buffers;
   }
 
-  // Pageable sources: the copy has consumed them when the call returns, so
-  // the host vectors may be reused by the next step at once.
-  Error write_placement(const cache::CellStep& step, cudaStream_t stream) {
-    staged_cells_.assign(step.cells.begin(), step.cells.end());
-    const int64_t read_len = step.read_len;
-    for (const auto& [index, src, bytes] :
-         {std::tuple{
-              kCellsBuffer,
-              static_cast<const void*>(staged_cells_.data()),
-              staged_cells_.size() * sizeof(int64_t)},
-          std::tuple{
-              kReadLenBuffer,
-              static_cast<const void*>(&read_len),
-              sizeof(int64_t)}}) {
+  // Writes the step's cells, read_len and one mask per window where the
+  // program reads them. The copies read pinned staging the cache owns, never
+  // the base's step, which the next verb invalidates: an async copy from
+  // pageable memory may still be reading it after the call returns. The
+  // staging is refilled only once the previous step's copies are done.
+  Error upload_step(
+      const std::vector<const cache::CellStep*>& steps,
+      cudaStream_t stream) {
+    const cache::CellStep& first = *steps.front();
+    const size_t width = first.cells.size();
+    const size_t read_len = static_cast<size_t>(first.read_len);
+    const size_t cells_bytes = width * sizeof(int64_t);
+    const size_t mask_bytes = width * read_len;
+    ET_CHECK_OK_OR_RETURN_ERROR(reserve_staging(
+        cells_bytes + sizeof(int64_t) + steps.size() * mask_bytes));
+    auto* cells = reinterpret_cast<int64_t*>(staging_);
+    std::copy(first.cells.begin(), first.cells.end(), cells);
+    cells[width] = first.read_len;
+    uint8_t* masks = staging_ + cells_bytes + sizeof(int64_t);
+    for (size_t index = 0; index < steps.size(); ++index) {
+      std::memcpy(
+          masks + index * mask_bytes, steps[index]->mask_bits.data(), mask_bytes);
+    }
+    const Error enqueued =
+        enqueue_uploads(steps.size(), width, read_len, stream);
+    // Fenced even when a copy failed: those issued before it may still read
+    // the staging.
+    const Error fenced = fence_staging(stream);
+    ET_CHECK_OK_OR_RETURN_ERROR(enqueued);
+    return fenced;
+  }
+
+  // Masks fill rows [0, width) over columns [0, read_len); the program bounds
+  // its sweep by read_len, so columns past it keep whatever an earlier step
+  // left.
+  Error enqueue_uploads(
+      size_t windows,
+      size_t width,
+      size_t read_len,
+      cudaStream_t stream) {
+    const size_t cells_bytes = width * sizeof(int64_t);
+    for (const auto& [index, offset, bytes] :
+         {std::tuple{kCellsBuffer, size_t{0}, cells_bytes},
+          std::tuple{kReadLenBuffer, cells_bytes, sizeof(int64_t)}}) {
       const cudaError_t error = cudaMemcpyAsync(
-          pool_.side_buffer(index), src, bytes, cudaMemcpyHostToDevice, stream);
+          pool_.side_buffer(index),
+          staging_ + offset,
+          bytes,
+          cudaMemcpyHostToDevice,
+          stream);
       ET_CHECK_OR_RETURN_ERROR(
           error == cudaSuccess,
           Internal,
           "offgraph_kv: cannot write the step placement: %s",
           cudaGetErrorString(error));
     }
+    const uint8_t* masks = staging_ + cells_bytes + sizeof(int64_t);
+    for (size_t index = 0; index < windows && read_len > 0; ++index) {
+      const cudaError_t error = cudaMemcpy2DAsync(
+          pool_.side_buffer(kFirstMaskBuffer + index),
+          static_cast<size_t>(capacity()),
+          masks + index * width * read_len,
+          read_len,
+          read_len,
+          width,
+          cudaMemcpyHostToDevice,
+          stream);
+      ET_CHECK_OR_RETURN_ERROR(
+          error == cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot write the step mask: %s",
+          cudaGetErrorString(error));
+    }
     return Error::Ok;
   }
 
-  // Rows [0, length) over columns [0, read_len); the program bounds its sweep
-  // by read_len, so columns past it keep whatever an earlier step left.
-  Error write_mask(size_t buffer, const cache::CellStep& step, cudaStream_t stream) {
-    if (step.read_len == 0) {
+  // Waits for the previous step's copies to finish reading the staging, then
+  // makes it hold at least `bytes`.
+  Error reserve_staging(size_t bytes) {
+    if (staged_ != nullptr) {
+      const cudaError_t error = cudaEventSynchronize(staged_);
+      ET_CHECK_OR_RETURN_ERROR(
+          error == cudaSuccess,
+          Internal,
+          "offgraph_kv: cannot wait for the previous step's uploads: %s",
+          cudaGetErrorString(error));
+    }
+    if (bytes <= staging_bytes_) {
       return Error::Ok;
     }
-    const size_t row = static_cast<size_t>(capacity());
-    const cudaError_t error = cudaMemcpy2DAsync(
-        pool_.side_buffer(buffer),
-        row,
-        step.mask_bits.data(),
-        static_cast<size_t>(step.read_len),
-        static_cast<size_t>(step.read_len),
-        static_cast<size_t>(step.length),
-        cudaMemcpyHostToDevice,
-        stream);
+    const size_t grown = std::max(bytes, 2 * staging_bytes_);
+    if (staging_ != nullptr) {
+      (void)cudaFreeHost(staging_);
+      staging_ = nullptr;
+      staging_bytes_ = 0;
+    }
+    void* data = nullptr;
+    const cudaError_t error = cudaMallocHost(&data, grown);
     ET_CHECK_OR_RETURN_ERROR(
         error == cudaSuccess,
-        Internal,
-        "offgraph_kv: cannot write the step mask: %s",
+        MemoryAllocationFailed,
+        "offgraph_kv: cannot allocate %zu bytes of pinned staging: %s",
+        grown,
         cudaGetErrorString(error));
+    staging_ = static_cast<uint8_t*>(data);
+    staging_bytes_ = grown;
+    return Error::Ok;
+  }
+
+  // Marks where this step's copies end, for the next step to wait on. If it
+  // cannot be marked, waits for them here instead.
+  Error fence_staging(cudaStream_t stream) {
+    cudaError_t error = cudaSuccess;
+    if (staged_ == nullptr) {
+      error = cudaEventCreateWithFlags(&staged_, cudaEventDisableTiming);
+    }
+    if (error == cudaSuccess) {
+      error = cudaEventRecord(staged_, stream);
+    }
+    if (error != cudaSuccess) {
+      (void)cudaStreamSynchronize(stream);
+      ET_LOG(
+          Error,
+          "offgraph_kv: cannot fence the step uploads: %s",
+          cudaGetErrorString(error));
+      return Error::Internal;
+    }
     return Error::Ok;
   }
 
@@ -560,7 +649,11 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
   CudaKVPool pool_;
   std::vector<int32_t> step_seq_ids_;
   std::vector<int32_t> positions_;
-  std::vector<int64_t> staged_cells_;
+  // Pinned host staging for one step's uploads, and the event marking where
+  // the last step's copies from it end.
+  uint8_t* staging_{nullptr};
+  size_t staging_bytes_{0};
+  cudaEvent_t staged_{nullptr};
   bool validated_{false};
   Error error_{Error::Ok};
 };

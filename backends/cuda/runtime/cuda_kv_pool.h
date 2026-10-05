@@ -133,6 +133,7 @@ class CudaKVPool final {
   };
 
   size_t row_bytes(const Layer& layer) const;
+  static std::vector<int64_t> layer_sizes(const Layer& layer);
   runtime::Error allocate_layer(
       const Layer& layer,
       int64_t rows,
@@ -150,7 +151,7 @@ class CudaKVPool final {
       size_t constant_index,
       const std::string& name,
       ::executorch::backends::aoti::slim::c10::ScalarType dtype,
-      size_t bytes) const;
+      const std::vector<int64_t>& sizes) const;
 
   std::vector<Layer> layers_;
   std::vector<SideBuffer> side_specs_;

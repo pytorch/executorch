@@ -22,6 +22,7 @@ using executorch::runtime::CompileSpec;
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+#include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 
 namespace executorch {
 namespace backends {
@@ -108,7 +109,8 @@ class VgfRepr {
       uint32_t queue_family_index = UINT32_MAX,
       bool neural_statistics_requested = false,
       bool neural_statistics_device_enabled = false,
-      int neural_statistics_mode_index = 1)
+      int neural_statistics_mode_index = 1,
+      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {})
       : vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
@@ -117,7 +119,8 @@ class VgfRepr {
         vk_queue_family_index(queue_family_index),
         neural_statistics_requested_(neural_statistics_requested),
         neural_statistics_device_enabled_(neural_statistics_device_enabled),
-        neural_statistics_mode_index_(neural_statistics_mode_index) {}
+        neural_statistics_mode_index_(neural_statistics_mode_index),
+        host_memory_import_capabilities_(host_memory_import_capabilities) {}
 
   /*
    * Process a VGF ready for execution, allocate necessary Vulkan objects.
@@ -175,6 +178,23 @@ class VgfRepr {
     return neural_statistics_requested_;
   }
 
+  bool host_memory_import_advertised() const {
+    return host_memory_import_capabilities_.physical_device_advertised;
+  }
+
+  bool host_memory_import_enabled() const {
+    return host_memory_import_capabilities_.logical_device_enabled;
+  }
+
+  VkDeviceSize min_imported_host_pointer_alignment() const {
+    return host_memory_import_capabilities_.min_imported_host_pointer_alignment;
+  }
+
+  const VgfHostMemoryImportCapabilities& host_memory_import_capabilities()
+      const {
+    return host_memory_import_capabilities_;
+  }
+
   ~VgfRepr() {
     free_vgf();
     if (vk_pipeline_cache != VK_NULL_HANDLE) {
@@ -203,6 +223,7 @@ class VgfRepr {
   bool neural_statistics_requested_ = false;
   bool neural_statistics_device_enabled_ = false;
   int neural_statistics_mode_index_ = 1;
+  VgfHostMemoryImportCapabilities host_memory_import_capabilities_{};
 
   bool timestamp_queries_enabled = false;
   uint32_t timestamp_valid_bits = 0;
