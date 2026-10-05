@@ -435,11 +435,20 @@ dispatch_time_t cleanup_deadline() {
                     completion:(void (^)(NSError*))completion {
   ++evictions;
   run_async(self.context, ^{
-    completion(fake_error(ETCoreAIErrorUnsupported));
+    if (self.onEvict != nil) {
+      self.onEvict(bookmark);
+    }
+    @synchronized(self) {
+      if (self.evictError == nil) {
+        [self.models removeObjectForKey:bookmark];
+      }
+      completion(self.evictError);
+    }
   });
 }
 - (void)clearRetainedState {
   self.onSpecialize = nil;
+  self.onEvict = nil;
   self.lastAcquired = nil;
   self.lastBound = nil;
   [self.models removeAllObjects];

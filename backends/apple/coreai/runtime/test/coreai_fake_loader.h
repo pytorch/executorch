@@ -97,9 +97,11 @@ class ScopedFakeBridgeState final {
 @property(nonatomic, strong) NSError* restoreError;
 @property(nonatomic, strong) NSError* specializeError;
 @property(nonatomic, strong) NSError* bindError;
+@property(nonatomic, strong) NSError* evictError;
 @property(nonatomic) BOOL restoreMiss;
 @property(nonatomic) BOOL emptyBookmark;
 @property(nonatomic, copy) void (^onSpecialize)(NSURL*);
+@property(nonatomic, copy) void (^onEvict)(NSData*);
 @property(nonatomic, strong) BookmarkFakeModel* lastAcquired;
 @property(nonatomic, strong) BookmarkFakeModel* lastBound;
 @property(nonatomic, copy) NSString* lastSpecializeURL;

@@ -39,6 +39,7 @@ endif()
 set(_coreai_runtime_sources
     runtime/coreai_backend.mm
     runtime/coreai_bookmarks.mm
+    runtime/coreai_cache.mm
     runtime/coreai_cache_key.mm
     runtime/coreai_cache_root.mm
     runtime/coreai_error.mm
@@ -87,6 +88,8 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_delegate_test.mm
     runtime/test/coreai_pte_test.mm
     runtime/test/coreai_pte_fixture.mm
+    runtime/test/coreai_cache_test.mm
+    runtime/test/coreai_eviction_test.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
   )
@@ -443,6 +446,12 @@ coreai_require_os27(coreai_runtime_smoke)
 set_target_properties(coreai_runtime_smoke PROPERTIES LINKER_LANGUAGE CXX)
 target_link_libraries(
   coreai_runtime_smoke PRIVATE coreaidelegate ${_coreai_runtime}
+)
+
+install(
+  FILES runtime/coreai_cache.h
+  DESTINATION
+    ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/apple/coreai/runtime
 )
 
 install(
