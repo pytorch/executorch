@@ -51,6 +51,29 @@ processes of the same user rebinding paths. Written files and changed directorie
 are synced with `fsync`; atomic publication also uses `F_FULLFSYNC` before its
 rename.
 
+Inline bundles are read through `NamedDataMap` and materialized as unchanged
+files under the assets root. Named data can be supplied externally; inline
+packaging does not require all bytes to reside in one physical PTE. The exporter
+computes each bundle digest from all delivered relative filenames and file bytes,
+not just the SDK's bytecode-only `main.hash`. Each AOT architecture has an
+independent digest; only the selected architecture is materialized. NDS key names
+and raw asset bytes are unchanged.
+
+When source recovery is needed, existing bundles are checked for the expected
+file set, sizes, entry types and directory structure without reading asset
+contents or requesting NDS payloads.
+Missing bundles are written to a staging directory and published with an
+exclusive rename; each selected NDS payload is fetched once and checked for size
+before writing. If another loader publishes first, its bundle is validated and
+used. Incomplete, size-mismatched or otherwise malformed existing bundles fail
+loading without replacement, since an SDK model may still be using them.
+
+These are completeness checks, not full content-integrity verification. Same-size
+content changes are not detected, and a complete stored bundle does not cause its
+NDS source to be reread. The export-time digest is a trusted artifact identifier;
+the runtime does not rehash source or stored bytes. Core AI may reject invalid
+contents, but SDK load failures do not automatically evict the extracted copy.
+
 Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which covers
 everything beneath it. Ancestors are not modified. This is backup exclusion, not
 a control for iCloud Drive synchronization.

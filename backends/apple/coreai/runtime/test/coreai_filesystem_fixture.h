@@ -31,5 +31,12 @@ struct BookmarkDirectory {
 
 ::testing::AssertionResult backup_excluded(NSURL* url);
 ::testing::AssertionResult set_backup_excluded(NSURL* url, bool excluded);
+::testing::AssertionResult asset_tree_snapshot(
+    NSURL* root,
+    NSDictionary* __strong& result);
+::testing::AssertionResult snapshot_matches(
+    NSURL* root,
+    NSDictionary* expected);
+NSArray<NSURL*>* staging_directories(NSURL* root);
 
 } // namespace executorch::backends::coreai::testing
