@@ -10,6 +10,7 @@
 #include <any>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <iterator>
@@ -59,6 +60,21 @@ namespace utils = vkcompute::utils;
 
 void release_owned_bytes(void* context, void*, size_t) {
   delete static_cast<std::shared_ptr<OwnedBytes>*>(context);
+}
+
+// Prepack reads constants through typed pointers, so the package's bytes are
+// used in place only when aligned to the element size.
+std::optional<OwnedBytes> load_constant(
+    const Package& package,
+    const ConstantInfo& info) {
+  std::optional<OwnedBytes> view = package.view_constant(info.owner);
+  if (view &&
+      reinterpret_cast<uintptr_t>(view->span().data()) %
+              element_size(info.dtype) ==
+          0) {
+    return view;
+  }
+  return package.acquire_constant(info.owner);
 }
 
 // Native ScalarType -> ET-VK vkapi::ScalarType. The ids are pinned to the same
@@ -915,8 +931,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
     std::shared_ptr<OwnedBytes>& storage = source_constants_[info->owner];
     if (!storage) {
-      std::optional<OwnedBytes> acquired =
-          package.acquire_constant(info->owner);
+      std::optional<OwnedBytes> acquired = load_constant(package, *info);
       if (!acquired) {
         throw std::runtime_error(
             "vulkan: package could not load source constant for key '" +
