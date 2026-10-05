@@ -120,6 +120,8 @@ std::string registry_key(const std::string& target) {
       target.starts_with(kPrefix) ? target.substr(kPrefix.size()) : target;
   if (key == "aten.relu_.default") {
     key = "aten.relu.default";
+  } else if (key == "llama.update_cache.default") {
+    key = "update_cache.default";
   }
   return key;
 }
@@ -133,11 +135,16 @@ bool is_functional_in_place(const std::string& target) {
 // Ops whose ET-VK implementations require width-packed operands. This list
 // seeds layout assignment; propagation below determines the final layouts.
 bool is_width_packed_op(std::string_view key) {
-  constexpr std::array<std::string_view, 4> kOps{
+  constexpr std::array<std::string_view, 9> kOps{
       "aten.linear.default",
       "aten.addmm.default",
       "aten.mm.default",
-      "aten.bmm.default"};
+      "aten.bmm.default",
+      "et_vk.linear_dq8ca_q4gsw.default",
+      "et_vk.rms_norm.default",
+      "llama.custom_sdpa.default",
+      "update_cache.default",
+      "torchao.choose_qparams_affine.default"};
   return std::ranges::find(kOps, key) != kOps.end();
 }
 
@@ -898,19 +905,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
     throw std::runtime_error("vulkan: unhandled argument kind");
   }
 
-  // Insert a same-shape view_copy that repacks a channels-packed activation
-  // into a fresh width-packed tensor, and return the width-packed ref.
-  VkRef repack_to_width(VkRef src, const Value& v) {
+  // Insert a same-shape clone into a fresh width-packed tensor when an
+  // activation's current layout or storage cannot satisfy its consumer.
+  VkRef repack_to_width(VkRef src, const Value& v, utils::StorageType storage) {
     const std::vector<int64_t>& sizes = v.tensor_meta().sizes;
     const VkRef dst = graph_->add_tensor(
         sizes,
         to_vk_dtype(device_dtype(v.tensor_meta().dtype)),
-        utils::kTexture3D,
+        storage,
         utils::kWidthPacked);
-    const VkRef size_list =
-        graph_->add_scalar_list(std::vector<int64_t>(sizes));
-    std::vector<VkRef> args = {src, size_list, dst};
-    VK_GET_OP_FN("aten.view_copy.default")(*graph_, args);
+    std::vector<VkRef> args = {src, none_ref_, dst};
+    VK_GET_OP_FN("aten.clone.default")(*graph_, args);
     return dst;
   }
 
@@ -1022,6 +1027,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
           "vulkan: unsupported op '" + key + "' (target " + n.target + ")");
     }
     const bool width = is_width_packed_op(key);
+    std::optional<utils::StorageType> activation_storage;
+    if (key == "et_vk.linear_dq8ca_q4gsw.default") {
+      const auto output =
+          std::ranges::find_if(n.outputs, [this](const Output& candidate) {
+            return valid(candidate.value_id) &&
+                g().value(candidate.value_id).is_tensor();
+          });
+      if (output != n.outputs.end()) {
+        activation_storage = storage_at(output->value_id);
+      }
+    }
 
     std::vector<VkRef> args;
     args.reserve(n.inputs.size() + 1);
@@ -1038,8 +1054,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
           const Value& v = g().value(value_id);
           const bool activation = v.role == ValueRole::Intermediate ||
               v.role == ValueRole::UserInput;
-          if (activation && layout_at(value_id) != utils::kWidthPacked) {
-            a = repack_to_width(a, v);
+          const bool storage_mismatch = activation_storage.has_value() &&
+              na.name == "input" && storage_at(value_id) != *activation_storage;
+          if (activation &&
+              (layout_at(value_id) != utils::kWidthPacked ||
+               storage_mismatch)) {
+            a = repack_to_width(
+                a, v, activation_storage.value_or(storage_at(value_id)));
           }
         }
       }
