@@ -7,17 +7,19 @@
 """Launch the batching-backed OpenAI server with one multiplexed worker."""
 
 import argparse
+import asyncio
 import logging
 import os
 import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .chat_template import ChatTemplate
+from .multiplexed_worker_client import spawn_multiplexed_worker
 from .server import build_app
 from .serving_chat import ServingChat
 from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
-from .worker_client import spawn_worker
 
 _MAX_INT32 = (1 << 31) - 1
 
@@ -120,42 +122,48 @@ def main(argv=None) -> None:
         assistant_header=args.assistant_header,
     )
     template.generation_preamble()
-    worker = spawn_worker(
-        [
-            args.worker_bin,
-            "--pte",
-            args.model_path,
-            "--tokenizer",
-            args.tokenizer_path,
-            "--max_sessions",
-            str(args.max_sessions),
-            "--max_session_tokens",
-            str(args.max_context),
-            "--max_decode_sequences",
-            str(args.max_decode_sequences),
-            "--max_inflight_requests",
-            str(args.max_inflight_requests),
-            "--prefix_cache_entries",
-            str(args.prefix_cache_entries),
-        ],
-        require_multiplexing=True,
-    )
-    runtime = None
-    try:
-        runtime = SessionRuntime(worker)
-        serving = ServingChat(
-            runtime,
-            template,
-            args.model_id,
-            max_context=args.max_context,
-            tool_detector_cls=HermesDetector,
+
+    @asynccontextmanager
+    async def serving_factory():
+        worker = await spawn_multiplexed_worker(
+            [
+                args.worker_bin,
+                "--pte",
+                args.model_path,
+                "--tokenizer",
+                args.tokenizer_path,
+                "--max_sessions",
+                str(args.max_sessions),
+                "--max_session_tokens",
+                str(args.max_context),
+                "--max_decode_sequences",
+                str(args.max_decode_sequences),
+                "--max_inflight_requests",
+                str(args.max_inflight_requests),
+                "--prefix_cache_entries",
+                str(args.prefix_cache_entries),
+            ]
         )
-        uvicorn.run(build_app(serving, args.model_id), host=args.host, port=args.port)
-    finally:
-        if runtime is None:
-            worker.close()
-        else:
-            runtime.close_worker()
+        runtime = None
+        try:
+            runtime = SessionRuntime(worker)
+            yield ServingChat(
+                runtime,
+                template,
+                args.model_id,
+                max_context=args.max_context,
+                tool_detector_cls=HermesDetector,
+            )
+        finally:
+            if runtime is None:
+                await SessionRuntime._finish_cleanup(
+                    asyncio.create_task(worker.close())
+                )
+            else:
+                await runtime.aclose_worker()
+
+    app = build_app(None, args.model_id, serving_factory=serving_factory)
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

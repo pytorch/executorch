@@ -4,18 +4,30 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import asyncio
 import json
 import sys
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import uvicorn
 
 from executorch.examples.llm_server.python import serve
+from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    MultiplexedWorkerClient,
+    spawn_multiplexed_worker,
+)
+from executorch.examples.llm_server.python.server import build_app
+from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
+from executorch.examples.llm_server.python.tests.test_multiplexed_worker_client import (
+    _AsyncProc,
+    _run,
+)
 from executorch.examples.llm_server.python.tool_parsers import HermesDetector
-from executorch.examples.llm_server.python.worker_client import WorkerStats
+from executorch.examples.llm_server.python.worker_client import WorkerError
 from fastapi.testclient import TestClient
 
 
@@ -41,20 +53,41 @@ def argv(tmp_path):
 
 @pytest.fixture
 def launch(monkeypatch):
-    template = Mock(spec=["generation_preamble"])
-    worker = Mock(spec=["close"])
-    runtime = Mock(spec=["close_worker"])
+    template = Mock(spec=ChatTemplate)
+    template.generation_preamble.return_value = ""
+    template.turn_stop_sequences.return_value = []
+    template.special_tokens.return_value = []
+    template.count_tokens.return_value = 5
+    template.render.return_value = "PROMPT"
+    worker = SimpleNamespace(close=AsyncMock())
+    runtime = SimpleNamespace(aclose_worker=AsyncMock())
     stages = {
         "template": Mock(return_value=template),
         "preamble": template.generation_preamble,
-        "spawn": Mock(return_value=worker),
+        "spawn": AsyncMock(return_value=worker),
         "runtime": Mock(return_value=runtime),
         "serving": Mock(),
-        "app": Mock(),
+        "app": Mock(wraps=build_app),
         "uvicorn": Mock(),
     }
+    # Preserve the real cancellation-safe join when construction is made to fail.
+    stages["runtime"]._finish_cleanup = SessionRuntime._finish_cleanup
+
+    def run(app, **kwargs):
+        stages["spawn"].assert_not_called()
+        assert app.state.serving is None
+
+        async def scenario():
+            async with app.router.lifespan_context(app):
+                stages["spawn"].assert_awaited_once()
+                assert app.state.serving is not None
+            assert app.state.serving is None
+
+        asyncio.run(scenario())
+
+    stages["uvicorn"].side_effect = run
     monkeypatch.setattr(serve, "ChatTemplate", stages["template"])
-    monkeypatch.setattr(serve, "spawn_worker", stages["spawn"])
+    monkeypatch.setattr(serve, "spawn_multiplexed_worker", stages["spawn"])
     monkeypatch.setattr(serve, "SessionRuntime", stages["runtime"])
     monkeypatch.setattr(serve, "ServingChat", stages["serving"])
     monkeypatch.setattr(serve, "build_app", stages["app"])
@@ -64,10 +97,49 @@ def launch(monkeypatch):
     )
 
 
+@pytest.fixture
+def native_launch(launch):
+    launch.loops = []
+    launch.max_inflight_requests = 4
+
+    async def spawn(command):
+        launch.loops.append(("spawn", asyncio.get_running_loop()))
+        launch.proc = _AsyncProc()
+        worker = MultiplexedWorkerClient(
+            launch.proc, max_inflight_requests=launch.max_inflight_requests
+        )
+        launch.worker = worker
+        real_generate, real_close = worker.generate, worker.close
+
+        def generate(*args, **kwargs):
+            launch.loops.append(("generate", asyncio.get_running_loop()))
+            return real_generate(*args, **kwargs)
+
+        async def close():
+            launch.loops.append(("close", asyncio.get_running_loop()))
+            await real_close()
+
+        worker.generate = Mock(side_effect=generate)
+        worker.close = AsyncMock(side_effect=close)
+        return worker
+
+    def runtime(worker):
+        launch.loops.append(("runtime", asyncio.get_running_loop()))
+        launch.runtime = SessionRuntime(worker)
+        assert launch.runtime._native
+        assert launch.runtime._executor is None
+        return launch.runtime
+
+    launch.stages["spawn"].side_effect = spawn
+    launch.stages["runtime"].side_effect = runtime
+    launch.stages["serving"].side_effect = ServingChat
+    return launch
+
+
 def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
     args = serve._parse_args(argv)
     serve.main(argv)
-    launch.stages["spawn"].assert_called_once_with(
+    launch.stages["spawn"].assert_awaited_once_with(
         [
             sys.executable,
             "--pte",
@@ -84,8 +156,7 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
             "64",
             "--prefix_cache_entries",
             "0",
-        ],
-        require_multiplexing=True,
+        ]
     )
     launch.stages["template"].assert_called_once_with(
         hf_tokenizer_path=args.tokenizer_path,
@@ -98,10 +169,14 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
         max_context=1024,
         tool_detector_cls=HermesDetector,
     )
-    launch.stages["uvicorn"].assert_called_once_with(
-        launch.stages["app"].return_value, host="127.0.0.1", port=8000
+    app = launch.stages["uvicorn"].call_args.args[0]
+    launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
+    factory = launch.stages["app"].call_args.kwargs["serving_factory"]
+    launch.stages["app"].assert_called_once_with(
+        None, "executorch", serving_factory=factory
     )
-    launch.runtime.close_worker.assert_called_once_with()
+    launch.runtime.aclose_worker.assert_awaited_once_with()
+    launch.worker.close.assert_not_called()
 
 
 _TOOLS = [
@@ -119,41 +194,40 @@ _TOOL_TOKENS = [
 
 
 @pytest.fixture
-def launcher_request(argv, monkeypatch):
+def launcher_request(argv, native_launch):
+    launch = native_launch
+
     def post(tokens, **options):
-        template = Mock(spec=serve.ChatTemplate)
-        template.generation_preamble.return_value = ""
-        template.turn_stop_sequences.return_value = []
-        template.special_tokens.return_value = []
-        template.count_tokens.return_value = 5
-        template.render.return_value = "PROMPT"
-
-        def generate(prompt, config, token_callback, stats_callback, request_id):
-            assert prompt == "PROMPT"
-            assert request_id == 1
-            for token in tokens:
-                token_callback(token)
-            stats_callback(
-                WorkerStats(
-                    num_prompt_tokens=5,
-                    num_generated_tokens=len(tokens),
-                    finish_reason="stop",
-                )
-            )
-
-        worker = SimpleNamespace(
-            supports_multiplexing=True,
-            max_inflight_requests=4,
-            reserve_request=Mock(return_value=1),
-            wait_for_request=Mock(),
-            generate=Mock(side_effect=generate),
-            close=Mock(),
-        )
         responses = []
 
+        async def respond():
+            request = await launch.proc.stdin.frames.get()
+            assert request["op"] == "generate"
+            assert request["prompt"] == "PROMPT"
+            assert request["request_id"] == 1
+            for token in tokens:
+                launch.proc.send(1, token=token)
+            launch.proc.send(
+                1,
+                done=True,
+                prompt_tokens=5,
+                completion_tokens=len(tokens),
+                finish_reason="stop",
+            )
+
+        async def start_responder():
+            return asyncio.create_task(respond())
+
+        async def finish_responder(task):
+            await task
+            assert not launch.worker._requests
+            assert not launch.runtime._settlements
+
         def run(app, **kwargs):
-            # Exercise the app while main still owns the live runtime.
+            launch.stages["spawn"].assert_not_called()
+            assert app.state.serving is None
             with TestClient(app) as client:
+                task = client.portal.call(start_responder)
                 responses.append(
                     client.post(
                         "/v1/chat/completions",
@@ -164,15 +238,24 @@ def launcher_request(argv, monkeypatch):
                         },
                     )
                 )
+                client.portal.call(finish_responder, task)
+            assert app.state.serving is None
 
-        monkeypatch.setattr(serve, "ChatTemplate", Mock(return_value=template))
-        monkeypatch.setattr(serve, "spawn_worker", Mock(return_value=worker))
-        monkeypatch.setattr(uvicorn, "run", run)
+        launch.stages["uvicorn"].side_effect = run
         serve.main(argv)
-        worker.generate.assert_called_once()
-        worker.wait_for_request.assert_called_once_with(1)
-        worker.close.assert_called_once_with()
-        return responses[0], template
+        launch.stages["spawn"].assert_awaited_once()
+        launch.worker.generate.assert_called_once()
+        launch.worker.close.assert_awaited_once_with()
+        assert [stage for stage, _ in launch.loops] == [
+            "spawn",
+            "runtime",
+            "generate",
+            "close",
+        ]
+        assert all(loop is launch.worker._loop for _, loop in launch.loops)
+        assert launch.proc.reaped and launch.proc.stdin.closed
+        assert launch.worker._reader.done() and launch.worker._writer.done()
+        return responses[0], launch.template
 
     return post
 
@@ -235,13 +318,10 @@ def test_launcher_app_preserves_text(launcher_request, stream, tokens, options):
     assert template.generation_preamble.call_args.kwargs["tools"] == expected_tools
 
 
-def test_overrides_and_capability_based_concurrency(argv, launch, monkeypatch):
+def test_overrides_and_capability_based_concurrency(argv, native_launch):
+    launch = native_launch
     header = "<|start_header_id|>assistant<|end_header_id|>\n\n"
-    worker = SimpleNamespace(
-        supports_multiplexing=True, max_inflight_requests=23, close=Mock()
-    )
-    launch.stages["spawn"].return_value = worker
-    monkeypatch.setattr(serve, "SessionRuntime", SessionRuntime)
+    launch.max_inflight_requests = 23
     serve.main(
         argv
         + [
@@ -289,7 +369,8 @@ def test_overrides_and_capability_based_concurrency(argv, launch, monkeypatch):
         "host": "localhost",
         "port": 8123,
     }
-    worker.close.assert_called_once_with()
+    launch.worker.close.assert_awaited_once_with()
+    assert launch.proc.reaped
 
 
 def test_json_file_uses_sibling_config_and_directory(argv, launch):
@@ -428,7 +509,7 @@ def test_context_is_required(argv, launch):
 
 
 def test_template_probe_precedes_spawn(argv, launch):
-    def spawn(*args, **kwargs):
+    async def spawn(*args, **kwargs):
         launch.template.generation_preamble.assert_called_once_with()
         return launch.worker
 
@@ -444,11 +525,200 @@ def test_startup_failures_release_owned_worker(argv, launch, stage, error_type):
     launch.stages[stage].side_effect = error_type("startup failed")
     with pytest.raises(error_type):
         serve.main(argv)
-    if stage in ("template", "preamble", "spawn"):
+    if stage in ("template", "preamble", "app", "uvicorn"):
+        launch.stages["spawn"].assert_not_called()
         launch.worker.close.assert_not_called()
-        launch.runtime.close_worker.assert_not_called()
+        launch.runtime.aclose_worker.assert_not_called()
+    elif stage == "spawn":
+        launch.stages["spawn"].assert_awaited_once()
+        launch.worker.close.assert_not_called()
+        launch.runtime.aclose_worker.assert_not_called()
     elif stage == "runtime":
-        launch.worker.close.assert_called_once_with()
-        launch.runtime.close_worker.assert_not_called()
+        launch.worker.close.assert_awaited_once_with()
+        launch.runtime.aclose_worker.assert_not_called()
     else:
-        launch.runtime.close_worker.assert_called_once_with()
+        launch.worker.close.assert_not_called()
+        launch.runtime.aclose_worker.assert_awaited_once_with()
+
+
+def test_main_defers_worker_ownership_until_lifespan(argv, native_launch):
+    launch = native_launch
+    launch.stages["uvicorn"].side_effect = None
+    assert serve.main(argv) is None
+    launch.template.generation_preamble.assert_called_once_with()
+    launch.stages["spawn"].assert_not_called()
+    launch.stages["runtime"].assert_not_called()
+    launch.stages["serving"].assert_not_called()
+    launch.worker.close.assert_not_called()
+    launch.runtime.aclose_worker.assert_not_called()
+    app = launch.stages["uvicorn"].call_args.args[0]
+    assert app.state.serving is None
+
+    async def scenario():
+        initial_tasks = asyncio.all_tasks()
+        async with app.router.lifespan_context(app):
+            launch.stages["spawn"].assert_awaited_once()
+            assert app.state.serving is not None
+            assert launch.worker.healthy
+            launch.worker.close.assert_not_called()
+        launch.worker.close.assert_awaited_once_with()
+        assert app.state.serving is None
+        assert launch.proc.reaped and launch.proc.stdin.closed
+        assert launch.worker._reader.done() and launch.worker._writer.done()
+        assert [stage for stage, _ in launch.loops] == ["spawn", "runtime", "close"]
+        assert all(loop is asyncio.get_running_loop() for _, loop in launch.loops)
+        assert not (asyncio.all_tasks() - initial_tasks)
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("stage", ["runtime", "serving"])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_partial_startup_waits_for_reap_despite_repeated_cancellation(
+    argv, native_launch, stage, cancel
+):
+    launch = native_launch
+
+    def fail(*args, **kwargs):
+        launch.proc.reap_allowed.clear()
+        raise RuntimeError("late startup failed")
+
+    launch.stages[stage].side_effect = fail
+
+    async def scenario(app):
+        initial_tasks = asyncio.all_tasks()
+        reaped_at_exit = []
+
+        async def startup():
+            try:
+                async with app.router.lifespan_context(app):
+                    pytest.fail("failed startup must not yield a serving adapter")
+            finally:
+                reaped_at_exit.append(launch.proc.reaped)
+
+        operation = asyncio.create_task(startup())
+        try:
+            # Spawn happens in startup; yield before inspecting its process.
+            await asyncio.sleep(0)
+            await launch.proc.wait_started.wait()
+            assert not operation.done() and not launch.proc.reaped
+            if cancel:
+                for _ in range(3):
+                    assert operation.cancel()
+                    await asyncio.sleep(0)
+                    assert not operation.done() and not launch.proc.reaped
+            assert reaped_at_exit == []
+            launch.proc.reap_allowed.set()
+            error_type = (
+                asyncio.CancelledError
+                if cancel and stage == "serving"
+                else RuntimeError
+            )
+            with pytest.raises(error_type) as error:
+                await operation
+            if error_type is RuntimeError:
+                assert str(error.value) == "late startup failed"
+            assert reaped_at_exit == [True]
+            assert app.state.serving is None
+            launch.worker.close.assert_awaited_once_with()
+            assert launch.proc.stdin.closed and launch.proc.wait_count == 1
+            assert launch.worker._reader.done() and launch.worker._writer.done()
+            assert not (asyncio.all_tasks() - initial_tasks)
+        finally:
+            launch.proc.reap_allowed.set()
+            await asyncio.gather(operation, return_exceptions=True)
+
+    launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
+    serve.main(argv)
+
+
+def test_normal_shutdown_reports_failed_native_reap(argv, native_launch):
+    launch = native_launch
+
+    async def scenario(app):
+        initial_tasks = asyncio.all_tasks()
+        try:
+            with pytest.raises(WorkerError, match="could not be reaped"):
+                async with app.router.lifespan_context(app):
+                    launch.proc.wait_failures = 2
+                    assert launch.worker.healthy
+            launch.worker.close.assert_awaited_once_with()
+            assert app.state.serving is None
+            assert not launch.proc.reaped and launch.proc.wait_count == 2
+            assert launch.worker._reader.done() and launch.worker._writer.done()
+            assert launch.runtime._shutdown_task.done()
+            assert not (asyncio.all_tasks() - initial_tasks)
+        finally:
+            # Retry only after asserting the launcher delivered the shutdown error.
+            await launch.runtime.aclose_worker()
+        assert launch.proc.reaped
+
+    launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
+    serve.main(argv)
+
+
+def test_failure_inside_running_lifespan_reaps_worker(argv, native_launch):
+    launch = native_launch
+
+    async def scenario(app):
+        initial_tasks = asyncio.all_tasks()
+        with pytest.raises(RuntimeError, match="server failed after startup"):
+            async with app.router.lifespan_context(app):
+                raise RuntimeError("server failed after startup")
+        launch.worker.close.assert_awaited_once_with()
+        assert app.state.serving is None
+        assert launch.proc.reaped and launch.proc.stdin.closed
+        assert launch.worker._reader.done() and launch.worker._writer.done()
+        assert not (asyncio.all_tasks() - initial_tasks)
+
+    launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
+    serve.main(argv)
+
+
+@pytest.mark.parametrize("capability", [{}, {"multiplexed": False}, {"multiplexed": 1}])
+def test_launcher_rejects_legacy_readiness_and_reaps_real_child(
+    argv, launch, monkeypatch, capability
+):
+    processes = []
+    real_spawn = asyncio.create_subprocess_exec
+    readiness = json.dumps({"ready": True, **capability})
+    script = (
+        "import sys\n"
+        f"print({readiness!r}, flush=True)\n"
+        "for line in sys.stdin: pass\n"
+    )
+
+    async def spawn(*command, **kwargs):
+        assert command == tuple(launch.stages["spawn"].call_args.args[0])
+        proc = await real_spawn(sys.executable, "-u", "-c", script, **kwargs)
+        proc.wait = AsyncMock(wraps=proc.wait)
+        processes.append(proc)
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    launch.stages["spawn"].side_effect = spawn_multiplexed_worker
+
+    async def scenario(app):
+        initial_tasks = asyncio.all_tasks()
+        try:
+            with pytest.raises(WorkerError, match="required multiplexing") as error:
+                async with app.router.lifespan_context(app):
+                    pytest.fail("legacy readiness must not start the application")
+            assert error.value.code == "unsupported_multiplexing"
+            assert len(processes) == 1
+            proc = processes[0]
+            assert proc.returncode is not None
+            proc.wait.assert_awaited_once_with()
+            assert proc.stdin.is_closing()
+            launch.stages["runtime"].assert_not_called()
+            launch.stages["serving"].assert_not_called()
+            assert app.state.serving is None
+            assert not (asyncio.all_tasks() - initial_tasks)
+        finally:
+            for proc in processes:
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.wait()
+
+    launch.stages["uvicorn"].side_effect = lambda app, **kwargs: _run(scenario(app))
+    serve.main(argv)
