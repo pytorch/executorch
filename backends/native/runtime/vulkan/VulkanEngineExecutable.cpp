@@ -35,6 +35,7 @@
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
+#include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
@@ -494,6 +495,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
+    vulkan::lower_rms_norms(method_.graph);
     vulkan::insert_prepack_nodes(method_);
     validate_graph(method_.graph);
     validate_user_io(method_);
