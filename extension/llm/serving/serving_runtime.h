@@ -9,17 +9,24 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
+#include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
 #include <executorch/runtime/platform/compiler.h>
+
+namespace tokenizers {
+class Tokenizer;
+}
 
 namespace executorch {
 namespace extension {
@@ -28,7 +35,7 @@ namespace serving {
 
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
-  // Reported metadata; 0 means unknown.
+  // Text-generation context bound and reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
   // Queued, executing, and delivery-fenced lifecycle/generation-start
   // operations, excluding completion callbacks. Must be non-zero.
@@ -41,12 +48,23 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // separate terminal slot is reserved, but its tokens share the token budget.
   std::size_t max_events_per_request = 16;
   std::size_t max_tokens_per_request = 256;
+  std::vector<batching::Token> default_stop_tokens = {};
+  // Used only for an unset request limit when max_context_length is unknown.
+  std::int32_t default_max_new_tokens = 256;
+  // Opt-in prefix reuse for new text sessions; zero disables caching.
+  // Explicit open, reset, and same-session replay bypass the cache. Snapshots
+  // may outlive their source; misses/refusals fall back to full prefill.
+  // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
+  // when enabled. Backend numerical parity requires model-specific validation.
+  std::size_t prefix_cache_capacity = 0;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
 // operation.
 using LifecycleResult ET_EXPERIMENTAL = std::optional<ServingError>;
 using LifecycleCallback ET_EXPERIMENTAL = std::function<void(LifecycleResult)>;
+using GenerateResult ET_EXPERIMENTAL =
+    std::variant<RequestHandle, ServingError>;
 
 class ET_EXPERIMENTAL ServingRuntime {
  public:
@@ -59,6 +77,13 @@ class ET_EXPERIMENTAL ServingRuntime {
   ServingRuntime(
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
+      ServingRuntimeConfig config);
+  // The tokenizer is borrowed, must outlive shutdown, and must permit
+  // concurrent const encode/decode calls without being reloaded or mutated.
+  ServingRuntime(
+      batching::Executor& executor,
+      std::unique_ptr<batching::Scheduler> scheduler,
+      const tokenizers::Tokenizer& tokenizer,
       ServingRuntimeConfig config);
   ~ServingRuntime();
 
@@ -105,6 +130,29 @@ class ET_EXPERIMENTAL ServingRuntime {
   // request; stale completion cannot claim the replacement. No prefix reuse.
   void reset_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> reset_session_async(std::string key);
+
+  // Full-prompt text generation; nullopt uses an independent ephemeral session.
+  // Admission never waits for tokenization; callbacks may race with return.
+  // Preadmission errors have no callback. Accepted work delivers ordered text
+  // and one terminal event off-engine. Invalid preparation leaves state intact.
+  // Same-key execution overlap is Busy. Work admitted after close/reset waits
+  // for its acknowledgement before preparation or execution. That fence covers
+  // earlier rendered text (including final flush), terminal delivery, and sink
+  // capture cleanup. Exact strict prefixes continue; other histories
+  // cold-replay without caching. Sinks share one delivery thread and must do
+  // short, bounded work: no blocking I/O, waits for runtime work, or
+  // synchronous shutdown/destruction of the runtime. A text/flush sink throw
+  // disables output and selects a failure. A terminal sink throw is logged;
+  // it cannot revise the finalized result or committed session history.
+  // Before terminal invocation, this request's session claim and admission
+  // are released. Nonblocking follow-up submission is allowed but may still
+  // be rejected; wait()/done() remain callback-lifetime barriers.
+  // The lifecycle-only constructor rejects text generation with NotReady.
+  GenerateResult generate(
+      std::optional<std::string> key,
+      PromptInput prompt,
+      GenerationOptions options,
+      std::function<void(GenerationEvent)> on_event);
 
   // A synchronized snapshot. Ready means initialized and accepting operations,
   // not that capacity is available. Active slots include ephemeral sessions,

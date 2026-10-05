@@ -10,15 +10,21 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <condition_variable>
 #include <deque>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 
+#include <executorch/extension/llm/batching/prefix_cache.h>
 #include <executorch/extension/llm/batching/runner.h>
 #include <executorch/extension/llm/serving/detail/generation_bridge.h>
+#include <executorch/extension/llm/serving/detail/prompt_preparer.h>
+#include <executorch/extension/llm/serving/detail/text_output.h>
+#include <executorch/extension/llm/serving/prompt_history.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch {
@@ -27,6 +33,42 @@ namespace llm {
 namespace serving {
 
 namespace detail {
+
+struct TextRequest {
+  PromptInput input;
+  GenerationOptions options;
+  std::function<void(GenerationEvent)> sink;
+  std::vector<batching::Token> prompt;
+  std::vector<batching::Token> raw_tokens;
+  std::vector<batching::Token> history;
+  std::unique_ptr<TextOutput> output;
+  std::optional<ServingError> render_error;
+  // Completed on control, then transferred unchanged by terminal delivery.
+  TerminalEvent terminal;
+  batching::MetricsTime submitted = batching::MetricsClock::now();
+  std::size_t start_position = 0;
+  bool started = false;
+  bool capture_lane = false;
+  std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
+
+  void emit(GenerationEvent event) {
+    if (!sink) {
+      return;
+    }
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      sink(std::move(event));
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // Flush runs in the preparation hook, outside the raw sink's guard.
+      // Disable user output here so neither path invokes a throwing sink again.
+      sink = {};
+      throw;
+    }
+#endif
+  }
+};
 
 struct RequestState {
   enum class Delivery { Streaming, Settling, Finalizing };
@@ -138,6 +180,7 @@ struct RequestState {
   // Remains immutable while delivery destroys the callback-owning request.
   const std::optional<std::string> fence_key;
   GenerationRequest request;
+  std::shared_ptr<TextRequest> text;
   const std::size_t event_limit;
   const std::size_t token_limit;
   std::atomic<bool> cancelled{false};
@@ -177,6 +220,8 @@ struct ServingRuntime::Impl {
     std::optional<batching::Session> session;
     std::uint64_t incarnation = 0;
     RequestId active_request = 0;
+    std::vector<batching::Token> logical_history;
+    bool dirty = false;
   };
 
   struct Command {
@@ -193,13 +238,16 @@ struct ServingRuntime::Impl {
   Impl(
       batching::Executor& executor,
       std::unique_ptr<batching::Scheduler> scheduler,
-      ServingRuntimeConfig config)
+      ServingRuntimeConfig config,
+      const tokenizers::Tokenizer* tokenizer = nullptr)
       : config_(config),
         valid_config_(
             scheduler && config.max_sessions > 0 &&
             config.max_pending_operations > 0 && config.max_requests > 0 &&
             config.max_events_per_request > 0 &&
-            config.max_tokens_per_request > 0) {
+            config.max_tokens_per_request > 0),
+        tokenizer_(tokenizer),
+        prefix_cache_(config.prefix_cache_capacity) {
     if (valid_config_) {
       runner_ =
           std::make_unique<batching::Runner>(executor, std::move(scheduler));
@@ -341,6 +389,8 @@ struct ServingRuntime::Impl {
       }
       it->second.active_request = 0;
       it->second.incarnation = next_incarnation_++;
+      it->second.logical_history.clear();
+      it->second.dirty = false;
       retired = std::move(it->second.session);
       it->second.session.reset();
     }
@@ -391,11 +441,17 @@ struct ServingRuntime::Impl {
             : "session reopen failed; old state is gone and key is unavailable"};
   }
 
-  detail::SubmissionResult submit(detail::GenerationRequest&& request) {
+  detail::SubmissionResult submit(
+      detail::GenerationRequest&& request,
+      std::shared_ptr<detail::TextRequest> text = {}) {
     // Even moving an inline std::function can copy a user callable. Construct
     // and unwind callback ownership outside admission locking.
     auto state =
         std::make_shared<detail::RequestState>(std::move(request), config_);
+    state->text = std::move(text);
+    if (state->text) {
+      wire_text(state);
+    }
     Command command{
         Operation::Generate, state->fence_key.value_or(""), {}, state};
     {
@@ -409,9 +465,14 @@ struct ServingRuntime::Impl {
               batching::InitializationState::Failed) {
         return ServingError{ErrorCode::NotReady, "runtime is not ready"};
       }
+      if (state->text && !tokenizer_) {
+        return ServingError{
+            ErrorCode::NotReady, "text generation requires a tokenizer"};
+      }
       if ((state->fence_key && state->fence_key->empty()) ||
-          state->request.delta.empty() ||
-          state->request.config.max_new_tokens <= 0) {
+          (!state->text &&
+           (state->request.delta.empty() ||
+            state->request.config.max_new_tokens <= 0))) {
         return ServingError{
             ErrorCode::InvalidArgument, "invalid generation request"};
       }
@@ -439,7 +500,285 @@ struct ServingRuntime::Impl {
     return RequestHandle(state);
   }
 
+  void complete_text(
+      detail::TextRequest& text,
+      const std::optional<std::string>& key,
+      const detail::GenerationCompletion& completion) {
+    auto& terminal = text.terminal;
+    terminal.error = completion.error;
+    if (terminal.error) {
+      terminal.finish_reason = FinishReason::Failed;
+    } else if (text.output && text.output->stopped()) {
+      terminal.finish_reason = FinishReason::Stop;
+    } else {
+      switch (*completion.terminal.finish_reason) {
+        case batching::FinishReason::StopToken:
+          terminal.finish_reason = FinishReason::Stop;
+          break;
+        case batching::FinishReason::NewTokenLimit:
+          terminal.finish_reason = FinishReason::Length;
+          break;
+        case batching::FinishReason::Cancelled:
+          terminal.finish_reason = FinishReason::Cancelled;
+          break;
+        case batching::FinishReason::Failed:
+          terminal.finish_reason = FinishReason::Failed;
+          terminal.error = ServingError{
+              ErrorCode::Internal, completion.terminal.error_message};
+          break;
+      }
+    }
+    auto& stats = terminal.stats;
+    stats.completion_tokens =
+        text.output ? text.output->completion_tokens() : 0;
+    stats.prefill_ms = completion.metrics.prefill_span_us() / 1000.0;
+    stats.decode_ms = completion.metrics.decode_span_us() / 1000.0;
+    stats.total_ms = std::chrono::duration<double, std::milli>(
+                         batching::MetricsClock::now() - text.submitted)
+                         .count();
+    if (text.started) {
+      // The carried pending token is not physically resident: charge its
+      // forward pass as prompt work, rather than counting it as free reuse.
+      stats.reused_prompt_tokens =
+          std::min(text.start_position, stats.prompt_tokens);
+      stats.prefilled_prompt_tokens = completion.metrics.n_prefilled_tokens;
+    }
+    const bool completed = terminal.finish_reason == FinishReason::Stop ||
+        terminal.finish_reason == FinishReason::Length;
+    stats.generated_token_ids = completed && text.output
+        ? text.output->generated_token_ids()
+        : std::nullopt;
+    if (!completion.current_session || !text.started) {
+      return;
+    }
+    // Execution can finish a batch after cancellation retires its logical
+    // result. Physical work alone is not proof that Runner retained the prompt.
+    const bool full_prompt = stats.prompt_tokens > 0 &&
+        (completion.metrics.n_generated_tokens > 0 ||
+         (completion.position &&
+          *completion.position >=
+              static_cast<batching::Position>(stats.prompt_tokens)));
+    const bool all_output =
+        static_cast<std::size_t>(completion.metrics.n_generated_tokens) ==
+        text.raw_tokens.size();
+    const SessionKey session_key =
+        key ? SessionKey(*key) : SessionKey(completion.request_id);
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session_key);
+    if (it == sessions_.end() ||
+        it->second.incarnation != completion.incarnation ||
+        it->second.active_request != completion.request_id) {
+      return;
+    }
+    if (full_prompt &&
+        text.history.size() == stats.prompt_tokens + text.raw_tokens.size()) {
+      it->second.logical_history = std::move(text.history);
+    } else {
+      it->second.logical_history.clear();
+    }
+    it->second.dirty = !completed || !full_prompt || !all_output ||
+        (text.output && text.output->string_stopped());
+  }
+
+  void wire_text(const Request& request) {
+    const auto text = request->text;
+    request->request.on_update = [text](
+                                     const batching::GenerationUpdate& update,
+                                     const RequestHandle& handle) {
+      if (update.finish_reason) {
+        text->emit(std::move(text->terminal));
+        return;
+      }
+      text->raw_tokens.insert(
+          text->raw_tokens.end(), update.tokens.begin(), update.tokens.end());
+      if (text->output && !text->render_error) {
+        if (text->output->append(update.tokens) != runtime::Error::Ok) {
+          text->render_error =
+              ServingError{ErrorCode::Internal, "token decoding failed"};
+          handle.cancel();
+        } else if (text->output->stopped()) {
+          handle.cancel();
+        }
+      }
+    };
+    request->request.on_prepare_complete =
+        [text](const detail::GenerationCompletion&) {
+          text->history = std::move(text->prompt);
+          text->history.insert(
+              text->history.end(),
+              text->raw_tokens.begin(),
+              text->raw_tokens.end());
+          if (text->output) {
+            text->output->finish();
+          }
+        };
+    request->request.on_complete =
+        [this, text, key = request->request.key](
+            const detail::GenerationCompletion& completion) {
+          complete_text(*text, key, completion);
+        };
+  }
+
+  LifecycleResult prepare_text(const Request& request) {
+    auto& text = *request->text;
+    const SessionKey key = request->request.key
+        ? SessionKey(*request->request.key)
+        : SessionKey(request->id);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
+        return std::nullopt;
+      }
+      auto it = sessions_.find(key);
+      if (it != sessions_.end() && it->second.active_request) {
+        return ServingError{
+            ErrorCode::SessionBusy, "session already has an active request"};
+      }
+      if (it != sessions_.end() && it->second.phase != SessionPhase::Open) {
+        return ServingError{
+            ErrorCode::NotReady, "session is unavailable; reset first"};
+      }
+    }
+    const auto& options = text.options;
+    if ((options.max_new_tokens && *options.max_new_tokens <= 0) ||
+        !std::isfinite(options.sampling.temperature) ||
+        options.sampling.temperature < 0 ||
+        !std::isfinite(options.sampling.top_p) || options.sampling.top_p <= 0 ||
+        options.sampling.top_p > 1 || options.sampling.top_k < 0 ||
+        std::any_of(
+            options.stop_strings.begin(),
+            options.stop_strings.end(),
+            [](const std::string& stop) { return stop.empty(); })) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "invalid generation options"};
+    }
+    const auto position_limit = static_cast<std::size_t>(
+        std::numeric_limits<batching::Position>::max());
+    const auto context_limit = config_.max_context_length
+        ? std::min(config_.max_context_length, position_limit)
+        : position_limit;
+    auto prepared =
+        detail::prepare_prompt(*tokenizer_, text.input, context_limit);
+    if (!prepared.ok()) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "prompt preparation failed"};
+    }
+    text.prompt = std::move(prepared->tokens);
+    text.input = {};
+    text.terminal.stats.prompt_tokens = text.prompt.size();
+    const auto available = context_limit - text.prompt.size();
+    const auto wanted = options.max_new_tokens.value_or(
+        config_.max_context_length
+            ? static_cast<std::int32_t>(
+                  std::min(available, static_cast<std::size_t>(INT32_MAX)))
+            : config_.default_max_new_tokens);
+    if (wanted <= 0 || available == 0) {
+      return ServingError{
+          ErrorCode::InvalidArgument, "no generation budget available"};
+    }
+    auto& config = request->request.config;
+    config.max_new_tokens = static_cast<std::int32_t>(
+        std::min(available, static_cast<std::size_t>(wanted)));
+    config.sampling = options.sampling;
+    config.seed = options.seed;
+    config.stop_tokens = config_.default_stop_tokens;
+    config.stop_tokens.insert(
+        config.stop_tokens.end(),
+        options.stop_tokens.begin(),
+        options.stop_tokens.end());
+    text.output = std::make_unique<detail::TextOutput>(
+        *tokenizer_,
+        text.prompt.back(),
+        config.stop_tokens,
+        options.stop_strings,
+        [state = &text](const std::string& piece) {
+          state->emit(TextEvent{piece});
+        });
+
+    PrefillPlan plan{PrefillPlan::kFull, 0, "new"};
+    bool reset = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = sessions_.find(key);
+      if (it != sessions_.end()) {
+        plan = plan_prefill(
+            it->second.logical_history, text.prompt, it->second.dirty);
+        reset = plan.action == PrefillPlan::kFull &&
+            (it->second.dirty || !it->second.logical_history.empty() ||
+             it->second.session->position() != 0);
+      }
+    }
+    text.terminal.stats.session_reset_reason = plan.reason;
+    request->request.delta.assign(
+        text.prompt.begin() + plan.suffix_start, text.prompt.end());
+    // All fallible preparation precedes destructive cold replacement.
+    if (request->cancelled.load()) {
+      return std::nullopt;
+    }
+    if (reset) {
+      Command command{Operation::Reset, *request->request.key, {}, {}};
+      return process(command);
+    }
+    return std::nullopt;
+  }
+
+  std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
+    if (!request->text || config_.prefix_cache_capacity == 0) {
+      return std::nullopt;
+    }
+    // A lookup clone uses the new request's reserved working-session slot.
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      return prefix_cache_.lookup(request->text->prompt);
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      return std::nullopt;
+    }
+#endif
+  }
+
+  void finish_capture(const Request& request) {
+    if (!request->text || !request->text->capture_lane) {
+      return;
+    }
+    // Generation has already finished on the dispatcher. collect() combines
+    // clone wait and insertion; keep both on control, outside all request and
+    // admission locks. Settle even a cancelled source's queued clone before
+    // releasing the transient snapshot slot.
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      if (request->text->prefix_capture) {
+        request->text->prefix_capture->collect();
+      }
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      // Optional cache maintenance must not change the generation outcome.
+    }
+#endif
+    request->text->prefix_capture.reset();
+    request->text->capture_lane = false;
+    capture_lane_busy_ = false;
+  }
+
   void generate(const Request& request) {
+    if (request->text) {
+      LifecycleResult error;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        error = prepare_text(request);
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        error = ServingError{ErrorCode::Internal, "prompt preparation failed"};
+      }
+#endif
+      if (error) {
+        request->reject(std::move(error));
+        return;
+      }
+    }
     const SessionKey key = request->request.key
         ? SessionKey(*request->request.key)
         : SessionKey(request->id);
@@ -476,10 +815,20 @@ struct ServingRuntime::Impl {
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
+      auto match = lookup_prefix(request);
+      if (match) {
+        opened = std::move(match->session);
+        // Lookup always leaves the final prompt token for a fresh forward.
+        request->request.delta.erase(
+            request->request.delta.begin(),
+            request->request.delta.begin() + match->matched_tokens);
+      }
 #if ET_HAS_EXCEPTIONS
       try {
 #endif
-        opened = runner_->open_session_async().get();
+        if (!opened && !request->cancelled.load()) {
+          opened = runner_->open_session_async().get();
+        }
 #if ET_HAS_EXCEPTIONS
       } catch (...) {
         // Refusal below also releases the initial reservation.
@@ -506,6 +855,9 @@ struct ServingRuntime::Impl {
       it->second.phase = SessionPhase::Open;
     }
     auto& session = *it->second.session;
+    if (!request->text) {
+      it->second.dirty = true;
+    }
     const bool cancelled =
         lifecycle_ != Lifecycle::Running || request->cancelled.load();
     lock.unlock();
@@ -513,18 +865,42 @@ struct ServingRuntime::Impl {
       request->reject();
       return;
     }
+    if (request->text) {
+      request->text->start_position =
+          static_cast<std::size_t>(session.position());
+      request->text->started = true;
+    }
     // The control thread alone owns Session objects. Rejection can invoke the
     // callback inline before this call returns; the mailbox needs no binding.
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      auto handle = session.generate_async(
-          std::move(request->request.delta),
-          std::move(request->request.config),
+      batching::GenerationCallback callback =
           [this, request](const batching::GenerationUpdate& update) {
             request->emit(update);
             schedule(request);
-          },
+          };
+      if (opening && request->text && config_.prefix_cache_capacity != 0 &&
+          !capture_lane_busy_) {
+        // Only a capture needs an extra row beyond the working-session slots.
+        capture_lane_busy_ = true;
+        request->text->capture_lane = true;
+#if ET_HAS_EXCEPTIONS
+        try {
+#endif
+          request->text->prefix_capture =
+              prefix_cache_.capture_prompt(session, request->text->prompt);
+          callback = request->text->prefix_capture->wrap(callback);
+#if ET_HAS_EXCEPTIONS
+        } catch (...) {
+          // Keep the original callback when optional capture setup fails.
+        }
+#endif
+      }
+      auto handle = session.generate_async(
+          std::move(request->request.delta),
+          std::move(request->request.config),
+          std::move(callback),
           [this, weak = std::weak_ptr<detail::RequestState>(request)] {
             if (auto request = weak.lock()) {
               {
@@ -544,6 +920,7 @@ struct ServingRuntime::Impl {
   }
 
   void finalize(const Request& request) {
+    finish_capture(request);
     const SessionKey key = request->request.key
         ? SessionKey(*request->request.key)
         : SessionKey(request->id);
@@ -559,6 +936,14 @@ struct ServingRuntime::Impl {
       if (request->completion.current_session) {
         request->completion.position = it->second.session->position();
       }
+    }
+    if (request->text && request->text->render_error &&
+        !request->completion.error) {
+      std::lock_guard<std::mutex> lock(request->mutex);
+      request->error = request->text->render_error;
+      request->completion.error = request->error;
+      request->completion.terminal = {
+          {}, batching::FinishReason::Failed, request->error->message};
     }
     bool failed = false;
 #if ET_HAS_EXCEPTIONS
@@ -576,6 +961,12 @@ struct ServingRuntime::Impl {
       request->completion.error = request->error;
       request->completion.terminal = {
           {}, batching::FinishReason::Failed, request->error->message};
+      if (request->text) {
+        auto& terminal = request->text->terminal;
+        terminal.finish_reason = FinishReason::Failed;
+        terminal.error = request->completion.error;
+        terminal.stats.generated_token_ids.reset();
+      }
     }
 #endif
     std::optional<batching::Session> retired;
@@ -728,6 +1119,7 @@ struct ServingRuntime::Impl {
 #endif
     // Callback quiescence includes capture destruction, outside runtime locks.
     request->request = {};
+    request->text.reset();
     {
       std::lock_guard<std::mutex> lock(request->mutex);
       request->terminal.reset();
@@ -882,6 +1274,7 @@ struct ServingRuntime::Impl {
       retired.swap(sessions_);
     }
     retired.clear();
+    prefix_cache_.clear();
   }
 
   ServingInfo info() const {
@@ -935,7 +1328,12 @@ struct ServingRuntime::Impl {
 
   const ServingRuntimeConfig config_;
   const bool valid_config_;
+  const tokenizers::Tokenizer* const tokenizer_;
   std::unique_ptr<batching::Runner> runner_;
+  batching::PrefixCache prefix_cache_;
+  // Control-thread policy; held through capture collection, including clone
+  // refusal and cancellation. At most one transient snapshot can exist.
+  bool capture_lane_busy_ = false;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::condition_variable stopped_cv_;
@@ -1002,6 +1400,32 @@ ServingRuntime::ServingRuntime(
     std::unique_ptr<batching::Scheduler> scheduler,
     ServingRuntimeConfig config)
     : impl_(std::make_unique<Impl>(executor, std::move(scheduler), config)) {}
+
+ServingRuntime::ServingRuntime(
+    batching::Executor& executor,
+    std::unique_ptr<batching::Scheduler> scheduler,
+    const tokenizers::Tokenizer& tokenizer,
+    ServingRuntimeConfig config)
+    : impl_(std::make_unique<Impl>(
+          executor,
+          std::move(scheduler),
+          config,
+          &tokenizer)) {}
+
+GenerateResult ServingRuntime::generate(
+    std::optional<std::string> key,
+    PromptInput prompt,
+    GenerationOptions options,
+    std::function<void(GenerationEvent)> on_event) {
+  auto text = std::make_shared<detail::TextRequest>();
+  text->input = std::move(prompt);
+  text->options = std::move(options);
+  // Unlike move, swap leaves no inline callable copy in the incoming sink.
+  text->sink.swap(on_event);
+  detail::GenerationRequest request;
+  request.key = std::move(key);
+  return impl_->submit(std::move(request), std::move(text));
+}
 
 ServingRuntime::~ServingRuntime() {
   shutdown();
