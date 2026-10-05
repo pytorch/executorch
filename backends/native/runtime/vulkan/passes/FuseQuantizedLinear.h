@@ -27,7 +27,7 @@ enum class Q4ConstantTransformKind {
 struct Q4ConstantTransform {
   Q4ConstantTransformKind kind;
   ValueId source_id;
-  ValueId zero_points_id = kInvalid;
+  ValueId zero_points_id = kInvalid; // kInvalid for symmetric weights
   int64_t group_size = 0;
 };
 
@@ -47,9 +47,12 @@ std::vector<int32_t> q4_group_sums(
     std::span<const uint8_t> weight,
     const Q4GroupSumsLayout& layout);
 
-// Rewrites portable torchao q8-dynamic/q4-weight linear patterns into the
-// Native-VK runtime kernel. This runs after PTN deserialization; PTNs therefore
-// contain neither et_vk operators nor Vulkan AOT transformations.
+// Rewrites aten.linear over a q4 weight into a Native-VK runtime kernel. The
+// weight is either a torchao dequantize_affine output or a constant carrying
+// AffineGroupQuant read directly. A torchao q8 dynamic activation selects
+// linear_dq8ca_q4gsw, and a floating-point activation linear_q4gsw. This runs
+// after PTN deserialization; PTNs therefore contain neither et_vk operators nor
+// Vulkan AOT transformations.
 size_t fuse_quantized_linears(Method& method);
 
 } // namespace ptn::vulkan
