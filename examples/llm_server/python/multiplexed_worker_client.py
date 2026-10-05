@@ -32,6 +32,30 @@ from .worker_client import (
 logger = logging.getLogger(__name__)
 _MAX_REQUEST_BYTES = 1024 * 1024
 _MAX_MESSAGE_BYTES = 1024 * 1024
+_INT32_MAX = 2**31 - 1
+_INT64_MIN = -(2**63)
+
+
+def _validate_wire_values(value):
+    # JSON permits escaped surrogates and arbitrary integers that the native
+    # parser cannot represent. Check keys and nested values, not just prompts.
+    if isinstance(value, str):
+        value.encode("utf-8")
+    elif isinstance(value, int):
+        if not _INT64_MIN <= value <= _UINT64_MAX:
+            raise ValueError("worker JSON integer is outside [INT64_MIN, UINT64_MAX]")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _validate_wire_values(key)
+            _validate_wire_values(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _validate_wire_values(item)
+
+
+def _validate_integer(value, name, low, high):
+    if type(value) is not int or not low <= value <= high:
+        raise ValueError(f"{name} must be an integer in [{low}, {high}]")
 
 
 def _validate_limits(**limits):
@@ -422,9 +446,28 @@ class MultiplexedWorkerClient:
 
     @staticmethod
     def _encode_request(request):
-        payload = (
-            json.dumps(request, allow_nan=False, ensure_ascii=True) + "\n"
-        ).encode("utf-8")
+        try:
+            _validate_wire_values(request)
+            for name, low, high in (
+                ("max_new_tokens", -1, _INT32_MAX),
+                ("top_k", 0, _INT32_MAX),
+                ("seed", 0, _UINT64_MAX),
+            ):
+                if name in request:
+                    _validate_integer(request[name], name, low, high)
+            for segment in request.get("prompt_segments", ()):
+                if isinstance(segment, dict) and isinstance(
+                    segment.get("ids"), (list, tuple)
+                ):
+                    for token in segment["ids"]:
+                        _validate_integer(token, "token ID", 0, _UINT64_MAX)
+            payload = (
+                json.dumps(request, allow_nan=False, ensure_ascii=True) + "\n"
+            ).encode("utf-8")
+        except (TypeError, ValueError, RecursionError) as error:
+            raise WorkerError(
+                f"invalid worker request: {error}", code="invalid_argument"
+            ) from error
         if len(payload) > _MAX_REQUEST_BYTES:
             raise WorkerError(
                 "worker request exceeds the 1 MiB frame limit", code="invalid_argument"

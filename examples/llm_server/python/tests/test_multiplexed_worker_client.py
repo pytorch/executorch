@@ -1244,6 +1244,127 @@ def test_oversized_payload_releases_only_its_reservation(reserved, field):
     _run(scenario())
 
 
+_INVALID_NATIVE_INPUTS = (
+    [
+        pytest.param("\ud800", {}, id="prompt-high-surrogate"),
+        pytest.param("\udfff", {}, id="prompt-low-surrogate"),
+        pytest.param("hi", {"stop": ["end\ud800"]}, id="stop-surrogate"),
+        pytest.param("hi", {"session_id": "s\udfff"}, id="session-surrogate"),
+        pytest.param(
+            "hi", {"prompt_segments": [{"text": "\ud800"}]}, id="segment-surrogate"
+        ),
+        pytest.param(
+            "hi", {"prompt_segments": [{"\ud800": "text"}]}, id="key-surrogate"
+        ),
+        pytest.param("hi", {"temperature": 10**400}, id="numeric-parser-overflow"),
+        pytest.param("hi", {"temperature": -(10**400)}, id="negative-parser-overflow"),
+    ]
+    + [
+        pytest.param("hi", {field: value}, id=f"{field}-{name}")
+        for field, low, high in (
+            ("max_new_tokens", -1, 2**31 - 1),
+            ("top_k", 0, 2**31 - 1),
+            ("seed", 0, _UINT64_MAX),
+        )
+        for name, value in (
+            ("below-min", low - 1),
+            ("above-max", high + 1),
+            ("huge", 10**400),
+            ("bool", True),
+            ("float", 1.5),
+        )
+    ]
+    + [
+        pytest.param("hi", {"prompt_segments": [{"ids": [value]}]}, id=f"token-{name}")
+        for name, value in (
+            ("negative", -1),
+            ("overflow", _UINT64_MAX + 1),
+            ("huge", 10**400),
+            ("bool", True),
+            ("float", 1.5),
+        )
+    ]
+)
+
+
+@pytest.mark.parametrize("reserved", [False, True])
+@pytest.mark.parametrize("prompt,config", _INVALID_NATIVE_INPUTS)
+def test_invalid_native_input_never_reaches_peer_and_releases_reservation(
+    reserved, prompt, config
+):
+    async def scenario():
+        async with _fake_client(max_inflight_requests=2) as (client, proc):
+            peer = client.generate("peer", SimpleNamespace())
+            await proc.stdin.frames.get()
+            request_id = client.reserve_request() if reserved else None
+            waiter = None
+            if reserved:
+                waiter = asyncio.create_task(client.wait_for_request(request_id))
+                await asyncio.sleep(0)
+            with pytest.raises(WorkerError) as error:
+                client.generate(prompt, SimpleNamespace(**config), request_id)
+            assert error.value.code == "invalid_argument"
+            if waiter is not None:
+                await waiter
+            assert list(client._requests) == [peer.request_id]
+            assert not client._writes and not client._controls
+            assert len(proc.stdin.written) == 1
+            replacement = client.generate("valid", SimpleNamespace())
+            request = await proc.stdin.frames.get()
+            assert request["prompt"] == "valid"
+            proc.send(peer.request_id, token="peer survived")
+            proc.send(peer.request_id, done=True, completion_tokens=1)
+            proc.send(replacement.request_id, token="valid survived")
+            proc.send(replacement.request_id, done=True, completion_tokens=1)
+            assert await _collect(peer) == ["peer survived"]
+            assert await _collect(replacement) == ["valid survived"]
+            assert (await peer.wait()).num_generated_tokens == 1
+            assert (await replacement.wait()).num_generated_tokens == 1
+            assert client.healthy and not client._requests
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("session_id", ["\ud800", "\udfff"])
+def test_invalid_unicode_lifecycle_is_request_local(session_id):
+    async def scenario():
+        async with _fake_client(max_inflight_requests=1) as (client, proc):
+            for operation in (
+                client.open_session,
+                client.reset_session,
+                client.close_session,
+            ):
+                with pytest.raises(WorkerError) as error:
+                    await operation(session_id)
+                assert error.value.code == "invalid_argument"
+                assert not client._requests and not client._writes
+                assert not proc.stdin.written
+            await _barrier(client, proc)
+            assert client.healthy
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("max_new_tokens", [-1, 0, 2**31 - 1])
+def test_native_integer_boundaries_and_valid_unicode_are_preserved(max_new_tokens):
+    request = {
+        "op": "generate",
+        "request_id": _UINT64_MAX,
+        "session_id": "session\U0001f600",
+        "prompt_segments": [
+            {"text": "\u00e9\U0001f600\\ud800"},
+            {"ids": [0, 2**63, _UINT64_MAX]},
+        ],
+        "max_new_tokens": max_new_tokens,
+        "top_k": 2**31 - 1,
+        "seed": _UINT64_MAX,
+        "stop": ["\u7d42"],
+    }
+    encoded = MultiplexedWorkerClient._encode_request(request)
+    assert json.loads(encoded) == request
+    assert encoded.endswith(b"\n")
+
+
 @pytest.mark.parametrize("payload", ["object", "nan", "infinity", "bad_stop"])
 def test_unserializable_and_nonfinite_payloads_are_request_local(payload):
     async def scenario():

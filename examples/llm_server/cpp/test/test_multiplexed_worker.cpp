@@ -1175,4 +1175,39 @@ TEST_F(ProtocolTest, OperationCapacityReservesCancellationResponses) {
   EXPECT_TRUE(done.value("cancelled", false));
   EXPECT_EQ(finish(), 0);
 }
+// Subprocess mode for Python validation regressions. The inherited socket is
+// separate from JSONL: 'A' witnesses active execution, and 'R' releases it.
+int run_validation_worker(int gate_fd) {
+  signal(SIGPIPE, SIG_IGN);
+  Tokenizer tokenizer;
+  Executor executor;
+  executor.before_execute = [gate_fd](std::size_t call) {
+    if (call != 1)
+      return;
+    pollfd gate{gate_fd, POLLIN, 0};
+    char release = 0;
+    if (write(gate_fd, "A", 1) != 1 || poll(&gate, 1, 10000) <= 0 ||
+        read(gate_fd, &release, 1) != 1 || release != 'R') {
+      std::_Exit(2);
+    }
+  };
+  serving::ServingRuntimeConfig config;
+  config.max_sessions = 4;
+  config.max_context_length = 128;
+  serving::ServingRuntime runtime(
+      executor,
+      batching::DecodeFirstScheduler::create(16, 8, 8),
+      tokenizer,
+      config);
+  return executorch::examples::llm_server::run_multiplexed_worker(
+      runtime, STDIN_FILENO, STDOUT_FILENO);
+}
 } // namespace
+
+int main(int argc, char** argv) {
+  if (argc == 3 && std::string(argv[1]) == "--validation-worker") {
+    return run_validation_worker(std::stoi(argv[2]));
+  }
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
