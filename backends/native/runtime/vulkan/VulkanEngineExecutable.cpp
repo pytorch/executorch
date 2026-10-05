@@ -193,6 +193,28 @@ bool is_width_packed_op(std::string_view key) {
   return std::ranges::find(kOps, key) != kOps.end();
 }
 
+// Ops whose activation input is converted to the storage of their output.
+bool converts_activation_storage(std::string_view key) {
+  return key == "aten.linear.default" ||
+      key == "et_vk.linear_dq8ca_q4gsw.default" ||
+      key == "et_vk.linear_q4gsw.default" ||
+      key == "et_vk.apply_rotary_emb_hf.default" ||
+      key == "llama.custom_sdpa.default";
+}
+
+// Which inputs of a converts_activation_storage op take its output storage.
+// Only activation tensors are converted: dispatch leaves constants, such as the
+// rotary cos and sin tables, in their own storage.
+bool is_activation_input(std::string_view key, std::string_view input) {
+  if (key == "et_vk.apply_rotary_emb_hf.default") {
+    return true;
+  }
+  if (key == "llama.custom_sdpa.default") {
+    return input == "query";
+  }
+  return input == "input";
+}
+
 bool preserves_packed_layout(std::string_view key) {
   constexpr std::array<std::string_view, 5> kOps{
       "aten._to_copy.default",
@@ -723,6 +745,43 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return g().value(id).tensor_meta();
   }
 
+  // ET-VK checks the padded [H, S, C] attention weights against
+  // max_buffer_numel(), which is a byte limit, and shrinks S instead of
+  // failing. Only choose buffer when they fit in bytes.
+  bool buffer_attention_fits(const Node& n) {
+    const std::string key = registry_key(n.target);
+    if (key != "llama.custom_sdpa.default") {
+      return false;
+    }
+    const auto tensor_input = [&](std::string_view name) -> const TensorMeta* {
+      const auto it =
+          std::ranges::find_if(n.inputs, [&](const NamedArgument& na) {
+            return na.name == name && na.arg.kind() == ArgKind::Tensor &&
+                valid(na.arg.as_tensor().id);
+          });
+      return it == n.inputs.end()
+          ? nullptr
+          : &g().value(it->arg.as_tensor().id).tensor_meta();
+    };
+    const TensorMeta* query = tensor_input("query");
+    const TensorMeta* cache = tensor_input("key");
+    if (query == nullptr || cache == nullptr || query->sizes.size() != 4 ||
+        cache->sizes.size() != 4) {
+      return false;
+    }
+    const auto align4 = [](int64_t v) { return (v + 3) / 4 * 4; };
+    const int64_t limit = graph_->max_buffer_numel();
+    const int64_t elem = static_cast<int64_t>(element_size(query->dtype));
+    int64_t weights = 0;
+    if (__builtin_mul_overflow(
+            query->sizes[2] * align4(query->sizes[1]),
+            align4(cache->sizes[1]) * elem,
+            &weights)) {
+      return false;
+    }
+    return weights < limit;
+  }
+
   void assign_layouts() {
     layout_.assign(g().values.size(), utils::kChannelsPacked);
     storage_.assign(g().values.size(), utils::kTexture3D);
@@ -789,6 +848,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
           storage_at(output_id) = utils::kBuffer;
         }
       });
+    }
+
+    // SDPA stores attention weights in the query's storage. For compatible
+    // shapes, use buffer storage and convert the query to the output's storage.
+    for (const NodeId nid : nodes_) {
+      const Node& n = g().node(nid);
+      if (n.is_call() && buffer_attention_fits(n)) {
+        for_each_output_value(n, [&](ValueId output_id) {
+          storage_at(output_id) = utils::kBuffer;
+        });
+      }
     }
 
     bool changed;
@@ -1521,10 +1591,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
     const bool width = is_width_packed_op(key);
     std::optional<utils::StorageType> activation_storage;
-    if (key == "aten.linear.default" ||
-        key == "et_vk.linear_dq8ca_q4gsw.default" ||
-        key == "et_vk.linear_q4gsw.default" ||
-        key == "et_vk.apply_rotary_emb_hf.default") {
+    if (converts_activation_storage(key)) {
       const auto output =
           std::ranges::find_if(n.outputs, [this](const Output& candidate) {
             return valid(candidate.value_id) &&
@@ -1551,8 +1618,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
           const bool activation = v.role == ValueRole::Intermediate ||
               v.role == ValueRole::UserInput;
           const bool storage_mismatch = activation_storage.has_value() &&
-              (key == "et_vk.apply_rotary_emb_hf.default" ||
-               na.name == "input") &&
+              is_activation_input(key, na.name) &&
               storage_at(value_id) != *activation_storage;
           if (activation &&
               (layout_at(value_id) != utils::kWidthPacked ||
