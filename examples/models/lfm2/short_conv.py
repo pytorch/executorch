@@ -63,10 +63,9 @@ class ShortConv(nn.Module):
         Bx = B * x  # (batch_size, dim, seq_len)
 
         ## This is where we handle padding
-        ## By default, the conv_state is initialized to 0.
-        #  So, assuming prefill is done on an empty cache, concatenating conv_state to the beginning of the sequence acts similary to
-        ## using nn.Conv1d(padding=L_cache-1) (for prefill) without no manual padding.
-        ## However, the manual padding has the added benefit of being correct during decode, when the cache is not initialized to 0.
+        ## conv_state is zero at the start of a sequence (_maybe_reset_state), so for prefill, concatenating it to the
+        ## beginning of the sequence provides L_cache-1 zeros of causal left padding.
+        ## During decode it holds the previous inputs instead, which plain padding could not provide.
         Bx = torch.cat(
             [self.conv_state, Bx], dim=-1
         )  # (batch_size, dim, seq_len + L_cache - 1)
