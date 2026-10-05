@@ -119,10 +119,13 @@ advanced inputs.
 |---|---|---|
 | Target | CUDA | `embed_text`, `forward_from_embeddings`, `decode_from_embedding` |
 | Target | MLX | `embed_text`, `forward_from_embeddings` |
-| DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill` |
+| DFlash | CUDA | `target_forward_from_embeddings`, `target_prefill_from_embeddings`, `embed_text`, `draft_forward`, `draft_prefill`, `dflash_sample_tokens`, `dflash_verify_speculative` |
 | DFlash | MLX | `target_forward_from_embeddings`, `embed_text`, `draft_forward` |
 
-Vision adds `vision_encoder` to each method set.
+Vision adds `vision_encoder` to each method set. CUDA DFlash samples draft
+proposals, verifies them, and samples corrections through its two
+`dflash_*` methods, so vocabulary-wide logits and probabilities stay on the
+device; MLX DFlash samples on the host.
 
 ## Build the runners
 
@@ -243,10 +246,17 @@ The model id must match `--model-id`. The `compat` entries:
 - `supportsDeveloperRole` — the template renders no `developer` turn, so pi's
   system prompt is otherwise dropped silently.
 - `supportsReasoningEffort` — the server rejects `reasoning_effort` with a 400.
-- `return_reasoning` — returns the `to=self` channel as `reasoning_content`.
+- `return_reasoning` — defaults to `true`, returning the `to=self` channel as
+  `reasoning_content` (or `delta.reasoning_content` when streaming). Set
+  `"chatTemplateKwargs": { "return_reasoning": false }` to omit it. This only
+  controls the response; the model still computes reasoning.
 - `sendSessionAffinityHeaders` — optional, for per-conversation sessions; needs
   `--max-sessions` above 1.
 
 Set `contextWindow` to the export's context length (`128K` is 131072) and pass
 the same value as `--max-context`. Add `"input": ["text", "image"]` for a vision
 export.
+
+For direct HTTP requests, the opt-out is
+`"chat_template_kwargs": { "return_reasoning": false }`. The flag must be a JSON
+boolean; strings, numbers, and `null` return a 400 error.

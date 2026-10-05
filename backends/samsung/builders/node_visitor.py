@@ -60,7 +60,7 @@ class NodeVisitor:
                 tensor = torch.swapdims(tensor, 0, 1)
             if not isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
                 # .numpy() is not supported for tensor subclasses if the tensor is a fake tensor.
-                const_data = tensor.contiguous().detach().numpy()
+                const_data = tensor.contiguous().cpu().detach().numpy()
 
         dims = [1] if len(tensor.size()) == 0 else list(tensor.size())
 

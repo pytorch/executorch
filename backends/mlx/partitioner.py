@@ -23,6 +23,9 @@ import torch
 from executorch.backends.mlx._logging import logger
 from executorch.backends.mlx._memprofile import mem_phase
 from executorch.backends.mlx.preprocess import MLXBackend
+from executorch.backends.transforms.normalize_sdpa_input_rank import (
+    NormalizeSDPAInputRankPass,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -33,6 +36,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
+from executorch.exir.pass_manager import ExportedProgramPassManager
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -109,6 +113,35 @@ class MLXPartitioner(Partitioner):
             Tuple["weakref.ReferenceType[ExportedProgram]", List[torch._ops.OpOverload]]
             | None
         ) = None
+
+    def transform_for_pre_decomposition(
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
+        """Normalize symbolic ops and SDPA ranks before deciding which ops to preserve."""
+        from executorch.exir.dialects.edge._ops import EdgeOpOverload
+        from executorch.exir.passes.executorch_prim_ops_registry import (
+            _EXECUTORCH_SYM_OPS,
+        )
+
+        # Exporters may wrap symbolic primitives before this ATen-stage validation.
+        for module in exported_program.graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+            modified = False
+            for node in module.graph.nodes:
+                if (
+                    node.op == "call_function"
+                    and isinstance(node.target, EdgeOpOverload)
+                    and node.target in _EXECUTORCH_SYM_OPS
+                ):
+                    node.target = node.target._op
+                    modified = True
+            if modified:
+                module.recompile()
+
+        return ExportedProgramPassManager([NormalizeSDPAInputRankPass()])(
+            exported_program
+        ).exported_program
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram

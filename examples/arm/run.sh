@@ -45,8 +45,9 @@ scratch_dir_set=false
 toolchain="arm-none-eabi-gcc"
 select_ops_list="aten::_softmax.out"
 select_ops_list_overridden=false
-qdq_fusion_op=false
 model_explorer=false
+model_explorer_dir=""
+model_explorer_pythonpath=""
 perf_overlay=false
 visualize_tosa=false
 visualize_pte=false
@@ -88,7 +89,6 @@ function help() {
     echo "  --specify_ethosu_scratch               Use actual Ethos-U scratch size for given model to size temp allocator"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scratch dir if you not using default ${arm_scratch_dir}"
-    echo "  --qdq_fusion_op                        Enable QDQ fusion op"
     echo "  --model_explorer                       Enable model explorer to visualize a TOSA or PTE model graph."
     echo "  --visualize_pte                        With --model_explorer, visualize PTE flatbuffer model and delegates. Cannot be used with --visualize_tosa"
     echo "                                            NOTE: If PTE contains an Ethos-U delegate, the Ethos-U subgraph will be visualized if aot_arm_compiler_flags includes -i for TOSA dumps."
@@ -125,7 +125,6 @@ for arg in "$@"; do
       --specify_ethosu_scratch) specify_ethosu_scratch=true ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) arm_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
-      --qdq_fusion_op) qdq_fusion_op=true;;
       --model_explorer) model_explorer=true ;;
       --perf_overlay) perf_overlay=true ;;
       --visualize_tosa) visualize_tosa=true ;;
@@ -149,6 +148,26 @@ if [ "$perf_overlay" = true ] && [ "$visualize_tosa" != true ]; then
     exit 1
 fi
 
+if [[ "$model_explorer" != true && ("$visualize_tosa" = true || "$visualize_pte" = true) ]]; then
+    echo "Error: --visualize_tosa and --visualize_pte require --model_explorer" >&2
+    exit 1
+fi
+
+if [[ "$model_explorer" = true && "$visualize_tosa" = "$visualize_pte" ]]; then
+    echo "Error: --model_explorer requires exactly one of --visualize_tosa or --visualize_pte" >&2
+    exit 1
+fi
+
+if [[ "$perf_overlay" = true && "$visualize_tosa" != true ]]; then
+    echo "Error: --perf_overlay requires --visualize_tosa" >&2
+    exit 1
+fi
+
+if [[ "$perf_overlay" = true && ${target} != ethos-u* ]]; then
+    echo "Error: --perf_overlay requires an Ethos-U target" >&2
+    exit 1
+fi
+
 # Cortex-M backend is an operator-library, not a delegate; force-disable
 # --delegate when targeting cortex-m so users don't need --no_delegate.
 if [[ ${target} == cortex-m* ]]; then
@@ -168,10 +187,6 @@ arm_scratch_dir=$(realpath "${arm_scratch_dir}")
 ethos_u_root_dir="${arm_scratch_dir}/ethos-u"
 mkdir -p "${ethos_u_root_dir}"
 ethos_u_root_dir=$(realpath "${ethos_u_root_dir}")
-cmsis_nn_local_path=""
-if [[ -d "${ethos_u_root_dir}/core_software/cmsis-nn" ]]; then
-    cmsis_nn_local_path=$(realpath "${ethos_u_root_dir}/core_software/cmsis-nn")
-fi
 setup_path_script=${arm_scratch_dir}/setup_path.sh
 _setup_msg="please refer to ${script_dir}/setup.sh to properly install necessary tools."
 
@@ -335,9 +350,6 @@ configure_runner_build_dir() {
         -DETHOS_SDK_PATH:PATH="${ethos_u_root_dir}"
         -DEXECUTORCH_SELECT_OPS_LIST="${select_ops_list}"
     )
-    if [[ -n "${cmsis_nn_local_path}" ]]; then
-        cmake_cmd+=(-DCMSIS_NN_LOCAL_PATH:PATH="${cmsis_nn_local_path}")
-    fi
     cmake_cmd+=(-DET_PTE_FILE_PATH:PATH="${pte_source}")
     if [[ "${pte_placement}" == "elf" ]]; then
         cmake_cmd+=(-DET_MODEL_PTE_ADDR=)
@@ -608,8 +620,12 @@ EOF
 #######
 if ! check_setup; then
     if [ "$scratch_dir_set" = false ] ; then
+	setup_cmd=("${script_dir}/setup.sh")
+	if [[ "$model_explorer" = true ]]; then
+	    setup_cmd+=(--enable-model-explorer)
+	fi
 	# check setup failed, no scratchdir given as parameter. trying to run setup.sh
-	if ${script_dir}/setup.sh; then
+	if "${setup_cmd[@]}"; then
 	    # and recheck setup. If this fails exit.
 	    if ! check_setup; then
 		exit 1
@@ -621,21 +637,48 @@ if ! check_setup; then
     fi
 fi
 
+if [[ "$model_explorer" = true ]]; then
+    model_explorer_dir="${arm_scratch_dir}/model-explorer"
+    if [[ ! -f "${model_explorer_dir}/.python-version" ]]; then
+        echo "Error: Model Explorer dependencies not found at ${model_explorer_dir}." >&2
+        echo "Rerun setup.sh with --enable-model-explorer and a matching --root-dir." >&2
+        exit 1
+    fi
+
+    IFS= read -r model_explorer_python_version < "${model_explorer_dir}/.python-version"
+    if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')" \
+          != "${model_explorer_python_version}" ]]; then
+        echo "Error: Model Explorer was installed for Python ${model_explorer_python_version}." >&2
+        echo "Activate a matching Python environment or rerun setup.sh with --enable-model-explorer." >&2
+        exit 1
+    fi
+
+    model_explorer_pythonpath="${model_explorer_dir}"
+    if [[ -n "${PYTHONPATH:-}" ]]; then
+        model_explorer_pythonpath="${model_explorer_pythonpath}:${PYTHONPATH}"
+    fi
+    model_explorer_adapter="tosa_adapter_model_explorer.main"
+    if [[ "$visualize_pte" = true ]]; then
+        model_explorer_adapter="pte_adapter_model_explorer.main"
+    fi
+    if ! PYTHONPATH="${model_explorer_pythonpath}" python3 -c \
+        'import importlib, sys; importlib.import_module(sys.argv[1])' "${model_explorer_adapter}"; then
+        echo "Error: The Model Explorer installation failed its import check." >&2
+        echo "Rerun setup.sh with --enable-model-explorer and a matching --root-dir." >&2
+        exit 1
+    fi
+fi
+
 cd "${et_root_dir}"
 
 bundleio_flag=""
 etrecord_flag_template=""
-qdq_fusion_op_flag=""
 if [ "$build_with_etdump" = true ] ; then
     etrecord_flag_template="--etrecord"
 fi
 
 if [ "$bundleio" = true ] ; then
     bundleio_flag="--bundleio"
-fi
-
-if [ "$qdq_fusion_op" = true ] ; then
-    qdq_fusion_op_flag="--enable_qdq_fusion_pass"
 fi
 
 if [[ "${auto_configure}" == true ]]; then
@@ -689,6 +732,29 @@ configure_ethosu_scratch_if_requested() {
     cmake_cmd+=("-DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${scratch_size}")
     echo "[run.sh] Updating scratch allocator size to ${scratch_size}"
     "${cmake_cmd[@]}"
+}
+
+visualize_model() {
+    if [[ "$model_explorer" != true ]]; then
+        return
+    fi
+
+    local model_explorer_args=(--model_dir "${output_folder}")
+    if [[ "$visualize_tosa" = true ]]; then
+        model_explorer_args+=(--tosa)
+    else
+        model_explorer_args+=(--pte)
+    fi
+    if [[ "$perf_overlay" = true ]]; then
+        model_explorer_args+=(
+            --trace "${output_folder}/pmu_trace.gz"
+            --tables "${output_folder}/output/out_debug.xml"
+        )
+    fi
+
+    PYTHONPATH="${model_explorer_pythonpath}" \
+        python3 "${script_dir}/visualize.py" \
+        "${model_explorer_args[@]}"
 }
 
 if [[ -z "$model_name" ]]; then
@@ -763,7 +829,7 @@ for i in "${!test_model[@]}"; do
     fi
 
     model_etrecord_flag="${etrecord_flag_template}"
-    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${model_etrecord_flag} --config=${config} $qdq_fusion_op_flag"
+    ARM_AOT_CMD="python3 -m backends.arm.scripts.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${model_etrecord_flag} --config=${config}"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
@@ -781,6 +847,7 @@ for i in "${!test_model[@]}"; do
 
     if [[ ${target} == *"TOSA"*  ]]; then
         echo "Build for ${target} skip generating a .elf and running it"
+        visualize_model
         continue
     elif [[ ${target} == cortex-m*  ]]; then
         # Cortex-M backend uses a semihosting executor_runner (built by
@@ -843,23 +910,7 @@ for i in "${!test_model[@]}"; do
         fi
     fi
 
-    if [ "$model_explorer" = true ]; then
-        perf_flags=""
-        if [ "$perf_overlay" = true ]; then
-            perf_flags+=" --trace ${output_folder}/pmu_trace.gz --tables ${output_folder}/output/out_debug.xml"
-        fi
-
-        visualization_file=""
-        if [ "$visualize_tosa" = true ]; then
-            visualization_file+=" --tosa"
-        fi
-        if [ "$visualize_pte" = true ]; then
-            visualization_file+=" --pte"
-        fi
-
-        me_flags="${visualization_file} ${perf_flags}"
-        python3 ${script_dir}/visualize.py --model_dir ${output_folder} ${me_flags}
-    fi
+    visualize_model
 done
 
 exit 0

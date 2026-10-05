@@ -82,6 +82,7 @@ def define_arm_tests():
         "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
         "misc/test_vgf_check_env.py",
+        "misc/test_vulkan_validation_layer.py",
         "misc/test_vgf_backend.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
@@ -160,7 +161,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
             ] if runtime.is_oss else []) + ([
-                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
+                "//executorch/backends/arm/scripts/docgen:generate_op_support",
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",

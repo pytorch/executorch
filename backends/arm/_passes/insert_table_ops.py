@@ -9,7 +9,10 @@ from typing import Callable, cast, Dict, Iterator, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
-from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.arm_pass_utils import (
+    create_node,
+    POW_LOG_POSITIVE_LOWER_BOUND_META,
+)
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.transforms.utils import create_constant_placeholder
 
@@ -127,7 +130,7 @@ class TableOps:
                     # Op must be handled if it's inside self.special_ops
                     raise AssertionError("Unhandled table operation")
         else:
-            raise KeyError("Table op for {target} does not exist")
+            raise KeyError(f"Table op for {target} does not exist")
 
     @staticmethod
     def included_ops() -> Iterator[EdgeOpOverload]:
@@ -154,6 +157,54 @@ class InsertTableOpsPass(ArmPass):
     def register_buffer(self, buffer_name: str, buffer: torch.Tensor) -> None:
         """Add buffer to self.exported_program.state_dict."""
         self.exported_program.state_dict[buffer_name] = buffer
+
+    @staticmethod
+    def _validate_pow_log_positive_lower_bound(
+        node: Node, input_qargs: QuantArgs
+    ) -> None:
+        """Reject POW-generated LOG when quantization destroys positivity.
+
+        The POW decomposition proves positivity in the source floating-point
+        graph before observers run. Once the LOG input qparams are available,
+        verify that the proven lower bound is still strictly positive after the
+        exact QDQ mapping used by the backend.
+
+        """
+        custom_meta = node.meta.get("custom", {})
+        lower_bound = custom_meta.get(
+            POW_LOG_POSITIVE_LOWER_BOUND_META,
+            node.meta.get(POW_LOG_POSITIVE_LOWER_BOUND_META),
+        )
+        if lower_bound is None:
+            return
+
+        if isinstance(lower_bound, bool) or not isinstance(lower_bound, (int, float)):
+            raise RuntimeError(
+                "Invalid POW LOG positive lower-bound metadata: " f"{lower_bound!r}"
+            )
+
+        if input_qargs.per_channel:
+            raise RuntimeError(
+                "Tensor/Tensor POW LOG positivity validation requires "
+                "per-tensor activation quantization."
+            )
+
+        lower_bound_tensor = torch.tensor([float(lower_bound)], dtype=torch.float32)
+        quantized = input_qargs.quantize_value(lower_bound_tensor)
+        dequantized = input_qargs.dequantize_value(quantized)
+
+        if bool(torch.all(torch.isfinite(dequantized) & (dequantized > 0)).item()):
+            return
+
+        dequantized_lower_bound = float(dequantized.reshape(-1)[0].item())
+        raise RuntimeError(
+            "Unsafe Tensor/Tensor POW INT decomposition: the structurally "
+            f"proven positive base lower bound {float(lower_bound)} becomes "
+            f"{dequantized_lower_bound} after LOG input quantization "
+            f"(scale={input_qargs.get_scale_per_tensor()}, "
+            f"zero_point={input_qargs.get_zp_per_tensor()}). "
+            "LOG requires a strictly positive input."
+        )
 
     @staticmethod
     def _get_8bit_table_domain() -> torch.Tensor:
@@ -308,9 +359,11 @@ class InsertTableOpsPass(ArmPass):
                     )
 
                 # Generate table buffer and how much to lshift the table output.
+                input_qargs = input_qparams[0]
+                self._validate_pow_log_positive_lower_bound(node, input_qargs)
                 buffer, lshift = self.generate_table_values(
                     torch_op=self.table_ops[node],
-                    in_quantargs=input_qparams[0],
+                    in_quantargs=input_qargs,
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict

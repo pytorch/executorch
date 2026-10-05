@@ -280,12 +280,19 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
 
   void shutdown();
   std::future<std::optional<Session>> open_session_async();
+  std::future<std::optional<Session>> clone_async(
+      SessionId source,
+      Position upto);
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
       std::vector<Token> delta,
       GenConfig config,
       GenerationCallback on_update);
+
+  InitializationState initialization_state() const noexcept {
+    return initialization_state_.load(std::memory_order_acquire);
+  }
 
   // Engine-thread data, so only stable once that thread is joined.
   EngineMetrics metrics() const {
@@ -310,8 +317,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   };
 
   // Start-only data. The sampling policy is installed on the executor at
-  // admission and the scheduler tasks own the delta after submission, so
-  // neither belongs in an active Generation.
+  // admission. Scheduler tasks own the delta after submission.
   struct GenerationRequest {
     SessionId session = 0;
     std::shared_ptr<const std::vector<Token>> delta;
@@ -400,6 +406,12 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     SessionId session;
   };
 
+  struct CloneCommand {
+    SessionId source;
+    Position upto;
+    std::shared_ptr<std::promise<std::optional<Session>>> ack;
+  };
+
   struct StartCommand {
     GenerationRequest request;
   };
@@ -408,12 +420,14 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     std::optional<Generation> active_generation;
   };
 
-  using Command = std::variant<OpenCommand, CloseCommand, StartCommand>;
+  using Command =
+      std::variant<OpenCommand, CloseCommand, CloneCommand, StartCommand>;
 
   void run_();
   void process_pending_commands_();
   void process_command_(OpenCommand command);
   void process_command_(CloseCommand command);
+  void process_command_(CloneCommand command);
   void process_command_(StartCommand command);
   std::optional<RetiredSession> retire_session_(SessionId session);
   void reap_cancelled_();
@@ -500,6 +514,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::condition_variable stopped_cv_;
   std::vector<Command> inbox_;
   std::atomic<Lifecycle> lifecycle_{Lifecycle::Running};
+  std::atomic<InitializationState> initialization_state_{
+      InitializationState::Pending};
   bool join_in_progress_ = false;
   std::thread::id engine_thread_id_;
 
@@ -556,6 +572,35 @@ Position Session::position() const noexcept {
   return state_->status->position.load(std::memory_order_acquire);
 }
 
+std::future<std::optional<Session>> Session::clone_async(Position upto) const {
+  if (!valid()) {
+    std::promise<std::optional<Session>> ack;
+    auto future = ack.get_future();
+    ack.set_value(std::nullopt);
+    return future;
+  }
+  return state_->impl->clone_async(state_->session, upto);
+}
+
+std::function<std::future<std::optional<Session>>()>
+Session::make_clone_request(Position upto) const {
+  if (!state_) {
+    return {};
+  }
+  return [impl = state_->impl,
+          session = state_->session,
+          status = state_->status,
+          upto]() {
+    if (!status->open.load(std::memory_order_acquire)) {
+      std::promise<std::optional<Session>> ack;
+      auto future = ack.get_future();
+      ack.set_value(std::nullopt);
+      return future;
+    }
+    return impl->clone_async(session, upto);
+  };
+}
+
 GenerationHandle Session::generate_async(
     std::vector<Token> delta,
     GenConfig config,
@@ -595,6 +640,10 @@ Runner::~Runner() {
 
 void Runner::shutdown() {
   impl_->shutdown();
+}
+
+InitializationState Runner::initialization_state() const noexcept {
+  return impl_->initialization_state();
 }
 
 EngineMetrics Runner::metrics() const {
@@ -672,8 +721,21 @@ void RunnerImpl::run_() {
   // handed a session for an executor that did not come up, and so one-time
   // setup is not charged to whichever generation happened to go first.
   const MetricsTime init_start = MetricsClock::now();
-  const bool ready = executor_.initialize();
+  bool ready = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    ready = executor_.initialize();
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Use the same shutdown/drain path as an explicit initialization failure.
+  }
+#endif
   metrics_.init_us = us_between(init_start, MetricsClock::now());
+  // Publish the reason before a stopped Runner can refuse an open.
+  initialization_state_.store(
+      ready ? InitializationState::Ready : InitializationState::Failed,
+      std::memory_order_release);
   if (!ready) {
     // Stop without running work. The drain below still answers whatever was
     // queued while this was starting, so no caller is left waiting.
@@ -728,14 +790,16 @@ void RunnerImpl::run_() {
   }
 }
 
-// Ends generations cancelled since the last pass, before the next get_work()
-// can batch their waiting tasks.
+// Cancellation and logical closure take effect before get_work(), even when
+// their CloseCommand arrived while an earlier command was running.
 void RunnerImpl::reap_cancelled_() {
   std::vector<SessionId> doomed;
   for (const auto& entry : sessions_) {
     const std::optional<Generation>& generation =
         entry.second.active_generation;
-    if (generation && generation->state->cancelled.load()) {
+    if (generation &&
+        (generation->state->cancelled.load() ||
+         !entry.second.status->open.load(std::memory_order_acquire))) {
       doomed.push_back(entry.first);
     }
   }
@@ -755,6 +819,7 @@ void RunnerImpl::process_pending_commands_() {
         Overloaded{
             [this](OpenCommand& open) { process_command_(std::move(open)); },
             [this](CloseCommand& close) { process_command_(std::move(close)); },
+            [this](CloneCommand& clone) { process_command_(std::move(clone)); },
             [this](StartCommand& start) {
               process_command_(std::move(start));
             }},
@@ -810,6 +875,60 @@ void RunnerImpl::process_command_(CloseCommand command) {
         /*on_engine_thread=*/true);
   }
   executor_.close_session(command.session);
+}
+
+void RunnerImpl::process_command_(CloneCommand command) {
+  const auto source = sessions_.find(command.source);
+  // A later CloseCommand may already have cleared the public open flag. FIFO
+  // admission still gives this clone access until that command retires source.
+  if (!is_running_() || source == sessions_.end() || source->second.poisoned ||
+      command.upto < 0 || command.upto > source->second.position()) {
+    command.ack->set_value(std::nullopt);
+    return;
+  }
+
+  std::optional<SessionId> sid;
+  bool owned = false;
+  bool registered = false;
+  bool published = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    sid = executor_.clone(command.source, command.upto);
+    if (sid) {
+      owned = issued_session_ids_.count(*sid) == 0;
+      assert(owned && "Executor::clone must return lifetime-unique ids");
+      if (owned) {
+        issued_session_ids_.insert(*sid);
+        std::lock_guard<std::mutex> lock(control_mutex_);
+        if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+          auto status = std::make_shared<SessionStatus>();
+          status->position.store(command.upto, std::memory_order_relaxed);
+          SessionRecord record;
+          record.status = status;
+          sessions_.emplace(*sid, std::move(record));
+          registered = true;
+          command.ack->set_value(Session(std::make_unique<SessionState>(
+              shared_from_this(), *sid, std::move(status))));
+          published = true;
+        }
+      }
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Cloning is optional. A failed allocation or backend clone must not stop
+    // the engine or strand the caller's future.
+  }
+#endif
+  if (!published) {
+    if (registered) {
+      sessions_.erase(*sid);
+    }
+    if (owned) {
+      executor_.close_session(*sid);
+    }
+    command.ack->set_value(std::nullopt);
+  }
 }
 
 void RunnerImpl::process_command_(StartCommand command) {
@@ -1109,6 +1228,23 @@ std::future<std::optional<Session>> RunnerImpl::open_session_async() {
   return f;
 }
 
+std::future<std::optional<Session>> RunnerImpl::clone_async(
+    SessionId source,
+    Position upto) {
+  auto ack = std::make_shared<std::promise<std::optional<Session>>>();
+  auto future = ack->get_future();
+  {
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
+      ack->set_value(std::nullopt);
+      return future;
+    }
+    inbox_.emplace_back(CloneCommand{source, upto, std::move(ack)});
+  }
+  notify_engine_();
+  return future;
+}
+
 void RunnerImpl::request_close(SessionId session) noexcept {
   auto queue_close = [this, session] {
     {
@@ -1261,12 +1397,22 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   request.generation.m.n_prompt_tokens =
       static_cast<std::int64_t>(request.delta->size());
   auto delta = build_initial_delta_(request, record);
+  if (!is_running_() || !record.status->open.load(std::memory_order_acquire) ||
+      request.generation.state->cancelled.load()) {
+    complete_request_(
+        std::move(request),
+        TerminalOutcome::cancelled(),
+        /*on_engine_thread=*/true);
+    return;
+  }
   executor_.set_sampling(request.session, request.sampling, request.seed);
 
   bool installed = false;
   {
     std::lock_guard<std::mutex> lock(control_mutex_);
-    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running &&
+        record.status->open.load(std::memory_order_acquire) &&
+        !request.generation.state->cancelled.load()) {
       record.active_generation.emplace(std::move(request.generation));
       installed = true;
     }

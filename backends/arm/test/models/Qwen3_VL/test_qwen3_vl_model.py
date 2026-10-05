@@ -382,6 +382,7 @@ def test_qwen3_vl_text_model_tosa_mxfp8_bf16():
 
 @pytest.mark.slow
 @pytest.mark.xlarge
+@pytest.mark.timeout(3600)
 @common.parametrize("test_case", TOSA_FP_TEST_CASES)
 def test_qwen3_vl_2b_instruct_full_models_tosa_FP_bf16(
     test_case: Qwen3VLModelTestCase,
@@ -407,6 +408,7 @@ def test_qwen3_vl_2b_instruct_full_models_vgf_no_quant_bf16(
 
 @pytest.mark.slow
 @pytest.mark.xlarge
+@pytest.mark.timeout(3600)
 def test_qwen3_vl_2b_instruct_text_model_tosa_mxfp8_bf16():
     _test_qwen3_vl_text_model_tosa_mxfp8_bf16(
         _make_qwen3_vl_2b_instruct_layer_config,

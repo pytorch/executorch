@@ -162,8 +162,9 @@ _COREML_SYMBOLS = (
     "executorch::backends::coreml::CoreMLBackendDelegate::get_registered_delegate()",
 )
 
-# A representative symbol from the TorchAO kernels. These are Apple Silicon only, so
-# most wheels ship no such library and the row below is not required.
+# A representative symbol from the TorchAO kernels. Built on every aarch64 wheel, macOS
+# and Linux alike, since the kernels target NEON rather than a particular operating
+# system. The x86 and Windows wheels ship no such library.
 _TORCHAO_KERNEL_SYMBOLS = ("torchao::quantization::get_qvals_range",)
 
 # A representative symbol from the profiler. A second definer means two event
@@ -888,6 +889,11 @@ _REQUIRED_ON_MACOS = "macos-only"
 # library and demanding it there would fail a wheel that is correct. Reusing the
 # Linux-wide marker would do exactly that.
 _REQUIRED_ON_LINUX_X86 = "linux-x86-only"
+# Marker for a row whose owner every aarch64 wheel carries, macOS and Linux alike. The
+# TorchAO kernels are selected by the processor rather than the operating system, so
+# neither the macOS nor the Linux marker describes them and a fixed False would let a
+# wheel that silently dropped the library pass.
+_REQUIRED_ON_AARCH64 = "aarch64-only"
 
 
 def _resolve_required(required):
@@ -900,6 +906,8 @@ def _resolve_required(required):
         return sys.platform == "darwin"
     if required == _REQUIRED_ON_LINUX_X86:
         return sys.platform == "linux" and platform.machine() in ("x86_64", "amd64")
+    if required == _REQUIRED_ON_AARCH64:
+        return platform.machine() in ("aarch64", "arm64")
     return required
 
 
@@ -989,11 +997,14 @@ _OWNED_COMPONENTS = (
         _library_file_name("libexecutorch_kernels_quantized"),
         True,
     ),
+    # Required on every aarch64 wheel, where the kernels are built for both macOS and
+    # Linux, so a wheel that silently dropped the library fails here. Not built on x86
+    # or Windows, where the row resolves to not-required and skips.
     (
         "set of TorchAO kernels",
         _TORCHAO_KERNEL_SYMBOLS,
         _library_file_name("libexecutorch_kernels_torchao"),
-        False,
+        _REQUIRED_ON_AARCH64,
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
     # which is decided at check time rather than here: a fixed False meant a wheel

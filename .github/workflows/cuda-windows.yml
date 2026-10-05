@@ -27,6 +27,10 @@ permissions:
   contents: read
 
 jobs:
+  docker-image:
+    name: Resolve CI docker image
+    uses: ./.github/workflows/_docker-image.yml
+
   changed-files:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
@@ -44,7 +48,7 @@ jobs:
     # filter so push commits that don't touch CUDA-relevant paths skip
     # this job on non-sampled commits. See _ci-run-decision.yml for
     # the sampling policy.
-    needs: [changed-files, run-decision]
+    needs: [docker-image, changed-files, run-decision]
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (
@@ -54,7 +58,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
     permissions:
       id-token: write
       contents: read
@@ -89,10 +93,10 @@ jobs:
     with:
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.g5.4xlarge.nvidia.gpu
+      runner: mt-l-x86aavx2-11-41-a10g
       gpu-arch-type: cuda
       gpu-arch-version: "13.0"
-      docker-image: ci-image:executorch-ubuntu-22.04-cuda-windows
+      docker-image: ${{ needs.docker-image.outputs.docker-registry }}/ci-image:executorch-ubuntu-22.04-cuda-windows-${{ needs.docker-image.outputs.ci-docker-hash }}
       submodules: recursive
       upload-artifact: ${{ matrix.model_repo }}-${{ matrix.model_name }}-cuda-windows-${{ matrix.quant }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -218,3 +222,27 @@ jobs:
 
           .ci/scripts/test_model_e2e_windows.ps1 -Device cuda-windows -HfModel '${{ matrix.model_repo }}/${{ matrix.model_name }}' -QuantName '${{ matrix.quant }}' -ModelDir \$artifactDir -ExpectedCudaVersion '13.0'
         }"
+
+  delete-model-cuda-windows-artifacts:
+    name: delete-model-cuda-windows-artifacts
+    # The exports exist only to hand the models to the Windows job above, about
+    # 18 GB per run, and GitHub bills artifact storage by the hour, so delete
+    # them as soon as the tests have consumed them instead of keeping them for
+    # the repository retention window. They are kept when a test fails so that
+    # "Re-run failed jobs" and debugging still have them; those expire with the
+    # retention window.
+    needs: [export-model-cuda-windows-artifact, test-model-cuda-windows-e2e]
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: write
+    steps:
+      - name: Delete the exported models
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+            --jq '.artifacts[] | select(.name | test("-cuda-windows-")) | "\(.id) \(.name)"' |
+          while read -r id name; do
+            echo "Deleting ${name} (${id})"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${id}"
+          done
