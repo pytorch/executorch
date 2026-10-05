@@ -51,6 +51,15 @@ def _vulkan_graphs(edge):
     ]
 
 
+class ConstantMask(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("mask", torch.arange(21).reshape(3, 7) % 2 == 0)
+
+    def forward(self, x):
+        return torch.where(self.mask, x, -x)
+
+
 class TestVulkanDynamic(unittest.TestCase):
     def _lower(
         self,
@@ -165,6 +174,39 @@ class TestVulkanDynamic(unittest.TestCase):
                         x = torch.linspace(-6, 6, math.prod(shape)).reshape(shape)
                         edge = self._lower(model, (x,), storage=storage)
                         self._run(edge, model, [(x,)], atol=5e-6, rtol=5e-6)
+
+    def test_dynamic_logical_not(self):
+        class LogicalNot(torch.nn.Module):
+            def forward(self, x):
+                return torch.logical_not(x)
+
+        model = LogicalNot()
+        inputs = [
+            ((torch.arange(3 * s).reshape(3, s) % 3 == 0),) for s in (7, 2, 15, 3, 7)
+        ]
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                edge = self._lower(
+                    model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
+                )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_constant_bool_mask(self):
+        model = ConstantMask()
+        inputs = [(torch.linspace(-1, 1, 21).reshape(3, 7),)]
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                edge = self._lower(model, inputs[0], storage=storage)
+                self.assertTrue(
+                    any(
+                        isinstance(value.value, VkTensor)
+                        and value.value.constant_id >= 0
+                        and value.value.datatype == VkDataType.BOOL
+                        for graph in _vulkan_graphs(edge)
+                        for value in graph.values
+                    )
+                )
+                self._run(edge, model, inputs, atol=0, rtol=0)
 
     def test_4d_reductions(self):
         class Reduce(torch.nn.Module):
@@ -418,6 +460,27 @@ class TestVulkanDynamic(unittest.TestCase):
                     model = Reduce(op)
                     edge = self._lower(model, (x,), storage=VkStorageType.BUFFER)
                     self._run(edge, model, [(x,)], atol=0, rtol=0)
+
+    @unittest.skipUnless(USING_SWIFTSHADER, "requires a device without 8-bit buffers")
+    def test_bool_buffers_fail_cleanly_without_8bit_storage(self):
+        from executorch.extension.pybindings.portable_lib import (
+            _load_for_executorch_from_buffer,
+        )
+
+        class LogicalNot(torch.nn.Module):
+            def forward(self, x):
+                return torch.logical_not(x)
+
+        for model, inputs in (
+            (LogicalNot(), (torch.zeros(3, 7, dtype=torch.bool),)),
+            (ConstantMask(), (torch.zeros(3, 7),)),
+        ):
+            with self.subTest(model=type(model).__name__):
+                edge = self._lower(model, inputs, storage=VkStorageType.BUFFER)
+                program_buffer = edge.to_executorch().buffer
+                module = _load_for_executorch_from_buffer(program_buffer)
+                with self.assertRaisesRegex(RuntimeError, r"0x:?10\b"):
+                    module.run_method("forward", inputs)
 
 
 if __name__ == "__main__":
