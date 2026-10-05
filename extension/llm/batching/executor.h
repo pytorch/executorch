@@ -72,7 +72,8 @@ class ET_EXPERIMENTAL Executor {
   // Optional one-time setup, called on the engine thread before any other
   // method.
   //
-  // false = the runner admits no work, so open_session_async() reports nullopt.
+  // false or an exception = the runner admits no work, so
+  // open_session_async() reports nullopt.
   virtual bool initialize() {
     return true;
   }
