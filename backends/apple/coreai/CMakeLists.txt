@@ -22,8 +22,9 @@ endforeach()
 enable_language(OBJCXX)
 
 set(_coreai_runtime_sources
-    runtime/coreai_assets.mm runtime/coreai_storage.mm
-    runtime/coreai_bookmarks.mm runtime/coreai_load_coordinator.mm
+    runtime/coreai_backend.mm runtime/coreai_assets.mm
+    runtime/coreai_storage.mm runtime/coreai_bookmarks.mm
+    runtime/coreai_load_coordinator.mm
 )
 
 # Keep ARC and C++ exception settings away from the private Swift module.
@@ -57,14 +58,21 @@ if(EXECUTORCH_BUILD_TESTS)
     runtime/test/coreai_fake_loader.mm
     runtime/test/coreai_acquisition_test.mm
     runtime/test/coreai_acquisition_fixture.mm
+    runtime/test/coreai_delegate_test.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
+  # The consolidated runtime target is created after this directory.
+  if(EXECUTORCH_BUILD_SHARED)
+    set(_coreai_host_runtime executorch_shared)
+  else()
+    set(_coreai_host_runtime executorch)
+  endif()
   target_link_libraries(
-    coreai_host_test PRIVATE executorch GTest::gtest
+    coreai_host_test PRIVATE ${_coreai_host_runtime} GTest::gtest
                              ${COREAI_FOUNDATION_FRAMEWORK}
   )
   add_test(NAME coreai_host_test COMMAND coreai_host_test)
@@ -277,8 +285,53 @@ if(EXECUTORCH_BUILD_TESTS
   set_tests_properties(coreai_swift_bridge_test PROPERTIES TIMEOUT 120)
 endif()
 
+if(EXECUTORCH_BUILD_SHARED)
+  set(_coreai_library_type SHARED)
+  set(_coreai_runtime executorch_shared)
+  set(_coreai_data_loader "")
+else()
+  set(_coreai_library_type STATIC)
+  set(_coreai_runtime executorch)
+  set(_coreai_data_loader extension_data_loader)
+endif()
+add_library(
+  coreaidelegate ${_coreai_library_type} ${_coreai_runtime_sources}
+                 $<TARGET_OBJECTS:coreai_bridge_obj>
+)
+coreai_configure_objc_target(coreaidelegate)
+# The delegate contains no Swift sources; its archive is assembled by C++.
+set_target_properties(coreaidelegate PROPERTIES LINKER_LANGUAGE CXX)
+coreai_require_os27(coreaidelegate)
+target_include_directories(coreaidelegate PUBLIC ${_common_include_directories})
+add_dependencies(coreaidelegate coreai_swift)
+target_link_libraries(
+  coreaidelegate PRIVATE coreai_swift ${_coreai_runtime} ${_coreai_data_loader}
+                         executorch::coreai_dependencies
+)
+executorch_target_link_options_shared_lib(coreaidelegate)
+if(EXECUTORCH_BUILD_SHARED)
+  set_target_properties(
+    coreaidelegate PROPERTIES OUTPUT_NAME executorch_backend_coreai
+  )
+  executorch_target_soname_policy(coreaidelegate)
+  executorch_target_shipped_runtime_path(coreaidelegate)
+endif()
+
+# A consumer is necessary to check Swift linkage and registration retention.
+add_executable(coreai_runtime_smoke runtime/test/runtime_smoke.cpp)
+if(EXECUTORCH_BUILD_TESTS)
+  add_test(NAME coreai_runtime_smoke COMMAND coreai_runtime_smoke)
+else()
+  set_target_properties(coreai_runtime_smoke PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()
+coreai_require_os27(coreai_runtime_smoke)
+set_target_properties(coreai_runtime_smoke PROPERTIES LINKER_LANGUAGE CXX)
+target_link_libraries(
+  coreai_runtime_smoke PRIVATE coreaidelegate ${_coreai_runtime}
+)
+
 install(
-  TARGETS coreai_swift
+  TARGETS coreaidelegate coreai_swift
   EXPORT ExecuTorchTargets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
