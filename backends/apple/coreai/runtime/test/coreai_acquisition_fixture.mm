@@ -268,12 +268,11 @@ namespace {
     loader = nil;
   }
   auto& state = bridge.state();
-  const bool none_live = state.prepared_models.load() == 0 &&
-      state.loaders.load() == 0 && state.missing_bundles.load() == 0;
-  if (!send_child_byte(fd, static_cast<char>(none_live)))
-    _exit(12);
-  // No GTest-bearing destructors run before InitGoogleTest, even on a failed
-  // child.
+  const bool none_live = state.sessions.load() == 0 && state.prepared_models.load() == 0 &&
+                         state.loaders.load() == 0 && state.binding_mismatches.load() == 0 &&
+                         state.missing_bundles.load() == 0 && state.input_wait_timeouts.load() == 0;
+  if (!send_child_byte(fd, static_cast<char>(none_live))) _exit(12);
+  // Avoid GTest-bearing destructors before InitGoogleTest.
   _exit(close(fd) == 0 ? 0 : 13);
 }
 } // namespace
