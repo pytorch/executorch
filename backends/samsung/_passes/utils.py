@@ -63,3 +63,34 @@ def merge_decomposed_graph(
                     decomposed_node,
                     arg_transform=lambda x, remap=remap: remap[x],
                 )
+
+
+def copy_meta(meta: Dict, callback=None):
+    copied = {}
+    for k, v in meta.items():
+        copied[k] = v
+    if callback:
+        copied = callback(copied)
+    return copied
+
+
+def create_const_node(
+    graph: torch.fx.Graph,
+    graph_module: torch.fx.GraphModule,
+    attr_name: str,
+    value,
+    source_node: torch.fx.Node,
+) -> torch.fx.Node:
+    """
+    Register a scalar constant as a named buffer on the graph module and return a get_attr node referencing it.
+    Used in edge dialect op decomposition passes where raw scalar arguments are not accepted by QNN op builders which need the inputs to be graph nodes.
+    """
+    dtype = source_node.meta["val"].dtype
+    tensor = torch.tensor(value, dtype=dtype)
+    graph_module.register_buffer(attr_name, tensor)
+
+    fake_mode = source_node.meta["val"].fake_mode
+    with graph.inserting_before(next(iter(graph.nodes))):
+        const_node = graph.get_attr(attr_name)
+        const_node.meta["val"] = fake_mode.from_tensor(tensor)
+    return const_node
