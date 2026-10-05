@@ -18,7 +18,7 @@ def define_common_targets():
         name = "arm_backend",
         srcs = [
             "EthosUBackend.cpp",
-            "EthosUBackend_Cortex_M.cpp",
+            "EthosUBackend_CoreDriver.cpp",
             "EthosUBackend_IoMemcpy.cpp",
         ],
         headers = ["EthosUBackend_Internal.h"],

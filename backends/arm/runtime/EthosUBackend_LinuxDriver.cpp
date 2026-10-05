@@ -6,7 +6,7 @@
  */
 
 /*
- * Arm backend for Ethos-U Linux driver stack, this relies on the
+ * Arm backend for the Ethos-U Linux driver stack, this relies on the
  * ethos-u-linux-driver-stack for hardware interaction.
  */
 

@@ -6,8 +6,8 @@
  */
 
 /*
- * Arm backend for Ethos-U baremetal driver stack, this relies on the
- * ethos-u-core-driver for hardware interaction.
+ * Arm backend for Ethos-U bare-metal (no-OS) and RTOS targets. This relies on
+ * the ethos-u-core-driver for hardware interaction.
  */
 
 #include <cstdint>
