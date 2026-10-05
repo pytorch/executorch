@@ -21,6 +21,14 @@ struct TestDirectory {
   TestDirectory& operator=(const TestDirectory&) = delete;
 };
 
+struct BookmarkDirectory {
+  NSURL* url = nil;
+  explicit BookmarkDirectory(NSString* parent = @"/private/tmp");
+  ~BookmarkDirectory();
+  BookmarkDirectory(const BookmarkDirectory&) = delete;
+  BookmarkDirectory& operator=(const BookmarkDirectory&) = delete;
+};
+
 ::testing::AssertionResult backup_excluded(NSURL* url);
 ::testing::AssertionResult set_backup_excluded(NSURL* url, bool excluded);
 

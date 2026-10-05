@@ -11,9 +11,9 @@ endif()
 enable_language(OBJCXX)
 
 set(_coreai_runtime_sources
-    runtime/coreai_cache_root.mm runtime/coreai_fault_injection.mm
-    runtime/coreai_manifest.mm runtime/coreai_validation.mm
-    runtime/coreai_storage.mm
+    runtime/coreai_bookmarks.mm runtime/coreai_cache_root.mm
+    runtime/coreai_fault_injection.mm runtime/coreai_manifest.mm
+    runtime/coreai_validation.mm runtime/coreai_storage.mm
 )
 
 function(coreai_configure_objc_target target)
@@ -32,9 +32,14 @@ endfunction()
 if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   add_executable(
     coreai_host_test
-    runtime/test/coreai_host_test.mm runtime/test/coreai_manifest_test.mm
-    runtime/test/coreai_cache_root_test.mm runtime/test/coreai_storage_test.mm
-    runtime/test/coreai_filesystem_fixture.mm ${_coreai_runtime_sources}
+    runtime/test/coreai_host_test.mm
+    runtime/test/coreai_manifest_test.mm
+    runtime/test/coreai_cache_root_test.mm
+    runtime/test/coreai_storage_test.mm
+    runtime/test/coreai_filesystem_fixture.mm
+    runtime/test/coreai_bookmark_test.mm
+    runtime/test/coreai_bookmark_fixture.mm
+    ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
