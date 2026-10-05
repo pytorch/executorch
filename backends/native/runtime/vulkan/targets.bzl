@@ -14,6 +14,20 @@ def define_common_targets():
     if is_xplat():
         return
 
+    runtime.cxx_library(
+        name = "vulkan_passes",
+        srcs = ["passes/InsertPrepack.cpp"],
+        exported_headers = ["passes/InsertPrepack.h"],
+        exported_deps = [
+            "//executorch/backends/native/runtime:method",
+            "//executorch/backends/native/runtime/graph:graph",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime/graph:graph_utils",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
     # The Vulkan engine: implements the EngineContext / EngineExecutable
     # boundary by lowering a native Method's Graph onto ET-VK's ComputeGraph,
     # reusing every ET-VK compute shader and prepack path via the operator
@@ -47,6 +61,7 @@ def define_common_targets():
             "//executorch/backends/native/runtime/graph:value",
             "//executorch/backends/native/runtime/graph:graph_utils",
             "//executorch/runtime/core:core",
+            ":vulkan_passes",
             # ET-VK: ComputeGraph + operator registry + shaders (link_whole, so
             # the static op registrations survive), and the Vulkan API layer
             # (Runtime / Adapter / Context; SwiftShader on a headless host).
