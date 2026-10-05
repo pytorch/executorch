@@ -3,9 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import sympy  # type: ignore[import-untyped]
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
-from executorch.backends.arm.tosa.specification import get_context_spec
+from executorch.backends.arm.tosa.specification import (
+    get_context_shape_env,
+    get_context_spec,
+)
+from torch.fx.experimental.symbolic_shapes import FloorDiv
+from torch.types import IntLikeType
 
 _VALID_NAN_MODES = {"PROPAGATE", "IGNORE"}
 
@@ -79,3 +85,50 @@ def validate_power_of_two(size: int | torch.SymInt, name: str, op: str) -> None:
         raise TosaValueError(
             f"{name} must be a positive power of two, got {size}", op=op
         )
+
+
+def _to_sympy_expr(value: int | torch.SymInt) -> sympy.Expr:
+    if isinstance(value, torch.SymInt):
+        return value.node._expr
+    return sympy.Integer(int(value))
+
+
+def _from_sympy_expr(expr: sympy.Expr) -> int | torch.SymInt:
+    # Full `sympy.simplify()` is too expensive for the large symbolic formulas
+    # produced by dynamic-shape model lowering. Keep the expression in its raw
+    # symbolic form and only fold obviously-static integers.
+    if expr.is_Integer:
+        return int(expr)
+    return get_context_shape_env().create_symintnode(expr, hint=None)
+
+
+def compute_pool2d_output_shape(
+    x: torch.Tensor,
+    kernel: list[IntLikeType] | list[int],
+    stride: list[IntLikeType] | list[int],
+    pad: list[IntLikeType] | list[int],
+) -> list[IntLikeType]:
+    """Compute the output shape for NHWC pooling."""
+    n, h, w, c = x.shape
+    k_h, k_w = kernel
+    s_h, s_w = stride
+    p_top, p_bot, p_left, p_right = pad
+
+    h_expr = (
+        FloorDiv(
+            _to_sympy_expr(h) + _to_sympy_expr(p_top) + _to_sympy_expr(p_bot) - k_h,
+            s_h,
+        )
+        + 1
+    )
+    w_expr = (
+        FloorDiv(
+            _to_sympy_expr(w) + _to_sympy_expr(p_left) + _to_sympy_expr(p_right) - k_w,
+            s_w,
+        )
+        + 1
+    )
+
+    h_out = _from_sympy_expr(h_expr)
+    w_out = _from_sympy_expr(w_expr)
+    return [n, h_out, w_out, c]
