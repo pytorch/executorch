@@ -162,3 +162,30 @@ echo "=== sanity ==="
 xt-clang --version 2>&1 | head -1
 xt-run --show-config=cores 2>&1 | sed -n '/available/,/registry/p' | head -6
 echo "Xtensa toolchain ready for ${BACKEND}."
+
+# [temp][do-not-land] Inspect the hifi1s / hifi5s SDKs uploaded to the bucket:
+# are they there, are they the Drive SDKs (md5), which generator built them, and
+# which LLVM their codegen plugin needs. Never prints a licence signature.
+if true; then  # whichever Xtensa job gets a runner first
+  (
+    set +eu +o pipefail
+    echo "=== S3 SDK probe ==="
+    echo "--- bucket listing (hifi / XtensaTools keys):"
+    aws s3 ls "s3://${S3_BUCKET}/" 2>&1 | grep -iE "hifi|XtensaTools|denied|error"
+    for k in hifi1s_ao_7 hifi5s_ao_7; do
+      echo "--- ${k}.tgz"
+      aws s3api head-object --bucket "${S3_BUCKET}" --key "${k}.tgz" \
+        --query '[ContentLength,LastModified]' --output text 2>&1
+      aws s3 cp "s3://${S3_BUCKET}/${k}.tgz" "${DL_DIR}/${k}.tgz" --only-show-errors || continue
+      echo "md5: $(md5sum < "${DL_DIR}/${k}.tgz" | cut -c1-32)"
+      echo "top-level dirs: $(tar tzf "${DL_DIR}/${k}.tgz" | cut -d/ -f1 | sort -u | head -3 | tr '\n' ' ')"
+      P="${XTENSA_ROOT}/probe-${k}"; mkdir -p "${P}"; gzip -dc "${DL_DIR}/${k}.tgz" | tar xf - -C "${P}"
+      D=$(find "${P}" -maxdepth 2 -type d -name "${k}" | head -1)
+      grep -m1 "Generator version" "${D}/build.info"
+      awk '/^(FEATURE|INCREMENT)/ && $2 ~ /XCC_TIE/ {print "licence:", $2, "expires", $5}' "${D}/misc/license.dat"
+      CG="${D}/config/llvm/lib/libXtensaCodeGen.so"
+      [[ -f "${CG}" ]] && echo "codegen needs: $(grep -aoE 'libLLVM[A-Za-z]*\.so\.[0-9.]+' "${CG}" | sort -u | head -1)"
+    done
+    echo "=== end S3 SDK probe ==="
+  ) || true
+fi
