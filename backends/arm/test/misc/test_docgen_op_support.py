@@ -728,3 +728,70 @@ def test_main_writes_requested_markdown_and_html(
     assert result == 0
     assert (tmp_path / "generated/support.md").read_text(encoding="utf-8") == "md\n"
     assert (tmp_path / "generated/support.html").read_text(encoding="utf-8") == "html\n"
+
+
+def test_main_backend_all_writes_all_markdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        docgen,
+        "generate_markdown",
+        lambda _root, debug=False: f"{docgen.ACTIVE_BACKEND_KEY}\n",
+    )
+
+    result = docgen.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--backend",
+            "all",
+        ]
+    )
+
+    assert result == 0
+    for backend, config in docgen.BACKENDS.items():
+        assert (tmp_path / config.default_output).read_text(encoding="utf-8") == (
+            f"{backend}\n"
+        )
+
+
+def test_main_backend_all_check_runs_every_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checked: list[tuple[str, bool]] = []
+
+    def fake_run_check(_root: Path, *, strict_ast: bool = False) -> int:
+        checked.append((docgen.ACTIVE_BACKEND_KEY, strict_ast))
+        return 1 if docgen.ACTIVE_BACKEND_KEY == "u55" else 0
+
+    monkeypatch.setattr(docgen, "run_check", fake_run_check)
+
+    result = docgen.main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "--backend",
+            "all",
+            "--check",
+            "--strict-ast",
+        ]
+    )
+
+    assert result == 1
+    assert checked == [(backend, True) for backend in docgen.BACKENDS]
+
+
+def test_main_backend_all_rejects_custom_output(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        docgen.main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "--backend",
+                "all",
+                "--output",
+                "generated/support.md",
+            ]
+        )
+
+    assert exc_info.value.code == 2

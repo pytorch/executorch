@@ -874,13 +874,11 @@ jobs:
         .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
         if [[ "${{ matrix.test_arm_backend }}" == "test_pytest_ops_no_target" ]]; then
-          for backend in vgf u55 u85; do
-            python backends/arm/scripts/docgen/generate_op_support.py \
-              --backend "$backend" --check || exit 1
+          python backends/arm/scripts/docgen/generate_op_support.py \
+            --backend all --check || exit 1
 
-            python backends/arm/scripts/docgen/generate_op_support.py \
-              --backend "$backend" || exit 1
-          done
+          python backends/arm/scripts/docgen/generate_op_support.py \
+            --backend all || exit 1
 
           git diff --exit-code -- \
             docs/source/backends/arm-vgf/VGF_op_support.md \
