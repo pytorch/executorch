@@ -17,6 +17,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "vulkan_passes",
         srcs = [
+            "passes/FuseQuantizedEmbedding.cpp",
             "passes/FuseQuantizedLinear.cpp",
             "passes/InsertPrepack.cpp",
             "passes/LowerHFAttention.cpp",
@@ -24,6 +25,7 @@ def define_common_targets():
             "passes/MaterializeViewCopies.cpp",
         ],
         exported_headers = [
+            "passes/FuseQuantizedEmbedding.h",
             "passes/FuseQuantizedLinear.h",
             "passes/InsertPrepack.h",
             "passes/LowerHFAttention.h",

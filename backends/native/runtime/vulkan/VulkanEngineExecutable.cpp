@@ -37,6 +37,7 @@
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
+#include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedEmbedding.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerHFAttention.h>
@@ -176,12 +177,13 @@ bool is_functional_in_place(const std::string& target) {
 // Ops whose ET-VK implementations require width-packed operands. This list
 // seeds layout assignment; propagation below determines the final layouts.
 bool is_width_packed_op(std::string_view key) {
-  constexpr std::array<std::string_view, 11> kOps{
+  constexpr std::array<std::string_view, 12> kOps{
       "aten.linear.default",
       "aten.addmm.default",
       "aten.mm.default",
       "aten.bmm.default",
       "et_vk.apply_rotary_emb_hf.default",
+      "et_vk.embedding_q4gsw.default",
       "et_vk.linear_dq8ca_q4gsw.default",
       "et_vk.linear_q4gsw.default",
       "et_vk.rms_norm.default",
@@ -558,6 +560,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
     vulkan::lower_hf_attention(method_.graph);
+    vulkan::fuse_quantized_embeddings(method_);
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
     vulkan::insert_prepack_nodes(method_);
