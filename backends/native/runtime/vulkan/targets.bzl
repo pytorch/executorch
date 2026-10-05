@@ -19,12 +19,14 @@ def define_common_targets():
         srcs = [
             "passes/FuseQuantizedLinear.cpp",
             "passes/InsertPrepack.cpp",
+            "passes/LowerHFAttention.cpp",
             "passes/LowerRMSNorm.cpp",
             "passes/MaterializeViewCopies.cpp",
         ],
         exported_headers = [
             "passes/FuseQuantizedLinear.h",
             "passes/InsertPrepack.h",
+            "passes/LowerHFAttention.h",
             "passes/LowerRMSNorm.h",
             "passes/MaterializeViewCopies.h",
         ],

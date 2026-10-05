@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <any>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <deque>
 #include <iterator>
@@ -37,6 +38,7 @@
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
+#include <executorch/backends/native/runtime/vulkan/passes/LowerHFAttention.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
 #include <executorch/runtime/core/freeable_buffer.h>
@@ -158,11 +160,12 @@ bool is_functional_in_place(const std::string& target) {
 // Ops whose ET-VK implementations require width-packed operands. This list
 // seeds layout assignment; propagation below determines the final layouts.
 bool is_width_packed_op(std::string_view key) {
-  constexpr std::array<std::string_view, 9> kOps{
+  constexpr std::array<std::string_view, 10> kOps{
       "aten.linear.default",
       "aten.addmm.default",
       "aten.mm.default",
       "aten.bmm.default",
+      "et_vk.apply_rotary_emb_hf.default",
       "et_vk.linear_dq8ca_q4gsw.default",
       "et_vk.rms_norm.default",
       "llama.custom_sdpa.default",
@@ -364,6 +367,29 @@ void validate_int64_to_int32(const void* data, size_t numel) {
   }
 }
 
+void check_cache_position_input(
+    const void* data,
+    size_t numel,
+    ScalarType dtype,
+    const vulkan::CachePosition& bound,
+    int64_t& rows_written) {
+  std::vector<int64_t> positions(numel);
+  if (dtype == ScalarType::Long) {
+    std::memcpy(positions.data(), data, numel * sizeof(int64_t));
+  } else if (dtype == ScalarType::Int) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < numel; ++i) {
+      int32_t value;
+      std::memcpy(&value, bytes + i * sizeof(value), sizeof(value));
+      positions[i] = value;
+    }
+  } else {
+    throw std::runtime_error(
+        "vulkan: cache_position input must be int32 or int64");
+  }
+  vulkan::check_cache_positions(positions, bound, rows_written);
+}
+
 // Holds a method's non-empty mutable DataBinding keys in `owners` for the
 // lifetime of its executable.
 class MutableStateClaim {
@@ -426,6 +452,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
   std::vector<NodeId> nodes_;
   std::vector<ValueId> inputs_;
   std::vector<ValueId> outputs_;
+  // Aligned to inputs_: set on the positions the lowered attention reads.
+  std::vector<std::optional<vulkan::CachePosition>> cache_positions_;
+  // Rows filled by completed executions. set_input stages its extension in
+  // pending_cache_rows_written_, which execute() commits once it succeeds.
+  std::vector<int64_t> cache_rows_written_;
+  std::vector<int64_t> pending_cache_rows_written_;
   // Public output index -> graph output position. Mutation outputs remain in
   // outputs_ for execution but are not part of the EngineExecutable API.
   std::vector<size_t> user_output_positions_;
@@ -501,6 +533,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
+    vulkan::lower_hf_attention(method_.graph);
     vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
     vulkan::insert_prepack_nodes(method_);
@@ -509,6 +542,21 @@ class VulkanEngineExecutable final : public EngineExecutable {
     nodes_ = method_.graph.schedule;
     inputs_ = method_.graph.input_ids;
     outputs_ = method_.graph.output_ids;
+    for (const ValueId input : inputs_) {
+      const auto& attrs = g().value(input).attrs;
+      const auto attr = attrs.find(vulkan::kCachePositionAttr);
+      if (attr == attrs.end()) {
+        cache_positions_.emplace_back();
+        continue;
+      }
+      const auto* bound = std::any_cast<vulkan::CachePosition>(&attr->second);
+      if (bound == nullptr) {
+        throw std::runtime_error("vulkan: malformed cache_position annotation");
+      }
+      cache_positions_.emplace_back(*bound);
+    }
+    cache_rows_written_.assign(inputs_.size(), 0);
+    pending_cache_rows_written_ = cache_rows_written_;
     if (!method_.output_specs.empty() &&
         method_.output_specs.size() != outputs_.size()) {
       throw std::runtime_error(
@@ -573,6 +621,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
         device_dtype(meta.dtype) == ScalarType::Int) {
       validate_int64_to_int32(data, numel);
     }
+    if (const auto& bound = cache_positions_.at(i)) {
+      int64_t rows_written = cache_rows_written_.at(i);
+      check_cache_position_input(data, numel, src_dtype, *bound, rows_written);
+      pending_cache_rows_written_.at(i) = rows_written;
+    }
     graph_->maybe_cast_and_copy_into_staging(
         input_staging_.at(i), data, numel, to_vk_dtype(src_dtype));
   }
@@ -580,6 +633,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   void execute() override {
     graph_->propagate_resize();
     graph_->execute();
+    cache_rows_written_ = pending_cache_rows_written_;
   }
 
   void get_output(size_t i, void* data, size_t numel, ScalarType dst_dtype)
@@ -867,18 +921,33 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return storage;
   }
 
-  void validate_zero_points(const Package& package, ValueId zero_points_id) {
-    const DataBinding* binding = binding_at(zero_points_id);
-    if (binding == nullptr || !binding->has_data) {
+  void validate_zero_constant(
+      const Package& package,
+      ValueId id,
+      const std::string& what) {
+    const DataBinding* binding = binding_at(id);
+    if (binding == nullptr || !binding->has_data || binding->mutated) {
       throw std::runtime_error(
-          "vulkan: q4 weight zero points must be a stored constant");
+          "vulkan: " + what + " must be a read-only stored constant");
     }
     const std::shared_ptr<OwnedBytes> storage =
         source_constant(package, *binding);
     if (!std::ranges::all_of(
             storage->span(), [](uint8_t value) { return value == 0; })) {
-      throw std::runtime_error(
-          "vulkan: q4 weight zero points must all be zero");
+      throw std::runtime_error("vulkan: " + what + " must all be zero");
+    }
+  }
+
+  void validate_zero_points(const Package& package, ValueId zero_points_id) {
+    validate_zero_constant(package, zero_points_id, "q4 weight zero points");
+  }
+
+  void validate_marked_zero_constants(const Package& package) {
+    for (ValueId id = 0; id < static_cast<ValueId>(g().values.size()); ++id) {
+      const Value& value = g().value(id);
+      if (value.attrs.contains(vulkan::kZeroConstantAttr)) {
+        validate_zero_constant(package, id, "constant '" + value.name + "'");
+      }
     }
   }
 
@@ -1050,6 +1119,53 @@ class VulkanEngineExecutable final : public EngineExecutable {
         bytes.data(), bytes.size(), release_owned_bytes, context);
   }
 
+  executorch::runtime::FreeableBuffer derived_rope_table_buffer(
+      const Package& package,
+      const Value& value,
+      const vulkan::RopeTable& table) {
+    const DataBinding* source_binding = binding_at(table.inv_freq_id);
+    if (source_binding == nullptr || !source_binding->has_data) {
+      throw std::runtime_error("vulkan: RoPE table has no stored inv_freq");
+    }
+    const TensorMeta& meta = value.tensor_meta();
+    std::shared_ptr<OwnedBytes>& storage =
+        derived_constants_["rope:" + value.name];
+    if (!storage) {
+      if (meta.dtype != ScalarType::Float) {
+        throw std::runtime_error("vulkan: RoPE tables are only built in fp32");
+      }
+      const std::shared_ptr<OwnedBytes> source =
+          source_constant(package, *source_binding);
+      const size_t half = source->span().size() / sizeof(float);
+      const size_t rows = static_cast<size_t>(meta.sizes.at(0));
+      if (static_cast<size_t>(meta.sizes.at(1)) != 2 * half) {
+        throw std::runtime_error(
+            "vulkan: RoPE table width mismatches inv_freq");
+      }
+      std::vector<float> inv_freq(half);
+      std::memcpy(inv_freq.data(), source->span().data(), half * sizeof(float));
+      std::vector<float> values(rows * 2 * half);
+      for (size_t p = 0; p < rows; ++p) {
+        for (size_t j = 0; j < half; ++j) {
+          const float phase = static_cast<float>(p) * inv_freq[j];
+          const float v = static_cast<float>(
+              (table.use_sin ? std::sin(phase) : std::cos(phase)) *
+              table.attention_scale);
+          values[p * 2 * half + j] = v;
+          values[p * 2 * half + half + j] = v;
+        }
+      }
+      std::vector<uint8_t> bytes(values.size() * sizeof(float));
+      std::memcpy(bytes.data(), values.data(), bytes.size());
+      storage = std::make_shared<OwnedBytes>(
+          OwnedBytes::from_vector(std::move(bytes)));
+    }
+    const ByteSpan bytes = storage->span();
+    auto* context = new std::shared_ptr<OwnedBytes>(storage);
+    return executorch::runtime::FreeableBuffer(
+        bytes.data(), bytes.size(), release_owned_bytes, context);
+  }
+
   VkRef make_value(const Package& package, const Value& v, ValueId native_id) {
     switch (v.kind()) {
       case ValueKind::None:
@@ -1077,6 +1193,17 @@ class VulkanEngineExecutable final : public EngineExecutable {
       case ValueKind::Tensor: {
         const TensorMeta& m = v.tensor_meta();
         const std::vector<int64_t>& sizes = m.sizes;
+        const auto rope = v.attrs.find(vulkan::kRopeTableAttr);
+        if (rope != v.attrs.end()) {
+          const auto* table = std::any_cast<vulkan::RopeTable>(&rope->second);
+          if (table == nullptr) {
+            throw std::runtime_error("vulkan: malformed RoPE table annotation");
+          }
+          return graph_->add_tensorref(
+              sizes,
+              to_vk_dtype(device_dtype(m.dtype)),
+              derived_rope_table_buffer(package, v, *table));
+        }
         const auto transform = v.attrs.find(vulkan::kQ4ConstantTransformAttr);
         if (transform != v.attrs.end()) {
           const auto* q4 =
@@ -1123,7 +1250,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
           VK_GET_OP_FN("et_vk.prepack.default")(*graph_, {source, tensor});
           return tensor;
         }
-        if (b != nullptr && b->mutated) {
+        if (b != nullptr && b->mutated &&
+            !v.attrs.contains(vulkan::kWrittenBeforeReadAttr)) {
           return zero_initialized_tensor(v, native_id);
         }
         return graph_->add_tensor(
@@ -1338,7 +1466,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
     const bool width = is_width_packed_op(key);
     std::optional<utils::StorageType> activation_storage;
     if (key == "aten.linear.default" ||
-        key == "et_vk.linear_dq8ca_q4gsw.default") {
+        key == "et_vk.linear_dq8ca_q4gsw.default" ||
+        key == "et_vk.apply_rotary_emb_hf.default") {
       const auto output =
           std::ranges::find_if(n.outputs, [this](const Output& candidate) {
             return valid(candidate.value_id) &&
@@ -1365,7 +1494,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
           const bool activation = v.role == ValueRole::Intermediate ||
               v.role == ValueRole::UserInput;
           const bool storage_mismatch = activation_storage.has_value() &&
-              na.name == "input" && storage_at(value_id) != *activation_storage;
+              (key == "et_vk.apply_rotary_emb_hf.default" ||
+               na.name == "input") &&
+              storage_at(value_id) != *activation_storage;
           if (activation &&
               (layout_at(value_id) != utils::kWidthPacked ||
                storage_mismatch)) {
@@ -1639,6 +1770,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     detach_in_place_outputs();
     index_output_kinds();
     index_bindings();
+    validate_marked_zero_constants(package);
     plan_allocations();
 
     // 1. Materialize every native value as an ET-VK value.
