@@ -273,6 +273,45 @@ if(EXECUTORCH_BUILD_VGF)
   # vgf backend
   list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
   add_library(vgf_backend ${_vgf_backend_sources})
+
+  # Should be absent in ordinary production builds.
+  option(EXECUTORCH_VGF_IO_STATS "Collect per-execution VGF copy statistics"
+         OFF
+  )
+  if(EXECUTORCH_VGF_IO_STATS)
+    target_sources(
+      vgf_backend
+      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFExecutionStats.cpp
+    )
+    target_compile_definitions(vgf_backend PUBLIC EXECUTORCH_VGF_IO_STATS=1)
+  endif()
+  if(EXECUTORCH_BUILD_TESTS)
+    find_package(Threads REQUIRED)
+    foreach(_stats_mode IN ITEMS enabled disabled)
+      set(_stats_target vgf_execution_stats_${_stats_mode}_test)
+      add_executable(
+        ${_stats_target}
+        ${EXECUTORCH_ROOT}/backends/arm/test/vgf_execution_stats_test.cpp
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFExecutionStats.cpp
+      )
+      target_include_directories(
+        ${_stats_target} PRIVATE ${_common_include_directories}
+      )
+      target_compile_features(${_stats_target} PRIVATE cxx_std_17)
+      target_link_libraries(${_stats_target} PRIVATE Threads::Threads)
+      if(_stats_mode STREQUAL "enabled")
+        target_compile_definitions(
+          ${_stats_target} PRIVATE EXECUTORCH_VGF_IO_STATS=1
+        )
+      else()
+        target_compile_definitions(
+          ${_stats_target} PRIVATE EXECUTORCH_VGF_IO_STATS=0
+        )
+      endif()
+      add_test(NAME ${_stats_target} COMMAND ${_stats_target})
+    endforeach()
+  endif()
+
   install(TARGETS vgf_backend EXPORT ExecuTorchTargets)
   target_include_directories(
     vgf_backend PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
