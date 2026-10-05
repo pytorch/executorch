@@ -89,6 +89,15 @@ TEST(InsertPrepackTest, SharesOnePrepackAcrossConsumers) {
   EXPECT_EQ(graph.value(4).role, ValueRole::ConstantTensor);
 }
 
+TEST(InsertPrepackTest, PrepacksConstantSliceInput) {
+  Method method = make_method();
+  method.graph.node(2).target = "torch.ops.aten.slice_copy.Tensor";
+
+  EXPECT_EQ(insert_prepack_nodes(method), 1);
+  EXPECT_EQ(
+      method.graph.node(2).input_value_ids(), std::vector<ValueId>({0, 4}));
+}
+
 TEST(InsertPrepackTest, LeavesSelfPrepackingOpUntouched) {
   Method method = make_method();
   method.graph.node(2).target = "torch.ops.aten.linear.default";

@@ -19,10 +19,11 @@ namespace ptn::vulkan {
 namespace {
 
 bool needs_prepack(const Node& node) {
-  constexpr std::array<std::string_view, 3> kOps{
+  constexpr std::array<std::string_view, 4> kOps{
       "torch.ops.aten.add.Tensor",
       "torch.ops.aten.index.Tensor",
       "torch.ops.aten.mul.Tensor",
+      "torch.ops.aten.slice_copy.Tensor",
   };
   return node.is_call() && std::ranges::find(kOps, node.target) != kOps.end();
 }
