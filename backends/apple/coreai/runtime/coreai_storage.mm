@@ -119,6 +119,57 @@ Error write_file(
   }
   return result;
 }
+
+enum class StorageTreePass {
+  Preflight,
+  Remove,
+};
+
+Error walk_storage_tree(
+    int fd,
+    StorageTreePass pass,
+    StorageRemovalPolicy policy) {
+  auto children = storage_children(fd);
+  if (!children.ok()) {
+    return children.error();
+  }
+  for (NSString* name in children.get()) {
+    struct stat info;
+    ET_CHECK_OR_RETURN_ERROR(
+        lstat_at(fd, name.fileSystemRepresentation, &info) == 0,
+        AccessFailed,
+        "Cannot inspect Core AI storage entry");
+    const bool directory = S_ISDIR(info.st_mode);
+    if (policy == StorageRemovalPolicy::Strict) {
+      ET_CHECK_OR_RETURN_ERROR(
+          directory || S_ISREG(info.st_mode),
+          InvalidExternalData,
+          "Unexpected Core AI storage entry type");
+    }
+    if (directory) {
+      FileDescriptor child(
+          open_directory_at(fd, name.fileSystemRepresentation));
+      ET_CHECK_OR_RETURN_ERROR(
+          child.get() >= 0,
+          AccessFailed,
+          "Cannot open Core AI storage directory");
+      ET_CHECK_OK_OR_RETURN_ERROR(walk_storage_tree(child.get(), pass, policy));
+    }
+    if (pass == StorageTreePass::Remove) {
+      ET_CHECK_OR_RETURN_ERROR(
+          storage_call(FaultPoint::Remove, [&] {
+            return unlinkat(
+                fd,
+                name.fileSystemRepresentation,
+                directory ? AT_REMOVEDIR : 0);
+          }) == 0,
+          AccessFailed,
+          "Cannot remove Core AI storage entry");
+    }
+  }
+  return pass == StorageTreePass::Remove ? sync_storage_directory(fd)
+                                         : Error::Ok;
+}
 } // namespace
 
 Result<StorageDirectory> open_storage_directory(
@@ -201,6 +252,50 @@ Result<NSArray<NSString*>*> storage_children(int fd, StorageNamePolicy policy) {
   ET_CHECK_OR_RETURN_ERROR(
       closed == 0, AccessFailed, "Cannot close storage directory stream");
   return [names sortedArrayUsingSelector:@selector(compare:)];
+}
+
+Error remove_storage_directory(
+    int parent_fd,
+    NSString* name,
+    StorageRemovalPolicy policy) {
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_component(name), InvalidArgument, "Invalid Core AI entry name");
+  struct stat info;
+  const int inspected = lstat_at(
+      parent_fd, name.fileSystemRepresentation, &info);
+  if (inspected < 0 && errno == ENOENT) {
+    return Error::Ok;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      inspected == 0, AccessFailed, "Cannot inspect Core AI storage entry");
+  if (!S_ISDIR(info.st_mode)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        policy == StorageRemovalPolicy::Maintenance,
+        InvalidExternalData,
+        "Core AI storage entry is not a directory");
+    ET_CHECK_OR_RETURN_ERROR(
+        storage_call(FaultPoint::Remove, [&] {
+          return unlinkat(parent_fd, name.fileSystemRepresentation, 0);
+        }) == 0,
+        AccessFailed,
+        "Cannot remove Core AI storage entry");
+    return sync_storage_directory(parent_fd);
+  }
+  FileDescriptor entry(
+      open_directory_at(parent_fd, name.fileSystemRepresentation));
+  ET_CHECK_OR_RETURN_ERROR(
+      entry.get() >= 0, AccessFailed, "Cannot open Core AI storage directory");
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      walk_storage_tree(entry.get(), StorageTreePass::Preflight, policy));
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      walk_storage_tree(entry.get(), StorageTreePass::Remove, policy));
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_call(FaultPoint::Remove, [&] {
+        return unlinkat(parent_fd, name.fileSystemRepresentation, AT_REMOVEDIR);
+      }) == 0,
+      AccessFailed,
+      "Cannot remove Core AI storage directory");
+  return sync_storage_directory(parent_fd);
 }
 
 int open_storage_shared_file(int parent_fd, const char* name) {

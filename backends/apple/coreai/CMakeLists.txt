@@ -16,6 +16,7 @@ set(_coreai_runtime_sources
     runtime/coreai_cache_root.mm
     runtime/coreai_fault_injection.mm
     runtime/coreai_manifest.mm
+    runtime/coreai_source_bundle.mm
     runtime/coreai_validation.mm
     runtime/coreai_storage.mm
 )
@@ -44,7 +45,9 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_cache_key_test.mm
     runtime/test/coreai_bookmark_test.mm
     runtime/test/coreai_bookmark_contention_test.mm
+    runtime/test/coreai_source_test.mm
     runtime/test/coreai_bookmark_fixture.mm
+    runtime/test/coreai_source_fixture.mm
     ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)

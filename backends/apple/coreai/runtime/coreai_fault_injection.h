@@ -16,6 +16,9 @@ enum class FaultPoint {
   SyncDirectory,
   FullSync,
   Rename,
+  Remove,
+  CreateStagingDirectory,
+  OpenStagingDirectory,
   BeforeCreateDirectory,
   BeforeCacheEntryLock,
 };

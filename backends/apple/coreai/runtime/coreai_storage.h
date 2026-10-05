@@ -47,4 +47,18 @@ runtime::Result<NSArray<NSString*>*> storage_children(
     int fd,
     StorageNamePolicy policy = StorageNamePolicy::Strict);
 
+enum class StorageRemovalPolicy {
+  Strict,
+  Maintenance,
+};
+
+// Removes one child directory without following links. The complete tree is
+// checked before removal and every entry is checked again during removal.
+// Missing entries are already removed. Maintenance also removes malformed
+// backend-owned non-directory entries.
+runtime::Error remove_storage_directory(
+    int parent_fd,
+    NSString* name,
+    StorageRemovalPolicy policy = StorageRemovalPolicy::Strict);
+
 } // namespace executorch::backends::coreai
