@@ -5,6 +5,7 @@
 
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
+from executorch.backends.arm.tosa.specification import get_context_spec
 
 _VALID_NAN_MODES = {"PROPAGATE", "IGNORE"}
 
@@ -39,6 +40,28 @@ def binary_meta(
     require_same_dtype(input1, input2, op)
     output_shape = broadcast_shape(input1, input2, op)
     return torch.empty(output_shape, dtype=output_dtype or input1.dtype)
+
+
+def validate_float_dtype(dtype: torch.dtype, op: str) -> None:
+    tosa_spec = get_context_spec()
+
+    if dtype in (torch.float16, torch.float32):
+        if not tosa_spec.support_float():
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support {dtype} for {op}",
+                op=op,
+            )
+        return
+
+    if dtype == torch.bfloat16:
+        if not (tosa_spec.support_float() and tosa_spec.support_extension("bf16")):
+            raise TosaValueError(
+                f"TOSA spec {tosa_spec} doesn't support bfloat16 for {op}",
+                op=op,
+            )
+        return
+
+    raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
 
 
 def validate_nan_mode(nan_mode: str, op: str) -> None:
