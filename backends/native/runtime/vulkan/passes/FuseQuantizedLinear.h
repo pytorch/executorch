@@ -7,6 +7,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
+#include <vector>
 
 #include <executorch/backends/native/runtime/Method.h>
 
@@ -27,6 +30,22 @@ struct Q4ConstantTransform {
   ValueId zero_points_id = kInvalid;
   int64_t group_size = 0;
 };
+
+struct Q4GroupSumsLayout {
+  size_t rows;
+  size_t cols;
+  size_t group_size;
+  size_t output_cols;
+  // Two weights per byte, low nibble first, each stored as value + 8.
+  // Otherwise one int8 weight per byte.
+  bool packed;
+};
+
+// Returns the int32 sum of each [row, group] of `weight` as
+// [cols / group_size, output_cols]. Columns past `rows` are zero.
+std::vector<int32_t> q4_group_sums(
+    std::span<const uint8_t> weight,
+    const Q4GroupSumsLayout& layout);
 
 // Rewrites portable torchao q8-dynamic/q4-weight linear patterns into the
 // Native-VK runtime kernel. This runs after PTN deserialization; PTNs therefore

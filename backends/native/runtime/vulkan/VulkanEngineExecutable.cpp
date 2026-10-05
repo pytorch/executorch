@@ -1039,28 +1039,16 @@ class VulkanEngineExecutable final : public EngineExecutable {
       throw std::runtime_error(
           "vulkan: invalid source metadata for q4 group sums");
     }
-    std::vector<uint8_t> sums(logical_nbytes(output), 0);
-    for (size_t row = 0; row < rows; ++row) {
-      for (size_t group = 0; group < groups; ++group) {
-        int32_t sum = 0;
-        const size_t start = group * static_cast<size_t>(group_size);
-        for (size_t i = 0; i < static_cast<size_t>(group_size); ++i) {
-          const size_t col = start + i;
-          if (packed) {
-            const uint8_t byte = source[row * stored_cols + col / 2];
-            const uint8_t nibble = col % 2 == 0 ? byte & 0x0F : byte >> 4;
-            sum += static_cast<int32_t>(nibble) - 8;
-          } else {
-            sum += static_cast<int8_t>(source[row * stored_cols + col]);
-          }
-        }
-        std::memcpy(
-            sums.data() + (group * output_cols + row) * sizeof(sum),
-            &sum,
-            sizeof(sum));
-      }
-    }
-    return sums;
+    const std::vector<int32_t> sums = vulkan::q4_group_sums(
+        source,
+        {.rows = rows,
+         .cols = cols,
+         .group_size = static_cast<size_t>(group_size),
+         .output_cols = output_cols,
+         .packed = packed});
+    std::vector<uint8_t> bytes(logical_nbytes(output));
+    std::memcpy(bytes.data(), sums.data(), bytes.size());
+    return bytes;
   }
 
   executorch::runtime::FreeableBuffer derived_q4_constant_buffer(
