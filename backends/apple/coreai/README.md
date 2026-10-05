@@ -42,6 +42,19 @@ architectures=["h17p"])` requests that compiler architecture; omitting the list
 lets the compiler emit its supported architectures for the target platform.
 These are Core AI architecture names, not CPU names such as `arm64`.
 
+### Asset storage
+
+The assets root must be an absolute path. The application chooses it, should
+reserve it for this backend, and is trusted not to rename, replace or modify its
+contents while the backend uses it; the backend does not defend against other
+processes of the same user rebinding paths. Written files and changed directories
+are synced with `fsync`; atomic publication also uses `F_FULLFSYNC` before its
+rename.
+
+Preparing the assets root sets `NSURLIsExcludedFromBackupKey` on it, which covers
+everything beneath it. Ancestors are not modified. This is backup exclusion, not
+a control for iCloud Drive synchronization.
+
 ## Host Tests
 
 `EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON` registers the
