@@ -9,21 +9,25 @@
 #pragma once
 
 // Decodes first, up to max_decode_sequences, then spends the rest of
-// max_batch_tokens on prefill, so prefill never delays a queued decode.
+// max_batch_tokens on prefill, so prefill never delays a queued decode within
+// an execution batch. Preparation runs FIFO, one task between execution batches
+// while both kinds of work remain queued.
 // Prefill rotates over sessions taking one chunk each, so a long prompt
 // cannot monopolise a batch.
 //
-// Reads only input.size, input.sid, is_decode and tid from a Task. The rest is
-// carried through untouched.
+// Execution payloads are carried through untouched; scheduling reads only
+// input.size, input.sid, is_decode and tid.
 
 #include <cassert>
 #include <cstddef>
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <executorch/extension/llm/batching/scheduler.h>
@@ -35,12 +39,21 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-// Shared so that pending_ and the queues name the same task. Cancelling marks
-// it once, and each queue skips it when scheduling reaches it.
-using TaskPtr = std::shared_ptr<Task>;
-using TaskQueue = std::deque<TaskPtr>;
-
 class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
+  // Cancellation belongs to the queue entry, including for preparation tasks
+  // that have no cancelled field. A tombstone stays dead even if its id is
+  // reused.
+  struct QueuedTask {
+    Task task;
+    bool cancelled = false;
+
+    ExecutionTask& execution() {
+      return std::get<ExecutionTask>(task);
+    }
+  };
+  using TaskPtr = std::shared_ptr<QueuedTask>;
+  using TaskQueue = std::deque<TaskPtr>;
+
  public:
   // Returns nullptr if the limits are unusable. All three must be non-zero,
   // and the budget must cover a saturated decode batch plus one full chunk.
@@ -72,8 +85,8 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
         max_batch_tokens, max_decode_sequences, max_prefill_chunk_size));
   }
 
-  // Rejects an empty task, a decode wider than one token, an oversized chunk,
-  // and a tid already queued, including one repeated inside this vector.
+  // Rejects null preparation input, an empty execution task, a decode wider
+  // than one token, an oversized chunk, and duplicate ids across both kinds.
   bool submit(std::vector<Task> tasks) override {
     std::lock_guard<std::mutex> g(mutex_);
     for (std::size_t i = 0; i < tasks.size(); ++i) {
@@ -84,14 +97,52 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
       // repeat within one submit has to be caught here. Pairwise because a
       // vector holds one prompt's chunks: small, and it allocates nothing.
       for (std::size_t j = 0; j < i; ++j) {
-        if (tasks[j].tid == tasks[i].tid) {
+        if (task_id_(tasks[j]) == task_id_(tasks[i])) {
           return false;
         }
       }
     }
-    for (Task& t : tasks) {
-      enqueue_(std::move(t));
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+    std::vector<TaskId> staged;
+    const std::size_t rotation_size = prefill_rotation_.size();
+    try {
+      // Allocate the rollback ledger before changing any queue. Record each id
+      // before enqueue_, which can fail after inserting it into pending_.
+      staged.reserve(tasks.size());
+#endif
+      for (Task& t : tasks) {
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+        staged.push_back(task_id_(t));
+#endif
+        enqueue_(std::move(t));
+      }
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+    } catch (...) {
+      // No allocation on rollback. Existing queue entries are untouched; dead
+      // entries from this group must not retain caller-owned payloads or ids.
+      for (TaskId tid : staged) {
+        const auto it = pending_.find(tid);
+        if (it == pending_.end()) {
+          continue;
+        }
+        auto& queued = *it->second;
+        mark_cancelled_(queued);
+        if (auto* preparation = std::get_if<PrepareTask>(&queued.task)) {
+          preparation->input.reset();
+        } else {
+          queued.execution().input.prepared.reset();
+        }
+        pending_.erase(it);
+      }
+      // New sessions only append slots. A slot may have no map entry yet if
+      // try_emplace threw; erase tolerates that and restores the pairing.
+      while (prefill_rotation_.size() > rotation_size) {
+        prefill_by_session_.erase(prefill_rotation_.back());
+        prefill_rotation_.pop_back();
+      }
+      return false;
     }
+#endif
     return true;
   }
 
@@ -102,9 +153,13 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
 
   // Spending accumulates instead of counting a budget down, so no arithmetic
   // here can wrap below zero.
-  std::vector<Task> get_work() override {
-    std::vector<Task> taken;
+  std::optional<Work> get_work() override {
     std::lock_guard<std::mutex> g(mutex_);
+    drop_cancelled_(preparation_queue_);
+    if (prepare_next_ && !preparation_queue_.empty()) {
+      return take_preparation_();
+    }
+    std::vector<ExecutionTask> taken;
     std::size_t spent = 0;
     // Sessions that already hold a decode in this batch. The executor is
     // promised consecutive ranges and one produce_output per session, so a
@@ -117,7 +172,14 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
     while (spent < max_batch_tokens_ &&
            take_prefill_pass_(taken, spent, decoding)) {
     }
-    return taken;
+    if (!taken.empty()) {
+      prepare_next_ = true;
+      return Work{ExecutionBatch{std::move(taken)}};
+    }
+    if (!preparation_queue_.empty()) {
+      return take_preparation_();
+    }
+    return std::nullopt;
   }
 
   std::vector<Task> cancel(SessionId sid) override {
@@ -128,7 +190,7 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
     if (prefills != prefill_by_session_.end()) {
       for (const TaskPtr& t : prefills->second) {
         if (release_(t)) {
-          dropped.push_back(std::move(*t));
+          dropped.push_back(std::move(t->task));
         }
       }
       // The entry stays behind, empty, because it holds the session's place in
@@ -138,10 +200,23 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
     // Marked in place rather than erased: the queues already tolerate
     // cancelled entries, and drop_cancelled_ removes them as they surface.
     for (const TaskPtr& t : decode_queue_) {
-      if (t->input.sid == sid && release_(t)) {
-        dropped.push_back(std::move(*t));
+      if (t->execution().input.sid == sid && release_(t)) {
+        dropped.push_back(std::move(t->task));
       }
     }
+    return dropped;
+  }
+
+  std::vector<Task> cancel_task(TaskId tid) override {
+    std::lock_guard<std::mutex> g(mutex_);
+    const auto it = pending_.find(tid);
+    if (it == pending_.end()) {
+      return {};
+    }
+    const TaskPtr task = it->second;
+    release_(task);
+    std::vector<Task> dropped;
+    dropped.push_back(std::move(task->task));
     return dropped;
   }
 
@@ -151,10 +226,12 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
 
     dropped.reserve(pending_.size());
     for (auto& entry : pending_) {
-      entry.second->cancelled = true;
-      dropped.push_back(std::move(*entry.second));
+      mark_cancelled_(*entry.second);
+      dropped.push_back(std::move(entry.second->task));
     }
     pending_.clear();
+    preparation_queue_.clear();
+    prepare_next_ = false;
     decode_queue_.clear();
     prefill_by_session_.clear();
     prefill_rotation_.clear();
@@ -183,8 +260,19 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
         max_decode_sequences_(max_decode_sequences),
         max_prefill_chunk_size_(max_prefill_chunk_size) {}
 
+  static TaskId task_id_(const Task& task) {
+    return std::visit([](const auto& t) { return t.tid; }, task);
+  }
+
   // Caller holds mutex_.
-  bool admissible_(const Task& t) const {
+  bool admissible_(const Task& task) const {
+    if (pending_.count(task_id_(task)) != 0) {
+      return false;
+    }
+    if (const auto* preparation = std::get_if<PrepareTask>(&task)) {
+      return preparation->input != nullptr;
+    }
+    const auto& t = std::get<ExecutionTask>(task);
     if (t.input.size == 0) {
       return false;
     }
@@ -197,20 +285,22 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
     } else if (t.input.size > max_prefill_chunk_size_) {
       return false;
     }
-    return pending_.find(t.tid) == pending_.end();
+    return true;
   }
 
   // Caller holds mutex_, having already checked admissible_.
   void enqueue_(Task&& task) {
-    const bool decode = task.is_decode;
-    const SessionId sid = task.input.sid;
-    const TaskId tid = task.tid;
-
-    auto t = std::make_shared<Task>(std::move(task));
-    t->cancelled = false;
+    const TaskId tid = task_id_(task);
+    auto t = std::make_shared<QueuedTask>(QueuedTask{std::move(task)});
     pending_.emplace(tid, t);
-
-    if (decode) {
+    if (std::holds_alternative<PrepareTask>(t->task)) {
+      preparation_queue_.push_back(t);
+      return;
+    }
+    auto& execution = t->execution();
+    execution.cancelled = false;
+    const SessionId sid = execution.input.sid;
+    if (execution.is_decode) {
       decode_queue_.push_back(t);
       return;
     }
@@ -218,11 +308,14 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
     // insertion, not the emptiness of the queue, is what decides whether it
     // joins. Testing for emptiness would give a second slot to a session whose
     // entry cancel() emptied, and it would then take two turns per pass.
-    auto entry = prefill_by_session_.try_emplace(sid);
-    if (entry.second) {
+    auto entry = prefill_by_session_.find(sid);
+    if (entry == prefill_by_session_.end()) {
+      // Append the slot first: submit's rollback can retire it whether map
+      // insertion succeeds or throws. Never leave a map entry without a slot.
       prefill_rotation_.push_back(sid);
+      entry = prefill_by_session_.try_emplace(sid).first;
     }
-    entry.first->second.push_back(t);
+    entry->second.push_back(t);
   }
 
   // pending_ tracks only tasks still waiting, so a dispatched one leaves it.
@@ -231,13 +324,29 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
     pending_.erase(tid);
   }
 
+  // Caller holds mutex_; the preparation queue has a live head.
+  Work take_preparation_() {
+    const TaskPtr task = preparation_queue_.front();
+    preparation_queue_.pop_front();
+    dispatch_(task_id_(task->task));
+    prepare_next_ = false;
+    return Work{std::move(std::get<PrepareTask>(task->task))};
+  }
+
+  static void mark_cancelled_(QueuedTask& task) {
+    task.cancelled = true;
+    if (auto* execution = std::get_if<ExecutionTask>(&task.task)) {
+      execution->cancelled = true;
+    }
+  }
+
   // Returns whether this call was the one that dropped the task, so that a
   // double cancel reports it once. Caller holds mutex_.
   bool release_(const TaskPtr& t) {
-    if (pending_.erase(t->tid) == 0) {
+    if (t->cancelled || pending_.erase(task_id_(t->task)) == 0) {
       return false; // already handed out, or already dropped
     }
-    t->cancelled = true;
+    mark_cancelled_(*t);
     return true;
   }
 
@@ -253,7 +362,7 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
   // max_batch_tokens above max_decode_sequences, so this cannot exhaust the
   // budget. Caller holds mutex_.
   void take_decodes_(
-      std::vector<Task>& taken,
+      std::vector<ExecutionTask>& taken,
       std::size_t& spent,
       std::unordered_set<SessionId>& decoding) {
     std::vector<TaskPtr> deferred; // session already decoding in this batch
@@ -265,13 +374,13 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
       }
       const TaskPtr t = decode_queue_.front();
       decode_queue_.pop_front();
-      if (!decoding.insert(t->input.sid).second) {
+      if (!decoding.insert(t->execution().input.sid).second) {
         deferred.push_back(t);
         continue;
       }
       // Read the id before moving the task out of the shared entry.
-      const TaskId tid = t->tid;
-      taken.push_back(std::move(*t));
+      const TaskId tid = t->execution().tid;
+      taken.push_back(std::move(t->execution()));
       dispatch_(tid);
       ++n;
       spent += 1;
@@ -286,7 +395,7 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
   // One turn each, in rotation order. Returns whether anything was taken.
   // Caller holds mutex_.
   bool take_prefill_pass_(
-      std::vector<Task>& taken,
+      std::vector<ExecutionTask>& taken,
       std::size_t& spent,
       const std::unordered_set<SessionId>& decoding) {
     bool progress = false;
@@ -317,7 +426,7 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
         deferred.push_back(sid);
         continue;
       }
-      const std::size_t n = dq.front()->input.size;
+      const std::size_t n = dq.front()->execution().input.size;
       // The loop condition keeps spent below the budget, so the remaining room
       // is positive.
       if (n > max_batch_tokens_ - spent) {
@@ -327,8 +436,8 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
         continue;
       }
       const TaskPtr t = dq.front();
-      const TaskId tid = t->tid;
-      taken.push_back(std::move(*t));
+      const TaskId tid = t->execution().tid;
+      taken.push_back(std::move(t->execution()));
       dispatch_(tid);
       dq.pop_front();
       spent += n;
@@ -357,6 +466,8 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
   std::size_t max_decode_sequences_;
   std::size_t max_prefill_chunk_size_;
 
+  TaskQueue preparation_queue_;
+  bool prepare_next_ = false;
   TaskQueue decode_queue_;
 
   // A session is in prefill_rotation_ exactly when it has an entry here. That

@@ -19,7 +19,9 @@ and the rendered text is split on the sentinels with the stored ids spliced back
 in -- only for turns whose content/tool fingerprint and any supplied reasoning string
 match the recorded response, and whose ids are present (a stop-trimmed turn is
 left as text). An edit invalidates that turn and all later records. The worker's
-exact-token prefix check separately protects KV reuse.
+exact-token prefix check separately protects KV reuse. Image-history turns also
+require matching original source-history provenance; preserving their generated
+ids does not authorize native image-history KV reuse.
 """
 
 import hashlib
@@ -29,6 +31,7 @@ import uuid
 from typing import Optional
 
 from .chat_template import ChatTemplate
+from .image_input import bind_image_segments, has_images
 from .protocol import ChatMessage
 from .session_runtime import PromptInput
 
@@ -139,6 +142,48 @@ class OpenAITranscriptState:
         if reasoning_content is None:
             return None
         return hashlib.sha256(reasoning_content.encode("utf-8")).digest()
+
+    @staticmethod
+    def _history_fingerprint(messages: list[ChatMessage]) -> bytes:
+        # Hash original source messages, never the random rendering sentinels.
+        # Escape ignored metadata too: it may contain unpaired surrogates.
+        blob = json.dumps(
+            [message.model_dump(mode="json") for message in messages],
+            sort_keys=True,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(blob.encode("utf-8")).digest()
+
+    @staticmethod
+    def _history_prefixes(messages: list[ChatMessage], positions) -> dict:
+        """Hash selected JSON-list prefixes, serializing each message only once."""
+        if not positions:
+            return {}
+        last = max(positions)
+        prefixes = {}
+        digest = hashlib.sha256(b"[")
+        prefix_has_images = False
+        for pos in range(last + 1):
+            if pos in positions:
+                # Closing a copy preserves the open list for the next prefix.
+                closed = digest.copy()
+                closed.update(b"]")
+                prefixes[pos] = (closed.digest(), prefix_has_images)
+            if pos == last:
+                break
+            if pos:
+                digest.update(b",")
+            message = messages[pos]
+            blob = json.dumps(
+                message.model_dump(mode="json"),
+                sort_keys=True,
+                ensure_ascii=True,
+                separators=(",", ":"),
+            )
+            digest.update(blob.encode("utf-8"))
+            prefix_has_images = prefix_has_images or has_images([message])
+        return prefixes
 
     def _normalize_scaffold(self, text_chunk: str, preamble: str) -> Optional[str]:
         """Force the scaffold region (between the last assistant header in
@@ -266,41 +311,89 @@ class OpenAITranscriptState:
         rendered_prompt: str,
         tools,
         template_kwargs,
+        render_messages: Optional[list[ChatMessage]] = None,
+        image_bindings: Optional[dict] = None,
     ) -> PromptInput:
-        """Return a PromptInput: token-ID segments when this session has faithful
+        """Return token-ID segments when this session has faithful
         stored ids for matching prior assistant turns, else the plain rendered
         text. Each incoming assistant turn is matched IN ORDER against the stored
         records and only spliced when its content/tool calls and any supplied
         reasoning string match what we returned, and we kept faithful ids for it.
         Omitted or null reasoning permits reuse; a string edit invalidates the tail.
         Falls back to text on a sentinel collision or a render that
-        dropped/duplicated a sentinel."""
-        stored = self._turns.get(session_id or "")
-        if not stored:
-            return PromptInput(text=rendered_prompt)
+        dropped/duplicated a sentinel. Identity uses original `messages`, while
+        `render_messages` may contain image markers. Prune stale records only
+        after rendering and image binding succeed."""
+        stored = self._turns.get(session_id or "", {})
+        invalidate_from = None
         # Missing records render as text without shifting later turn indices.
         positions = [i for i, m in enumerate(messages) if m.role == "assistant"]
+        candidates = {pos: stored[k] for k, pos in enumerate(positions) if k in stored}
+        prefixes = {}
+        if candidates and (
+            any(
+                record.get("history_has_images", False)
+                for record in candidates.values()
+            )
+            or has_images(messages[i] for i in range(max(candidates)))
+        ):
+            prefixes = self._history_prefixes(messages, candidates)
         splice: dict[int, dict] = {}  # message index -> {"ids", "preamble"}
         for k, pos in enumerate(positions):
             record = stored.get(k)
             if record is None:
                 continue
             m = messages[pos]
-            if self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"] or (
-                m.reasoning_content is not None
-                and self._reasoning_fingerprint(m.reasoning_content)
-                != record["reasoning_fp"]
+            prefix_fp, prefix_has_images = prefixes.get(pos, (None, False))
+            check_history = record.get("history_has_images", False) or prefix_has_images
+            history_mismatch = check_history and (
+                record.get("history_fp") is None or record["history_fp"] != prefix_fp
+            )
+            if (
+                history_mismatch
+                or self._assistant_fingerprint(m.content, m.tool_calls) != record["fp"]
+                or (
+                    m.reasoning_content is not None
+                    and self._reasoning_fingerprint(m.reasoning_content)
+                    != record["reasoning_fp"]
+                )
             ):
-                # Discard the stale tail without shifting subsequent turn indices.
-                self._turns[session_id or ""] = {
-                    index: record for index, record in stored.items() if index < k
-                }
+                invalidate_from = k
                 break
             if record["ids"] is not None:
                 splice[pos] = {
                     "ids": record["ids"],
                     "preamble": record.get("preamble", ""),
                 }
+        prompt = self._splice_prompt_input(
+            render_messages if render_messages is not None else messages,
+            rendered_prompt,
+            splice,
+            tools,
+            template_kwargs,
+        )
+        if image_bindings:
+            prompt = PromptInput(
+                segments=bind_image_segments(
+                    (
+                        prompt.segments
+                        if prompt.segments is not None
+                        else [{"text": prompt.text}]
+                    ),
+                    image_bindings,
+                )
+            )
+        if invalidate_from is not None:
+            self._turns[session_id or ""] = {
+                index: record
+                for index, record in stored.items()
+                if index < invalidate_from
+            }
+        return prompt
+
+    def _splice_prompt_input(
+        self, messages, rendered_prompt, splice, tools, template_kwargs
+    ) -> PromptInput:
         if not splice:
             return PromptInput(text=rendered_prompt)
         tool_splice = {
@@ -353,6 +446,7 @@ class OpenAITranscriptState:
         prior_turns: int,
         preamble: str = "",
         reasoning_content: Optional[str] = None,
+        source_messages: Optional[list[ChatMessage]] = None,
     ) -> None:
         """Record this turn's {fingerprint, generated ids, generation preamble} at
         `prior_turns` (the assistant-turn count of the request it answers).
@@ -363,7 +457,9 @@ class OpenAITranscriptState:
         `reasoning_content` is the client-visible value,
         including None when the client opted out. `preamble` is the generation
         scaffold (e.g. the Qwen3 `<think>` block) reproduced ahead of the spliced
-        ids next request."""
+        ids next request. `source_messages` is the original request history,
+        before image-marker rewriting. Its digest is required when the recorded
+        or incoming prefix contains images; missing provenance is not a match."""
         if not session_id:
             return
         turns = self._turns.setdefault(session_id, {})
@@ -376,6 +472,14 @@ class OpenAITranscriptState:
                 list(generated_token_ids) if generated_token_ids is not None else None
             ),
             "preamble": preamble,
+            "history_fp": (
+                self._history_fingerprint(source_messages)
+                if source_messages is not None
+                else None
+            ),
+            "history_has_images": (
+                has_images(source_messages) if source_messages is not None else False
+            ),
         }
 
     def reset(self, session_id: str) -> None:

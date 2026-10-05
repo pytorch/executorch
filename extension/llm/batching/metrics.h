@@ -64,14 +64,16 @@ struct ET_EXPERIMENTAL GenerationMetrics {
   // generate_async() was called. Taken on the caller's thread, before the
   // request is queued.
   MetricsTime t_submit{};
-  // The first batch this generation appeared in. Everything between here and
-  // t_submit is time the scheduler did not pick it.
+  // The first execution batch this generation appeared in. The interval from
+  // t_submit also includes preparation for the token-vector overload.
   MetricsTime t_first_step{};
   MetricsTime t_first_token{};
   MetricsTime t_end{};
 
+  // Legacy token-named input counters measure decoder positions. For opaque
+  // input they need not equal tokenizer tokens; serving keeps that identity.
   std::int64_t n_prompt_tokens = 0;
-  // Successfully executed initial-input tokens, including a carried pending
+  // Successfully executed initial-input positions, including a carried pending
   // token, excluding reused context and later generated-token inputs. Counts
   // physical work even when cancellation or shutdown discards its result.
   std::int64_t n_prefilled_tokens = 0;
@@ -96,8 +98,8 @@ struct ET_EXPERIMENTAL GenerationMetrics {
         : 0;
   }
 
-  // The queueing share of ttft_us(). Large means the scheduler was busy, not
-  // that prefill was slow.
+  // Time before decoder execution, including scheduled preparation for the
+  // token-vector overload as well as scheduler queueing.
   std::int64_t queue_wait_us() const {
     return stamped(t_submit) && stamped(t_first_step)
         ? us_between(t_submit, t_first_step)
@@ -173,8 +175,8 @@ struct ET_EXPERIMENTAL EngineMetrics {
   std::int64_t step_latency_sum_us = 0;
   std::int64_t step_latency_max_us = 0;
 
-  // Every token the engine processed. Task::is_decode classifies each one
-  // exactly, so these are complete.
+  // Every decoder position the engine processed. ExecutionTask::is_decode
+  // classifies each one exactly, so these are complete.
   //
   // There is deliberately no rate over every step that held them. A step
   // mixing both kinds runs them in one forward pass over one weight read, so
@@ -313,8 +315,8 @@ struct ET_EXPERIMENTAL EngineMetrics {
     return steps > 0 ? static_cast<double>(model_input_tokens()) / steps : 0.0;
   }
 
-  // Wall time the engine spent outside execute(): waiting for work, draining
-  // commands, running callbacks.
+  // Wall time outside decoder execute(): preparation, waiting for work,
+  // draining commands, and running callbacks.
   double idle_fraction() const {
     const double wall = wall_us();
     return wall > 0.0 ? 1.0 - static_cast<double>(step_latency_sum_us) / wall

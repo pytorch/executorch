@@ -41,6 +41,8 @@ using executorch::extension::llm::batching::GenerationHandle;
 using executorch::extension::llm::batching::GenerationUpdate;
 using executorch::extension::llm::batching::InitializationState;
 using executorch::extension::llm::batching::Position;
+using executorch::extension::llm::batching::PreparationInput;
+using executorch::extension::llm::batching::PreparedInputPtr;
 using executorch::extension::llm::batching::Runner;
 using executorch::extension::llm::batching::SamplingParams;
 using executorch::extension::llm::batching::Scheduler;
@@ -48,7 +50,10 @@ using executorch::extension::llm::batching::Session;
 using executorch::extension::llm::batching::SessionId;
 using executorch::extension::llm::batching::stamped;
 using executorch::extension::llm::batching::Task;
+using executorch::extension::llm::batching::TaskId;
 using executorch::extension::llm::batching::Token;
+using executorch::extension::llm::batching::TokenPreparedInput;
+using executorch::extension::llm::batching::Work;
 using executorch::extension::llm::batching::testing::FakeExecutor;
 
 namespace {
@@ -225,8 +230,14 @@ class CloneExecutor : public FakeExecutor {
       history.resize(start);
       history.insert(
           history.end(),
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          static_cast<const TokenPreparedInput&>(*input.prepared)
+                  .tokens()
+                  .begin() +
+              input.offset,
+          static_cast<const TokenPreparedInput&>(*input.prepared)
+                  .tokens()
+                  .begin() +
+              input.offset + input.size);
       const auto& output = out.outputs[i];
       if (output && !output->tokens.empty()) {
         history.insert(
@@ -321,6 +332,24 @@ std::vector<Token> tokens(int n, Token first = 100) {
   return result;
 }
 
+PreparedInputPtr prepare_tokens(Runner& runner, std::vector<Token> tokens) {
+  PreparationInput input;
+  input.segments.emplace_back(std::move(tokens));
+  std::promise<PreparedInputPtr> promise;
+  auto future = promise.get_future();
+  runner.prepare_async(
+      std::move(input), {}, [&](bool ok, PreparedInputPtr output) {
+        EXPECT_TRUE(ok);
+        promise.set_value(std::move(output));
+      });
+  if (future.wait_for(kTimeout) != std::future_status::ready) {
+    ADD_FAILURE() << "preparation did not settle";
+    runner.shutdown();
+    return {};
+  }
+  return future.get();
+}
+
 GenConfig config(std::int32_t max_new_tokens) {
   GenConfig result;
   result.max_new_tokens = max_new_tokens;
@@ -346,7 +375,10 @@ class RejectingScheduler : public Scheduler {
   bool has_work() const override {
     return false;
   }
-  std::vector<Task> get_work() override {
+  std::optional<Work> get_work() override {
+    return std::nullopt;
+  }
+  std::vector<Task> cancel_task(TaskId) override {
     return {};
   }
   std::vector<Task> cancel(SessionId) override {
@@ -1265,8 +1297,11 @@ TEST(CloneTest, CopiesOnlyCommittedPrefixAndStartsIdleWithoutSampling) {
       generate(source, tokens(1, 300), config(1), continued_updates);
   ASSERT_TRUE(continued_updates->wait());
   continued.wait();
-  EXPECT_EQ(executor.seen().back().effective_position(), 6);
-  EXPECT_EQ(executor.seen().back().size, 2u);
+  const auto continued_seen = executor.seen();
+  EXPECT_EQ(continued_seen[continued_seen.size() - 2].effective_position(), 6);
+  EXPECT_EQ(continued_seen[continued_seen.size() - 2].size, 1u);
+  EXPECT_EQ(continued_seen.back().effective_position(), 7);
+  EXPECT_EQ(continued_seen.back().size, 1u);
   EXPECT_EQ(executor.history(source_id)[6], source_updates->tokens().back());
   EXPECT_EQ(executor.history(child_id), expected);
 }
@@ -1584,8 +1619,12 @@ TEST_P(CloneStopTest, CloneCompletesIndependentlyUnlessRunnerStops) {
     ASSERT_TRUE(next->wait());
     continued.wait();
     EXPECT_EQ(continued.finish_reason(), FinishReason::NewTokenLimit);
-    EXPECT_EQ(executor.seen().back().effective_position(), 4);
-    EXPECT_EQ(executor.seen().back().size, 2u);
+    const auto continued_seen = executor.seen();
+    EXPECT_EQ(
+        continued_seen[continued_seen.size() - 2].effective_position(), 4);
+    EXPECT_EQ(continued_seen[continued_seen.size() - 2].size, 1u);
+    EXPECT_EQ(continued_seen.back().effective_position(), 5);
+    EXPECT_EQ(continued_seen.back().size, 1u);
   }
 }
 
@@ -1733,11 +1772,12 @@ TEST(DeltaTest, SecondTurnContinuesWhereTheFirstEnded) {
 
   const std::vector<FakeExecutor::Seen> seen = executor.seen();
   ASSERT_GE(seen.size(), 3u);
-  EXPECT_EQ(seen.back().effective_position(), after_first)
-      << "the second turn must append, not restart at 0";
+  EXPECT_EQ(seen[seen.size() - 2].effective_position(), after_first);
+  EXPECT_EQ(seen[seen.size() - 2].size, 1u);
+  EXPECT_EQ(seen.back().effective_position(), after_first + 1);
   EXPECT_GT(seen.back().effective_position(), 0);
-  EXPECT_EQ(seen.back().size, 2u)
-      << "the delta carries the token the first turn emitted but never fed";
+  EXPECT_EQ(seen.back().size, 1u)
+      << "the carried prediction is a separate input before the suffix";
   first.wait();
   second.wait();
   EXPECT_EQ(first.metrics().n_prefilled_tokens, 3);
@@ -2029,10 +2069,11 @@ TEST(SpeculativeTest, TerminalStepPositionCarriesToTheNextTurn) {
   ASSERT_TRUE(second->wait());
   ASSERT_EQ(second->finish(), FinishReason::NewTokenLimit);
 
-  EXPECT_EQ(executor.seen().back().effective_position(), after_first)
-      << "the second turn must resume at the carried token, not past it";
-  EXPECT_EQ(executor.seen().back().size, 2u)
-      << "the delta carries the token the first turn emitted but never fed";
+  const auto seen = executor.seen();
+  EXPECT_EQ(seen[seen.size() - 2].effective_position(), after_first);
+  EXPECT_EQ(seen[seen.size() - 2].size, 1u);
+  EXPECT_EQ(seen.back().effective_position(), after_first + 1);
+  EXPECT_EQ(seen.back().size, 1u);
 }
 
 TEST(SpeculativeTest, StopTokenInAcceptedRunDropsOnlyTheSuffix) {
@@ -2094,9 +2135,11 @@ TEST(SpeculativeTest, FinalStopTokenCarriesToTheNextTurn) {
 
   const auto seen = executor.seen();
   ASSERT_FALSE(seen.empty());
-  EXPECT_EQ(seen.back().effective_position(), position_after_stop);
-  EXPECT_EQ(seen.back().size, 2u)
-      << "the next delta carries the final uncommitted STOP";
+  EXPECT_EQ(seen[seen.size() - 2].effective_position(), position_after_stop);
+  EXPECT_EQ(seen[seen.size() - 2].size, 1u);
+  EXPECT_EQ(seen.back().effective_position(), position_after_stop + 1);
+  EXPECT_EQ(seen.back().size, 1u)
+      << "the uncommitted STOP is forwarded before the selected suffix";
 }
 
 TEST(SpeculativeTest, AcceptedRunUsesExecutorPosition) {
@@ -2124,7 +2167,12 @@ TEST(FailureTest, SchedulerRejectionEndsTheGeneration) {
   Session session = open(runner);
   auto updates = std::make_shared<Updates>();
 
-  GenerationHandle handle = generate(session, tokens(2), config(2), updates);
+  auto prepared = std::make_shared<const TokenPreparedInput>(
+      std::make_shared<const std::vector<Token>>(tokens(2)));
+  GenerationHandle handle = session.generate_async(
+      prepared, 0, 2, config(2), [updates](const auto& update) {
+        (*updates)(update);
+      });
   ASSERT_TRUE(updates->wait());
   handle.wait();
   EXPECT_EQ(updates->finish(), FinishReason::Failed);
@@ -2239,6 +2287,8 @@ TEST(CancelTest, InterleavedPrefillCountsAllExecutedChunksBeforeCancellation) {
   const auto first_id = last_opened(executor);
   Session second = open(fixture.runner);
   const auto second_id = last_opened(executor);
+  auto first_prepared = prepare_tokens(fixture.runner, tokens(4));
+  auto second_prepared = prepare_tokens(fixture.runner, tokens(6));
   auto barrier_updates = std::make_shared<Updates>();
   auto first_updates = std::make_shared<Updates>();
   auto second_updates = std::make_shared<Updates>();
@@ -2254,11 +2304,14 @@ TEST(CancelTest, InterleavedPrefillCountsAllExecutedChunksBeforeCancellation) {
   // Queue both prompts behind the barrier to force A, B, A, B in one batch.
   GenerationHandle second_handle;
   auto first_handle = first.generate_async(
-      tokens(4), config(1), [&](const GenerationUpdate& update) {
+      first_prepared, 0, 4, config(1), [&](const GenerationUpdate& update) {
         second_handle.cancel();
         (*first_updates)(update);
       });
-  second_handle = generate(second, tokens(6), config(1), second_updates);
+  second_handle = second.generate_async(
+      second_prepared, 0, 6, config(1), [second_updates](const auto& update) {
+        (*second_updates)(update);
+      });
   executor.release();
 
   ASSERT_TRUE(first_updates->wait());
@@ -2395,10 +2448,18 @@ TEST(CancelTest, DecodeCancelAdvancesOnlyForDeliveredTokens) {
   ASSERT_TRUE(resumed->wait());
   ASSERT_EQ(resumed->finish(), FinishReason::NewTokenLimit);
 
-  const FakeExecutor::Seen last_delta = executor.seen().back();
-  EXPECT_EQ(last_delta.effective_position(), static_cast<Position>(grown));
-  EXPECT_EQ(last_delta.size, 1u + carried)
-      << "a token delivered but not yet fed must ride with the next delta";
+  const auto seen = executor.seen();
+  const FakeExecutor::Seen last_delta = seen.back();
+  EXPECT_EQ(
+      last_delta.effective_position(), static_cast<Position>(grown + carried));
+  EXPECT_EQ(last_delta.size, 1u);
+  if (carried) {
+    ASSERT_GE(seen.size(), 2u);
+    EXPECT_EQ(
+        seen[seen.size() - 2].effective_position(),
+        static_cast<Position>(grown));
+    EXPECT_EQ(seen[seen.size() - 2].size, 1u);
+  }
 }
 
 TEST(SessionTest, DestroyingASessionEndsItsGeneration) {
@@ -2590,6 +2651,7 @@ TEST(ShutdownTest, CallbackShutdownStopsLaterOutputsInTheSameBatch) {
   Session barrier = open(fixture.runner);
   Session first = open(fixture.runner);
   Session second = open(fixture.runner);
+  auto prepared = prepare_tokens(fixture.runner, tokens(2));
   auto barrier_updates = std::make_shared<Updates>();
   auto first_updates = std::make_shared<Updates>();
   auto second_updates = std::make_shared<Updates>();
@@ -2601,14 +2663,16 @@ TEST(ShutdownTest, CallbackShutdownStopsLaterOutputsInTheSameBatch) {
   }
   std::atomic<bool> requested{false};
   GenerationHandle first_handle = first.generate_async(
-      tokens(2), config(2), [&](const GenerationUpdate& update) {
+      prepared, 0, 2, config(2), [&](const GenerationUpdate& update) {
         (*first_updates)(update);
         if (!update.finish_reason && !requested.exchange(true)) {
           fixture.runner.shutdown();
         }
       });
-  GenerationHandle second_handle =
-      generate(second, tokens(2), config(2), second_updates);
+  GenerationHandle second_handle = second.generate_async(
+      prepared, 0, 2, config(2), [second_updates](const auto& update) {
+        (*second_updates)(update);
+      });
   executor.release();
 
   while (!requested.load()) {

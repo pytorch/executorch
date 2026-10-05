@@ -23,24 +23,96 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 using executorch::extension::llm::batching::BatchInput;
 using executorch::extension::llm::batching::DecodeFirstScheduler;
+using executorch::extension::llm::batching::ExecutionBatch;
+using executorch::extension::llm::batching::ExecutionTask;
 using executorch::extension::llm::batching::Input;
 using executorch::extension::llm::batching::Position;
+using executorch::extension::llm::batching::PreparationInput;
+using executorch::extension::llm::batching::PrepareTask;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::SessionId;
-using executorch::extension::llm::batching::Task;
+using executorch::extension::llm::batching::TokenPreparedInput;
+using SchedulerTask = executorch::extension::llm::batching::Task;
+// The original execution-only regression cases use this short name.
+using Task = ExecutionTask;
 using executorch::extension::llm::batching::TaskId;
 using executorch::extension::llm::batching::to_batch_input;
 using executorch::extension::llm::batching::Token;
 
 namespace {
 
-using SchedulerPtr = std::unique_ptr<DecodeFirstScheduler>;
+// Adapt only the original execution-only cases. Every returned variant is
+// checked before unwrapping; mixed-work tests use DecodeFirstScheduler
+// directly.
+class ExecutionScheduler {
+ public:
+  explicit ExecutionScheduler(std::unique_ptr<DecodeFirstScheduler> scheduler)
+      : scheduler_(std::move(scheduler)) {}
+
+  bool submit(std::vector<ExecutionTask> executions) {
+    std::vector<SchedulerTask> tasks;
+    tasks.reserve(executions.size());
+    for (auto& execution : executions) {
+      tasks.emplace_back(std::move(execution));
+    }
+    return scheduler_->submit(std::move(tasks));
+  }
+
+  bool has_work() const {
+    return scheduler_->has_work();
+  }
+
+  std::vector<ExecutionTask> get_work() {
+    auto work = scheduler_->get_work();
+    if (!work) {
+      return {};
+    }
+    auto* batch = std::get_if<ExecutionBatch>(&*work);
+    EXPECT_NE(batch, nullptr);
+    if (!batch) {
+      return {};
+    }
+    EXPECT_FALSE(batch->tasks.empty());
+    return std::move(batch->tasks);
+  }
+
+  std::vector<ExecutionTask> cancel(SessionId sid) {
+    return executions_(scheduler_->cancel(sid));
+  }
+
+  std::vector<ExecutionTask> clear() {
+    return executions_(scheduler_->clear());
+  }
+
+  std::size_t max_batch_tokens() const {
+    return scheduler_->max_batch_tokens();
+  }
+
+ private:
+  static std::vector<ExecutionTask> executions_(
+      std::vector<SchedulerTask> tasks) {
+    std::vector<ExecutionTask> executions;
+    for (auto& task : tasks) {
+      auto* execution = std::get_if<ExecutionTask>(&task);
+      EXPECT_NE(execution, nullptr);
+      if (execution) {
+        executions.push_back(std::move(*execution));
+      }
+    }
+    return executions;
+  }
+
+  std::unique_ptr<DecodeFirstScheduler> scheduler_;
+};
+
+using SchedulerPtr = std::unique_ptr<ExecutionScheduler>;
 
 // Sizes a scheduler by decode cap and chunk size, giving it room for two full
 // chunks beside a saturated decode batch. Every case below states its limits
@@ -50,14 +122,14 @@ using SchedulerPtr = std::unique_ptr<DecodeFirstScheduler>;
 SchedulerPtr make_scheduler(
     std::size_t max_decode_sequences,
     std::size_t max_prefill_chunk_size) {
-  return DecodeFirstScheduler::create(
+  return std::make_unique<ExecutionScheduler>(DecodeFirstScheduler::create(
       2 * max_prefill_chunk_size + max_decode_sequences,
       max_decode_sequences,
-      max_prefill_chunk_size);
+      max_prefill_chunk_size));
 }
 
 // Token values are irrelevant to scheduling, so they are all the same.
-Task make_task(
+ExecutionTask make_task(
     TaskId task_id,
     SessionId session,
     std::size_t n_tokens,
@@ -65,18 +137,23 @@ Task make_task(
     bool is_decode,
     bool produce_output = true) {
   auto tokens = std::make_shared<std::vector<Token>>(n_tokens, 7);
-  Task task;
+  ExecutionTask task;
   task.tid = task_id;
   task.cancelled = false;
   task.is_decode = is_decode;
-  task.input =
-      Input{session, produce_output, 0, n_tokens, std::move(tokens), position};
+  task.input = Input{
+      session,
+      produce_output,
+      0,
+      n_tokens,
+      std::make_shared<const TokenPreparedInput>(tokens),
+      position};
   return task;
 }
 
 // One chunk of a prompt. A chunk of one token is still prefill, which is the
 // distinction is_decode exists to make.
-Task prefill(
+ExecutionTask prefill(
     TaskId task_id,
     SessionId session,
     std::size_t n_tokens,
@@ -97,10 +174,21 @@ Task decode(TaskId task_id, SessionId session, Position position = 0) {
       task_id, session, /*n_tokens=*/1, position, /*is_decode=*/true);
 }
 
-bool submit(DecodeFirstScheduler& scheduler, Task task) {
-  std::vector<Task> tasks;
-  tasks.push_back(std::move(task));
-  return scheduler.submit(std::move(tasks));
+bool submit(ExecutionScheduler& scheduler, ExecutionTask task) {
+  return scheduler.submit({std::move(task)});
+}
+
+PrepareTask prepare(TaskId tid) {
+  return PrepareTask{tid, std::make_shared<const PreparationInput>()};
+}
+
+std::vector<TaskId> variant_ids(const std::vector<SchedulerTask>& tasks) {
+  std::vector<TaskId> result;
+  for (const auto& task : tasks) {
+    result.push_back(std::visit([](const auto& t) { return t.tid; }, task));
+  }
+  std::sort(result.begin(), result.end());
+  return result;
 }
 
 std::vector<TaskId> ids(const std::vector<Task>& tasks) {
@@ -172,7 +260,7 @@ static_assert(
 // --- construction ----------------------------------------------------------
 
 TEST(CreateTest, Defaults) {
-  SchedulerPtr scheduler = DecodeFirstScheduler::create();
+  auto scheduler = DecodeFirstScheduler::create();
   ASSERT_NE(scheduler, nullptr);
   EXPECT_EQ(scheduler->max_batch_tokens(), 544u);
   EXPECT_EQ(scheduler->max_decode_sequences(), 32u);
@@ -327,7 +415,8 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   auto tokens = std::make_shared<std::vector<Token>>(
       std::initializer_list<Token>{10, 11, 12, 13, 14, 15});
   Task task = prefill(1, 40, 4, 90, /*produce_output=*/false);
-  task.input.tokens = tokens;
+  auto prepared = std::make_shared<const TokenPreparedInput>(tokens);
+  task.input.prepared = prepared;
   task.input.offset = 1;
   EXPECT_TRUE(submit(*scheduler, std::move(task)));
 
@@ -337,7 +426,8 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   EXPECT_FALSE(work[0].input.produce_output);
   EXPECT_EQ(work[0].input.offset, 1u);
   EXPECT_EQ(work[0].input.size, 4u);
-  EXPECT_EQ(work[0].input.tokens.get(), tokens.get());
+  EXPECT_EQ(work[0].input.prepared.get(), prepared.get());
+  EXPECT_EQ(&prepared->tokens(), tokens.get());
   EXPECT_EQ(work[0].input.position, 90);
 }
 
@@ -937,4 +1027,283 @@ TEST(ConcurrencyTest, ObserversAreSafeDuringScheduling) {
 
   EXPECT_GT(observations.load(), 0) << "observer never ran";
   EXPECT_FALSE(scheduler->has_work());
+}
+
+// --- preparation and public variants ---------------------------------------
+
+TEST(PreparationTest, EmptyWorkIsNulloptAndPreparationIsFifo) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  Scheduler& api = *scheduler;
+  EXPECT_FALSE(api.get_work().has_value());
+  EXPECT_TRUE(api.submit({}));
+  EXPECT_FALSE(api.has_work());
+  auto first = prepare(1);
+  auto second = prepare(2);
+  ASSERT_TRUE(api.submit({first, second}));
+  for (const auto& expected : {first, second}) {
+    ASSERT_TRUE(api.has_work());
+    auto work = api.get_work();
+    ASSERT_TRUE(work.has_value());
+    ASSERT_TRUE(std::holds_alternative<PrepareTask>(*work));
+    const auto& actual = std::get<PrepareTask>(*work);
+    EXPECT_EQ(actual.tid, expected.tid);
+    EXPECT_EQ(actual.input, expected.input);
+    EXPECT_TRUE(api.cancel_task(actual.tid).empty());
+  }
+  EXPECT_FALSE(api.has_work());
+  EXPECT_FALSE(api.get_work().has_value());
+  EXPECT_TRUE(api.clear().empty());
+}
+
+TEST(PreparationTest, AlternatesWithPackedExecutionAndPreservesRotation) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  ASSERT_TRUE(scheduler->submit(
+      {prepare(100),
+       prepare(101),
+       prepare(102),
+       prepare(103),
+       decode(1, 1),
+       decode(2, 2),
+       decode(3, 3),
+       decode(4, 4),
+       prefill(10, 10, 4, 0, false),
+       prefill(12, 10, 4, 4),
+       prefill(11, 20, 4, 0, false),
+       prefill(13, 20, 4, 4)}));
+  for (TaskId i = 0; i < 4; ++i) {
+    auto work = scheduler->get_work();
+    ASSERT_TRUE(work.has_value());
+    ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*work));
+    const auto& tasks = std::get<ExecutionBatch>(*work).tasks;
+    EXPECT_EQ(ids(tasks), (std::vector<TaskId>{i + 1, i + 10}));
+    EXPECT_EQ(token_count(tasks), 5u);
+    work = scheduler->get_work();
+    ASSERT_TRUE(work.has_value());
+    ASSERT_TRUE(std::holds_alternative<PrepareTask>(*work));
+    EXPECT_EQ(std::get<PrepareTask>(*work).tid, i + 100);
+  }
+  EXPECT_FALSE(scheduler->has_work());
+  EXPECT_FALSE(scheduler->get_work().has_value());
+}
+
+TEST(PreparationTest, ContinuousArrivalsCannotStarveEitherKind) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  ASSERT_TRUE(scheduler->submit({prepare(1000), decode(1, 1)}));
+  for (TaskId i = 0; i < 20; ++i) {
+    auto execution = scheduler->get_work();
+    ASSERT_TRUE(execution.has_value());
+    ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*execution));
+    EXPECT_EQ(
+        ids(std::get<ExecutionBatch>(*execution).tasks),
+        (std::vector<TaskId>{i + 1}));
+    ASSERT_TRUE(scheduler->submit({decode(i + 2, i + 2)}));
+    auto preparation = scheduler->get_work();
+    ASSERT_TRUE(preparation.has_value());
+    ASSERT_TRUE(std::holds_alternative<PrepareTask>(*preparation));
+    EXPECT_EQ(std::get<PrepareTask>(*preparation).tid, i + 1000);
+    ASSERT_TRUE(scheduler->submit({prepare(i + 1001)}));
+  }
+  EXPECT_EQ(variant_ids(scheduler->clear()), (std::vector<TaskId>{21, 1020}));
+}
+
+TEST(PreparationTest, CancelledTurnsNeverProduceEmptyWork) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  ASSERT_TRUE(scheduler->submit({prepare(1), decode(2, 20)}));
+  ASSERT_EQ(scheduler->cancel_task(2).size(), 1u);
+  auto work = scheduler->get_work();
+  ASSERT_TRUE(work.has_value());
+  ASSERT_TRUE(std::holds_alternative<PrepareTask>(*work));
+  EXPECT_EQ(std::get<PrepareTask>(*work).tid, 1);
+
+  ASSERT_TRUE(scheduler->submit({prepare(3), decode(4, 40), decode(5, 50)}));
+  work = scheduler->get_work();
+  ASSERT_TRUE(work.has_value());
+  ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*work));
+  EXPECT_EQ(
+      ids(std::get<ExecutionBatch>(*work).tasks), (std::vector<TaskId>{4}));
+  ASSERT_EQ(scheduler->cancel_task(3).size(), 1u);
+  work = scheduler->get_work();
+  ASSERT_TRUE(work.has_value());
+  ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*work));
+  EXPECT_EQ(
+      ids(std::get<ExecutionBatch>(*work).tasks), (std::vector<TaskId>{5}));
+  EXPECT_FALSE(scheduler->get_work().has_value());
+}
+
+TEST(
+    MixedSubmitTest,
+    InvalidMemberRejectsEveryKindWithoutDisturbingQueuedWork) {
+  const std::vector<SchedulerTask> invalid = {
+      PrepareTask{7, nullptr},
+      prefill(7, 70, 0, 0),
+      prefill(7, 70, 5, 0),
+      make_task(7, 70, 2, 0, true)};
+  for (const auto& task : invalid) {
+    for (bool invalid_first : {false, true}) {
+      auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+      ASSERT_TRUE(scheduler->submit({prepare(90), decode(91, 91)}));
+      std::vector<SchedulerTask> tasks = {prepare(1), decode(2, 20)};
+      tasks.insert(invalid_first ? tasks.begin() : tasks.end(), task);
+      EXPECT_FALSE(scheduler->submit(std::move(tasks)));
+      EXPECT_EQ(variant_ids(scheduler->clear()), (std::vector<TaskId>{90, 91}));
+      EXPECT_FALSE(scheduler->has_work());
+      EXPECT_FALSE(scheduler->get_work().has_value());
+    }
+  }
+}
+
+TEST(MixedSubmitTest, TaskIdsAreUniqueAcrossPreparationAndExecution) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  EXPECT_FALSE(scheduler->submit({prepare(1), decode(1, 10)}));
+  EXPECT_FALSE(scheduler->submit({decode(1, 10), prepare(1)}));
+  EXPECT_FALSE(scheduler->submit({prepare(1), prepare(1)}));
+  EXPECT_FALSE(scheduler->has_work());
+  ASSERT_TRUE(scheduler->submit({prepare(1)}));
+  EXPECT_FALSE(scheduler->submit({prepare(2), decode(1, 10)}));
+  EXPECT_EQ(variant_ids(scheduler->clear()), (std::vector<TaskId>{1}));
+  ASSERT_TRUE(scheduler->submit({decode(1, 10)}));
+  EXPECT_FALSE(scheduler->submit({decode(2, 20), prepare(1)}));
+  EXPECT_EQ(variant_ids(scheduler->clear()), (std::vector<TaskId>{1}));
+}
+
+TEST(MixedCancelTest, SessionCancellationLeavesPreparationForTaskCancellation) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  Scheduler& api = *scheduler;
+  auto preparation = prepare(10);
+  ASSERT_TRUE(api.submit({preparation, decode(1, 10), prefill(2, 10, 4, 0)}));
+  auto dropped = api.cancel(10);
+  EXPECT_EQ(variant_ids(dropped), (std::vector<TaskId>{1, 2}));
+  for (const auto& task : dropped) {
+    ASSERT_TRUE(std::holds_alternative<ExecutionTask>(task));
+    EXPECT_TRUE(std::get<ExecutionTask>(task).cancelled);
+  }
+  EXPECT_TRUE(api.cancel(10).empty());
+  EXPECT_TRUE(api.has_work());
+  dropped = api.cancel_task(10);
+  ASSERT_EQ(dropped.size(), 1u);
+  ASSERT_TRUE(std::holds_alternative<PrepareTask>(dropped[0]));
+  EXPECT_EQ(std::get<PrepareTask>(dropped[0]).input, preparation.input);
+  EXPECT_TRUE(api.cancel_task(10).empty());
+  EXPECT_TRUE(api.cancel_task(404).empty());
+  EXPECT_FALSE(api.has_work());
+  EXPECT_FALSE(api.get_work().has_value());
+  EXPECT_TRUE(api.clear().empty());
+}
+
+TEST(
+    MixedCancelTest,
+    CancellingPreparationInTheMiddlePreservesFifoAndReusesId) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  ASSERT_TRUE(scheduler->submit({prepare(1), prepare(2), prepare(3)}));
+  EXPECT_EQ(variant_ids(scheduler->cancel_task(2)), (std::vector<TaskId>{2}));
+  ASSERT_TRUE(scheduler->submit({prepare(2)}));
+  for (TaskId expected : {1, 3, 2}) {
+    auto work = scheduler->get_work();
+    ASSERT_TRUE(work.has_value());
+    ASSERT_TRUE(std::holds_alternative<PrepareTask>(*work));
+    EXPECT_EQ(std::get<PrepareTask>(*work).tid, expected);
+  }
+  ASSERT_TRUE(scheduler->submit({decode(2, 20)}));
+  auto work = scheduler->get_work();
+  ASSERT_TRUE(work.has_value());
+  ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*work));
+  EXPECT_EQ(
+      ids(std::get<ExecutionBatch>(*work).tasks), (std::vector<TaskId>{2}));
+  EXPECT_TRUE(scheduler->cancel_task(2).empty());
+  EXPECT_FALSE(scheduler->has_work());
+}
+
+TEST(MixedCancelTest, TaskCancellationDropsOnlyTheSelectedExecution) {
+  for (bool is_decode : {false, true}) {
+    auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+    ASSERT_TRUE(scheduler->submit(
+        {make_task(1, 10, 1, 0, is_decode, false),
+         make_task(2, 10, 1, 1, is_decode, false),
+         make_task(3, 10, 1, 2, is_decode)}));
+    auto dropped = scheduler->cancel_task(2);
+    ASSERT_EQ(dropped.size(), 1u);
+    ASSERT_TRUE(std::holds_alternative<ExecutionTask>(dropped[0]));
+    EXPECT_EQ(std::get<ExecutionTask>(dropped[0]).tid, 2);
+    EXPECT_TRUE(std::get<ExecutionTask>(dropped[0]).cancelled);
+    EXPECT_TRUE(scheduler->cancel_task(2).empty());
+    std::vector<TaskId> dispatched;
+    while (scheduler->has_work()) {
+      auto work = scheduler->get_work();
+      ASSERT_TRUE(work.has_value());
+      ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*work));
+      auto batch_ids = ids(std::get<ExecutionBatch>(*work).tasks);
+      ASSERT_FALSE(batch_ids.empty());
+      dispatched.insert(dispatched.end(), batch_ids.begin(), batch_ids.end());
+    }
+    EXPECT_EQ(dispatched, (std::vector<TaskId>{1, 3}));
+    EXPECT_TRUE(scheduler->cancel_task(1).empty());
+  }
+}
+
+TEST(MixedCancelTest, OldTombstoneCannotCancelReusedIdInAnotherQueue) {
+  for (bool is_decode : {false, true}) {
+    auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+    ASSERT_TRUE(scheduler->submit({make_task(7, 10, 1, 0, is_decode)}));
+    ASSERT_EQ(scheduler->cancel_task(7).size(), 1u);
+    ASSERT_TRUE(scheduler->submit({prepare(7)}));
+    EXPECT_TRUE(scheduler->cancel(10).empty());
+    EXPECT_TRUE(scheduler->has_work());
+    auto work = scheduler->get_work();
+    ASSERT_TRUE(work.has_value());
+    ASSERT_TRUE(std::holds_alternative<PrepareTask>(*work));
+    EXPECT_EQ(std::get<PrepareTask>(*work).tid, 7);
+    EXPECT_FALSE(scheduler->has_work());
+  }
+}
+
+TEST(
+    MixedClearTest,
+    ShutdownReturnsAllQueuedVariantsExactlyOnceAndAllowsReuse) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  auto preparation = prepare(1);
+  ASSERT_TRUE(
+      scheduler->submit({preparation, decode(2, 20), prefill(3, 30, 4, 0)}));
+  auto dropped = scheduler->clear();
+  EXPECT_EQ(variant_ids(dropped), (std::vector<TaskId>{1, 2, 3}));
+  for (const auto& task : dropped) {
+    if (const auto* prep = std::get_if<PrepareTask>(&task)) {
+      EXPECT_EQ(prep->input, preparation.input);
+    } else {
+      EXPECT_TRUE(std::get<ExecutionTask>(task).cancelled);
+    }
+  }
+  EXPECT_FALSE(scheduler->has_work());
+  EXPECT_FALSE(scheduler->get_work().has_value());
+  EXPECT_TRUE(scheduler->clear().empty());
+  EXPECT_TRUE(scheduler->cancel_task(1).empty());
+  ASSERT_TRUE(scheduler->submit({prepare(1), decode(2, 20)}));
+  auto work = scheduler->get_work();
+  ASSERT_TRUE(work.has_value());
+  ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*work));
+  EXPECT_EQ(
+      ids(std::get<ExecutionBatch>(*work).tasks), (std::vector<TaskId>{2}));
+  EXPECT_EQ(variant_ids(scheduler->clear()), (std::vector<TaskId>{1}));
+}
+
+TEST(MixedClearTest, ShutdownDoesNotReturnDispatchedOrCancelledTasks) {
+  auto scheduler = DecodeFirstScheduler::create(5, 1, 4);
+  ASSERT_TRUE(
+      scheduler->submit({prepare(1), prepare(2), prepare(3), decode(4, 40)}));
+  auto execution = scheduler->get_work();
+  ASSERT_TRUE(execution.has_value());
+  ASSERT_TRUE(std::holds_alternative<ExecutionBatch>(*execution));
+  EXPECT_EQ(
+      ids(std::get<ExecutionBatch>(*execution).tasks),
+      (std::vector<TaskId>{4}));
+  auto preparation = scheduler->get_work();
+  ASSERT_TRUE(preparation.has_value());
+  ASSERT_TRUE(std::holds_alternative<PrepareTask>(*preparation));
+  EXPECT_EQ(std::get<PrepareTask>(*preparation).tid, 1);
+  ASSERT_EQ(scheduler->cancel_task(2).size(), 1u);
+  ASSERT_TRUE(scheduler->submit({decode(5, 50), prefill(6, 60, 4, 0)}));
+  EXPECT_EQ(variant_ids(scheduler->clear()), (std::vector<TaskId>{3, 5, 6}));
+  EXPECT_TRUE(scheduler->clear().empty());
+  EXPECT_TRUE(scheduler->cancel_task(1).empty());
+  EXPECT_TRUE(scheduler->cancel_task(4).empty());
+  EXPECT_FALSE(scheduler->get_work().has_value());
 }

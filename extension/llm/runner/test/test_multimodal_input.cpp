@@ -11,7 +11,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using executorch::extension::llm::EncodedImage;
 using executorch::extension::llm::Image;
+using executorch::extension::llm::make_encoded_image_input;
 using executorch::extension::llm::make_image_input;
 using executorch::extension::llm::make_text_input;
 using executorch::extension::llm::make_token_input;
@@ -415,6 +417,33 @@ TEST_F(MultimodalInputTest, AssignmentBetweenTypes) {
   input = MultimodalInput(text);
   EXPECT_TRUE(input.is_text());
   EXPECT_EQ(input.get_text(), text);
+}
+
+TEST_F(MultimodalInputTest, EncodedImageOwnsBytesDistinctFromPixels) {
+  EncodedImage image{{0x89, 0x50, 0x4e, 0x47}, "image/png"};
+  auto input = make_encoded_image_input(image);
+  image.data.clear();
+  EXPECT_TRUE(input.is_encoded_image());
+  EXPECT_FALSE(input.is_image());
+  EXPECT_EQ(input.get_type(), MultimodalInput::Type::ENCODED_IMAGE);
+  EXPECT_STREQ(input.type_name(), "encoded_image");
+  EXPECT_EQ(input.try_get_image(), nullptr);
+  ASSERT_NE(input.try_get_encoded_image(), nullptr);
+  EXPECT_EQ(input.get_encoded_image().data.size(), 4);
+  EXPECT_EQ(input.get_encoded_image().mime_type, "image/png");
+
+  const auto& view = input;
+  EXPECT_EQ(view.try_get_encoded_image(), &view.get_encoded_image());
+  auto copy = input;
+  copy.get_encoded_image().data[0] = 0;
+  EXPECT_EQ(input.get_encoded_image().data[0], 0x89);
+  auto moved = make_encoded_image_input(std::move(input).get_encoded_image());
+  EXPECT_EQ(moved.get_encoded_image().data[0], 0x89);
+  EXPECT_THROW(moved.get_image(), std::bad_variant_access);
+
+  MultimodalInput pixels(createTestImage());
+  EXPECT_FALSE(pixels.is_encoded_image());
+  EXPECT_EQ(pixels.try_get_encoded_image(), nullptr);
 }
 
 // Token-related tests

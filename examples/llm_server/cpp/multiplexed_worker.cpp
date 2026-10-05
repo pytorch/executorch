@@ -18,11 +18,13 @@
 #include <cmath>
 #include <condition_variable>
 #include <deque>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -94,7 +96,71 @@ std::string session_key(const Json& request) {
   return key.get<std::string>();
 }
 
-serving::PromptInput prompt_input(const Json& request) {
+extension::llm::EncodedImage image_input(
+    const Json& value,
+    std::size_t max_bytes) {
+  fields(value, {"mime_type", "data"});
+  auto mime = value.at("mime_type").get<std::string>();
+  if (mime != "image/jpeg" && mime != "image/png") {
+    throw std::invalid_argument(
+        "image MIME type must be image/jpeg or image/png");
+  }
+  const auto& encoded = value.at("data").get_ref<const std::string&>();
+  if (encoded.empty() || encoded.size() % 4 != 0) {
+    throw std::invalid_argument("image requires padded base64");
+  }
+  const std::size_t padding =
+      (encoded.back() == '=') + (encoded[encoded.size() - 2] == '=');
+  const auto size = encoded.size() / 4 * 3 - padding;
+  if (size == 0 || size > max_bytes) {
+    throw std::invalid_argument("encoded image exceeds byte limit");
+  }
+  auto digit = [](unsigned char c) -> int {
+    if (c >= 'A' && c <= 'Z')
+      return c - 'A';
+    if (c >= 'a' && c <= 'z')
+      return c - 'a' + 26;
+    if (c >= '0' && c <= '9')
+      return c - '0' + 52;
+    if (c == '+')
+      return 62;
+    if (c == '/')
+      return 63;
+    return -1;
+  };
+  std::vector<std::uint8_t> data;
+  data.reserve(size);
+  for (std::size_t i = 0; i < encoded.size(); i += 4) {
+    const bool last = i + 4 == encoded.size();
+    const auto a = digit(encoded[i]);
+    const auto b = digit(encoded[i + 1]);
+    const auto c = last && padding == 2 ? 0 : digit(encoded[i + 2]);
+    const auto d = last && padding != 0 ? 0 : digit(encoded[i + 3]);
+    if (a < 0 || b < 0 || c < 0 || d < 0 ||
+        (last && padding == 2 && (b & 15) != 0) ||
+        (last && padding == 1 && (c & 3) != 0)) {
+      throw std::invalid_argument("image requires canonical base64");
+    }
+    data.push_back(static_cast<std::uint8_t>((a << 2) | (b >> 4)));
+    if (!last || padding < 2)
+      data.push_back(static_cast<std::uint8_t>((b << 4) | (c >> 2)));
+    if (!last || padding == 0)
+      data.push_back(static_cast<std::uint8_t>((c << 6) | d));
+  }
+  constexpr std::uint8_t png[] = {137, 80, 78, 71, 13, 10, 26, 10};
+  const bool signature = mime == "image/png" ? data.size() >= sizeof(png) &&
+          std::equal(std::begin(png), std::end(png), data.begin())
+                                             : data.size() >= 3 &&
+          data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
+  if (!signature) {
+    throw std::invalid_argument("image contents do not match MIME type");
+  }
+  return {std::move(data), std::move(mime)};
+}
+
+serving::PromptInput prompt_input(
+    const Json& request,
+    const serving::ServingInfo& info) {
   if (request.contains("prompt") == request.contains("prompt_segments")) {
     throw std::invalid_argument(
         "supply exactly one of prompt and prompt_segments");
@@ -108,13 +174,20 @@ serving::PromptInput prompt_input(const Json& request) {
   if (!segments.is_array()) {
     throw std::invalid_argument("prompt_segments must be an array");
   }
+  std::size_t images = 0;
   for (const auto& segment : segments) {
-    fields(segment, {"text", "ids"});
-    if (segment.contains("text") == segment.contains("ids")) {
+    fields(segment, {"text", "ids", "image"});
+    if (segment.size() != 1) {
       throw std::invalid_argument(
-          "prompt segment requires exactly one of text and ids");
+          "prompt segment requires exactly one of text, ids, and image");
     }
-    if (segment.contains("text")) {
+    if (segment.contains("image")) {
+      if (++images > info.max_images) {
+        throw std::invalid_argument("image capability limit exceeded");
+      }
+      prompt.segments.emplace_back(
+          image_input(segment.at("image"), info.max_image_encoded_bytes));
+    } else if (segment.contains("text")) {
       prompt.segments.emplace_back(segment.at("text").get<std::string>());
     } else {
       const auto& ids = segment.at("ids");
@@ -207,6 +280,9 @@ Json terminal_json(const serving::TerminalEvent& event) {
       {"completion_tokens", s.completion_tokens},
       {"reused_prompt_tokens", s.reused_prompt_tokens},
       {"prefilled_prompt_tokens", s.prefilled_prompt_tokens},
+      {"prompt_positions", s.prompt_positions},
+      {"reused_prompt_positions", s.reused_prompt_positions},
+      {"prefilled_prompt_positions", s.prefilled_prompt_positions},
       {"prefill_ms", s.prefill_ms},
       {"decode_ms", s.decode_ms},
       {"total_ms", s.total_ms},
@@ -273,7 +349,12 @@ class Worker {
            Json({{"ready", true},
                  {"multiplexed", true},
                  {"max_named_sessions", info.max_sessions},
-                 {"max_inflight_requests", config_.max_inflight_requests}})
+                 {"max_inflight_requests", config_.max_inflight_requests},
+                 {"supports_images", info.max_images != 0},
+                 {"max_images", info.max_images},
+                 {"max_image_bytes", info.max_image_encoded_bytes},
+                 {"max_image_dimension", info.max_image_dimension},
+                 {"max_image_pixels", info.max_image_pixels}})
                    .dump() +
                "\n",
            false});
@@ -366,7 +447,27 @@ class Worker {
   }
 
   void request(const std::string& line) {
-    auto message = Json::parse(line);
+    std::vector<std::unordered_set<std::string>> object_keys;
+    bool duplicate = false;
+    bool ambiguous_id = false;
+    auto message =
+        Json::parse(line, [&](int, Json::parse_event_t event, Json& value) {
+          if (event == Json::parse_event_t::object_start) {
+            object_keys.emplace_back();
+          } else if (event == Json::parse_event_t::object_end) {
+            object_keys.pop_back();
+          } else if (event == Json::parse_event_t::key) {
+            const auto& key = value.get_ref<const std::string&>();
+            if (!object_keys.back().insert(key).second) {
+              duplicate = true;
+              ambiguous_id |= object_keys.size() == 1 && key == "request_id";
+            }
+          }
+          return true;
+        });
+    if (ambiguous_id) {
+      throw std::invalid_argument("ambiguous request_id");
+    }
     const Id id = unsigned_integer(message.at("request_id"), true);
     auto op = std::make_shared<Operation>();
     op->id = id;
@@ -394,6 +495,9 @@ class Worker {
     }
     checkpoint(Checkpoint::Admitted, id);
     try {
+      if (duplicate) {
+        throw std::invalid_argument("duplicate JSON field");
+      }
       if (name == "overloaded") {
         std::lock_guard<std::mutex> lock(mutex_);
         complete(
@@ -417,7 +521,7 @@ class Worker {
         std::optional<std::string> key;
         if (message.contains("session_id"))
           key = session_key(message);
-        auto prompt = prompt_input(message);
+        auto prompt = prompt_input(message, runtime_.info());
         auto options = generation_options(message);
         // Register first. This serial reader retains op through handle binding,
         // even if a callback publishes its terminal and the writer retires it.

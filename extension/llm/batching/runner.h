@@ -236,6 +236,19 @@ class ET_EXPERIMENTAL Session {
       GenerationCallback on_update,
       std::function<void()> on_settled = {}) const;
 
+  // Execute only this nonempty range of owned prepared backing. Preparation is
+  // not repeated; a carried prediction is forwarded separately before it.
+  // Admission reserves max_retained_bytes for this request's input plus another
+  // max_retained_bytes if feedback may be needed, even for an already-accounted
+  // prepare_async owner. Insufficient capacity completes inline as Failed.
+  GenerationHandle generate_async(
+      PreparedInputPtr prepared,
+      std::size_t offset,
+      std::size_t size,
+      GenConfig config,
+      GenerationCallback on_update,
+      std::function<void()> on_settled = {}) const;
+
  private:
   friend class RunnerImpl;
   friend class PrefixCache;
@@ -274,6 +287,20 @@ class ET_EXPERIMENTAL Runner {
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
+
+  // Context-free preparation on the existing engine thread. Exactly one
+  // completion, including rejection (which may run inline). The callback must
+  // not block. Cancellation discards queued/in-flight preparation results.
+  // Completion is exactly once: admission failures may complete inline;
+  // admitted work completes on the engine thread. Cancellation discards the
+  // result after any in-flight synchronous preparation returns. The returned
+  // owner keeps its retained-memory charge even if it outlives this Runner.
+  void prepare_async(
+      PreparationInput input,
+      CancellationToken cancellation,
+      std::function<void(bool, PreparedInputPtr)> on_complete);
+
+  const PreparationConfig& preparation_config() const;
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended, and every owned session is closed. A generation that

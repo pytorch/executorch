@@ -82,6 +82,66 @@ The batching guide covers the native build, supported export contract, and
 integration checks. The existing generic launcher below and Muse-specific
 launcher are unchanged.
 
+## Inline images
+
+Generic batching image input is available only when the native worker advertises
+`supports_images: true` with positive `max_images`, `max_image_bytes`,
+`max_image_dimension`, and `max_image_pixels` limits. Missing capability means
+unsupported; the HTTP adapter rejects images before generation and never silently
+falls back to a legacy text worker. The generic text executable does not gain
+vision support merely by accepting this protocol.
+
+Submit one inline PNG or JPEG across the **entire submitted conversation history**:
+
+```json
+{
+  "messages": [{"role": "user", "content": [
+    {"type": "text", "text": "Describe this image: "},
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,<canonical-base64>"}},
+    {"type": "text", "text": " Focus on the foreground."}
+  ]}]
+}
+```
+
+Remote URLs and filesystem paths are never fetched. Data URIs require the exact
+`data:image/png;base64,` or `data:image/jpeg;base64,` prefix and canonical strict
+base64. Python caps encoded image bytes at 512 KiB, dimensions at 4096 per axis,
+and pixels at 4 Mi pixels, or the smaller advertised native limit. Native HTTP chat
+bodies are bounded to 1 MiB before JSON parsing, including chunked requests. The
+active adapter is resolved at request time, including lifespan-created adapters;
+legacy adapters retain their existing request and image limits. The separate
+native **1 MiB JSONL frame** limit includes all rendered text, token IDs,
+base64, JSON escaping, request metadata, and the final newline. A body that fits
+can still produce an oversized rendered frame, which is rejected before enqueue.
+
+Images become unique text bindings during existing Jinja chat-template rendering;
+the template must preserve each binding exactly once and in order. A dropped,
+changed, duplicated, or reordered binding is a request error. No model-specific
+patch token or image delimiter is injected by Python. The native ordered segment
+representation retains existing `{"text": "..."}` and `{"ids": [1, 2]}` segments
+and adds `{"image": {"mime_type": "image/png", "data": "<canonical-base64>"}}`.
+The worker's preprocessing/executor integration must implement the model's actual
+image semantics. Templates that require a special image branch are not implicitly
+compatible with generic text bindings.
+
+Image histories always cold-replay the complete submitted history, bypassing
+native token-keyed prefix reuse. Python can still splice exact generated assistant
+IDs alongside image bindings when the echoed response and original preceding
+history match. Editing an image or its preceding history invalidates the affected
+record and later records; failed image binding leaves transcript state unchanged.
+This reconstruction does not enable image decoder-state reuse. Generated token
+IDs travel through the native client/runtime unchanged. Native optional
+`prompt_positions`, `reused_prompt_positions`, and `prefilled_prompt_positions`
+distinguish expanded decoder positions from text-token counts and OpenAI
+completion-token usage.
+Python inspects bounded container metadata without allocating pixels; the native
+CPU preprocessing hook performs full decoding and enforces allocation limits.
+
+This is generic transport/serving support, tested with fake executors. It does not
+establish real-model numerical correctness, accelerator support, packed image
+batching, or model-specific integration. Async client, cancellation, per-session
+ordering, and ASGI lifespan ownership are unchanged.
+
 ## Run a legacy worker
 
 ```bash

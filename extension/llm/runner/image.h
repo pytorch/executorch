@@ -12,6 +12,7 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -21,6 +22,12 @@
 namespace executorch {
 namespace extension {
 namespace llm {
+
+// Encoded file bytes are not decoded Image pixels.
+struct ET_EXPERIMENTAL EncodedImage {
+  std::vector<uint8_t> data;
+  std::string mime_type;
+};
 
 class ET_EXPERIMENTAL Image {
  public:

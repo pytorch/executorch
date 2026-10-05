@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -25,7 +26,7 @@ class TextOutput {
  public:
   TextOutput(
       const tokenizers::Tokenizer& tokenizer,
-      batching::Token previous,
+      std::optional<batching::Token> previous,
       std::vector<batching::Token> stop_tokens,
       std::vector<std::string> stop_strings,
       TextStream::Sink sink)
@@ -35,7 +36,12 @@ class TextOutput {
         stream_(
             tokenizer,
             [this](const std::string& piece) { accept(piece); },
-            previous) {}
+            // No text predecessor exists for an image-only prompt. Avoid even
+            // a disabled BOS ID, which some tokenizers represent as UINT64_MAX.
+            previous.value_or(
+                std::numeric_limits<batching::Token>::max() -
+                (tokenizer.bos_tok() ==
+                 std::numeric_limits<batching::Token>::max()))) {}
 
   TextOutput(const TextOutput&) = delete;
   TextOutput& operator=(const TextOutput&) = delete;
@@ -96,7 +102,8 @@ class TextOutput {
     return generated_.size();
   }
 
-  // Cancellation additionally invalidates replay at the serving layer.
+  // Cancellation additionally invalidates replay at the serving
+  // layer.
   std::optional<std::vector<batching::Token>> generated_token_ids() const {
     if (!finished_ || string_stop_ || error_ != runtime::Error::Ok) {
       return std::nullopt;

@@ -17,6 +17,7 @@ fbcode_target(_kind = runtime.cxx_library,
     srcs = ["serving_runtime.cpp"],
     headers = [
         "detail/generation_bridge.h",
+        "detail/image_header.h",
         "detail/prompt_preparer.h",
         "detail/text_output.h",
     ],
@@ -29,11 +30,11 @@ fbcode_target(_kind = runtime.cxx_library,
     deps = [
         ":prompt_history",
         "//executorch/extension/llm/runner:stats",
-        "//executorch/runtime/core:core",
     ],
     exported_deps = [
         "//executorch/extension/llm/batching:batching",
         "//executorch/extension/llm/runner:multimodal_input",
+        "//executorch/runtime/core:core",
     ],
     visibility = ["PUBLIC"],
 )

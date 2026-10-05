@@ -186,9 +186,12 @@ class Executor : public batching::testing::FakeExecutor {
       auto& history = histories_[input.sid];
       EXPECT_LE(begin, history.size());
       history.resize(begin);
+      const auto& tokens =
+          static_cast<const batching::TokenPreparedInput&>(*input.prepared)
+              .tokens();
       std::vector<Token> fed(
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          tokens.begin() + input.offset,
+          tokens.begin() + input.offset + input.size);
       history.insert(history.end(), fed.begin(), fed.end());
       feeds_.push_back(Feed{
           input.sid,
@@ -562,8 +565,9 @@ TEST_F(
     auto other = output();
     others.emplace_back(other, submit(other, {1, 2, 3}, std::nullopt));
   }
-  // Process all admissions while the seed still owns the capture lane.
-  ASSERT_FALSE(runtime->open_session_async("seed").get());
+  // Admissions alone do not imply that asynchronous preparation has resumed.
+  // All three generations must execute while the seed owns the capture lane.
+  ASSERT_TRUE(wait_until([&] { return executor.feeds().size() == 4; }));
   EXPECT_EQ(executor.clone_calls.load(), 1);
   EXPECT_FALSE(handle.done());
   slow->blocked.release();
@@ -967,8 +971,12 @@ TEST_P(
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 5u);
   EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
-  EXPECT_EQ(executor.feeds().back().position, 5);
-  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{100, 9}));
+  const auto feeds = executor.feeds();
+  ASSERT_GE(feeds.size(), 2u);
+  EXPECT_EQ(feeds[feeds.size() - 2].position, 5);
+  EXPECT_EQ(feeds[feeds.size() - 2].tokens, (std::vector<Token>{100}));
+  EXPECT_EQ(feeds.back().position, 6);
+  EXPECT_EQ(feeds.back().tokens, (std::vector<Token>{9}));
   EXPECT_EQ(executor.clone_calls.load(), 1);
   // Closing/resetting the source did not retire its independent snapshot.
   auto hit_events = output();

@@ -38,8 +38,18 @@ namespace testing {
 // touches while the engine thread is driving the fake: the seen(), opened(),
 // and open_count() observers, and the hold()/release() gate that parks the
 // engine inside execute() so a test can land a race deterministically.
-class FakeExecutor : public Executor {
+class ET_EXPERIMENTAL FakeExecutor : public Executor {
  public:
+  explicit FakeExecutor(
+      PreparationConfig config =
+          PreparationConfig{
+              128 * 1024 - 128,
+              1024 * 1024,
+              1024 * 1024,
+              256 * 1024 * 1024,
+              0})
+      : Executor(config) {}
+
   struct Seen {
     SessionId session;
     Position position;
@@ -89,6 +99,9 @@ class FakeExecutor : public Executor {
   }
 
   bool execute(const BatchInput& batch, BatchOutput& out) override {
+    if (!validate_batch(batch)) {
+      return false;
+    }
     {
       std::unique_lock<std::mutex> lock(gate_mutex_);
       in_execute_.store(true);

@@ -98,6 +98,9 @@ class HistoryExecutor final : public Executor {
   }
 
   bool execute(const BatchInput& batch, BatchOutput& out) override {
+    if (!validate_batch(batch)) {
+      return false;
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     out.outputs.assign(batch.inputs.size(), std::nullopt);
     for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
@@ -110,8 +113,14 @@ class HistoryExecutor final : public Executor {
       }
       state.tokens.resize(static_cast<std::size_t>(start));
       Tokens supplied(
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          static_cast<const TokenPreparedInput&>(*input.prepared)
+                  .tokens()
+                  .begin() +
+              input.offset,
+          static_cast<const TokenPreparedInput&>(*input.prepared)
+                  .tokens()
+                  .begin() +
+              input.offset + input.size);
       state.tokens.insert(state.tokens.end(), supplied.begin(), supplied.end());
       state.written =
           std::max(state.written, static_cast<Position>(state.tokens.size()));

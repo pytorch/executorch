@@ -41,9 +41,10 @@ _DEFAULT_ABORT_TIMEOUT_SECONDS = 12.0
 @dataclass
 class PromptInput:
     """A prompt as either a single rendered string or token-ID segments. Exactly
-    one of `text` / `segments` is set. Segments ([{"text": str} | {"ids": [int]}])
-    let an adapter splice exact prior-turn token ids in place of a lossy
-    re-render (see openai_transcript)."""
+    one of `text` / `segments` is set. Segments contain text, exact token IDs,
+    or inline images ({"image": {"mime_type": str, "data": base64}}).
+    Image histories cold-replay; token IDs remain distinct from decoder positions.
+    """
 
     text: Optional[str] = None
     segments: Optional[list] = None
@@ -86,6 +87,9 @@ class GenStats:
     prefill_tok_s: float = 0.0
     decode_tok_s: float = 0.0
     vision_encoder_ms: Optional[float] = None
+    prompt_positions: Optional[int] = None
+    reused_prompt_positions: Optional[int] = None
+    prefilled_prompt_positions: Optional[int] = None
     # Exact token ids generated this turn, for an adapter's transcript
     # store. None means unknown/unsafe (e.g. a stop-trimmed turn); [] means the
     # worker explicitly reported a known-empty, resumable token sequence.
@@ -121,6 +125,9 @@ def _copy_stats(stats: GenStats, s) -> None:
     stats.prefill_tok_s = getattr(s, "prefill_tok_s", 0.0)
     stats.decode_tok_s = getattr(s, "decode_tok_s", 0.0)
     stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
+    stats.prompt_positions = getattr(s, "prompt_positions", None)
+    stats.reused_prompt_positions = getattr(s, "reused_prompt_positions", None)
+    stats.prefilled_prompt_positions = getattr(s, "prefilled_prompt_positions", None)
     stats.cancelled = getattr(s, "cancelled", False)
     stats.generated_token_ids = getattr(s, "generated_token_ids", None)
 
@@ -458,6 +465,8 @@ class SessionRuntime:
             raise ValueError("cancellation timeouts must be nonnegative and positive")
         self._worker = worker
         self._native = isinstance(worker, MultiplexedWorkerClient)
+        self.image_limits = worker.image_limits if self._native else None
+        self.supports_images = self.image_limits is not None
         self.supports_multiplexing = (
             getattr(worker, "supports_multiplexing", False) is True
         )
@@ -489,6 +498,11 @@ class SessionRuntime:
         self._cancel_grace_seconds = cancel_grace_seconds
         self._abort_timeout_seconds = abort_timeout_seconds
         self._failure: Optional[WorkerError] = None
+
+    @property
+    def uses_native_transport(self) -> bool:
+        """Whether this runtime uses the bounded native JSONL protocol."""
+        return self._native
 
     @property
     def healthy(self) -> bool:

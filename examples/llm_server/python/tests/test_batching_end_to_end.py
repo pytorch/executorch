@@ -48,6 +48,7 @@ async def native_worker(tmp_path, monkeypatch):
         gate=False,
         stop_immediately=False,
         prefix_cache=False,
+        images=False,
         mailbox_capacity=64,
         max_buffered_chars=1024 * 1024,
     ):
@@ -60,6 +61,8 @@ async def native_worker(tmp_path, monkeypatch):
             command.append("--stop-immediately")
         if prefix_cache:
             command.append("--prefix-cache")
+        if images:
+            command.append("--images")
 
         async def spawn(*args, **kwargs):
             # asyncio is shared: leave unrelated subprocess launches untouched.
@@ -163,6 +166,146 @@ async def collect(generation):
         return await asyncio.wait_for(consume(), 10)
     finally:
         await generation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mime", ["image/png", "image/jpeg"])
+async def test_native_images_expand_positions_cold_replay_and_keep_ids(
+    native_worker, mime
+):
+    from executorch.examples.llm_server.python.tests.test_image_input import (
+        encoded,
+        JPEG_BASE64,
+        png,
+    )
+
+    worker, _ = await native_worker(images=True, prefix_cache=True)
+    assert worker.supports_images
+    data = encoded(png()) if mime == "image/png" else JPEG_BASE64
+    segments = [
+        {"text": "hello"},
+        {"image": {"mime_type": mime, "data": data}},
+        {"ids": [33]},
+    ]
+    _, first = await collect(
+        generate(worker, "", key="image", count=2, segments=segments)
+    )
+    assert len(first.generated_token_ids) == first.num_generated_tokens == 2
+    assert first.num_prompt_tokens == 6
+    assert first.prompt_positions > first.num_prompt_tokens
+    assert first.reused_prompt_tokens == first.reused_prompt_positions == 0
+    assert first.prefilled_prompt_positions == first.prompt_positions
+    for key in ("image", "other-image"):
+        _, repeated = await collect(
+            generate(worker, "", key=key, count=2, segments=segments)
+        )
+        assert repeated.reused_prompt_tokens == repeated.reused_prompt_positions == 0
+        assert repeated.prefilled_prompt_positions == repeated.prompt_positions
+        assert len(repeated.generated_token_ids) == 2
+    _, text_only = await collect(generate(worker, "hello!", key="image", count=1))
+    assert text_only.reused_prompt_tokens == text_only.reused_prompt_positions == 0
+    assert text_only.prompt_positions == text_only.num_prompt_tokens
+    assert len(text_only.generated_token_ids) == 1
+    await worker.reset_session("image")
+    await worker.close_session("image")
+    assert worker.healthy
+
+
+@pytest.mark.anyio
+async def test_native_http_image_template_and_history(native_worker, monkeypatch):
+    from executorch.examples.llm_server.python.tests.test_image_input import (
+        image_part,
+        template,
+    )
+
+    worker, _ = await native_worker(images=True, prefix_cache=True)
+    runtime = SessionRuntime(worker)
+    serving = ServingChat(runtime, template(), "test-model")
+    prompts = []
+    stats = []
+    generate = worker.generate
+
+    def capture_generate(prompt, config, *args, **kwargs):
+        prompts.append(config.prompt_segments)
+        return generate(prompt, config, *args, **kwargs)
+
+    monkeypatch.setattr(worker, "generate", capture_generate)
+    monkeypatch.setattr(
+        serving,
+        "_log_generation_stats",
+        lambda sid, result, finish: stats.append(result),
+    )
+    body = {
+        "session_id": "image-http",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "before"},
+                    image_part(),
+                    {"type": "text", "text": "after"},
+                ],
+            }
+        ],
+        "max_tokens": 2,
+    }
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=build_app(serving, "test-model")),
+            base_url="http://test",
+        ) as http:
+            first = await http.post("/v1/chat/completions", json=body)
+            assert first.status_code == 200
+            result = first.json()
+            assert result["usage"]["completion_tokens"] == 2
+            assert result["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+            first_ids = serving._transcript._turns["image-http"][0]["ids"]
+            assert len(first_ids) == 2
+            body["messages"] += [
+                result["choices"][0]["message"],
+                {"role": "user", "content": "next"},
+            ]
+            body["stream"] = True
+            body["stream_options"] = {"include_usage": True}
+            response = await http.post("/v1/chat/completions", json=body)
+            assert response.status_code == 200
+            chunks = [
+                json.loads(line[6:])
+                for line in response.text.splitlines()
+                if line.startswith("data: ") and line != "data: [DONE]"
+            ]
+            assert all("error" not in chunk for chunk in chunks)
+            assert chunks[-1]["usage"]["completion_tokens"] == 2
+            assert chunks[-1]["usage"]["prompt_tokens_details"]["cached_tokens"] == 0
+            assert [s["ids"] for s in prompts[1] if "ids" in s] == [first_ids]
+            second_ids = serving._transcript._turns["image-http"][1]["ids"]
+            assert len(second_ids) == 2
+            content = "".join(
+                choice["delta"].get("content", "")
+                for chunk in chunks
+                for choice in chunk["choices"]
+            )
+            body["messages"] += [
+                {"role": "assistant", "content": content},
+                {"role": "user", "content": "again"},
+            ]
+            body["stream"] = False
+            third = await http.post("/v1/chat/completions", json=body)
+            assert third.status_code == 200
+            assert [s["ids"] for s in prompts[2] if "ids" in s] == [
+                first_ids,
+                second_ids,
+            ]
+            assert len(stats) == 3
+            for result in stats:
+                assert (
+                    result.reused_prompt_tokens == result.reused_prompt_positions == 0
+                )
+                assert result.prefilled_prompt_positions == result.prompt_positions
+            assert (await http.post("/v1/sessions/image-http/reset")).status_code == 200
+            assert (await http.delete("/v1/sessions/image-http")).status_code == 200
+    finally:
+        await runtime.aclose_worker()
 
 
 @pytest.mark.anyio

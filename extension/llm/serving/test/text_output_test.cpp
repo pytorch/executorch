@@ -50,6 +50,23 @@ class PieceTokenizer : public tokenizers::Tokenizer {
   }
 };
 
+class BosSensitiveTokenizer : public PieceTokenizer {
+ public:
+  explicit BosSensitiveTokenizer(uint64_t bos) {
+    bos_tok_ = bos;
+  }
+
+  tokenizers::Result<std::string>
+  decode(uint64_t previous, uint64_t token, bool skip_special) const override {
+    auto piece = PieceTokenizer::decode(previous, token, skip_special);
+    if (piece.ok() && previous == bos_tok() && !piece->empty() &&
+        piece->front() == ' ') {
+      piece->erase(0, 1);
+    }
+    return piece;
+  }
+};
+
 } // namespace
 
 TEST(TextOutputTest, ExcludesTerminalTokenAndKeepsDecodeContext) {
@@ -67,6 +84,50 @@ TEST(TextOutputTest, ExcludesTerminalTokenAndKeepsDecodeContext) {
   EXPECT_EQ(
       tokenizer.decoded,
       (std::vector<std::pair<uint64_t, uint64_t>>{{8, 1}, {1, 2}}));
+}
+
+TEST(TextOutputTest, MissingTextPredecessorDoesNotInventBos) {
+  PieceTokenizer tokenizer;
+  tokenizer.pieces = {{1, " a"}, {2, "b"}};
+  std::string text;
+  TextOutput output(tokenizer, std::nullopt, {}, {}, [&](const auto& piece) {
+    text += piece;
+  });
+  EXPECT_EQ(output.append({1, 2}), Error::Ok);
+  output.finish();
+  EXPECT_EQ(text, " ab");
+  EXPECT_EQ(
+      tokenizer.decoded,
+      (std::vector<std::pair<uint64_t, uint64_t>>{
+          {std::numeric_limits<uint64_t>::max(), 1}, {1, 2}}));
+}
+
+TEST(TextOutputTest, MissingPredecessorPreservesSpaceWithDisabledBos) {
+  for (const uint64_t bos :
+       {uint64_t{0}, std::numeric_limits<uint64_t>::max()}) {
+    SCOPED_TRACE(bos);
+    BosSensitiveTokenizer tokenizer(bos);
+    tokenizer.pieces = {{1, " a"}, {2, "b"}};
+    std::string text;
+    TextOutput missing(tokenizer, std::nullopt, {}, {}, [&](const auto& piece) {
+      text += piece;
+    });
+    ASSERT_EQ(missing.append({1, 2}), Error::Ok);
+    missing.finish();
+    EXPECT_EQ(text, " ab");
+    ASSERT_EQ(tokenizer.decoded.size(), 2u);
+    EXPECT_NE(tokenizer.decoded.front().first, bos);
+    EXPECT_EQ(tokenizer.decoded.back().first, 1u);
+
+    text.clear();
+    tokenizer.decoded.clear();
+    TextOutput present(
+        tokenizer, bos, {}, {}, [&](const auto& piece) { text += piece; });
+    ASSERT_EQ(present.append({1, 2}), Error::Ok);
+    present.finish();
+    EXPECT_EQ(text, "ab");
+    EXPECT_EQ(tokenizer.decoded.front().first, bos);
+  }
 }
 
 TEST(TextOutputTest, StringStopCanTrimInsideSpeculativeTokenOutput) {

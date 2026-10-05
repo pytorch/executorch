@@ -20,6 +20,7 @@ fbcode_target(_kind = runtime.cxx_library,
     ],
     header_namespace = "executorch/extension/llm/batching",
     exported_deps = [
+        "//executorch/extension/llm/runner:multimodal_input",
         "//executorch/runtime/platform:compiler",
     ],
     visibility = ["PUBLIC"],

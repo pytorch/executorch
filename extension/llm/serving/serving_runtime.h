@@ -22,6 +22,7 @@
 #include <executorch/extension/llm/batching/scheduler.h>
 #include <executorch/extension/llm/serving/request_handle.h>
 #include <executorch/extension/llm/serving/types.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace tokenizers {
@@ -35,7 +36,7 @@ namespace serving {
 
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
-  // Text-generation context bound and reported metadata; 0 means unknown.
+  // Decoder-position context bound and reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
   // Queued, executing, and delivery-fenced lifecycle/generation-start
   // operations, excluding completion callbacks. Must be non-zero.
@@ -57,6 +58,28 @@ struct ET_EXPERIMENTAL ServingRuntimeConfig {
   // Provision max_sessions + prefix_cache_capacity + 1 physical executor rows
   // when enabled. Backend numerical parity requires model-specific validation.
   std::size_t prefix_cache_capacity = 0;
+  // Aggregate raw-input/workspace plus prepared-output reservation. Both fixed
+  // executor bounds are charged before CPU preparation, through callback
+  // cleanup.
+  std::size_t max_prepared_bytes = 256 * 1024 * 1024;
+  // Opt-in, at most one inline image. The executor must also support images.
+  std::size_t max_images = 0;
+  std::size_t max_image_encoded_bytes = 512 * 1024;
+  std::size_t max_image_dimension = 4096;
+  std::size_t max_image_pixels = 4 * 1024 * 1024;
+  // Fixed maximum returned pixel-buffer capacity in bytes; zero disables
+  // images. This plus the complete tokenized input must fit executor workspace.
+  std::size_t max_image_preprocessed_bytes = 0;
+  // Trusted CPU-only decoding/preprocessing. Capture these immutable image
+  // limits, including max_image_preprocessed_bytes, when constructing the hook;
+  // validate MIME, file headers, source dimensions/pixels and enforce the
+  // output capacity bound BEFORE allocation. No model calls. Output is an
+  // owned CHW Image with 1..4 channels. Separately bounded codec scratch must
+  // not exceed max_image_pixels * 4 * sizeof(float) bytes. Serving validates
+  // returned capacity/shape/storage and preflights PNG/JPEG source dimensions
+  // before calling the hook. Header preflight does not validate compressed
+  // pixels; this contract does not sandbox arbitrary callback allocations.
+  std::function<runtime::Result<Image>(const EncodedImage&)> image_preprocessor;
 };
 
 // nullopt acknowledges success. Dropping a future does not cancel its
@@ -131,23 +154,24 @@ class ET_EXPERIMENTAL ServingRuntime {
   void reset_session_async(std::string key, LifecycleCallback on_complete);
   std::future<LifecycleResult> reset_session_async(std::string key);
 
-  // Full-prompt text generation; nullopt uses an independent ephemeral session.
-  // Admission never waits for tokenization; callbacks may race with return.
+  // Full-prompt generation; nullopt uses an independent ephemeral session.
+  // Admission never waits for CPU/model preparation; callbacks may race with
+  // return. Every prompt is prepared before generation changes decoder state.
   // Preadmission errors have no callback. Accepted work delivers ordered text
   // and one terminal event off-engine. Invalid preparation leaves state intact.
   // Same-key execution overlap is Busy. Work admitted after close/reset waits
   // for its acknowledgement before preparation or execution. That fence covers
   // earlier rendered text (including final flush), terminal delivery, and sink
-  // capture cleanup. Exact strict prefixes continue; other histories
-  // cold-replay without caching. Sinks share one delivery thread and must do
-  // short, bounded work: no blocking I/O, waits for runtime work, or
-  // synchronous shutdown/destruction of the runtime. A text/flush sink throw
-  // disables output and selects a failure. A terminal sink throw is logged;
-  // it cannot revise the finalized result or committed session history.
-  // Before terminal invocation, this request's session claim and admission
-  // are released. Nonblocking follow-up submission is allowed but may still
-  // be rejected; wait()/done() remain callback-lifetime barriers.
-  // The lifecycle-only constructor rejects text generation with NotReady.
+  // capture cleanup. Exact strict text prefixes continue; incoming or resident
+  // image histories always cold-replay without caching. Sinks share one
+  // delivery thread and must do short, bounded work: no blocking I/O, waits for
+  // runtime work, or synchronous shutdown/destruction of the runtime. A
+  // text/flush sink throw disables output and selects a failure. A terminal
+  // sink throw is logged; it cannot revise the finalized result or committed
+  // session history. Before terminal invocation, this request's session claim
+  // and admission are released. Nonblocking follow-up submission is allowed but
+  // may still be rejected; wait()/done() remain callback-lifetime barriers. The
+  // lifecycle-only constructor rejects text generation with NotReady.
   GenerateResult generate(
       std::optional<std::string> key,
       PromptInput prompt,

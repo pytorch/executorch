@@ -46,6 +46,24 @@ bool batch_answered(bool ok, const BatchInput& batch, const BatchOutput& out) {
   return ok && out.outputs.size() == batch.inputs.size();
 }
 
+void notify_preparation(
+    std::function<void(bool, PreparedInputPtr)> callback,
+    PreparedInputPtr output = {}) {
+  if (!callback) {
+    return;
+  }
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    const bool ok = static_cast<bool>(output);
+    callback(ok, std::move(output));
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Client notification cannot stop the engine or affect peer tasks.
+  }
+#endif
+}
+
 template <class... Visitors>
 struct Overloaded : Visitors... {
   using Visitors::operator()...;
@@ -275,7 +293,9 @@ GenerationMetrics GenerationHandle::metrics() const {
 class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
  public:
   RunnerImpl(Executor& executor, std::unique_ptr<Scheduler> scheduler)
-      : executor_(executor), scheduler_(std::move(scheduler)) {
+      : executor_(executor),
+        preparation_config_(executor.preparation_config()),
+        scheduler_(std::move(scheduler)) {
     assert(scheduler_ != nullptr && "Runner requires a scheduler");
   }
 
@@ -302,10 +322,22 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
-      std::vector<Token> delta,
+      PreparedInputPtr delta,
+      std::size_t offset,
+      std::size_t size,
+      std::shared_ptr<PreparationInput> raw,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled);
+
+  void prepare_async(
+      PreparationInput input,
+      CancellationToken cancellation,
+      std::function<void(bool, PreparedInputPtr)> on_complete);
+
+  const PreparationConfig& preparation_config() const {
+    return preparation_config_;
+  }
 
   InitializationState initialization_state() const noexcept {
     return initialization_state_.load(std::memory_order_acquire);
@@ -319,6 +351,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
  private:
   enum class Lifecycle { Running, Stopping, Stopped };
 
+  struct Reservation;
+
   // Runtime state for the one generation currently active on a session.
   struct Generation {
     std::int32_t remaining_tokens = 0;
@@ -331,13 +365,22 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     // Engine-side only. An inter-token gap needs the previous delivery, and
     // the published metrics keep only the summary, not the last timestamp.
     MetricsTime last_token_at{};
+    // Held through settlement so unrelated preparations cannot consume the
+    // capacity needed for this generation's next feedback backing.
+    std::shared_ptr<Reservation> feedback_reservation;
+    std::weak_ptr<const PreparedInput> feedback_backing;
   };
 
   // Start-only data. The sampling policy is installed on the executor at
   // admission. Scheduler tasks own the delta after submission.
   struct GenerationRequest {
     SessionId session = 0;
-    std::shared_ptr<const std::vector<Token>> delta;
+    PreparedInputPtr delta;
+    std::size_t offset = 0;
+    std::size_t size = 0;
+    std::shared_ptr<Reservation> raw_reservation;
+    std::shared_ptr<PreparationInput> raw;
+    bool counted = false;
     SamplingParams sampling;
     std::optional<std::uint64_t> seed;
     Generation generation;
@@ -394,6 +437,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     // if generation ends first, the next generation carries it with its delta.
     std::optional<Token> pending;
     std::optional<Generation> active_generation;
+    std::shared_ptr<GenerationHandleState> preparing;
 
     // Engine thread only, so its own reads need no ordering; the release pairs
     // with the acquire in Session::position().
@@ -437,8 +481,30 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     std::optional<Generation> active_generation;
   };
 
-  using Command =
-      std::variant<OpenCommand, CloseCommand, CloneCommand, StartCommand>;
+  struct Reservation {
+    std::shared_ptr<std::atomic<std::size_t>> used;
+    std::size_t bytes;
+    ~Reservation() {
+      used->fetch_sub(bytes);
+    }
+  };
+  struct PreparationState {
+    std::shared_ptr<const PreparationInput> input;
+    CancellationToken cancellation;
+    std::function<void(bool, PreparedInputPtr)> on_complete;
+    std::shared_ptr<Reservation> reservation;
+    bool protect_feedback = false;
+  };
+  struct PrepareCommand {
+    std::shared_ptr<PreparationState> state;
+  };
+
+  using Command = std::variant<
+      OpenCommand,
+      CloseCommand,
+      CloneCommand,
+      StartCommand,
+      PrepareCommand>;
 
   void run_();
   void process_pending_commands_();
@@ -446,6 +512,22 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void process_command_(CloseCommand command);
   void process_command_(CloneCommand command);
   void process_command_(StartCommand command);
+  void process_command_(PrepareCommand command);
+  void execute_preparation_(PrepareTask task);
+  void prepare_async_(
+      PreparationInput input,
+      CancellationToken cancellation,
+      std::function<void(bool, PreparedInputPtr)> on_complete,
+      std::shared_ptr<GenerationRequest> generation_request);
+  void finish_preparation_(
+      std::shared_ptr<PreparationState> state,
+      PreparedInputPtr output = {});
+  std::shared_ptr<Reservation> reserve_preparation_(
+      std::size_t source_bytes = 0);
+  PreparedInputPtr retain_prepared_(
+      PreparedInputPtr output,
+      std::shared_ptr<Reservation> reservation,
+      bool shrink = true);
   std::optional<RetiredSession> retire_session_(SessionId session);
   void reap_cancelled_();
   bool execute_one_batch_();
@@ -453,9 +535,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::optional<TerminalOutcome> validate_generation_start_(
       const GenerationRequest& request,
       const SessionRecord& record) const;
-  std::shared_ptr<const std::vector<Token>> build_initial_delta_(
-      GenerationRequest& request,
-      const SessionRecord& record) const;
+  bool wrap_tokens_(
+      std::shared_ptr<const std::vector<Token>> tokens,
+      PreparedInputPtr& out,
+      std::shared_ptr<Reservation> reservation = {});
 
   // Split `tokens` into chunks, the last of which produces output.
   //
@@ -465,9 +548,12 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   // continuation is re-fed as prefill too.
   std::vector<Task> create_tasks_(
       SessionId session,
-      std::shared_ptr<const std::vector<Token>> tokens,
+      PreparedInputPtr prepared,
+      std::size_t offset,
+      std::size_t size,
       Position position,
-      bool is_continuation);
+      bool is_continuation,
+      bool produce_output = true);
   InterpretedOutput interpret_output_(
       const Generation& generation,
       const Output& output) const;
@@ -520,6 +606,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void notify_engine_();
 
   Executor& executor_;
+  const PreparationConfig preparation_config_;
+  // Owned,
   // Owned, so that a Session outliving its Runner still finds a live scheduler
   // on the close and cancel paths.
   std::unique_ptr<Scheduler> scheduler_;
@@ -541,6 +629,9 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::unordered_map<SessionId, SessionRecord> sessions_;
   // Kept after records close to enforce executor IDs are lifetime-unique.
   std::unordered_set<SessionId> issued_session_ids_;
+  std::unordered_map<TaskId, std::shared_ptr<PreparationState>> preparations_;
+  std::shared_ptr<std::atomic<std::size_t>> retained_bytes_ =
+      std::make_shared<std::atomic<std::size_t>>(0);
   TaskId next_tid_ = 1;
   EngineMetrics metrics_;
 
@@ -640,9 +731,44 @@ GenerationHandle Session::generate_async(
     finalize_terminal(handle_state, on_update, TerminalOutcome::cancelled());
     return handle;
   }
+  const auto size = delta.size();
+  auto raw = std::make_shared<PreparationInput>();
+  raw->segments.emplace_back(std::move(delta));
   return state_->impl->generate_async(
       state_->session,
-      std::move(delta),
+      nullptr,
+      0,
+      size,
+      std::move(raw),
+      std::move(config),
+      std::move(on_update),
+      std::move(on_settled));
+}
+
+GenerationHandle Session::generate_async(
+    PreparedInputPtr prepared,
+    std::size_t offset,
+    std::size_t size,
+    GenConfig config,
+    GenerationCallback on_update,
+    std::function<void()> on_settled) const {
+  if (!state_ || !state_->status->open.load(std::memory_order_acquire)) {
+    auto state = std::make_shared<GenerationHandleState>();
+    state->on_settled = std::move(on_settled);
+    GenerationHandle handle(state);
+    finalize_terminal(
+        state,
+        on_update,
+        state_ ? TerminalOutcome::cancelled()
+               : TerminalOutcome::failed("session is not initialized"));
+    return handle;
+  }
+  return state_->impl->generate_async(
+      state_->session,
+      std::move(prepared),
+      offset,
+      size,
+      nullptr,
       std::move(config),
       std::move(on_update),
       std::move(on_settled));
@@ -673,6 +799,18 @@ EngineMetrics Runner::metrics() const {
 
 std::future<std::optional<Session>> Runner::open_session_async() {
   return impl_->open_session_async();
+}
+
+void Runner::prepare_async(
+    PreparationInput input,
+    CancellationToken cancellation,
+    std::function<void(bool, PreparedInputPtr)> on_complete) {
+  impl_->prepare_async(
+      std::move(input), std::move(cancellation), std::move(on_complete));
+}
+
+const PreparationConfig& Runner::preparation_config() const {
+  return impl_->preparation_config();
 }
 
 // --- RunnerImpl ------------------------------------------------------------
@@ -782,6 +920,11 @@ void RunnerImpl::run_() {
   process_pending_commands_();
 
   scheduler_->clear();
+  auto preparations = std::move(preparations_);
+  preparations_.clear();
+  for (auto& entry : preparations) {
+    finish_preparation_(std::move(entry.second));
+  }
 
   std::vector<SessionId> session_ids;
   session_ids.reserve(sessions_.size());
@@ -814,10 +957,25 @@ void RunnerImpl::run_() {
 // Cancellation and logical closure take effect before get_work(), even when
 // their CloseCommand arrived while an earlier command was running.
 void RunnerImpl::reap_cancelled_() {
+  std::vector<TaskId> cancelled_preparations;
+  for (const auto& entry : preparations_) {
+    if (entry.second->cancellation && entry.second->cancellation->load()) {
+      cancelled_preparations.push_back(entry.first);
+    }
+  }
+  for (auto tid : cancelled_preparations) {
+    scheduler_->cancel_task(tid);
+    auto state = std::move(preparations_.at(tid));
+    preparations_.erase(tid);
+    finish_preparation_(std::move(state));
+  }
   std::vector<SessionId> doomed;
   for (const auto& entry : sessions_) {
     const std::optional<Generation>& generation =
         entry.second.active_generation;
+    if (entry.second.preparing && !entry.second.status->open.load()) {
+      entry.second.preparing->cancelled.store(true);
+    }
     if (generation &&
         (generation->state->cancelled.load() ||
          !entry.second.status->open.load(std::memory_order_acquire))) {
@@ -841,8 +999,9 @@ void RunnerImpl::process_pending_commands_() {
             [this](OpenCommand& open) { process_command_(std::move(open)); },
             [this](CloseCommand& close) { process_command_(std::move(close)); },
             [this](CloneCommand& clone) { process_command_(std::move(clone)); },
-            [this](StartCommand& start) {
-              process_command_(std::move(start));
+            [this](StartCommand& start) { process_command_(std::move(start)); },
+            [this](PrepareCommand& prepare) {
+              process_command_(std::move(prepare));
             }},
         command);
   }
@@ -956,6 +1115,184 @@ void RunnerImpl::process_command_(StartCommand command) {
   start_generation_(std::move(command.request));
 }
 
+std::shared_ptr<RunnerImpl::Reservation> RunnerImpl::reserve_preparation_(
+    std::size_t source_bytes) {
+  const auto& config = preparation_config();
+  if (config.max_retained_bytes == 0 || config.max_positions == 0 ||
+      source_bytes > config.max_total_retained_bytes ||
+      config.max_retained_bytes >
+          config.max_total_retained_bytes - source_bytes) {
+    return {};
+  }
+  const auto bytes = config.max_retained_bytes + source_bytes;
+  auto reservation =
+      std::make_shared<Reservation>(Reservation{retained_bytes_, 0});
+  auto used = retained_bytes_->load();
+  while (used <= config.max_total_retained_bytes - bytes) {
+    if (retained_bytes_->compare_exchange_weak(used, used + bytes)) {
+      // Construct before publishing any task. Reservation follows the backing,
+      // including after Runner shutdown, through the shared counter.
+      reservation->bytes = bytes;
+      return reservation;
+    }
+  }
+  return {};
+}
+
+void RunnerImpl::prepare_async(
+    PreparationInput input,
+    CancellationToken cancellation,
+    std::function<void(bool, PreparedInputPtr)> on_complete) {
+  prepare_async_(
+      std::move(input), std::move(cancellation), std::move(on_complete), {});
+}
+
+void RunnerImpl::prepare_async_(
+    PreparationInput input,
+    CancellationToken cancellation,
+    std::function<void(bool, PreparedInputPtr)> on_complete,
+    std::shared_ptr<GenerationRequest> generation_request) {
+  std::shared_ptr<PreparationState> state;
+  bool admitted = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    state = std::make_shared<PreparationState>();
+    state->cancellation = std::move(cancellation);
+    state->on_complete = std::move(on_complete);
+    if (generation_request) {
+      state->reservation = std::move(generation_request->raw_reservation);
+    } else if (
+        auto source_bytes = preparation_config().input_retained_bytes(input)) {
+      state->reservation = reserve_preparation_(*source_bytes);
+    }
+    if (state->reservation) {
+      state->protect_feedback = generation_request &&
+          generation_request->generation.remaining_tokens > 1;
+      if (state->protect_feedback) {
+        generation_request->generation.feedback_reservation =
+            state->reservation;
+      }
+      state->input = std::make_shared<const PreparationInput>(std::move(input));
+      std::lock_guard<std::mutex> lock(control_mutex_);
+      if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running &&
+          (!state->cancellation || !state->cancellation->load())) {
+        inbox_.emplace_back(PrepareCommand{state});
+        admitted = true;
+      }
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+  }
+#endif
+  if (admitted) {
+    notify_engine_();
+  } else {
+    input = {};
+    if (state) {
+      finish_preparation_(std::move(state));
+    } else {
+      notify_preparation(std::move(on_complete));
+    }
+  }
+}
+
+void RunnerImpl::process_command_(PrepareCommand command) {
+  auto state = std::move(command.state);
+  if (!is_running_() || (state->cancellation && state->cancellation->load())) {
+    finish_preparation_(std::move(state));
+    return;
+  }
+  const auto tid = next_tid_++;
+  bool submitted = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    preparations_.emplace(tid, state);
+    submitted = scheduler_->submit({PrepareTask{tid, state->input}});
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+  }
+#endif
+  if (!submitted) {
+    preparations_.erase(tid);
+    finish_preparation_(std::move(state));
+  }
+}
+
+PreparedInputPtr RunnerImpl::retain_prepared_(
+    PreparedInputPtr output,
+    std::shared_ptr<Reservation> reservation,
+    bool shrink) {
+  struct Backing {
+    std::shared_ptr<Reservation> reservation;
+    PreparedInputPtr output;
+  };
+  // Keep the original address: an executor's checked cast still names its
+  // private object, while the alias owns both payload and reservation.
+  const auto* pointer = output.get();
+  const auto bytes = shrink ? output->retained_bytes()
+                            : preparation_config().max_retained_bytes;
+  reservation->used->fetch_sub(reservation->bytes - bytes);
+  reservation->bytes = bytes;
+  auto backing = std::make_shared<Backing>(
+      Backing{std::move(reservation), std::move(output)});
+  return PreparedInputPtr(std::move(backing), pointer);
+}
+
+void RunnerImpl::finish_preparation_(
+    std::shared_ptr<PreparationState> state,
+    PreparedInputPtr output) {
+  state->input.reset();
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (output) {
+      output = retain_prepared_(
+          std::move(output),
+          std::move(state->reservation),
+          !state->protect_feedback);
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    output.reset();
+  }
+#endif
+  state->reservation.reset();
+  auto callback = std::move(state->on_complete);
+  state.reset();
+  notify_preparation(std::move(callback), std::move(output));
+}
+
+void RunnerImpl::execute_preparation_(PrepareTask task) {
+  auto entry = preparations_.find(task.tid);
+  if (entry == preparations_.end()) {
+    return;
+  }
+  auto state = std::move(entry->second);
+  preparations_.erase(entry);
+  PreparedInputPtr output;
+  bool ok = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (is_running_() &&
+        (!state->cancellation || !state->cancellation->load())) {
+      ok = executor_.prepare(*state->input, output) &&
+          executor_.valid_prepared(output);
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+  }
+#endif
+  if (!ok || !is_running_() ||
+      (state->cancellation && state->cancellation->load())) {
+    output.reset();
+  }
+  task.input.reset();
+  finish_preparation_(std::move(state), std::move(output));
+}
+
 std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
     SessionId session_id) {
   auto session = sessions_.find(session_id);
@@ -964,6 +1301,9 @@ std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
   }
   session->second.status->open.store(false, std::memory_order_release);
   RetiredSession retired{std::move(session->second.active_generation)};
+  if (session->second.preparing) {
+    session->second.preparing->cancelled.store(true);
+  }
   // Retire before callback delivery so reentrant requests see the session
   // closed. Cancellation is unconditional because queued tasks may outlive the
   // generation that submitted them.
@@ -973,15 +1313,23 @@ std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
 }
 
 bool RunnerImpl::execute_one_batch_() {
-  std::vector<Task> tasks;
+  std::optional<Work> work;
   {
     // Work reservation and the stop transition have a total order.
     std::lock_guard<std::mutex> lock(control_mutex_);
     if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
       return false;
     }
-    tasks = scheduler_->get_work();
+    work = scheduler_->get_work();
   }
+  if (!work) {
+    return false;
+  }
+  if (auto* preparation = std::get_if<PrepareTask>(&*work)) {
+    execute_preparation_(std::move(*preparation));
+    return true;
+  }
+  auto tasks = std::move(std::get<ExecutionBatch>(*work).tasks);
   if (tasks.empty()) {
     return false;
   }
@@ -1001,7 +1349,7 @@ bool RunnerImpl::execute_one_batch_() {
   std::uint64_t prefill_tokens = 0;
   std::vector<SessionId> prefilling; // small: bounded by the batch width
   const MetricsTime step_start = MetricsClock::now();
-  for (const Task& task : tasks) {
+  for (const ExecutionTask& task : tasks) {
     bool first_chunk = false;
     if (task.is_decode) {
       ++decode_sessions;
@@ -1063,7 +1411,7 @@ bool RunnerImpl::execute_one_batch_() {
   // across several chunks of one step is one context, not one per chunk, and
   // scheduler.h lets a session appear more than once for exactly that reason.
   std::vector<std::pair<SessionId, std::int64_t>> context_ends;
-  for (const Task& task : tasks) {
+  for (const ExecutionTask& task : tasks) {
     const auto end = static_cast<std::int64_t>(task.input.position) +
         static_cast<std::int64_t>(task.input.offset) +
         static_cast<std::int64_t>(task.input.size);
@@ -1090,8 +1438,22 @@ bool RunnerImpl::execute_one_batch_() {
   const MetricsTime exec_start = MetricsClock::now();
   BatchInput batch = to_batch_input(tasks);
   BatchOutput out;
-  const bool ok = executor_.execute(batch, out);
+  bool ok = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    ok = executor_.validate_batch(batch) && executor_.execute(batch, out);
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Execution failures retain the whole-batch poisoning contract.
+  }
+#endif
   const MetricsTime step_end = MetricsClock::now();
+  // Execution is synchronous. Drop every consumed backing before callbacks or
+  // feedback reuse the generation's protected capacity; range metadata remains.
+  for (auto& input : batch.inputs) {
+    input.prepared.reset();
+  }
 
   const std::int64_t latency = us_between(exec_start, step_end);
   ++metrics_.steps;
@@ -1307,7 +1669,10 @@ void RunnerImpl::request_close(SessionId session) noexcept {
 
 GenerationHandle RunnerImpl::generate_async(
     SessionId session,
-    std::vector<Token> delta,
+    PreparedInputPtr delta,
+    std::size_t offset,
+    std::size_t size,
+    std::shared_ptr<PreparationInput> raw,
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) {
@@ -1315,7 +1680,10 @@ GenerationHandle RunnerImpl::generate_async(
   state->on_settled = std::move(on_settled);
   GenerationRequest request;
   request.session = session;
-  request.delta = std::make_shared<const std::vector<Token>>(std::move(delta));
+  request.delta = std::move(delta);
+  request.offset = offset;
+  request.size = size;
+  request.raw = std::move(raw);
   request.seed = config.seed;
   request.sampling = std::move(config.sampling);
   request.generation.remaining_tokens = config.max_new_tokens;
@@ -1328,22 +1696,67 @@ GenerationHandle RunnerImpl::generate_async(
   request.generation.m.t_submit = MetricsClock::now();
 
   auto handle = GenerationHandle(state);
-  {
-    std::unique_lock<std::mutex> lock(control_mutex_);
-    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
-      inbox_.emplace_back(StartCommand{std::move(request)});
-      lock.unlock();
-      notify_engine_();
-      return handle;
+  bool input_reserved = !request.raw && !request.delta;
+  auto rejection = TerminalOutcome::cancelled();
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    // The command inbox owns token storage too, including while execute blocks.
+    // Transfer this reservation to preparation instead of charging it again.
+    if (request.raw) {
+      if (auto bytes =
+              preparation_config().input_retained_bytes(*request.raw)) {
+        request.raw_reservation = reserve_preparation_(*bytes);
+        input_reserved = static_cast<bool>(request.raw_reservation);
+      }
+    } else if (
+        request.delta &&
+        request.delta->retained_bytes() <=
+            preparation_config().max_retained_bytes) {
+      // The caller may construct compatible backing outside this Runner. Charge
+      // each request independently, including already-accounted prepared
+      // owners.
+      auto reservation = reserve_preparation_();
+      if (reservation && request.generation.remaining_tokens > 1) {
+        request.generation.feedback_reservation = reserve_preparation_();
+        if (!request.generation.feedback_reservation) {
+          reservation.reset();
+        }
+      }
+      if (reservation) {
+        request.delta = retain_prepared_(
+            std::move(request.delta), std::move(reservation), false);
+        input_reserved = true;
+      }
     }
+    {
+      std::unique_lock<std::mutex> lock(control_mutex_);
+      if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+        if (input_reserved) {
+          // Allocate before moving the request, preserving settlement on
+          // failure.
+          static_assert(noexcept(request = std::move(request)));
+          inbox_.emplace_back(StartCommand{});
+          std::get<StartCommand>(inbox_.back()).request = std::move(request);
+          lock.unlock();
+          notify_engine_();
+          return handle;
+        } else {
+          rejection =
+              TerminalOutcome::failed("insufficient preparation capacity");
+        }
+      }
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    rejection = TerminalOutcome::failed("could not queue generation");
   }
+#endif
 
-  // After shutdown nothing drains the inbox, so complete synchronously instead
-  // of admitting a start that can never report completion.
+  // Rejected work never enters the inbox; release its source and reservation
+  // before synchronous terminal delivery, including after shutdown.
   complete_request_(
-      std::move(request),
-      TerminalOutcome::cancelled(),
-      /*on_engine_thread=*/false);
+      std::move(request), std::move(rejection), /*on_engine_thread=*/false);
   return handle;
 }
 
@@ -1353,8 +1766,14 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   if (request.generation.remaining_tokens <= 0) {
     return TerminalOutcome::failed("max_new_tokens must be greater than zero");
   }
-  if (!request.delta || request.delta->empty()) {
+  if (request.size == 0) {
     return TerminalOutcome::failed("generation delta must not be empty");
+  }
+  if (!request.raw &&
+      (!executor_.valid_prepared(request.delta) ||
+       request.offset > request.delta->position_count() ||
+       request.size > request.delta->position_count() - request.offset)) {
+    return TerminalOutcome::failed("invalid prepared generation range");
   }
 
   const auto start_position = record.position();
@@ -1364,7 +1783,15 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   const auto room = static_cast<std::size_t>(
       std::numeric_limits<Position>::max() - start_position);
   const auto pending_tokens = record.pending ? 1u : 0u;
-  if (pending_tokens > room || request.delta->size() > room - pending_tokens) {
+  const auto base = static_cast<std::int64_t>(start_position) + pending_tokens -
+      static_cast<std::int64_t>(std::min(
+          request.offset,
+          static_cast<std::size_t>(std::numeric_limits<Position>::max())));
+  if (request.offset >
+          static_cast<std::size_t>(std::numeric_limits<Position>::max()) ||
+      base < std::numeric_limits<Position>::min() ||
+      base > std::numeric_limits<Position>::max() || pending_tokens > room ||
+      request.size > room - pending_tokens) {
     return TerminalOutcome::failed(
         "generation delta exceeds the session position range");
   }
@@ -1372,73 +1799,202 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
     return TerminalOutcome::failed(
         "session cannot continue after an executor failure");
   }
-  if (record.active_generation) {
+  if (record.active_generation || record.preparing) {
     return TerminalOutcome::failed("session already has an active generation");
   }
   return std::nullopt;
 }
 
-std::shared_ptr<const std::vector<Token>> RunnerImpl::build_initial_delta_(
-    GenerationRequest& request,
-    const SessionRecord& record) const {
-  auto delta = std::move(request.delta);
-  if (!record.pending) {
-    return delta;
+bool RunnerImpl::wrap_tokens_(
+    std::shared_ptr<const std::vector<Token>> tokens,
+    PreparedInputPtr& out,
+    std::shared_ptr<Reservation> reservation) {
+  const auto count = tokens->size();
+  const bool protected_feedback = static_cast<bool>(reservation);
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    if (!reservation) {
+      reservation = reserve_preparation_();
+    }
+    if (reservation && executor_.wrap_tokens(std::move(tokens), out) &&
+        executor_.valid_prepared(out) && out->position_count() == count) {
+      out = retain_prepared_(
+          std::move(out), std::move(reservation), !protected_feedback);
+      return true;
+    }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
   }
-
-  std::vector<Token> carried;
-  carried.reserve(delta->size() + 1);
-  carried.push_back(*record.pending);
-  carried.insert(carried.end(), delta->begin(), delta->end());
-  return std::make_shared<const std::vector<Token>>(std::move(carried));
+#endif
+  out.reset();
+  return false;
 }
 
 void RunnerImpl::start_generation_(GenerationRequest request) {
   // Counted on arrival at the engine, not on successful install: every path
   // below ends in a completion, so deferring this would let completions
   // exceed starts.
-  ++metrics_.generations_started;
-  if (!is_running_() || request.generation.state->cancelled.load()) {
-    complete_request_(
-        std::move(request),
-        TerminalOutcome::cancelled(),
-        /*on_engine_thread=*/true);
+  if (!request.counted) {
+    ++metrics_.generations_started;
+    request.counted = true;
+  }
+  std::vector<Task> tasks;
+  // Keep an owner here even while constructing the preparation callback. A
+  // failed allocation must leave either request or pending able to settle.
+  std::shared_ptr<GenerationRequest> pending;
+  SessionRecord* staged_record = nullptr;
+  bool handed_to_preparation = false;
+  auto stage = [&]() -> std::optional<TerminalOutcome> {
+    if (!is_running_() || request.generation.state->cancelled.load()) {
+      return TerminalOutcome::cancelled();
+    }
+    auto session = sessions_.find(request.session);
+    if (session == sessions_.end()) {
+      return TerminalOutcome::failed("session is not open");
+    }
+    auto& record = session->second;
+    if (auto rejection = validate_generation_start_(request, record)) {
+      return rejection;
+    }
+
+    if (request.raw) {
+      pending = std::make_shared<GenerationRequest>(std::move(request));
+      record.preparing = pending->generation.state;
+      auto raw = std::move(pending->raw);
+      CancellationToken cancellation(
+          pending->generation.state, &pending->generation.state->cancelled);
+      prepare_async_(
+          std::move(*raw),
+          std::move(cancellation),
+          [this, pending](bool ok, PreparedInputPtr prepared) mutable {
+            auto session = sessions_.find(pending->session);
+            if (session != sessions_.end() &&
+                session->second.preparing == pending->generation.state) {
+              session->second.preparing.reset();
+            }
+            std::optional<TerminalOutcome> rejection;
+#if ET_HAS_EXCEPTIONS
+            try {
+#endif
+              if (!ok) {
+                const bool cancelled = !is_running_() ||
+                    pending->generation.state->cancelled.load() ||
+                    session == sessions_.end() ||
+                    !session->second.status->open.load();
+                rejection = cancelled
+                    ? TerminalOutcome::cancelled()
+                    : TerminalOutcome::failed(
+                          "executor failed to prepare generation input");
+              } else {
+                pending->delta = std::move(prepared);
+                if (pending->generation.feedback_reservation) {
+                  pending->generation.feedback_backing = pending->delta;
+                }
+                pending->size = pending->delta->position_count();
+              }
+#if ET_HAS_EXCEPTIONS
+            } catch (...) {
+              rejection = TerminalOutcome::failed({});
+            }
+#endif
+            if (rejection) {
+              prepared.reset();
+              complete_request_(
+                  std::move(*pending), std::move(*rejection), true);
+            } else {
+              start_generation_(std::move(*pending));
+            }
+          },
+          pending);
+      // This also covers inline refusal: its callback has already consumed
+      // pending, so neither that case nor deferred ownership may install here.
+      handed_to_preparation = true;
+      return std::nullopt;
+    }
+
+    if (request.generation.remaining_tokens > 1 &&
+        !request.generation.feedback_reservation) {
+      request.generation.feedback_reservation = reserve_preparation_();
+      if (!request.generation.feedback_reservation) {
+        return TerminalOutcome::failed(
+            "insufficient capacity for generation feedback");
+      }
+    }
+
+    const auto start_position = record.position();
+    request.generation.m.n_prompt_tokens =
+        static_cast<std::int64_t>(request.size);
+    if (record.pending) {
+      PreparedInputPtr carried;
+      if (!wrap_tokens_(
+              std::make_shared<const std::vector<Token>>(
+                  std::vector<Token>{*record.pending}),
+              carried)) {
+        return TerminalOutcome::failed("executor failed to wrap pending token");
+      }
+      tasks = create_tasks_(
+          request.session,
+          std::move(carried),
+          0,
+          1,
+          start_position,
+          false,
+          false);
+    }
+    const auto base = static_cast<Position>(
+        static_cast<std::int64_t>(start_position) + (record.pending ? 1 : 0) -
+        static_cast<std::int64_t>(request.offset));
+    auto suffix = create_tasks_(
+        request.session,
+        std::move(request.delta),
+        request.offset,
+        request.size,
+        base,
+        false);
+    for (auto& task : suffix) {
+      tasks.push_back(std::move(task));
+    }
+    if (!is_running_() ||
+        !record.status->open.load(std::memory_order_acquire) ||
+        request.generation.state->cancelled.load()) {
+      return TerminalOutcome::cancelled();
+    }
+    executor_.set_sampling(request.session, request.sampling, request.seed);
+    staged_record = &record;
+    return std::nullopt;
+  };
+
+  std::optional<TerminalOutcome> rejection;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    rejection = stage();
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Do not allocate a diagnostic while recovering from allocation failure.
+    rejection = TerminalOutcome::failed({});
+  }
+#endif
+  if (rejection) {
+    tasks.clear();
+    auto& failed = pending ? *pending : request;
+    auto session = sessions_.find(failed.session);
+    if (session != sessions_.end() &&
+        session->second.preparing == failed.generation.state) {
+      session->second.preparing.reset();
+    }
+    // Terminal delivery stays outside the staging catch, preserving callback
+    // failure semantics and releasing all staged backing before notification.
+    complete_request_(std::move(failed), std::move(*rejection), true);
+    return;
+  }
+  if (handed_to_preparation) {
     return;
   }
 
-  auto session = sessions_.find(request.session);
-  if (session == sessions_.end()) {
-    complete_request_(
-        std::move(request),
-        TerminalOutcome::failed("session is not open"),
-        /*on_engine_thread=*/true);
-    return;
-  }
-  auto& record = session->second;
-  if (auto rejection = validate_generation_start_(request, record)) {
-    complete_request_(
-        std::move(request), std::move(*rejection), /*on_engine_thread=*/true);
-    return;
-  }
-
-  const auto start_position = record.position();
-  // The caller's own delta, captured before build_initial_delta_ moves it and
-  // before any carried token is prepended. The generation tier counts what
-  // callers gave; tokens actually fed to the model are EngineMetrics'
-  // model_input_tokens().
-  request.generation.m.n_prompt_tokens =
-      static_cast<std::int64_t>(request.delta->size());
-  auto delta = build_initial_delta_(request, record);
-  if (!is_running_() || !record.status->open.load(std::memory_order_acquire) ||
-      request.generation.state->cancelled.load()) {
-    complete_request_(
-        std::move(request),
-        TerminalOutcome::cancelled(),
-        /*on_engine_thread=*/true);
-    return;
-  }
-  executor_.set_sampling(request.session, request.sampling, request.seed);
-
+  assert(staged_record);
+  auto& record = *staged_record;
   bool installed = false;
   {
     std::lock_guard<std::mutex> lock(control_mutex_);
@@ -1451,6 +2007,7 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   }
   if (!installed) {
     // Sampling began before the stop transition, but no task was submitted.
+    tasks.clear();
     complete_request_(
         std::move(request),
         TerminalOutcome::cancelled(),
@@ -1459,48 +2016,43 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   }
 
   // advance() clears a carried token only after the input holding it runs.
-  submit_(
-      request.session,
-      create_tasks_(
-          request.session,
-          std::move(delta),
-          start_position,
-          /*is_continuation=*/false));
+  submit_(request.session, std::move(tasks));
 }
 
 std::vector<Task> RunnerImpl::create_tasks_(
     SessionId session,
-    std::shared_ptr<const std::vector<Token>> tokens,
+    PreparedInputPtr prepared,
+    std::size_t offset,
+    std::size_t size,
     Position position,
-    bool is_continuation) {
-  const auto total = static_cast<std::int32_t>(tokens->size());
+    bool is_continuation,
+    bool produce_output) {
   // The scheduler owns this limit, so the runner cannot split a prompt into
-  // chunks the scheduler would then refuse. It is non-zero and clamped to the
-  // token count, so the loop below always advances.
-  const auto limit = scheduler_->max_prefill_chunk_size();
-  const auto chunk = limit >= static_cast<std::size_t>(total)
-      ? total
-      : static_cast<std::int32_t>(limit);
+  // chunks the scheduler would then refuse. It is non-zero, so the loop below
+  // always advances by the actual emitted length, including the final chunk.
+  const auto chunk = scheduler_->max_prefill_chunk_size();
   // A one-token continuation is the decode step. Anything else is prefill,
   // including an opening delta that happens to be a single token.
-  const auto decode = is_continuation && total == 1;
+  const auto decode = is_continuation && size == 1;
   std::vector<Task> tasks;
 
-  for (std::int32_t i = 0; i < total; i += chunk) {
-    const auto n = std::min(chunk, total - i);
-    const auto last = (i + n) == total;
+  for (std::size_t i = 0; i < size;) {
+    const auto remaining = size - i;
+    const auto n = std::min(chunk, remaining);
+    const auto last = n == remaining;
 
-    Task t;
+    ExecutionTask t;
     t.tid = next_tid_++;
     t.cancelled = false;
     t.is_decode = decode;
     t.input.sid = session;
-    t.input.produce_output = last;
-    t.input.offset = static_cast<size_t>(i);
-    t.input.size = static_cast<size_t>(n);
-    t.input.tokens = tokens;
+    t.input.produce_output = produce_output && last;
+    t.input.offset = offset + i;
+    t.input.size = n;
+    t.input.prepared = prepared;
     t.input.position = position;
     tasks.push_back(std::move(t));
+    i += n;
   }
   return tasks;
 }
@@ -1702,11 +2254,29 @@ void RunnerImpl::resume_generation_(
     return;
   }
 
+  auto& generation = *session->second.active_generation;
+  if (!generation.feedback_backing.expired()) {
+    complete_active_generation_(
+        session_id,
+        TerminalOutcome::failed("executor retained consumed feedback backing"));
+    return;
+  }
+  PreparedInputPtr prepared;
+  if (!wrap_tokens_(
+          std::move(input), prepared, generation.feedback_reservation)) {
+    complete_active_generation_(
+        session_id,
+        TerminalOutcome::failed("executor failed to wrap decode token"));
+    return;
+  }
+  generation.feedback_backing = prepared;
   submit_(
       session_id,
       create_tasks_(
           session_id,
-          std::move(input),
+          std::move(prepared),
+          0,
+          1,
           position,
           /*is_continuation=*/true));
 }
@@ -1752,6 +2322,7 @@ void RunnerImpl::complete_generation_(
     TerminalOutcome outcome,
     bool on_engine_thread) {
   generation.m.t_end = MetricsClock::now();
+  generation.feedback_reservation.reset();
   std::optional<TerminalCompletion> completion;
   {
     // The claim is taken under the runner lock. User code still runs only after
@@ -1818,6 +2389,9 @@ void RunnerImpl::complete_request_(
     GenerationRequest request,
     TerminalOutcome outcome,
     bool on_engine_thread) {
+  request.delta.reset();
+  request.raw.reset();
+  request.raw_reservation.reset();
   complete_generation_(
       std::move(request.generation), std::move(outcome), on_engine_thread);
 }
@@ -1861,6 +2435,7 @@ void RunnerImpl::fail_active_generation_after_callback_(
     return;
   }
   active->m.t_end = MetricsClock::now();
+  active->feedback_reservation.reset();
   auto completion = TerminalCompletion::try_claim(active->state);
   if (!completion) {
     return;

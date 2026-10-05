@@ -25,6 +25,7 @@ from .errors import (
     ModelNotFound,
     SessionCapacity,
 )
+from .image_input import prepare_image_bindings
 from .openai_transcript import OpenAITranscriptState
 from .protocol import (
     _new_id,
@@ -164,6 +165,11 @@ class ServingChat:
         self._transactions = _SessionLocks(
             runtime.max_concurrent_requests if self._multiplexed else None
         )
+
+    @property
+    def uses_native_transport(self) -> bool:
+        """Whether native request-frame limits apply to this adapter."""
+        return getattr(self._runtime, "uses_native_transport", False) is True
 
     @property
     def healthy(self) -> bool:
@@ -310,6 +316,15 @@ class ServingChat:
             stats.total_ms,
             finish,
         )
+        for name in (
+            "prompt_positions",
+            "reused_prompt_positions",
+            "prefilled_prompt_positions",
+        ):
+            value = getattr(stats, name, None)
+            if value is not None:
+                message += f" {name}=%d"
+                args += (value,)
         if stats.vision_encoder_ms is not None:
             message += " vision_encoder_ms=%.1f"
             args += (stats.vision_encoder_ms,)
@@ -556,6 +571,9 @@ class ServingChat:
         text, or for token-ID segments sum(len(ids)) for {ids} runs + the
         tokenized length of {text} chunks. None when no tokenizer is available to
         count text (the worker still enforces the real context limit)."""
+        if any("image" in segment for segment in prompt.segments or []):
+            # Only native preparation knows the expanded decoder-position count.
+            return None
         if prompt.text is not None:
             count = self._template.count_tokens(prompt.text)
             return None if count is None else count + self._prompt_token_offset
@@ -601,20 +619,35 @@ class ServingChat:
         template_tools = None if req.tool_choice == "none" else req.tools
         template_kwargs = dict(req.chat_template_kwargs or {})
         template_kwargs.pop("return_reasoning", None)
-        prompt = self._template.render(
-            req.messages, tools=template_tools, template_kwargs=template_kwargs
+        messages, image_bindings = prepare_image_bindings(
+            req.messages, getattr(self._runtime, "image_limits", None)
         )
-        # Token-ID segments splice prior assistant turns' exact ids so warm resume
-        # survives the template's lossy tool-call re-render; plain text when
-        # there's nothing to splice or on ambiguity (the worker verifies the
-        # exact-token prefix regardless).
-        prompt_input = self._transcript.build_prompt_input(
-            session_id=req.session_id,
-            messages=req.messages,
-            rendered_prompt=prompt,
-            tools=template_tools,
-            template_kwargs=template_kwargs,
-        )
+        try:
+            prompt = self._template.render(
+                messages, tools=template_tools, template_kwargs=template_kwargs
+            )
+            # Reconstruct exact assistant IDs before binding images. This does
+            # not authorize native cache reuse for incoming/resident image history.
+            prompt_input = self._transcript.build_prompt_input(
+                session_id=req.session_id,
+                messages=req.messages,
+                render_messages=messages,
+                rendered_prompt=prompt,
+                tools=template_tools,
+                template_kwargs=template_kwargs,
+                image_bindings=image_bindings,
+            )
+        except APIError:
+            raise
+        except Exception as error:
+            if not image_bindings:
+                raise
+            raise APIError(
+                400,
+                "Chat template cannot render image bindings.",
+                "invalid_request_error",
+                "invalid_image",
+            ) from error
         # Pre-flight context check against the tokens the worker will actually
         # assemble: for segments that is sum(len(ids)) + tokenized text, not the
         # rendered string, so a near-limit prompt agrees with the worker rather
@@ -708,6 +741,7 @@ class ServingChat:
             tool_calls=tool_calls,
             reasoning_content=reasoning,
             generated_token_ids=stats.generated_token_ids,
+            source_messages=req.messages,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )
@@ -876,6 +910,7 @@ class ServingChat:
             tool_calls=tool_calls,
             reasoning_content=reasoning or None,
             generated_token_ids=stats.generated_token_ids,
+            source_messages=req.messages,
             prior_turns=sum(1 for m in req.messages if m.role == "assistant"),
             preamble=preamble,
         )

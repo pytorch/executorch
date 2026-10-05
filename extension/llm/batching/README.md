@@ -1,9 +1,78 @@
 # Batched generation, session cloning, and prefix reuse
 
-`Runner` schedules token deltas through an `Executor`. `ModuleExecutor` runs
-those batches against a registered off-graph KV cache. Session cloning is a
-runtime operation; token matching and snapshot eviction are a separate,
-caller-owned policy in `batching::PrefixCache`.
+`Runner` schedules opaque prepared-input ranges through an `Executor`.
+`ModuleExecutor` provides the token-backed implementation against a registered
+off-graph KV cache. Session cloning is a runtime operation; token matching and
+snapshot eviction are a separate, caller-owned policy in `batching::PrefixCache`.
+
+## Preparation and selected ranges
+
+`PreparationInput::segments` preserves prompt order using the shared
+`MultimodalInput` vocabulary. Text must already be tokenized and images must
+already be CPU-preprocessed `Image` objects. Source text, encoded-image bytes,
+and audio are not accepted at this boundary. A model-specific Executor may
+encode images; the default Executor and ModuleExecutor are text-only.
+
+```cpp
+PreparationInput input;
+input.segments.emplace_back(std::move(token_ids));
+input.segments.emplace_back(std::move(decoded_image));
+auto cancelled = std::make_shared<std::atomic<bool>>(false);
+runner.prepare_async(std::move(input), cancelled, on_prepared);
+// on_prepared(bool ok, PreparedInputPtr prepared) transfers the owned result.
+```
+
+`Executor::prepare` runs synchronously on the existing engine thread, without a
+decoder session or sampling state. `PreparationConfig` fixes position, retained
+byte, workspace, aggregate retained byte, and image-count bounds at construction;
+`Runner::preparation_config()` exposes a snapshot without a downcast, including
+after shutdown and Executor destruction. `PreparationConfig::input_retained_bytes`
+validates capacity-based source ownership against the workspace limit. Admission
+reserves these source bytes plus the maximum output; completion releases the source
+charge and retains the actual output charge with every returned backing alias.
+The aggregate bound includes queued/in-flight source and prepared owners. Executor
+scratch is separately bounded by `max_workspace_bytes`; only one preparation runs
+on the engine thread. Failed or cancelled preparation releases partial output.
+Cancellation during an executor call discards its result after return.
+Completion occurs exactly once, inline on admission refusal or on the engine
+thread for admitted work; callbacks must not block that thread.
+
+`PreparedInput` owns immutable executor-private backing. Generic scheduling knows
+only positions, memory accounting, and compatibility tags: no tensor layout, RTTI,
+or mandatory payload subclass. Executors call `validate_batch()` before mutation
+and inspect their payload only after its compatibility check succeeds.
+
+```cpp
+auto generation = session.generate_async(
+    prepared, offset, size, config, on_update, on_settled);
+// Whole input: offset = 0, size = prepared->position_count().
+```
+
+Only the selected range is appended. `Input::position + Input::offset` is the
+absolute decoder position, so the backing base may be negative. Any pending
+prediction is a separate input before the suffix; only the last selected suffix
+chunk asks for output. Generated-token feedback uses the lightweight engine-thread
+`Executor::wrap_tokens` hook, never asynchronous preparation or a model forward.
+The token-vector generation overload remains available and performs preparation
+under the same generation handle, cancellation, and settlement fence. It reserves
+source plus output capacity before its start command enters the inbox, then
+transfers that reservation into preparation without a second charge. Generations
+that may decode protect one maximum-output reservation until settlement. Internal
+token preparation transfers its reservation to feedback after consumed backing is
+released. Prepared-range requests reserve one maximum-input charge and, when
+needed, a separate feedback charge before their start command is queued. The input
+charge follows queued/executing aliases. This conservative per-request charge also
+applies to already-accounted `Runner::prepare_async` results; it avoids an ownership
+registry and bounds compatible backing constructed outside the Runner. Admission
+fails if either charge is unavailable. New preparations cannot consume protected
+feedback capacity.
+consume this protected capacity. Executors must not retain consumed input backing
+when the next feedback step reuses it. Preparation and execution share the scheduler
+with bounded alternating fairness.
+
+Legacy token-named batching input metrics count decoder positions. Serving must
+track tokenizer-token counts separately and must not use token-only prefix keys
+for image requests. This seam adds no model or image encoder implementation.
 
 ## Cloning a session
 
