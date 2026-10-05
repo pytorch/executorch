@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/data_loader/mmap_data_loader.h>
+#include <executorch/extension/data_loader/file_data_loader.h>
 
 #include <cerrno>
 #include <cstdint>
@@ -337,6 +338,11 @@ Error MmapDataLoader::load_into(
   ::munmap(pages, map_size);
 
   return Error::Ok;
+}
+
+Error MmapDataLoader::replace_data(runtime::Span<const DataChunk> chunks) {
+  const std::lock_guard<std::mutex> lock(replace_mutex_);
+  return internal::replace_file_data(fd_, file_name_, file_size_, chunks);
 }
 
 } // namespace extension

@@ -65,6 +65,7 @@ def define_common_targets():
         ],
         visibility = ["PUBLIC"],
         exported_deps = [
+            ":file_data_loader",
             "//executorch/runtime/core:core",
         ],
     )
