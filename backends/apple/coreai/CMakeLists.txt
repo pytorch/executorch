@@ -21,8 +21,9 @@ endforeach()
 
 enable_language(OBJCXX)
 
-set(_coreai_runtime_sources runtime/coreai_assets.mm runtime/coreai_storage.mm
-                            runtime/coreai_bookmarks.mm
+set(_coreai_runtime_sources
+    runtime/coreai_assets.mm runtime/coreai_storage.mm
+    runtime/coreai_bookmarks.mm runtime/coreai_load_coordinator.mm
 )
 
 # Keep ARC and C++ exception settings away from the private Swift module.
@@ -53,6 +54,10 @@ if(EXECUTORCH_BUILD_TESTS)
     runtime/test/coreai_bookmark_test.mm
     runtime/test/coreai_source_fixture.mm
     runtime/test/coreai_bookmark_fixture.mm
+    runtime/test/coreai_fake_loader.mm
+    runtime/test/coreai_acquisition_test.mm
+    runtime/test/coreai_acquisition_fixture.mm
+    runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
   )
   coreai_configure_objc_target(coreai_host_test)
