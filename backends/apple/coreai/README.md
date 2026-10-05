@@ -168,6 +168,56 @@ the original PTE and named data for reconstruction after a cache miss.
 Source-free inference, fresh-process SDK restoration and persistent-policy
 behavior require separate OS 27 hardware qualification.
 
+### Clearing cached assets
+
+The public C++ maintenance APIs are in `executorch::backends::coreai`:
+
+```cpp
+runtime::Error clear_cache(const char* coreai_assets_dir);
+runtime::Error clear_cache_for_pte(
+    runtime::DataLoader& pte, const char* coreai_assets_dir = nullptr);
+runtime::Error clear_cache_for_pte(
+    const char* pte_path, const char* coreai_assets_dir = nullptr);
+```
+
+`clear_cache` requires an explicit absolute assets root. The PTE overloads use
+user-domain `NSCachesDirectory` plus `executorch_coreai` when the directory is
+omitted or null, just like backend initialization. An invalid supplied path is
+an error. If loading used a custom root, pass that same root when clearing;
+the PTE does not store runtime directory overrides.
+
+Root-wide clearing visits keyed bookmarks and staged directories. PTE clearing
+selects and deduplicates keys for all Core AI delegates in every method, using
+the current platform, SDK architecture and default specialization configuration.
+Both public `clear_cache_for_pte` overloads use the private `inspect_coreai_pte`
+reader and retain its `CoreAIPteData`, including the verified program image and
+selected processed buffers, through `clear_keys`. Discovery does not load a
+Program or initialize a Method, load SDK models, bind functions, extract Core AI
+assets or specialize. All selected manifests are validated before any key is
+cleared; root-wide clearing remains
+available for existing keyed entries. Backend-local structural and semantic
+verification is mandatory even with `ET_ENABLE_PROGRAM_VERIFICATION=0`.
+The reader's I/O and buffer-lifetime contract is described below.
+
+These synchronous calls require callers to unload affected models and prevent
+concurrent loads, inference and maintenance across processes. Per-key locks are
+not a whole-root barrier. Clearing first deletes the recorded SDK entry, then
+staging, then its bookmark. Busy or unknown SDK errors preserve the files;
+SDK-confirmed absence permits cleanup. Filesystem errors may leave partial
+cleanup, but the bookmark is retained until staging removal succeeds so cleanup
+can be retried. Independent keys are still attempted in sorted order, and the
+first key error is returned. Each removal syncs the directory it changed. A
+missing root or absent entry is a noncreating no-op.
+
+Everything under a keyed `staging/<key>` directory belongs to the backend and is
+removed with that key. Outside keyed entries, clearing does not delete PTEs,
+other files or the stable lock files. Unkeyed interrupted-staging directories
+also remain untouched. Bookmarks are SDK eviction handles, not weights: lost
+bookmarks can leave SDK entries that these APIs cannot target. There is no
+history or ownership registry. Copied or reused exported artifacts can share
+keys; clearing them also removes the other copy's warm-cache benefit. Subsequent
+loads can specialize again.
+
 ### Runtime options
 
 Pass options through the public `Module` API before loading. In an error-returning
@@ -222,7 +272,8 @@ Ninja builds use one architecture per build directory. Current runtime support
 covers arm64 macOS and iOS device builds. x86_64 builds are blocked by Swift
 `Float16` availability, and the tested iOS simulator SDKs do not contain Core AI.
 
-Enable `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER` for inference consumers.
+Enable `EXECUTORCH_BUILD_EXTENSION_DATA_LOADER` for inference consumers and
+the public PTE-file maintenance API.
 Link the CMake target `coreaidelegate`, not just its archive filename. Its
 transitive dependencies supply Swift and Foundation/CoreAI linkage, and its
 link interface retains static backend registration. With
@@ -235,8 +286,8 @@ Select the Apple SDK/toolchain when configuring the consumer project.
 SwiftPM and XCFramework distribution are not integrated yet.
 
 The `coreai_runtime_smoke` target checks final linkage of a C++ consumer,
-including Swift dependencies and backend registration retention. With
-`EXECUTORCH_BUILD_TESTS=ON` it is built and
+including Swift dependencies, backend registration retention and all public
+cache-clearing overloads. With `EXECUTORCH_BUILD_TESTS=ON` it is built and
 registered with CTest; otherwise it is excluded from the default build. On OS 27,
 running it checks registration and availability; it does not perform model
 inference. Do not execute SDK27 binaries on an older host.
