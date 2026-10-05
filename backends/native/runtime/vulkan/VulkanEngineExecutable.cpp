@@ -321,6 +321,37 @@ bool is_metadata_only_view(std::string_view key) {
       std::ranges::find(kOps, key) != kOps.end();
 }
 
+// ET-VK tensor views keep the sizes they were created with, so a view of a
+// dynamically sized source must be resized whenever that source is.
+void resize_view_alias(
+    ComputeGraph* graph,
+    const std::vector<vkcompute::ArgGroup>& /*args*/,
+    const std::vector<VkRef>& resize_args) {
+  const int64_t numel =
+      utils::multiply_integers(graph->sizes_of(resize_args.at(1)));
+  std::vector<int64_t> sizes =
+      graph->extract_int_or_symint_list(resize_args.at(2));
+  int64_t known_numel = 1;
+  auto inferred = sizes.end();
+  for (auto it = sizes.begin(); it != sizes.end(); ++it) {
+    if (*it == -1 && inferred == sizes.end()) {
+      inferred = it;
+    } else if (
+        *it < 0 || __builtin_mul_overflow(known_numel, *it, &known_numel)) {
+      throw std::runtime_error("vulkan: invalid view size list");
+    }
+  }
+  if (inferred != sizes.end()) {
+    if (known_numel != 0 && numel % known_numel != 0) {
+      throw std::runtime_error("vulkan: view size list does not divide input");
+    }
+    *inferred = known_numel == 0 ? 0 : numel / known_numel;
+  } else if (known_numel != numel) {
+    throw std::runtime_error("vulkan: view size list does not match input");
+  }
+  graph->virtual_resize(resize_args.at(0), sizes);
+}
+
 MemoryKind memory_kind(utils::StorageType storage) {
   switch (storage) {
     case utils::StorageType::BUFFER:
@@ -1586,6 +1617,18 @@ class VulkanEngineExecutable final : public EngineExecutable {
     VK_GET_OP_FN(key)(*graph_, args);
   }
 
+  bool is_dynamic(ValueId id) const {
+    return !meta_of(id).lower_bounds.empty();
+  }
+
+  void add_view_resize(const Node& n) {
+    graph_->execute_nodes().emplace_back(new vkcompute::ExecuteNode(
+        resize_view_alias,
+        {vref_at(n.outputs.at(0).value_id),
+         resolve_arg(n.inputs.at(0).arg),
+         resolve_arg(n.inputs.at(1).arg)}));
+  }
+
   void index_output_kinds() {
     symint_.assign(g().values.size(), 0);
     for (const NodeId node_id : nodes_) {
@@ -1814,12 +1857,20 @@ class VulkanEngineExecutable final : public EngineExecutable {
       if (!n.is_call()) {
         continue;
       }
-      if (is_metadata_only_view(registry_key(n.target)) &&
+      const std::string key = registry_key(n.target);
+      if (is_metadata_only_view(key) &&
           std::ranges::all_of(n.outputs, [&](const Output& output) {
             return valid(output.value_id) &&
                 valid(g().value(output.value_id).alias_id);
           })) {
         check_view_offset(n);
+        if (key == "aten.view.default") {
+          add_view_resize(n);
+        } else if (is_dynamic(g().value(n.outputs.at(0).value_id).alias_id)) {
+          throw std::runtime_error(
+              "vulkan: node '" + n.name + "' (" + n.target +
+              "): only aten.view can alias a dynamically shaped source");
+        }
         continue;
       }
       try {
