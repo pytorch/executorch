@@ -739,3 +739,37 @@ def test_adaptive_avg_pool1d_is_decomposed_with_public_api_alias() -> None:
         "torch.nn.AdaptiveAvgPool1d",
         "torch.nn.functional.adaptive_avg_pool1d",
     )
+
+
+def test_linalg_vector_norm_is_decomposed_with_public_api_alias() -> None:
+    op = "torch.ops.aten.linalg_vector_norm.default"
+
+    assert op in docgen.DECOMPOSED_OPS
+    assert docgen._pytorch_api_aliases(op) == ("torch.linalg.vector_norm",)
+
+
+@pytest.mark.parametrize(
+    ("backend", "function", "profile"),
+    [
+        ("vgf", "test_vector_norm_vgf_no_quant", "FP"),
+        ("vgf", "test_vector_norm_vgf_quant", "INT"),
+        ("u55", "test_vector_norm_u55_INT_fvp", "INT"),
+        ("u85", "test_vector_norm_u85_INT_fvp", "INT"),
+    ],
+)
+def test_linalg_vector_norm_explicit_backend_coverage(
+    backend: str, function: str, profile: str
+) -> None:
+    op = "torch.ops.aten.linalg_vector_norm.default"
+    original = docgen.ACTIVE_BACKEND_KEY
+    try:
+        docgen._activate_backend(backend)
+        coverage = docgen._active_explicit_backend_coverage()
+        assert coverage[
+            (
+                "backends/arm/test/ops/test_linalg_vector_norm.py",
+                function,
+            )
+        ][profile] == {op}
+    finally:
+        docgen._activate_backend(original)

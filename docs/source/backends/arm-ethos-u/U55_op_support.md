@@ -51,6 +51,7 @@ Total supported PyTorch APIs: **106**.
 | `torch.full` | INT | `INT8` | 8x8 |
 | `torch.full_like` | INT | `INT8` | 8x8 |
 | `torch.index_select` | INT | `INT8` | 8x8 |
+| `torch.linalg.vector_norm` | INT | `INT8` | 8x8 |
 | `torch.linspace` | INT | `INT8` | 8x8 |
 | `torch.log` | INT | `INT8` | 8x8 |
 | `torch.log10` | INT | `INT8` | 8x8 |

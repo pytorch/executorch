@@ -358,6 +358,7 @@ DECOMPOSED_OPS = {
     "torch.ops.aten.pow.Tensor_Tensor",
     "torch.ops.aten.scaled_dot_product_attention.default",
     "torch.ops.aten.adaptive_avg_pool1d.default",
+    "torch.ops.aten.linalg_vector_norm.default",
 }
 
 
@@ -418,6 +419,18 @@ VGF_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
     },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_vgf_no_quant",
+    ): {
+        "FP": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_vgf_quant",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
 }
 
 # Existing U55 runtime tests below intentionally suppress direct ATen/Edge
@@ -466,6 +479,12 @@ U55_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
     },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_u55_INT_fvp",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
+    },
 }
 
 # Existing U85 runtime tests below intentionally suppress direct ATen/Edge
@@ -503,6 +522,12 @@ U85_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
         "test_sdpa_u85_INT",
     ): {
         "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_linalg_vector_norm.py",
+        "test_vector_norm_u85_INT_fvp",
+    ): {
+        "INT": {"torch.ops.aten.linalg_vector_norm.default"},
     },
 }
 
@@ -605,6 +630,7 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.bmm.default": ("torch.bmm",),
     "torch.ops.aten.matmul.default": ("torch.matmul", "@"),
     "torch.ops.aten.addmm.default": ("torch.addmm",),
+    "torch.ops.aten.linalg_vector_norm.default": ("torch.linalg.vector_norm",),
     "torch.ops.aten.convolution.default": (
         "torch.nn.Conv2d",
         "torch.nn.functional.conv2d",
