@@ -20,9 +20,8 @@ After edge decomposition the graph looks like:
     getitem_1 = auto_func[1]   # mutated state  (BUFFER_MUTATION)
     return (getitem_1, getitem)
 
-The pattern handler uses HEAD = getitem[1] (same as ETKVCacheUpdateHandler)
-because the partitioner needs the BUFFER_MUTATION node as a proper subgraph
-output. getitem[0] is left for the normal _getitem_handler to process.
+The handler preserves both outputs when present. A local state can leave only
+the output tensor or final state live after dead-code elimination.
 """
 
 from __future__ import annotations
@@ -122,8 +121,8 @@ class GatedDeltaRuleHandler(PatternHandler):
     """
     Pattern for gated delta rule state mutation.
 
-    HEAD = getitem[1] (BUFFER_MUTATION — mutated state)
-    BODY = [auto_func_node, getitem_0]
+    HEAD = getitem[1] (mutated state), or getitem[0] when state is unused.
+    BODY = auto_func_node and the other live getitem, if any.
 
     Both getitem nodes are handled by this pattern to prevent
     _getitem_handler from calling slot_map on auto_func_node
@@ -136,7 +135,8 @@ class GatedDeltaRuleHandler(PatternHandler):
         head: Node,
         body: List[Node],
         auto_func_node: Node,
-        getitem_0: Node,
+        getitem_0: Optional[Node],
+        getitem_1: Optional[Node],
         q: Node,
         k: Node,
         v: Node,
@@ -147,6 +147,7 @@ class GatedDeltaRuleHandler(PatternHandler):
         super().__init__(head, body)
         self.auto_func_node = auto_func_node
         self.getitem_0 = getitem_0
+        self.getitem_1 = getitem_1
         self.q_node = q
         self.k_node = k
         self.v_node = v
@@ -169,12 +170,9 @@ class GatedDeltaRuleHandler(PatternHandler):
     def maybe_create(
         cls, ep: ExportedProgram, head: Node
     ) -> Optional["GatedDeltaRuleHandler"]:
-        """
-        Match HEAD = getitem[1] from auto_functionalized_v2(gated_delta_rule).
-        """
         if head.op != "call_function" or "getitem" not in str(head.target):
             return None
-        if len(head.args) < 2 or head.args[1] != 1:
+        if len(head.args) < 2 or head.args[1] not in (0, 1):
             return None
         if not isinstance(head.args[0], Node):
             return None
@@ -196,26 +194,26 @@ class GatedDeltaRuleHandler(PatternHandler):
 
         state = all_bases[0]
 
-        # Find getitem[0] (output tensor) among auto_func's users
-        getitem_0 = None
+        getitems = {}
         for user in auto_func_node.users:
             if (
                 user.op == "call_function"
                 and "getitem" in str(user.target)
                 and len(user.args) >= 2
-                and user.args[1] == 0
+                and user.args[1] in (0, 1)
             ):
-                getitem_0 = user
-                break
+                getitems[user.args[1]] = user
 
-        if getitem_0 is None:
+        if head is not getitems.get(1, getitems.get(0)):
             return None
 
         return cls(
             head=head,
-            body=[auto_func_node, getitem_0],
+            body=[auto_func_node]
+            + [user for user in getitems.values() if user is not head],
             auto_func_node=auto_func_node,
-            getitem_0=getitem_0,
+            getitem_0=getitems.get(0),
+            getitem_1=getitems.get(1),
             q=q,
             k=k,
             v=v,
@@ -223,6 +221,19 @@ class GatedDeltaRuleHandler(PatternHandler):
             beta=beta,
             state=state,
         )
+
+    def _output_slots(self, P: MLXProgramBuilder) -> tuple[Slot, Slot]:
+        out = (
+            P.make_or_get_slot(self.getitem_0)
+            if self.getitem_0 is not None
+            else P.make_tmp_slot()[1]
+        )
+        carry = (
+            P.make_or_get_slot(self.getitem_1)
+            if self.getitem_1 is not None
+            else P.make_tmp_slot()[1]
+        )
+        return out, carry
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
@@ -313,13 +324,7 @@ class GatedDeltaRuleHandler(PatternHandler):
 
         # Output slot for y — use existing IO slot if getitem_0 is a graph output,
         # otherwise create a new temp slot.
-        out = P.make_or_get_slot(self.getitem_0)
-
-        # Output slot for state_out (carry). This is node n's persistent output
-        # (the mutated state), so it must be a node-owned slot — not a temp slot,
-        # whose id is reclaimed on tmp_scope exit and would be read as dead by a
-        # later node that consumes the mutated state (e.g. a second op call).
-        carry = P.make_or_get_slot(n)
+        out, carry = self._output_slots(P)
 
         # Metal kernel source (non-vectorized, no mask variant from mlx-lm)
         source = """
@@ -440,11 +445,7 @@ class GatedDeltaRuleHandler(PatternHandler):
             )
         )
 
-        # HEAD is getitem[1] = mutated state → bind to carry
-        # carry already registered as n's slot via make_or_get_slot(n) above.
-        P.set_slot(self.getitem_0, out)
-
-        return carry
+        return carry if self.getitem_1 is not None else out
 
     def _emit_scan(self, P: MLXProgramBuilder, n: Node) -> Slot:
         """Emit ScanNode decomposition of the gated delta recurrence."""
@@ -487,11 +488,7 @@ class GatedDeltaRuleHandler(PatternHandler):
             )
             q_slot, k_slot = q_exp, k_exp
 
-        # Carry needs a writable slot. This is node n's persistent output (the
-        # mutated state), so it must be a node-owned slot — not a temp slot, whose
-        # id is reclaimed on tmp_scope exit and would be read as dead by a later
-        # node that consumes the mutated state (e.g. a second op call).
-        carry = P.make_or_get_slot(n)
+        out, carry = self._output_slots(P)
         P.emit(IdCopyNode(x=P.slot_to_tid(state_slot), out=P.slot_to_tid(carry)))
 
         # Sliced temp slots for per-step inputs
@@ -500,9 +497,6 @@ class GatedDeltaRuleHandler(PatternHandler):
         _, v_s = P.make_tmp_slot()
         _, g_s = P.make_tmp_slot()
         _, beta_s = P.make_tmp_slot()
-
-        # Output slot for the recurrence output.
-        out = P.make_or_get_slot(self.getitem_0)
 
         # Body temp slots
         _, t0 = P.make_tmp_slot()
@@ -585,13 +579,7 @@ class GatedDeltaRuleHandler(PatternHandler):
             )
         )
 
-        # HEAD is getitem[1] = mutated state → bind to carry
-        # carry already registered as n's slot via make_or_get_slot(n) above.
-
-        # Set getitem[0] slot → output tensor (for downstream computation)
-        P.set_slot(self.getitem_0, out)
-
-        return carry
+        return carry if self.getitem_1 is not None else out
 
 
 _registered = False

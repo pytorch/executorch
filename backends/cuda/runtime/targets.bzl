@@ -123,11 +123,14 @@ def define_common_targets(is_fbcode = False):
         name = "cuda_backend",
         srcs = [
             "cuda_backend.cpp",
+            "cuda_kv_cache.cpp",
             "cuda_mutable_state.cpp",
             "cuda_weight_cache.cpp",
         ],
         headers = [
+            "backend_options.h",
             "cuda_delegate_handle.h",
+            "cuda_kv_cache.h",
             "cuda_mutable_state.h",
             "cuda_weight_cache.h",
         ],
@@ -136,12 +139,17 @@ def define_common_targets(is_fbcode = False):
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
-        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        preprocessor_flags = [
+            "-DCUDA_AVAILABLE=1",
+            # Always built with the LLM extension's cache here.
+            "-DEXECUTORCH_BUILD_EXTENSION_LLM",
+        ],
         visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/backends/aoti:delegate_handle",
             "//executorch/backends/aoti/slim/core:slimtensor",
             "//executorch/extension/cuda:runtime_api",
+            "//executorch/extension/llm/cache:kv_cache",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:named_data_map",
         ],
@@ -177,6 +185,27 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_kv_cache",
+        srcs = [
+            "test/test_cuda_kv_cache.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/backends/aoti:aoti_common_slim",
+            "//executorch/backends/aoti/slim/core:slimtensor",
+            "//executorch/runtime/core:core",
         ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),

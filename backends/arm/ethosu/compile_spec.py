@@ -8,9 +8,7 @@ from dataclasses import dataclass
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.pipeline_config import ArmPassPipelineConfig
-from executorch.backends.arm.tosa import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 

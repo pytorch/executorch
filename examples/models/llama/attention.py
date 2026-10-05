@@ -418,7 +418,17 @@ class AttentionMHA(Attention):
         self.enable_dynamic_shape = args.enable_dynamic_shape
         self.scale_query_by = args.scale_query_by
         self.use_attn_o_gate = args.use_attn_o_gate
+        self.headwise_attn_output_gate = args.headwise_attn_output_gate
+        if self.use_attn_o_gate and self.headwise_attn_output_gate:
+            raise ValueError(
+                "use_attn_o_gate and headwise_attn_output_gate are mutually exclusive"
+            )
         self.use_attn_o_norm = args.use_attn_o_norm
+        self.is_sliding = (
+            args.layer_types is not None
+            and layer_id < len(args.layer_types)
+            and args.layer_types[layer_id] == "sliding_attention"
+        )
         q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
@@ -447,6 +457,10 @@ class AttentionMHA(Attention):
                 device="cpu",
             )
         )
+        # Sliding-window layers: additionally mask out positions outside the window.
+        if self.is_sliding and args.sliding_window:
+            window = args.sliding_window
+            causal_mask = causal_mask.triu(diagonal=1 - window)
         self.register_buffer("mask", causal_mask, persistent=False)
 
         if self.use_kv_cache:
@@ -481,6 +495,8 @@ class AttentionMHA(Attention):
             self.o_norm = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
         if self.use_attn_o_gate:
             self.og = nn.Linear(args.dim, self.n_heads * self.head_dim, bias=False)
+        if self.headwise_attn_output_gate:
+            self.og = nn.Linear(args.dim, self.n_local_heads, bias=False)
 
     def _init_projections(self, args: ModelArgs, q_out_dim: int) -> None:
         """Initialize Q/K/V/O projection layers."""
@@ -509,13 +525,22 @@ class AttentionMHA(Attention):
     def _init_kv_cache(self, args: ModelArgs) -> None:
         """Initialize KV cache (only for non-shared layers)."""
         if self.has_kv_weights:
-            self.kv_cache = KVCache(
-                args.max_batch_size,
-                args.max_context_len,
-                self.n_kv_heads,
-                self.head_dim,
-                args.enable_dynamic_shape,
-            )
+            if self.is_sliding and args.sliding_window:
+                self.kv_cache = RingKVCache(
+                    args.max_batch_size,
+                    args.sliding_window,
+                    self.n_kv_heads,
+                    self.head_dim,
+                    args.enable_dynamic_shape,
+                )
+            else:
+                self.kv_cache = KVCache(
+                    args.max_batch_size,
+                    args.max_context_len,
+                    self.n_kv_heads,
+                    self.head_dim,
+                    args.enable_dynamic_shape,
+                )
         else:
             self.kv_cache = None
 
@@ -678,6 +703,11 @@ class AttentionMHA(Attention):
             if self.use_attn_o_gate:
                 og = self.og(x).view(bsz, seqlen, self.n_local_heads, self.head_dim)
                 output_4d = torch.sigmoid(og) * output_4d
+            output = output_4d.reshape(bsz, seqlen, -1)
+        if self.headwise_attn_output_gate:
+            output_4d = output.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+            og = self.og(x).unsqueeze(-1).to(output_4d.dtype)
+            output_4d = torch.sigmoid(og) * output_4d
             output = output_4d.reshape(bsz, seqlen, -1)
         if gate is not None:
             output = output * torch.sigmoid(gate)

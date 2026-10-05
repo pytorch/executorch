@@ -45,6 +45,7 @@ from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .decompose_sdpa_pass import DecomposeSDPAPass
 from .explicit_layout_pass import (
     CortexMCanonicalizeViewCopyPermutePass,
     CortexMReplaceOpsWithChannelsLastVariants,
@@ -148,6 +149,7 @@ class CortexMPassManager(ExportedProgramPassManager):
     pass_list = legacy_pass_list
 
     pass_list_transform_for_annotation: list[Type[ExportPass]] = [
+        DecomposeSDPAPass,
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
