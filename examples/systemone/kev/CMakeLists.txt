@@ -24,7 +24,7 @@ project(kev LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-get_filename_component(EXECUTORCH_ROOT "../.." ABSOLUTE)
+get_filename_component(EXECUTORCH_ROOT "../../.." ABSOLUTE)
 
 option(BUILD_SHARED_LIBS "" OFF)
 option(EXECUTORCH_BUILD_EXECUTOR_RUNNER "" OFF)
