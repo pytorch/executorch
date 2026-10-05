@@ -45,6 +45,7 @@ set(_coreai_runtime_sources
     runtime/coreai_fault_injection.mm
     runtime/coreai_load_coordinator.mm
     runtime/coreai_manifest.mm
+    runtime/coreai_pte.cpp
     runtime/coreai_source_bundle.mm
     runtime/coreai_tensor_io.mm
     runtime/coreai_validation.mm
@@ -84,6 +85,8 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     runtime/test/coreai_acquisition_fixture.mm
     runtime/test/coreai_delegate_fixture.mm
     runtime/test/coreai_delegate_test.mm
+    runtime/test/coreai_program_data_test.mm
+    runtime/test/coreai_pte_fixture.mm
     runtime/ETCoreAITensor.mm
     ${_coreai_runtime_sources}
   )
@@ -91,7 +94,7 @@ if(EXECUTORCH_BUILD_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   target_compile_definitions(coreai_host_test PRIVATE COREAI_ASSETS_TESTING=1)
   find_library(COREAI_FOUNDATION_FRAMEWORK Foundation REQUIRED)
   target_link_libraries(
-    coreai_host_test PRIVATE ${_coreai_runtime} GTest::gtest
+    coreai_host_test PRIVATE ${_coreai_runtime} program_schema GTest::gtest
                              ${COREAI_FOUNDATION_FRAMEWORK}
   )
   add_test(NAME coreai_host_test COMMAND coreai_host_test)
@@ -398,7 +401,7 @@ target_include_directories(coreaidelegate PUBLIC ${_common_include_directories})
 add_dependencies(coreaidelegate coreai_swift)
 target_link_libraries(
   coreaidelegate PRIVATE coreai_swift ${_coreai_runtime}
-                         executorch::coreai_dependencies
+                         program_schema executorch::coreai_dependencies
 )
 executorch_target_link_options_shared_lib(coreaidelegate)
 if(EXECUTORCH_BUILD_SHARED)
