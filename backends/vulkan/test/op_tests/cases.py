@@ -1859,6 +1859,35 @@ def get_unary_ops_inputs():
     return test_suite
 
 
+@register_test_suite("aten.logical_not.default")
+def get_logical_not_inputs():
+    standard_cases = [
+        (M1,),
+        (M1, M2),
+        (S1, M1, M2),
+        (S1, S2, S2, M2),
+    ]
+    layouts = [
+        "utils::kChannelsPacked",
+        "utils::kHeightPacked",
+        "utils::kWidthPacked",
+    ]
+
+    texture_test_suite = VkTestSuite(standard_cases)
+    texture_test_suite.storage_types = ["utils::kTexture3D"]
+    texture_test_suite.layouts = layouts
+    texture_test_suite.dtypes = ["at::kBool"]
+    texture_test_suite.test_name_suffix = "texture"
+
+    buffer_test_suite = VkTestSuite(standard_cases + [(S1, S2, S2, M1, M2)])
+    buffer_test_suite.storage_types = ["utils::kBuffer"]
+    buffer_test_suite.layouts = layouts
+    buffer_test_suite.dtypes = ["at::kBool"]
+    buffer_test_suite.test_name_suffix = "buffer"
+
+    return [texture_test_suite, buffer_test_suite]
+
+
 @register_test_suite("aten.unfold_copy.default")
 def get_unfold_copy_inputs():
     Test = namedtuple("UnfoldCopy", ["self", "dimension", "size", "step"])
