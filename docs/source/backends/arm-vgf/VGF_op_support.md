@@ -105,6 +105,7 @@ Total supported PyTorch APIs: **158**.
 | `torch.nn.ELU` / `torch.nn.functional.elu` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.Embedding` / `torch.nn.functional.embedding` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.functional.pad` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.nn.functional.scaled_dot_product_attention` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.GELU` / `torch.nn.functional.gelu` | FP, INT | `FP32`, `BF16`, `INT8` | 8x8 |
 | `torch.nn.GroupNorm` / `torch.nn.functional.group_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.nn.Hardsigmoid` / `torch.nn.functional.hardsigmoid` | FP, INT | `FP32`, `INT8` | 8x8 |
