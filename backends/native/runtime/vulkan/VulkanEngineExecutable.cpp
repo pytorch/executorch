@@ -1337,7 +1337,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
     const bool width = is_width_packed_op(key);
     std::optional<utils::StorageType> activation_storage;
-    if (key == "et_vk.linear_dq8ca_q4gsw.default") {
+    if (key == "aten.linear.default" ||
+        key == "et_vk.linear_dq8ca_q4gsw.default") {
       const auto output =
           std::ranges::find_if(n.outputs, [this](const Output& candidate) {
             return valid(candidate.value_id) &&
@@ -1373,6 +1374,25 @@ class VulkanEngineExecutable final : public EngineExecutable {
           }
         }
       }
+      // ET-VK's view_copy shaders read and write one storage type.
+      if (key == "aten.view_copy.default" && na.name == "self" &&
+          na.arg.kind() == ArgKind::Tensor) {
+        const ValueId in_id = na.arg.as_tensor().id;
+        ValueId out_id = kInvalid;
+        for_each_output_value(n, [&](ValueId id) { out_id = id; });
+        if (valid(in_id) && valid(out_id) &&
+            storage_at(in_id) != storage_at(out_id)) {
+          const Value& v = g().value(in_id);
+          const VkRef dst = graph_->add_tensor(
+              v.tensor_meta().sizes,
+              to_vk_dtype(device_dtype(v.tensor_meta().dtype)),
+              storage_at(out_id),
+              layout_at(in_id));
+          std::vector<VkRef> clone_args = {a, none_ref_, dst};
+          VK_GET_OP_FN("aten.clone.default")(*graph_, clone_args);
+          a = dst;
+        }
+      }
       args.push_back(a);
     }
 
@@ -1382,6 +1402,20 @@ class VulkanEngineExecutable final : public EngineExecutable {
     std::vector<VkRef> outs;
     for_each_output_value(
         n, [&](ValueId output_id) { outs.push_back(vref_at(output_id)); });
+    // ET-VK's embedding only writes channels-packed outputs.
+    if (key == "aten.embedding.default" && outs.size() == 1 &&
+        graph_->packed_dim_of(outs[0]) != vkcompute::WHCN::kChannelsDim) {
+      const VkRef tmp = graph_->add_tensor(
+          graph_->sizes_of(outs[0]),
+          graph_->dtype_of(outs[0]),
+          graph_->storage_type_of(outs[0]),
+          utils::kChannelsPacked);
+      args.push_back(tmp);
+      VK_GET_OP_FN(key)(*graph_, args);
+      std::vector<VkRef> clone_args = {tmp, none_ref_, outs[0]};
+      VK_GET_OP_FN("aten.clone.default")(*graph_, clone_args);
+      return;
+    }
     const bool returns_list =
         std::ranges::any_of(n.outputs, [](const Output& output) {
           return output.kind == OutputValueKind::TensorList;
