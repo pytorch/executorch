@@ -22,6 +22,8 @@ runtime::Result<NSString*> bookmark_key(
 runtime::Result<NSString*> resolve_bookmark_root(
     NSString* path,
     bool create = true);
+// Missing roots produce an empty inventory.
+runtime::Result<NSArray<NSString*>*> inventory_bookmark_keys(NSString* root);
 
 class BookmarkLock final {
  public:
@@ -36,6 +38,10 @@ class BookmarkLock final {
   lock_bookmark(NSString* root, NSString* key, bool create);
   friend runtime::Result<NSData*> read_bookmark(const BookmarkLock& lock);
   friend runtime::Error write_bookmark(const BookmarkLock& lock, NSData* data);
+  friend runtime::Error remove_bookmark(const BookmarkLock& lock);
+  friend runtime::Error remove_bookmark_staging(
+      const BookmarkLock& lock,
+      bool remove);
   friend runtime::Result<NSString*> prepare_bookmark_staging(
       const BookmarkLock& lock);
   BookmarkLock(
@@ -59,6 +65,10 @@ lock_bookmark(NSString* root, NSString* key, bool create = true);
 // closed.
 runtime::Result<NSData*> read_bookmark(const BookmarkLock& lock);
 runtime::Error write_bookmark(const BookmarkLock& lock, NSData* data);
+runtime::Error remove_bookmark(const BookmarkLock& lock);
+runtime::Error remove_bookmark_staging(
+    const BookmarkLock& lock,
+    bool remove = true);
 // Prepared only for cold loads; source preparation appends key/bundle.
 runtime::Result<NSString*> prepare_bookmark_staging(const BookmarkLock& lock);
 

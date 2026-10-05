@@ -149,6 +149,33 @@ Result<NSString*> resolve_bookmark_root(NSString* path, bool create) {
   return resolve_root(path, create);
 }
 
+Result<NSArray<NSString*>*> inventory_bookmark_keys(NSString* root) {
+  auto resolved = resolve_root(root, false);
+  if (!resolved.ok()) return resolved.error();
+  auto opened = open_root(resolved.get());
+  if (!opened.ok()) return opened.error();
+  FileDescriptor directory(opened.get());
+  if (directory.get() < 0) return @[];
+  NSMutableSet<NSString*>* keys = [NSMutableSet set];
+  for (NSString* name in @[ @"bookmarks", @"staging" ]) {
+    auto child_result = open_child(directory.get(), name, false);
+    if (!child_result.ok()) return child_result.error();
+    FileDescriptor child(child_result.get());
+    if (child.get() < 0) continue;
+    auto children = storage_children(child.get(), true);
+    if (!children.ok()) return children.error();
+    for (NSString* entry in children.get()) {
+      NSString* key = entry;
+      if ([name isEqual:@"bookmarks"]) {
+        if (![entry hasSuffix:@".bookmark"]) continue;
+        key = [entry substringToIndex:entry.length - @".bookmark".length];
+      }
+      if (digest(key)) [keys addObject:key];
+    }
+  }
+  return [keys.allObjects sortedArrayUsingSelector:@selector(compare:)];
+}
+
 BookmarkLock::BookmarkLock(int root, int bookmarks, int file,
                            NSString* root_path, NSString* key)
     : root_(root),
@@ -234,6 +261,23 @@ Error write_bookmark(const BookmarkLock& lock, NSData* data) {
       InvalidExternalData, "Invalid Core AI bookmark data");
   return publish_storage_data(lock.bookmarks_.get(), bookmark_name(lock.key_),
                               data);
+}
+
+Error remove_bookmark(const BookmarkLock& lock) {
+  if (lock.bookmarks_.get() < 0) return Error::Ok;
+  ET_CHECK_OR_RETURN_ERROR(storage_fault(StorageOperation::Remove) == 0,
+                           AccessFailed,
+                           "Core AI bookmark removal interrupted");
+  ET_CHECK_OR_RETURN_ERROR(
+      unlinkat(lock.bookmarks_.get(),
+               bookmark_name(lock.key_).fileSystemRepresentation, 0) == 0 ||
+          errno == ENOENT,
+      AccessFailed, "Cannot remove Core AI bookmark");
+  return sync_storage_directory(lock.bookmarks_.get());
+}
+
+Error remove_bookmark_staging(const BookmarkLock& lock, bool remove) {
+  return remove_storage_staging(lock.root_.get(), lock.key_, remove);
 }
 
 Result<NSString*> prepare_bookmark_staging(const BookmarkLock& lock) {

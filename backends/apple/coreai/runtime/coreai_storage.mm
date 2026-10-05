@@ -193,6 +193,43 @@ Error write_file(
                            "Cannot close Core AI storage file");
   return sync_storage_directory(parent.get());
 }
+
+// Removes the children of fd. The preflight pass rejects the whole tree before
+// the first unlink if anything other than directories and regular files exists.
+Error visit_source_tree(int fd, bool remove) {
+  auto names = storage_children(fd);
+  if (!names.ok()) return names.error();
+  for (NSString* name in names.get()) {
+    struct stat info;
+    ET_CHECK_OR_RETURN_ERROR(
+        retry_eintr([&] {
+          return fstatat(fd, name.fileSystemRepresentation, &info,
+                         AT_SYMLINK_NOFOLLOW);
+        }) == 0,
+        AccessFailed, "Cannot inspect Core AI source entry");
+    ET_CHECK_OR_RETURN_ERROR(
+        S_ISDIR(info.st_mode) || S_ISREG(info.st_mode), InvalidExternalData,
+        "Unexpected Core AI source entry type");
+    if (S_ISDIR(info.st_mode)) {
+      FileDescriptor child(retry_eintr([&] {
+        return openat(fd, name.fileSystemRepresentation,
+                      O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+      }));
+      ET_CHECK_OR_RETURN_ERROR(child.get() >= 0, AccessFailed,
+                               "Cannot open Core AI source directory");
+      ET_CHECK_OK_OR_RETURN_ERROR(visit_source_tree(child.get(), remove));
+    }
+    if (remove) {
+      ET_CHECK_OR_RETURN_ERROR(
+          storage_call(StorageOperation::Remove, [&] {
+            return unlinkat(fd, name.fileSystemRepresentation,
+                            S_ISDIR(info.st_mode) ? AT_REMOVEDIR : 0);
+          }) == 0,
+          AccessFailed, "Cannot remove Core AI source entry");
+    }
+  }
+  return remove ? sync_storage_directory(fd) : Error::Ok;
+}
 } // namespace
 
 Result<NSArray<NSString*>*> storage_children(int fd, bool skip_invalid_names) {
@@ -259,6 +296,49 @@ Error sync_storage_directory(int fd) {
       AccessFailed,
       "Cannot synchronize Core AI directory");
   return Error::Ok;
+}
+
+Error remove_storage_staging(int root_fd, NSString* key, bool remove) {
+  ET_CHECK_OR_RETURN_ERROR(
+      [key isKindOfClass:NSString.class] && key.length == 64 &&
+          [key rangeOfCharacterFromSet:
+                   [[NSCharacterSet characterSetWithCharactersInString:
+                                        @"0123456789abcdef"] invertedSet]]
+                  .location == NSNotFound,
+      InvalidArgument, "Invalid Core AI staging key");
+  FileDescriptor staging(retry_eintr([&] {
+    return openat(root_fd, "staging",
+                  O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  }));
+  if (staging.get() < 0 && errno == ENOENT) return Error::Ok;
+  ET_CHECK_OR_RETURN_ERROR(staging.get() >= 0, AccessFailed,
+                           "Cannot open Core AI staging directory");
+  struct stat info;
+  const int inspected = retry_eintr([&] {
+    return fstatat(staging.get(), key.fileSystemRepresentation, &info,
+                   AT_SYMLINK_NOFOLLOW);
+  });
+  if (inspected < 0 && errno == ENOENT) return Error::Ok;
+  ET_CHECK_OR_RETURN_ERROR(inspected == 0, AccessFailed,
+                           "Cannot inspect Core AI keyed staging directory");
+  ET_CHECK_OR_RETURN_ERROR(S_ISDIR(info.st_mode), InvalidExternalData,
+                           "Core AI keyed staging entry is not a directory");
+  FileDescriptor source(retry_eintr([&] {
+    return openat(staging.get(), key.fileSystemRepresentation,
+                  O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  }));
+  ET_CHECK_OR_RETURN_ERROR(source.get() >= 0, AccessFailed,
+                           "Cannot open Core AI keyed staging directory");
+  ET_CHECK_OK_OR_RETURN_ERROR(visit_source_tree(source.get(), false));
+  if (!remove) return Error::Ok;
+  ET_CHECK_OK_OR_RETURN_ERROR(visit_source_tree(source.get(), true));
+  ET_CHECK_OR_RETURN_ERROR(
+      storage_call(StorageOperation::Remove, [&] {
+        return unlinkat(staging.get(), key.fileSystemRepresentation,
+                        AT_REMOVEDIR);
+      }) == 0,
+      AccessFailed, "Cannot remove Core AI keyed staging directory");
+  return sync_storage_directory(staging.get());
 }
 
 Error write_storage_file(
