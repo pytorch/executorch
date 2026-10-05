@@ -44,13 +44,20 @@ create_strings(
 flatbuffers::Offset<fbs::TensorMeta> create_tensor_meta(
     flatbuffers::FlatBufferBuilder& builder,
     fbs::ScalarType dtype,
-    const std::vector<int64_t>& shape) {
+    const std::vector<int64_t>& shape,
+    const std::vector<int64_t>& lower_bounds = {},
+    const std::vector<int32_t>& dim_order = {}) {
   std::vector<flatbuffers::Offset<fbs::Dim>> sizes;
   sizes.reserve(shape.size());
-  for (const int64_t size : shape) {
-    sizes.push_back(fbs::CreateDim(builder, size, size));
+  for (size_t i = 0; i < shape.size(); ++i) {
+    const int64_t lower = lower_bounds.empty() ? shape[i] : lower_bounds.at(i);
+    sizes.push_back(fbs::CreateDim(builder, lower, shape[i]));
   }
-  return fbs::CreateTensorMeta(builder, dtype, builder.CreateVector(sizes));
+  return fbs::CreateTensorMeta(
+      builder,
+      dtype,
+      builder.CreateVector(sizes),
+      builder.CreateVector(dim_order));
 }
 
 flatbuffers::Offset<fbs::TensorMeta> create_tensor_meta(
@@ -121,9 +128,11 @@ std::vector<uint8_t> finish_program(
 
 std::vector<uint8_t> make_add_program(
     fbs::ScalarType dtype,
+    const std::vector<int64_t>& shape = {4},
+    const std::vector<int64_t>& lower_bounds = {},
     bool include_mutation_output = false) {
   flatbuffers::FlatBufferBuilder builder;
-  const auto meta = create_tensor_meta(builder, dtype);
+  const auto meta = create_tensor_meta(builder, dtype, shape, lower_bounds);
   const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(builder, "left", meta),
       fbs::CreateTensorValueDirect(builder, "right", meta),
@@ -601,6 +610,52 @@ std::vector<uint8_t> make_mean_view_mm_program() {
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "product")});
 }
 
+std::vector<uint8_t> make_relu_program(const std::vector<int32_t>& dim_order) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto meta = create_tensor_meta(
+      builder, fbs::ScalarType::FLOAT, {2, 2}, /*lower_bounds=*/{}, dim_order);
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", meta),
+      fbs::CreateTensorValueDirect(builder, "relu", meta),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> relu_outputs = {
+      fbs::CreateOutputDirect(builder, "relu")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> relu_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input"))};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "relu"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "relu",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.relu.default",
+          &relu_inputs,
+          &relu_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"relu"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "relu")});
+}
+
 struct CompiledProgram {
   std::unique_ptr<VulkanEngineHost> host;
   std::shared_ptr<const Program> program;
@@ -683,7 +738,7 @@ TEST(VulkanEngineTest, ExposesOnlyUserOutputsWhenMutationOutputsArePresent) {
 
 TEST(VulkanEngineTest, RejectsUserInputMutation) {
   try {
-    compile_program(make_add_program(fbs::ScalarType::FLOAT, true));
+    compile_program(make_add_program(fbs::ScalarType::FLOAT, {4}, {}, true));
     FAIL() << "expected the user input mutation to be rejected";
   } catch (const std::runtime_error& e) {
     EXPECT_NE(
@@ -691,6 +746,36 @@ TEST(VulkanEngineTest, RejectsUserInputMutation) {
         std::string::npos)
         << e.what();
   }
+}
+
+TEST(VulkanEngineTest, ResizesInputsWithinSerializedBounds) {
+  CompiledProgram compiled =
+      compile_program(make_add_program(fbs::ScalarType::FLOAT, {4}, {1}));
+
+  EXPECT_THROW(compiled.executable->resize_input(0, {0}), std::runtime_error);
+  EXPECT_THROW(compiled.executable->resize_input(0, {5}), std::runtime_error);
+  compiled.executable->resize_input(0, {2});
+  compiled.executable->resize_input(1, {2});
+  EXPECT_EQ(compiled.executable->input_sizes(0), (std::vector<int64_t>{2}));
+
+  const std::vector<float> left = {1.0f, 2.0f};
+  const std::vector<float> right = {10.0f, 20.0f};
+  compiled.executable->set_input(
+      0, left.data(), left.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, right.data(), right.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  EXPECT_EQ(compiled.executable->output_sizes(0), (std::vector<int64_t>{2}));
+  std::vector<float> output(2);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{11.0f, 22.0f}));
+}
+
+TEST(VulkanEngineTest, RejectsNonContiguousGraphInputsAndOutputs) {
+  EXPECT_NO_THROW(compile_program(make_relu_program({0, 1})));
+  EXPECT_THROW(compile_program(make_relu_program({1, 0})), std::runtime_error);
 }
 
 TEST(VulkanEngineTest, PreservesLogicalLongDtypeAndChecksNarrowing) {
