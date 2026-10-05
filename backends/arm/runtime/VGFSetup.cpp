@@ -1502,31 +1502,96 @@ bool VgfRepr::process_vgf(
   {
     VGF_PROFILE_SCOPE(event_tracer, "VGF_INIT_DECODE_TABLES");
 
-    // Prepare temporary decoders
+    // Prepare temporary decoders. Header-provided offsets are untrusted until
+    // both the header and every referenced sub-range have been validated.
+    const auto header_size = vgflib::HeaderSize();
+    if (vgf_data == nullptr || header_size > vgf_size) {
+      ET_LOG(Error, "Invalid or truncated VGF input buffer");
+      return false;
+    }
+
     header_decoder =
-        vgflib::CreateHeaderDecoder(vgf_data, vgflib::HeaderSize(), vgf_size);
+        vgflib::CreateHeaderDecoder(vgf_data, header_size, vgf_size);
     if (!header_decoder) {
       ET_LOG(Error, "Failed to create VGF header decoder");
       return false;
     }
 
+    // Validate the header before consuming any offsets or sizes from it.
+    if (!header_decoder->IsValid() || !header_decoder->CheckVersion()) {
+      ET_LOG(Error, "Invalid or unsupported VGF header");
+      return false;
+    }
+
+    const uint64_t total_size = static_cast<uint64_t>(vgf_size);
+
+    const uint64_t sequence_offset =
+        static_cast<uint64_t>(header_decoder->GetModelSequenceTableOffset());
+    const uint64_t sequence_size =
+        static_cast<uint64_t>(header_decoder->GetModelSequenceTableSize());
+
+    const uint64_t module_offset =
+        static_cast<uint64_t>(header_decoder->GetModuleTableOffset());
+    const uint64_t module_size =
+        static_cast<uint64_t>(header_decoder->GetModuleTableSize());
+
+    const uint64_t resource_offset =
+        static_cast<uint64_t>(header_decoder->GetModelResourceTableOffset());
+    const uint64_t resource_size =
+        static_cast<uint64_t>(header_decoder->GetModelResourceTableSize());
+
+    const uint64_t constants_offset =
+        static_cast<uint64_t>(header_decoder->GetConstantsOffset());
+    const uint64_t constants_size =
+        static_cast<uint64_t>(header_decoder->GetConstantsSize());
+
+    // Use subtraction-based range checks rather than offset + size so a
+    // malformed header cannot trigger integer overflow in the validation
+    // itself. The short-circuit ordering also prevents subtraction underflow.
+    if (sequence_offset > total_size ||
+        sequence_size > total_size - sequence_offset) {
+      ET_LOG(Error, "VGF model-sequence table is outside the input buffer");
+      return false;
+    }
+
+    if (module_offset > total_size ||
+        module_size > total_size - module_offset) {
+      ET_LOG(Error, "VGF module table is outside the input buffer");
+      return false;
+    }
+
+    if (resource_offset > total_size ||
+        resource_size > total_size - resource_offset) {
+      ET_LOG(Error, "VGF model-resource table is outside the input buffer");
+      return false;
+    }
+
+    if (constants_offset > total_size ||
+        constants_size > total_size - constants_offset) {
+      ET_LOG(Error, "VGF constants table is outside the input buffer");
+      return false;
+    }
+
+    // Form sub-buffer pointers only after their ranges have been proven to be
+    // entirely contained in vgf_data.
     sequence_decoder = vgflib::CreateModelSequenceTableDecoder(
-        vgf_data + header_decoder->GetModelSequenceTableOffset(),
-        header_decoder->GetModelSequenceTableSize());
+        vgf_data + static_cast<size_t>(sequence_offset),
+        static_cast<size_t>(sequence_size));
     module_decoder = vgflib::CreateModuleTableDecoder(
-        vgf_data + header_decoder->GetModuleTableOffset(),
-        header_decoder->GetModuleTableSize());
+        vgf_data + static_cast<size_t>(module_offset),
+        static_cast<size_t>(module_size));
     resource_decoder = vgflib::CreateModelResourceTableDecoder(
-        vgf_data + header_decoder->GetModelResourceTableOffset(),
-        header_decoder->GetModelResourceTableSize());
+        vgf_data + static_cast<size_t>(resource_offset),
+        static_cast<size_t>(resource_size));
     constant_decoder = vgflib::CreateConstantDecoder(
-        vgf_data + header_decoder->GetConstantsOffset(),
-        header_decoder->GetConstantsSize());
-    // Check the VGF decoders
-    if (not(header_decoder && module_decoder && sequence_decoder &&
-            resource_decoder && constant_decoder && header_decoder->IsValid() &&
-            header_decoder->CheckVersion())) {
-      ET_LOG(Error, "Failed to process VGF file internalsr");
+        vgf_data + static_cast<size_t>(constants_offset),
+        static_cast<size_t>(constants_size));
+
+    // Each decoder still validates the internal structure of its bounded
+    // sub-buffer.
+    if (!(module_decoder && sequence_decoder && resource_decoder &&
+          constant_decoder)) {
+      ET_LOG(Error, "Failed to process VGF file internals");
       return false;
     }
   }
