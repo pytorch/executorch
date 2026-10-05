@@ -65,7 +65,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
 )
 add_library(aten_ops_cadence ${_aten_ops__srcs})
-target_link_libraries(aten_ops_cadence PUBLIC executorch)
+target_link_libraries(aten_ops_cadence PUBLIC prim_ops_lib)
 target_link_libraries(aten_ops_cadence PRIVATE xa_nnlib)
 
 # Let files say "include <executorch/path/to/header.h>".

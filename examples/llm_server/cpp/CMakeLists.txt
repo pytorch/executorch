@@ -27,7 +27,7 @@ set(_json_include
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 find_package(Threads REQUIRED)
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 # Older installed packages may omit this header-only interface target.
 if(NOT TARGET extension_llm_session)

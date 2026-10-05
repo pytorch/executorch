@@ -26,7 +26,7 @@ find_package(gflags REQUIRED)
 # Find executorch libraries
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-executorch_target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(prim_ops_lib)
 
 set(link_libraries executorch gflags)
 

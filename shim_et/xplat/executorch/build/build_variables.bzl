@@ -26,7 +26,7 @@
 # `srcs`. There should then be simple Python code that combines those lists into lists
 # that map 1:1 to the CMake library layout.
 
-EXECUTORCH_SRCS = [
+PRIM_OPS_LIB_SRCS = [
     "kernels/prim_ops/et_copy_index.cpp",
     "kernels/prim_ops/et_view.cpp",
     "kernels/prim_ops/register_prim_ops.cpp",
