@@ -116,3 +116,7 @@ if(EXECUTORCH_LLM_SERVER_PYTHON_TESTS)
   )
   set_tests_properties(multiplexed_worker_client_native PROPERTIES TIMEOUT 120)
 endif()
+
+# Native subprocess fixture for the opt-in Python/OpenAI integration tests.
+add_executable(test_batching_worker test_batching_worker_main.cpp)
+target_link_libraries(test_batching_worker PRIVATE multiplexed_worker)

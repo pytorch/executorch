@@ -92,7 +92,8 @@ op) is future work.
 
 ### Prefix / KV reuse
 
-No global (cross-session) prefix cache: the control plane holds no KV state and
+On the legacy path there is no global (cross-session) prefix cache: the control
+plane holds no KV state and
 does no prefix-reuse routing, so a system prompt shared by two different sessions
 is prefilled independently for each. Per-session append-only warm resume *is*
 implemented worker-side for engines that support it — a named session whose next
@@ -122,7 +123,9 @@ loop. It requires a multiplex-aware client and exposes one `ServingRuntime`,
 which owns one batching Runner. The adapter owns only JSONL framing and wire request
 identities; tokenization, decoding, stop handling, and session history belong to
 the runtime. Chat templates and OpenAI response presentation remain in Python.
-The legacy cancellation limitations above do not describe this opt-in path.
+The legacy cancellation and cross-session cache limitations above do not describe
+this opt-in path. See the [batching-backed serving guide](batching.md) for launch
+selection, creation-only caching, and native-backed Python integration checks.
 
 Before accepting requests the worker emits one readiness record, with no request
 ID:
@@ -244,8 +247,11 @@ loads only the program before ModuleExecutor construction, reads activation dtyp
 and context length, resolves model/tokenizer EOS, binds the backend's default
 batched cache via `cache::kind::kBatched`, derives scheduler width from
 `preferred_batch_tokens()`, and constructs
-one `ServingRuntime`. It does not preload `forward`, run token-step loops, enable
-prefix caching, or use Glimmer's legacy session implementation.
+one `ServingRuntime`. It does not preload `forward`, run token-step loops, or use
+Glimmer's legacy session implementation. Prefix caching is disabled by default.
+`--prefix_cache_entries=N` enables creation-only reuse for both greedy and
+sampled requests. It adds `N + 1` physical rows for retained snapshots and one
+transient capture; logical `--max_sessions` remains unchanged.
 
 With an existing MLX-enabled ExecuTorch installation and matching gflags package,
 configure the MLX LLM examples and build `llm_worker`. Launch with `--pte`,
