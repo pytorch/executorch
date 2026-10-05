@@ -1,17 +1,22 @@
-# Copy to terminal-bench.local.toml and set your model paths.
+# Copy to terminal-bench.local.toml and replace the artifact paths.
+# Use absolute paths or ~; shell variables are not expanded.
 [server]
-python = "/path/to/executorch-env/bin/python"
+# Defaults to setup's server environment; override if needed.
+# python = "/path/to/server-venv/bin/python"
 worker_bin = "/path/to/model_worker"
 model_path = "/path/to/model.pte"
 tokenizer_path = "/path/to/tokenizer.json"
 hf_tokenizer = "/path/to/pinned-hf-tokenizer"
-model_id = "qwen3"
-max_context = 8192
-no_think = true
+model_id = "qwen3" # Local API label.
+max_context = 8192 # Must fit the export.
+no_think = true # Qwen3 template option; adapt to your model.
+# host = "0.0.0.0" # Exposes the server on all network interfaces.
+# port = 8000
 
 [terminal_bench]
 tasks = ["fix-git"]
-max_output_tokens = 1024
-temperature = 0.0
+max_output_tokens = 1024 # Prompt plus output must fit max_context.
+temperature = 0.0 # Range 0–2, subject to worker support.
 step_limit = 100
 attempts = 1
+# agent_host = "host.lima.internal" # Override automatic Docker host detection.

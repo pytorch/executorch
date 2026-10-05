@@ -52,4 +52,11 @@ if [[ ! -x "${eval_env}/bin/python" ]]; then
   uv venv --python 3.12 "${eval_env}"
 fi
 uv pip install --python "${eval_env}/bin/python" -r "${harness_dir}/requirements.txt"
-echo "Ready. Run bash ${harness_dir}/run.sh --config /path/to/model.toml"
+server_env="${EXECUTORCH_EVAL_CACHE}/server-venv"
+if [[ ! -x "${server_env}/bin/python" ]]; then
+  uv venv --python 3.12 "${server_env}"
+fi
+uv pip install --python "${server_env}/bin/python" -r "${evals_dir}/../python/requirements.txt"
+echo "Server Python: ${server_env}/bin/python"
+echo "Dependencies ready. Configure your model, worker, and tokenizer paths in a local TOML."
+echo "Run bash ${harness_dir}/run.sh --config /path/to/model.toml"

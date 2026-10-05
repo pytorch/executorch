@@ -29,7 +29,7 @@ HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 def load_config(path):
     config = tomllib.loads(path.read_text())
     server = config["server"]
-    server.setdefault("python", sys.executable)
+    server.setdefault("python", str(CACHE / "server-venv/bin/python"))
     server.setdefault("module", "executorch.examples.llm_server.python.server")
     server.setdefault("host", "0.0.0.0")
     server.setdefault("port", 8000)
@@ -38,7 +38,11 @@ def load_config(path):
         if key in {"worker_bin", "model_path", "tokenizer_path"} or value.startswith(
             ("/", "~", ".")
         ):
-            server[key] = str((path.parent / Path(value).expanduser()).resolve())
+            resolved = path.parent / Path(value).expanduser()
+            # Resolving an interpreter symlink bypasses its virtual environment.
+            server[key] = str(
+                resolved.absolute() if key == "python" else resolved.resolve()
+            )
     defaults = {
         "tasks": ["fix-git"],
         "attempts": 1,
@@ -267,15 +271,17 @@ def run(config, output, serve, harbor, probe):
             )
             wait_ready(process, server["host"], server["port"])
             try:
-                with (output / "connection.log").open("w") as log:
+                with (output / "connection.json").open("w") as response_file, (
+                    output / "connection.log"
+                ).open("w") as log:
                     subprocess.run(
                         probe,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
+                        stdout=response_file,
+                        stderr=log,
                         check=True,
                         timeout=120,
                     )
-                response = json.loads((output / "connection.log").read_text())
+                response = json.loads((output / "connection.json").read_text())
                 if (
                     response["object"] != "chat.completion"
                     or response["choices"][0]["message"]["role"] != "assistant"
@@ -291,7 +297,8 @@ def run(config, output, serve, harbor, probe):
                 subprocess.SubprocessError,
             ) as error:
                 raise RuntimeError(
-                    "Generation preflight failed; see connection.log and server.log"
+                    "Generation preflight failed; see connection.json, connection.log, "
+                    "and server.log"
                 ) from error
             finally:
                 subprocess.run(
