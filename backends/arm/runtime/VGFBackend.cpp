@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iomanip>
 #include <list>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -408,7 +409,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
  public:
   VGFBackend() = default;
 
-  // Lazy Vulkan init — runs on first use, not in the constructor.
+  // Lazy Vulkan init. All callers hold mutex_; no Vulkan work is done
+  // from the process-global backend's constructor or destructor.
   void ensure_initialized() {
     if (is_initialized_) {
       return;
@@ -430,6 +432,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     if (result != VK_SUCCESS) {
       ET_LOG(
           Error, "Failed to initialize the Vulkan device error 0x%08X", result);
+      release_basics_if_unused();
       return;
     }
 
@@ -440,28 +443,37 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
           Error,
           "Failed to verify VKML extensions needed, error 0x%08X",
           result);
+      release_basics_if_unused();
       return;
     }
 
     is_initialized_ = true;
   }
 
-  ~VGFBackend() = default;
+  // Vulkan teardown belongs to destroy(), not static destruction: the
+  // loader and layers may already have torn down their dispatch state.
+  ~VGFBackend() override = default;
 
   bool is_available() const override {
-    ET_LOG(Info, "Checking VGFBackend is available");
-    const_cast<VGFBackend*>(this)->ensure_initialized();
-    if (!is_initialized_) {
-      return false;
-    }
-    return vkml_load_extensions(&vk_device) == VK_SUCCESS;
+    auto* self = const_cast<VGFBackend*>(this);
+    const std::lock_guard<std::mutex> lock(mutex_);
+    ET_LOG(Debug, "Checking VGFBackend is available");
+    self->ensure_initialized();
+    const bool available =
+        is_initialized_ && vkml_load_extensions(&vk_device) == VK_SUCCESS;
+    // An availability-only probe must not retain a device until exit.
+    // Existing delegates, if any, keep their shared device alive.
+    self->release_basics_if_unused();
+    return available;
   }
 
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ET_LOG(Info, "Entered VGF init");
+    auto* self = const_cast<VGFBackend*>(this);
+    const std::lock_guard<std::mutex> lock(mutex_);
+    ET_LOG(Debug, "Entered VGF init");
 
 #ifdef ET_EVENT_TRACER_ENABLED
     EventTracer* event_tracer = context.event_tracer();
@@ -478,7 +490,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
             /*delegate_debug_id=*/-1);
 #endif
 
-    const_cast<VGFBackend*>(this)->ensure_initialized();
+    self->ensure_initialized();
 
 #ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_end_profiling_delegate(event_tracer, ensure_initialized_event);
@@ -506,6 +518,14 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
     MemoryAllocator* allocator = context.get_runtime_allocator();
     VgfRepr* repr = allocator->allocateInstance<VgfRepr>();
+    if (repr == nullptr) {
+#ifdef ET_EVENT_TRACER_ENABLED
+      event_tracer_end_profiling_delegate(event_tracer, allocate_repr_event);
+      event_tracer_end_profiling_delegate(event_tracer, init_total_event);
+#endif
+      self->release_basics_if_unused();
+      return Error::MemoryAllocationFailed;
+    }
     new (repr) VgfRepr(
         vk_instance,
         vk_physical_device,
@@ -543,6 +563,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
       ET_LOG(Error, "Failed to process VGF blob.");
+      // The runtime never receives this handle, so it cannot destroy it.
+      self->wait_for_device_idle();
+      repr->~VgfRepr();
+      self->release_basics_if_unused();
       return Error::Internal;
     }
 
@@ -550,6 +574,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
     event_tracer_end_profiling_delegate(event_tracer, init_total_event);
 #endif
 
+    ++self->live_delegates_;
     return repr;
   }
 
@@ -557,11 +582,14 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* handle,
       Span<EValue*> args) const override {
+    // The queue and command pool are shared by all VGF delegates.
+    // Serialize their host access with initialization and teardown.
+    const std::lock_guard<std::mutex> lock(mutex_);
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
     const size_t input_count = repr->model_input_count;
     const size_t output_count = repr->model_output_count;
     ET_LOG(
-        Info,
+        Debug,
         "VGF execute: args=%zu IOs=%zu inputs=%zu outputs=%zu",
         args.size(),
         repr->IOs.size(),
@@ -612,7 +640,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
       if (io_idx < 0) {
-        ET_LOG(Info, "Skipping eliminated VGF input %zu", input_arg_idx);
+        ET_LOG(Debug, "Skipping eliminated VGF input %zu", input_arg_idx);
         // See test_addmm_vgf_no_quant[beta_only]
         // two inputs are eliminated from the graph by the converter
         continue;
@@ -633,7 +661,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       Tensor* tensor = &args[input_arg_idx]->toTensor();
       IO* io = &repr->IOs[io_idx];
 
-      ET_LOG(Info, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
+      ET_LOG(Debug, "Copy input IO[%d] -> args[%zu]", io_idx, input_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -746,7 +774,7 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
       Tensor* tensor = &args[output_arg_idx]->toTensor();
       IO* io = &repr->IOs[io_idx];
 
-      ET_LOG(Info, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
+      ET_LOG(Debug, "Copy output IO[%d] -> args[%zu]", io_idx, output_arg_idx);
       size_t io_size = tensor->nbytes();
       if (io_size != io->allocation_size) {
 #ifdef ET_EVENT_TRACER_ENABLED
@@ -783,11 +811,66 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle) const override {
+    if (handle == nullptr) {
+      return;
+    }
+    auto* self = const_cast<VGFBackend*>(this);
+    const std::lock_guard<std::mutex> lock(mutex_);
+    ET_CHECK_MSG(live_delegates_ > 0, "Unbalanced VGF delegate destruction");
+    // A failed execution may have submitted work without completing its
+    // fence wait. Drain it before freeing any per-delegate resources.
+    self->wait_for_device_idle();
     VgfRepr* repr = static_cast<VgfRepr*>(handle);
     repr->~VgfRepr();
+    --self->live_delegates_;
+    self->release_basics_if_unused();
   }
 
  private:
+  // Call only with mutex_ held. A device-lost error still permits
+  // destruction; record it rather than leaking the remaining objects.
+  void wait_for_device_idle() {
+    if (vk_device != VK_NULL_HANDLE) {
+      const VkResult result = vkDeviceWaitIdle(vk_device);
+      if (result != VK_SUCCESS) {
+        ET_LOG(Error, "VGF teardown: vkDeviceWaitIdle failed: %d", result);
+      }
+      ET_CHECK_MSG(
+          result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST,
+          "Cannot free VGF resources while device completion is unknown");
+    }
+  }
+
+  // Call only with mutex_ held, after destroying the last VgfRepr (or
+  // when a probe/initialization failed without publishing a handle).
+  // Any submitted work must have been drained before freeing the repr.
+  void release_basics_if_unused() {
+    if (live_delegates_ != 0) {
+      return;
+    }
+    if (vk_command_pool != VK_NULL_HANDLE) {
+      vkDestroyCommandPool(vk_device, vk_command_pool, nullptr);
+      vk_command_pool = VK_NULL_HANDLE;
+    }
+    if (vk_device != VK_NULL_HANDLE) {
+      vkDestroyDevice(vk_device, nullptr);
+      vk_device = VK_NULL_HANDLE;
+    }
+    if (vk_instance != VK_NULL_HANDLE) {
+      vkDestroyInstance(vk_instance, nullptr);
+      vk_instance = VK_NULL_HANDLE;
+    }
+    vk_physical_device = VK_NULL_HANDLE;
+    vk_queue = VK_NULL_HANDLE;
+    vk_queue_family_index = UINT32_MAX;
+    neural_statistics_config_ = {};
+    neural_statistics_device_enabled_ = false;
+    is_initialized_ = false;
+    // Do not call volkFinalize(): the Vulkan backend shares the loader.
+  }
+
+  mutable std::mutex mutex_;
+  size_t live_delegates_ = 0;
   VkInstance vk_instance = VK_NULL_HANDLE;
   VkPhysicalDevice vk_physical_device = VK_NULL_HANDLE;
   VkDevice vk_device = VK_NULL_HANDLE;
@@ -891,6 +974,8 @@ VkResult vkml_allocate_basics(
   result = vkCreateInstance(&instance_info, nullptr, instance);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkInstance");
+    // Failed creation leaves the output undefined; do not destroy it.
+    *instance = VK_NULL_HANDLE;
     return result;
   }
   volkLoadInstance(*instance);
@@ -1171,6 +1256,8 @@ VkResult vkml_allocate_basics(
   result = vkCreateDevice(*physical_device, &dci, nullptr, device);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkDevice");
+    // Failed creation leaves the output undefined; do not destroy it.
+    *device = VK_NULL_HANDLE;
     return result;
   }
   // Load the device with volk and populate function pointers
@@ -1187,6 +1274,8 @@ VkResult vkml_allocate_basics(
   result = vkCreateCommandPool(*device, &poolInfo, nullptr, command_pool);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Failed to create VkCommandPool");
+    // Failed creation leaves the output undefined; do not destroy it.
+    *command_pool = VK_NULL_HANDLE;
     return result;
   }
 

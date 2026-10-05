@@ -4,7 +4,7 @@ The section describes the process of taking a PyTorch model and converting to th
 
 ## Prerequisites
 
-Exporting requires the ExecuTorch python libraries to be installed, typically by running `pip install executorch`. See [Installation](getting-started.md#Installation) for more information. This process assumes you have a PyTorch model, can instantiate it from Python, and can provide example input tensors to run the model.
+Exporting requires the ExecuTorch python libraries to be installed, typically by running `pip install executorch`. See [Installation](getting-started.md#installation) for more information. This process assumes you have a PyTorch model, can instantiate it from Python, and can provide example input tensors to run the model.
 
 ## The Export and Lowering Process
 
@@ -42,10 +42,23 @@ Commonly used hardware backends are listed below. For mobile, consider using XNN
 
 ## Model Preparation
 
-The export process takes in a standard PyTorch model, typically a `torch.nn.Module`. This can be an custom model definition, or a model from an existing source, such as TorchVision or HuggingFace. See [Getting Started with ExecuTorch](getting-started.md) for an example of lowering a TorchVision model.
+The export process takes in a standard PyTorch model, typically a
+`torch.nn.Module`. This can be a custom model definition or a model from an
+existing source, such as TorchVision or Hugging Face. See
+[Getting Started with ExecuTorch](getting-started.md) for an example of lowering
+a TorchVision model.
 
 :::{tip}
-Exporting a model from the [Hugging Face Hub](https://huggingface.co/models)? Use the [Optimum ExecuTorch](llm/export-llm-optimum.md) integration. It wraps the export and lowering steps below in a single CLI invocation and supports a wide range of decoder, encoder, multimodal, and seq2seq architectures out of the box.
+Exporting a `PreTrainedModel` from the [Hugging Face Hub](https://huggingface.co/models)?
+The [Transformers ExecuTorch exporter](https://huggingface.co/docs/transformers/en/exporters)
+is a broad, experimental programmatic path for XNNPACK and CUDA. Pin the versions
+tested by Transformers, and expect to supply application-side orchestration for
+the independent graphs returned by `export_for_generation`.
+
+Use [Optimum ExecuTorch](llm/export-llm-optimum.md) when you want its tested
+task-level recipes, CLI, quantization, and higher-level model wrappers.
+If an architecture needs exporter changes, see Transformers'
+[extension guide](https://huggingface.co/docs/transformers/en/exporters_extend).
 :::
 
 Model export is done from Python. This is commonly done through a Python script or from an interactive Python notebook, such as Jupyter or Colab. The example below shows instantiation and inputs for a simple PyTorch model. The inputs are prepared as a tuple of torch.Tensors, and the model can run with these inputs.
@@ -107,7 +120,7 @@ class Model(torch.nn.Module):
         y = self.linear(y)
         return y
 
-model = Model()
+model = Model().eval()
 inputs = (torch.randn(1,1,16,16),)
 dynamic_shapes = {
     "x": {
@@ -160,7 +173,10 @@ The PyTorch export process uses the example inputs provided to trace through the
 
 Many models require support for varying input sizes. To support this, export takes a `dynamic_shapes` parameter, which informs the compiler of which dimensions can vary and their bounds. This takes the form of a nested dictionary, where keys correspond to input names and values specify the bounds for each input.
 
-In the example model, inputs are provided as 4-dimensions tensors following the standard convention of batch, channels, height, and width (NCHW). An input with the shape `[1, 3, 16, 16]` indicates 1 batch, 3 channels, and a height and width of 16.
+In the example model, inputs are provided as four-dimensional tensors following
+the standard convention of batch, channels, height, and width (NCHW). The input
+shape `[1, 1, 16, 16]` indicates one batch, one channel, and a height and width
+of 16.
 
 Suppose your model supports images with sizes between 16x16 and 1024x1024. The shape bounds can be specified as follows:
 
@@ -191,7 +207,7 @@ from executorch.runtime import Runtime
 
 runtime = Runtime.get()
 
-input_tensor = torch.randn(1, 3, 32, 32)
+input_tensor = torch.randn(1, 1, 32, 32)
 program = runtime.load_program("model.pte")
 method = program.load_method("forward")
 outputs = method.execute([input_tensor])
@@ -202,7 +218,7 @@ To run a model with program and data separated, please use the [ExecuTorch Modul
 import torch
 from executorch.extension.pybindings import portable_lib
 
-input_tensor = torch.randn(1, 3, 32, 32)
+input_tensor = torch.randn(1, 1, 32, 32)
 module = portable_lib._load_for_executorch("model.pte", "model.ptd")
 outputs = module.forward([input_tensor])
 ```

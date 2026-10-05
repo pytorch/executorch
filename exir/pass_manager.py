@@ -34,7 +34,7 @@ PassType: TypeAlias = Union[
 ]
 
 
-def _get_pass_name(fn: PassType) -> str:
+def _get_pass_name(fn: object) -> str:
     """Returns a human-readable name for a pass."""
     if hasattr(fn, "__name__"):
         return fn.__name__
@@ -240,7 +240,10 @@ class ExportedProgramPassManager(fx.PassManager):
                             exported_program._graph_module = res.graph_module
                             exported_program._graph_signature = new_graph_signature
                             exported_program._range_constraints = (
-                                _get_updated_range_constraints(res.graph_module)
+                                _get_updated_range_constraints(
+                                    res.graph_module,
+                                    exported_program.range_constraints,
+                                )
                             )
                             pass_modified = True
 

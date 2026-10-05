@@ -22,7 +22,8 @@ It uses `CacheFactory` to build a cache, `InstallGuard` to publish it, and one
 runner-facing face for the rest of the session:
 
 ```cpp
-auto built = CacheFactory::global().build(kMLXBackendId, kind::kSingle, cfg);
+auto built = CacheFactory::global().build(
+    kMLXBackendId, kind::kSingle, geometry, config);
 if (!built.ok()) { return built.error(); }
 
 const std::shared_ptr<Cache> kv = built.get();

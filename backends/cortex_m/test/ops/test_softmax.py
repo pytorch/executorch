@@ -6,11 +6,13 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize, xfail_type
+from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.test.tester import (
     CortexMTester,
     McuTestCase,
     ramp_tensor,
 )
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class CortexMSoftmax(torch.nn.Module):
@@ -78,6 +80,26 @@ def test_dialect_softmax(test_case, cortex_m_target):
         test_case.model.ops_after_transforms,
         qtol=2,
     )
+
+
+def test_softmax_output_does_not_requantize():
+    inputs = (ramp_tensor(-8, 8, (4, 8)),)
+    exported = torch.export.export(CortexMSoftmax(dim=-1), inputs, strict=True)
+    prepared = prepare_pt2e(exported.module(), CortexMQuantizer())
+    prepared(*inputs)
+    converted = convert_pt2e(prepared)
+
+    quantize = torch.ops.quantized_decomposed.quantize_per_tensor.default
+    dequantize = torch.ops.quantized_decomposed.dequantize_per_tensor.default
+    requantize_nodes = [
+        node
+        for node in converted.graph.nodes
+        if node.target == quantize
+        and isinstance(node.args[0], torch.fx.Node)
+        and node.args[0].target == dequantize
+        and any(user.target == dequantize for user in node.users)
+    ]
+    assert not requantize_nodes
 
 
 @parametrize("test_case", test_cases, xfails=xfail_cases_impl)

@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -18,6 +19,7 @@ from executorch.backends.transforms.channels_last_layout import (
 )
 from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
@@ -71,7 +73,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             default_factory=set
         )
 
-    def __init__(self, extra_permutable_ops: set | None = None) -> None:
+    def __init__(
+        self,
+        extra_permutable_ops: set | None = None,
+        target_filters: (
+            dict[EdgeOpOverload, Callable[[torch.fx.Node], bool]] | None
+        ) = None,
+    ) -> None:
         super().__init__()
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
@@ -99,6 +107,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             pass
         if extra_permutable_ops:
             self._permutable_ops |= extra_permutable_ops
+        # Per-op predicates gating permutability. The pass only reasons about
+        # per-tensor quantization: a numel-1 qparam broadcasts identically under
+        # any permutation, while a per-channel one is tied to an axis this pass
+        # does not remap. Callers adding quantized ops supply a filter here.
+        self._target_filters: dict[EdgeOpOverload, Callable[[torch.fx.Node], bool]] = (
+            target_filters or {}
+        )
         self._sq_unsq_cache: dict[torch.fx.Node, bool] = {}
         self._interleave_cache: dict[
             torch.fx.Node,
@@ -656,6 +671,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
         if node.target in self._PAD_OPS and not self._is_constant_pad(node):
+            return False
+        target_filter = self._target_filters.get(node.target)
+        if target_filter is not None and not target_filter(node):
             return False
         if node.target in self._permutable_ops:
             if node.target in (

@@ -79,10 +79,9 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "build-tools;35.0.0"
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
-  # The 'tools' package (emulator) is not available on aarch64
-  if [ "$(uname -m)" != "aarch64" ]; then
-    yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
-  fi
+  # Google withdrew the 'tools' package, so installing it fails under set -e.
+  # cmdline-tools and platform-tools above replace it, and this image neither
+  # installs nor runs an emulator.
 }
 
 install_prerequiresites

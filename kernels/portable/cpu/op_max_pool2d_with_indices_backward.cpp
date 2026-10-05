@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
+
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -172,6 +174,14 @@ Tensor& max_pool2d_with_indices_backward_out(
   static constexpr auto name = "max_pool2d_with_indices_backward.grad_input";
 
   ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
+    // grad_input is written by scatter-accumulation over the argmax positions
+    // only, so every other element must start from zero. The arena allocator
+    // recycles buffers across ops and iterations, so without this the gradient
+    // accumulates onto whatever stale bytes the memory planner left behind.
+    // ATen zeroes the buffer for the same reason
+    // (max_pool2d_with_indices_backward_out_cpu calls gradInput.zero_()).
+    CTYPE* grad_input_data = grad_input.mutable_data_ptr<CTYPE>();
+    std::fill_n(grad_input_data, grad_input.numel(), static_cast<CTYPE>(0));
     max_pool_backward_impl<CTYPE, false>(grad_input, grad_output, indices);
   });
 

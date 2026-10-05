@@ -25,6 +25,7 @@ class AnnotateScalarParametersPass(ExportPass):
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.pow.Tensor_Tensor,
     }
 
     def __init__(self, edge_program: ExportedProgram):
