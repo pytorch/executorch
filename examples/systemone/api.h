@@ -16,7 +16,8 @@
 #include <variant>
 #include <vector>
 
-namespace kev {
+namespace executorch {
+namespace systemone {
 
 struct Choice {
   std::string instructions;
@@ -70,4 +71,5 @@ class SystemOne {
       const Questions& questions) = 0;
 };
 
-} // namespace kev
+} // namespace systemone
+} // namespace executorch
