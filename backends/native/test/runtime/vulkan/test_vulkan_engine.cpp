@@ -44,12 +44,19 @@ create_strings(
 flatbuffers::Offset<fbs::TensorMeta> create_tensor_meta(
     flatbuffers::FlatBufferBuilder& builder,
     fbs::ScalarType dtype,
-    const std::vector<int64_t>& shape = {4}) {
+    const std::vector<int64_t>& shape) {
   std::vector<flatbuffers::Offset<fbs::Dim>> sizes;
+  sizes.reserve(shape.size());
   for (const int64_t size : shape) {
-    sizes.push_back(fbs::CreateDim(builder, /*min=*/size, /*max=*/size));
+    sizes.push_back(fbs::CreateDim(builder, size, size));
   }
   return fbs::CreateTensorMeta(builder, dtype, builder.CreateVector(sizes));
+}
+
+flatbuffers::Offset<fbs::TensorMeta> create_tensor_meta(
+    flatbuffers::FlatBufferBuilder& builder,
+    fbs::ScalarType dtype) {
+  return create_tensor_meta(builder, dtype, {4});
 }
 
 flatbuffers::Offset<fbs::Argument> create_tensor_arg(
@@ -66,6 +73,29 @@ flatbuffers::Offset<fbs::Argument> create_int_arg(
   const auto argument = fbs::CreateIntArg(builder, value);
   return fbs::CreateArgument(
       builder, fbs::ArgumentValue::IntArg, argument.Union());
+}
+
+flatbuffers::Offset<fbs::Argument> create_int_list_arg(
+    flatbuffers::FlatBufferBuilder& builder,
+    const std::vector<int64_t>& values) {
+  const auto argument = fbs::CreateIntListArgDirect(builder, &values);
+  return fbs::CreateArgument(
+      builder, fbs::ArgumentValue::IntListArg, argument.Union());
+}
+
+flatbuffers::Offset<fbs::Argument> create_bool_arg(
+    flatbuffers::FlatBufferBuilder& builder,
+    bool value) {
+  const auto argument = fbs::CreateBoolArg(builder, value);
+  return fbs::CreateArgument(
+      builder, fbs::ArgumentValue::BoolArg, argument.Union());
+}
+
+flatbuffers::Offset<fbs::Argument> create_none_arg(
+    flatbuffers::FlatBufferBuilder& builder) {
+  const auto argument = fbs::CreateNoneArg(builder);
+  return fbs::CreateArgument(
+      builder, fbs::ArgumentValue::NoneArg, argument.Union());
 }
 
 std::vector<uint8_t> finish_program(
@@ -469,6 +499,108 @@ std::vector<uint8_t> make_inplace_relu_program(
   return finish_program(builder, graph, output_specs);
 }
 
+std::vector<uint8_t> make_mean_view_mm_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto input_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 2, 2, 2});
+  const auto mean_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 2, 1, 1});
+  const auto matrix_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 2});
+  const auto weight_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {2, 2});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", input_meta),
+      fbs::CreateTensorValueDirect(builder, "mean", mean_meta),
+      fbs::CreateTensorValueDirect(builder, "matrix", matrix_meta),
+      fbs::CreateTensorValueDirect(builder, "weight", weight_meta),
+      fbs::CreateTensorValueDirect(builder, "product", matrix_meta),
+  };
+
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> weight_outputs = {
+      fbs::CreateOutputDirect(builder, "weight")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> mean_outputs = {
+      fbs::CreateOutputDirect(builder, "mean")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> view_outputs = {
+      fbs::CreateOutputDirect(builder, "matrix", "mean")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> product_outputs = {
+      fbs::CreateOutputDirect(builder, "product")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> mean_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dim", create_int_list_arg(builder, {-1, -2})),
+      fbs::CreateNamedArgumentDirect(
+          builder, "keepdim", create_bool_arg(builder, true)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dtype", create_none_arg(builder)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> view_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "mean")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "size", create_int_list_arg(builder, {1, 2})),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> mm_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "matrix")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "mat2", create_tensor_arg(builder, "weight")),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "product"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "weight",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &weight_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "mean",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.mean.dim",
+          &mean_inputs,
+          &mean_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "view",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.view.default",
+          &view_inputs,
+          &view_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "mm",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.mm.default",
+          &mm_inputs,
+          &product_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input", "weight"}),
+      create_strings(builder, {"product"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "product")});
+}
+
 struct CompiledProgram {
   std::unique_ptr<VulkanEngineHost> host;
   std::shared_ptr<const Program> program;
@@ -734,6 +866,23 @@ TEST(VulkanEngineTest, RejectsInPlaceReluWhoseInputIsReadElsewhere) {
         std::string::npos)
         << e.what();
   }
+}
+
+TEST(VulkanEngineTest, ExecutesMeanBeforeWidthPackedView) {
+  CompiledProgram compiled = compile_program(make_mean_view_mm_program());
+  const std::vector<float> input = {
+      1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+  const std::vector<float> weight = {1.0f, 0.0f, 0.0f, 1.0f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, weight.data(), weight.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(2);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{2.5f, 6.5f}));
 }
 // cppcheck-suppress-end syntaxError
 

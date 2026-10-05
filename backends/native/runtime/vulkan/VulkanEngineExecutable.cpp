@@ -35,6 +35,7 @@
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
+#include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -150,6 +151,79 @@ bool preserves_packed_layout(std::string_view key) {
   return std::ranges::find(kOps, key) != kOps.end();
 }
 
+struct Reduce2dLayoutConstraint {
+  ValueId input_id;
+  std::array<bool, 3> allowed_packed_dims;
+};
+
+std::optional<Reduce2dLayoutConstraint> reduce2d_layout_constraint(
+    const Graph& graph,
+    const Node& node) {
+  constexpr std::array<std::string_view, 4> kReduceOps{
+      "aten.amax.default",
+      "aten.amin.default",
+      "aten.mean.dim",
+      "aten.sum.dim_IntList",
+  };
+  if (std::ranges::find(kReduceOps, registry_key(node.target)) ==
+      kReduceOps.end()) {
+    return std::nullopt;
+  }
+
+  const auto input = std::ranges::find_if(node.inputs, [](const auto& arg) {
+    return arg.name == "self" && arg.arg.kind() == ArgKind::Tensor;
+  });
+  const auto dims = std::ranges::find_if(node.inputs, [](const auto& arg) {
+    return arg.name == "dim" && arg.arg.kind() == ArgKind::IntList;
+  });
+  if (input == node.inputs.end() || dims == node.inputs.end() ||
+      dims->arg.as_int_list().values.size() != 2) {
+    return std::nullopt;
+  }
+  if (!dims->arg.as_int_list().ids.empty()) {
+    throw std::runtime_error(
+        "vulkan: symbolic dimensions are not supported for 2D reductions");
+  }
+
+  const ValueId input_id = input->arg.as_tensor().id;
+  const int64_t ndim =
+      static_cast<int64_t>(graph.value(input_id).tensor_meta().ndim());
+  std::array<bool, 3> allowed{true, true, true};
+  for (int64_t dim : dims->arg.as_int_list().values) {
+    dim = dim < 0 ? dim + ndim : dim;
+    if (dim < 0 || dim >= ndim) {
+      throw std::runtime_error("vulkan: reduction dimension is out of range");
+    }
+    const int64_t whcn_dim = ndim - 1 - dim;
+    if (whcn_dim < static_cast<int64_t>(allowed.size())) {
+      allowed[static_cast<size_t>(whcn_dim)] = false;
+    }
+  }
+  return Reduce2dLayoutConstraint{input_id, allowed};
+}
+
+int32_t packed_dim(utils::GPUMemoryLayout layout) {
+  if (layout == utils::kWidthPacked) {
+    return 0;
+  }
+  if (layout == utils::kHeightPacked) {
+    return 1;
+  }
+  if (layout == utils::kChannelsPacked) {
+    return 2;
+  }
+  throw std::runtime_error("vulkan: unsupported packed layout");
+}
+
+utils::GPUMemoryLayout layout_for_packed_dim(int32_t dim) {
+  constexpr std::array<utils::GPUMemoryLayout, 3> kLayouts{
+      utils::kWidthPacked,
+      utils::kHeightPacked,
+      utils::kChannelsPacked,
+  };
+  return kLayouts.at(static_cast<size_t>(dim));
+}
+
 bool exceeds_texture_limit(
     const TensorMeta& meta,
     utils::GPUMemoryLayout layout,
@@ -162,6 +236,8 @@ bool exceeds_texture_limit(
       meta.sizes.begin(), meta.sizes.end(), sizes.end() - meta.sizes.size());
   if (layout == utils::kWidthPacked) {
     sizes[3] = (sizes[3] + 3) / 4;
+  } else if (layout == utils::kHeightPacked) {
+    sizes[2] = (sizes[2] + 3) / 4;
   } else if (layout == utils::kChannelsPacked) {
     sizes[1] = (sizes[1] + 3) / 4;
   }
@@ -543,6 +619,30 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     } while (changed);
 
+    for (const NodeId node_id : nodes_) {
+      const Node& node = g().node(node_id);
+      if (!node.is_call()) {
+        continue;
+      }
+      const auto constraint = reduce2d_layout_constraint(g(), node);
+      if (!constraint) {
+        continue;
+      }
+      utils::GPUMemoryLayout required = layout_at(constraint->input_id);
+      if (!constraint->allowed_packed_dims.at(
+              static_cast<size_t>(packed_dim(required)))) {
+        for (int32_t dim = 2; dim >= 0; --dim) {
+          if (constraint->allowed_packed_dims.at(static_cast<size_t>(dim))) {
+            required = layout_for_packed_dim(dim);
+            break;
+          }
+        }
+      }
+      layout_at(constraint->input_id) = required;
+      for_each_output_value(
+          node, [&](ValueId output_id) { layout_at(output_id) = required; });
+    }
+
     const uint32_t texture_limit =
         graph_->context()->adapter_ptr()->max_texture3d_dim();
     for (ValueId id = 0; id < static_cast<ValueId>(g().values.size()); ++id) {
@@ -573,6 +673,25 @@ class VulkanEngineExecutable final : public EngineExecutable {
         }
       }
     } while (changed);
+  }
+
+  void materialize_packed_views() {
+    std::vector<ValueId> value_ids;
+    for (const NodeId node_id : nodes_) {
+      const Node& node = g().node(node_id);
+      if (!node.is_call() || registry_key(node.target) != "aten.view.default") {
+        continue;
+      }
+      for_each_output_value(node, [&](ValueId output_id) {
+        const ValueId source_id = g().value(output_id).alias_id;
+        if (valid(source_id) && layout_at(output_id) != layout_at(source_id) &&
+            storage_at(output_id) != utils::kBuffer) {
+          value_ids.push_back(output_id);
+        }
+      });
+    }
+    vulkan::materialize_view_copies(method_.graph, value_ids);
+    validate_graph(method_.graph);
   }
 
   // Resolve a bound value's package bytes and verify them against the
@@ -1152,6 +1271,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   void build(const Package& package) {
     check_mutation_outputs();
     assign_layouts();
+    materialize_packed_views();
     detach_in_place_outputs();
     index_output_kinds();
     index_bindings();
