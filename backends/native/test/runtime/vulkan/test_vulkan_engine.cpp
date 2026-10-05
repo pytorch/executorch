@@ -6,6 +6,7 @@
 
 #include <executorch/backends/native/runtime/vulkan/VulkanEngine.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -840,6 +841,148 @@ std::vector<uint8_t> make_dynamic_buffer_view_index_program() {
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "gathered")});
 }
 
+// Grouped-query causal attention of a query with a dynamic sequence length,
+// starting at the position equal to that length, over caches of kSdpaCache.
+constexpr int64_t kSdpaSeq = 4;
+constexpr int64_t kSdpaCache = 8;
+constexpr int64_t kSdpaHeads = 2;
+constexpr int64_t kSdpaKvHeads = 1;
+constexpr int64_t kSdpaDim = 8;
+
+std::vector<uint8_t> make_dynamic_sdpa_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto query_meta = create_tensor_meta(
+      builder,
+      fbs::ScalarType::FLOAT,
+      {1, kSdpaSeq, kSdpaHeads, kSdpaDim},
+      {1, 1, kSdpaHeads, kSdpaDim});
+  const auto cache_meta = create_tensor_meta(
+      builder, fbs::ScalarType::FLOAT, {1, kSdpaCache, kSdpaKvHeads, kSdpaDim});
+  const auto flat_meta = create_tensor_meta(
+      builder,
+      fbs::ScalarType::FLOAT,
+      {1, kSdpaSeq, kSdpaHeads * kSdpaDim},
+      {1, 1, kSdpaHeads * kSdpaDim});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "query", query_meta),
+      fbs::CreateTensorValueDirect(builder, "key", cache_meta),
+      fbs::CreateTensorValueDirect(builder, "value", cache_meta),
+      fbs::CreateTensorValueDirect(builder, "attention", query_meta),
+      fbs::CreateTensorValueDirect(builder, "flat", flat_meta),
+  };
+
+  const std::vector<flatbuffers::Offset<fbs::Output>> query_outputs = {
+      fbs::CreateOutputDirect(builder, "query")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> key_outputs = {
+      fbs::CreateOutputDirect(builder, "key")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> value_outputs = {
+      fbs::CreateOutputDirect(builder, "value")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> pos_outputs = {
+      fbs::CreateOutputDirect(
+          builder, "pos", nullptr, fbs::OutputValueKind::INT)};
+  const std::vector<flatbuffers::Offset<fbs::Output>> attention_outputs = {
+      fbs::CreateOutputDirect(builder, "attention")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> view_outputs = {
+      fbs::CreateOutputDirect(builder, "flat", "attention")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> sym_size_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "query")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dim", create_int_arg(builder, 1)),
+  };
+  const auto start_pos = fbs::CreateIntArgDirect(builder, 0, "pos");
+  const auto dropout = fbs::CreateFloatArg(builder, 0.0);
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> sdpa_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "query", create_tensor_arg(builder, "query")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "key", create_tensor_arg(builder, "key")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "value", create_tensor_arg(builder, "value")),
+      fbs::CreateNamedArgumentDirect(
+          builder,
+          "start_pos",
+          fbs::CreateArgument(
+              builder, fbs::ArgumentValue::IntArg, start_pos.Union())),
+      fbs::CreateNamedArgumentDirect(
+          builder, "attn_mask", create_none_arg(builder)),
+      fbs::CreateNamedArgumentDirect(
+          builder,
+          "drpout_p",
+          fbs::CreateArgument(
+              builder, fbs::ArgumentValue::FloatArg, dropout.Union())),
+      fbs::CreateNamedArgumentDirect(
+          builder, "is_causal", create_bool_arg(builder, true)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "scale", create_none_arg(builder)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> view_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "attention")),
+      fbs::CreateNamedArgumentDirect(
+          builder,
+          "size",
+          create_int_list_arg(builder, {1, -1, kSdpaHeads * kSdpaDim})),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "flat"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "query",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &query_outputs),
+      fbs::CreateNodeDirect(
+          builder, "key", fbs::OpKind::PLACEHOLDER, "", nullptr, &key_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "value",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &value_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "pos",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.sym_size.int",
+          &sym_size_inputs,
+          &pos_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "sdpa",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.llama.custom_sdpa.default",
+          &sdpa_inputs,
+          &attention_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "view",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.view.default",
+          &view_inputs,
+          &view_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"query", "key", "value"}),
+      create_strings(builder, {"flat"}),
+      builder.CreateVector(tensor_values));
+  return finish_program(
+      builder, graph, {fbs::CreateOutputSpecDirect(builder, "flat")});
+}
+
+float sdpa_input_value(size_t index, int64_t salt) {
+  return 0.125f * static_cast<float>((static_cast<int64_t>(index) * salt) % 9) -
+      0.5f;
+}
+
 // Values of the int4 [4, 8] weight in groups of 4 used by the program below.
 constexpr int64_t kQ4Out = 4;
 constexpr int64_t kQ4In = 8;
@@ -1379,6 +1522,66 @@ TEST(VulkanEngineTest, RejectsBufferViewResizeThatDoesNotDivide) {
       compile_program(make_dynamic_buffer_view_index_program());
   compiled.executable->resize_input(0, {3, 2});
   EXPECT_THROW(compiled.executable->execute(), std::runtime_error);
+}
+
+TEST(VulkanEngineTest, ExecutesCausalSdpaOnResizedQuery) {
+  CompiledProgram compiled = compile_program(make_dynamic_sdpa_program());
+  constexpr int64_t kSeq = 3;
+  compiled.executable->resize_input(0, {1, kSeq, kSdpaHeads, kSdpaDim});
+
+  std::vector<float> query(kSeq * kSdpaHeads * kSdpaDim);
+  std::vector<float> key(kSdpaCache * kSdpaKvHeads * kSdpaDim);
+  std::vector<float> value(key.size());
+  for (size_t i = 0; i < query.size(); ++i) {
+    query[i] = sdpa_input_value(i, 5);
+  }
+  for (size_t i = 0; i < key.size(); ++i) {
+    key[i] = sdpa_input_value(i, 7);
+    value[i] = sdpa_input_value(i, 4);
+  }
+  compiled.executable->set_input(
+      0, query.data(), query.size(), ScalarType::Float);
+  compiled.executable->set_input(1, key.data(), key.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      2, value.data(), value.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  EXPECT_EQ(
+      compiled.executable->output_sizes(0),
+      (std::vector<int64_t>{1, kSeq, kSdpaHeads * kSdpaDim}));
+  std::vector<float> output(query.size());
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+
+  const float scale = 1.0f / std::sqrt(static_cast<float>(kSdpaDim));
+  for (int64_t s = 0; s < kSeq; ++s) {
+    const int64_t context = kSeq + s + 1;
+    for (int64_t h = 0; h < kSdpaHeads; ++h) {
+      const int64_t kv_head = h / (kSdpaHeads / kSdpaKvHeads);
+      const float* q = &query[(s * kSdpaHeads + h) * kSdpaDim];
+      std::vector<float> weights(context);
+      float total = 0.0f;
+      for (int64_t c = 0; c < context; ++c) {
+        const float* k = &key[(c * kSdpaKvHeads + kv_head) * kSdpaDim];
+        float dot = 0.0f;
+        for (int64_t d = 0; d < kSdpaDim; ++d) {
+          dot += q[d] * k[d];
+        }
+        weights[c] = std::exp(dot * scale);
+        total += weights[c];
+      }
+      for (int64_t d = 0; d < kSdpaDim; ++d) {
+        float expected = 0.0f;
+        for (int64_t c = 0; c < context; ++c) {
+          expected += weights[c] / total *
+              value[(c * kSdpaKvHeads + kv_head) * kSdpaDim + d];
+        }
+        EXPECT_NEAR(
+            output[(s * kSdpaHeads + h) * kSdpaDim + d], expected, 1e-4f)
+            << "position " << s << " head " << h << " dim " << d;
+      }
+    }
+  }
 }
 
 TEST(VulkanEngineTest, ExecutesLinearOnDirectlyQuantizedWeight) {
