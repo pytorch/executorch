@@ -209,6 +209,12 @@ DEFINE_ACTIVATION_FN(log10);
 DEFINE_ACTIVATION_FN(round);
 DEFINE_ACTIVATION_FN(bitwise_not);
 
+void logical_not(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  VK_CHECK_COND(graph.dtype_of(args[0]) == vkapi::kBool);
+  VK_CHECK_COND(graph.dtype_of(args[1]) == vkapi::kBool);
+  bitwise_not(graph, args);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
@@ -231,6 +237,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.log10.default, log10);
   VK_REGISTER_OP(aten.round.default, round);
   VK_REGISTER_OP(aten.bitwise_not.default, bitwise_not);
+  VK_REGISTER_OP(aten.logical_not.default, logical_not);
 }
 
 } // namespace vkcompute
