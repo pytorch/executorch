@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {
@@ -308,6 +310,11 @@ struct CudaDelegateHandle : public aoti::AOTIDelegateHandle {
   // cannot report it, because lowering replaced the cache op with kernels over
   // pre-bound memory.
   OffGraphKVStepWidth kv_step_width;
+
+  // Compiled shape of each off-graph KV constant by FQN, from the serialized
+  // FQN-weight metadata. AOTI reports only a constant's bytes, possibly
+  // rounded up to 64, which cannot tell two nearby geometries apart.
+  std::unordered_map<std::string, std::vector<int64_t>> offgraph_kv_sizes;
 };
 
 } // namespace cuda
