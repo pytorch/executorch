@@ -48,6 +48,7 @@ namespace {
 using vkcompute::ComputeGraph;
 using vkcompute::GraphConfig;
 using VkRef = vkcompute::ValueRef;
+constexpr VkRef kNoOutputStaging = -1;
 namespace vkapi = vkcompute::vkapi;
 namespace utils = vkcompute::utils;
 
@@ -528,6 +529,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   void execute() override {
+    graph_->propagate_resize();
     graph_->execute();
   }
 
@@ -602,6 +604,30 @@ class VulkanEngineExecutable final : public EngineExecutable {
         continue;
       }
       mark_node_width(n);
+    }
+
+    for (const NodeId nid : nodes_) {
+      const Node& n = g().node(nid);
+      if (!n.is_call() || registry_key(n.target) != "aten.index.Tensor") {
+        continue;
+      }
+      const std::vector<ValueId> inputs = n.input_value_ids();
+      if (inputs.empty() || !valid(inputs.front()) ||
+          !g().value(inputs.front()).is_tensor() ||
+          g().value(inputs.front()).tensor_meta().sizes.size() <= 1) {
+        continue;
+      }
+      mark_node_width(n);
+      for (const ValueId input_id : inputs) {
+        if (valid(input_id) && g().value(input_id).is_tensor()) {
+          storage_at(input_id) = utils::kBuffer;
+        }
+      }
+      for_each_output_value(n, [&](ValueId output_id) {
+        if (g().value(output_id).is_tensor()) {
+          storage_at(output_id) = utils::kBuffer;
+        }
+      });
     }
 
     bool changed;
@@ -1331,15 +1357,20 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
     }
 
-    // 4. Register the region's outputs, creating device->host staging.
-    output_staging_.resize(outputs_.size());
-    std::transform(
-        outputs_.begin(),
-        outputs_.end(),
-        output_staging_.begin(),
-        [this](ValueId out) {
-          return graph_->set_output_tensor(vref_at(out));
-        });
+    // 4. Register graph outputs. User outputs get host staging; mutation
+    // outputs remain device-resident.
+    output_staging_.reserve(outputs_.size());
+    for (size_t i = 0; i < outputs_.size(); ++i) {
+      const VkRef output = vref_at(outputs_[i]);
+      const bool is_mutation = !method_.output_specs.empty() &&
+          method_.output_specs.at(i).kind != OutputKind::UserOutput;
+      if (is_mutation) {
+        graph_->set_output_tensor(output, false);
+        output_staging_.push_back(kNoOutputStaging);
+      } else {
+        output_staging_.push_back(graph_->set_output_tensor(output));
+      }
+    }
 
     // 5. Finalize and upload constants. TensorRef owns the remaining shared
     // references and releases each source after its final prepack consumer.
