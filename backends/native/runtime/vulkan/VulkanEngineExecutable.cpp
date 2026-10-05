@@ -10,7 +10,9 @@
 #include <array>
 #include <cstring>
 #include <deque>
+#include <iterator>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -129,12 +131,50 @@ bool is_width_packed_op(std::string_view key) {
   return std::ranges::find(kOps, key) != kOps.end();
 }
 
+bool preserves_packed_layout(std::string_view key) {
+  constexpr std::array<std::string_view, 5> kOps{
+      "aten._to_copy.default",
+      "aten.add.Tensor",
+      "aten.mul.Tensor",
+      "aten.sigmoid.default",
+      "aten.sub.Tensor"};
+  return std::ranges::find(kOps, key) != kOps.end();
+}
+
+bool exceeds_texture_limit(
+    const TensorMeta& meta,
+    utils::GPUMemoryLayout layout,
+    uint32_t limit) {
+  if (meta.sizes.size() > 4) {
+    return true;
+  }
+  std::array<uint64_t, 4> sizes{1, 1, 1, 1};
+  std::copy(
+      meta.sizes.begin(), meta.sizes.end(), sizes.end() - meta.sizes.size());
+  if (layout == utils::kWidthPacked) {
+    sizes[3] = (sizes[3] + 3) / 4;
+  } else if (layout == utils::kChannelsPacked) {
+    sizes[1] = (sizes[1] + 3) / 4;
+  }
+  return sizes[3] > limit || sizes[2] > limit || sizes[0] * sizes[1] > limit;
+}
+
 bool requires_bias_tensor(std::string_view key) {
   return key == "aten.linear.default" || key == "aten.convolution.default";
 }
 
-bool requires_buffer_storage(ScalarType dtype) {
-  return dtype != ScalarType::Float && dtype != ScalarType::Half;
+bool is_metadata_only_view(std::string_view key) {
+  constexpr std::array<std::string_view, 7> kOps{
+      "aten.alias.default",
+      "aten.permute.default",
+      "aten.select.int",
+      "aten.squeeze.dim",
+      "aten.squeeze.dims",
+      "aten.transpose.int",
+      "aten.unsqueeze.default",
+  };
+  return key == "aten.view.default" ||
+      std::ranges::find(kOps, key) != kOps.end();
 }
 
 MemoryKind memory_kind(utils::StorageType storage) {
@@ -149,44 +189,40 @@ MemoryKind memory_kind(utils::StorageType storage) {
   throw std::runtime_error("vulkan: unrecognized storage type");
 }
 
-// cppcheck-suppress-begin useStlAlgorithm
-void validate_supported_method(const Method& method) {
-  const Graph& graph = method.graph;
-  for (const Value& value : graph.values) {
-    if (valid(value.alias_id)) {
-      throw std::runtime_error(
-          "vulkan: tensor aliases are not supported by this engine version");
+template <typename Fn>
+void for_each_output_value(const Node& node, Fn&& fn) {
+  for (const Output& output : node.outputs) {
+    if (output.kind == OutputValueKind::TensorList) {
+      for (const ValueId id : output.elem_ids) {
+        if (valid(id)) {
+          fn(id);
+        }
+      }
+    } else if (valid(output.value_id)) {
+      fn(output.value_id);
     }
   }
-  for (const ValueId id : graph.input_ids) {
-    if (!graph.value(id).is_tensor()) {
+}
+
+// cppcheck-suppress-begin useStlAlgorithm
+void validate_user_io(const Method& method) {
+  for (const ValueId id : method.graph.input_ids) {
+    if (!method.graph.value(id).is_tensor()) {
       throw std::runtime_error("vulkan: user inputs must be tensors");
     }
   }
-  for (const ValueId id : graph.output_ids) {
-    if (!graph.value(id).is_tensor()) {
-      throw std::runtime_error("vulkan: user outputs must be tensors");
+  for (const ValueId id : method.graph.output_ids) {
+    if (!method.graph.value(id).is_tensor()) {
+      throw std::runtime_error("vulkan: graph outputs must be tensors");
     }
   }
-  for (const DataBinding& binding : method.data_bindings) {
-    if (binding.mutated || !binding.has_data) {
-      throw std::runtime_error(
-          "vulkan: mutable buffers are not supported by this engine version");
-    }
-  }
-  for (const OutputSpec& spec : method.output_specs) {
-    if (spec.kind != OutputKind::UserOutput) {
-      throw std::runtime_error(
-          "vulkan: mutation outputs are not supported by this engine version");
-    }
-  }
-  for (const NodeId id : graph.schedule) {
-    for (const NamedArgument& input : graph.node(id).inputs) {
-      if (input.mutated) {
-        throw std::runtime_error(
-            "vulkan: mutating operators are not supported by this engine version");
-      }
-    }
+  const auto is_quantized = [&method](ValueId id) {
+    return method.graph.value(id).tensor_meta().quant.has_value();
+  };
+  if (std::ranges::any_of(method.graph.input_ids, is_quantized) ||
+      std::ranges::any_of(method.graph.output_ids, is_quantized)) {
+    throw std::runtime_error(
+        "vulkan: quantized graph inputs and outputs are not supported");
   }
 }
 // cppcheck-suppress-end useStlAlgorithm
@@ -204,6 +240,52 @@ void validate_int64_to_int32(const void* data, size_t numel) {
   }
 }
 
+// Holds a method's non-empty mutable DataBinding keys in `owners` for the
+// lifetime of its executable.
+class MutableStateClaim {
+ public:
+  MutableStateClaim(VulkanMutableStateOwners& owners, const Method& method)
+      : owners_(owners) {
+    for (const DataBinding& binding : method.data_bindings) {
+      if (!binding.mutated || binding.key.empty()) {
+        continue;
+      }
+      const auto owner = owners_.find(binding.key);
+      if (owner != owners_.end()) {
+        // TODO(Native-VK): share it instead: the context would own one buffer
+        // per key and each graph would wrap it via
+        // ComputeGraph::add_tensor(const vkapi::VulkanBuffer&).
+        throw std::runtime_error(
+            "vulkan: mutable state '" + binding.key + "' of method '" +
+            method.name + "' is already held by a live executable of method '" +
+            owner->second +
+            "'; sharing mutable state across executables is not implemented");
+      }
+    }
+    for (const DataBinding& binding : method.data_bindings) {
+      if (binding.mutated && !binding.key.empty() &&
+          owners_.try_emplace(binding.key, method.name).second) {
+        keys_.push_back(binding.key);
+      }
+    }
+  }
+
+  MutableStateClaim(const MutableStateClaim&) = delete;
+  MutableStateClaim& operator=(const MutableStateClaim&) = delete;
+  MutableStateClaim(MutableStateClaim&&) = delete;
+  MutableStateClaim& operator=(MutableStateClaim&&) = delete;
+
+  ~MutableStateClaim() {
+    for (const std::string& key : keys_) {
+      owners_.erase(key);
+    }
+  }
+
+ private:
+  VulkanMutableStateOwners& owners_;
+  std::vector<std::string> keys_;
+};
+
 // One region of a Method lowered onto an ET-VK ComputeGraph.
 //
 // Deliberately not in the header: EngineContext::compile hands this back
@@ -212,6 +294,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
  private:
   Method method_;
   VulkanConstantMaterializationTracker& materializations_;
+  MutableStateClaim mutable_state_claim_;
 
   // The region this executable covers. Today this is the whole method. The
   // lowering helpers still inspect the full method graph, so narrower runtime
@@ -219,10 +302,16 @@ class VulkanEngineExecutable final : public EngineExecutable {
   std::vector<NodeId> nodes_;
   std::vector<ValueId> inputs_;
   std::vector<ValueId> outputs_;
+  // Public output index -> graph output position. Mutation outputs remain in
+  // outputs_ for execution but are not part of the EngineExecutable API.
+  std::vector<size_t> user_output_positions_;
 
   std::unique_ptr<ComputeGraph> graph_;
   // native ValueId -> ET-VK ValueRef, one slot per value in the method graph.
   std::vector<VkRef> vref_;
+  // Dynamic integer outputs need mutable ET-VK SymInt values rather than the
+  // placeholder None payload carried by the serialized native Value.
+  std::vector<uint8_t> symint_;
   // native ValueId -> the method binding that supplies its storage, null for a
   // value with none. Indexed so the value walk can ask about external storage
   // without scanning the binding list per value.
@@ -238,6 +327,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   // Backing bytes for synthesized zero biases. add_tensorref keeps each data
   // pointer until prepack.
   std::deque<std::vector<uint8_t>> synth_bias_;
+  std::vector<uint8_t> zero_state_;
   // Canonical owner -> bytes shared by tensor references until ET-VK consumes
   // and releases them during prepack.
   std::unordered_map<std::string, std::shared_ptr<OwnedBytes>> constants_;
@@ -273,17 +363,30 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Method& method,
       const Package& package,
       VulkanConstantMaterializationTracker& materializations,
+      VulkanMutableStateOwners& mutable_state_owners,
       const GraphConfig& config)
       : method_(method),
         materializations_(materializations),
+        mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
     vulkan::insert_prepack_nodes(method_);
     validate_graph(method_.graph);
-    validate_supported_method(method_);
+    validate_user_io(method_);
     nodes_ = method_.graph.schedule;
     inputs_ = method_.graph.input_ids;
     outputs_ = method_.graph.output_ids;
+    if (!method_.output_specs.empty() &&
+        method_.output_specs.size() != outputs_.size()) {
+      throw std::runtime_error(
+          "vulkan: output_specs must be empty or match graph outputs");
+    }
+    for (size_t i = 0; i < outputs_.size(); ++i) {
+      if (method_.output_specs.empty() ||
+          method_.output_specs.at(i).kind == OutputKind::UserOutput) {
+        user_output_positions_.push_back(i);
+      }
+    }
     build(package);
   }
 
@@ -292,7 +395,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   size_t num_outputs() const override {
-    return outputs_.size();
+    return user_output_positions_.size();
   }
 
   std::vector<int64_t> input_sizes(size_t i) const override {
@@ -300,7 +403,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   std::vector<int64_t> output_sizes(size_t i) const override {
-    return meta_of(outputs_.at(i)).sizes;
+    return meta_of(outputs_.at(user_output_positions_.at(i))).sizes;
   }
 
   ScalarType input_dtype(size_t i) const override {
@@ -308,7 +411,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   ScalarType output_dtype(size_t i) const override {
-    return meta_of(outputs_.at(i)).dtype;
+    return meta_of(outputs_.at(user_output_positions_.at(i))).dtype;
   }
 
   void set_input(size_t i, const void* data, size_t numel, ScalarType src_dtype)
@@ -338,7 +441,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
 
   void get_output(size_t i, void* data, size_t numel, ScalarType dst_dtype)
       override {
-    if (numel != logical_numel(meta_of(outputs_.at(i)))) {
+    const size_t output_position = user_output_positions_.at(i);
+    if (numel != logical_numel(meta_of(outputs_.at(output_position)))) {
       throw std::runtime_error(
           "vulkan: output element count does not match its shape");
     }
@@ -349,7 +453,10 @@ class VulkanEngineExecutable final : public EngineExecutable {
       throw std::runtime_error("vulkan: output data is null");
     }
     graph_->maybe_cast_and_copy_from_staging(
-        output_staging_.at(i), data, numel, to_vk_dtype(dst_dtype));
+        output_staging_.at(output_position),
+        data,
+        numel,
+        to_vk_dtype(dst_dtype));
   }
 
  private:
@@ -361,37 +468,102 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return g().value(id).tensor_meta();
   }
 
-  // Everything is channels-packed except the operands of the width-packed ops,
-  // whose producing values are created width-packed directly so only genuine
-  // mid-graph transitions need a repack.
   void assign_layouts() {
     layout_.assign(g().values.size(), utils::kChannelsPacked);
     storage_.assign(g().values.size(), utils::kTexture3D);
-    for (ValueId id = 0; id < static_cast<ValueId>(g().values.size()); ++id) {
-      const Value& value = g().value(id);
-      if (value.is_tensor() &&
-          requires_buffer_storage(value.tensor_meta().dtype)) {
-        storage_at(id) = utils::kBuffer;
-        layout_at(id) = utils::kWidthPacked;
+
+    const auto mark_width = [&](ValueId id) {
+      if (!valid(id) || !g().value(id).is_tensor() ||
+          layout_at(id) == utils::kWidthPacked) {
+        return false;
       }
-    }
+      layout_at(id) = utils::kWidthPacked;
+      return true;
+    };
+    const auto mark_node_width = [&](const Node& node) {
+      bool changed = false;
+      for (const ValueId input_id : node.input_value_ids()) {
+        changed |= mark_width(input_id);
+      }
+      for_each_output_value(
+          node, [&](ValueId output_id) { changed |= mark_width(output_id); });
+      return changed;
+    };
+    const auto node_is_width = [&](const Node& node) {
+      if (std::ranges::any_of(node.input_value_ids(), [&](ValueId input_id) {
+            return g().value(input_id).is_tensor() &&
+                layout_at(input_id) == utils::kWidthPacked;
+          })) {
+        return true;
+      }
+      bool output_is_width = false;
+      for_each_output_value(node, [&](ValueId output_id) {
+        output_is_width |= g().value(output_id).is_tensor() &&
+            layout_at(output_id) == utils::kWidthPacked;
+      });
+      return output_is_width;
+    };
+
     for (const NodeId nid : nodes_) {
       const Node& n = g().node(nid);
       if (!n.is_call() || !is_width_packed_op(registry_key(n.target))) {
         continue;
       }
-      for (const Output& o : n.outputs) {
-        if (o.kind == OutputValueKind::TensorList) {
-          for (const ValueId e : o.elem_ids) {
-            if (valid(e)) {
-              layout_at(e) = utils::kWidthPacked;
-            }
-          }
-        } else if (valid(o.value_id)) {
-          layout_at(o.value_id) = utils::kWidthPacked;
+      mark_node_width(n);
+    }
+
+    bool changed;
+    do {
+      changed = false;
+      for (const NodeId node_id : nodes_) {
+        const Node& node = g().node(node_id);
+        if (node.is_call() &&
+            preserves_packed_layout(registry_key(node.target)) &&
+            node_is_width(node)) {
+          changed |= mark_node_width(node);
         }
       }
+      for (ValueId id = 0; id < static_cast<ValueId>(g().values.size()); ++id) {
+        const ValueId source = g().value(id).alias_id;
+        if (valid(source) &&
+            (layout_at(id) == utils::kWidthPacked ||
+             layout_at(source) == utils::kWidthPacked)) {
+          changed |= mark_width(id);
+          changed |= mark_width(source);
+        }
+      }
+    } while (changed);
+
+    const uint32_t texture_limit =
+        graph_->context()->adapter_ptr()->max_texture3d_dim();
+    for (ValueId id = 0; id < static_cast<ValueId>(g().values.size()); ++id) {
+      const Value& value = g().value(id);
+      if (value.is_tensor() &&
+          exceeds_texture_limit(
+              value.tensor_meta(), layout_at(id), texture_limit)) {
+        storage_at(id) = utils::kBuffer;
+      }
     }
+    // Sibling views and alias chains need repeated passes before every alias
+    // agrees with the storage of its root.
+    do {
+      changed = false;
+      for (ValueId id = 0; id < static_cast<ValueId>(g().values.size()); ++id) {
+        const ValueId source = g().value(id).alias_id;
+        if (!valid(source)) {
+          continue;
+        }
+        if (storage_at(id) == utils::kBuffer &&
+            storage_at(source) != utils::kBuffer) {
+          storage_at(source) = utils::kBuffer;
+          changed = true;
+        }
+        if (storage_at(id) != storage_at(source)) {
+          storage_at(id) = storage_at(source);
+          changed = true;
+        }
+      }
+    } while (changed);
   }
 
   // Resolve a bound value's package bytes and verify them against the
@@ -466,7 +638,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
   VkRef make_value(const Package& package, const Value& v, ValueId native_id) {
     switch (v.kind()) {
       case ValueKind::None:
-        return graph_->add_none();
+        return checked_slot(symint_, native_id, "symint") != 0
+            ? graph_->add_symint(0)
+            : graph_->add_none();
       case ValueKind::Scalar: {
         const Scalar& s = v.scalar();
         if (s.is_int()) {
@@ -488,11 +662,41 @@ class VulkanEngineExecutable final : public EngineExecutable {
       case ValueKind::Tensor: {
         const TensorMeta& m = v.tensor_meta();
         const std::vector<int64_t>& sizes = m.sizes;
+        if (valid(v.alias_id)) {
+          const VkRef source = vref_at(v.alias_id);
+          const TensorMeta& source_meta = g().value(v.alias_id).tensor_meta();
+          if (m.dtype != source_meta.dtype ||
+              logical_nbytes(m) > logical_nbytes(source_meta)) {
+            throw std::runtime_error(
+                "vulkan: alias must match its source dtype and fit within it");
+          }
+          std::vector<int64_t> dim_order(
+              m.dim_order_hint.begin(), m.dim_order_hint.end());
+          if (dim_order.empty()) {
+            dim_order.resize(m.sizes.size());
+            std::iota(dim_order.begin(), dim_order.end(), 0);
+          }
+          return graph_->add_tensor_view(source, sizes, dim_order);
+        }
         const vkapi::ScalarType dt = to_vk_dtype(device_dtype(m.dtype));
         const DataBinding* b = binding_at(native_id);
         if (b != nullptr && b->has_data) {
-          return graph_->add_tensorref(
-              sizes, dt, constant_buffer(package, *b, v));
+          const VkRef source =
+              graph_->add_tensorref(sizes, dt, constant_buffer(package, *b, v));
+          if (!b->mutated) {
+            return source;
+          }
+          const VkRef tensor = graph_->add_tensor(
+              sizes,
+              dt,
+              storage_at(native_id),
+              layout_at(native_id),
+              memory_plan_.allocation_id(native_id));
+          VK_GET_OP_FN("et_vk.prepack.default")(*graph_, {source, tensor});
+          return tensor;
+        }
+        if (b != nullptr && b->mutated) {
+          return zero_initialized_tensor(v, native_id);
         }
         return graph_->add_tensor(
             sizes,
@@ -652,6 +856,37 @@ class VulkanEngineExecutable final : public EngineExecutable {
         {out_channels}, to_vk_dtype(dtype), synth_bias_.back().data());
   }
 
+  // A data-less mutable buffer starts as zeros. Every such buffer prepacks from
+  // one shared host zero block sized for the largest of them.
+  VkRef zero_initialized_tensor(const Value& v, ValueId native_id) {
+    if (zero_state_.empty()) {
+      size_t nbytes = 0;
+      for (const DataBinding& b : method_.data_bindings) {
+        if (b.mutated && !b.has_data) {
+          nbytes = std::max(nbytes, logical_nbytes(device_meta(b.value_id)));
+        }
+      }
+      zero_state_.assign(nbytes, 0);
+    }
+    const std::vector<int64_t>& sizes = v.tensor_meta().sizes;
+    const vkapi::ScalarType dt =
+        to_vk_dtype(device_dtype(v.tensor_meta().dtype));
+    const VkRef source = graph_->add_tensorref(sizes, dt, zero_state_.data());
+    const VkRef tensor = graph_->add_tensor(
+        sizes,
+        dt,
+        storage_at(native_id),
+        layout_at(native_id),
+        memory_plan_.allocation_id(native_id));
+    VK_GET_OP_FN("et_vk.prepack.default")(*graph_, {source, tensor});
+    return tensor;
+  }
+
+  TensorMeta device_meta(ValueId id) const {
+    const TensorMeta& m = meta_of(id);
+    return TensorMeta{.dtype = device_dtype(m.dtype), .sizes = m.sizes};
+  }
+
   void dispatch(const Node& n) {
     const std::string key = registry_key(n.target);
     if (!VK_HAS_OP(key)) {
@@ -683,28 +918,34 @@ class VulkanEngineExecutable final : public EngineExecutable {
       args.push_back(a);
     }
 
-    // Outputs: exactly one tensor is appended directly; otherwise every output
-    // ref is grouped into one ValueList, which is ET-VK's multi-return calling
-    // convention.
+    // Outputs: a single tensor output is appended directly; otherwise every
+    // output ref is grouped into one ValueList, which is ET-VK's multi-return
+    // and Tensor[] calling convention, even for a one-element Tensor[].
     std::vector<VkRef> outs;
-    for (const Output& o : n.outputs) {
-      if (o.kind == OutputValueKind::TensorList) {
-        std::transform(
-            o.elem_ids.begin(),
-            o.elem_ids.end(),
-            std::back_inserter(outs),
-            [this](ValueId e) { return vref_at(e); });
-      } else if (valid(o.value_id)) {
-        outs.push_back(vref_at(o.value_id));
-      }
-    }
-    if (outs.size() == 1) {
+    for_each_output_value(
+        n, [&](ValueId output_id) { outs.push_back(vref_at(output_id)); });
+    const bool returns_list =
+        std::ranges::any_of(n.outputs, [](const Output& output) {
+          return output.kind == OutputValueKind::TensorList;
+        });
+    if (outs.size() == 1 && !returns_list) {
       args.push_back(outs[0]);
-    } else if (outs.size() > 1) {
+    } else if (!outs.empty()) {
       args.push_back(graph_->add_value_list(std::move(outs)));
     }
 
     VK_GET_OP_FN(key)(*graph_, args);
+  }
+
+  void index_output_kinds() {
+    symint_.assign(g().values.size(), 0);
+    for (const NodeId node_id : nodes_) {
+      for (const Output& output : g().node(node_id).outputs) {
+        if (output.kind == OutputValueKind::Int && valid(output.value_id)) {
+          checked_slot(symint_, output.value_id, "symint") = 1;
+        }
+      }
+    }
   }
 
   // The bindings live in the Method copy owned by this executable, so the
@@ -731,7 +972,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
         continue;
       }
       const DataBinding* binding = binding_at(id);
-      if (binding != nullptr && binding->has_data) {
+      // Prepacked values get a dedicated allocation during prepack.
+      if (binding != nullptr && (binding->has_data || binding->mutated)) {
         continue;
       }
       const bool active = valid(value.producer_id) ||
@@ -748,23 +990,130 @@ class VulkanEngineExecutable final : public EngineExecutable {
     memory_plan_ = plan_memory(g(), requests);
   }
 
+  // execute() never copies a mutation output into its target, so the output
+  // must already be the target's storage: the buffer itself or an alias chain
+  // ending at it. Writes to a user input never reach the caller's host copy.
+  void check_mutation_outputs() const {
+    for (size_t i = 0; i < method_.output_specs.size(); ++i) {
+      const OutputSpec& spec = method_.output_specs[i];
+      if (spec.kind == OutputKind::UserOutput) {
+        continue;
+      }
+      if (spec.kind == OutputKind::UserInputMutation) {
+        throw std::runtime_error(
+            "vulkan: mutation of user input '" +
+            g().value(spec.target_id).name +
+            "' is not supported; results are not copied back to the caller");
+      }
+      ValueId id = outputs_.at(i);
+      while (id != spec.target_id && valid(g().value(id).alias_id)) {
+        id = g().value(id).alias_id;
+      }
+      if (id != spec.target_id) {
+        throw std::runtime_error(
+            "vulkan: mutation output '" + g().value(outputs_.at(i)).name +
+            "' is not written in place to '" + g().value(spec.target_id).name +
+            "'; copying mutation results back is not implemented");
+      }
+    }
+  }
+
+  std::vector<ValueId> value_dependencies(const Value& v) const {
+    if (v.kind() == ValueKind::List) {
+      std::vector<ValueId> ids;
+      std::ranges::copy_if(
+          v.content_ids(), std::back_inserter(ids), [](ValueId id) {
+            return valid(id);
+          });
+      return ids;
+    }
+    if (v.is_tensor() && valid(v.alias_id)) {
+      return {v.alias_id};
+    }
+    return {};
+  }
+
+  // Creates values dependencies first: a view or list may precede the values
+  // it refers to, e.g. when a pass appends the source of an existing view.
+  void make_values(const Package& package) {
+    none_ref_ = graph_->add_none();
+    vref_.assign(g().values.size(), -1);
+    std::vector<bool> on_path(g().values.size());
+    std::vector<ValueId> stack;
+    for (ValueId root = 0; root < static_cast<ValueId>(g().values.size());
+         ++root) {
+      stack.push_back(root);
+      while (!stack.empty()) {
+        const ValueId id = stack.back();
+        if (vref_at(id) >= 0) {
+          stack.pop_back();
+          continue;
+        }
+        const Value& v = g().values[id];
+        on_path.at(id) = true;
+        const std::vector<ValueId> deps = value_dependencies(v);
+        const auto missing = std::ranges::find_if(
+            deps, [this](ValueId dep) { return vref_at(dep) < 0; });
+        if (missing != deps.end()) {
+          if (on_path.at(*missing)) {
+            throw std::runtime_error(
+                "vulkan: value '" + v.name + "' depends on itself");
+          }
+          stack.push_back(*missing);
+          continue;
+        }
+        try {
+          vref_at(id) = make_value(package, v, id);
+        } catch (const std::exception& e) {
+          throw std::runtime_error(
+              "vulkan: value[" + std::to_string(id) + "] '" + v.name +
+              "': " + e.what());
+        }
+        on_path.at(id) = false;
+        stack.pop_back();
+      }
+    }
+  }
+
+  // ET-VK views share their source's base address, so select is only a view
+  // at index 0.
+  void check_view_offset(const Node& n) const {
+    if (registry_key(n.target) != "aten.select.int") {
+      return;
+    }
+    const auto arg = [&n](std::string_view name) -> const IntArg* {
+      const auto it = std::ranges::find(n.inputs, name, &NamedArgument::name);
+      return it == n.inputs.end() || it->arg.kind() != ArgKind::Int ||
+              valid(it->arg.as_int().id)
+          ? nullptr
+          : &it->arg.as_int();
+    };
+    const IntArg* dim = arg("dim");
+    const IntArg* index = arg("index");
+    const std::vector<int64_t>& sizes =
+        g().value(n.inputs.at(0).arg.as_tensor().id).tensor_meta().sizes;
+    const int64_t ndim = static_cast<int64_t>(sizes.size());
+    if (dim == nullptr || index == nullptr || dim->value < -ndim ||
+        dim->value >= ndim) {
+      throw std::runtime_error("vulkan: select view needs a constant index");
+    }
+    const int64_t extent =
+        sizes.at(dim->value < 0 ? dim->value + ndim : dim->value);
+    if (index->value != 0 && index->value != -extent) {
+      throw std::runtime_error(
+          "vulkan: select view at a nonzero index is not supported");
+    }
+  }
+
   void build(const Package& package) {
+    check_mutation_outputs();
     assign_layouts();
+    index_output_kinds();
     index_bindings();
     plan_allocations();
 
     // 1. Materialize every native value as an ET-VK value.
-    none_ref_ = graph_->add_none();
-    vref_.assign(g().values.size(), -1);
-    for (ValueId i = 0; i < static_cast<ValueId>(g().values.size()); ++i) {
-      try {
-        vref_at(i) = make_value(package, g().values[i], i);
-      } catch (const std::exception& e) {
-        throw std::runtime_error(
-            "vulkan: value[" + std::to_string(i) + "] '" + g().values[i].name +
-            "': " + e.what());
-      }
-    }
+    make_values(package);
 
     // 2. Register the region's inputs, creating host->device staging.
     input_staging_.resize(inputs_.size());
@@ -774,10 +1123,18 @@ class VulkanEngineExecutable final : public EngineExecutable {
         input_staging_.begin(),
         [this](ValueId in) { return graph_->set_input_tensor(vref_at(in)); });
 
-    // 3. Dispatch each call node in schedule order.
+    // 3. Dispatch executable call nodes in schedule order.
     for (const NodeId nid : nodes_) {
       const Node& n = g().node(nid);
       if (!n.is_call()) {
+        continue;
+      }
+      if (is_metadata_only_view(registry_key(n.target)) &&
+          std::ranges::all_of(n.outputs, [&](const Output& output) {
+            return valid(output.value_id) &&
+                valid(g().value(output.value_id).alias_id);
+          })) {
+        check_view_offset(n);
         continue;
       }
       try {
@@ -814,9 +1171,10 @@ std::unique_ptr<EngineExecutable> create_vulkan_engine_executable(
     const Method& method,
     const Package& package,
     VulkanConstantMaterializationTracker& materializations,
+    VulkanMutableStateOwners& mutable_state_owners,
     const GraphConfig& config) {
   return std::make_unique<VulkanEngineExecutable>(
-      method, package, materializations, config);
+      method, package, materializations, mutable_state_owners, config);
 }
 
 } // namespace ptn
