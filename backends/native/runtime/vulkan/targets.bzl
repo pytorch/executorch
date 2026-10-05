@@ -16,8 +16,14 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "vulkan_passes",
-        srcs = ["passes/InsertPrepack.cpp"],
-        exported_headers = ["passes/InsertPrepack.h"],
+        srcs = [
+            "passes/InsertPrepack.cpp",
+            "passes/MaterializeViewCopies.cpp",
+        ],
+        exported_headers = [
+            "passes/InsertPrepack.h",
+            "passes/MaterializeViewCopies.h",
+        ],
         exported_deps = [
             "//executorch/backends/native/runtime:method",
             "//executorch/backends/native/runtime/graph:graph",
