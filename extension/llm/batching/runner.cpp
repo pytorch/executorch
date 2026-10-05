@@ -1328,17 +1328,14 @@ GenerationHandle RunnerImpl::generate_async(
   request.generation.m.t_submit = MetricsClock::now();
 
   auto handle = GenerationHandle(state);
-  bool admitted = false;
   {
-    std::lock_guard<std::mutex> lock(control_mutex_);
+    std::unique_lock<std::mutex> lock(control_mutex_);
     if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
       inbox_.emplace_back(StartCommand{std::move(request)});
-      admitted = true;
+      lock.unlock();
+      notify_engine_();
+      return handle;
     }
-  }
-  if (admitted) {
-    notify_engine_();
-    return handle;
   }
 
   // After shutdown nothing drains the inbox, so complete synchronously instead

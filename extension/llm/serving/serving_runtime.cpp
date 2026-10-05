@@ -310,7 +310,7 @@ struct ServingRuntime::Impl {
         {}};
     LifecycleResult error;
     {
-      std::lock_guard<std::mutex> lock(mutex_);
+      std::unique_lock<std::mutex> lock(mutex_);
       if (!valid_config_) {
         error =
             ServingError{ErrorCode::InvalidArgument, "invalid runtime config"};
@@ -330,13 +330,12 @@ struct ServingRuntime::Impl {
         command.fence_through = next_request_id_ - 1;
         inbox_.push_back(std::move(command));
         ++outstanding_;
+        lock.unlock();
+        cv_.notify_one();
+        return;
       }
     }
-    if (error) {
-      complete(std::move(command.completion), std::move(error));
-    } else {
-      cv_.notify_one();
-    }
+    complete(std::move(command.completion), std::move(error));
   }
 
   LifecycleResult process(Command& command) {
