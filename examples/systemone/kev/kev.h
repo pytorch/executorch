@@ -15,12 +15,14 @@
 #include <cstdint>
 #include <string>
 
-#include "api.h"
+#include "executorch/examples/systemone/api.h"
 
 namespace tokenizers {
 class Tokenizer;
 }
 
+namespace executorch {
+namespace systemone {
 namespace kev {
 
 class Kev;
@@ -70,3 +72,5 @@ class Kev final : public SystemOne {
 };
 
 } // namespace kev
+} // namespace systemone
+} // namespace executorch
