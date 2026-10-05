@@ -9,15 +9,16 @@
 import asyncio
 import json
 import os
-import subprocess
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
+from executorch.examples.llm_server.python import multiplexed_worker_client
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    spawn_multiplexed_worker,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
@@ -25,10 +26,7 @@ from executorch.examples.llm_server.python.session_runtime import (
     PromptInput,
     SessionRuntime,
 )
-from executorch.examples.llm_server.python.worker_client import (
-    spawn_worker,
-    WorkerError,
-)
+from executorch.examples.llm_server.python.worker_client import WorkerError
 
 
 @pytest.fixture
@@ -37,30 +35,24 @@ def anyio_backend():
 
 
 @pytest.fixture
-def native_worker(tmp_path):
+async def native_worker(tmp_path, monkeypatch):
     binary = os.environ.get("EXECUTORCH_BATCHING_TEST_WORKER")
     if not binary:
         pytest.skip("Set EXECUTORCH_BATCHING_TEST_WORKER to the native test worker")
     clients = []
     processes = []
-    logs = []
-    pool = ThreadPoolExecutor(max_workers=4)
+    create_subprocess_exec = asyncio.create_subprocess_exec
 
-    def create(*, gate=False, stop_immediately=False, prefix_cache=False):
+    async def create(
+        *,
+        gate=False,
+        stop_immediately=False,
+        prefix_cache=False,
+        mailbox_capacity=64,
+        max_buffered_chars=1024 * 1024,
+    ):
         trace = tmp_path / f"batches-{len(processes)}.txt"
-        log = (tmp_path / f"worker-{len(processes)}.log").open("w")
-        logs.append(log)
-        timers = []
-
-        def popen(*args, **kwargs):
-            kwargs["stderr"] = log
-            process = subprocess.Popen(*args, **kwargs)
-            processes.append(process)
-            timer = threading.Timer(10, process.kill)
-            timer.start()
-            timers.append(timer)
-            return process
-
+        log_path = tmp_path / f"worker-{len(processes)}.log"
         command = [binary, "--trace", str(trace)]
         if gate:
             command.append("--gate-two")
@@ -68,30 +60,57 @@ def native_worker(tmp_path):
             command.append("--stop-immediately")
         if prefix_cache:
             command.append("--prefix-cache")
-        try:
-            client = spawn_worker(command, popen=popen, require_multiplexing=True)
-        finally:
-            for timer in timers:
-                timer.cancel()
+
+        async def spawn(*args, **kwargs):
+            # asyncio is shared: leave unrelated subprocess launches untouched.
+            if args != tuple(command):
+                return await create_subprocess_exec(*args, **kwargs)
+            kwargs["stderr"] = log
+            process = await create_subprocess_exec(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        with log_path.open("wb") as log, monkeypatch.context() as patch:
+            patch.setattr(
+                multiplexed_worker_client.asyncio, "create_subprocess_exec", spawn
+            )
+            client = await asyncio.wait_for(
+                spawn_multiplexed_worker(
+                    command,
+                    mailbox_capacity=mailbox_capacity,
+                    max_buffered_chars=max_buffered_chars,
+                ),
+                10,
+            )
         clients.append(client)
         assert client.supports_multiplexing
-        return client, pool, trace
+        return client, trace
 
-    yield create
-    for client in clients:
-        client.close()
-    for process in processes:
-        if process.poll() is None:
-            process.kill()
-        process.wait(timeout=5)
-    pool.shutdown(wait=True)
-    for log in logs:
-        log.close()
+    try:
+        yield create
+    finally:
+        try:
+            results = await asyncio.gather(
+                *(asyncio.wait_for(client.close(), 15) for client in clients),
+                return_exceptions=True,
+            )
+        finally:
+            for process in processes:
+                if process.returncode is None:
+                    process.kill()
+                await asyncio.wait_for(process.wait(), 5)
+                assert process.returncode is not None
+        for client in clients:
+            assert client._reader.done() and client._writer.done()
+            assert client._cleanup_task is not None and client._cleanup_task.done()
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
 
 @pytest.fixture
 async def native_http(native_worker):
-    worker, _, _ = native_worker()
+    worker, _ = await native_worker()
     runtime = SessionRuntime(worker)
     serving = ServingChat(
         runtime,
@@ -106,28 +125,19 @@ async def native_http(native_worker):
         ) as client:
             yield worker, runtime, serving, client
     finally:
-        runtime.close_worker()
+        await asyncio.wait_for(runtime.aclose_worker(), 15)
 
 
-def collect(
+def generate(
     client,
     prompt,
     *,
     key=None,
     count=4,
     request_id=None,
-    callback=None,
     segments=None,
     stop=None,
 ):
-    pieces = []
-    stats = []
-
-    def on_token(piece):
-        pieces.append(piece)
-        if callback:
-            callback(piece)
-
     config = SimpleNamespace(
         session_id=key,
         max_new_tokens=count,
@@ -139,22 +149,32 @@ def collect(
     )
     if segments is not None:
         config.prompt_segments = segments
-    client.generate(
-        prompt,
-        config,
-        token_callback=on_token,
-        stats_callback=stats.append,
-        request_id=request_id,
+    return client.generate(prompt, config, request_id=request_id)
+
+
+async def collect(generation):
+    async def consume():
+        pieces = [piece async for piece in generation]
+        stats = await generation.wait()
+        assert await generation.wait() is stats
+        return "".join(pieces), stats
+
+    try:
+        return await asyncio.wait_for(consume(), 10)
+    finally:
+        await generation.aclose()
+
+
+@pytest.mark.anyio
+async def test_two_python_requests_reach_one_executor_batch(native_worker):
+    client, trace = await native_worker(gate=True)
+    first = generate(client, "first", key="a")
+    second = generate(client, "second", key="b")
+    results = await asyncio.wait_for(
+        asyncio.gather(collect(first), collect(second), return_exceptions=True), 10
     )
-    assert len(stats) == 1
-    return "".join(pieces), stats[0]
-
-
-def test_two_python_requests_reach_one_executor_batch(native_worker):
-    client, pool, trace = native_worker(gate=True)
-    first = pool.submit(collect, client, "first", key="a")
-    second = pool.submit(collect, client, "second", key="b")
-    for result in (first.result(timeout=10), second.result(timeout=10)):
+    for result in results:
+        assert not isinstance(result, BaseException)
         text, stats = result
         assert len(text) == stats.num_generated_tokens == 4
         assert not stats.cancelled
@@ -163,7 +183,7 @@ def test_two_python_requests_reach_one_executor_batch(native_worker):
 
 @pytest.mark.anyio
 async def test_async_runtime_does_not_serialize_native_generations(native_worker):
-    client, _, trace = native_worker(gate=True)
+    client, trace = await native_worker(gate=True)
     runtime = SessionRuntime(client, max_concurrent_requests=4)
 
     async def generate(key):
@@ -177,15 +197,18 @@ async def test_async_runtime_does_not_serialize_native_generations(native_worker
         assert len("".join(pieces)) == stats.completion_tokens == 4
 
     try:
-        await asyncio.wait_for(asyncio.gather(generate("a"), generate("b")), 10)
+        results = await asyncio.wait_for(
+            asyncio.gather(generate("a"), generate("b"), return_exceptions=True), 10
+        )
+        assert results == [None, None]
         assert any(int(line) >= 2 for line in trace.read_text().splitlines())
     finally:
-        runtime.close_worker()
+        await asyncio.wait_for(runtime.aclose_worker(), 15)
 
 
 @pytest.mark.anyio
 async def test_openai_streaming_and_nonstreaming_share_native_runner(native_worker):
-    worker, _, trace = native_worker(gate=True)
+    worker, trace = await native_worker(gate=True)
     runtime = SessionRuntime(worker, max_concurrent_requests=4)
     serving = ServingChat(
         runtime,
@@ -214,6 +237,7 @@ async def test_openai_streaming_and_nonstreaming_share_native_runner(native_work
                 asyncio.gather(
                     client.post("/v1/chat/completions", json=ordinary),
                     client.post("/v1/chat/completions", json=streaming),
+                    return_exceptions=True,
                 ),
                 10,
             )
@@ -236,7 +260,7 @@ async def test_openai_streaming_and_nonstreaming_share_native_runner(native_work
         assert usage[-1]["completion_tokens"] == 4
         assert any(int(line) >= 2 for line in trace.read_text().splitlines())
     finally:
-        runtime.close_worker()
+        await asyncio.wait_for(runtime.aclose_worker(), 15)
 
 
 @pytest.mark.anyio
@@ -316,7 +340,7 @@ async def test_http_missing_native_reset_clears_transcript_and_is_idempotent(
 
 @pytest.mark.anyio
 async def test_runtime_prefix_cache_is_creation_only(native_worker):
-    worker, _, _ = native_worker(prefix_cache=True)
+    worker, _ = await native_worker(prefix_cache=True)
     runtime = SessionRuntime(worker)
 
     async def generate(key):
@@ -331,83 +355,83 @@ async def test_runtime_prefix_cache_is_creation_only(native_worker):
         return stats
 
     try:
-        cold = await generate("first")
-        warm = await generate("second")
+        cold = await asyncio.wait_for(generate("first"), 10)
+        warm = await asyncio.wait_for(generate("second"), 10)
         assert cold.reused_prompt_tokens == 0
         assert warm.reused_prompt_tokens == 4
         assert warm.prefilled_prompt_tokens == 1
-        await asyncio.to_thread(worker.reset_session, "first")
-        reset = await generate("first")
+        await asyncio.wait_for(worker.reset_session("first"), 5)
+        reset = await asyncio.wait_for(generate("first"), 10)
         assert reset.reused_prompt_tokens == 0
-        await asyncio.to_thread(worker.open_session, "explicit")
-        explicit = await generate("explicit")
+        await asyncio.wait_for(worker.open_session("explicit"), 5)
+        explicit = await asyncio.wait_for(generate("explicit"), 10)
         assert explicit.reused_prompt_tokens == 0
     finally:
-        runtime.close_worker()
+        await asyncio.wait_for(runtime.aclose_worker(), 15)
 
 
-def test_cancel_is_request_scoped(native_worker):
-    client, pool, _ = native_worker()
-    started = threading.Event()
+@pytest.mark.anyio
+async def test_cancel_is_request_scoped(native_worker):
+    client, _ = await native_worker()
     request_id = client.reserve_request()
-    first = pool.submit(
-        collect,
-        client,
-        "long request",
-        key="a",
-        count=1024,
-        request_id=request_id,
-        callback=lambda _: started.set(),
-    )
-    assert started.wait(timeout=5)
-    second = pool.submit(collect, client, "other request", key="b")
+    first = generate(client, "long request", key="a", count=1024, request_id=request_id)
+    assert await asyncio.wait_for(anext(first), 5)
+    second = generate(client, "other request", key="b")
     assert client.cancel(request_id)
-    _, cancelled = first.result(timeout=10)
-    text, completed = second.result(timeout=10)
+    results = await asyncio.wait_for(
+        asyncio.gather(collect(first), collect(second), return_exceptions=True), 10
+    )
+    for result in results:
+        assert not isinstance(result, BaseException)
+    _, cancelled = results[0]
+    text, completed = results[1]
     assert cancelled.cancelled
     assert len(text) == completed.num_generated_tokens == 4
     assert not completed.cancelled
 
 
-def test_native_tokenizer_preserves_unsigned_utf8_bytes(native_worker):
-    client, pool, _ = native_worker()
+@pytest.mark.anyio
+async def test_native_tokenizer_preserves_unsigned_utf8_bytes(native_worker):
+    client, _ = await native_worker()
     prompt = "\x00\x7f\u0080\u00ff\u20ac"
     encoded = list(prompt.encode("utf-8"))
-    _, first = pool.submit(collect, client, prompt, key="utf8", count=1).result(
-        timeout=10
-    )
+    _, first = await collect(generate(client, prompt, key="utf8", count=1))
     assert first.num_prompt_tokens == len(encoded)
-    _, continued = pool.submit(
-        collect,
-        client,
-        "",
-        key="utf8",
-        count=1,
-        segments=[
-            {"ids": encoded + first.generated_token_ids},
-            {"text": "!"},
-        ],
-    ).result(timeout=10)
+    _, continued = await collect(
+        generate(
+            client,
+            "",
+            key="utf8",
+            count=1,
+            segments=[
+                {"ids": encoded + first.generated_token_ids},
+                {"text": "!"},
+            ],
+        )
+    )
     assert continued.session_reset_reason == "exact_prefix"
     # The prior completion is still pending, so only the prompt was prefilled.
     assert continued.reused_prompt_tokens == len(encoded)
     assert continued.prefilled_prompt_tokens == 2
 
 
-def test_full_prompt_with_exact_completion_ids_continues_session(native_worker):
-    client, _, _ = native_worker()
-    _, first = collect(client, "hello", key="named")
+@pytest.mark.anyio
+async def test_full_prompt_with_exact_completion_ids_continues_session(native_worker):
+    client, _ = await native_worker()
+    _, first = await collect(generate(client, "hello", key="named"))
     assert len(first.generated_token_ids) == 4
-    _, second = collect(
-        client,
-        "",
-        key="named",
-        count=2,
-        segments=[
-            {"text": "hello"},
-            {"ids": first.generated_token_ids},
-            {"text": " again"},
-        ],
+    _, second = await collect(
+        generate(
+            client,
+            "",
+            key="named",
+            count=2,
+            segments=[
+                {"text": "hello"},
+                {"ids": first.generated_token_ids},
+                {"text": " again"},
+            ],
+        )
     )
     assert second.session_reset_reason == "exact_prefix"
     assert second.reused_prompt_tokens > 0
@@ -419,9 +443,10 @@ def test_full_prompt_with_exact_completion_ids_continues_session(native_worker):
     assert second.num_generated_tokens == 2
 
 
-def test_oversized_stop_preserves_resident_session(native_worker):
-    client, pool, _ = native_worker()
-    _, first = pool.submit(collect, client, "hello", key="named").result(timeout=10)
+@pytest.mark.anyio
+async def test_oversized_stop_preserves_resident_session(native_worker):
+    client, _ = await native_worker()
+    _, first = await collect(generate(client, "hello", key="named"))
     assert len(first.generated_token_ids) == 4
     segments = [
         {"text": "hello"},
@@ -429,24 +454,23 @@ def test_oversized_stop_preserves_resident_session(native_worker):
         {"text": " again"},
     ]
     request_id = client.reserve_request()
-    rejected = pool.submit(
-        collect,
-        client,
-        "",
-        key="named",
-        count=2,
-        segments=segments,
-        stop=["x" * (1024 * 1024)],
-        request_id=request_id,
-    )
     with pytest.raises(WorkerError) as error:
-        rejected.result(timeout=10)
+        generate(
+            client,
+            "",
+            key="named",
+            count=2,
+            segments=segments,
+            stop=["x" * (1024 * 1024)],
+            request_id=request_id,
+        )
     assert error.value.code == "invalid_argument"
-    pool.submit(client.wait_for_request, request_id).result(timeout=5)
+    await asyncio.wait_for(client.wait_for_request(request_id), 5)
+    assert request_id not in client._requests
     assert client.healthy
-    _, continued = pool.submit(
-        collect, client, "", key="named", count=2, segments=segments
-    ).result(timeout=10)
+    _, continued = await collect(
+        generate(client, "", key="named", count=2, segments=segments)
+    )
     assert continued.session_reset_reason == "exact_prefix"
     assert continued.reused_prompt_tokens > 0
     assert continued.prefilled_prompt_tokens > 0
@@ -457,29 +481,33 @@ def test_oversized_stop_preserves_resident_session(native_worker):
     assert continued.num_generated_tokens == 2
 
 
-def test_terminal_only_completion_preserves_known_empty_ids(native_worker):
-    client, _, _ = native_worker(stop_immediately=True)
-    text, stats = collect(client, "hello")
+@pytest.mark.anyio
+async def test_terminal_only_completion_preserves_known_empty_ids(native_worker):
+    client, _ = await native_worker(stop_immediately=True)
+    text, stats = await collect(generate(client, "hello"))
     assert text == ""
     assert stats.num_generated_tokens == 0
     assert stats.finish_reason == "stop"
     assert stats.generated_token_ids == []
 
 
-def test_empty_visible_string_stop_has_unknown_replay_ids(native_worker):
-    client, _, _ = native_worker()
-    first_text, first = collect(client, "hello", key="named", count=1)
-    text, stats = collect(
-        client,
-        "",
-        key="named",
-        count=1,
-        segments=[
-            {"text": "hello"},
-            {"ids": first.generated_token_ids},
-            {"text": " next"},
-        ],
-        stop=[first_text],
+@pytest.mark.anyio
+async def test_empty_visible_string_stop_has_unknown_replay_ids(native_worker):
+    client, _ = await native_worker()
+    first_text, first = await collect(generate(client, "hello", key="named", count=1))
+    text, stats = await collect(
+        generate(
+            client,
+            "",
+            key="named",
+            count=1,
+            segments=[
+                {"text": "hello"},
+                {"ids": first.generated_token_ids},
+                {"text": " next"},
+            ],
+            stop=[first_text],
+        )
     )
     assert text == ""
     assert stats.num_generated_tokens == 1
@@ -487,47 +515,68 @@ def test_empty_visible_string_stop_has_unknown_replay_ids(native_worker):
     assert stats.generated_token_ids is None
 
 
-def test_reset_and_close_keep_public_session_key_usable(native_worker):
-    client, _, _ = native_worker()
-    client.open_session("named")
-    collect(client, "before reset", key="named")
-    client.reset_session("named")
-    _, reset = collect(client, "after reset", key="named")
+@pytest.mark.anyio
+async def test_reset_and_close_keep_public_session_key_usable(native_worker):
+    client, _ = await native_worker()
+    await asyncio.wait_for(client.open_session("named"), 5)
+    await collect(generate(client, "before reset", key="named"))
+    await asyncio.wait_for(client.reset_session("named"), 5)
+    _, reset = await collect(generate(client, "after reset", key="named"))
     assert reset.reused_prompt_tokens == 0
-    client.close_session("named")
-    _, reopened = collect(client, "reopened", key="named")
+    await asyncio.wait_for(client.close_session("named"), 5)
+    _, reopened = await collect(generate(client, "reopened", key="named"))
     assert reopened.reused_prompt_tokens == 0
     assert reopened.num_generated_tokens == 4
 
 
-def test_reserved_older_id_can_arrive_after_lifecycle_completion(native_worker):
-    client, _, _ = native_worker()
+@pytest.mark.anyio
+async def test_reserved_older_id_can_arrive_after_lifecycle_completion(native_worker):
+    client, _ = await native_worker()
     older_id = client.reserve_request()
-    client.open_session("named")
-    text, stats = collect(client, "hello", key="named", request_id=older_id)
+    await asyncio.wait_for(client.open_session("named"), 5)
+    text, stats = await collect(
+        generate(client, "hello", key="named", request_id=older_id)
+    )
     assert len(text) == stats.num_generated_tokens == 4
 
 
-def test_slow_consumer_does_not_stall_another_request(native_worker):
-    client, pool, _ = native_worker()
-    started = threading.Event()
-    release = threading.Event()
+@pytest.mark.anyio
+async def test_slow_consumer_does_not_stall_another_request(native_worker):
+    client, _ = await native_worker(mailbox_capacity=64)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    first = generate(client, "slow", key="a", count=1024)
 
-    def hold(_):
-        started.set()
-        release.wait(timeout=5)
+    async def consume_slowly():
+        try:
+            assert await asyncio.wait_for(anext(first), 5)
+            started.set()
+            await release.wait()
+            return await collect(first)
+        finally:
+            await first.aclose()
 
-    first = pool.submit(collect, client, "slow", key="a", count=1024, callback=hold)
+    consumer = asyncio.create_task(consume_slowly())
     try:
-        assert started.wait(timeout=5)
+        await asyncio.wait_for(started.wait(), 5)
         # Enough decode steps to fill A's bounded mailbox while its caller waits.
-        second = pool.submit(collect, client, "fast", key="b", count=128)
-        text, stats = second.result(timeout=5)
+        text, stats = await asyncio.wait_for(
+            collect(generate(client, "fast", key="b", count=128)), 5
+        )
         assert len(text) == stats.num_generated_tokens == 128
         assert not stats.cancelled
     finally:
         release.set()
-    with pytest.raises(WorkerError):
-        first.result(timeout=10)
-    text, stats = collect(client, "still healthy", key="c", count=2)
+        await asyncio.wait_for(asyncio.gather(consumer, return_exceptions=True), 10)
+    assert consumer.done()
+    with pytest.raises(WorkerError) as error:
+        await consumer
+    assert error.value.code == "slow_consumer"
+    # Local iteration failure is not the native terminal or request retirement.
+    terminal = await asyncio.wait_for(first.wait(), 5)
+    assert terminal.cancelled
+    await asyncio.wait_for(client.wait_for_request(first.request_id), 5)
+    assert first.request_id not in client._requests
+    text, stats = await collect(generate(client, "still healthy", key="c", count=2))
     assert len(text) == stats.num_generated_tokens == 2
+    assert client.healthy

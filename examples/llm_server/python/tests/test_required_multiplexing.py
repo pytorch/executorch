@@ -6,76 +6,97 @@
 
 """Batching-required startup must never silently select a serial worker."""
 
+import asyncio
 import json
-import subprocess
 import sys
 
 import pytest
 
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    spawn_multiplexed_worker,
+)
 from executorch.examples.llm_server.python.worker_client import (
     spawn_worker,
     WorkerError,
 )
 
 
+def _command(capabilities):
+    readiness = {"ready": True, "max_named_sessions": 8, **capabilities}
+    program = (
+        "import sys; "
+        f"print({json.dumps(readiness)!r}, flush=True); "
+        "sys.stdin.read()"
+    )
+    return [sys.executable, "-u", "-c", program]
+
+
 @pytest.fixture
-def readiness_worker():
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+async def readiness_worker(monkeypatch):
     children = []
+    create_subprocess = asyncio.create_subprocess_exec
 
-    def launch(capabilities, **options):
-        readiness = {"ready": True, "max_named_sessions": 8, **capabilities}
-        program = (
-            "import sys; "
-            f"print({json.dumps(readiness)!r}, flush=True); "
-            "sys.stdin.read()"
+    async def record_process(*args, **kwargs):
+        proc = await create_subprocess(*args, **kwargs)
+        children.append(proc)
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", record_process)
+
+    async def launch(capabilities):
+        return await asyncio.wait_for(
+            spawn_multiplexed_worker(_command(capabilities)), 5
         )
 
-        def record_process(*args, **kwargs):
-            proc = subprocess.Popen(*args, **kwargs)
-            children.append((proc, proc.stdin, proc.stdout))
-            return proc
-
-        return spawn_worker(
-            [sys.executable, "-u", "-c", program], popen=record_process, **options
-        )
-
-    yield launch, children
-    for proc, stdin, stdout in children:
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=5)
-        stdin.close()
-        stdout.close()
+    try:
+        yield launch, children
+    finally:
+        for proc in children:
+            if proc.returncode is None:
+                proc.kill()
+            await asyncio.wait_for(proc.wait(), 5)
+            if proc.stdin is not None:
+                proc.stdin.close()
+                await asyncio.wait_for(proc.stdin.wait_closed(), 5)
 
 
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "capabilities", [{}, {"multiplexed": False}, {"multiplexed": 1}]
 )
-def test_required_multiplexing_rejects_and_reaps_legacy_worker(
+async def test_required_multiplexing_rejects_and_reaps_legacy_worker(
     readiness_worker, capabilities
 ):
     launch, children = readiness_worker
     with pytest.raises(WorkerError, match="multiplexing") as caught:
-        launch(capabilities, require_multiplexing=True)
+        await launch(capabilities)
     assert caught.value.code == "unsupported_multiplexing"
     assert len(children) == 1
-    proc, stdin, stdout = children[0]
-    assert proc.poll() is not None
-    assert stdin.closed and stdout.closed
+    proc = children[0]
+    assert proc.returncode is not None
+    assert proc.stdin.is_closing()
+    assert proc.stdout.at_eof()
 
 
-def test_required_multiplexing_accepts_explicit_capability(readiness_worker):
-    launch, _ = readiness_worker
-    client = launch({"multiplexed": True}, require_multiplexing=True)
+@pytest.mark.anyio
+async def test_required_multiplexing_accepts_explicit_capability(readiness_worker):
+    launch, children = readiness_worker
+    client = await launch({"multiplexed": True})
     try:
         assert client.supports_multiplexing
     finally:
-        client.close()
+        await client.close()
+    assert len(children) == 1
+    assert children[0].returncode is not None
 
 
-def test_default_negotiation_preserves_legacy_fallback(readiness_worker):
-    launch, _ = readiness_worker
-    client = launch({})
+def test_explicit_legacy_factory_preserves_sequential_worker():
+    client = spawn_worker(_command({}))
     try:
         assert not client.supports_multiplexing
     finally:

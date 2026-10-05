@@ -14,11 +14,12 @@ speculative drafting/verification remain inside the runner and executor.
 - Exact strict history extensions reuse the existing session. Equal, mismatched,
   or dirty histories cold-replay. Reset destroys the old session and reopens
   under the same reserved key; failed reopen leaves that key unavailable.
-- Prefix caching is optional and disabled by default. It is only for greedy
-  implicit new-session initialization, never ordinary continuation, explicit
-  open, reset, or replay. Snapshot capacity is additional to logical serving
-  capacity. The worker's `--prefix_cache_entries` option reserves those snapshots
-  plus one transient capture row without reducing logical `--max_sessions`.
+- Prefix caching is optional and disabled by default. It supports both greedy
+  and sampled requests, but only for implicit new-session initialization, never
+  ordinary continuation, explicit open, reset, or replay. Snapshot capacity is
+  additional to logical serving capacity. The worker's `--prefix_cache_entries`
+  option reserves those snapshots plus one transient capture row without reducing
+  logical `--max_sessions`.
 - Visible text is not model history. EOS and pending/internal tokens can remain
   in history without being visible. Omitted generated IDs mean replay is unsafe;
   an explicit empty list means a known empty completion.
@@ -29,9 +30,10 @@ speculative drafting/verification remain inside the runner and executor.
   or control thread. They must do short, bounded, nonblocking work: no blocking
   I/O, synchronous runtime shutdown/destruction, or waits for runtime work.
   A blocked native callback delays other native delivery. The native transport
-  enqueues bounded output and writes pipes separately. Python callbacks run on
-  consuming threads, never the stdout reader; slow Python callbacks remain
-  isolated from other requests and consume bounded capacity.
+  enqueues bounded output and writes pipes separately. Python uses one async
+  stdout reader and bounded per-request mailboxes. Native HTTP consumers read
+  those streams directly, without an executor or a second token queue. A paused
+  consumer does not stall peers, but consumers must not block the event loop.
 - Image/audio preparation is not implemented by this worker. The existing
   muse-glimmer image-serving path remains on its legacy worker. This change does
   not make existing glimmer embedding-forward exports compatible with the packed
@@ -39,41 +41,63 @@ speculative drafting/verification remain inside the runner and executor.
 
 ## Select the Worker Explicitly
 
-`spawn_worker` selects multiplexing only from a positive `multiplexed: true`
-readiness capability. Ordinary callers retain legacy fallback. A launch that
-requires batching must pass `require_multiplexing=True` so an older worker is
-rejected rather than silently serialized.
+Use `await spawn_multiplexed_worker(...)` for native batching. It requires a
+positive `multiplexed: true` readiness capability and rejects and reaps older
+workers rather than silently serializing. The synchronous `spawn_worker` factory
+is legacy-only and rejects multiplexed workers.
+
+Create, use, and close the native client on the same event loop. For HTTP serving,
+the async-context-manager factory passed to `build_app` owns startup and awaited
+shutdown inside the ASGI lifespan. `SessionRuntime` retains admission and session
+ordering through actual wire completion, not merely a cancel acknowledgement.
 
 The following is a launch recipe, not a completed real-model smoke test. Replace
 all `/path/to` paths with absolute paths to matching local artifacts:
 
 ```python
+from contextlib import asynccontextmanager
+
 import uvicorn
 
 from executorch.examples.llm_server.python.chat_template import ChatTemplate
+from executorch.examples.llm_server.python.multiplexed_worker_client import (
+    spawn_multiplexed_worker,
+)
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
-from executorch.examples.llm_server.python.worker_client import spawn_worker
 
-worker = spawn_worker(
-    [
-        "/path/to/llm_worker",
-        "--pte=/path/to/model.pte",
-        "--tokenizer=/path/to/model-assets/tokenizer.json",
-        "--max_sessions=4",
-        "--max_session_tokens=1024",
-        "--max_decode_sequences=2",
-    ],
-    require_multiplexing=True,
-)
-runtime = SessionRuntime(worker)
 template = ChatTemplate(hf_tokenizer_path="/path/to/model-assets")
-serving = ServingChat(runtime, template, "local-model", max_context=1024)
-try:
-    uvicorn.run(build_app(serving, "local-model"), host="127.0.0.1", port=8000)
-finally:
-    runtime.close_worker()
+
+
+@asynccontextmanager
+async def serving_factory():
+    worker = await spawn_multiplexed_worker(
+        [
+            "/path/to/llm_worker",
+            "--pte=/path/to/model.pte",
+            "--tokenizer=/path/to/model-assets/tokenizer.json",
+            "--max_sessions=4",
+            "--max_session_tokens=1024",
+            "--max_decode_sequences=2",
+        ]
+    )
+    runtime = None
+    try:
+        runtime = SessionRuntime(worker)
+        yield ServingChat(runtime, template, "local-model", max_context=1024)
+    finally:
+        if runtime is None:
+            await worker.close()
+        else:
+            await runtime.aclose_worker()
+
+
+uvicorn.run(
+    build_app(None, "local-model", serving_factory=serving_factory),
+    host="127.0.0.1",
+    port=8000,
+)
 ```
 
 The model must accept packed token/position inputs with per-token sequence IDs
