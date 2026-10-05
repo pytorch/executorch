@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -117,8 +119,14 @@ struct PhysicalDevice final {
 struct DeviceHandle final {
   VkDevice handle;
 
-  explicit DeviceHandle(VkDevice);
+  // Record device ownership when DeviceHandle is constructed. If a later
+  // Adapter member throws during construction, already-created members are
+  // destroyed even though Adapter itself is never fully constructed.
+  explicit DeviceHandle(VkDevice, bool owns_handle = true);
   ~DeviceHandle();
+
+ private:
+  bool owns_handle_;
 };
 
 void find_requested_device_extensions(

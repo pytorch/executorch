@@ -2,6 +2,8 @@
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
+ * Copyright 2026  Arm Limited and/or its affiliates.
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
@@ -11,6 +13,10 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+
+// vk_api.h must precede SharedVulkanContext.h: Volk requires VK_NO_PROTOTYPES
+// before the first inclusion of Vulkan headers.
+#include <executorch/backends/vulkan_shared/runtime/SharedVulkanContext.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
@@ -65,6 +71,12 @@ class Adapter final {
       const uint32_t num_queues,
       const std::string& cache_data_path);
 
+  // Borrow only the queue registered in shared_context.
+  explicit Adapter(
+      executorch::backends::vulkan_shared::SharedVulkanContextPtr
+          shared_context,
+      const std::string& cache_data_path);
+
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
@@ -83,6 +95,12 @@ class Adapter final {
   friend class ScopedAdapterCapabilityOverride;
 
  private:
+  // First member => released last, after caches, VMA, and borrowed
+  // DeviceHandle.
+  executorch::backends::vulkan_shared::SharedVulkanContextPtr shared_context_;
+  // Filled before device creation; these are enabled, not available,
+  // extensions.
+  std::vector<std::string> enabled_device_extensions_;
   // Use a mutex to manage queue usage info since
   // it can be accessed from multiple threads
   std::mutex queue_usage_mutex_;
@@ -112,6 +130,14 @@ class Adapter final {
 
  public:
   // Physical Device metadata
+
+  inline VkInstance instance_handle() const {
+    return instance_;
+  }
+
+  inline const std::vector<std::string>& enabled_device_extensions() const {
+    return enabled_device_extensions_;
+  }
 
   inline VkPhysicalDevice physical_handle() const {
     return physical_device_.handle;
@@ -157,6 +183,8 @@ class Adapter final {
 
   Queue request_queue();
   void return_queue(Queue&);
+  // All queue host operations, including waits, use the shared queue mutex.
+  void wait_idle(const Queue&);
 
   // Caches
 
