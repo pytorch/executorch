@@ -398,6 +398,77 @@ std::vector<uint8_t> make_state_program(
       builder.GetBufferPointer() + builder.GetSize()};
 }
 
+// relu_ mutates `input`, or with `from_sum` the intermediate input + input.
+// With `output_mutated`, the mutated tensor is also a graph output.
+std::vector<uint8_t> make_inplace_relu_program(
+    bool from_sum = false,
+    bool output_mutated = false) {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto meta = create_tensor_meta(builder, fbs::ScalarType::FLOAT);
+  const char* mutated = from_sum ? "sum" : "input";
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", meta),
+      fbs::CreateTensorValueDirect(builder, "relu", meta),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> sum_outputs = {
+      fbs::CreateOutputDirect(builder, "sum")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> relu_outputs = {
+      fbs::CreateOutputDirect(builder, "relu", mutated)};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> add_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "other", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "alpha", create_int_arg(builder, 1)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> relu_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, mutated), true)};
+  std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "relu"))};
+  std::vector<std::string> graph_outputs = {"relu"};
+  std::vector<flatbuffers::Offset<fbs::OutputSpec>> output_specs = {
+      fbs::CreateOutputSpecDirect(builder, "relu")};
+  if (output_mutated) {
+    output_inputs.push_back(fbs::CreateNamedArgumentDirect(
+        builder, "", create_tensor_arg(builder, mutated)));
+    graph_outputs.emplace_back(mutated);
+    output_specs.push_back(fbs::CreateOutputSpecDirect(builder, mutated));
+  }
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes = {fbs::CreateNodeDirect(
+      builder, "input", fbs::OpKind::PLACEHOLDER, "", nullptr, &input_outputs)};
+  if (from_sum) {
+    tensor_values.push_back(fbs::CreateTensorValueDirect(builder, "sum", meta));
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder,
+        "sum",
+        fbs::OpKind::CALL_FUNCTION,
+        "torch.ops.aten.add.Tensor",
+        &add_inputs,
+        &sum_outputs));
+  }
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder,
+      "relu",
+      fbs::OpKind::CALL_FUNCTION,
+      "torch.ops.aten.relu_.default",
+      &relu_inputs,
+      &relu_outputs));
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, graph_outputs),
+      builder.CreateVector(tensor_values));
+  return finish_program(builder, graph, output_specs);
+}
+
 struct CompiledProgram {
   std::unique_ptr<VulkanEngineHost> host;
   std::shared_ptr<const Program> program;
@@ -619,6 +690,47 @@ TEST(VulkanEngineTest, RejectsMutationOutputNotWrittenInPlace) {
   } catch (const std::runtime_error& e) {
     EXPECT_NE(
         std::string(e.what()).find("is not written in place to 'state'"),
+        std::string::npos)
+        << e.what();
+  }
+}
+
+TEST(VulkanEngineTest, ExecutesSerializedInPlaceRelu) {
+  CompiledProgram compiled = compile_program(make_inplace_relu_program());
+  const std::vector<float> input = {-2.0f, -0.5f, 0.0f, 3.0f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{0.0f, 0.0f, 0.0f, 3.0f}));
+}
+
+TEST(VulkanEngineTest, ExecutesInPlaceReluOfIntermediate) {
+  CompiledProgram compiled =
+      compile_program(make_inplace_relu_program(/*from_sum=*/true));
+  const std::vector<float> input = {-2.0f, -0.5f, 0.0f, 3.0f};
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{0.0f, 0.0f, 0.0f, 6.0f}));
+}
+
+TEST(VulkanEngineTest, RejectsInPlaceReluWhoseInputIsReadElsewhere) {
+  try {
+    compile_program(make_inplace_relu_program(
+        /*from_sum=*/true, /*output_mutated=*/true));
+    FAIL() << "expected the observed in-place relu to be rejected";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(
+        std::string(e.what()).find(
+            "in-place update of 'sum' is read elsewhere"),
         std::string::npos)
         << e.what();
   }
