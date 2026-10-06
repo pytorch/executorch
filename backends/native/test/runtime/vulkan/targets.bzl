@@ -36,3 +36,17 @@ def define_common_targets():
             "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         ],
     )
+
+    runtime.cxx_test(
+        name = "vulkan_passes_test",
+        srcs = ["test_insert_prepack.cpp"],
+        deps = [
+            "//executorch/backends/native/runtime/vulkan:vulkan_passes",
+            "//executorch/backends/native/runtime/graph:argument",
+            "//executorch/backends/native/runtime/graph:graph",
+            "//executorch/backends/native/runtime/graph:node",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+            "//executorch/backends/native/runtime/graph:value",
+            "//executorch/backends/native/runtime/graph:tensor_meta",
+        ],
+    )
