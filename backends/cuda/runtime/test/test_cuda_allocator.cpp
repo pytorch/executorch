@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #if defined(__linux__) && !defined(EXECUTORCH_USE_HIP)
@@ -114,10 +115,16 @@ class CudaAllocatorTest : public testing::Test {
   int device_count_ = 0;
 };
 
-TEST(CudaAllocatorCompatibilityTest, BackendAliasSharesTheExtensionSingleton) {
-  EXPECT_EQ(
-      &CudaAllocator::instance(),
-      &executorch::extension::cuda::CudaAllocator::instance());
+// A distinct backend class would bring back a second allocator singleton.
+static_assert(
+    std::is_same_v<CudaAllocator, executorch::extension::cuda::CudaAllocator>);
+
+TEST(CudaAllocatorCompatibilityTest, OnlyTheSingletonCanBeConstructed) {
+  EXPECT_FALSE(std::is_default_constructible_v<CudaAllocator>);
+  EXPECT_FALSE(std::is_copy_constructible_v<CudaAllocator>);
+  EXPECT_FALSE(std::is_move_constructible_v<CudaAllocator>);
+  EXPECT_FALSE(std::is_copy_assignable_v<CudaAllocator>);
+  EXPECT_FALSE(std::is_move_assignable_v<CudaAllocator>);
 }
 
 TEST_F(CudaAllocatorTest, CopyRoundtrip) {

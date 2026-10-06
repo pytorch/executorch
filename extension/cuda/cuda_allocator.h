@@ -132,6 +132,13 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
       size_t nbytes,
       cudaMemcpyKind direction,
       cudaStream_t stream);
+
+ private:
+  CudaAllocator() = default;
+  CudaAllocator(const CudaAllocator&) = delete;
+  CudaAllocator& operator=(const CudaAllocator&) = delete;
+  CudaAllocator(CudaAllocator&&) = delete;
+  CudaAllocator& operator=(CudaAllocator&&) = delete;
 };
 
 } // namespace executorch::extension::cuda

@@ -79,7 +79,10 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 # strong one elsewhere, so naming one of those would count a definition that may not be the one
 # the process uses.
 _CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
-_CUDA_STREAM_SYMBOLS = ("executorch::extension::cuda::getCallerStream",)
+_CUDA_EXTENSION_SYMBOLS = (
+    "executorch::extension::cuda::getCallerStream",
+    "executorch::extension::cuda::CudaAllocator::instance",
+)
 
 # The AOTI shim layer and the stream-guard state that lives with it. This is the state that was
 # genuinely duplicated: extracting the shims with a PUBLIC whole-archive replayed the extraction at
@@ -1236,8 +1239,8 @@ _OWNED_COMPONENTS = (
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
     (
-        "CUDA stream helper",
-        _CUDA_STREAM_SYMBOLS,
+        "CUDA allocator and stream helpers",
+        _CUDA_EXTENSION_SYMBOLS,
         _library_file_name("libexecutorch_extension_cuda"),
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
