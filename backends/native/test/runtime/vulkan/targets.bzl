@@ -42,6 +42,7 @@ def define_common_targets():
         srcs = [
             "test_fuse_quantized_linear.cpp",
             "test_insert_prepack.cpp",
+            "test_lower_hf_attention.cpp",
             "test_lower_rms_norm.cpp",
             "test_materialize_view_copies.cpp",
         ],
