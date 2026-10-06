@@ -456,7 +456,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       const GenerationRequest& request,
       const SessionRecord& record) const;
   // Merge a pending token into raw input, or return it as a separate prefix.
-  std::optional<Token> build_initial_delta_(
+  std::optional<Token> carry_pending_(
       GenerationRequest& request,
       const SessionRecord& record) const;
 
@@ -1394,7 +1394,7 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   return std::nullopt;
 }
 
-std::optional<Token> RunnerImpl::build_initial_delta_(
+std::optional<Token> RunnerImpl::carry_pending_(
     GenerationRequest& request,
     const SessionRecord& record) const {
   if (!record.pending) {
@@ -1454,7 +1454,7 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   // model_input_tokens() counts all positions actually fed to the model.
   request.generation.m.n_prompt_tokens =
       static_cast<std::int64_t>(request.size);
-  const auto prefix = build_initial_delta_(request, record);
+  const auto prefix = carry_pending_(request, record);
   if (!is_running_() || !record.status->open.load(std::memory_order_acquire) ||
       request.generation.state->cancelled.load()) {
     complete_request_(

@@ -22,7 +22,7 @@ namespace {
 constexpr std::chrono::seconds kTimeout{5};
 
 struct Payload final : PreparedInput {
-  inline static const char kKind = 0;
+  inline static char kKind = 0;
 
   explicit Payload(std::vector<Token> rows = {11, 7, 7, 7, 22})
       : values(std::move(rows)), count(values.size()) {}
@@ -37,7 +37,7 @@ struct Payload final : PreparedInput {
 };
 
 struct WrongPayload final : PreparedInput {
-  inline static const char kKind = 0;
+  inline static char kKind = 0;
 
   const void* kind() const override {
     return &kKind;

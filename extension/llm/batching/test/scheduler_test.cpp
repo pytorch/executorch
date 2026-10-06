@@ -366,7 +366,7 @@ TEST(PayloadTest, OpaqueChunksKeepSharedBackingAndSlices) {
   class OpaqueInput final : public PreparedInput {
    public:
     const void* kind() const override {
-      static const char kKind = 0;
+      static char kKind = 0;
       return &kKind;
     }
     std::size_t size() const override {

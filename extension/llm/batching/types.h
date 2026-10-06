@@ -44,10 +44,11 @@ class ET_EXPERIMENTAL PreparedInput {
   // The last owner may release on any thread, after the executor is gone.
   // Destruction must be thread-safe and independent of the executor's lifetime.
   virtual ~PreparedInput() = default;
-  // Stable, process-local identity for the concrete backing type. Use one
-  // canonical token address per type, shared by producers and consumers even
-  // across shared-library boundaries. This does not identify weights or
-  // devices.
+  // Stable, process-local identity for the concrete backing type. Use the
+  // address of one canonical non-const object with static storage per type
+  // (e.g. static char kKind), so identical constants cannot be folded together.
+  // Producers and consumers must share this address across shared-library
+  // boundaries. This does not identify weights or devices.
   virtual const void* kind() const = 0;
   // Number of decoder positions in the complete backing, not bytes.
   virtual std::size_t size() const = 0;
