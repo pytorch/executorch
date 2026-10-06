@@ -130,13 +130,14 @@ class ET_EXPERIMENTAL GenerationHandle {
   // handle.
   void cancel() const;
 
-  // Becomes true after the terminal callback returns or throws. False for an
-  // invalid handle.
+  // Becomes true after the terminal callback returns or throws, without
+  // waiting for on_settled to return. False for an invalid handle.
   bool done() const;
 
   // Blocks until the generation and its terminal callback have ended. Returns
-  // immediately if both already have or the handle is invalid. Must not be
-  // called from a callback serviced by the same runner.
+  // immediately if both already have or the handle is invalid. Does not wait
+  // for on_settled to return. Must not be called from a callback serviced by
+  // the same runner.
   void wait() const;
 
   // The terminal reason once done. nullopt for an invalid or unfinished
@@ -220,10 +221,20 @@ class ET_EXPERIMENTAL Session {
   // Invalid input and a second concurrent generation end as Failed. A default
   // or moved-from Session also completes synchronously as Failed; a retained
   // shutdown-closed Session completes synchronously as Cancelled.
+  //
+  // Optional on_settled runs exactly once after the handle's final outcome,
+  // diagnostic, metrics, and done state are published, even if on_update
+  // throws. It runs on the engine thread or inline for synchronous rejection,
+  // and may precede generate_async returning. Exceptions are contained without
+  // changing the outcome; its captures are released after invocation. It must
+  // not block, invoke user output, destroy Runner, or wait for Runner work.
+  // This signals generation settlement, not Runner idleness or physical
+  // session-close completion. Handle wait/done do not wait for it to return.
   GenerationHandle generate_async(
       std::vector<Token> delta,
       GenConfig config,
-      GenerationCallback on_update) const;
+      GenerationCallback on_update,
+      std::function<void()> on_settled = {}) const;
 
  private:
   friend class RunnerImpl;
