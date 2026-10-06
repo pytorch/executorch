@@ -195,14 +195,21 @@ def stop(process, stop_signal=signal.SIGTERM):
         os.killpg(process.pid, stop_signal)
     except ProcessLookupError:
         pass
-    try:
-        process.wait(timeout=20)
-    except subprocess.TimeoutExpired:
+    deadline = time.monotonic() + 20
+    while True:
+        process.poll()  # Reap the leader so it cannot keep the group alive as a zombie.
         try:
-            os.killpg(process.pid, signal.SIGKILL)
+            os.killpg(process.pid, 0)
         except ProcessLookupError:
-            pass
-        process.wait(timeout=10)
+            return
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait(timeout=10)
 
 
 def metrics(log, context, reserve):
@@ -273,6 +280,7 @@ def run(config, output, serve, harbor, probe):
     ).open("w") as harbor_log:
         try:
             with socket.socket() as port:
+                port.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 port.bind((server["host"], server["port"]))
             process = subprocess.Popen(
                 serve,
