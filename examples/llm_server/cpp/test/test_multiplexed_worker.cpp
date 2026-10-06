@@ -241,6 +241,151 @@ class ProtocolTest : public ::testing::Test {
   int input_[2]{-1, -1}, output_[2]{-1, -1};
 };
 
+TEST_F(ProtocolTest, DeferredAdapterAcceptsImageEnvelopeOffReaderAndCancels) {
+  auto preparing = gate();
+  auto calls = std::make_shared<std::atomic<int>>(0);
+  MultiplexedWorkerConfig config;
+  config.prompt_preparer = [preparing, calls](
+                               const Json& prompt,
+                               const serving::PromptPreparationContext& context)
+      -> serving::PromptPreparationResult {
+    ++*calls;
+    EXPECT_EQ(prompt.size(), 1u);
+    EXPECT_EQ(prompt.at("prompt_segments").at(0).at("text"), "before");
+    EXPECT_EQ(
+        prompt.at("prompt_segments").at(1).at("image").at("data"),
+        "inline data");
+    EXPECT_EQ(prompt.at("prompt_segments").at(2).at("text"), "after");
+    EXPECT_EQ(context.max_prompt_positions, 8192u);
+    preparing->pause();
+    EXPECT_TRUE(context.cancelled());
+    return serving::GenerationPrompt{serving::PromptInput{
+        {executorch::extension::llm::make_token_input({1, 2})}}};
+  };
+  start(config, 4, 1);
+  auto image = generate(1);
+  image.erase("prompt");
+  image["prompt_segments"] = Json::array({
+      {{"text", "before"}},
+      {{"image",
+        {{"encoding", "base64"},
+         {"mime_type", "image/png"},
+         {"data", "inline data"}}}},
+      {{"text", "after"}},
+  });
+  send(image);
+  ASSERT_TRUE(preparing->wait());
+  send(generate(2));
+  auto rejected = receive();
+  EXPECT_EQ(rejected.at("request_id"), 2);
+  EXPECT_EQ(rejected.at("code"), "capacity_exhausted");
+  send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 1}});
+  const auto ack = receive();
+  EXPECT_EQ(ack.at("request_id"), 3);
+  EXPECT_TRUE(ack.value("cancelled", false));
+  EXPECT_EQ(calls->load(), 1);
+  preparing->release();
+  auto done = receive();
+  EXPECT_EQ(done.at("request_id"), 1);
+  EXPECT_TRUE(done.value("done", false));
+  EXPECT_TRUE(done.value("cancelled", false));
+  EXPECT_TRUE(executor_.opened().empty());
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(
+    ProtocolTest,
+    DeferredAdapterReturnsPromptAndMapsErrorsWithoutPoisoningWorker) {
+  MultiplexedWorkerConfig config;
+  config.prompt_preparer = [](const Json& prompt,
+                              const serving::PromptPreparationContext&)
+      -> serving::PromptPreparationResult {
+    if (prompt.contains("prompt")) {
+      throw std::runtime_error("adapter failure");
+    }
+    return serving::GenerationPrompt{serving::PromptInput{
+        {executorch::extension::llm::make_token_input({1, 2, 3})}}};
+  };
+  start(config);
+  send(generate(1));
+  auto error = receive();
+  EXPECT_EQ(error.at("request_id"), 1);
+  EXPECT_EQ(error.at("code"), "internal");
+  auto image = generate(2, 1);
+  image.erase("prompt");
+  image["prompt_segments"] = Json::array({{{"image", "inline data"}}});
+  send(image);
+  EXPECT_EQ(receive().at("token"), tokenizer_.piece);
+  auto done = receive();
+  EXPECT_EQ(done.at("request_id"), 2);
+  EXPECT_TRUE(done.value("done", false));
+  EXPECT_EQ(done.at("prompt_tokens"), 3);
+  EXPECT_EQ(finish(), 0);
+}
+
+TEST_F(ProtocolTest, EofCancelsDeferredPreparationAndWaitsForItsReturn) {
+  auto preparing = gate();
+  auto observed = gate();
+  MultiplexedWorkerConfig config;
+  config.prompt_preparer = [preparing, observed](
+                               const Json&,
+                               const serving::PromptPreparationContext& context)
+      -> serving::PromptPreparationResult {
+    preparing->signal();
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (!context.cancelled() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::yield();
+    EXPECT_TRUE(context.cancelled());
+    observed->pause();
+    return serving::GenerationPrompt{serving::PromptInput{}};
+  };
+  start(config);
+  send(generate(1));
+  ASSERT_TRUE(preparing->wait());
+  send({{"op", "close"}, {"request_id", 2}, {"session_id", "absent"}});
+  close(input_[1]);
+  input_[1] = -1;
+  ASSERT_TRUE(observed->wait());
+  EXPECT_EQ(result_.wait_for(0s), std::future_status::timeout);
+  observed->release();
+  ASSERT_EQ(result_.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(result_.get(), 0);
+  std::map<uint64_t, Json> replies;
+  for (int i = 0; i < 2; ++i) {
+    auto reply = receive();
+    replies.emplace(reply.at("request_id").get<uint64_t>(), reply);
+  }
+  EXPECT_TRUE(replies.at(1).value("cancelled", false));
+  EXPECT_TRUE(replies.at(2).contains("error"));
+  EXPECT_TRUE(executor_.opened().empty());
+}
+
+TEST_F(
+    ProtocolTest,
+    IndependentInputLimitIncludesNewlineAndPreservesOutputLimit) {
+  MultiplexedWorkerConfig config;
+  config.max_frame_bytes = 1024;
+  config.max_input_frame_bytes = 4096;
+  start(config);
+  auto request = generate(1, 300);
+  request["prompt"] = "";
+  const auto overhead = request.dump().size() + 1;
+  request["prompt"] = std::string(config.max_input_frame_bytes - overhead, 'x');
+  send(request);
+  Json terminal;
+  do {
+    terminal = receive();
+    EXPECT_LE(terminal.dump().size() + 1, config.max_frame_bytes);
+  } while (terminal.contains("token"));
+  EXPECT_EQ(terminal.at("request_id"), 1);
+  EXPECT_EQ(terminal.at("code"), "frame_too_large");
+  request["request_id"] = 2;
+  request["prompt"] = request.at("prompt").get<std::string>() + "x";
+  send(request);
+  ASSERT_EQ(result_.wait_for(5s), std::future_status::ready);
+  EXPECT_EQ(result_.get(), 1);
+}
+
 TEST_F(ProtocolTest, InterleavedIdsAndOutOfOrderCompletion) {
   start();
   send(generate(20, 40));

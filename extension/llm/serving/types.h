@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <utility>
@@ -19,6 +20,10 @@
 #include <executorch/extension/llm/batching/types.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/runtime/platform/compiler.h>
+
+namespace tokenizers {
+class Tokenizer;
+}
 
 namespace executorch {
 namespace extension {
@@ -90,6 +95,19 @@ struct ET_EXPERIMENTAL ServingError {
   ErrorCode code = ErrorCode::Internal;
   std::string message;
 };
+
+// Valid only during preparation on the runtime's control thread. The callback
+// must do bounded work and may poll cancelled while preparing a large prompt.
+struct ET_EXPERIMENTAL PromptPreparationContext {
+  const tokenizers::Tokenizer& tokenizer;
+  std::size_t max_prompt_positions;
+  std::function<bool()> cancelled;
+};
+
+using PromptPreparationResult ET_EXPERIMENTAL =
+    std::variant<GenerationPrompt, ServingError>;
+using PromptPreparation ET_EXPERIMENTAL =
+    std::function<PromptPreparationResult(const PromptPreparationContext&)>;
 
 struct ET_EXPERIMENTAL GenerationStats {
   // Full prompt size in decoder positions, including any reused prefix.

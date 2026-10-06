@@ -257,6 +257,13 @@ class ET_EXPERIMENTAL Session {
 
 enum class ET_EXPERIMENTAL InitializationState { Pending, Ready, Failed };
 
+enum class ET_EXPERIMENTAL PreparedInputAcceptance {
+  Accepted,
+  Rejected,
+  Unavailable,
+  Failed,
+};
+
 class ET_EXPERIMENTAL Runner {
  public:
   // Takes the scheduler, one per runner, which also supplies the prefill chunk
@@ -282,6 +289,14 @@ class ET_EXPERIMENTAL Runner {
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
+
+  // Any thread. Checks metadata compatibility on the initialized engine thread
+  // without opening or changing sessions. Null input is Rejected; stopping or
+  // failed initialization is Unavailable; an exception from accepts() is
+  // Failed. Acceptance reserves no capacity and does not guarantee execution
+  // success. The command releases its input reference before the future becomes
+  // ready. Never wait for this future in a callback serviced by this runner.
+  std::future<PreparedInputAcceptance> accepts_async(PreparedInputPtr input);
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended, and every owned session is closed. A generation that

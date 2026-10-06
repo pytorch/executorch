@@ -36,6 +36,7 @@ namespace detail {
 
 struct TextRequest {
   GenerationPrompt input;
+  std::optional<PromptPreparation> prepare;
   GenerationOptions options;
   std::function<void(GenerationEvent)> sink;
   std::vector<batching::Token> prompt;
@@ -678,6 +679,26 @@ struct ServingRuntime::Impl {
     const auto context_limit = config_.max_context_length
         ? std::min(config_.max_context_length, position_limit)
         : position_limit;
+    if (text.prepare) {
+      if (request->cancelled.load()) {
+        return std::nullopt;
+      }
+      if (!*text.prepare) {
+        return ServingError{
+            ErrorCode::InvalidArgument, "empty prompt preparation callback"};
+      }
+      auto prepared = (*text.prepare)(PromptPreparationContext{
+          *tokenizer_, context_limit, [state = request.get()] {
+            return state->cancelled.load();
+          }});
+      if (request->cancelled.load()) {
+        return std::nullopt;
+      }
+      if (auto* error = std::get_if<ServingError>(&prepared)) {
+        return std::move(*error);
+      }
+      text.input = std::get<GenerationPrompt>(std::move(prepared));
+    }
     batching::Token previous_token;
     if (auto* opaque = std::get_if<PreparedPromptInput>(&text.input)) {
       const auto size = opaque->input ? opaque->input->size() : 0;
@@ -729,21 +750,55 @@ struct ServingRuntime::Impl {
           state->emit(TextEvent{piece});
         });
 
+    if (text.is_opaque()) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
+          return std::nullopt;
+        }
+      }
+      const auto acceptance =
+          runner_
+              ->accepts_async(
+                  std::get<batching::PreparedInputPtr>(request->request.delta))
+              .get();
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
+          return std::nullopt;
+        }
+      }
+      switch (acceptance) {
+        case batching::PreparedInputAcceptance::Accepted:
+          break;
+        case batching::PreparedInputAcceptance::Rejected:
+          return ServingError{
+              ErrorCode::InvalidArgument,
+              "executor does not accept prepared input"};
+        case batching::PreparedInputAcceptance::Unavailable:
+          return ServingError{ErrorCode::NotReady, "runner is not ready"};
+        case batching::PreparedInputAcceptance::Failed:
+          return ServingError{
+              ErrorCode::Internal, "prepared input acceptance check failed"};
+      }
+    }
+
     PrefillPlan plan{PrefillPlan::kFull, 0, "new"};
     bool reset = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       if (it != sessions_.end()) {
-        if (text.is_opaque()) {
-          plan.reason = "opaque";
-        } else {
+        if (!text.is_opaque()) {
           plan = plan_prefill(
               it->second.logical_history, text.prompt, it->second.dirty);
         }
         reset = plan.action == PrefillPlan::kFull &&
             (it->second.dirty || !it->second.logical_history.empty() ||
              it->second.session->position() != 0);
+        if (text.is_opaque() && reset) {
+          plan.reason = "opaque";
+        }
       }
     }
     text.terminal.stats.session_reset_reason = plan.reason;
@@ -1463,6 +1518,22 @@ GenerateResult ServingRuntime::generate(
   text->options = std::move(options);
   // Unlike move, swap leaves no inline callable copy in the incoming sink.
   text->sink.swap(on_event);
+  detail::GenerationRequest request;
+  request.key = std::move(key);
+  return impl_->submit(std::move(request), std::move(text));
+}
+
+GenerateResult ServingRuntime::generate(
+    std::optional<std::string> key,
+    PromptPreparation prepare,
+    GenerationOptions options,
+    std::function<void(GenerationEvent)> on_event) {
+  auto text = std::make_shared<detail::TextRequest>();
+  text->prepare.emplace();
+  // Swap empties inline callable storage as well as heap-backed functions.
+  text->prepare->swap(prepare);
+  text->sink.swap(on_event);
+  text->options = std::move(options);
   detail::GenerationRequest request;
   request.key = std::move(key);
   return impl_->submit(std::move(request), std::move(text));

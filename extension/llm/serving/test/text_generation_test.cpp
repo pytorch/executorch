@@ -129,6 +129,8 @@ class Executor : public batching::testing::FakeExecutor {
   std::vector<std::vector<Token>> fed;
   std::thread::id engine_thread;
   bool accept_opaque = false;
+  bool throw_accepts = false;
+  mutable Gate accepting;
   mutable std::atomic<int> accepts_calls{0};
   mutable std::thread::id accepts_thread;
   std::vector<std::pair<std::size_t, std::size_t>> opaque_slices;
@@ -136,6 +138,12 @@ class Executor : public batching::testing::FakeExecutor {
   bool accepts(const batching::PreparedInput& input) const override {
     ++accepts_calls;
     accepts_thread = std::this_thread::get_id();
+    accepting.enter();
+#if ET_HAS_EXCEPTIONS
+    if (throw_accepts) {
+      throw std::runtime_error("acceptance failure");
+    }
+#endif
     return accept_opaque && input.kind() == &TestPreparedInput::tag;
   }
   std::optional<batching::SessionId> open_session() override {
@@ -322,6 +330,7 @@ class TextGenerationTest : public ::testing::Test {
     cleanup_checkpoint.release();
     tokenizer.encoding.release();
     executor.opening.release();
+    executor.accepting.release();
     executor.executing.release();
     executor.second_step.release();
     executor.release();
@@ -364,6 +373,204 @@ class TextGenerationTest : public ::testing::Test {
     return std::get<RequestHandle>(std::move(result));
   }
 };
+
+TEST_F(
+    TextGenerationTest,
+    DeferredPreparationUsesControlAndExistingPromptPaths) {
+  executor.accept_opaque = true;
+  start();
+  for (bool prepared : {false, true}) {
+    auto event = output();
+    std::atomic<int> calls{0};
+    std::thread::id preparation_thread;
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    auto result = runtime->generate(
+        "s",
+        [&](const PromptPreparationContext& context)
+            -> PromptPreparationResult {
+          ++calls;
+          preparation_thread = std::this_thread::get_id();
+          EXPECT_EQ(&context.tokenizer, &tokenizer);
+          EXPECT_EQ(context.max_prompt_positions, 64u);
+          EXPECT_FALSE(context.cancelled());
+          EXPECT_TRUE(runtime->info().ready); // No runtime lock held.
+          return prepared
+              ? GenerationPrompt{opaque()}
+              : GenerationPrompt{PromptInput{{make_text_input("hello")}}};
+        },
+        options,
+        [event](GenerationEvent update) { event->accept(std::move(update)); });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    auto handle = std::get<RequestHandle>(result);
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+    EXPECT_EQ(calls.load(), 1);
+    EXPECT_NE(preparation_thread, std::this_thread::get_id());
+    EXPECT_NE(preparation_thread, executor.engine_thread);
+    EXPECT_NE(preparation_thread, event->sink_thread);
+    if (!prepared) {
+      EXPECT_EQ(preparation_thread, tokenizer.encoder_thread);
+    }
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->terminals, 1u);
+    EXPECT_EQ(event->terminal->stats.prompt_tokens, prepared ? 5u : 2u);
+    EXPECT_EQ(event->text, "A");
+  }
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "dirty");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 0u);
+}
+
+TEST_F(TextGenerationTest, DeferredFailuresAndInvalidOptionsPreserveHistory) {
+  start();
+  submit(output(), ids({10, 11})).wait();
+  std::atomic<int> calls{0};
+  for (int mode = 0; mode != 4; ++mode) {
+    auto event = output();
+    GenerationOptions options;
+    options.max_new_tokens = mode == 0 ? 0 : 1;
+    PromptPreparation prepare;
+    if (mode != 3) {
+      prepare =
+          [&](const PromptPreparationContext&) -> PromptPreparationResult {
+        ++calls;
+#if ET_HAS_EXCEPTIONS
+        if (mode == 2) {
+          throw std::runtime_error("deferred preparation");
+        }
+#endif
+        return ServingError{ErrorCode::InvalidArgument, "invalid model prompt"};
+      };
+    }
+    auto result = runtime->generate(
+        "s", std::move(prepare), options, [event](GenerationEvent update) {
+          event->accept(std::move(update));
+        });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    auto handle = std::get<RequestHandle>(result);
+    handle.wait();
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(
+        handle.error()->code,
+#if ET_HAS_EXCEPTIONS
+        mode == 2 ? ErrorCode::Internal :
+#endif
+                  ErrorCode::InvalidArgument);
+    EXPECT_EQ(executor.opened().size(), 1u);
+    EXPECT_TRUE(executor.closed().empty());
+    EXPECT_EQ(event->terminals, 1u);
+  }
+  EXPECT_EQ(calls.load(), 2);
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+}
+
+TEST_F(TextGenerationTest, DeferredAdmissionAndQueuedCancellationAreBounded) {
+  config.max_requests = 2;
+  config.max_pending_operations = 2;
+  delivery_checkpoint.hold();
+  start();
+  auto event = output();
+  std::atomic<int> calls{0};
+  auto prepare =
+      [&](const PromptPreparationContext& context) -> PromptPreparationResult {
+    ++calls;
+    delivery_checkpoint.enter();
+    EXPECT_TRUE(context.cancelled());
+    return GenerationPrompt{ids({20, 21})};
+  };
+  auto first =
+      runtime->generate("s", prepare, {}, [event](GenerationEvent update) {
+        event->accept(std::move(update));
+      });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(first));
+  ASSERT_TRUE(delivery_checkpoint.wait());
+  auto second = runtime->generate("other", prepare, {}, {});
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(second));
+  auto rejected = runtime->generate("third", prepare, {}, {});
+  ASSERT_TRUE(std::holds_alternative<ServingError>(rejected));
+  EXPECT_EQ(std::get<ServingError>(rejected).code, ErrorCode::CapacityExceeded);
+  const auto a = std::get<RequestHandle>(first);
+  const auto b = std::get<RequestHandle>(second);
+  a.cancel();
+  b.cancel();
+  EXPECT_FALSE(a.done());
+  EXPECT_FALSE(b.done());
+  delivery_checkpoint.release();
+  a.wait();
+  b.wait();
+  EXPECT_EQ(calls.load(), 1);
+  EXPECT_TRUE(executor.opened().empty());
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(event->terminals, 1u);
+}
+
+TEST_F(TextGenerationTest, DeferredCancellationDoesNotReplaceResidentHistory) {
+  start();
+  submit(output(), ids({10, 11})).wait();
+  delivery_checkpoint.hold();
+  auto result = runtime->generate(
+      "s",
+      [&](const PromptPreparationContext& context) -> PromptPreparationResult {
+        delivery_checkpoint.enter();
+        EXPECT_TRUE(context.cancelled());
+        return GenerationPrompt{opaque()};
+      },
+      {},
+      {});
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  ASSERT_TRUE(delivery_checkpoint.wait());
+  const auto handle = std::get<RequestHandle>(result);
+  handle.cancel();
+  delivery_checkpoint.release();
+  handle.wait();
+  EXPECT_FALSE(handle.error());
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_TRUE(executor.closed().empty());
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+}
+
+TEST_F(
+    TextGenerationTest,
+    DeferredSmallCaptureCleanupCanReenterAfterRejectionAndDone) {
+  watch_callbacks();
+  start();
+  struct Prepare {
+    ServingRuntime* runtime;
+    SmallSinkState* state;
+    ~Prepare() {
+      (void)runtime->info();
+      ++state->destructions;
+    }
+    PromptPreparationResult operator()(const PromptPreparationContext&) const {
+      ++state->calls;
+      return GenerationPrompt{ids({10, 11})};
+    }
+  };
+  static_assert(sizeof(Prepare) == 2 * sizeof(void*));
+  static_assert(std::is_nothrow_copy_constructible<Prepare>::value);
+  auto result =
+      runtime->generate("", Prepare{runtime.get(), &small_sink_state}, {}, {});
+  ASSERT_TRUE(std::holds_alternative<ServingError>(result));
+  EXPECT_GT(small_sink_state.destructions.load(), 0);
+  EXPECT_EQ(small_sink_state.calls.load(), 0);
+  const auto before = small_sink_state.destructions.load();
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  result = runtime->generate(
+      "s", Prepare{runtime.get(), &small_sink_state}, options, {});
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  std::get<RequestHandle>(result).wait();
+  EXPECT_EQ(small_sink_state.calls.load(), 1);
+  EXPECT_GT(small_sink_state.destructions.load(), before);
+}
 
 TEST_F(TextGenerationTest, OpaquePositionsUseExplicitDecodeContextAndBudgets) {
   executor.accept_opaque = true;
@@ -431,12 +638,15 @@ TEST_F(
   auto handle = submit(event, opaque(), {}, "other");
   handle.wait();
   ASSERT_TRUE(handle.error());
-  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
   ASSERT_TRUE(event->terminal);
   EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
   EXPECT_EQ(event->terminals, 1u);
   EXPECT_TRUE(event->text.empty());
   EXPECT_EQ(executor.steps.load(), steps);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_TRUE(executor.closed().empty());
+  EXPECT_EQ(executor.accepts_calls.load(), 1);
   EXPECT_TRUE(executor.opaque_slices.empty());
   auto continued = output();
   submit(continued, ids({10, 11, 100, 12})).wait();
@@ -445,6 +655,178 @@ TEST_F(
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
   EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12}));
 }
+
+TEST_F(TextGenerationTest, OpaqueRejectionPreservesSameKeyHistory) {
+  start();
+  submit(output(), ids({10, 11})).wait();
+  const auto steps = executor.steps.load();
+  for (bool deferred : {false, true}) {
+    SCOPED_TRACE(deferred);
+    auto event = output();
+    auto prompt = opaque();
+    std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+    GenerationOptions options;
+    options.max_new_tokens = 1;
+    auto sink = [event](GenerationEvent update) {
+      event->accept(std::move(update));
+    };
+    GenerateResult result;
+    if (deferred) {
+      result = runtime->generate(
+          "s",
+          [prompt = std::move(prompt)](const PromptPreparationContext&)
+              -> PromptPreparationResult { return GenerationPrompt{prompt}; },
+          options,
+          std::move(sink));
+    } else {
+      result =
+          runtime->generate("s", std::move(prompt), options, std::move(sink));
+    }
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    const auto handle = std::get<RequestHandle>(result);
+    handle.wait();
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    EXPECT_TRUE(owner.expired());
+    ASSERT_TRUE(event->terminal);
+    ASSERT_TRUE(event->terminal->error);
+    EXPECT_EQ(event->terminal->error->code, ErrorCode::InvalidArgument);
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
+    EXPECT_EQ(event->terminals, 1u);
+    EXPECT_NE(event->terminal->stats.session_reset_reason, "opaque");
+    EXPECT_TRUE(event->text.empty());
+    EXPECT_EQ(executor.steps.load(), steps);
+    EXPECT_EQ(executor.opened().size(), 1u);
+    EXPECT_TRUE(executor.closed().empty());
+    EXPECT_EQ(executor.accepts_thread, executor.engine_thread);
+    EXPECT_NE(executor.accepts_thread, std::this_thread::get_id());
+  }
+  EXPECT_EQ(executor.accepts_calls.load(), 2);
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12}));
+  EXPECT_EQ(executor.opened().size(), 1u);
+}
+
+TEST_F(TextGenerationTest, OpaqueRejectionDoesNotOpenOrResetSessions) {
+  start();
+  ASSERT_FALSE(runtime->open_session_async("empty").get());
+  for (const auto& key :
+       {std::optional<std::string>{"new"},
+        std::optional<std::string>{"empty"},
+        std::optional<std::string>{}}) {
+    auto event = output();
+    const auto handle = submit(event, opaque(), {}, key);
+    handle.wait();
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    EXPECT_EQ(executor.opened().size(), 1u);
+    EXPECT_TRUE(executor.closed().empty());
+    EXPECT_EQ(executor.steps.load(), 0);
+    EXPECT_EQ(runtime->info().active_sessions, 1u);
+  }
+  EXPECT_EQ(executor.accepts_calls.load(), 3);
+}
+
+TEST_F(TextGenerationTest, OpaqueUsesEmptySessionWithoutReportingReset) {
+  executor.accept_opaque = true;
+  start();
+  ASSERT_FALSE(runtime->open_session_async("s").get());
+  auto event = output();
+  const auto handle = submit(event, opaque());
+  handle.wait();
+  EXPECT_FALSE(handle.error());
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->stats.session_reset_reason, "new");
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_TRUE(executor.closed().empty());
+  EXPECT_EQ(executor.accepts_calls.load(), 2);
+}
+
+TEST_F(TextGenerationTest, CancelDuringOpaquePreflightPreservesHistory) {
+  start();
+  submit(output(), ids({10, 11})).wait();
+  executor.accepting.hold();
+  auto prompt = opaque();
+  std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+  auto event = output();
+  const auto handle = submit(event, std::move(prompt));
+  ASSERT_TRUE(executor.accepting.wait());
+  handle.cancel();
+  EXPECT_FALSE(handle.done());
+  executor.accepting.release();
+  handle.wait();
+  EXPECT_FALSE(handle.error());
+  EXPECT_TRUE(owner.expired());
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(event->terminals, 1u);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_TRUE(executor.closed().empty());
+  EXPECT_EQ(executor.steps.load(), 1);
+  EXPECT_EQ(executor.accepts_calls.load(), 1);
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12}));
+}
+
+TEST_F(TextGenerationTest, ShutdownDuringOpaquePreflightSettlesWithoutReset) {
+  executor.accept_opaque = true;
+  start();
+  submit(output(), ids({10, 11})).wait();
+  executor.accepting.hold();
+  auto prompt = opaque();
+  std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+  auto event = output();
+  const auto handle = submit(event, std::move(prompt));
+  ASSERT_TRUE(executor.accepting.wait());
+  submitting_caller = std::thread([this] { runtime->shutdown(); });
+  ASSERT_TRUE(wait_until([&] { return !runtime->info().ready; }));
+  EXPECT_FALSE(handle.done());
+  EXPECT_TRUE(executor.closed().empty());
+  executor.accepting.release();
+  ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+  submitting_caller.join();
+  EXPECT_FALSE(handle.error());
+  EXPECT_TRUE(owner.expired());
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+  EXPECT_EQ(event->terminals, 1u);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_EQ(executor.closed().size(), 1u);
+  EXPECT_EQ(executor.steps.load(), 1);
+  EXPECT_EQ(executor.accepts_calls.load(), 1);
+}
+
+#if ET_HAS_EXCEPTIONS
+TEST_F(TextGenerationTest, ThrowingOpaquePreflightPreservesHistory) {
+  executor.throw_accepts = true;
+  start();
+  submit(output(), ids({10, 11})).wait();
+  auto event = output();
+  const auto handle = submit(event, opaque());
+  handle.wait();
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
+  EXPECT_EQ(event->terminals, 1u);
+  EXPECT_EQ(executor.opened().size(), 1u);
+  EXPECT_TRUE(executor.closed().empty());
+  EXPECT_EQ(executor.steps.load(), 1);
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+}
+#endif
 
 TEST_F(TextGenerationTest, OpaqueMetadataAndOptionsPreserveRawHistory) {
   executor.accept_opaque = true;
@@ -526,6 +908,8 @@ TEST_F(TextGenerationTest, OpaqueReplacesRawAndForcesFollowingRawColdReplay) {
   EXPECT_EQ(prepared->text, "A");
   EXPECT_EQ(prepared->terminal->stats.reused_prompt_tokens, 0u);
   EXPECT_EQ(prepared->terminal->stats.prefilled_prompt_tokens, 5u);
+  EXPECT_EQ(prepared->terminal->stats.session_reset_reason, "opaque");
+  EXPECT_EQ(executor.accepts_calls.load(), 2);
   EXPECT_EQ(
       prepared->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
   EXPECT_EQ(executor.opened().size(), 2u);
@@ -1148,6 +1532,72 @@ class TextGenerationFenceTest : public TextGenerationTest,
                       : runtime->close_session_async("s");
   }
 };
+
+TEST_P(
+    TextGenerationFenceTest,
+    DeferredCaptureCleanupFencesAckAndNextPreparation) {
+  watch_callbacks();
+  start();
+  ASSERT_FALSE(runtime->open_session_async("s").get());
+  delivery_checkpoint.hold();
+  cleanup_checkpoint.hold();
+  auto cleaned = std::make_shared<std::atomic<bool>>(false);
+  auto capture = std::shared_ptr<int>(new int(0), [this, cleaned](int* value) {
+    (void)runtime->info();
+    cleanup_checkpoint.enter();
+    delete value;
+    cleaned->store(true);
+  });
+  auto event = output();
+  auto result = runtime->generate(
+      "s",
+      [this, capture = std::move(capture)](
+          const PromptPreparationContext&) -> PromptPreparationResult {
+        delivery_checkpoint.enter();
+        return GenerationPrompt{ids({10, 11})};
+      },
+      {},
+      [event](GenerationEvent update) { event->accept(std::move(update)); });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto old = std::get<RequestHandle>(result);
+  ASSERT_TRUE(delivery_checkpoint.wait());
+  auto ack = transition();
+  auto next_calls = std::make_shared<std::atomic<int>>(0);
+  GenerationOptions options;
+  options.max_new_tokens = 1;
+  auto next_result = runtime->generate(
+      "s",
+      [next_calls](const PromptPreparationContext&) -> PromptPreparationResult {
+        ++*next_calls;
+        return GenerationPrompt{ids({20, 21})};
+      },
+      options,
+      {});
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(next_result));
+  const auto next = std::get<RequestHandle>(next_result);
+  old.cancel();
+  EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+  delivery_checkpoint.release();
+  ASSERT_TRUE(cleanup_checkpoint.wait());
+  EXPECT_FALSE(old.done());
+  EXPECT_FALSE(next.done());
+  EXPECT_FALSE(cleaned->load());
+  EXPECT_EQ(next_calls->load(), 0);
+  EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+  auto other = runtime->open_session_async("other");
+  ASSERT_EQ(other.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(other.get());
+  cleanup_checkpoint.release();
+  ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
+  EXPECT_FALSE(ack.get());
+  EXPECT_TRUE(old.done());
+  EXPECT_TRUE(cleaned->load());
+  next.wait();
+  EXPECT_FALSE(next.error());
+  EXPECT_EQ(next_calls->load(), 1);
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+}
 
 TEST_P(TextGenerationFenceTest, AckIncludesSubmittingThreadInlineSinkOwners) {
 #if !defined(_LIBCPP_VERSION) || defined(_LIBCPP_ABI_OPTIMIZED_FUNCTION)

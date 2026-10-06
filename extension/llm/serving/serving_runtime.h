@@ -148,15 +148,32 @@ class ET_EXPERIMENTAL ServingRuntime {
   // are released. Nonblocking follow-up submission is allowed but may still
   // be rejected; wait()/done() remain callback-lifetime barriers.
   // PreparedPromptInput bypasses encoding and always uses full prefill without
-  // token-history or prefix-cache reuse. Existing content is cold-replaced;
-  // subsequent ordinary prompts also cold-replay. Metadata/options errors leave
-  // state intact, but later engine admission/execution failure does not restore
-  // content already replaced. Executor::accepts() runs only on the engine
-  // thread. Both input forms need a tokenizer for output. The lifecycle-only
-  // constructor rejects them with NotReady.
+  // token-history or prefix-cache reuse. Existing content is cold-replaced.
+  // Subsequent ordinary prompts replay only their supplied tokens: prior opaque
+  // or image context is not retained. To retain that context, resend it as part
+  // of each complete prepared prompt, even when reusing the same key.
+  // Metadata/options errors and unsupported prepared inputs return
+  // InvalidArgument without replacing existing content. Executor::accepts()
+  // is checked on the engine thread before replacement; later engine admission
+  // or execution failure does not restore content already replaced. Both input
+  // forms need a tokenizer for output. The lifecycle-only constructor rejects
+  // them with NotReady.
   GenerateResult generate(
       std::optional<std::string> key,
       GenerationPrompt prompt,
+      GenerationOptions options,
+      std::function<void(GenerationEvent)> on_event);
+
+  // Deferred preparation uses the same bounded admission and lifecycle fences.
+  // Invoked at most once on control, after options/session validation and
+  // before destructive replacement; cancelled or rejected work may skip
+  // invocation. Errors leave history intact. Exceptions become Internal errors
+  // when enabled. Captures are released outside locks before done()/wait() and
+  // close/reset acknowledgement. The callback must not wait for runtime work or
+  // shutdown.
+  GenerateResult generate(
+      std::optional<std::string> key,
+      PromptPreparation prepare,
       GenerationOptions options,
       std::function<void(GenerationEvent)> on_event);
 

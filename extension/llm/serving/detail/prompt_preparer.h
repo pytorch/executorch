@@ -23,8 +23,8 @@ struct PreparedPrompt {
   std::vector<batching::Token> tokens;
 };
 
-// Preparation owns its result. A future multimodal preparer can add owned
-// embedding spans here without teaching callers about encoder lifetimes.
+// Default text/token-ID preparation owns its result. Model-specific inputs use
+// the serving PromptPreparation callback to return owned prepared backing.
 inline runtime::Result<PreparedPrompt> prepare_prompt(
     const tokenizers::Tokenizer& tokenizer,
     const PromptInput& input,

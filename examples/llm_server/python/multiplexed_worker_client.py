@@ -232,6 +232,7 @@ class MultiplexedWorkerClient:
         mailbox_capacity: int = 64,
         max_buffered_chars: int = 1024 * 1024,
         max_message_bytes: int = _MAX_MESSAGE_BYTES,
+        max_request_bytes: int = _MAX_REQUEST_BYTES,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -239,6 +240,7 @@ class MultiplexedWorkerClient:
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,
             max_message_bytes=max_message_bytes,
+            max_request_bytes=max_request_bytes,
         )
         if proc.stdin is None or proc.stdout is None:
             raise WorkerError("worker requires stdin and stdout pipes")
@@ -248,6 +250,7 @@ class MultiplexedWorkerClient:
         self._mailbox_capacity = mailbox_capacity
         self._max_buffered_chars = max_buffered_chars
         self._max_message_bytes = max_message_bytes
+        self._max_request_bytes = max_request_bytes
         self._proc = proc
         self._write_ready = asyncio.Event()
         self._requests: dict[int, _Request] = {}
@@ -403,7 +406,8 @@ class MultiplexedWorkerClient:
                 "op": "cancel",
                 "request_id": cancel_id,
                 "target_request_id": state.request_id,
-            }
+            },
+            self._max_request_bytes,
         )
         state.cancel_pending = False
         self._controls[cancel_id] = _Cancellation(state.request_id)
@@ -445,7 +449,7 @@ class MultiplexedWorkerClient:
         self._ensure_usable()
 
     @staticmethod
-    def _encode_request(request):
+    def _encode_request(request, max_request_bytes=_MAX_REQUEST_BYTES):
         try:
             _validate_wire_values(request)
             for name, low, high in (
@@ -468,9 +472,10 @@ class MultiplexedWorkerClient:
             raise WorkerError(
                 f"invalid worker request: {error}", code="invalid_argument"
             ) from error
-        if len(payload) > _MAX_REQUEST_BYTES:
+        if len(payload) > max_request_bytes:
             raise WorkerError(
-                "worker request exceeds the 1 MiB frame limit", code="invalid_argument"
+                f"worker request exceeds the {max_request_bytes} byte frame limit",
+                code="invalid_argument",
             )
         return payload
 
@@ -485,7 +490,9 @@ class MultiplexedWorkerClient:
                 raise WorkerError(f"request id {request_id} is not reserved")
         state.submitted = True
         try:
-            payload = self._encode_request(dict(request, request_id=state.request_id))
+            payload = self._encode_request(
+                dict(request, request_id=state.request_id), self._max_request_bytes
+            )
             if not state.completion.done():
                 self._writes.append((state.request_id, payload))
                 self._write_ready.set()
@@ -774,6 +781,7 @@ async def spawn_multiplexed_worker(
     mailbox_capacity: int = 64,
     max_buffered_chars: int = 1024 * 1024,
     max_message_bytes: int = _MAX_MESSAGE_BYTES,
+    max_request_bytes: int = _MAX_REQUEST_BYTES,
 ) -> MultiplexedWorkerClient:
     """Start a native worker on the caller's loop, requiring explicit multiplexing.
 
@@ -784,6 +792,7 @@ async def spawn_multiplexed_worker(
         mailbox_capacity=mailbox_capacity,
         max_buffered_chars=max_buffered_chars,
         max_message_bytes=max_message_bytes,
+        max_request_bytes=max_request_bytes,
     )
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -809,6 +818,7 @@ async def spawn_multiplexed_worker(
             mailbox_capacity=mailbox_capacity,
             max_buffered_chars=max_buffered_chars,
             max_message_bytes=max_message_bytes,
+            max_request_bytes=max_request_bytes,
         )
     except BaseException:
         cleanup = asyncio.create_task(_shutdown_async_process(proc))

@@ -296,6 +296,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   }
 
   void shutdown();
+  std::future<PreparedInputAcceptance> accepts_async(PreparedInputPtr input);
   std::future<std::optional<Session>> open_session_async();
   std::future<std::optional<Session>> clone_async(
       SessionId source,
@@ -435,12 +436,21 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     GenerationRequest request;
   };
 
+  struct AcceptsCommand {
+    PreparedInputPtr input;
+    std::shared_ptr<std::promise<PreparedInputAcceptance>> ack;
+  };
+
   struct RetiredSession {
     std::optional<Generation> active_generation;
   };
 
-  using Command =
-      std::variant<OpenCommand, CloseCommand, CloneCommand, StartCommand>;
+  using Command = std::variant<
+      OpenCommand,
+      CloseCommand,
+      CloneCommand,
+      StartCommand,
+      AcceptsCommand>;
 
   void run_();
   void process_pending_commands_();
@@ -448,6 +458,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void process_command_(CloseCommand command);
   void process_command_(CloneCommand command);
   void process_command_(StartCommand command);
+  void process_command_(AcceptsCommand command);
   std::optional<RetiredSession> retire_session_(SessionId session);
   void reap_cancelled_();
   bool execute_one_batch_();
@@ -680,6 +691,11 @@ std::future<std::optional<Session>> Runner::open_session_async() {
   return impl_->open_session_async();
 }
 
+std::future<PreparedInputAcceptance> Runner::accepts_async(
+    PreparedInputPtr input) {
+  return impl_->accepts_async(std::move(input));
+}
+
 // --- RunnerImpl ------------------------------------------------------------
 
 void RunnerImpl::shutdown() {
@@ -846,8 +862,9 @@ void RunnerImpl::process_pending_commands_() {
             [this](OpenCommand& open) { process_command_(std::move(open)); },
             [this](CloseCommand& close) { process_command_(std::move(close)); },
             [this](CloneCommand& clone) { process_command_(std::move(clone)); },
-            [this](StartCommand& start) {
-              process_command_(std::move(start));
+            [this](StartCommand& start) { process_command_(std::move(start)); },
+            [this](AcceptsCommand& accepts) {
+              process_command_(std::move(accepts));
             }},
         command);
   }
@@ -959,6 +976,31 @@ void RunnerImpl::process_command_(CloneCommand command) {
 
 void RunnerImpl::process_command_(StartCommand command) {
   start_generation_(std::move(command.request));
+}
+
+void RunnerImpl::process_command_(AcceptsCommand command) {
+  auto result = PreparedInputAcceptance::Unavailable;
+  if (is_running_()) {
+#if ET_HAS_EXCEPTIONS
+    try {
+#endif
+      result = command.input && executor_.accepts(*command.input)
+          ? PreparedInputAcceptance::Accepted
+          : PreparedInputAcceptance::Rejected;
+#if ET_HAS_EXCEPTIONS
+    } catch (...) {
+      result = PreparedInputAcceptance::Failed;
+    }
+#endif
+  }
+  // Backing destruction may reenter the runner; release outside its locks and
+  // before acknowledging, including for commands drained during shutdown.
+  command.input.reset();
+  std::lock_guard<std::mutex> lock(control_mutex_);
+  command.ack->set_value(
+      lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running
+          ? result
+          : PreparedInputAcceptance::Unavailable);
 }
 
 std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
@@ -1264,6 +1306,26 @@ std::future<std::optional<Session>> RunnerImpl::open_session_async() {
   }
   notify_engine_();
   return f;
+}
+
+std::future<PreparedInputAcceptance> RunnerImpl::accepts_async(
+    PreparedInputPtr input) {
+  AcceptsCommand command{
+      std::move(input),
+      std::make_shared<std::promise<PreparedInputAcceptance>>()};
+  auto future = command.ack->get_future();
+  {
+    std::unique_lock<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+      inbox_.emplace_back(std::move(command));
+      lock.unlock();
+      notify_engine_();
+      return future;
+    }
+  }
+  command.input.reset();
+  command.ack->set_value(PreparedInputAcceptance::Unavailable);
+  return future;
 }
 
 std::future<std::optional<Session>> RunnerImpl::clone_async(

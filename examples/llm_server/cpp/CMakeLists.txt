@@ -73,9 +73,7 @@ add_test(NAME worker_loop COMMAND test_worker_loop)
 # New transport is deliberately separate from the legacy worker loop.
 add_library(multiplexed_worker STATIC multiplexed_worker.cpp)
 target_include_directories(
-  multiplexed_worker
-  PUBLIC ${_common_include_directories}
-  PRIVATE ${_json_include}
+  multiplexed_worker PUBLIC ${_common_include_directories} ${_json_include}
 )
 target_link_libraries(
   multiplexed_worker PUBLIC extension_llm_serving Threads::Threads
