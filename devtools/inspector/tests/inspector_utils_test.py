@@ -30,6 +30,7 @@ from executorch.devtools.inspector._inspector_utils import (
     calculate_mse,
     calculate_snr,
     calculate_time_scale_factor,
+    compare_results,
     convert_to_float_tensor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
@@ -228,6 +229,22 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertLess(calculate_mse([a], [b])[0], 0.5)
         self.assertGreater(calculate_snr([a], [b])[0], 30.0)
         self.assertAlmostEqual(calculate_cosine_similarity([a], [b])[0], 1.0)
+
+    def test_compare_results_with_non_tensor_output(self):
+        # Non-tensor outputs (e.g. ints) have no metric value and must not
+        # break printing or plotting.
+        import matplotlib
+
+        matplotlib.use("Agg")
+        a = torch.rand(4, 4)
+        b = a.clone()
+        b[0, 0] += 1e-2
+        for plot in (False, True):
+            results = compare_results([a, 3], [b, 3], plot=plot)
+            for values in results.values():
+                self.assertEqual(len(values), 2)
+                self.assertIsNotNone(values[0])
+                self.assertIsNone(values[1])
 
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)

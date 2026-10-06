@@ -209,7 +209,9 @@ class VgfBackend(BackendDetails):
             bytes: Target-specific VGF binary stream.
 
         """
-        compile_flags = compile_spec.compiler_flags
+        compile_flags = list(compile_spec.compiler_flags)
+        if compile_spec.emit_debug_info and "--emit-debug-info" not in compile_flags:
+            compile_flags.append("--emit-debug-info")
         artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)
