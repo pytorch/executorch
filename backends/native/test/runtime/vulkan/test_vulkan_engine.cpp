@@ -7,6 +7,7 @@
 #include <executorch/backends/native/runtime/vulkan/VulkanEngine.h>
 
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -108,12 +109,14 @@ flatbuffers::Offset<fbs::Argument> create_none_arg(
 std::vector<uint8_t> finish_program(
     flatbuffers::FlatBufferBuilder& builder,
     flatbuffers::Offset<fbs::Graph> graph,
-    const std::vector<flatbuffers::Offset<fbs::OutputSpec>>& output_specs) {
+    const std::vector<flatbuffers::Offset<fbs::OutputSpec>>& output_specs,
+    const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>>& constants =
+        {}) {
   const auto method = fbs::CreateMethod(
       builder,
       builder.CreateString("forward"),
       graph,
-      /*constants=*/0,
+      constants.empty() ? 0 : builder.CreateVector(constants),
       builder.CreateVector(output_specs));
   const auto program = fbs::CreateProgram(
       builder,
@@ -741,6 +744,152 @@ std::vector<uint8_t> make_dynamic_view_mm_program() {
       builder, graph, {fbs::CreateOutputSpecDirect(builder, "product")});
 }
 
+// Values of the int4 [4, 8] weight in groups of 4 used by the program below.
+constexpr int64_t kQ4Out = 4;
+constexpr int64_t kQ4In = 8;
+constexpr int64_t kQ4GroupSize = 4;
+
+int8_t q4_weight(int64_t n, int64_t k) {
+  return static_cast<int8_t>((n * kQ4In + k * 3) % 16 - 8);
+}
+
+float q4_scale(int64_t n, int64_t group) {
+  return 0.5f + 0.25f * static_cast<float>(n) +
+      0.125f * static_cast<float>(group);
+}
+
+// out = linear(input, weight), where the weight is a symmetric int4 constant
+// read directly by aten.linear, with no dequantize node.
+std::vector<uint8_t> make_direct_q4_linear_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto input_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, kQ4In});
+  const auto output_meta =
+      create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, kQ4Out});
+  const auto affine = fbs::CreateAffineGroupDirect(
+      builder,
+      "weight_scales",
+      fbs::ScalarType::FLOAT,
+      /*quant_min=*/-8,
+      /*quant_max=*/7,
+      kQ4GroupSize);
+  const auto quant = fbs::CreateQuantSpec(
+      builder, fbs::QuantScheme::AffineGroup, affine.Union());
+  const std::vector<flatbuffers::Offset<fbs::Dim>> weight_sizes = {
+      fbs::CreateDim(builder, kQ4Out, kQ4Out),
+      fbs::CreateDim(builder, kQ4In, kQ4In)};
+  const auto weight_meta = fbs::CreateTensorMeta(
+      builder,
+      fbs::ScalarType::BYTE,
+      builder.CreateVector(weight_sizes),
+      /*dim_order=*/0,
+      quant);
+  const auto scales_meta = create_tensor_meta(
+      builder, fbs::ScalarType::FLOAT, {kQ4Out, kQ4In / kQ4GroupSize});
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", input_meta),
+      fbs::CreateTensorValueDirect(builder, "product", output_meta),
+  };
+
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> weight_outputs = {
+      fbs::CreateOutputDirect(builder, "weight")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> scales_outputs = {
+      fbs::CreateOutputDirect(builder, "weight_scales")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> product_outputs = {
+      fbs::CreateOutputDirect(builder, "product")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> linear_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "input", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "weight", create_tensor_arg(builder, "weight")),
+      fbs::CreateNamedArgumentDirect(builder, "bias", create_none_arg(builder)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "product"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "weight",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &weight_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "weight_scales",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &scales_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "linear",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.linear.default",
+          &linear_inputs,
+          &product_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"product"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder, "weight", "weight", weight_meta, fbs::InputKind::PARAMETER),
+      fbs::CreateNamedTensorRefDirect(
+          builder,
+          "weight_scales",
+          "weight_scales",
+          scales_meta,
+          fbs::InputKind::PARAMETER),
+  };
+  return finish_program(
+      builder,
+      graph,
+      {fbs::CreateOutputSpecDirect(builder, "product")},
+      constants);
+}
+
+// The stored constants of make_direct_q4_linear_program: the weight packed two
+// values per byte (even k low, odd k high, offset by 8) and fp32 scales.
+std::vector<uint8_t> make_direct_q4_linear_tensors() {
+  const std::string header =
+      R"({"weight":{"dtype":"U8","shape":[4,4],"data_offsets":[0,16]},)"
+      R"("weight_scales":{"dtype":"F32","shape":[4,2],"data_offsets":[16,48]}})";
+  std::vector<uint8_t> tensors = testing::make_safetensors(header, 48);
+  uint8_t* data = tensors.data() + sizeof(uint64_t) + header.size();
+  for (int64_t n = 0; n < kQ4Out; ++n) {
+    for (int64_t k = 0; k < kQ4In; k += 2) {
+      data[n * kQ4In / 2 + k / 2] = static_cast<uint8_t>(
+          ((q4_weight(n, k + 1) + 8) << 4) | (q4_weight(n, k) + 8));
+    }
+  }
+  for (int64_t n = 0; n < kQ4Out; ++n) {
+    for (int64_t g = 0; g < kQ4In / kQ4GroupSize; ++g) {
+      const float scale = q4_scale(n, g);
+      std::memcpy(
+          data + 16 + (n * (kQ4In / kQ4GroupSize) + g) * sizeof(float),
+          &scale,
+          sizeof(scale));
+    }
+  }
+  return tensors;
+}
+
 struct CompiledProgram {
   std::unique_ptr<VulkanEngineHost> host;
   std::shared_ptr<const Program> program;
@@ -751,14 +900,18 @@ struct CompiledProgram {
 
 CompiledProgram compile_program(
     const std::vector<uint8_t>& program_bytes,
+    std::vector<uint8_t> tensors = {},
     const std::string& method_name = "forward") {
+  std::vector<testing::StoredMember> members = {{kProgramEntry, program_bytes}};
+  if (!tensors.empty()) {
+    members.push_back({kSafeTensorsEntry, std::move(tensors)});
+  }
   CompiledProgram result;
   result.host = VulkanEngineHost::create();
   result.program = std::make_shared<const Program>(
       Program::load(program_bytes.data(), program_bytes.size()));
-  result.package =
-      std::make_shared<const Package>(Package::load(OwnedBytes::from_vector(
-          testing::make_zip({{kProgramEntry, program_bytes}}))));
+  result.package = std::make_shared<const Package>(
+      Package::load(OwnedBytes::from_vector(testing::make_zip(members))));
   result.context =
       result.host->create_vulkan_context(result.program, result.package);
   result.executable = result.context->compile(method_name);
@@ -979,6 +1132,7 @@ TEST(VulkanEngineTest, RejectsAliasWithDifferentDtypeFromSource) {
 TEST(VulkanEngineTest, RejectsMutableStateHeldByAnotherLiveExecutable) {
   CompiledProgram compiled = compile_program(
       make_state_program({{"prefill", "cache"}, {"decode", "cache"}}),
+      {},
       "prefill");
   EXPECT_THROW(compiled.context->compile("decode"), std::runtime_error);
   EXPECT_THROW(compiled.context->compile("prefill"), std::runtime_error);
@@ -990,6 +1144,7 @@ TEST(VulkanEngineTest, RejectsMutableStateHeldByAnotherLiveExecutable) {
 TEST(VulkanEngineTest, CompilesMethodsWithPrivateMutableState) {
   CompiledProgram compiled = compile_program(
       make_state_program({{"prefill", "prefill_cache"}, {"decode", "cache"}}),
+      {},
       "prefill");
   const std::unique_ptr<EngineExecutable> decode =
       compiled.context->compile("decode");
@@ -1089,6 +1244,29 @@ TEST(VulkanEngineTest, ResizesWidthPackedViewOfWidthPackedInput) {
   compiled.executable->get_output(
       0, output.data(), output.size(), ScalarType::Float);
   EXPECT_EQ(output, (std::vector<float>{12.0f, 34.0f}));
+}
+TEST(VulkanEngineTest, ExecutesLinearOnDirectlyQuantizedWeight) {
+  CompiledProgram compiled = compile_program(
+      make_direct_q4_linear_program(), make_direct_q4_linear_tensors());
+  std::vector<float> input(kQ4In);
+  for (int64_t k = 0; k < kQ4In; ++k) {
+    input[k] = 0.5f * static_cast<float>(k) - 1.5f;
+  }
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(kQ4Out);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  for (int64_t n = 0; n < kQ4Out; ++n) {
+    float expected = 0.0f;
+    for (int64_t k = 0; k < kQ4In; ++k) {
+      expected += input[k] * static_cast<float>(q4_weight(n, k)) *
+          q4_scale(n, k / kQ4GroupSize);
+    }
+    EXPECT_NEAR(output[n], expected, 1e-3f) << "channel " << n;
+  }
 }
 // cppcheck-suppress-end syntaxError
 
