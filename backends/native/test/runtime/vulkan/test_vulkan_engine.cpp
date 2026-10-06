@@ -1129,6 +1129,504 @@ std::vector<uint8_t> make_direct_q4_linear_tensors() {
   return tensors;
 }
 
+// A transposed [1, 2, 2, 2] -> [1, 8, 3, 3] convolution with a 2x2 kernel and
+// no bias, so the engine sizes the bias from the transposed weight layout
+// [in_channels, out_channels / groups, kh, kw].
+constexpr int64_t kConvIn = 2;
+constexpr int64_t kConvOut = 8;
+constexpr int64_t kConvKernel = 2;
+constexpr int64_t kConvInSize = 2;
+constexpr int64_t kConvOutSize = kConvInSize + kConvKernel - 1;
+
+float conv_weight(int64_t ci, int64_t co, int64_t ky, int64_t kx) {
+  return 0.25f * static_cast<float>((ci * 5 + co * 3 + ky * 2 + kx) % 7) -
+      0.75f;
+}
+
+std::vector<uint8_t> make_transposed_conv_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(
+          builder,
+          "input",
+          create_tensor_meta(
+              builder,
+              fbs::ScalarType::FLOAT,
+              {1, kConvIn, kConvInSize, kConvInSize})),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "conv",
+          create_tensor_meta(
+              builder,
+              fbs::ScalarType::FLOAT,
+              {1, kConvOut, kConvOutSize, kConvOutSize})),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> weight_outputs = {
+      fbs::CreateOutputDirect(builder, "weight")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> conv_outputs = {
+      fbs::CreateOutputDirect(builder, "conv")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> conv_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "input", create_tensor_arg(builder, "input")),
+      fbs::CreateNamedArgumentDirect(
+          builder, "weight", create_tensor_arg(builder, "weight")),
+      fbs::CreateNamedArgumentDirect(builder, "bias", create_none_arg(builder)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "stride", create_int_list_arg(builder, {1, 1})),
+      fbs::CreateNamedArgumentDirect(
+          builder, "padding", create_int_list_arg(builder, {0, 0})),
+      fbs::CreateNamedArgumentDirect(
+          builder, "dilation", create_int_list_arg(builder, {1, 1})),
+      fbs::CreateNamedArgumentDirect(
+          builder, "transposed", create_bool_arg(builder, true)),
+      fbs::CreateNamedArgumentDirect(
+          builder, "output_padding", create_int_list_arg(builder, {0, 0})),
+      fbs::CreateNamedArgumentDirect(
+          builder, "groups", create_int_arg(builder, 1)),
+  };
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "conv"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "weight",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &weight_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "conv",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.convolution.default",
+          &conv_inputs,
+          &conv_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"conv"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder,
+          "weight",
+          "weight",
+          create_tensor_meta(
+              builder,
+              fbs::ScalarType::FLOAT,
+              {kConvIn, kConvOut, kConvKernel, kConvKernel}),
+          fbs::InputKind::PARAMETER),
+  };
+  return finish_program(
+      builder,
+      graph,
+      {fbs::CreateOutputSpecDirect(builder, "conv")},
+      constants);
+}
+
+std::vector<uint8_t> make_transposed_conv_tensors() {
+  constexpr int64_t kNumel = kConvIn * kConvOut * kConvKernel * kConvKernel;
+  const std::string header =
+      R"({"weight":{"dtype":"F32","shape":[2,8,2,2],"data_offsets":[0,256]}})";
+  std::vector<uint8_t> tensors =
+      testing::make_safetensors(header, kNumel * sizeof(float));
+  uint8_t* data = tensors.data() + sizeof(uint64_t) + header.size();
+  size_t offset = 0;
+  for (int64_t ci = 0; ci < kConvIn; ++ci) {
+    for (int64_t co = 0; co < kConvOut; ++co) {
+      for (int64_t ky = 0; ky < kConvKernel; ++ky) {
+        for (int64_t kx = 0; kx < kConvKernel; ++kx) {
+          const float weight = conv_weight(ci, co, ky, kx);
+          std::memcpy(data + offset, &weight, sizeof(weight));
+          offset += sizeof(weight);
+        }
+      }
+    }
+  }
+  return tensors;
+}
+
+// relu over a [1, 4] uint8 user input quantized per group, with its scale
+// bound as a stored constant.
+std::vector<uint8_t> make_quantized_input_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto affine = fbs::CreateAffineGroupDirect(
+      builder,
+      "input_scales",
+      fbs::ScalarType::FLOAT,
+      /*quant_min=*/0,
+      /*quant_max=*/255,
+      /*group_size=*/4);
+  const auto quant = fbs::CreateQuantSpec(
+      builder, fbs::QuantScheme::AffineGroup, affine.Union());
+  const std::vector<flatbuffers::Offset<fbs::Dim>> input_sizes = {
+      fbs::CreateDim(builder, 1, 1), fbs::CreateDim(builder, 4, 4)};
+  const auto input_meta = fbs::CreateTensorMeta(
+      builder,
+      fbs::ScalarType::BYTE,
+      builder.CreateVector(input_sizes),
+      /*dim_order=*/0,
+      quant);
+  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+      fbs::CreateTensorValueDirect(builder, "input", input_meta),
+      fbs::CreateTensorValueDirect(
+          builder,
+          "relu",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 4})),
+  };
+  const std::vector<flatbuffers::Offset<fbs::Output>> input_outputs = {
+      fbs::CreateOutputDirect(builder, "input")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> scales_outputs = {
+      fbs::CreateOutputDirect(builder, "input_scales")};
+  const std::vector<flatbuffers::Offset<fbs::Output>> relu_outputs = {
+      fbs::CreateOutputDirect(builder, "relu")};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> relu_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "self", create_tensor_arg(builder, "input"))};
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      fbs::CreateNamedArgumentDirect(
+          builder, "", create_tensor_arg(builder, "relu"))};
+  const std::vector<flatbuffers::Offset<fbs::Node>> nodes = {
+      fbs::CreateNodeDirect(
+          builder,
+          "input",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &input_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "input_scales",
+          fbs::OpKind::PLACEHOLDER,
+          "",
+          nullptr,
+          &scales_outputs),
+      fbs::CreateNodeDirect(
+          builder,
+          "relu",
+          fbs::OpKind::CALL_FUNCTION,
+          "torch.ops.aten.relu.default",
+          &relu_inputs,
+          &relu_outputs),
+      fbs::CreateNodeDirect(
+          builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs),
+  };
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"input"}),
+      create_strings(builder, {"relu"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder,
+          "input_scales",
+          "input_scales",
+          create_tensor_meta(builder, fbs::ScalarType::FLOAT, {1, 1}),
+          fbs::InputKind::CONSTANT_TENSOR),
+  };
+  return finish_program(
+      builder,
+      graph,
+      {fbs::CreateOutputSpecDirect(builder, "relu")},
+      constants);
+}
+
+std::vector<uint8_t> make_quantized_input_tensors() {
+  const std::string header =
+      R"({"input_scales":{"dtype":"F32","shape":[1,1],"data_offsets":[0,4]}})";
+  std::vector<uint8_t> tensors = testing::make_safetensors(header, 4);
+  const float scale = 0.5f;
+  std::memcpy(
+      tensors.data() + sizeof(uint64_t) + header.size(), &scale, sizeof(scale));
+  return tensors;
+}
+
+constexpr int64_t kHfTokens = 4;
+constexpr int64_t kHfHeads = 4;
+constexpr int64_t kHfKvHeads = 2;
+constexpr int64_t kHfDim = 16;
+constexpr int64_t kHfCache = 32;
+
+// One HF static-cache attention block as torch.export emits it: rope on q and
+// k, index_put_ into zero-initialized KV caches at cache_position, and SDPA
+// under the causal mask le(arange(0, cache) + kv_offset, cache_position).
+// kv_offset is a stored buffer, as in HF's StaticCache.
+std::vector<uint8_t> make_hf_attention_program() {
+  flatbuffers::FlatBufferBuilder builder;
+  using fbs::ScalarType;
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values;
+  std::vector<flatbuffers::Offset<fbs::Node>> nodes;
+  const auto tensor = [&](const char* name,
+                          ScalarType dtype,
+                          const std::vector<int64_t>& shape) {
+    tensor_values.push_back(fbs::CreateTensorValueDirect(
+        builder, name, create_tensor_meta(builder, dtype, shape)));
+  };
+  const auto placeholder = [&](const char* name) {
+    const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+        fbs::CreateOutputDirect(builder, name)};
+    nodes.push_back(fbs::CreateNodeDirect(
+        builder, name, fbs::OpKind::PLACEHOLDER, "", nullptr, &outputs));
+  };
+  const auto call =
+      [&](const char* name,
+          const char* target,
+          const std::vector<flatbuffers::Offset<fbs::NamedArgument>>& inputs,
+          const char* alias_of = nullptr) {
+        const std::vector<flatbuffers::Offset<fbs::Output>> outputs = {
+            fbs::CreateOutputDirect(builder, name, alias_of)};
+        nodes.push_back(fbs::CreateNodeDirect(
+            builder,
+            name,
+            fbs::OpKind::CALL_FUNCTION,
+            target,
+            &inputs,
+            &outputs));
+      };
+  const auto arg = [&](const char* name,
+                       flatbuffers::Offset<fbs::Argument> value,
+                       bool mutated = false) {
+    return fbs::CreateNamedArgumentDirect(builder, name, value, mutated);
+  };
+  const auto float_arg = [&](double value) {
+    return fbs::CreateArgument(
+        builder,
+        fbs::ArgumentValue::FloatArg,
+        fbs::CreateFloatArg(builder, value).Union());
+  };
+  const auto cache_indices = [&]() {
+    const std::vector<uint8_t> has_value = {0, 0, 1};
+    return fbs::CreateArgument(
+        builder,
+        fbs::ArgumentValue::OptionalTensorListArg,
+        fbs::CreateOptionalTensorListArg(
+            builder,
+            create_strings(builder, {"", "", "cache_position"}),
+            builder.CreateVector(has_value))
+            .Union());
+  };
+
+  const std::vector<int64_t> q_shape = {1, kHfTokens, kHfHeads, kHfDim};
+  const std::vector<int64_t> kv_shape = {1, kHfTokens, kHfKvHeads, kHfDim};
+  const std::vector<int64_t> q_heads = {1, kHfHeads, kHfTokens, kHfDim};
+  const std::vector<int64_t> kv_heads = {1, kHfKvHeads, kHfTokens, kHfDim};
+  const std::vector<int64_t> cache_shape = {1, kHfKvHeads, kHfCache, kHfDim};
+  const std::vector<int64_t> mask_shape = {1, 1, kHfTokens, kHfCache};
+  tensor("q", ScalarType::FLOAT, q_shape);
+  tensor("k", ScalarType::FLOAT, kv_shape);
+  tensor("v", ScalarType::FLOAT, kv_shape);
+  tensor("cache_position", ScalarType::LONG, {kHfTokens});
+  tensor("inv_freq", ScalarType::FLOAT, {kHfDim / 2});
+  tensor("key_cache", ScalarType::FLOAT, cache_shape);
+  tensor("value_cache", ScalarType::FLOAT, cache_shape);
+  tensor("kv_offset", ScalarType::LONG, {1});
+  tensor("position_ids", ScalarType::LONG, {1, kHfTokens});
+  tensor("q_perm", ScalarType::FLOAT, q_heads);
+  tensor("q_rope", ScalarType::FLOAT, q_heads);
+  tensor("k_perm", ScalarType::FLOAT, kv_heads);
+  tensor("k_rope", ScalarType::FLOAT, kv_heads);
+  tensor("v_perm", ScalarType::FLOAT, kv_heads);
+  tensor("k_all", ScalarType::FLOAT, cache_shape);
+  tensor("v_all", ScalarType::FLOAT, cache_shape);
+  tensor("kv_arange", ScalarType::LONG, {kHfCache});
+  tensor("kv_index", ScalarType::LONG, {kHfCache});
+  tensor("query_index", ScalarType::LONG, {kHfTokens, 1});
+  tensor("le", ScalarType::BOOL, {kHfTokens, kHfCache});
+  tensor("mask_0", ScalarType::BOOL, {1, kHfTokens, kHfCache});
+  tensor("mask_1", ScalarType::BOOL, mask_shape);
+  tensor("mask_2", ScalarType::BOOL, mask_shape);
+  tensor("mask", ScalarType::BOOL, mask_shape);
+  tensor("attention", ScalarType::FLOAT, q_heads);
+  tensor("out", ScalarType::FLOAT, q_shape);
+
+  for (const char* name :
+       {"q",
+        "k",
+        "v",
+        "cache_position",
+        "inv_freq",
+        "key_cache",
+        "value_cache",
+        "kv_offset"}) {
+    placeholder(name);
+  }
+  call(
+      "position_ids",
+      "torch.ops.aten.unsqueeze_copy.default",
+      {arg("self", create_tensor_arg(builder, "cache_position")),
+       arg("dim", create_int_arg(builder, 0))});
+  const auto permute = [&](const char* name, const char* input) {
+    call(
+        name,
+        "torch.ops.aten.permute_copy.default",
+        {arg("self", create_tensor_arg(builder, input)),
+         arg("dims", create_int_list_arg(builder, {0, 2, 1, 3}))});
+  };
+  const auto rope = [&](const char* name, const char* input) {
+    call(
+        name,
+        "torch.ops.native.rope.default",
+        {arg("input", create_tensor_arg(builder, input)),
+         arg("position_ids", create_tensor_arg(builder, "position_ids")),
+         arg("inv_freq", create_tensor_arg(builder, "inv_freq")),
+         arg("interleaved", create_bool_arg(builder, false)),
+         arg("attention_scale", float_arg(1.0))});
+  };
+  const auto cache_write =
+      [&](const char* name, const char* cache, const char* values) {
+        call(
+            name,
+            "torch.ops.aten.index_put_.default",
+            {arg("self", create_tensor_arg(builder, cache), true),
+             arg("indices", cache_indices()),
+             arg("values", create_tensor_arg(builder, values)),
+             arg("accumulate", create_bool_arg(builder, false))},
+            cache);
+      };
+  permute("q_perm", "q");
+  rope("q_rope", "q_perm");
+  permute("k_perm", "k");
+  rope("k_rope", "k_perm");
+  permute("v_perm", "v");
+  cache_write("k_all", "key_cache", "k_rope");
+  cache_write("v_all", "value_cache", "v_perm");
+  call(
+      "kv_arange",
+      "torch.ops.aten.arange.start_step",
+      {arg("start", create_int_arg(builder, 0)),
+       arg("end", create_int_arg(builder, kHfCache))});
+  call(
+      "kv_index",
+      "torch.ops.aten.add.Tensor",
+      {arg("self", create_tensor_arg(builder, "kv_arange")),
+       arg("other", create_tensor_arg(builder, "kv_offset"))});
+  call(
+      "query_index",
+      "torch.ops.aten.view_copy.default",
+      {arg("self", create_tensor_arg(builder, "cache_position")),
+       arg("size", create_int_list_arg(builder, {-1, 1}))});
+  call(
+      "le",
+      "torch.ops.aten.le.Tensor",
+      {arg("self", create_tensor_arg(builder, "kv_index")),
+       arg("other", create_tensor_arg(builder, "query_index"))});
+  call(
+      "mask_0",
+      "torch.ops.aten.unsqueeze_copy.default",
+      {arg("self", create_tensor_arg(builder, "le")),
+       arg("dim", create_int_arg(builder, 0))});
+  call(
+      "mask_1",
+      "torch.ops.aten.unsqueeze_copy.default",
+      {arg("self", create_tensor_arg(builder, "mask_0")),
+       arg("dim", create_int_arg(builder, 1))});
+  call(
+      "mask_2",
+      "torch.ops.aten.expand_copy.default",
+      {arg("self", create_tensor_arg(builder, "mask_1")),
+       arg("size", create_int_list_arg(builder, {1, -1, -1, -1}))});
+  call(
+      "mask",
+      "torch.ops.aten.alias_copy.default",
+      {arg("self", create_tensor_arg(builder, "mask_2"))});
+  call(
+      "attention",
+      "torch.ops.aten.scaled_dot_product_attention.default",
+      {arg("query", create_tensor_arg(builder, "q_rope")),
+       arg("key", create_tensor_arg(builder, "k_all")),
+       arg("value", create_tensor_arg(builder, "v_all")),
+       arg("attn_mask", create_tensor_arg(builder, "mask")),
+       arg("dropout_p", float_arg(0.0)),
+       arg("is_causal", create_bool_arg(builder, false)),
+       arg("scale", create_none_arg(builder)),
+       arg("enable_gqa", create_bool_arg(builder, true))});
+  permute("out", "attention");
+  const std::vector<flatbuffers::Offset<fbs::NamedArgument>> output_inputs = {
+      arg("", create_tensor_arg(builder, "k_all")),
+      arg("", create_tensor_arg(builder, "v_all")),
+      arg("", create_tensor_arg(builder, "out"))};
+  nodes.push_back(fbs::CreateNodeDirect(
+      builder, "output", fbs::OpKind::OUTPUT, "", &output_inputs));
+
+  const auto graph = fbs::CreateGraph(
+      builder,
+      builder.CreateVector(nodes),
+      create_strings(builder, {"q", "k", "v", "cache_position"}),
+      create_strings(builder, {"k_all", "v_all", "out"}),
+      builder.CreateVector(tensor_values));
+  const std::vector<flatbuffers::Offset<fbs::NamedTensorRef>> constants = {
+      fbs::CreateNamedTensorRefDirect(
+          builder,
+          "inv_freq",
+          "inv_freq",
+          create_tensor_meta(builder, ScalarType::FLOAT, {kHfDim / 2}),
+          fbs::InputKind::CONSTANT_TENSOR),
+      fbs::CreateNamedTensorRefDirect(
+          builder,
+          "kv_offset",
+          "kv_offset",
+          create_tensor_meta(builder, ScalarType::LONG, {1}),
+          fbs::InputKind::BUFFER),
+  };
+  const std::vector<flatbuffers::Offset<fbs::OutputSpec>> output_specs = {
+      fbs::CreateOutputSpecDirect(
+          builder, "k_all", fbs::OutputKind::BUFFER_MUTATION, "key_cache"),
+      fbs::CreateOutputSpecDirect(
+          builder, "v_all", fbs::OutputKind::BUFFER_MUTATION, "value_cache"),
+      fbs::CreateOutputSpecDirect(builder, "out"),
+  };
+  const std::vector<flatbuffers::Offset<fbs::MutableBufferSpec>>
+      mutable_buffers = {
+          fbs::CreateMutableBufferSpecDirect(builder, "key_cache", "key_cache"),
+          fbs::CreateMutableBufferSpecDirect(
+              builder, "value_cache", "value_cache")};
+  const auto method = fbs::CreateMethod(
+      builder,
+      builder.CreateString("forward"),
+      graph,
+      builder.CreateVector(constants),
+      builder.CreateVector(output_specs),
+      builder.CreateVector(mutable_buffers));
+  const auto program = fbs::CreateProgram(
+      builder,
+      builder.CreateString("1.0"),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<fbs::Method>>{method}));
+  fbs::FinishProgramBuffer(builder, program);
+  return {
+      builder.GetBufferPointer(),
+      builder.GetBufferPointer() + builder.GetSize()};
+}
+
+std::vector<uint8_t> make_hf_attention_tensors(int64_t kv_offset) {
+  const std::string header =
+      R"({"inv_freq":{"dtype":"F32","shape":[8],"data_offsets":[0,32]},)"
+      R"("kv_offset":{"dtype":"I64","shape":[1],"data_offsets":[32,40]}})";
+  std::vector<uint8_t> tensors = testing::make_safetensors(header, 40);
+  uint8_t* data = tensors.data() + sizeof(uint64_t) + header.size();
+  for (int64_t i = 0; i < kHfDim / 2; ++i) {
+    const float inv_freq = std::pow(10000.0f, -2.0f * i / kHfDim);
+    std::memcpy(data + i * sizeof(float), &inv_freq, sizeof(inv_freq));
+  }
+  std::memcpy(data + 32, &kv_offset, sizeof(kv_offset));
+  return tensors;
+}
+
 struct CompiledProgram {
   std::unique_ptr<VulkanEngineHost> host;
   std::shared_ptr<const Program> program;
@@ -1606,6 +2104,102 @@ TEST(VulkanEngineTest, ExecutesLinearOnDirectlyQuantizedWeight) {
     }
     EXPECT_NEAR(output[n], expected, 1e-3f) << "channel " << n;
   }
+}
+
+TEST(VulkanEngineTest, ExecutesTransposedConvolutionWithoutBias) {
+  CompiledProgram compiled = compile_program(
+      make_transposed_conv_program(), make_transposed_conv_tensors());
+  std::vector<float> input(kConvIn * kConvInSize * kConvInSize);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = 0.5f * static_cast<float>(i) - 1.0f;
+  }
+  compiled.executable->set_input(
+      0, input.data(), input.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(kConvOut * kConvOutSize * kConvOutSize);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  for (int64_t co = 0; co < kConvOut; ++co) {
+    for (int64_t y = 0; y < kConvOutSize; ++y) {
+      for (int64_t x = 0; x < kConvOutSize; ++x) {
+        float expected = 0.0f;
+        for (int64_t ci = 0; ci < kConvIn; ++ci) {
+          for (int64_t ky = 0; ky < kConvKernel; ++ky) {
+            for (int64_t kx = 0; kx < kConvKernel; ++kx) {
+              const int64_t iy = y - ky;
+              const int64_t ix = x - kx;
+              if (iy >= 0 && iy < kConvInSize && ix >= 0 && ix < kConvInSize) {
+                expected += input[(ci * kConvInSize + iy) * kConvInSize + ix] *
+                    conv_weight(ci, co, ky, kx);
+              }
+            }
+          }
+        }
+        EXPECT_NEAR(
+            output[(co * kConvOutSize + y) * kConvOutSize + x], expected, 1e-4f)
+            << "channel " << co << " at (" << y << ", " << x << ")";
+      }
+    }
+  }
+}
+
+TEST(VulkanEngineTest, RejectsQuantizedGraphInput) {
+  try {
+    compile_program(
+        make_quantized_input_program(), make_quantized_input_tensors());
+    FAIL() << "expected the quantized graph input to be rejected";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(
+        std::string(e.what()).find(
+            "quantized graph inputs and outputs are not supported"),
+        std::string::npos)
+        << e.what();
+  }
+}
+
+TEST(VulkanEngineTest, RejectsHFAttentionWithNonzeroKvOffset) {
+  try {
+    compile_program(make_hf_attention_program(), make_hf_attention_tensors(1));
+    FAIL() << "expected the nonzero kv_offset to be rejected";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(
+        std::string(e.what()).find("constant 'kv_offset' must all be zero"),
+        std::string::npos)
+        << e.what();
+  }
+}
+
+TEST(VulkanEngineTest, CountsHFAttentionCacheRowsOnlyAfterExecute) {
+  CompiledProgram compiled = compile_program(
+      make_hf_attention_program(), make_hf_attention_tensors(0));
+  const std::vector<int64_t> prefill = {0, 1, 2, 3};
+  const std::vector<int64_t> next = {4, 5, 6, 7};
+  std::vector<float> q(kHfTokens * kHfHeads * kHfDim);
+  std::vector<float> kv(kHfTokens * kHfKvHeads * kHfDim);
+  for (size_t i = 0; i < q.size(); ++i) {
+    q[i] = sdpa_input_value(i, 5);
+  }
+  for (size_t i = 0; i < kv.size(); ++i) {
+    kv[i] = sdpa_input_value(i, 7);
+  }
+
+  // Setting a position input without executing writes no cache rows.
+  compiled.executable->set_input(
+      3, prefill.data(), prefill.size(), ScalarType::Long);
+  EXPECT_THROW(
+      compiled.executable->set_input(
+          3, next.data(), next.size(), ScalarType::Long),
+      std::runtime_error);
+
+  compiled.executable->set_input(
+      3, prefill.data(), prefill.size(), ScalarType::Long);
+  compiled.executable->set_input(0, q.data(), q.size(), ScalarType::Float);
+  compiled.executable->set_input(1, kv.data(), kv.size(), ScalarType::Float);
+  compiled.executable->set_input(2, kv.data(), kv.size(), ScalarType::Float);
+  compiled.executable->execute();
+  EXPECT_NO_THROW(compiled.executable->set_input(
+      3, next.data(), next.size(), ScalarType::Long));
 }
 // cppcheck-suppress-end syntaxError
 
