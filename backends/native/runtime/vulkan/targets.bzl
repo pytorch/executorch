@@ -17,11 +17,13 @@ def define_common_targets():
     runtime.cxx_library(
         name = "vulkan_passes",
         srcs = [
+            "passes/FuseQuantizedLinear.cpp",
             "passes/InsertPrepack.cpp",
             "passes/LowerRMSNorm.cpp",
             "passes/MaterializeViewCopies.cpp",
         ],
         exported_headers = [
+            "passes/FuseQuantizedLinear.h",
             "passes/InsertPrepack.h",
             "passes/LowerRMSNorm.h",
             "passes/MaterializeViewCopies.h",
