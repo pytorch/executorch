@@ -32,20 +32,17 @@ setup and run to relocate environments and results.
 
 Configuration details:
 
-- Set `python` to an environment with
-  [`python/requirements.txt`](../../python/requirements.txt) and any dependencies
-  required by your server module. Setup installs only the generic server dependencies.
-- Paths support `~`, but not shell-variable expansion. Prefix relative
-  `hf_tokenizer` directories with `./` to distinguish them from Hub IDs.
-- Match the server module, tool parser, artifact mode, context limit, and sampling
-  settings to your model and worker.
-- The server binds to `0.0.0.0:8000` for container access; the API is unauthenticated.
-  `agent_host` defaults to `host.lima.internal` for Colima and
-  `host.docker.internal` otherwise. Override the address/port for your network.
-
-For cross-turn KV reuse, configure named-session capacity in your worker and set
-`session_affinity`. The harness sends it as `x-session-affinity`; sequential trials
-share this ID. Verify `reused_prompt_tokens` in `server.log`.
+- `[server]` selects the Python interpreter, server module, and its CLI options.
+  The interpreter needs [`python/requirements.txt`](../../python/requirements.txt)
+  plus any module-specific dependencies.
+- `[terminal_bench]` controls tasks, attempts, step limit, output token limit, and
+  temperature. Prompt plus output must fit `[server].max_context`.
+- Paths support `~`, but not shell variables. Prefix relative `hf_tokenizer`
+  directories with `./` to distinguish them from Hub IDs.
+- The server defaults to `0.0.0.0:8000` with no authentication. `agent_host`
+  defaults to `host.lima.internal` for Colima and `host.docker.internal` otherwise.
+- Optional `session_affinity` sends an `x-session-affinity` header for KV reuse.
+  It requires worker support for named sessions; sequential trials share the ID.
 
 `--dry-run` writes resolved commands to `run.json`. Use `--task NAME` to override
 the task list and `--output DIR` to select a new results directory. Each run owns

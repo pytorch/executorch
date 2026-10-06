@@ -90,10 +90,13 @@ def commands(config, output):
     server, options = config["server"], config["terminal_bench"]
     serve = [server["python"], "-m", server["module"]]
     for key, value in server.items():
-        if key in {"python", "module"} or value is False:
+        if key in {"python", "module"}:
             continue
         flag = "--" + key.replace("_", "-")
-        if value is True:
+        if value is False:
+            if key in {"warm_resume", "dflash_draft_argmax", "cuda_graph"}:
+                serve.append("--no-" + key.replace("_", "-"))
+        elif value is True:
             serve.append(flag)
         else:
             serve.extend(
