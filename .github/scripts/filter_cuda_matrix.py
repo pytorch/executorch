@@ -67,7 +67,8 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 #
 # cu130 is not published. PyTorch keeps it on its nightly builds only as a temporary hold for
 # other projects, and its release-candidate builds do not carry it, so a release would have
-# no cu130 train even while nightlies do.
+# no cu130 train even while nightlies do. See the PyTorch 2.15 support-matrix RFC:
+# https://github.com/pytorch/pytorch/issues/190385
 #
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
