@@ -115,8 +115,8 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         quantizer_adapter: Injectable adapter for single-graph quantization
             operations. Defaults to ``DefaultQuantizerAdapter`` if not provided.
         calibration_data_adapter: Injectable purpose adapter that assembles
-            calibration data. Defaults to ``DefaultCalibrationDataAdapter`` (random
-            fallback) when not provided.
+            calibration data. Defaults to ``DefaultCalibrationDataAdapter`` when
+            not provided.
         training_data_adapter: Injectable adapter for QAT training data. Retained
             for the QAT flow; the current native PTQ implementation does not
             consume it.
@@ -222,6 +222,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                 example_inputs=self._flatten_calibration_example_inputs(
                     input_config.example_inputs
                 ),
+                extra_options=dict(extra),
             )
 
             # Step 5: Quantize graphs that consume calibration data.
@@ -318,8 +319,8 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                     )
                 else:
                     logger.info(
-                        "Quant recipe not set yet; created QNN quantizer for "
-                        "'%s' graph '%s' with quant dtype %s",
+                        "Created dtype-driven QNN quantizer for '%s' graph '%s' "
+                        "with quant dtype %s",
                         component,
                         graph_name,
                         make_quantizer_kwargs.get("quant_dtype"),
@@ -462,6 +463,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
             for graph_name, graph_module in prepared_graphs.items():
                 if not self._is_deploy_graph(component, graph_name):
                     quantization_graphs[component] = graph_module
+                    break
         self._adapter.calibrate(
             quantization_graphs,
             calibration_data,
@@ -469,7 +471,7 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         )
 
     def _convert_pt2e(self, prepared_modules: dict) -> dict:
-        """Convert prepared PT2E modules to QDQ modules and release inputs.
+        """Convert prepared PT2E modules to QDQ modules and release the prepared map.
 
         Args:
             prepared_modules: Component- and graph-keyed prepared PT2E modules.
@@ -477,17 +479,18 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         Returns:
             Component- and graph-keyed converted QDQ modules.
         """
-        converted_modules = {}
-        for component, prepared_graphs in prepared_modules.items():
-            converted_modules[component] = {
+        converted_modules = {
+            component: {
                 graph_name: self._adapter.convert_pt2e(graph_module)
                 for graph_name, graph_module in prepared_graphs.items()
             }
+            for component, prepared_graphs in prepared_modules.items()
+        }
         prepared_modules.clear()
         gc.collect()
         return converted_modules
 
-    def _override_encodings(
+    def _override_encodings(  # noqa: C901
         self,
         converted_modules: dict,
         input_config: QuantizationInputConfig,
@@ -579,16 +582,18 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
                     prefill_meta = input_config.meta.get(ARTIFACT_TEXT_DECODER, {}).get(
                         GRAPH_PREFILL_FORWARD, {}
                     )
-                    encoding_override(
-                        quantized_model=quantized_decoder,
-                        unquantized_model=prefill,
-                        n_cache_layers=n_cache_layers,
-                    )
+                    if prefill_meta.get("get_use_kv_cache", False):
+                        encoding_override(
+                            quantized_model=quantized_decoder,
+                            unquantized_model=prefill,
+                            n_cache_layers=n_cache_layers,
+                        )
                     save_logits_quant_attrs(prefill, prefill_meta)
                     save_output_kv_cache_quant_attrs(prefill, prefill_meta)
             finally:
                 # The quantization graph only sources encodings; never deployed.
                 decoder_graphs.pop(GRAPH_FORWARD, None)
+                del quantized_decoder
                 gc.collect()
 
         # Override token embedding quant encodings
@@ -615,7 +620,6 @@ class ExecuTorchQuantizationStrategy(QuantizationStrategy):
         finally:
             # The quantization graph only sources encodings; never deployed.
             tok_embedding_graphs.pop(GRAPH_FORWARD, None)
-            gc.collect()
 
     def _validate_input(self, input_config: QuantizationInputConfig) -> None:
         """Validate required fields in the input configuration.

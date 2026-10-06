@@ -254,7 +254,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         }
         proxy = EngineProxy(
             {STAGE_MODEL_PREPARATION: EngineType.EXECUTORCH},
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline(
             model_preparation_stage=ModelPreparationStage(mock_model_prep),
@@ -280,7 +280,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         }
         proxy = EngineProxy(
             {STAGE_QUANTIZATION: EngineType.EXECUTORCH},
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline(
             model_preparation_stage=None,

@@ -51,9 +51,6 @@ class QuantizationInputConfig:
             shapes.
         tokenizer: The TokenizerWrapper from model preparation, used by the
             strategy to build calibration data.
-        training_data: Training dataset for quantization-aware training (QAT),
-            typically (features, labels) pairs. Mirrors ``qat_training_data`` in
-            ``build_executorch_binary``. ``None`` selects PTQ.
         quant_recipe: Quantization recipe, or a per-component map of them.
         meta: Per-graph constant metadata from model preparation.
         inference: Optional model-specific inference instance or callable used

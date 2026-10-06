@@ -336,29 +336,13 @@ class LLMLoaderAdapter(DefaultModelLoaderAdapter):
         output_dir: Path,
         extra_options: Optional[Dict[str, Any]] = None,
     ) -> Path:
-        """Export tokenizer to disk and return the runtime tokenizer file.
+        """Return the runtime tokenizer path selected by ``TokenizerWrapper``.
 
-        ``TokenizerWrapper`` has already written the artifacts. Prefer the
-        runtime formats recognized by ``pytorch_tokenizers.get_tokenizer`` over
-        the wrapper's order-dependent fallback.
-
-        Args:
-            tokenizer: The tokenizer instance to export.
-            output_dir: Directory to write the exported tokenizer artifacts to.
-            extra_options: Additional export options.
-
-        Returns:
-            Path to the runtime tokenizer file (e.g. ``tokenizer.json``).
-
-        Raises:
-            FileNotFoundError: If no tokenizer artifacts were written.
+        ``TokenizerWrapper`` creates its artifacts while loading the tokenizer
+        and owns the runtime file selection. ``output_dir`` is retained for
+        protocol compatibility and does not control the artifact location.
         """
-        runtime_tokenizer_path = Path(tokenizer.runtime_tokenizer_path)
-        artifact_dir = Path(tokenizer.artifact)
-        artifacts = list(artifact_dir.iterdir()) if artifact_dir.is_dir() else []
-        if runtime_tokenizer_path not in artifacts:
-            artifacts.append(runtime_tokenizer_path)
-        return self._select_runtime_tokenizer(artifacts)
+        return Path(tokenizer.runtime_tokenizer_path)
 
     @classmethod
     def from_model_config(

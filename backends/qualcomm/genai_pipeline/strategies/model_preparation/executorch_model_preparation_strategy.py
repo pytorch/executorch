@@ -208,7 +208,7 @@ class ExecuTorchModelPreparationStrategy(ModelPreparationStrategy):
             inference = self._adapter.get_inference(
                 meta,
                 example_inputs,
-                extra_options=extra,
+                extra_options=model_options,
             )
 
             # Step 7: Optionally export tokenizer for runtime

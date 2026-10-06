@@ -23,6 +23,12 @@ def get_dataset_adapter(dataset_options, is_multimodal=False):
 
     loaders = []
     if is_multimodal:
+        if dataset_options.calib_tasks or dataset_options.calib_hf_dataset:
+            raise ValueError(
+                "MLLM calibration currently supports --calib-samples only; "
+                "--calib-tasks and --calib-hf-dataset are unsupported."
+            )
+
         from executorch.backends.qualcomm.genai_pipeline.datasets.loaders.mllm.message_sample_adapter import (
             MessageSampleAdapter as MLLMMessageSampleAdapter,
         )
@@ -83,28 +89,15 @@ def get_collector(is_multimodal=False):
 
 
 def get_calibration_dataset_adapter(dataset_options, is_multimodal=False):
-    """Assemble the calibration purpose adapter.
+    """Assemble a corpus-backed calibration purpose adapter.
 
-    Selects source loaders from ``dataset_options``. With no source, returns
-    the modality-agnostic ``DefaultCalibrationDataAdapter`` (random pipeline
-    sanity data, sized from the options). With sources, wires them and the
+    Selects source loaders from ``dataset_options`` and wires them with the
     modality's collector through :class:`CalibrationDatasetBuilder`.
     """
     loaders = get_dataset_adapter(dataset_options, is_multimodal)
 
     if not loaders:
-        from executorch.backends.qualcomm.genai_pipeline.datasets.calibration.default_calibration_data_adapter import (
-            DefaultCalibrationDataAdapter,
-        )
-
-        kwargs = {}
-        if dataset_options is not None:
-            if dataset_options.num_samples is not None:
-                kwargs["num_samples"] = dataset_options.num_samples
-            kwargs["batch_size"] = dataset_options.batch_size
-            if dataset_options.seed is not None:
-                kwargs["seed"] = dataset_options.seed
-        return DefaultCalibrationDataAdapter(**kwargs)
+        raise ValueError("No calibration dataset sources were configured.")
 
     builder = CalibrationDatasetBuilder(is_multimodal)
     for loader in loaders:

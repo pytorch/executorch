@@ -425,13 +425,13 @@ class MLLMLoaderAdapter(DefaultModelLoaderAdapter):
         output_dir: Path,
         extra_options: Optional[Dict[str, Any]] = None,
     ) -> Path:
-        """Return the runtime tokenizer file exported by ``TokenizerWrapper``."""
-        runtime_tokenizer_path = Path(tokenizer.runtime_tokenizer_path)
-        artifact_dir = Path(tokenizer.artifact)
-        artifacts = list(artifact_dir.iterdir()) if artifact_dir.is_dir() else []
-        if runtime_tokenizer_path not in artifacts:
-            artifacts.append(runtime_tokenizer_path)
-        return self._select_runtime_tokenizer(artifacts)
+        """Return the runtime tokenizer path selected by ``TokenizerWrapper``.
+
+        ``TokenizerWrapper`` creates its artifacts while loading the tokenizer
+        and owns the runtime file selection. ``output_dir`` is retained for
+        protocol compatibility and does not control the artifact location.
+        """
+        return Path(tokenizer.runtime_tokenizer_path)
 
     def _build_custom_decoder_model(
         self,

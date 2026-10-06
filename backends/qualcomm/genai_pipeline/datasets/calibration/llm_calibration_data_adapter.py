@@ -82,8 +82,7 @@ class LLMCalibrationDataAdapter:
 
         if not self._dataset_loaders:
             raise ValueError(
-                "LLMCalibrationDataAdapter requires at least one dataset loader; "
-                "use DefaultCalibrationDataAdapter for the random fallback."
+                "LLMCalibrationDataAdapter requires at least one dataset loader."
             )
         if self._collector is None:
             raise ValueError("collector is required when dataset_loaders are provided")

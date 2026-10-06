@@ -10,9 +10,9 @@ This module is the registry-facing entry point for model-specific pipeline
 configuration. It keeps user-facing model names separate from the concrete
 objects and options required by each pipeline stage.
 
-Most callers should resolve a model config once with :func:`get_model_config`
-and pass it to the more specific lookup helpers when available, so all derived
-configuration comes from the same registry entry.
+Each lookup helper resolves its model configuration through
+:func:`get_model_config`, so all derived configuration comes from the same
+registry entry.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
     ARTIFACT_AUDIO_ENCODER,
@@ -33,13 +33,6 @@ from executorch.backends.qualcomm.genai_pipeline.graph_names import (
     GRAPH_FORWARD,
     TOK_EMBEDDING_GRAPH_NAMES,
 )
-from executorch.backends.qualcomm.genai_pipeline.model_components.decoder import (
-    LlamaModel,
-)
-from executorch.backends.qualcomm.genai_pipeline.model_components.embedding import (
-    TokenEmbedding,
-)
-from executorch.backends.qualcomm.genai_pipeline.models import LLM_VARIANT_ARCHS
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import ModelArgs
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
     get_model_specific_kwargs,
@@ -85,9 +78,7 @@ def get_model_config(model_name: str) -> Any:
     return config
 
 
-def get_model_arch_config(
-    model_name: str, control_args: Any, model_config: Optional[Any] = None
-) -> Any:
+def get_model_arch_config(model_name: str, control_args: Any) -> Any:
     """Resolve the decoder's config, for reading model shapes.
 
     All graphs (calibration / decode / prefill) share one set of weights and
@@ -107,8 +98,14 @@ def get_model_arch_config(
         ValueError: If the model needs a params file that ``control_args`` does
             not name.
     """
-    if not model_config:
-        model_config = get_model_config(model_name)
+    model_name = model_name.lower()
+    model_config = get_model_config(model_name)
+
+    if model_config.quant_recipe is None:
+        raise ValueError(
+            f"Model '{model_name}' has no quantization recipe; the GenAI Pipeline "
+            "requires one to configure the KV-cache IO bit width"
+        )
 
     if model_name == "gemma4-e2b":
         from executorch.examples.models.gemma4.text_decoder.gemma4_config import (
@@ -148,7 +145,7 @@ def get_model_arch_config(
 
 
 def get_model_arch(
-    model_name: str, control_args: Any, model_config: Optional[Any] = None
+    model_name: str, control_args: Any
 ) -> Dict[str, Dict[str, Callable]]:
     """Build the model constructors exported for a model.
 
@@ -162,15 +159,21 @@ def get_model_arch(
     Args:
         model_name: The model key in ``SUPPORTED_LLM_MODELS``.
         control_args: Runtime arguments controlling graph modes, shapes.
-        model_config: Optional pre-resolved model configuration.
 
     Returns:
         A ``{component_name: {graph_name: constructor}}`` mapping.
     """
 
-    # Get model config
-    if not model_config:
-        model_config = get_model_config(model_name)
+    from executorch.backends.qualcomm.genai_pipeline.model_components.decoder import (
+        LlamaModel,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.model_components.embedding import (
+        TokenEmbedding,
+    )
+    from executorch.backends.qualcomm.genai_pipeline.models import LLM_VARIANT_ARCHS
+
+    model_name = model_name.lower()
+    model_config = get_model_config(model_name)
 
     # Decode and calibration graphs are always exported. Prefill is additionally
     # exported for hybrid and lookahead modes.
@@ -194,6 +197,11 @@ def get_model_arch(
     use_i64_token = control_args.embedding_quantize is not None
     model_specific_kwargs = get_model_specific_kwargs(control_args, model_config)
     quant_recipe = model_config.quant_recipe
+    if quant_recipe is None:
+        raise ValueError(
+            f"Model '{model_name}' has no quantization recipe; the GenAI Pipeline "
+            "requires one to configure the KV-cache IO bit width"
+        )
 
     if model_name == "gemma4-e2b":
         from executorch.examples.models.gemma4.text_decoder.gemma4_config import (
@@ -225,11 +233,7 @@ def get_model_arch(
                 ar_len = 1
 
             extra_kwargs = {
-                # 32 is the sentinel for "unquantized KV IO"; get_kv_io_bit_width()
-                # returns it too when the recipe has no default_quant_dtype.
-                "kv_io_bit_width": (
-                    quant_recipe().get_kv_io_bit_width() if quant_recipe else 32
-                ),
+                "kv_io_bit_width": quant_recipe().get_kv_io_bit_width(),
             }
 
             # Get Text Decoder model architecture.
@@ -307,7 +311,6 @@ def get_source_transform(
     model_name: str,
     *,
     control_args: Any,
-    model_config: Optional[Any] = None,
 ) -> Tuple[Dict[str, List[Callable]], Dict[str, List[Callable]]]:
     """Resolve a model's source transforms, mirroring ``LLMWrapper._prepare_model``.
 
@@ -315,8 +318,6 @@ def get_source_transform(
         model_name: The model's key in ``SUPPORTED_LLM_MODELS``.
         control_args: CLI arguments used to determine the checkpoint source and
             resolve the values bound to individual transforms.
-        model_config: Optional resolved model configuration. When omitted, it
-            is looked up from ``model_name``.
 
     Returns:
         A ``(weight_transforms, module_transforms)`` tuple of component-keyed
@@ -345,12 +346,10 @@ def get_source_transform(
         unwrap_model_key,
     )
 
-    if model_config is None:
-        model_config = get_model_config(model_name)
-    config = model_config
-    name = model_name.lower()
+    model_name = model_name.lower()
+    config = get_model_config(model_name)
     is_hf_path = control_args.checkpoint is None
-    model_args = get_model_arch_config(model_name, control_args, config)
+    model_args = get_model_arch_config(model_name, control_args)
 
     if config.r1 or config.r2:
         raise RuntimeError(
@@ -363,10 +362,10 @@ def get_source_transform(
     if is_hf_path:
         # HF path: gemma4 key rename, then the Gemma RMSNorm +1 offset, then the
         # embedding scale (self-guarding on the factor / key).
-        if name == "gemma4-e2b":
+        if model_name == "gemma4-e2b":
             weight_transforms.append(remap_gemma4_keys)
         else:
-            if name in ("gemma-2b", "gemma2-2b", "gemma3-1b"):
+            if model_name in ("gemma-2b", "gemma2-2b", "gemma3-1b"):
                 weight_transforms.append(gemma_rmsnorm_offset)
             weight_transforms.append(
                 partial(
@@ -377,7 +376,7 @@ def get_source_transform(
     else:
         # Local checkpoint path: stories260k carries torch.compile's
         # ``_orig_mod.`` prefix and must be renamed.
-        if name == "stories260k":
+        if model_name == "stories260k":
             weight_transforms.append(strip_orig_mod_prefix)
     # RoPE weight layout permutation, gated on the model config flag.
     if config.transform_weight:
@@ -444,7 +443,6 @@ def get_state_dict_loader(
     model_name: str,
     *,
     control_args: Any,
-    model_config: Optional[Any] = None,
 ) -> Dict[str, Callable[[str], Dict[str, Any]]]:
     """Return component-keyed loaders for remote Hugging Face checkpoints.
 
@@ -452,8 +450,6 @@ def get_state_dict_loader(
         model_name: Registered model identifier used to select the loader.
         control_args: Runtime arguments. A configured local ``checkpoint``
             bypasses remote loading and returns no loader.
-        model_config: Optional resolved model configuration. When omitted, it
-            is looked up from ``model_name``.
 
     Returns:
         A component-keyed loader map. Each loader accepts a Hugging Face
@@ -465,13 +461,12 @@ def get_state_dict_loader(
           has model-specific conversion details bound into the callable.
 
     Raises:
-        KeyError: If ``model_name`` is not registered and ``model_config`` is
-            not supplied.
+        KeyError: If ``model_name`` is not registered.
     """
     import torch
 
-    if model_config is None:
-        model_config = get_model_config(model_name)
+    model_name = model_name.lower()
+    model_config = get_model_config(model_name)
     if control_args.checkpoint is not None:
         return {}
 
@@ -479,15 +474,12 @@ def get_state_dict_loader(
     if hasattr(convert_weights, "__func__"):
         convert_weights = convert_weights.__func__
 
-    name = model_name.lower()
-    if name == "gemma4-e2b":
+    if model_name == "gemma4-e2b":
         return {
             ARTIFACT_TEXT_DECODER: partial(
                 load_gemma4_hf_checkpoint_state_dict,
                 convert_weights=convert_weights,
-                gemma4_config=get_model_arch_config(
-                    model_name, control_args, model_config
-                ),
+                gemma4_config=get_model_arch_config(model_name, control_args),
                 dtype=torch.float32,
             )
         }
