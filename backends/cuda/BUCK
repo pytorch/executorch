@@ -67,6 +67,7 @@ fbcode_target(
         ":coalesced_int4_tensor",
         ":dp4a_planar_int5_tensor",
         ":dp4a_planar_int6_tensor",
+        ":triton_kernels",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
     ],
@@ -165,8 +166,10 @@ fbcode_target(
     srcs = [
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
+        "triton/kernels/int4_quantized_gemm.py",
         "triton/kernels/int4_matmul.py",
         "triton/kernels/quantized_gemm_family.py",
+        "triton/kernels/quantized_gemm_utils.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",

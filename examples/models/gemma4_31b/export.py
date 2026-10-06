@@ -264,10 +264,10 @@ def _export_cuda(
     cuda_source_transformations(model, use_turboquant=use_turboquant)
 
     # Int4Tensor weights are used directly — no format conversion.
-    # F.linear dispatches to executorch_cuda::int4_plain_mm (CUDA shim).
+    # F.linear dispatches decode (static M<=4) to the Triton INT4 bucket kernels.
     # Both decode and prefill share the same nibble-packed weights.
 
-    # Prefill (T>=2): shim does dequant+cuBLAS (optimal for large M).
+    # Prefill: dequant + cuBLAS (optimal for large M).
     max_prefill = min(config.max_seq_len - 1, config.sliding_window * 2)
     seq_dim = Dim("seq_len", min=5, max=max_prefill)
     print(f"Exporting prefill (T in [2, {max_prefill}])...")
