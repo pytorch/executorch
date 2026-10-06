@@ -468,6 +468,26 @@ void get_max_pool2d_with_indices_out_target_size(
     executorch::aten::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_max_pool3d_with_indices_args(
+    const Tensor& in,
+    IntArrayRef kernel_size,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    bool ceil_mode,
+    const Tensor& out,
+    const Tensor& indices);
+
+void get_max_pool3d_with_indices_out_target_size(
+    const Tensor& in,
+    IntArrayRef kernel_size,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    bool ceil_mode,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim);
+
 bool check_masked_fill_args(
     const Tensor& in,
     const Tensor& mask,

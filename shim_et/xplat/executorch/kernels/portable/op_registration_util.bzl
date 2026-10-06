@@ -892,6 +892,13 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_max_pool3d_with_indices",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/runtime/core/exec_aten/util:dim_order_util",
+        ],
+    ),
+    op_target(
         name = "op_mean",
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",

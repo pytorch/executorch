@@ -583,6 +583,70 @@ void get_max_pool2d_with_indices_out_target_size(
       in, 2, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
 }
 
+bool check_max_pool3d_with_indices_args(
+    const Tensor& in,
+    IntArrayRef kernel_size,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    bool ceil_mode,
+    const Tensor& out,
+    const Tensor& indices) {
+  (void)ceil_mode;
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_CHECK_OR_RETURN_FALSE(
+      indices.scalar_type() == ScalarType::Long,
+      "Expected indices to have type of Long, but found %s",
+      toString(indices.scalar_type()));
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+
+  ET_CHECK_OR_RETURN_FALSE(
+      in.dim() == 4 || in.dim() == 5,
+      "Expected 4D or 5D (batch mode) tensor for input; in.dim() = %" ET_PRI_TENSOR_DIM,
+      in.dim());
+  for (const auto d : c10::irange(in.dim() - 4, in.dim())) {
+    ET_CHECK_OR_RETURN_FALSE(
+        in.size(d) > 0,
+        "Expected input dimension %zd to be non-empty; in.size(%zd) = %zd",
+        d,
+        d,
+        in.size(d));
+  }
+
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid(kernel_size, /*kernel_ndim=*/3));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      stride_is_valid(stride, /*kernel_ndim=*/3, /*allow_empty=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+      padding, kernel_size, /*kernel_ndim=*/3, /*enforce_half_kernel=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, /*kernel_ndim=*/3));
+
+  return true;
+}
+
+void get_max_pool3d_with_indices_out_target_size(
+    const Tensor& in,
+    IntArrayRef kernel_size,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    bool ceil_mode,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+
+  // Batch dim is optional, so in can be either 4 or 5 dim.
+  for (const auto d : c10::irange(in.dim() - 3)) {
+    out_sizes[d] = in.size(d);
+  }
+
+  calculate_kernel_output_sizes(
+      in, 3, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
+}
+
 bool check_masked_fill_args(
     const Tensor& in,
     const Tensor& mask,

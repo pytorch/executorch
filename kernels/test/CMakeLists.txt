@@ -245,6 +245,7 @@ set(all_test_sources
     "op_masked_fill_test.cpp"
     "op_max_test.cpp"
     "op_max_pool2d_with_indices_test.cpp"
+    "op_max_pool3d_with_indices_test.cpp"
     "op_maximum_test.cpp"
     "op_mean_test.cpp"
     "op_min_test.cpp"
