@@ -372,6 +372,14 @@ class TestSerialization(unittest.TestCase):
             ]
         )
 
+    def test_serialize_deserialize_signed_zero(self) -> None:
+        values = [
+            VkValue(Double(-0.0)),
+            VkValue(Double(0.0)),
+            VkValue(DoubleList([-0.0, 0.0])),
+        ]
+        self.assertEqual(repr(self._round_trip(values).values), repr(values))
+
     def test_serialize_deserialize_non_finite_floats_in_list(self) -> None:
         # json only emits a float as a chunk of its own inside an object; in a
         # list the chunk carries the delimiter with it, so a rewrite that works

@@ -145,6 +145,21 @@ TEST_F(OpUnfoldTest, NonDefaultDimOrderSelfDies) {
       op_unfold_copy_out(input, /*dim=*/3, /*size=*/1, /*step=*/1, output));
 }
 
+TEST_F(OpUnfoldTest, MaxRankInputDies) {
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel supports ranks above kTensorDimensionLimit");
+  TensorFactory<ScalarType::Float> tf;
+  // Unfold appends an output dim, so a rank-kTensorDimensionLimit input cannot
+  // fit its target shape into the fixed-size buffer. Must fail gracefully.
+  const auto input = tf.zeros({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+  auto output = tf.zeros({1});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_unfold_copy_out(input, /*dim=*/15, /*size=*/1, /*step=*/1, output));
+}
+
 TEST_F(OpUnfoldTest, NonDefaultDimOrderOutDies) {
   TensorFactory<ScalarType::Float> tf;
   const auto input = tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});

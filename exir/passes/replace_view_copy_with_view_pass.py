@@ -9,12 +9,17 @@
 
 import copy
 import logging
-from typing import Any, List, Tuple
+import operator
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 import torch
 from executorch.exir import memory
 
 from executorch.exir.dialects._ops import ops
+from executorch.exir.operator.convert import (
+    output_to_aliased_input_map,
+    unwrap_op_overload,
+)
 from executorch.exir.tensor import (
     contiguous_stride_from_shape,
     determine_tensor_dynanism,
@@ -35,6 +40,163 @@ def _is_view_copy(node: torch.fx.Node) -> bool:
 
 
 _VIEW_OP = memory.view
+
+
+def _schema(node: torch.fx.Node) -> Optional[torch.FunctionSchema]:
+    if node.op != "call_function":
+        return None
+    try:
+        return unwrap_op_overload(node.target)._schema
+    except (AttributeError, TypeError):
+        return None
+
+
+def _schema_arg(node: torch.fx.Node, schema: torch.FunctionSchema, index: int) -> Any:
+    if index < len(node.args):
+        return node.args[index]
+    return node.kwargs.get(schema.arguments[index].name)
+
+
+def _mutated_inputs(node: torch.fx.Node) -> Set[torch.fx.Node]:
+    mutated: Set[torch.fx.Node] = set()
+
+    share_idx = node.meta.get("_share_alloc_with_arg_idx")
+    if isinstance(share_idx, int) and share_idx < len(node.args):
+        arg = node.args[share_idx]
+        if isinstance(arg, torch.fx.Node):
+            mutated.add(arg)
+
+    schema = _schema(node)
+    if schema is None:
+        return mutated
+    for index, argument in enumerate(schema.arguments):
+        alias_info = argument.alias_info
+        if alias_info is None or not alias_info.is_write:
+            continue
+        arg = _schema_arg(node, schema, index)
+        if isinstance(arg, torch.fx.Node):
+            mutated.add(arg)
+    return mutated
+
+
+def _alias_source(
+    node: torch.fx.Node, aliasing_ops: FrozenSet[Any]
+) -> Optional[torch.fx.Node]:
+    if node.op != "call_function":
+        return None
+
+    if node.target in aliasing_ops and node.args:
+        base = node.args[0]
+        return base if isinstance(base, torch.fx.Node) else None
+
+    share_idx = node.meta.get("_share_alloc_with_arg_idx")
+    if isinstance(share_idx, int) and share_idx < len(node.args):
+        base = node.args[share_idx]
+        return base if isinstance(base, torch.fx.Node) else None
+
+    if node.target == operator.getitem and len(node.args) == 2:
+        container, output_index = node.args
+        if not isinstance(container, torch.fx.Node) or not isinstance(
+            output_index, int
+        ):
+            return None
+        schema = _schema(container)
+        if schema is None:
+            return None
+        input_index = output_to_aliased_input_map(schema).get(output_index)
+        if input_index is None:
+            return None
+        base = _schema_arg(container, schema, input_index)
+        return base if isinstance(base, torch.fx.Node) else None
+
+    schema = _schema(node)
+    if schema is None or len(schema.returns) != 1:
+        return None
+    input_index = output_to_aliased_input_map(schema).get(0)
+    if input_index is None:
+        return None
+    base = _schema_arg(node, schema, input_index)
+    return base if isinstance(base, torch.fx.Node) else None
+
+
+def _alias_root(
+    node: torch.fx.Node,
+    aliasing_ops: FrozenSet[Any],
+    roots: Dict[torch.fx.Node, torch.fx.Node],
+) -> torch.fx.Node:
+    if node in roots:
+        return roots[node]
+    source = _alias_source(node, aliasing_ops)
+    root = (
+        node
+        if source is None or source is node
+        else _alias_root(source, aliasing_ops, roots)
+    )
+    roots[node] = root
+    return root
+
+
+def _is_alias_only_node(node: torch.fx.Node, aliasing_ops: FrozenSet[Any]) -> bool:
+    if node.op != "call_function":
+        return False
+    if node.target in aliasing_ops:
+        return True
+    return (
+        node.target == operator.getitem
+        and _alias_source(node, aliasing_ops) is not None
+    )
+
+
+def is_copy_to_view_safe(
+    node: torch.fx.Node,
+    aliasing_ops: Optional[Iterable[Any]] = None,
+) -> bool:
+    """Return whether replacing a copy with an alias preserves mutation semantics.
+
+    The replacement merges the storage of ``node`` and its first argument. A
+    mutation of either storage is safe only after the other storage's last read.
+    Existing aliases and outputs of in-place operations are included in each
+    storage group.
+    """
+    if not node.args or not isinstance(node.args[0], torch.fx.Node):
+        return False
+
+    aliases = (
+        frozenset(aliasing_ops) if aliasing_ops is not None else frozenset({_VIEW_OP})
+    )
+    roots: Dict[torch.fx.Node, torch.fx.Node] = {}
+    base_root = _alias_root(node.args[0], aliases, roots)
+    copy_root = _alias_root(node, aliases, roots)
+    if base_root is copy_root:
+        return True
+
+    nodes = list(node.graph.nodes)
+    copy_index = nodes.index(node)
+    last_base_read = copy_index
+    last_copy_read = copy_index
+
+    for index, current in enumerate(nodes):
+        if _is_alias_only_node(current, aliases):
+            continue
+        input_roots = {
+            _alias_root(input_node, aliases, roots)
+            for input_node in current.all_input_nodes
+        }
+        if base_root in input_roots:
+            last_base_read = index
+        if copy_root in input_roots:
+            last_copy_read = index
+
+    for index, current in enumerate(nodes[copy_index + 1 :], copy_index + 1):
+        mutated_roots = {
+            _alias_root(input_node, aliases, roots)
+            for input_node in _mutated_inputs(current)
+        }
+        if copy_root in mutated_roots and index <= last_base_read:
+            return False
+        if base_root in mutated_roots and index <= last_copy_read:
+            return False
+    return True
 
 
 class _Guard:
@@ -278,10 +440,16 @@ class ReplaceViewCopyWithViewPass(PassBase):
         for module in graph_module.modules():
             if not isinstance(module, torch.fx.GraphModule):
                 continue
-            for node in module.graph.nodes:
+            # Process consumers before producers so nested view copies are
+            # analyzed with their final aliasing behavior.
+            for node in reversed(module.graph.nodes):
                 # Note: We only replace view_copy nodes that are not output, since
                 # the output pointer could be modified at runtime (T187925929)
-                if _is_view_copy(node) and all(u.op != "output" for u in node.users):
+                if (
+                    _is_view_copy(node)
+                    and all(u.op != "output" for u in node.users)
+                    and is_copy_to_view_safe(node)
+                ):
                     base, _ = node.args
                     node.target = _VIEW_OP
 
@@ -309,7 +477,9 @@ class ReplaceViewCopyWithViewPass(PassBase):
                 # Note: We only replace view_copy nodes that are not output, since
                 # the output pointer could be modified at runtime (T187925929)
                 assert not (
-                    _is_view_copy(node) and all(u.op != "output" for u in node.users)
+                    _is_view_copy(node)
+                    and all(u.op != "output" for u in node.users)
+                    and is_copy_to_view_safe(node)
                 )
                 if node.op == "call_function" and node.target == _VIEW_OP:
                     assert isinstance(node.meta["spec"], _ViewSpec)

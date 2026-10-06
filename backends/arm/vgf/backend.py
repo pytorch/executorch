@@ -31,30 +31,23 @@ from executorch.backends.arm._passes.arm_pass_manager import (
     PassInsertions,
     register_pass_insertions_before,
 )
-from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-found]
+from executorch.backends.arm.tosa.backend import (
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf._passes import (
     FuseGridSamplerFlowOffsetPass,
     InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
-from executorch.backends.arm.vgf.compile_spec import (  # type: ignore[import-not-found]
-    VgfCompileSpec,
-)
-from executorch.backends.arm.vgf.model_converter import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
+from executorch.backends.arm.vgf.model_converter import (
     model_converter_env,
     require_model_converter_executable,
 )
-from executorch.exir.backend.backend_details import (  # type: ignore[import-not-found]
-    BackendDetails,
-    PreprocessResult,
-)
-from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
-    CompileSpec,
-)
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_base import ExportPass
 from torch.export.exported_program import ExportedProgram
 
@@ -216,7 +209,9 @@ class VgfBackend(BackendDetails):
             bytes: Target-specific VGF binary stream.
 
         """
-        compile_flags = compile_spec.compiler_flags
+        compile_flags = list(compile_spec.compiler_flags)
+        if compile_spec.emit_debug_info and "--emit-debug-info" not in compile_flags:
+            compile_flags.append("--emit-debug-info")
         artifact_path = compile_spec._get_intermediate_path()
         # Pass on the TOSA flatbuffer to the vgf compiler.
         binary = vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name)

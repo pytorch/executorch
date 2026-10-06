@@ -8,6 +8,7 @@
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnCustomProtocol.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 
 namespace executorch {
 namespace backends {
@@ -50,7 +51,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
     num_graphs = binaryinfo->contextBinaryInfoV2.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV2.graphs;
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
   } else if (binaryinfo->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
     num_graphs = binaryinfo->contextBinaryInfoV3.numGraphs;
     graphs = binaryinfo->contextBinaryInfoV3.graphs;
@@ -66,7 +67,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary(
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV1_t>(graphs[i].graphInfoV1);
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_2) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV2_t>(graphs[i].graphInfoV2);
-#if (QNN_API_VERSION_MAJOR >= 2 && QNN_API_VERSION_MINOR >= 21)
+#if QNN_EXECUTORCH_QNN_API_VERSION_AT_LEAST(2, 21)
     } else if (graphs->version == QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_3) {
       RetrieveGraphInfo<QnnSystemContext_GraphInfoV3_t>(graphs[i].graphInfoV3);
 #endif

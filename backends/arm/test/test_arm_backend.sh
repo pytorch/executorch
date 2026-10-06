@@ -74,6 +74,12 @@ enable_vgf_vulkan_validation() {
     export VK_KHRONOS_VALIDATION_LOG_FILENAME="stdout"
     export VK_KHRONOS_VALIDATION_DEBUG_ACTION="VK_DBG_LAYER_ACTION_LOG_MSG"
 
+    # Keep object-lifetime and core validation explicit. They are enabled by
+    # default by current VVL releases, but VGF lifetime coverage should not
+    # depend on an implicit SDK default.
+    export VK_LAYER_OBJECT_LIFETIME="1"
+    export VK_LAYER_VALIDATE_CORE="1"
+
     # Temporary workarounds for known VKML / Model Converter validation
     # defects. Keep validation enabled, but mute only these tracked VUIDs.
     #
@@ -450,6 +456,58 @@ test_pytest_vgf_smoke() {
 
     pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
         backends/arm/test/misc/test_vgf_smoke.py
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_runtime_vgf() {
+    echo "${TEST_SUITE_NAME}: Run VGF C++ unit tests"
+
+    # Keep this separate from the executor_runner build. The normal VKML runner
+    # intentionally does not enable EXECUTORCH_BUILD_TESTS.
+    local ctest_build_dir="${et_root_dir}/arm_test/vgf_runtime_tests"
+    local python_executable="${PYTHON_EXECUTABLE:-}"
+
+    if [[ -z "${python_executable}" ]]; then
+        if command -v python3 >/dev/null 2>&1; then
+            python_executable="$(command -v python3)"
+        elif command -v python >/dev/null 2>&1; then
+            python_executable="$(command -v python)"
+        else
+            echo "Python is required to configure the VGF build."
+            return 1
+        fi
+    fi
+
+    # Always configure a clean tree so stale CMake cache values cannot make CI
+    # silently skip EXECUTORCH_BUILD_TESTS or EXECUTORCH_BUILD_VGF.
+    rm -rf "${ctest_build_dir}"
+
+    cmake \
+        -S "${et_root_dir}" \
+        -B "${ctest_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_TESTS=ON \
+        -DEXECUTORCH_BUILD_VGF=ON \
+        -DEXECUTORCH_BUILD_VULKAN=OFF \
+        -DPYTHON_EXECUTABLE="${python_executable}"         -DPython3_EXECUTABLE="${python_executable}"
+
+    # Build the VGF tests explicitly. This makes a missing/renamed target fail
+    # the job instead of being hidden among unrelated C++ tests.
+    cmake --build "${ctest_build_dir}" \
+    --target \
+        vgf_neural_statistics_test \
+        vgf_vulkan_features_test \
+        vgf_execution_stats_enabled_test \
+        vgf_execution_stats_disabled_test \
+    --parallel
+
+    # --no-tests=error is intentional: discovering zero VGF tests must fail CI.
+    ctest \
+        --test-dir "${ctest_build_dir}" \
+        --output-on-failure \
+        --no-tests=error \
+        -R '^vgf_'
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
