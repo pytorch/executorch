@@ -110,14 +110,23 @@ size_t logical_nbytes(const TensorMeta& meta) {
   return numel * element_bytes;
 }
 
-// Strip the leading "torch.ops." namespace so a native fx target becomes an
-// ET-VK operator-registry key (torch.ops.aten.add.Tensor -> aten.add.Tensor).
+// ET-VK operator-registry key for a native fx target: strips the leading
+// "torch.ops." namespace (torch.ops.aten.add.Tensor -> aten.add.Tensor) and
+// renames targets whose ET-VK kernel is registered under another key.
 std::string registry_key(const std::string& target) {
   constexpr std::string_view kPrefix = "torch.ops.";
-  if (target.starts_with(kPrefix)) {
-    return target.substr(kPrefix.size());
+  std::string key =
+      target.starts_with(kPrefix) ? target.substr(kPrefix.size()) : target;
+  if (key == "aten.relu_.default") {
+    key = "aten.relu.default";
   }
-  return target;
+  return key;
+}
+
+// In-place targets that registry_key maps to a functional ET-VK kernel.
+bool is_functional_in_place(const std::string& target) {
+  return target == "torch.ops.aten.relu_.default" ||
+      target == "aten.relu_.default";
 }
 
 // Ops whose ET-VK implementations require width-packed operands. This list
@@ -959,6 +968,41 @@ class VulkanEngineExecutable final : public EngineExecutable {
     }
   }
 
+  // A functional kernel whose output views its input binds one storage for
+  // both read and write. ET-VK records only the last binding's access, so the
+  // write is forgotten and the next reader of the output gets no barrier. Such
+  // ops run out of place instead, which is only equivalent while nothing else
+  // reads the mutated tensor. Runs after layout assignment so the detached
+  // output keeps its input's layout and storage.
+  void detach_in_place_outputs() {
+    for (const NodeId nid : nodes_) {
+      const Node& n = g().node(nid);
+      if (!n.is_call() || !is_functional_in_place(n.target) ||
+          n.inputs.empty() || n.inputs[0].arg.kind() != ArgKind::Tensor ||
+          n.outputs.size() != 1) {
+        continue;
+      }
+      const ValueId self_id = n.inputs[0].arg.as_tensor().id;
+      const ValueId out_id = n.outputs[0].value_id;
+      if (!valid(self_id) || !valid(out_id) ||
+          g().value(out_id).alias_id != self_id) {
+        continue;
+      }
+      const Value& self = g().value(self_id);
+      const bool observed = (self.role != ValueRole::Intermediate &&
+                             self.role != ValueRole::UserInput) ||
+          valid(self.alias_id) || self.consumer_ids.size() != 1 ||
+          std::ranges::find(outputs_, self_id) != outputs_.end();
+      if (observed) {
+        throw std::runtime_error(
+            "vulkan: node '" + n.name + "' (" + n.target +
+            "): in-place update of '" + self.name +
+            "' is read elsewhere; only an unshared input can run out of place");
+      }
+      method_.graph.value(out_id).alias_id = kInvalid;
+    }
+  }
+
   void plan_allocations() {
     std::vector<AllocationRequest> requests;
     requests.reserve(g().values.size());
@@ -1108,6 +1152,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
   void build(const Package& package) {
     check_mutation_outputs();
     assign_layouts();
+    detach_in_place_outputs();
     index_output_kinds();
     index_bindings();
     plan_allocations();
