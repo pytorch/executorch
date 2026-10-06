@@ -35,7 +35,7 @@ namespace serving {
 namespace detail {
 
 struct TextRequest {
-  PromptInput input;
+  GenerationPrompt input;
   GenerationOptions options;
   std::function<void(GenerationEvent)> sink;
   std::vector<batching::Token> prompt;
@@ -50,6 +50,10 @@ struct TextRequest {
   bool started = false;
   bool capture_lane = false;
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
+
+  bool is_opaque() const {
+    return std::holds_alternative<PreparedPromptInput>(input);
+  }
 
   void emit(GenerationEvent event) {
     if (!sink) {
@@ -453,6 +457,18 @@ struct ServingRuntime::Impl {
     }
     Command command{
         Operation::Generate, state->fence_key.value_or(""), {}, state};
+    bool empty_delta = false;
+    if (!state->text) {
+      if (const auto* tokens = std::get_if<std::vector<batching::Token>>(
+              &state->request.delta)) {
+        empty_delta = tokens->empty();
+      } else {
+        const auto& input =
+            std::get<batching::PreparedInputPtr>(state->request.delta);
+        // Backing metadata is caller-defined; do not query it under mutex_.
+        empty_delta = !input || input->size() == 0;
+      }
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!valid_config_) {
@@ -470,8 +486,7 @@ struct ServingRuntime::Impl {
       }
       if ((state->fence_key && state->fence_key->empty()) ||
           (!state->text &&
-           (state->request.delta.empty() ||
-            state->request.config.max_new_tokens <= 0))) {
+           (empty_delta || state->request.config.max_new_tokens <= 0))) {
         return ServingError{
             ErrorCode::InvalidArgument, "invalid generation request"};
       }
@@ -569,6 +584,11 @@ struct ServingRuntime::Impl {
         it->second.active_request != completion.request_id) {
       return;
     }
+    if (text.is_opaque()) {
+      it->second.logical_history.clear();
+      it->second.dirty = true;
+      return;
+    }
     if (full_prompt &&
         text.history.size() == stats.prompt_tokens + text.raw_tokens.size()) {
       it->second.logical_history = std::move(text.history);
@@ -602,11 +622,13 @@ struct ServingRuntime::Impl {
     };
     request->request.on_prepare_complete =
         [text](const detail::GenerationCompletion&) {
-          text->history = std::move(text->prompt);
-          text->history.insert(
-              text->history.end(),
-              text->raw_tokens.begin(),
-              text->raw_tokens.end());
+          if (!text->is_opaque()) {
+            text->history = std::move(text->prompt);
+            text->history.insert(
+                text->history.end(),
+                text->raw_tokens.begin(),
+                text->raw_tokens.end());
+          }
           if (text->output) {
             text->output->finish();
           }
@@ -656,16 +678,29 @@ struct ServingRuntime::Impl {
     const auto context_limit = config_.max_context_length
         ? std::min(config_.max_context_length, position_limit)
         : position_limit;
-    auto prepared =
-        detail::prepare_prompt(*tokenizer_, text.input, context_limit);
-    if (!prepared.ok()) {
-      return ServingError{
-          ErrorCode::InvalidArgument, "prompt preparation failed"};
+    batching::Token previous_token;
+    if (auto* opaque = std::get_if<PreparedPromptInput>(&text.input)) {
+      const auto size = opaque->input ? opaque->input->size() : 0;
+      if (size == 0 || size > context_limit) {
+        return ServingError{
+            ErrorCode::InvalidArgument, "invalid prepared prompt size"};
+      }
+      text.terminal.stats.prompt_tokens = size;
+      previous_token = opaque->previous_token;
+      request->request.delta = std::move(opaque->input);
+    } else {
+      auto prepared = detail::prepare_prompt(
+          *tokenizer_, std::get<PromptInput>(text.input), context_limit);
+      if (!prepared.ok()) {
+        return ServingError{
+            ErrorCode::InvalidArgument, "prompt preparation failed"};
+      }
+      text.prompt = std::move(prepared->tokens);
+      text.input = PromptInput{};
+      text.terminal.stats.prompt_tokens = text.prompt.size();
+      previous_token = text.prompt.back();
     }
-    text.prompt = std::move(prepared->tokens);
-    text.input = {};
-    text.terminal.stats.prompt_tokens = text.prompt.size();
-    const auto available = context_limit - text.prompt.size();
+    const auto available = context_limit - text.terminal.stats.prompt_tokens;
     const auto wanted = options.max_new_tokens.value_or(
         config_.max_context_length
             ? static_cast<std::int32_t>(
@@ -687,7 +722,7 @@ struct ServingRuntime::Impl {
         options.stop_tokens.end());
     text.output = std::make_unique<detail::TextOutput>(
         *tokenizer_,
-        text.prompt.back(),
+        previous_token,
         config.stop_tokens,
         options.stop_strings,
         [state = &text](const std::string& piece) {
@@ -700,16 +735,22 @@ struct ServingRuntime::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       if (it != sessions_.end()) {
-        plan = plan_prefill(
-            it->second.logical_history, text.prompt, it->second.dirty);
+        if (text.is_opaque()) {
+          plan.reason = "opaque";
+        } else {
+          plan = plan_prefill(
+              it->second.logical_history, text.prompt, it->second.dirty);
+        }
         reset = plan.action == PrefillPlan::kFull &&
             (it->second.dirty || !it->second.logical_history.empty() ||
              it->second.session->position() != 0);
       }
     }
     text.terminal.stats.session_reset_reason = plan.reason;
-    request->request.delta.assign(
-        text.prompt.begin() + plan.suffix_start, text.prompt.end());
+    if (!text.is_opaque()) {
+      request->request.delta = std::vector<batching::Token>(
+          text.prompt.begin() + plan.suffix_start, text.prompt.end());
+    }
     // All fallible preparation precedes destructive cold replacement.
     if (request->cancelled.load()) {
       return std::nullopt;
@@ -722,7 +763,8 @@ struct ServingRuntime::Impl {
   }
 
   std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
-    if (!request->text || config_.prefix_cache_capacity == 0) {
+    if (!request->text || request->text->is_opaque() ||
+        config_.prefix_cache_capacity == 0) {
       return std::nullopt;
     }
     // A lookup clone uses the new request's reserved working-session slot.
@@ -818,9 +860,9 @@ struct ServingRuntime::Impl {
       if (match) {
         opened = std::move(match->session);
         // Lookup always leaves the final prompt token for a fresh forward.
-        request->request.delta.erase(
-            request->request.delta.begin(),
-            request->request.delta.begin() + match->matched_tokens);
+        auto& tokens =
+            std::get<std::vector<batching::Token>>(request->request.delta);
+        tokens.erase(tokens.begin(), tokens.begin() + match->matched_tokens);
       }
 #if ET_HAS_EXCEPTIONS
       try {
@@ -879,8 +921,8 @@ struct ServingRuntime::Impl {
             request->emit(update);
             schedule(request);
           };
-      if (opening && request->text && config_.prefix_cache_capacity != 0 &&
-          !capture_lane_busy_) {
+      if (opening && request->text && !request->text->is_opaque() &&
+          config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
         // Only a capture needs an extra row beyond the working-session slots.
         capture_lane_busy_ = true;
         request->text->capture_lane = true;
@@ -1413,7 +1455,7 @@ ServingRuntime::ServingRuntime(
 
 GenerateResult ServingRuntime::generate(
     std::optional<std::string> key,
-    PromptInput prompt,
+    GenerationPrompt prompt,
     GenerationOptions options,
     std::function<void(GenerationEvent)> on_event) {
   auto text = std::make_shared<detail::TextRequest>();

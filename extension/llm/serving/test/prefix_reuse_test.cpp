@@ -9,6 +9,7 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
 #include <executorch/extension/llm/serving/serving_runtime.h>
+#include <executorch/extension/llm/serving/test/prepared_input.h>
 #include <gtest/gtest.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
@@ -30,6 +31,7 @@ using namespace executorch::extension::llm::serving;
 using batching::Position;
 using batching::SessionId;
 using batching::Token;
+using serving::testing::TestPreparedInput;
 using namespace std::chrono_literals;
 
 namespace {
@@ -110,6 +112,7 @@ class Executor : public batching::testing::FakeExecutor {
     std::vector<Token> tokens;
     std::optional<batching::SamplingParams> sampling;
     std::optional<std::uint64_t> seed;
+    batching::Input original;
   };
   Gate executing;
   Gate cloning;
@@ -118,8 +121,12 @@ class Executor : public batching::testing::FakeExecutor {
   std::atomic<int> clone_calls{0};
   std::atomic<int> peak_rows{0};
   bool reject_after_decode = false;
+  bool accept_prepared = false;
   std::size_t burst = 1;
 
+  bool accepts(const batching::PreparedInput& input) const override {
+    return accept_prepared && input.kind() == &TestPreparedInput::tag;
+  }
   std::optional<SessionId> open_session() override {
     auto session = FakeExecutor::open_session();
     if (session) {
@@ -175,7 +182,15 @@ class Executor : public batching::testing::FakeExecutor {
     if (decode) {
       decoding.enter();
     }
-    if (!FakeExecutor::execute(batch, output)) {
+    auto translated = batch;
+    for (auto& input : translated.inputs) {
+      auto source = serving::testing::validated_backing(input, accept_prepared);
+      if (!source) {
+        return false;
+      }
+      input.payload = std::move(source);
+    }
+    if (!FakeExecutor::execute(translated, output)) {
       return false;
     }
     std::lock_guard<std::mutex> lock(data_mutex_);
@@ -186,7 +201,8 @@ class Executor : public batching::testing::FakeExecutor {
       auto& history = histories_[input.sid];
       EXPECT_LE(begin, history.size());
       history.resize(begin);
-      const auto& source = *std::get<batching::TokenInputPtr>(input.payload);
+      const auto& source =
+          *std::get<batching::TokenInputPtr>(translated.inputs[i].payload);
       std::vector<Token> fed(
           source.begin() + input.offset,
           source.begin() + input.offset + input.size);
@@ -196,7 +212,8 @@ class Executor : public batching::testing::FakeExecutor {
           static_cast<Position>(begin),
           std::move(fed),
           sampling_params(input.sid),
-          sampling_seed(input.sid)});
+          sampling_seed(input.sid),
+          input});
       advanced_[input.sid] = advanced_[input.sid] || produced_[input.sid] != 0;
       if (output.outputs[i]) {
         auto& tokens = output.outputs[i]->tokens;
@@ -433,6 +450,98 @@ INSTANTIATE_TEST_SUITE_P(
       return std::string(info.param.first ? "SampledSeed" : "GreedySeed") +
           (info.param.second ? "SampledLookup" : "GreedyLookup");
     });
+
+TEST_F(PrefixReuseTest, OpaquePromptsBypassLookupAndCapturePreservingRawCache) {
+  executor.accept_prepared = true;
+  config.prefix_cache_capacity = 1;
+  start();
+  std::vector<Token> raw(40);
+  std::iota(raw.begin(), raw.end(), 1);
+  auto seed = output();
+  submit(seed, raw, "seed").wait();
+  ASSERT_TRUE(seed->terminal);
+  ASSERT_FALSE(seed->terminal->error);
+  ASSERT_EQ(executor.clones().size(), 1u);
+  const auto snapshot = executor.clones().front();
+  EXPECT_EQ(snapshot.prefix, raw);
+  const auto clone_count = executor.clone_calls.load();
+
+  for (bool named : {true, false}) {
+    auto rows = raw;
+    if (!named) {
+      std::iota(rows.begin(), rows.end(), 51);
+    }
+    auto opaque = std::make_shared<TestPreparedInput>(rows);
+    const auto first_feed = executor.feeds().size();
+    auto event = output();
+    GenerationOptions options;
+    options.max_new_tokens = 2;
+    options.seed = 42;
+    auto result = runtime->generate(
+        named ? std::optional<std::string>{"opaque"} : std::nullopt,
+        PreparedPromptInput{opaque, rows.back()},
+        options,
+        [event](GenerationEvent update) { event->accept(std::move(update)); });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    const auto handle = std::get<RequestHandle>(std::move(result));
+    ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
+    EXPECT_FALSE(event->terminal->error);
+    EXPECT_EQ(event->terminals, 1u);
+    EXPECT_EQ(event->terminal->stats.prompt_tokens, rows.size());
+    EXPECT_EQ(event->terminal->stats.prefilled_prompt_tokens, rows.size());
+    EXPECT_EQ(event->terminal->stats.reused_prompt_tokens, 0u);
+    EXPECT_EQ(
+        event->terminal->stats.generated_token_ids,
+        (std::vector<Token>{100, 101}));
+    EXPECT_EQ(executor.clone_calls.load(), clone_count);
+    ASSERT_EQ(executor.clones().size(), 1u);
+    EXPECT_EQ(executor.clones().front().destination, snapshot.destination);
+
+    const auto feeds = executor.feeds();
+    ASSERT_EQ(feeds.size() - first_feed, 6u); // Five chunks and raw feedback.
+    for (std::size_t i = 0; i < 5; ++i) {
+      const auto& feed = feeds[first_feed + i];
+      ASSERT_TRUE(std::holds_alternative<batching::PreparedInputPtr>(
+          feed.original.payload));
+      EXPECT_EQ(
+          std::get<batching::PreparedInputPtr>(feed.original.payload), opaque);
+      EXPECT_EQ(feed.original.position, 0);
+      EXPECT_EQ(feed.original.offset, i * 8);
+      EXPECT_EQ(feed.original.size, 8u);
+      EXPECT_EQ(feed.original.produce_output, i == 4);
+      EXPECT_EQ(feed.position, i * 8);
+      EXPECT_EQ(
+          feed.tokens,
+          (std::vector<Token>(
+              rows.begin() + i * 8, rows.begin() + (i + 1) * 8)));
+      EXPECT_EQ(feed.session, feeds[first_feed].session);
+    }
+    EXPECT_TRUE(std::holds_alternative<batching::TokenInputPtr>(
+        feeds.back().original.payload));
+    EXPECT_EQ(feeds.back().tokens, (std::vector<Token>{100}));
+    EXPECT_EQ(feeds.back().position, 40);
+    EXPECT_EQ(feeds.back().session, feeds[first_feed].session);
+  }
+
+  auto hit = output();
+  submit(hit, raw, "raw-hit").wait();
+  ASSERT_TRUE(hit->terminal);
+  EXPECT_EQ(hit->terminal->finish_reason, FinishReason::Length);
+  EXPECT_FALSE(hit->terminal->error);
+  EXPECT_EQ(hit->terminal->stats.reused_prompt_tokens, 39u);
+  EXPECT_EQ(hit->terminal->stats.prefilled_prompt_tokens, 1u);
+  EXPECT_EQ(executor.feeds().back().tokens, (std::vector<Token>{40}));
+  EXPECT_EQ(executor.feeds().back().position, 39);
+  const auto clones = executor.clones();
+  ASSERT_EQ(clones.size(), 3u);
+  EXPECT_EQ(clones[1].source, snapshot.destination);
+  EXPECT_EQ(clones[1].prefix, (std::vector<Token>(raw.begin(), raw.end() - 1)));
+  EXPECT_EQ(executor.clone_calls.load(), clone_count + 2);
+}
 
 TEST_F(PrefixReuseTest, DisabledCacheNeverCapturesOrLooksUpAnySamplingMode) {
   EXPECT_EQ(ServingRuntimeConfig{}.prefix_cache_capacity, 0u);

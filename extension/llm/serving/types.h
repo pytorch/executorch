@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -34,6 +35,22 @@ struct ET_EXPERIMENTAL PromptInput {
   std::vector<MultimodalInput> segments;
 };
 
+// A complete opaque prompt, never a session delta. Its size counts decoder
+// positions. The caller supplies the tokenizer context preceding generated
+// output, normally the last prompt token; serving cannot infer it from backing.
+struct ET_EXPERIMENTAL PreparedPromptInput {
+  PreparedPromptInput(
+      batching::PreparedInputPtr input,
+      batching::Token previous_token)
+      : input(std::move(input)), previous_token(previous_token) {}
+
+  batching::PreparedInputPtr input;
+  batching::Token previous_token;
+};
+
+using GenerationPrompt ET_EXPERIMENTAL =
+    std::variant<PromptInput, PreparedPromptInput>;
+
 struct ET_EXPERIMENTAL GenerationOptions {
   // Must be positive when set. Capped by the context remaining after the full
   // prompt; a prompt leaving no generation room is invalid. Unset uses that
@@ -43,8 +60,8 @@ struct ET_EXPERIMENTAL GenerationOptions {
   // Per-request policy: finite temperature >= 0, finite top_p in (0, 1],
   // and top_k >= 0. Invalid options leave existing session history unchanged.
   batching::SamplingParams sampling;
-  // Added to the service's default stop tokens. A matched token is retained in
-  // logical session history, but excluded from text and generated_token_ids.
+  // Added to the service's default stop tokens. A matched token is excluded
+  // from text and generated_token_ids, but retained in ordinary prompt history.
   std::vector<batching::Token> stop_tokens;
   // Non-empty strings matched across decoded pieces. The match and everything
   // after it are hidden; a match invalidates exact token replay and warm reuse.
@@ -75,7 +92,7 @@ struct ET_EXPERIMENTAL ServingError {
 };
 
 struct ET_EXPERIMENTAL GenerationStats {
-  // Full prepared prompt size, including any reused prefix.
+  // Full prompt size in decoder positions, including any reused prefix.
   std::size_t prompt_tokens = 0;
   // Tokens processed by text output, excluding EOS/stop tokens but including
   // the token that completes a string stop. Later discarded tokens do not
@@ -85,7 +102,7 @@ struct ET_EXPERIMENTAL GenerationStats {
   // Committed prompt prefix reused without execution. A pending prediction
   // fed by this request counts as prefilled, not reused.
   std::size_t reused_prompt_tokens = 0;
-  // Actually consumed prompt tokens; may be partial on cancellation or failure.
+  // Consumed prompt positions; may be partial on cancellation or failure.
   std::size_t prefilled_prompt_tokens = 0;
   double prefill_ms = 0.0;
   double decode_ms = 0.0;

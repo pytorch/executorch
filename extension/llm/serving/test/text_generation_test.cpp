@@ -9,6 +9,7 @@
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <executorch/extension/llm/batching/test/fake_executor.h>
 #include <executorch/extension/llm/serving/serving_runtime.h>
+#include <executorch/extension/llm/serving/test/prepared_input.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 #include <pytorch/tokenizers/tokenizer.h>
@@ -19,6 +20,7 @@
 #include <cstdlib>
 #include <functional>
 #include <future>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <stdexcept>
@@ -28,6 +30,7 @@
 using namespace executorch::extension::llm;
 using namespace executorch::extension::llm::serving;
 using batching::Token;
+using serving::testing::TestPreparedInput;
 using namespace std::chrono_literals;
 
 namespace {
@@ -73,6 +76,7 @@ class Tokenizer : public tokenizers::Tokenizer {
   mutable Gate encoding;
   mutable std::atomic<int> encode_calls{0};
   mutable std::thread::id encoder_thread;
+  mutable std::vector<Token> decode_previous;
 
   tokenizers::Error load(const std::string&) override {
     return tokenizers::Error::Ok;
@@ -90,8 +94,9 @@ class Tokenizer : public tokenizers::Tokenizer {
     }
     return it->second;
   }
-  tokenizers::Result<std::string> decode(Token, Token token, bool)
+  tokenizers::Result<std::string> decode(Token previous, Token token, bool)
       const override {
+    decode_previous.push_back(previous);
     auto it = pieces.find(token);
     if (it == pieces.end()) {
       return tokenizers::Error::Internal;
@@ -106,6 +111,11 @@ class Tokenizer : public tokenizers::Tokenizer {
   }
 };
 
+PreparedPromptInput opaque(std::size_t positions = 5) {
+  return PreparedPromptInput{
+      std::make_shared<TestPreparedInput>(positions), 777};
+}
+
 class Executor : public batching::testing::FakeExecutor {
  public:
   Gate opening;
@@ -118,7 +128,16 @@ class Executor : public batching::testing::FakeExecutor {
   std::vector<Token> script{100, 101, 102, 103};
   std::vector<std::vector<Token>> fed;
   std::thread::id engine_thread;
+  bool accept_opaque = false;
+  mutable std::atomic<int> accepts_calls{0};
+  mutable std::thread::id accepts_thread;
+  std::vector<std::pair<std::size_t, std::size_t>> opaque_slices;
 
+  bool accepts(const batching::PreparedInput& input) const override {
+    ++accepts_calls;
+    accepts_thread = std::this_thread::get_id();
+    return accept_opaque && input.kind() == &TestPreparedInput::tag;
+  }
   std::optional<batching::SessionId> open_session() override {
     opening.enter();
     if (refuse_open.load()) {
@@ -145,10 +164,17 @@ class Executor : public batching::testing::FakeExecutor {
     }
     for (std::size_t i = 0; i < input.inputs.size(); ++i) {
       const auto& slice = input.inputs[i];
-      const auto& source = *std::get<batching::TokenInputPtr>(slice.payload);
+      const auto source =
+          serving::testing::validated_backing(slice, accept_opaque);
+      if (!source) {
+        return false;
+      }
+      if (std::holds_alternative<batching::PreparedInputPtr>(slice.payload)) {
+        opaque_slices.emplace_back(slice.offset, slice.size);
+      }
       fed.emplace_back(
-          source.begin() + slice.offset,
-          source.begin() + slice.offset + slice.size);
+          source->begin() + slice.offset,
+          source->begin() + slice.offset + slice.size);
       if (output.outputs[i]) {
         auto& tokens = output.outputs[i]->tokens;
         tokens.clear();
@@ -320,7 +346,7 @@ class TextGenerationTest : public ::testing::Test {
   }
   RequestHandle submit(
       const std::shared_ptr<Events>& event,
-      PromptInput prompt,
+      GenerationPrompt prompt,
       GenerationOptions options = {},
       std::optional<std::string> key = "s") {
     if (!options.max_new_tokens) {
@@ -338,6 +364,259 @@ class TextGenerationTest : public ::testing::Test {
     return std::get<RequestHandle>(std::move(result));
   }
 };
+
+TEST_F(TextGenerationTest, OpaquePositionsUseExplicitDecodeContextAndBudgets) {
+  executor.accept_opaque = true;
+  config.max_context_length = 7;
+  config.prefix_cache_capacity = 1;
+  start(2, 3, 1);
+  for (auto limit :
+       {std::optional<std::int32_t>{2},
+        std::optional<std::int32_t>{},
+        std::optional<std::int32_t>{99}}) {
+    auto event = output();
+    auto prompt = opaque();
+    std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+    GenerationOptions options;
+    options.max_new_tokens = limit;
+    const auto before = executor.seen().size();
+    auto result = runtime->generate(
+        std::nullopt,
+        std::move(prompt),
+        options,
+        [event](GenerationEvent update) { event->accept(std::move(update)); });
+    ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+    const auto handle = std::get<RequestHandle>(result);
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+    EXPECT_TRUE(owner.expired());
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->text, "AB");
+    EXPECT_EQ(event->terminals, 1u);
+    const auto& stats = event->terminal->stats;
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Length);
+    EXPECT_EQ(stats.prompt_tokens, 5u);
+    EXPECT_EQ(stats.prefilled_prompt_tokens, 5u);
+    EXPECT_EQ(stats.reused_prompt_tokens, 0u);
+    EXPECT_EQ(stats.completion_tokens, 2u);
+    EXPECT_EQ(stats.generated_token_ids, (std::vector<Token>{100, 101}));
+    EXPECT_EQ(tokenizer.decode_previous, (std::vector<Token>{777, 100}));
+    EXPECT_EQ(tokenizer.encode_calls.load(), 0);
+    EXPECT_EQ(executor.accepts_thread, executor.engine_thread);
+    EXPECT_NE(executor.accepts_thread, std::this_thread::get_id());
+    EXPECT_EQ(
+        executor.opaque_slices,
+        (std::vector<std::pair<std::size_t, std::size_t>>{
+            {0, 2}, {2, 2}, {4, 1}}));
+    const auto seen = executor.seen();
+    ASSERT_EQ(seen.size(), before + 4);
+    EXPECT_EQ(seen[before].effective_position(), 0);
+    EXPECT_EQ(seen[before + 1].effective_position(), 2);
+    EXPECT_EQ(seen[before + 2].effective_position(), 4);
+    EXPECT_EQ(seen.back().effective_position(), 5);
+    EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100}));
+    tokenizer.decode_previous.clear();
+    executor.opaque_slices.clear();
+  }
+  EXPECT_EQ(executor.clones.load(), 0);
+}
+
+TEST_F(
+    TextGenerationTest,
+    OpaqueDefaultRejectionLeavesUnrelatedRawSessionWarm) {
+  start();
+  submit(output(), ids({10, 11})).wait();
+  const auto steps = executor.steps.load();
+  auto event = output();
+  auto handle = submit(event, opaque(), {}, "other");
+  handle.wait();
+  ASSERT_TRUE(handle.error());
+  EXPECT_EQ(handle.error()->code, ErrorCode::Internal);
+  ASSERT_TRUE(event->terminal);
+  EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
+  EXPECT_EQ(event->terminals, 1u);
+  EXPECT_TRUE(event->text.empty());
+  EXPECT_EQ(executor.steps.load(), steps);
+  EXPECT_TRUE(executor.opaque_slices.empty());
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12}));
+}
+
+TEST_F(TextGenerationTest, OpaqueMetadataAndOptionsPreserveRawHistory) {
+  executor.accept_opaque = true;
+  config.max_context_length = 8;
+  start();
+  submit(output(), ids({10, 11})).wait();
+  const auto steps = executor.steps.load();
+  for (int i = 0; i < 11; ++i) {
+    SCOPED_TRACE(i);
+    auto prompt = opaque();
+    GenerationOptions options;
+    switch (i) {
+      case 0:
+        prompt.input.reset();
+        break;
+      case 1:
+        prompt = opaque(0);
+        break;
+      case 2:
+        prompt = opaque(
+            static_cast<std::size_t>(
+                std::numeric_limits<batching::Position>::max()) +
+            1);
+        break;
+      case 3:
+        prompt = opaque(9);
+        break;
+      case 4:
+        prompt = opaque(8);
+        break;
+      case 5:
+        options.max_new_tokens = 0;
+        break;
+      case 6:
+        options.max_new_tokens = -1;
+        break;
+      case 7:
+        options.sampling.temperature = -1;
+        break;
+      case 8:
+        options.sampling.top_p = 2;
+        break;
+      case 9:
+        options.sampling.top_k = -1;
+        break;
+      case 10:
+        options.stop_strings = {""};
+        break;
+    }
+    auto event = output();
+    const auto handle = submit(event, std::move(prompt), options);
+    handle.wait();
+    ASSERT_TRUE(handle.error());
+    EXPECT_EQ(handle.error()->code, ErrorCode::InvalidArgument);
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Failed);
+    EXPECT_EQ(event->terminals, 1u);
+    EXPECT_TRUE(event->text.empty());
+    EXPECT_EQ(executor.steps.load(), steps);
+    EXPECT_EQ(executor.opened().size(), 1u);
+    EXPECT_TRUE(executor.closed().empty());
+    EXPECT_EQ(executor.accepts_calls.load(), 0);
+  }
+  auto continued = output();
+  submit(continued, ids({10, 11, 100, 12})).wait();
+  ASSERT_TRUE(continued->terminal);
+  EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
+  EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
+  EXPECT_EQ(executor.opened().size(), 1u);
+}
+
+TEST_F(TextGenerationTest, OpaqueReplacesRawAndForcesFollowingRawColdReplay) {
+  executor.accept_opaque = true;
+  start();
+  submit(output(), ids({10, 11})).wait();
+  auto prepared = output();
+  submit(prepared, opaque()).wait();
+  ASSERT_TRUE(prepared->terminal);
+  EXPECT_EQ(prepared->text, "A");
+  EXPECT_EQ(prepared->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(prepared->terminal->stats.prefilled_prompt_tokens, 5u);
+  EXPECT_EQ(
+      prepared->terminal->stats.generated_token_ids, (std::vector<Token>{100}));
+  EXPECT_EQ(executor.opened().size(), 2u);
+  EXPECT_EQ(executor.closed().size(), 1u);
+  EXPECT_EQ(executor.seen().back().effective_position(), 0);
+  auto raw = output();
+  submit(raw, ids({10, 11, 100, 12})).wait();
+  ASSERT_TRUE(raw->terminal);
+  EXPECT_EQ(raw->terminal->stats.session_reset_reason, "dirty");
+  EXPECT_EQ(raw->terminal->stats.reused_prompt_tokens, 0u);
+  EXPECT_EQ(raw->terminal->stats.prefilled_prompt_tokens, 4u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{10, 11, 100, 12}));
+  EXPECT_EQ(executor.seen().back().effective_position(), 0);
+  EXPECT_EQ(executor.opened().size(), 3u);
+  EXPECT_EQ(tokenizer.encode_calls.load(), 0);
+}
+
+TEST_F(TextGenerationTest, OpaqueStopsRetainExistingTextAndIdSemantics) {
+  executor.accept_opaque = true;
+  executor.burst = 3;
+  start();
+  for (bool string_stop : {false, true}) {
+    if (string_stop) {
+      tokenizer.pieces = {{100, "AEN"}, {101, "Dhidden"}, {102, "ignored"}};
+    }
+    GenerationOptions options;
+    options.max_new_tokens = 8;
+    options.stop_tokens =
+        string_stop ? std::vector<Token>{} : std::vector<Token>{101};
+    options.stop_strings = string_stop ? std::vector<std::string>{"END"}
+                                       : std::vector<std::string>{};
+    auto event = output();
+    const auto handle = submit(event, opaque(), options, std::nullopt);
+    handle.wait();
+    EXPECT_FALSE(handle.error());
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->text, "A");
+    EXPECT_EQ(event->terminals, 1u);
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Stop);
+    EXPECT_EQ(event->terminal->stats.completion_tokens, string_stop ? 2u : 1u);
+    if (string_stop) {
+      EXPECT_FALSE(event->terminal->stats.generated_token_ids);
+    } else {
+      EXPECT_EQ(
+          event->terminal->stats.generated_token_ids,
+          (std::vector<Token>{100}));
+    }
+  }
+  EXPECT_EQ(tokenizer.encode_calls.load(), 0);
+}
+
+TEST_F(
+    TextGenerationTest,
+    OpaqueCancelAndResetReleaseBackingBeforeWaitReturns) {
+  executor.accept_opaque = true;
+  start(2, 3, 1);
+  for (bool reset : {false, true}) {
+    SCOPED_TRACE(reset ? "cancel with reset" : "cancel");
+    executor.executing.hold();
+    auto prompt = opaque();
+    std::weak_ptr<const batching::PreparedInput> owner = prompt.input;
+    auto event = output();
+    const auto handle = submit(event, std::move(prompt));
+    ASSERT_TRUE(executor.executing.wait());
+    EXPECT_FALSE(owner.expired());
+    std::future<LifecycleResult> ack;
+    if (reset) {
+      ack = runtime->reset_session_async("s");
+      EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
+    }
+    // Pin cancellation before releasing the forward. Reset's synchronous
+    // reopen needs engine progress, so it cannot fence control while held.
+    handle.cancel();
+    EXPECT_FALSE(handle.done());
+    EXPECT_FALSE(owner.expired());
+    executor.executing.release();
+    if (reset) {
+      ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
+      EXPECT_FALSE(ack.get());
+      EXPECT_TRUE(handle.done());
+      EXPECT_TRUE(owner.expired());
+    }
+    ASSERT_TRUE(wait_until([&] { return handle.done(); }));
+    handle.wait();
+    EXPECT_TRUE(owner.expired());
+    ASSERT_TRUE(event->terminal);
+    EXPECT_EQ(event->terminal->finish_reason, FinishReason::Cancelled);
+    EXPECT_EQ(event->terminals, 1u);
+    EXPECT_FALSE(event->terminal->stats.generated_token_ids);
+  }
+}
 
 TEST_F(
     TextGenerationTest,
@@ -1358,6 +1637,10 @@ TEST_F(TextGenerationTest, LifecycleOnlyConstructorRejectsTextWithoutCallback) {
       "s", ids({10, 11}), {}, [&](GenerationEvent) { callback = true; });
   ASSERT_TRUE(std::holds_alternative<ServingError>(result));
   EXPECT_EQ(std::get<ServingError>(result).code, ErrorCode::NotReady);
+  auto prepared = lifecycle.generate(
+      "s", opaque(), {}, [&](GenerationEvent) { callback = true; });
+  ASSERT_TRUE(std::holds_alternative<ServingError>(prepared));
+  EXPECT_EQ(std::get<ServingError>(prepared).code, ErrorCode::NotReady);
   lifecycle.shutdown();
   EXPECT_FALSE(callback);
 }

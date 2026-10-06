@@ -35,7 +35,7 @@ namespace serving {
 
 struct ET_EXPERIMENTAL ServingRuntimeConfig {
   std::size_t max_sessions = 1;
-  // Text-generation context bound and reported metadata; 0 means unknown.
+  // Decoder-position context bound and reported metadata; 0 means unknown.
   std::size_t max_context_length = 0;
   // Queued, executing, and delivery-fenced lifecycle/generation-start
   // operations, excluding completion callbacks. Must be non-zero.
@@ -147,10 +147,16 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Before terminal invocation, this request's session claim and admission
   // are released. Nonblocking follow-up submission is allowed but may still
   // be rejected; wait()/done() remain callback-lifetime barriers.
-  // The lifecycle-only constructor rejects text generation with NotReady.
+  // PreparedPromptInput bypasses encoding and always uses full prefill without
+  // token-history or prefix-cache reuse. Existing content is cold-replaced;
+  // subsequent ordinary prompts also cold-replay. Metadata/options errors leave
+  // state intact, but later engine admission/execution failure does not restore
+  // content already replaced. Executor::accepts() runs only on the engine
+  // thread. Both input forms need a tokenizer for output. The lifecycle-only
+  // constructor rejects them with NotReady.
   GenerateResult generate(
       std::optional<std::string> key,
-      PromptInput prompt,
+      GenerationPrompt prompt,
       GenerationOptions options,
       std::function<void(GenerationEvent)> on_event);
 
