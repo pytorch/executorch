@@ -1220,6 +1220,139 @@ class _Emitter(torch.fx.Interpreter):
 
         return subemitter_binding_output_values
 
+    def _emit_while(
+        self,
+        args: Tuple[_Argument, ...],
+        subemitter_binding_output_values: List[_AbstractValue],
+    ) -> List[_AbstractValue]:
+        """Emits torch.ops.higher_order.while_loop.
+
+        while_loop(cond_fn, body_fn, carried_inputs, additional_inputs) is lowered to:
+
+            carry = clone(carried_inputs)
+          loop_start:
+            pred = cond_fn(*carry, *additional_inputs)
+            if not pred: jump loop_end
+            new_carry = body_fn(*carry, *additional_inputs)
+            carry = clone(new_carry)
+            jump loop_start
+          loop_end:
+
+        The carry buffers are the while_loop node's outputs. clone.out is used
+        rather than copy_ because it resizes the destination, so carried tensors
+        with dynamic shapes work.
+        """
+        cond_fn, body_fn, carried_inputs, additional_inputs = args
+
+        assert isinstance(cond_fn, torch.fx.GraphModule)
+        assert isinstance(body_fn, torch.fx.GraphModule)
+        assert isinstance(carried_inputs, (list, tuple))
+        assert isinstance(additional_inputs, (list, tuple))
+        assert isinstance(subemitter_binding_output_values, (list, tuple)), (
+            f"Expected list for subemitter_binding_output_values. "
+            f"Got {type(subemitter_binding_output_values).__name__}: "
+            f"{subemitter_binding_output_values}."
+        )
+
+        carry = list(subemitter_binding_output_values)
+        self._internal_assert_emitter(
+            len(carry) == len(carried_inputs),
+            self.node,
+            f"while_loop should output {len(carried_inputs)} carried values, got {len(carry)}",
+        )
+        for value in [*carried_inputs, *carry]:
+            self._internal_assert_emitter(
+                isinstance(value, _AbstractValue) and value.tensor is not None,
+                self.node,
+                "while_loop only supports tensor carried inputs",
+            )
+
+        op_index_clone, _ = self._get_operator(name="aten::clone", overload="out")
+
+        def emit_carry_update(srcs: List[_AbstractValue]) -> None:
+            carry_ids = [c.id for c in carry]
+            for i, (src, dst) in enumerate(zip(srcs, carry)):
+                if src.id == dst.id:
+                    continue
+                self._internal_assert_emitter(
+                    src.id not in carry_ids[i + 1 :],
+                    self.node,
+                    "while_loop body outputs that permute carried inputs are not supported",
+                )
+                self.chain.instructions.append(
+                    Instruction(
+                        KernelCall(
+                            op_index=op_index_clone,
+                            args=[
+                                src.id,
+                                self._emit_evalue(EValue(Null())).id,
+                                dst.id,
+                                dst.id,
+                            ],
+                        )
+                    )
+                )
+
+        emit_carry_update(typing.cast(List[_AbstractValue], list(carried_inputs)))
+
+        loop_start = self.instruction_start_offset + len(self.chain.instructions)
+        cond_emitter = _Emitter(
+            cond_fn,
+            self.emitter_state,
+            self.program_state,
+            instruction_start_offset=loop_start,
+            binding_input_values=[*carry, *additional_inputs],
+            binding_output_values=None,
+        )
+        cond_emitter.run()
+        self._merge_chain(cond_emitter.chain)
+        self._internal_assert_emitter(
+            len(cond_emitter.concrete_output_ids) == 1,
+            self.node,
+            f"while_loop cond_fn should return one value, got {len(cond_emitter.concrete_output_ids)}",
+        )
+
+        # Exit the loop when the predicate is false; the destination is patched
+        # once the body has been emitted.
+        jf_exit_loop = Instruction(
+            JumpFalseCall(
+                cond_value_index=cond_emitter.concrete_output_ids[0].id,
+                destination_instruction=-1,
+            )
+        )
+        self.chain.instructions.append(jf_exit_loop)
+
+        body_emitter = _Emitter(
+            body_fn,
+            self.emitter_state,
+            self.program_state,
+            instruction_start_offset=self.instruction_start_offset
+            + len(self.chain.instructions),
+            binding_input_values=[*carry, *additional_inputs],
+            binding_output_values=None,
+        )
+        body_emitter.run()
+        self._merge_chain(body_emitter.chain)
+        self._internal_assert_emitter(
+            len(body_emitter.concrete_output_ids) == len(carry),
+            self.node,
+            f"while_loop body_fn should output {len(carry)} values, got {len(body_emitter.concrete_output_ids)}",
+        )
+        emit_carry_update(body_emitter.concrete_output_ids)
+
+        self.chain.instructions.append(
+            Instruction(
+                JumpFalseCall(
+                    cond_value_index=self._emit_evalue(EValue(Bool(False))).id,
+                    destination_instruction=loop_start,
+                )
+            )
+        )
+        jf_exit_loop.instr_args.destination_instruction = (
+            self.instruction_start_offset + len(self.chain.instructions)
+        )
+        return carry
+
     def _emit_control_flow(
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _EmitterValue:
@@ -1257,6 +1390,8 @@ class _Emitter(torch.fx.Interpreter):
             return self._emit_map(args, subemitter_binding_output_values)
         elif target is torch.ops.higher_order.scan:
             return self._emit_scan(args, subemitter_binding_output_values)
+        elif target is torch.ops.higher_order.while_loop:
+            return self._emit_while(args, subemitter_binding_output_values)
         else:
             raise InternalError(
                 self._emit_node_specific_error(
