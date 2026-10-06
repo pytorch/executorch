@@ -47,9 +47,9 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "stride_1_padding_0", "0")}
 ${layout_declare_spec_const(C, "int", "activation_type", "0")}
 
-#include "linear_fp_input_tile.glslh"
-#include "linear_fp_packed_weight_tile_load.glslh"
-#include "linear_fp_output_tile_fp_compute.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_packed_weight_tile_load.glslh"
+#include "gemm/tile_utils/linear_fp_output_tile_fp_compute.glslh"
 
 void load_input_tile_with_checks(
     out FPInputTile tile,

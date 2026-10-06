@@ -26,7 +26,7 @@
 #include "indexing.glslh"
 #include "conv2d_common.glslh"
 #include "conv2d_fp_im2col_block.glslh"
-#include "linear_fp_input_tile.glslh"
+#include "gemm/tile_utils/linear_fp_input_tile.glslh"
 
 VEC4_T load_input_texel(const TensorIndex4D tidx) {
   // Assumes batch size is 1 and channels packing
