@@ -19,7 +19,7 @@ std::vector<TestCase> generate_gated_delta_rule_test_cases() {
   DataGenType data_gen_type = DataGenType::ONES;
 
   std::vector<std::vector<int64_t>> size_configs = {
-      {1, 4, 32, 128}, // Batch=1, Heads=4, Seq=32, Dim=128
+      {1, 2, 4, 32}, // Batch=1, Heads=2, Seq=4, Dim=32 to prevent inf overflow
   };
 
   std::vector<utils::StorageType> storage_types = {utils::kTexture3D};

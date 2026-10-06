@@ -266,6 +266,7 @@ void test_reference_hf(
       xk_out.sizes().vec(), from_at_scalartype(xk_out.scalar_type()));
 
   const ValueRef r_start_pos = graph.add_scalar<int64_t>(0);
+  const ValueRef r_tensor_layout_format = graph.add_scalar<int64_t>(0);
 
   VK_GET_OP_FN("et_vk.apply_rotary_emb_hf.default")
   (graph,
@@ -274,6 +275,7 @@ void test_reference_hf(
     r_freqs_cos.value,
     r_freqs_sin.value,
     r_start_pos,
+    r_tensor_layout_format,
     graph.add_value_list({r_xq_out, r_xk_out})});
 
   ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
@@ -391,6 +393,7 @@ TEST(VulkanRotaryEmbeddingHFTest, rotary_embedding_hf_dynamic_resize_qwen3) {
     r_freqs_cos.value,
     r_freqs_sin.value,
     r_start_pos,
+    r_tensor_layout_format,
     graph.add_value_list({r_xq_out, r_xk_out})});
 
   ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
@@ -576,6 +579,7 @@ void test_reference_hf_with_start_pos(
     r_freqs_cos.value,
     r_freqs_sin.value,
     r_start_pos,
+    r_tensor_layout_format,
     graph.add_value_list({r_xq_out, r_xk_out})});
 
   ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);
@@ -752,6 +756,7 @@ void test_reference_hf_partial_rotary(
     r_freqs_cos.value,
     r_freqs_sin.value,
     r_start_pos,
+    r_tensor_layout_format,
     graph.add_value_list({r_xq_out, r_xk_out})});
 
   ValueRef staging_xq_out = graph.set_output_tensor(r_xq_out);

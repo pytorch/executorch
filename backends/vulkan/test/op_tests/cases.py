@@ -1743,7 +1743,7 @@ def get_softmax_inputs():
 
 
 @register_test_suite(
-    ["aten.amax.default", "aten.amin.default", "aten.sum.dim_IntList", "aten.mean.dim"]
+    ["aten.amax.default", "aten.amin.default", "aten.sum.dim_IntList", "aten.mean.dim", "aten.any.dim"]
 )
 def get_reduce_op_inputs():
     test_suite = VkTestSuite(get_reduce_inputs())

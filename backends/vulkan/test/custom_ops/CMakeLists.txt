@@ -5,14 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 cmake_minimum_required(VERSION 3.19)
-project(prototyping_shaders)
 
 if(ANDROID)
   set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
   set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
 endif()
-
-find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
 
 # Compile settings
 
@@ -95,7 +92,11 @@ if(TARGET vulkan_backend)
 
   # Define operator prototypes
   add_operator_prototype(test_add)
+  add_operator_prototype(test_any)
+  add_operator_prototype(test_log1p)
+  add_operator_prototype(test_mul_scalar)
   add_operator_prototype(test_gated_delta_rule)
+  add_operator_prototype(test_split_with_sizes_copy)
   add_operator_prototype(test_q8csw_linear)
   add_operator_prototype(test_q8csw_conv2d)
   add_operator_prototype(test_q4gsw_linear)
