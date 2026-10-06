@@ -757,7 +757,10 @@ class VulkanEngineExecutable final : public EngineExecutable {
       }
       for_each_output_value(node, [&](ValueId output_id) {
         const ValueId source_id = g().value(output_id).alias_id;
-        if (valid(source_id) && layout_at(output_id) != layout_at(source_id) &&
+        if (valid(source_id) &&
+            ((!g().value(output_id).tensor_meta().lower_bounds.empty() &&
+              layout_at(output_id) == utils::kWidthPacked) ||
+             layout_at(output_id) != layout_at(source_id)) &&
             storage_at(output_id) != utils::kBuffer) {
           value_ids.push_back(output_id);
         }
