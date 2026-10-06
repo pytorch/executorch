@@ -5,11 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Regenerate the hardcoded INT4/INT5/INT6 plain_mm dp4a test vectors.
+"""Regenerate the hardcoded INT5/INT6 plain_mm dp4a test vectors.
 
 This script deterministically recreates every ``uint8_t``/``int8_t``/``uint16_t``
 array embedded in the plain_mm gtest files:
-  --dtype int4 -> test_aoti_torch_cuda_int4_plain_mm.cpp
   --dtype int5 -> test_aoti_torch_cuda_int5_plain_mm.cpp
   --dtype int6 -> test_aoti_torch_cuda_int6_plain_mm.cpp
 Each dtype has a fixed seed, so the emitted vectors are reproducible by
@@ -19,20 +18,9 @@ All dtypes share the same scaffolding (a ``Case`` dataclass, C++ array emit,
 the ``--check`` regression, and stdout emission). They differ only in the encode
 math and the array field names:
 
-INT4 (W4A8, asymmetric; pack path in coalesced_int4_tensor.py):
-  1. torch.manual_seed(case.seed) on CPU.
-  2. Draw a random bf16 weight ``[N, K]`` then activation ``[M, K]`` (weight
-     first, then activation: fixed order is part of the seed contract).
-  3. quantize_weight(..., bits=4, min_max, asymmetric) -> torchao Int4Tensor,
-     wrapped as the canonical ExportableInt4Tensor.
-  4. CudaCoalescedInt4Tensor.from_exportable_int4_tensor(...) -> qdata [N, K/2] uint8,
-     scale codes [N, K/gs] uint8, scale_step [N, K/256] fp16, zero_point codes
-     [N, K/gs] uint8, zero_point_step [N, K/256] fp16.
-  5. expected = F.linear(A, tensor.dequantize(bf16)).
-
 INT5 (W5A8, asymmetric Q5_K; pack path in dp4a_planar_int5_tensor.py):
   1. torch.manual_seed(INT5_SEED) ONCE, then draw ALL cases in list order
-     (unlike int4/int6, the int5 cases share one RNG stream, so build_int5
+     (unlike int6, the int5 cases share one RNG stream, so build_int5
      replays the earlier cases to stay reproducible per-case).
   2. Per case, draw a scaled fp32 weight ``[N, K]`` (``randn * (0.5 +
      rand[N,1])``) then activation ``[M, K]`` (bf16). Weight-then-activation
@@ -59,7 +47,7 @@ Both kernels quantize activations to int8, so the .cpp compares with a 0.5 atol.
 
 Usage (from the executorch repo root, conda env with torch + torchao):
   python backends/cuda/runtime/shims/tests/gen_plain_mm_test_vectors.py \\
-        --dtype {int4,int5,int6} [--case NAME] [--check]
+        --dtype {int5,int6} [--case NAME] [--check]
 
 Without ``--check`` it prints the C++ array blocks for each case to stdout; paste
 them into the matching TEST_F body. With ``--check`` it re-derives the vectors
@@ -85,15 +73,6 @@ class Case:
     gs: int
     seed: int
 
-
-# One entry per numerical TEST_F in each .cpp. The seeds are arbitrary but fixed:
-# they define the checked-in vectors.
-INT4_CASES: List[Case] = [
-    Case("SingleSuperBlock", M=1, K=256, N=8, gs=32, seed=0),
-    Case("MultiSuperBlock", M=1, K=512, N=4, gs=32, seed=1),
-    Case("WideN", M=1, K=256, N=16, gs=32, seed=2),
-    Case("PackedShuffleMultiSuper", M=1, K=1024, N=8, gs=32, seed=3),
-]
 
 # The INT5 cases share ONE RNG stream: torch.manual_seed(INT5_SEED) is called
 # once and the cases are drawn in this list order (weight then activation per
@@ -155,39 +134,6 @@ def _i8(t: torch.Tensor) -> List[int]:
 # Dtype-specific encode paths. Imports are lazy so generating one dtype does not
 # require the other dtype's dependencies.
 # ---------------------------------------------------------------------------
-def build_int4(case: Case) -> Dict[str, tuple]:
-    """Return {array_name: (ctype, [ints])} for one INT4 case (CPU only)."""
-    from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
-    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
-    from executorch.extension.llm.export.quant.quantize import quantize_weight
-    from executorch.extension.llm.export.quant.recipe import QuantConfig
-
-    torch.manual_seed(case.seed)
-    # Weight first, then activation: fixed order is part of the seed contract.
-    w = torch.randn(case.N, case.K, dtype=torch.bfloat16)
-    A = torch.randn(case.M, case.K, dtype=torch.bfloat16)
-
-    config = QuantConfig(bits=4, group_size=case.gs, symmetric=False, method="min_max")
-    int4 = quantize_weight(w, config)
-    c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(
-        ExportableInt4Tensor.from_int4_tensor(int4)
-    )
-
-    # bf16 dequant @ F.linear reference (kernel adds activation-quant noise).
-    w_deq = c.dequantize(torch.bfloat16)
-    expected = torch.nn.functional.linear(A, w_deq)
-
-    return {
-        "qdata_host": ("uint8_t", _u8(c.qdata)),
-        "scale_codes": ("uint8_t", _u8(c.scale)),
-        "scale_step": ("uint16_t", _fp16_bits(c.scale_step)),
-        "zero_codes": ("uint8_t", _u8(c.zero_point)),
-        "zero_point_step": ("uint16_t", _fp16_bits(c.zero_point_step)),
-        "A_host": ("uint16_t", _bf16_bits(A)),
-        "expected": ("uint16_t", _bf16_bits(expected)),
-    }
-
-
 def _draw_int5_case(case: Case):
     """Consume the RNG for one INT5 case; return (IntxUnpackedToInt8Tensor, A).
 
@@ -305,22 +251,6 @@ class DtypeSpec:
 
 
 SPECS: Dict[str, DtypeSpec] = {
-    "int4": DtypeSpec(
-        name="int4",
-        cases=INT4_CASES,
-        order=[
-            "qdata_host",
-            "scale_codes",
-            "scale_step",
-            "zero_codes",
-            "zero_point_step",
-            "A_host",
-            "expected",
-        ],
-        build=build_int4,
-        test_class="AOTITorchInt4PlainMMTest",
-        cpp_name="test_aoti_torch_cuda_int4_plain_mm.cpp",
-    ),
     "int5": DtypeSpec(
         name="int5",
         cases=INT5_CASES,
