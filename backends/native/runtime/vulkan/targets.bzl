@@ -69,10 +69,8 @@ def define_common_targets():
             "//executorch/runtime/core:core",
             ":vulkan_passes",
             # ET-VK: ComputeGraph + operator registry + shaders (link_whole, so
-            # the static op registrations survive), and the Vulkan API layer
-            # (Runtime / Adapter / Context; SwiftShader on a headless host).
-            "//executorch/backends/vulkan:vulkan_graph_runtime",
-            "//executorch/backends/vulkan:vulkan_compute_api",
+            # the static op registrations survive), and the Vulkan API layer.
+            ":xplat_vulkan_runtime",
         ],
         visibility = ["PUBLIC"],
     )
