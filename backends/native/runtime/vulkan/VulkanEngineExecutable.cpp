@@ -7,6 +7,7 @@
 #include <executorch/backends/native/runtime/vulkan/VulkanEngineExecutable.h>
 
 #include <algorithm>
+#include <any>
 #include <array>
 #include <cstring>
 #include <deque>
@@ -34,6 +35,7 @@
 #include <executorch/backends/native/runtime/graph/Value.h>
 #include <executorch/backends/native/runtime/graph/utils/GraphUtils.h>
 #include <executorch/backends/native/runtime/vulkan/VulkanConstantMaterializationTracker.h>
+#include <executorch/backends/native/runtime/vulkan/passes/FuseQuantizedLinear.h>
 #include <executorch/backends/native/runtime/vulkan/passes/InsertPrepack.h>
 #include <executorch/backends/native/runtime/vulkan/passes/LowerRMSNorm.h>
 #include <executorch/backends/native/runtime/vulkan/passes/MaterializeViewCopies.h>
@@ -450,9 +452,13 @@ class VulkanEngineExecutable final : public EngineExecutable {
   // pointer until prepack.
   std::deque<std::vector<uint8_t>> synth_bias_;
   std::vector<uint8_t> zero_state_;
-  // Canonical owner -> bytes shared by tensor references until ET-VK consumes
-  // and releases them during prepack.
-  std::unordered_map<std::string, std::shared_ptr<OwnedBytes>> constants_;
+  // Bytes shared by tensor references until ET-VK consumes and releases them
+  // during prepack: raw package bytes by canonical owner, and bytes computed
+  // from them (int32-narrowed Long constants, q4 repacks) by derivation key.
+  std::unordered_map<std::string, std::shared_ptr<OwnedBytes>>
+      source_constants_;
+  std::unordered_map<std::string, std::shared_ptr<OwnedBytes>>
+      derived_constants_;
 
   // vref_ and layout_ are sized to the method graph's value list, so every
   // ValueId the graph hands out addresses them. An id that does not means the
@@ -495,6 +501,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
         mutable_state_claim_(mutable_state_owners, method),
         graph_(std::make_unique<ComputeGraph>(config)) {
     method_.graph.rebuild_def_use();
+    vulkan::fuse_quantized_linears(method_);
     vulkan::lower_rms_norms(method_.graph);
     vulkan::insert_prepack_nodes(method_);
     validate_graph(method_.graph);
@@ -796,22 +803,18 @@ class VulkanEngineExecutable final : public EngineExecutable {
           std::to_string(info->nbytes) + " bytes but its shape and dtype " +
           "need " + std::to_string(expected));
     }
-    std::shared_ptr<OwnedBytes>& storage = constants_[info->owner];
-    if (!storage) {
-      std::optional<OwnedBytes> acquired =
-          package.acquire_constant(info->owner);
-      if (!acquired) {
-        throw std::runtime_error(
-            "vulkan: package could not load constant for key '" + b.key + "'");
-      }
-      const ByteSpan source = acquired->span();
-      if (source.size() != expected) {
-        throw std::runtime_error(
-            "vulkan: loaded constant '" + b.key + "' has " +
-            std::to_string(source.size()) + " bytes but metadata declares " +
-            std::to_string(expected));
-      }
-      if (info->dtype == ScalarType::Long) {
+    std::shared_ptr<OwnedBytes> storage = source_constant(package, b);
+    const ByteSpan source = storage->span();
+    if (source.size() != expected) {
+      throw std::runtime_error(
+          "vulkan: loaded constant '" + b.key + "' has " +
+          std::to_string(source.size()) + " bytes but metadata declares " +
+          std::to_string(expected));
+    }
+    if (info->dtype == ScalarType::Long) {
+      std::shared_ptr<OwnedBytes>& narrowed = derived_constants_
+          [std::to_string(info->owner.size()) + ":" + info->owner + ":int32"];
+      if (!narrowed) {
         std::vector<uint8_t> converted(
             static_cast<size_t>(v.tensor_meta().numel()) * sizeof(int32_t));
         for (size_t i = 0; i < converted.size() / sizeof(int32_t); ++i) {
@@ -828,14 +831,220 @@ class VulkanEngineExecutable final : public EngineExecutable {
               &downcast,
               sizeof(downcast));
         }
-        storage = std::make_shared<OwnedBytes>(
+        narrowed = std::make_shared<OwnedBytes>(
             OwnedBytes::from_vector(std::move(converted)));
-      } else {
-        storage = std::make_shared<OwnedBytes>(std::move(acquired.value()));
       }
-      materializations_.record(info->package_id, info->owner, info->nbytes);
+      storage = narrowed;
     }
     const ByteSpan bytes = storage->span();
+    auto* context = new std::shared_ptr<OwnedBytes>(storage);
+    return executorch::runtime::FreeableBuffer(
+        bytes.data(), bytes.size(), release_owned_bytes, context);
+  }
+
+  // The only place package bytes are acquired, so each owner is recorded once.
+  std::shared_ptr<OwnedBytes> source_constant(
+      const Package& package,
+      const DataBinding& binding) {
+    const std::optional<ConstantInfo> info = package.constant_info(binding.key);
+    if (!info) {
+      throw std::runtime_error(
+          "vulkan: package holds no source constant for key '" + binding.key +
+          "'");
+    }
+    std::shared_ptr<OwnedBytes>& storage = source_constants_[info->owner];
+    if (!storage) {
+      std::optional<OwnedBytes> acquired =
+          package.acquire_constant(info->owner);
+      if (!acquired) {
+        throw std::runtime_error(
+            "vulkan: package could not load source constant for key '" +
+            binding.key + "'");
+      }
+      storage = std::make_shared<OwnedBytes>(std::move(acquired.value()));
+      materializations_.record(info->package_id, info->owner, info->nbytes);
+    }
+    return storage;
+  }
+
+  void validate_zero_points(const Package& package, ValueId zero_points_id) {
+    const DataBinding* binding = binding_at(zero_points_id);
+    if (binding == nullptr || !binding->has_data) {
+      throw std::runtime_error(
+          "vulkan: q4 weight zero points must be a stored constant");
+    }
+    const std::shared_ptr<OwnedBytes> storage =
+        source_constant(package, *binding);
+    if (!std::ranges::all_of(
+            storage->span(), [](uint8_t value) { return value == 0; })) {
+      throw std::runtime_error(
+          "vulkan: q4 weight zero points must all be zero");
+    }
+  }
+
+  std::vector<uint8_t> pack_q4_weight(
+      ByteSpan source,
+      const ConstantInfo& info,
+      const TensorMeta& output) {
+    if (info.dtype != ScalarType::Char || info.sizes == nullptr ||
+        info.sizes->size() != 2 || output.dtype != ScalarType::Byte ||
+        output.sizes.size() != 2 || info.sizes->at(0) != output.sizes[0] ||
+        info.sizes->at(1) != output.sizes[1] * 2 ||
+        source.size() !=
+            static_cast<size_t>(info.sizes->at(0) * info.sizes->at(1))) {
+      throw std::runtime_error(
+          "vulkan: invalid source metadata for q4 packing");
+    }
+    std::vector<uint8_t> packed(logical_nbytes(output));
+    for (size_t i = 0; i < packed.size(); ++i) {
+      const int8_t even = static_cast<int8_t>(source[i * 2]);
+      const int8_t odd = static_cast<int8_t>(source[i * 2 + 1]);
+      if (even < -8 || even > 7 || odd < -8 || odd > 7) {
+        throw std::runtime_error("vulkan: q4 weight value is outside [-8, 7]");
+      }
+      packed[i] = static_cast<uint8_t>(
+          (static_cast<uint8_t>(odd + 8) << 4) |
+          static_cast<uint8_t>(even + 8));
+    }
+    return packed;
+  }
+
+  std::vector<uint8_t> transpose_q4_scales(
+      ByteSpan source,
+      const ConstantInfo& info,
+      const TensorMeta& output) {
+    if ((info.dtype != ScalarType::Float && info.dtype != ScalarType::Half) ||
+        info.sizes == nullptr || info.sizes->size() != 2 ||
+        output.dtype != info.dtype || output.sizes.size() != 2 ||
+        info.sizes->at(0) > output.sizes[1] ||
+        info.sizes->at(1) != output.sizes[0]) {
+      throw std::runtime_error(
+          "vulkan: invalid source metadata for q4 scale transpose");
+    }
+    const size_t elem_size = element_size(info.dtype);
+    const size_t rows = static_cast<size_t>(info.sizes->at(0));
+    const size_t cols = static_cast<size_t>(info.sizes->at(1));
+    const size_t output_cols = static_cast<size_t>(output.sizes[1]);
+    if (source.size() != rows * cols * elem_size) {
+      throw std::runtime_error("vulkan: q4 scale source byte count is invalid");
+    }
+    std::vector<uint8_t> transposed(logical_nbytes(output), 0);
+    for (size_t row = 0; row < rows; ++row) {
+      for (size_t col = 0; col < cols; ++col) {
+        std::memcpy(
+            transposed.data() + (col * output_cols + row) * elem_size,
+            source.data() + (row * cols + col) * elem_size,
+            elem_size);
+      }
+    }
+    return transposed;
+  }
+
+  std::vector<uint8_t> q4_weight_sums(
+      ByteSpan source,
+      const ConstantInfo& info,
+      const TensorMeta& output,
+      int64_t group_size) {
+    if (info.sizes == nullptr || info.sizes->size() != 2 ||
+        output.dtype != ScalarType::Int || output.sizes.size() != 2 ||
+        group_size <= 0 || info.sizes->at(0) > output.sizes[1]) {
+      throw std::runtime_error(
+          "vulkan: invalid source metadata for q4 group sums");
+    }
+    const size_t rows = static_cast<size_t>(info.sizes->at(0));
+    const size_t groups = static_cast<size_t>(output.sizes[0]);
+    const size_t cols = groups * static_cast<size_t>(group_size);
+    const size_t output_cols = static_cast<size_t>(output.sizes[1]);
+    const bool packed = info.dtype == ScalarType::Byte;
+    const size_t stored_cols = static_cast<size_t>(info.sizes->at(1));
+    if ((!packed && info.dtype != ScalarType::Char) ||
+        stored_cols * (packed ? 2 : 1) != cols ||
+        source.size() != rows * stored_cols) {
+      throw std::runtime_error(
+          "vulkan: invalid source metadata for q4 group sums");
+    }
+    std::vector<uint8_t> sums(logical_nbytes(output), 0);
+    for (size_t row = 0; row < rows; ++row) {
+      for (size_t group = 0; group < groups; ++group) {
+        int32_t sum = 0;
+        const size_t start = group * static_cast<size_t>(group_size);
+        for (size_t i = 0; i < static_cast<size_t>(group_size); ++i) {
+          const size_t col = start + i;
+          if (packed) {
+            const uint8_t byte = source[row * stored_cols + col / 2];
+            const uint8_t nibble = col % 2 == 0 ? byte & 0x0F : byte >> 4;
+            sum += static_cast<int32_t>(nibble) - 8;
+          } else {
+            sum += static_cast<int8_t>(source[row * stored_cols + col]);
+          }
+        }
+        std::memcpy(
+            sums.data() + (group * output_cols + row) * sizeof(sum),
+            &sum,
+            sizeof(sum));
+      }
+    }
+    return sums;
+  }
+
+  executorch::runtime::FreeableBuffer derived_q4_constant_buffer(
+      const Package& package,
+      const Value& value,
+      const vulkan::Q4ConstantTransform& transform) {
+    const DataBinding* source_binding = binding_at(transform.source_id);
+    if (source_binding == nullptr || !source_binding->has_data) {
+      throw std::runtime_error(
+          "vulkan: derived q4 value has no stored source constant");
+    }
+    const std::optional<ConstantInfo> info =
+        package.constant_info(source_binding->key);
+    if (!info) {
+      throw std::runtime_error(
+          "vulkan: package holds no q4 source constant for key '" +
+          source_binding->key + "'");
+    }
+    const std::string cache_key = std::to_string(info->owner.size()) + ":" +
+        info->owner +
+        ":q4:" + std::to_string(static_cast<int>(transform.kind)) + ":" +
+        value.name;
+    std::shared_ptr<OwnedBytes>& storage = derived_constants_[cache_key];
+    if (!storage) {
+      const std::shared_ptr<OwnedBytes> source =
+          source_constant(package, *source_binding);
+      std::vector<uint8_t> transformed;
+      switch (transform.kind) {
+        case vulkan::Q4ConstantTransformKind::PackWeight:
+          validate_zero_points(package, transform.zero_points_id);
+          if (info->dtype == ScalarType::Byte && info->sizes != nullptr &&
+              *info->sizes == value.tensor_meta().sizes &&
+              info->nbytes == logical_nbytes(value.tensor_meta())) {
+            storage = source;
+          } else {
+            transformed =
+                pack_q4_weight(source->span(), *info, value.tensor_meta());
+          }
+          break;
+        case vulkan::Q4ConstantTransformKind::TransposeScales:
+          transformed =
+              transpose_q4_scales(source->span(), *info, value.tensor_meta());
+          break;
+        case vulkan::Q4ConstantTransformKind::WeightSums:
+          validate_zero_points(package, transform.zero_points_id);
+          transformed = q4_weight_sums(
+              source->span(), *info, value.tensor_meta(), transform.group_size);
+          break;
+      }
+      if (!storage) {
+        storage = std::make_shared<OwnedBytes>(
+            OwnedBytes::from_vector(std::move(transformed)));
+      }
+    }
+    const ByteSpan bytes = storage->span();
+    if (bytes.size() != logical_nbytes(value.tensor_meta())) {
+      throw std::runtime_error(
+          "vulkan: derived q4 constant '" + value.name +
+          "' does not match its declared size");
+    }
     auto* context = new std::shared_ptr<OwnedBytes>(storage);
     return executorch::runtime::FreeableBuffer(
         bytes.data(), bytes.size(), release_owned_bytes, context);
@@ -868,6 +1077,19 @@ class VulkanEngineExecutable final : public EngineExecutable {
       case ValueKind::Tensor: {
         const TensorMeta& m = v.tensor_meta();
         const std::vector<int64_t>& sizes = m.sizes;
+        const auto transform = v.attrs.find(vulkan::kQ4ConstantTransformAttr);
+        if (transform != v.attrs.end()) {
+          const auto* q4 =
+              std::any_cast<vulkan::Q4ConstantTransform>(&transform->second);
+          if (q4 == nullptr) {
+            throw std::runtime_error(
+                "vulkan: malformed q4 constant transform annotation");
+          }
+          return graph_->add_tensorref(
+              sizes,
+              to_vk_dtype(device_dtype(m.dtype)),
+              derived_q4_constant_buffer(package, v, *q4));
+        }
         if (valid(v.alias_id)) {
           const VkRef source = vref_at(v.alias_id);
           const TensorMeta& source_meta = g().value(v.alias_id).tensor_meta();
@@ -1440,7 +1662,8 @@ class VulkanEngineExecutable final : public EngineExecutable {
 
     // 5. Finalize and upload constants. TensorRef owns the remaining shared
     // references and releases each source after its final prepack consumer.
-    constants_.clear();
+    source_constants_.clear();
+    derived_constants_.clear();
     graph_->prepare();
     graph_->prepare_pipelines();
     graph_->prepack();
