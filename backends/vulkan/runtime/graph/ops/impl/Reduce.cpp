@@ -387,7 +387,11 @@ void add_reduce_per_row_node(
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     std::vector<int64_t> dims_list;                                      \
     if (graph.val_is_not_none(args[1])) {                                \
-      dims_list = graph.extract_int_or_symint_list(args[1]);             \
+      if (graph.val_is_int(args[1])) {                                   \
+        dims_list = {graph.extract_scalar<int64_t>(args[1])};            \
+      } else {                                                           \
+        dims_list = graph.extract_int_or_symint_list(args[1]);           \
+      }                                                                  \
     } else if (graph.dim_of(args[0]) == 1) {                             \
       dims_list = {-1};                                                  \
     } else {                                                             \

@@ -205,6 +205,7 @@ DEFINE_ACTIVATION_FN(log10);
 DEFINE_ACTIVATION_FN(log1p);
 DEFINE_ACTIVATION_FN(round);
 DEFINE_ACTIVATION_FN(bitwise_not);
+DEFINE_ACTIVATION_FN(logical_not);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -229,6 +230,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.log1p.default, log1p);
   VK_REGISTER_OP(aten.round.default, round);
   VK_REGISTER_OP(aten.bitwise_not.default, bitwise_not);
+  VK_REGISTER_OP(aten.logical_not.default, logical_not);
 }
 
 } // namespace vkcompute

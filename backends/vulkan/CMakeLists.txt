@@ -168,6 +168,9 @@ set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
 # Test targets
 
+add_subdirectory(test)
+add_subdirectory(test/custom_ops)
+
 install(
   TARGETS vulkan_backend vulkan_schema
   EXPORT ExecuTorchTargets

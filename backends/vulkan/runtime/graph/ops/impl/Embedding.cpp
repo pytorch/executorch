@@ -124,14 +124,14 @@ void embedding(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // input/output. Needed to support some old models still in circulation.
   if (graph.is_standard_channels_packed_texture_tensor(indices)) {
     ValueRef weight = prepack_standard(
-        graph, weight_data, utils::kTexture2D, utils::kHeightPacked);
+        graph, weight_data, utils::kTexture2D, utils::kHeightPacked, /*passthrough=*/true);
 
     add_embedding_legacy_node(graph, weight, indices, out);
     return;
   }
 
   ValueRef weight =
-      prepack_standard(graph, weight_data, utils::kBuffer, utils::kWidthPacked);
+      prepack_standard(graph, weight_data, utils::kBuffer, utils::kWidthPacked, /*passthrough=*/true);
 
   // New implementation for contiguous buffer and width-packed texture tensors
   add_embedding_node(graph, indices, weight, out);
