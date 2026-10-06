@@ -25,7 +25,19 @@ set(_json_include
 
 # executorch
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
-find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+if(NOT TARGET executorch)
+  find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+  # Older tokenizer exports expose their internal headers as top-level includes,
+  # shadowing the POSIX regex.h used by GoogleTest. Use the public include root.
+  get_target_property(
+    _tokenizer_includes tokenizers::tokenizers INTERFACE_INCLUDE_DIRECTORIES
+  )
+  list(TRANSFORM _tokenizer_includes REPLACE "/pytorch/tokenizers/?$" "")
+  set_target_properties(
+    tokenizers::tokenizers PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
+                                      "${_tokenizer_includes}"
+  )
+endif()
 find_package(Threads REQUIRED)
 executorch_target_link_options_shared_lib(executorch)
 
@@ -57,3 +69,54 @@ target_link_libraries(
   test_worker_loop PUBLIC ${test_link_libraries} Threads::Threads
 )
 add_test(NAME worker_loop COMMAND test_worker_loop)
+
+# New transport is deliberately separate from the legacy worker loop.
+add_library(multiplexed_worker STATIC multiplexed_worker.cpp)
+target_include_directories(
+  multiplexed_worker
+  PUBLIC ${_common_include_directories}
+  PRIVATE ${_json_include}
+)
+target_link_libraries(
+  multiplexed_worker PUBLIC extension_llm_serving Threads::Threads
+)
+
+if(NOT TARGET GTest::gtest)
+  find_package(GTest CONFIG QUIET)
+  if(NOT TARGET GTest::gtest)
+    add_subdirectory(
+      ${EXECUTORCH_ROOT}/third-party/googletest
+      ${CMAKE_CURRENT_BINARY_DIR}/googletest EXCLUDE_FROM_ALL
+    )
+  endif()
+endif()
+add_executable(test_multiplexed_worker test/test_multiplexed_worker.cpp)
+target_include_directories(test_multiplexed_worker PRIVATE ${_json_include})
+target_link_libraries(
+  test_multiplexed_worker PRIVATE multiplexed_worker GTest::gtest
+)
+add_test(NAME multiplexed_worker COMMAND test_multiplexed_worker)
+
+option(
+  EXECUTORCH_LLM_SERVER_PYTHON_TESTS
+  "Run native-backed Python client tests (requires Python test dependencies)"
+  OFF
+)
+if(EXECUTORCH_LLM_SERVER_PYTHON_TESTS)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(_native_worker $<TARGET_FILE:test_multiplexed_worker>)
+  set(_python_tests ${CMAKE_CURRENT_SOURCE_DIR}/../python/tests)
+  add_test(
+    NAME multiplexed_worker_client_native
+    COMMAND
+      ${CMAKE_COMMAND} -E env
+      "EXECUTORCH_TEST_MULTIPLEXED_WORKER=${_native_worker}"
+      "PYTHONPATH=${EXECUTORCH_ROOT}/.." ${Python3_EXECUTABLE} -m pytest -q
+      ${_python_tests}/test_multiplexed_worker_client_native.py
+  )
+  set_tests_properties(multiplexed_worker_client_native PROPERTIES TIMEOUT 120)
+endif()
+
+# Native subprocess fixture for the opt-in Python/OpenAI integration tests.
+add_executable(test_batching_worker test_batching_worker_main.cpp)
+target_link_libraries(test_batching_worker PRIVATE multiplexed_worker)
