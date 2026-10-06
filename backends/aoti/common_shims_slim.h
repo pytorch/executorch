@@ -11,6 +11,7 @@
 #include <executorch/backends/aoti/export.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/runtime/core/error.h>
+#include <cstddef>
 #include <cstdint>
 
 namespace executorch {
@@ -86,6 +87,7 @@ AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int16();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_int8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_uint8();
 AOTI_SHIM_EXPORT int32_t aoti_torch_dtype_bool();
+AOTI_SHIM_EXPORT size_t aoti_torch_dtype_element_size(int32_t dtype);
 
 // ============================================================
 // Device Type Constants - Declarations

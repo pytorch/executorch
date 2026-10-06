@@ -22,6 +22,11 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_constant_and_index_propagation_is_disabled(self):
+        options = CudaBackend.get_aoti_compile_options([])
+
+        self.assertFalse(options["constant_and_index_propagation"])
+
     def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
         from executorch.backends.cuda.cuda_backend import (
             _keep_triton_reduction_loads_loop_scoped,

@@ -61,6 +61,9 @@ install_sccache() {
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
   export SCCACHE_S3_KEY_PREFIX=executorch
   export SCCACHE_IDLE_TIMEOUT=0
+  # A cache-server timeout should fall back to the local compiler instead of
+  # failing an otherwise valid source build.
+  export SCCACHE_IGNORE_SERVER_IO_ERROR=1
   export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
   export RUST_LOG=sccache::server=error
 

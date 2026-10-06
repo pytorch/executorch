@@ -99,6 +99,15 @@ install_pytorch_and_domains() {
   pushd pytorch || return
   git checkout "${TORCH_VERSION}"
 
+  # The pinned source snapshot predates PyTorch's clang 15 template fix. Apple
+  # clang rejects its unconditional static_assert even though that branch is
+  # never instantiated. Apply the upstream fix until a complete wheel train
+  # includes pytorch/pytorch@ad2cbdaf1791a1add8119eec8efb2ad7cb4adebe.
+  local mps_loss_ops=aten/src/ATen/native/mps/operations/LossOps.mm
+  if [[ "$(uname)" == "Darwin" ]] && grep -q "static_assert(false);" "${mps_loss_ops}"; then
+    git show ad2cbdaf1791a1add8119eec8efb2ad7cb4adebe -- "${mps_loss_ops}" | git apply
+  fi
+
   local system_name=$(uname)
   if [[ "${system_name}" == "Darwin" ]]; then
     local platform=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')

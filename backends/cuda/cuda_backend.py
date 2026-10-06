@@ -845,6 +845,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Base options for all platforms
 
         options: Dict[str, typing.Any] = {
+            # The pinned nightly's index propagation crashes when a nested
+            # bfloat16 cast declines to fold. Keep the cast explicit instead.
+            "constant_and_index_propagation": False,
             # Disable this to support sdpa decomposition
             # TODO(gasoonjia): remove it after pin bump to latest pytorch
             "loop_ordering_after_fusion": False,
