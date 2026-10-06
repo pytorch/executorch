@@ -97,7 +97,6 @@ _AOTI_SHIM_SYMBOLS = (
     # failure this row exists to catch.
     "aoti_torch_cuda__weight_int4pack_mm",
     "aoti_torch_cuda_int5_plain_mm",
-    "aoti_torch_cuda_int6_plain_mm",
     "aoti_torch_cuda_int8_plain_mm",
     "aoti_torch_cuda_rand",
     "aoti_torch_cuda_randint_low_out",

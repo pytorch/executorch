@@ -773,8 +773,6 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int5_plain_mm": None,
             "aoti_torch_cuda_int5_plain_mm": None,
-            "executorch_cuda::int6_plain_mm": None,
-            "aoti_torch_cuda_int6_plain_mm": None,
             "executorch_cuda::int8_plain_mm": None,
             "aoti_torch_cuda_int8_plain_mm": None,
         }
@@ -791,12 +789,6 @@ class CudaBackend(AotiBackend, BackendDetails):
                         "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                         "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                         "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                    ],
-                    torch.ops.executorch_cuda.int6_plain_mm.default: [
-                        "AOTITorchError aoti_torch_cuda_int6_plain_mm("
-                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                        "AtenTensorHandle, AtenTensorHandle, int64_t, "
-                        "AtenTensorHandle*)"
                     ],
                     torch.ops.executorch_cuda.int8_plain_mm.default: [
                         "AOTITorchError aoti_torch_cuda_int8_plain_mm("
