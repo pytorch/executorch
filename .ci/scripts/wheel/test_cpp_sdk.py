@@ -1243,14 +1243,45 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         # tests a configuration no consumer of this package is ever in.
         "-DC10_USING_CUSTOM_GENERATED_MACROS",
     ]
-    # Deliberately no CUDA toolkit include directory. A CUDA wheel's own headers have to compile
-    # against nothing but the wheel, the same as every other header here. Adding the builder's toolkit
-    # would measure the build machine rather than the consumer, and a header that only compiles that way
-    # fails in the consumer's project instead of here.
-    # Headers a wheel-only consumer cannot compile and is not expected to. Each needs something outside the
-    # package: a platform that is not the one being built for, or a third-party library the wheel does not
-    # carry. They ship because a source build includes them, and holding them to this rule would report a
-    # defect with no available fix.
+    cuda_headers = (
+        "executorch/extension/cuda/cuda_allocator.h",
+        "executorch/extension/cuda/runtime_api.h",
+    )
+    cuda_includes = []
+    if any(
+        (package_dir / "lib").glob(
+            _library_file_name("libexecutorch_extension_cuda") + "*"
+        )
+    ):
+        for header in cuda_headers:
+            assert (include_root / header).is_file(), f"{header} is not shipped"
+        # Only these headers require toolkit types. Use the consumer's toolkit
+        # search, not the compiler's default path or the builder's Torch headers.
+        toolkit_source = work_dir / "cuda-toolkit"
+        toolkit_source.mkdir(parents=True, exist_ok=True)
+        toolkit_build = work_dir / "cuda-toolkit-build"
+        (toolkit_source / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.19)\n"
+            "project(toolkit CXX)\n"
+            "find_package(CUDAToolkit REQUIRED)\n"
+            'file(WRITE "${CMAKE_BINARY_DIR}/includes.txt" "${CUDAToolkit_INCLUDE_DIRS}")\n'
+        )
+        command = [
+            _tool("cmake"),
+            "-S",
+            str(toolkit_source),
+            "-B",
+            str(toolkit_build),
+        ]
+        if os.environ.get("CUDA_HOME"):
+            command.append(f"-DCUDAToolkit_ROOT={os.environ['CUDA_HOME']}")
+        subprocess.run(command, capture_output=True, text=True, check=True)
+        cuda_includes = [
+            f"-I{directory}"
+            for directory in (toolkit_build / "includes.txt").read_text().split(";")
+            if directory
+        ]
+    source = work_dir / "header_probe.cpp"
     needs_more_than_the_wheel = (
         # These ship because other shipped headers include them, so they cannot be left out, and they do
         # not compile on their own: each needs a third-party library the wheel links but publishes no
@@ -1262,7 +1293,6 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         "torch/headeronly/util/complex_utils.h",
     )
 
-    source = work_dir / "header_probe.cpp"
     broken = []
     skipped_but_fine = []
     compiled = 0
@@ -1274,7 +1304,14 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
             f"#include <{relative.as_posix()}>\nint main() {{ return 0; }}\n"
         )
         result = subprocess.run(
-            [_cxx(), "-std=c++20", *includes, "-fsyntax-only", str(source)],
+            [
+                _cxx(),
+                "-std=c++20",
+                *includes,
+                *(cuda_includes if relative.as_posix() in cuda_headers else []),
+                "-fsyntax-only",
+                str(source),
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -1310,6 +1347,52 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         f"wheel; {len(skipped_names)} need something the wheel does not carry "
         f"({', '.join(sorted(skipped_names))})"
     )
+
+
+def test_cuda_allocator_component(work_dir: Path) -> None:
+    """The CUDA target must supply everything needed to use its allocator."""
+    package = _installed_package_dir()
+    if not any(
+        (package / "lib").glob(_library_file_name("libexecutorch_extension_cuda") + "*")
+    ):
+        print("- no CUDA extension is shipped; skipping its allocator consumer")
+        return
+
+    source_dir = work_dir / "cuda-allocator-consumer"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "consumer.cpp").write_text(
+        "#include <executorch/extension/cuda/cuda_allocator.h>\n"
+        "using namespace executorch::extension::cuda;\n"
+        "int main() {\n"
+        "  return CudaAllocator::instance().device_type() ==\n"
+        "      executorch::runtime::etensor::DeviceType::CUDA ? 0 : 1;\n"
+        "}\n"
+    )
+    (source_dir / "CMakeLists.txt").write_text(_consumer_cmake(["extension_cuda"]))
+    build_dir = work_dir / "cuda-allocator-consumer-build"
+    configure = [
+        _tool("cmake"),
+        "-S",
+        str(source_dir),
+        "-B",
+        str(build_dir),
+        f"-DCMAKE_PREFIX_PATH={package}",
+    ]
+    if os.environ.get("CUDA_HOME"):
+        configure.append(f"-DCUDAToolkit_ROOT={os.environ['CUDA_HOME']}")
+    for command in (configure, _cmake_build(_tool("cmake"), build_dir)):
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, (
+            "a consumer linking only executorch::extension_cuda could not build:\n"
+            f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
+    subprocess.run(
+        [str(_executable(build_dir, "consumer"))],
+        env=_loader_clean_environment(),
+        check=True,
+        timeout=_RUN_TIMEOUT,
+    )
+    print("CUDA allocator compiles, links and runs through executorch::extension_cuda")
 
 
 def test_shipped_headers_have_implementations(work_dir: Path) -> None:
@@ -1921,6 +2004,7 @@ def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
     test_profiler_component_is_usable(work_dir)
     test_every_shipped_header_compiles(work_dir)
+    test_cuda_allocator_component(work_dir)
     test_shipped_headers_have_implementations(work_dir)
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_cannot_compute(work_dir)
