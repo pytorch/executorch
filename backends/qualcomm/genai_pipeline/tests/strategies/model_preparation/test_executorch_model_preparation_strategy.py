@@ -336,16 +336,17 @@ class TestExecuTorchModelPreparationStrategy(unittest.TestCase):
     def test_invoke_builds_inference_from_meta_and_example_inputs(self):
         loader = _make_mock_adapter()
         strategy = _make_strategy(loader)
-        extra = {"embedding_quantize": "4a"}
+        model_options = {"embedding_quantize": "4a"}
 
         result = strategy.invoke(
-            make_test_context(), _make_valid_input_config(extra_options=extra)
+            make_test_context(),
+            _make_valid_input_config(extra_options={"model_options": model_options}),
         )
 
         loader.get_inference.assert_called_once_with(
             result.meta,
             result.example_inputs,
-            extra_options=extra,
+            extra_options=model_options,
         )
 
     def test_invoke_rejects_unkeyed_module_transforms(self):
@@ -384,16 +385,23 @@ class TestExecuTorchModelPreparationStrategy(unittest.TestCase):
 
     def test_invoke_chat_template_prefers_tokenizer_over_extra_options(self):
         """A chat template on the tokenizer is carried into the output config."""
+
+        def tokenizer_template():
+            return "tokenizer_template"
+
+        def fallback_template():
+            return "fallback"
+
         loader = _make_mock_adapter()
-        loader.load_tokenizer.return_value.chat_template = "tokenizer_template"
+        loader.load_tokenizer.return_value.chat_template = tokenizer_template
         strategy = _make_strategy(loader)
         input_config = _make_valid_input_config(
-            extra_options={"chat_template": "fallback"}
+            extra_options={"chat_template": fallback_template}
         )
 
         result = strategy.invoke(make_test_context(), input_config)
 
-        self.assertEqual(result.chat_template, "tokenizer_template")
+        self.assertIs(result.chat_template, tokenizer_template)
 
     def test_invoke_missing_model_name_raises_stage_error(self):
         """StageError raised when model_name is empty."""

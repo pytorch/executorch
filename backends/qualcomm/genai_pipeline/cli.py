@@ -37,24 +37,17 @@ from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
 from executorch.backends.qualcomm.genai_pipeline.control_args import (
-    DEFAULT_ARTIFACT_DIR,
+    DEFAULT_ARTIFACT,
     DEFAULT_BACKEND,
     DEFAULT_BATCH_SIZE,
     DEFAULT_CALIB_HF_LIMIT,
     DEFAULT_CALIB_LIMIT,
     DEFAULT_DTYPE_OVERRIDE,
-    DEFAULT_EVAL_LIMIT,
-    DEFAULT_EVAL_METHOD,
     DEFAULT_GCAP,
     DEFAULT_MAX_SEQ_LEN,
     DEFAULT_MODEL_MODE,
     DEFAULT_NGRAM,
     DEFAULT_PREFILL_AR_LEN,
-    DEFAULT_SOC_MODEL,
-    DEFAULT_TEMPERATURE,
-    DEFAULT_TRAIN_HF_LIMIT,
-    DEFAULT_TRAIN_LIMIT,
-    DEFAULT_TRAIN_VAL_RATIO,
     DEFAULT_WINDOW,
 )
 from executorch.backends.qualcomm.genai_pipeline.genai_pipeline import QuantizationStage
@@ -124,8 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--artifact-dir",
         type=str,
-        default=DEFAULT_ARTIFACT_DIR,
-        help=f"Directory for compiled artifacts (default: {DEFAULT_ARTIFACT_DIR}).",
+        default=DEFAULT_ARTIFACT,
+        help=f"Directory for compiled artifacts (default: {DEFAULT_ARTIFACT}).",
     )
 
     # --- Quantization ---
@@ -135,16 +128,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use FP16 precision (skip quantization).",
     )
     parser.add_argument(
+        "--qat",
+        action="store_true",
+        help="Enable Quantization-Aware Training (QAT). If not set, defaults to PTQ.",
+    )
+    parser.add_argument(
         "--embedding-quantize",
         type=str,
         default=None,
         help="Fall back to the CPU embedding operator and quantize it, as "
         "'<bitwidth>,<groupsize>' -- e.g. '4,32'.",
-    )
-    parser.add_argument(
-        "--quant-recipe-suggestion",
-        action="store_true",
-        help="Emit a per-layer mixed-precision recipe suggestion during PTQ.",
     )
     parser.add_argument(
         "--batch-size",
@@ -201,101 +194,12 @@ def build_parser() -> argparse.ArgumentParser:
         f"(default: {DEFAULT_CALIB_HF_LIMIT}).",
     )
 
-    # --- Quantization-aware training ---
-    parser.add_argument(
-        "--qat",
-        action="store_true",
-        help="Enable Quantization-Aware Training (QAT). If not set, defaults to PTQ.",
-    )
-    parser.add_argument(
-        "--train-config",
-        type=str,
-        default=None,
-        help="(QAT) YAML file overriding training configuration defaults.",
-    )
-    parser.add_argument(
-        "--lr-config",
-        type=str,
-        default=None,
-        help="(QAT) YAML file configuring optimizer parameter groups.",
-    )
-    parser.add_argument(
-        "--train-tasks",
-        type=str,
-        nargs="+",
-        default=None,
-        help="(QAT) lm-eval tasks for training data. Use --calib-tasks to "
-        "specify calibration data separately.",
-    )
-    parser.add_argument(
-        "--train-limit",
-        type=int,
-        default=DEFAULT_TRAIN_LIMIT,
-        help=f"(QAT) Number of samples for train tasks (default: {DEFAULT_TRAIN_LIMIT}).",
-    )
-    parser.add_argument(
-        "--train-hf-dataset",
-        type=str,
-        default=None,
-        help="(QAT) HuggingFace instruct dataset for training "
-        "(e.g. 'HuggingFaceTB/smol-smoltalk').",
-    )
-    parser.add_argument(
-        "--train-hf-limit",
-        type=int,
-        default=DEFAULT_TRAIN_HF_LIMIT,
-        help="(QAT) Number of samples to load from --train-hf-dataset "
-        f"(default: {DEFAULT_TRAIN_HF_LIMIT}).",
-    )
-    parser.add_argument(
-        "--train-val-ratio",
-        type=float,
-        default=DEFAULT_TRAIN_VAL_RATIO,
-        help="(QAT) Fraction of non-calib samples used for training; the "
-        "remainder becomes validation. 1.0 disables validation "
-        f"(default: {DEFAULT_TRAIN_VAL_RATIO}).",
-    )
-    parser.add_argument(
-        "--freeze-all-params",
-        action="store_true",
-        help="(QAT) Freeze model weights so only quantization parameters are updated.",
-    )
-
-    # --- Evaluation ---
-    parser.add_argument(
-        "--eval-tasks",
-        type=str,
-        nargs="+",
-        default=None,
-        help="lm-eval tasks to evaluate on, e.g. --eval-tasks wikitext.",
-    )
-    parser.add_argument(
-        "--eval-methods",
-        type=str,
-        nargs="+",
-        default=[DEFAULT_EVAL_METHOD],
-        help=f"Evaluation methods to run (default: {DEFAULT_EVAL_METHOD}).",
-    )
-    parser.add_argument(
-        "--eval-limit",
-        type=int,
-        default=DEFAULT_EVAL_LIMIT,
-        help=f"How many samples to evaluate on (default: {DEFAULT_EVAL_LIMIT}).",
-    )
-    parser.add_argument(
-        "--eval-num-fewshot",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Number of few-shot examples in each evaluation sample.",
-    )
-
     # --- Backend and SoC selection ---
     parser.add_argument(
         "--soc",
         type=str,
-        default=DEFAULT_SOC_MODEL,
-        help=f"Target SoC model (default: {DEFAULT_SOC_MODEL}).",
+        default=None,
+        help="Target SoC model.",
     )
     parser.add_argument(
         "--backend",
@@ -305,39 +209,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"QNN backend type (default: {DEFAULT_BACKEND}).",
     )
 
-    # --- Runtime prompts and multimodal inputs ---
+    # --- Runtime prompt ---
     parser.add_argument(
         "--prompt",
         type=str,
         nargs="+",
         default=["Hello, how are you?"],
         help="User prompt(s) for text generation.",
-    )
-    parser.add_argument(
-        "--system-prompt",
-        type=str,
-        default="",
-        help="System prompt for models that support one.",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=DEFAULT_TEMPERATURE,
-        help=f"Sampling temperature for text generation (default: {DEFAULT_TEMPERATURE}).",
-    )
-    parser.add_argument(
-        "--audio-path",
-        type=str,
-        nargs="+",
-        default=[],
-        help="Audio file(s) for multimodal (ALM) models.",
-    )
-    parser.add_argument(
-        "--image-path",
-        type=str,
-        nargs="+",
-        default=[],
-        help="Image file(s) for multimodal (VLM) models.",
     )
 
     # Graph shapes and modes
@@ -357,8 +235,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-context-len",
         type=int,
-        default=DEFAULT_MAX_SEQ_LEN,  # TODO: Add DEFAULT_MAX_CONTEXT_LEN once attention sink is introduced in GenAI Pipeline.
-        help=f"Maximum context length (default: {DEFAULT_MAX_SEQ_LEN}).",
+        default=None,
+        help=(
+            "Maximum context length. Overrides --max-seq-len until GenAI Pipeline "
+            f"supports attention sink (default: {DEFAULT_MAX_SEQ_LEN})."
+        ),
     )
     parser.add_argument(
         "--prefill-ar-len",
@@ -402,12 +283,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only compile the model (skip inference).",
     )
     parser.add_argument(
-        "--pre-gen-pte",
-        type=str,
-        default=None,
-        help="Directory containing pre-generated .pte artifacts.",
-    )
-    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -448,6 +323,9 @@ def _validate_args(args: argparse.Namespace) -> None:
     Raises:
         ValueError: If arguments violate constraints.
     """
+    if not args.soc:
+        raise ValueError("--soc is required to run the GenAI Pipeline.")
+
     # TODO: The legacy path already supports the QAT feature,
     # but it is not yet introduced in GenAI Pipeline.
     if args.qat:
@@ -477,6 +355,14 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
         args.batch_size = 1
 
+    if not args.use_fp16 and not (
+        args.calib_tasks or args.calib_samples or args.calib_hf_dataset
+    ):
+        raise ValueError(
+            "Quantization requires calibration data. Provide --calib-tasks, "
+            "--calib-samples, or --calib-hf-dataset."
+        )
+
 
 def _prepare_configs(args: argparse.Namespace) -> dict:
     """Prepare model configs, transforms, and dataset options.
@@ -501,26 +387,22 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
         get_state_dict_loader,
     )
 
-    # TODO: The legacy path already supports attention sink, but GenAI Pipeline
-    # does not yet. Until attention sink is supported, keep max_context_len
-    # equal to max_seq_len.
-    logger.info(
-        "Setting max_context_len=%s to match max_seq_len because "
-        "attention sink is not yet supported in GenAI Pipeline.",
-        args.max_seq_len,
-    )
-    args.max_context_len = args.max_seq_len
+    # TODO: Separate sequence and context lengths once attention sink is
+    # supported in GenAI Pipeline. Until then, use one resolved graph shape.
+    if args.max_context_len is None:
+        args.max_context_len = args.max_seq_len
+    else:
+        args.max_seq_len = args.max_context_len
 
     model_config = get_model_config(args.model)
     logger.info("Model config loaded")
 
-    model_arch = get_model_arch(args.model, args, model_config=model_config)
+    model_arch = get_model_arch(args.model, args)
     logger.info("Model arch loaded")
 
     weight_transforms, module_transforms = get_source_transform(
         args.model,
         control_args=args,
-        model_config=model_config,
     )
     logger.info("Loaded source transforms for model '%s'", args.model)
 
@@ -528,7 +410,6 @@ def _prepare_configs(args: argparse.Namespace) -> dict:
     state_dict_loaders = get_state_dict_loader(
         args.model,
         control_args=args,
-        model_config=model_config,
     )
     model_options = {
         "model_arch": model_arch,
@@ -578,8 +459,6 @@ def get_quantization_stage(
 ) -> "QuantizationStage":
     from executorch.backends.qualcomm.genai_pipeline.datasets import (
         get_calibration_dataset_adapter,
-        get_eval_dataset_adapter,
-        get_training_dataset_adapter,
     )
     from executorch.backends.qualcomm.genai_pipeline.model_lookup import (
         get_quantizer_adapter,
@@ -594,13 +473,6 @@ def get_quantization_stage(
     calibration_data_adapter = get_calibration_dataset_adapter(
         dataset_options, is_multimodal=model_is_multimodal
     )
-    training_data_adapter = get_training_dataset_adapter(
-        dataset_options, is_multimodal=model_is_multimodal
-    )
-    evaluation_data_adapter = get_eval_dataset_adapter(
-        dataset_options, is_multimodal=model_is_multimodal
-    )
-
     quantizer_adapter = get_quantizer_adapter(args.model)
     recipe_names = {
         component: (
@@ -617,8 +489,6 @@ def get_quantization_stage(
         ExecuTorchQuantizationStrategy(
             quantizer_adapter=quantizer_adapter,
             calibration_data_adapter=calibration_data_adapter,
-            training_data_adapter=training_data_adapter,
-            evaluation_data_adapter=evaluation_data_adapter,
         )
     )
     return quantization_stage
@@ -656,6 +526,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     extra_options = {
         "backend": args.backend,
         "model_mode": args.model_mode,
+        "max_context_len": args.max_context_len,
         "max_seq_len": args.max_seq_len,
         "use_fp16": args.use_fp16,
         "compile_only": args.compile_only,
@@ -711,7 +582,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
     # Currently, only model preparation and quantization are supported.
     # TODO: Add support for compilation and inference.
     if args.compile_only:
-        logger.info("Compile-only mode (no device inference)")
+        logger.info(
+            "--compile-only is reserved until compilation and inference stages are added"
+        )
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -738,6 +611,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Validate --model is required
     if not args.model:
         parser.error("--model is required (use --list-models to see options)")
+    args.model = args.model.lower()
 
     # Run pipeline
     try:

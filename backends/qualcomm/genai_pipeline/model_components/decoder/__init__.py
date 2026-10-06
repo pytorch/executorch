@@ -55,11 +55,6 @@ __all__ = [
     "LlamaModel",
     "LlamaModelWithoutEmbedding",
     "MultiScopeAwareLlamaModel",
-    # Attention masks.
-    "AttentionMask",
-    "BaseAttentionMask",
-    "CausalAttentionMask",
-    "SlidingWindowAttentionMask",
     # Attention, KV-head expansion, and rotary positional encoding.
     "AttentionSinkRope",
     "LlamaAttention",

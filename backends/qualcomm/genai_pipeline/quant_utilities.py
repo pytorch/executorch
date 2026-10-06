@@ -58,11 +58,15 @@ def make_quantizer(
     from executorch.backends.qualcomm.export_utils import (
         make_quantizer as _make_quantizer,
     )
+    from torchao.quantization.pt2e import MinMaxObserver
 
     soc_model_str = soc_model.name if hasattr(soc_model, "name") else str(soc_model)
     make_quantizer_kwargs = {
         "backend": backend,
         "soc_model": soc_model_str,
+        "per_channel_conv": True,
+        "per_channel_linear": True,
+        "act_observer": MinMaxObserver,
         **kwargs,
     }
     if quant_dtype is not None:
@@ -201,7 +205,11 @@ def encoding_override(  # noqa: C901
     ``n_cache_layers`` additionally copies KV-cache output encodings onto the
     deployed graph's cache inputs; ``None`` leaves KV-cache encodings unchanged.
     """
-    from executorch.backends.qualcomm.builders.utils import is_graph_output
+    from executorch.backends.qualcomm.builders.utils import (
+        get_attr_from_target,
+        is_graph_output,
+        set_attr_from_target,
+    )
 
     pbq_target = {
         torch.ops.torchao.dequantize_affine,
@@ -254,26 +262,10 @@ def encoding_override(  # noqa: C901
                 activation_override(quantized_user, unquantized_user)
 
     def parameter_override(quantized_node, unquantized_node):
-        # Some parameters need to be iterated over to retrieve attributes such as static_llama.tok_embedding.weight
-        def _get_attr(graph_module: torch.fx.GraphModule, target: str) -> Any:
-            attr: Any = graph_module
-            for target_atom in target.split("."):
-                attr = getattr(attr, target_atom)
-            return attr
-
-        def _set_attr(
-            graph_module: torch.fx.GraphModule, target: str, replacement: Any
-        ) -> Any:
-            attr: Any = graph_module
-            target_list = target.split(".")
-            for target_atom in target_list[:-1]:
-                attr = getattr(attr, target_atom)
-            setattr(attr, target_list[-1], replacement)
-
-        _set_attr(
+        set_attr_from_target(
             unquantized_model,
             unquantized_node.target,
-            _get_attr(quantized_model, quantized_node.target),
+            get_attr_from_target(quantized_model, quantized_node.target),
         )
         # scale / zero point are part of op's attributes
         if list(quantized_node.users)[0].target in ptq_target:

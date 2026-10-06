@@ -96,15 +96,6 @@ class GenAIPipeline:
     Assembles stages from EngineProxy, wires data flow between
     InputConfig → Stage → OutputConfig, and executes sequentially:
     model_preparation → quantization → compilation → inference.
-
-    One decoder is exported several times, once per Mode, so the orchestrator
-    plans ``{graph_name: Mode}`` once per run and hands it to the stages that
-    fan out over it. Every other per-graph fact is derived from a graph's Mode
-    where it is needed, rather than carried between stages.
-
-    Calibration data is built inside the quantization stage from its injected
-    dataset adapters, so there is no separate dataset stage: a run that skips
-    quantization never touches a corpus.
     """
 
     def __init__(

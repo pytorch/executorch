@@ -198,7 +198,7 @@ class TestExportTokenizer(unittest.TestCase):
         self.assertEqual(result, self.artifact_dir / TEST_TOKENIZER_JSON)
         self.assertNotEqual(result, self.artifact_dir)
 
-    def test_selects_by_name_not_by_position(self):
+    def test_returns_wrapper_runtime_path_over_other_artifacts(self):
         self._touch_artifacts(
             [TEST_TOKENIZER_CONFIG, TEST_TOKENIZER_JSON, TEST_ADDED_TOKENS]
         )
@@ -207,18 +207,9 @@ class TestExportTokenizer(unittest.TestCase):
             self._make_tokenizer(TEST_ADDED_TOKENS), self.output_dir
         )
 
-        self.assertEqual(result, self.artifact_dir / TEST_TOKENIZER_JSON)
+        self.assertEqual(result, self.artifact_dir / TEST_ADDED_TOKENS)
 
-    def test_prefers_tokenizer_json_over_tokenizer_model(self):
-        self._touch_artifacts([TEST_TOKENIZER_MODEL, TEST_TOKENIZER_JSON])
-
-        result = self.adapter.export_tokenizer(
-            self._make_tokenizer(TEST_TOKENIZER_MODEL), self.output_dir
-        )
-
-        self.assertEqual(result, self.artifact_dir / TEST_TOKENIZER_JSON)
-
-    def test_falls_back_to_tokenizer_model_when_no_json(self):
+    def test_returns_wrapper_runtime_path_for_known_name(self):
         self._touch_artifacts(
             [TEST_TOKENIZER_CONFIG, TEST_TOKENIZER_MODEL, TEST_SPECIAL_TOKENS_MAP]
         )
@@ -229,7 +220,7 @@ class TestExportTokenizer(unittest.TestCase):
 
         self.assertEqual(result, self.artifact_dir / TEST_TOKENIZER_MODEL)
 
-    def test_falls_back_to_runtime_tokenizer_when_no_known_name(self):
+    def test_returns_wrapper_runtime_path_when_no_known_name(self):
         runtime_name = "tokenizer.bin"
         tokenizer = self._make_tokenizer(runtime_name)
 

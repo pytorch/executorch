@@ -45,6 +45,7 @@ from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
 DECODE_GRAPH_NAME = DECODER_GRAPH_NAMES[0]
 PREFILL_GRAPH_NAME = DECODER_GRAPH_NAMES[1]
 EMBED_DECODE_GRAPH_NAME = TOK_EMBEDDING_GRAPH_NAMES[0]
+EMBED_PREFILL_GRAPH_NAME = TOK_EMBEDDING_GRAPH_NAMES[1]
 
 
 def _make_recipe(name, kv_bit_width=8, logits_bit_width=16):
@@ -194,7 +195,7 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
         self.assertIsInstance(strategy, QuantizationStrategy)
 
     def test_default_adapters_created_when_none_provided(self):
-        """Default quantization and purpose adapters are created when omitted."""
+        """Default adapters are created when callers do not inject one."""
         with patch(
             "executorch.backends.qualcomm.genai_pipeline.strategies.quantization."
             "default_quantizer_adapter.DefaultQuantizerAdapter"
@@ -370,7 +371,7 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
                 ][GRAPH_FORWARD],
             },
         )
-        self.assertNotIn("extra_options", kwargs)
+        self.assertEqual(kwargs["extra_options"], input_config.extra_options)
 
     def test_invoke_calibrates_only_non_deployed_graphs(self):
         """Only each component's non-deployed graph is truly calibrated."""
@@ -420,11 +421,17 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
             ],
         )
 
-    def test_invoke_overrides_only_text_and_embedding_deployed_graphs(self):
-        """Encoding override applies only where calibration/deploy graph split exists."""
+    def test_invoke_skips_prefill_decoder_override_without_kv_cache(self):
+        """Only decoder cache reconciliation depends on prefill cache topology."""
         adapter = _make_mock_adapter()
         strategy = _make_strategy(adapter)
         input_config = _make_valid_input_config()
+        input_config.example_inputs[ARTIFACT_TOK_EMBEDDING][
+            EMBED_PREFILL_GRAPH_NAME
+        ] = ("embed_prefill",)
+        input_config.meta[ARTIFACT_TOK_EMBEDDING][EMBED_PREFILL_GRAPH_NAME] = {
+            "get_n_layers": 0
+        }
 
         strategy.invoke(make_test_context(), input_config)
 
@@ -433,21 +440,40 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
             kwargs.get("n_cache_layers")
             for _, kwargs in self.encoding_override.call_args_list
         ]
+        self.assertEqual(n_cache_layers, [2, None, None])
+        embedding_override_calls = self.encoding_override.call_args_list[1:]
         self.assertEqual(
-            n_cache_layers,
-            [
-                2,
-                2,
-                None,
-            ],
+            embedding_override_calls[0].kwargs["unquantized_model"]._mock_name,
+            "converted_prepared_exported_tok_embedding_embed_decode",
         )
+        self.assertEqual(
+            embedding_override_calls[1].kwargs["unquantized_model"]._mock_name,
+            "converted_prepared_exported_tok_embedding_embed_prefill",
+        )
+        self.assertEqual(self.save_logits_quant_attrs.call_count, 2)
+        self.assertEqual(self.save_output_kv_cache_quant_attrs.call_count, 2)
+
+    def test_invoke_overrides_prefill_with_kv_cache(self):
+        adapter = _make_mock_adapter()
+        strategy = _make_strategy(adapter)
+        input_config = _make_valid_input_config()
+        input_config.meta[ARTIFACT_TEXT_DECODER][PREFILL_GRAPH_NAME][
+            "get_use_kv_cache"
+        ] = True
+
+        strategy.invoke(make_test_context(), input_config)
+
+        self.assertEqual(self.encoding_override.call_count, 3)
+        n_cache_layers = [
+            kwargs.get("n_cache_layers")
+            for _, kwargs in self.encoding_override.call_args_list
+        ]
+        self.assertEqual(n_cache_layers, [2, 2, None])
         text_override_calls = self.encoding_override.call_args_list[:2]
         self.assertIs(
             text_override_calls[1].kwargs["quantized_model"],
             text_override_calls[0].kwargs["quantized_model"],
         )
-        self.assertEqual(self.save_logits_quant_attrs.call_count, 2)
-        self.assertEqual(self.save_output_kv_cache_quant_attrs.call_count, 2)
 
     def test_invoke_skips_missing_text_decoder_prefill_graph(self):
         adapter = _make_mock_adapter()
@@ -643,6 +669,19 @@ class TestExecuTorchQuantizationStrategy(unittest.TestCase):
         strategy = _make_strategy()
 
         self.assertIsNone(strategy._get_quant_io_dtypes(None))
+
+    def test_quant_io_dtypes_returns_io_dtype_for_encoder_recipe(self):
+        """A non-KV component recipe produces an io_type-only mapping."""
+        strategy = _make_strategy()
+        recipe = MagicMock()
+        del recipe.get_kv_io_bit_width
+        del recipe.get_logits_output_bit_width
+        recipe.get_act_bit_width.return_value = 16
+
+        self.assertEqual(
+            strategy._get_quant_io_dtypes(recipe),
+            {"io_type": torch.uint16},
+        )
 
     def test_quant_io_dtypes_rejects_unsupported_widths(self):
         """Unsupported IO widths must not silently produce a partial result."""
