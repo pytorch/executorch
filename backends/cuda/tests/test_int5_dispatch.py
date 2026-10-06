@@ -8,17 +8,16 @@
 """Tests for CudaDp4aPlanarInt5Tensor F.linear dispatch via int5_dispatch.
 
 These tests validate the eager / trace-time dispatch path — the same code that
-torch.export traces through when building the AOTI graph. They do NOT test the
-.pte runtime C shim (W5A8 dp4a kernel); that is covered by
-test_aoti_torch_cuda_int5_plain_mm.cpp (C++ unit tests).
+torch.export traces through when building the AOTI graph. The Triton kernels
+themselves are covered by test_int5_quantized_gemm.py.
 
 The API contract: after importing int5_dispatch, F.linear / nn.Linear with a
 CudaDp4aPlanarInt5Tensor weight produce numerically correct results, routed by
-batch size (decode M<=4 -> custom op, prefill M>4 -> inline dequant). Q5_K is
+batch size (decode M<=4 -> ``triton::int5_quantized_gemm_m{M}``, everything
+else -> inline dequant, never an error). Q5_K is
 asymmetric (has a zero point, like INT4): ``w = scale * (u - zero)`` with u in
 [0, 31]. Both scale and zero are stored as per-group uint8 codes with a per-256
-fp16 step packed into ONE warp-shuffle word by the kernel (z_pack). Routing tests
-run without a GPU by recording calls to the decode custom op.
+fp16 step.
 
 Usage:
   python -m pytest backends/cuda/tests/test_int5_dispatch.py -v
@@ -92,22 +91,23 @@ def _make_int5_tensor(N, K, gs=GS):
 
 
 @contextlib.contextmanager
-def _record_int5_plain_mm():
-    """Record calls to the decode custom op without needing a GPU.
+def _record_int5_kernel_ops():
+    """Record which INT5 Triton op the dispatch would launch; the recorder
+    computes the result via the eager dequant."""
+    from executorch.backends.cuda.triton.kernels.int5_quantized_gemm import (
+        INT5_QUANTIZED_GEMM,
+    )
 
-    Replaces ``torch.ops.executorch_cuda.int5_plain_mm`` (whose real impl is the
-    CUDA C shim) with a recorder that computes the result via the eager CPU
-    dequant, so the dispatch handler still returns a valid tensor.
-    """
     calls = []
 
-    def _fake(self, ql, qh, scale, scale_step, zero, zero_point_step, group_size):
-        calls.append((tuple(self.shape), group_size))
-        return _dequant_matmul_int5(
-            self, ql, qh, scale, scale_step, zero, zero_point_step, group_size
-        )
+    def _op(bucket):
+        def run(x, *weight_args):
+            calls.append((bucket, tuple(x.shape)))
+            return _dequant_matmul_int5(x, *weight_args)
 
-    with mock.patch.object(torch.ops.executorch_cuda, "int5_plain_mm", _fake):
+        return run
+
+    with mock.patch.object(INT5_QUANTIZED_GEMM, "op", side_effect=_op):
         yield calls
 
 
@@ -147,10 +147,10 @@ class TestPacker(unittest.TestCase):
 
 
 class TestDispatchRouting(unittest.TestCase):
-    """Type-based routing: M<=4 -> int5_plain_mm op, M>4 -> inline dequant.
+    """Type-based routing on CPU: CudaDp4aPlanarInt5Tensor takes inline dequant.
 
-    Runs without a GPU by recording calls to the decode custom op and computing
-    the result with the eager CPU dequant.
+    CPU eager cannot launch Triton, so every M takes the inline dequant and no
+    INT5 op is reached; decode on CUDA is covered by TestDecodeDispatch.
     """
 
     def setUp(self):
@@ -161,18 +161,18 @@ class TestDispatchRouting(unittest.TestCase):
             (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
         ).item()
 
-    def test_decode_routes_to_int5_plain_mm(self):
+    def test_cpu_decode_uses_dequant(self):
         t, _ = _make_int5_tensor(16, 256)
         x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
-        with _record_int5_plain_mm() as calls:
+        with _record_int5_kernel_ops() as calls:
             out = F.linear(x, t)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])
         self.assertEqual(out.shape, (1, 16))
 
     def test_prefill_uses_dequant(self):
         t, w_ref = _make_int5_tensor(16, 256)
         x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
-        with _record_int5_plain_mm() as calls:
+        with _record_int5_kernel_ops() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])
         ref = F.linear(x, w_ref)
@@ -181,9 +181,9 @@ class TestDispatchRouting(unittest.TestCase):
     def test_decode_result_matches_reference(self):
         t, w_ref = _make_int5_tensor(24, 512)
         x = torch.randn(2, 512, dtype=torch.bfloat16)
-        with _record_int5_plain_mm() as calls:
+        with _record_int5_kernel_ops() as calls:
             out = F.linear(x, t)
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls, [])
         ref = F.linear(x, w_ref)
         self.assertLess(self._rel_err(out, ref), 0.02)
 
@@ -191,7 +191,7 @@ class TestDispatchRouting(unittest.TestCase):
         t, w_ref = _make_int5_tensor(16, 256)
         bias = torch.randn(16, dtype=torch.bfloat16)
         x = torch.randn(1, 256, dtype=torch.bfloat16)
-        with _record_int5_plain_mm():
+        with _record_int5_kernel_ops():
             out = F.linear(x, t, bias)
         ref = F.linear(x, w_ref, bias)
         self.assertLess(self._rel_err(out, ref), 0.02)
@@ -200,11 +200,11 @@ class TestDispatchRouting(unittest.TestCase):
         t, w_ref = _make_int5_tensor(16, 256)
         bias = torch.randn(16, dtype=torch.bfloat16)
         x = torch.randn(1, 256, dtype=torch.bfloat16)
-        with _record_int5_plain_mm():
+        with _record_int5_kernel_ops():
             out = F.linear(x, t, bias=bias)
         ref = F.linear(x, w_ref, bias)
         self.assertLess(self._rel_err(out, ref), 0.02)
-        with _record_int5_plain_mm():
+        with _record_int5_kernel_ops():
             out_no_bias = F.linear(x, t)
         self.assertTrue(
             torch.allclose(out, out_no_bias + bias, atol=1e-2),
@@ -214,7 +214,7 @@ class TestDispatchRouting(unittest.TestCase):
     def test_3d_batched_input(self):
         t, w_ref = _make_int5_tensor(16, 256)
         x = torch.randn(2, 8, 256, dtype=torch.bfloat16)  # flattened M=16 > 4
-        with _record_int5_plain_mm() as calls:
+        with _record_int5_kernel_ops() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])  # prefill regime
         self.assertEqual(out.shape, (2, 8, 16))
@@ -228,11 +228,11 @@ class TestDispatchRouting(unittest.TestCase):
         # Weight bit-pack is lossless: unpacked u matches the source.
         self.assertTrue(torch.equal(unpack_int5(t.ql, t.qh, 16, 256), u))
         x = torch.randn(1, 256, dtype=torch.bfloat16)
-        with _record_int5_plain_mm() as calls:
+        with _record_int5_kernel_ops() as calls:
             out = F.linear(x, t)
-        self.assertEqual(len(calls), 1)
-        # Reference is the tensor's own fp32-accumulated dequant; the op path
-        # accumulates in bf16, so ~1% bf16 rounding is expected (not an error).
+        self.assertEqual(calls, [])  # CPU eager: inline dequant
+        # Reference is the tensor's own fp32-accumulated dequant; the dequant
+        # path accumulates in bf16, so ~1% bf16 rounding is expected.
         ref = F.linear(x, t.dequantize(torch.bfloat16))
         self.assertLess(self._rel_err(out, ref), 0.02)
 
@@ -317,6 +317,81 @@ class TestFLinearDispatchCuda(unittest.TestCase):
         # Explicit dtype: scale/zero are uint8 codes, so the default would
         # dequantize in an integer dtype and collapse to 0.
         self.assertTrue(torch.equal(t.dequantize(torch.bfloat16).cpu(), w_ref.cpu()))
+
+
+class TestDecodeDispatch(unittest.TestCase):
+    """CUDA export: decode-sized M captures the INT5 bucket op."""
+
+    def setUp(self):
+        _require_cuda(self)
+        torch.manual_seed(3)
+
+    def _module(self, n=256, k=512):
+        t, w_ref = _make_int5_tensor(n, k)
+        module = nn.Linear(k, n, bias=False, dtype=torch.bfloat16)
+        module.weight = nn.Parameter(t, requires_grad=False)
+        return module.cuda(), w_ref.cuda()
+
+    @staticmethod
+    def _bucket_ops(module, x, dynamic_m=None):
+        from torch.export import Dim
+
+        dynamic = None if dynamic_m is None else ({0: Dim("m", min=dynamic_m[0], max=dynamic_m[1])},)
+        with torch.no_grad():
+            program = torch.export.export(module, (x,), dynamic_shapes=dynamic)
+        return {str(n.target) for n in program.graph.nodes if "int5_quantized_gemm" in str(n.target)}
+
+    def test_decode_sized_m_uses_its_bucket_op(self):
+        module, w_ref = self._module()
+        for m in (1, 2, 3, 4):
+            x = torch.randn(m, 512, dtype=torch.bfloat16, device="cuda")
+            self.assertEqual(self._bucket_ops(module, x), {f"triton.int5_quantized_gemm_m{m}.default"}, m)
+            with torch.no_grad():
+                out = module(x)
+            ref = F.linear(x, w_ref)
+            rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+            self.assertLess(rel.item(), 0.02, m)
+
+    def test_dynamic_m_bounded_by_a_bucket_uses_that_bucket(self):
+        module, _ = self._module()
+        x = torch.randn(4, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertEqual(self._bucket_ops(module, x, (2, 4)), {"triton.int5_quantized_gemm_m4.default"})
+        self.assertEqual(self._bucket_ops(module, x[:2], (2, 3)), {"triton.int5_quantized_gemm_m3.default"})
+
+    def test_prefill_and_unbounded_dynamic_m_use_dequant(self):
+        module, _ = self._module()
+        x8 = torch.randn(8, 512, dtype=torch.bfloat16, device="cuda")
+        self.assertFalse(self._bucket_ops(module, x8))
+        self.assertFalse(self._bucket_ops(module, x8, (5, 64)))
+        self.assertFalse(self._bucket_ops(module, x8, (1, 64)))
+
+
+class TestFallbacks(unittest.TestCase):
+    """Inputs the INT5 kernels do not serve take inline dequant: no error, no
+    Triton op, correct output."""
+
+    def setUp(self):
+        _require_cuda(self)
+        torch.manual_seed(4)
+
+    def _check(self, n, k, gs, x):
+        t, w_ref = _make_int5_tensor(n, k, gs)
+        t, w_ref = t.cuda(), w_ref.cuda()
+        with _record_int5_kernel_ops() as calls:
+            out = F.linear(x, t)
+        self.assertEqual(calls, [])
+        ref = F.linear(x.to(torch.bfloat16), w_ref).to(out.dtype)
+        rel = (out.float() - ref.float()).abs().mean() / ref.float().abs().mean()
+        self.assertLess(rel.item(), 0.02)
+
+    def test_fp16_activation(self):
+        self._check(64, 512, GS, torch.randn(1, 512, dtype=torch.float16, device="cuda"))
+
+    def test_non_contiguous_activation(self):
+        self._check(64, 512, GS, torch.randn(512, 2, dtype=torch.bfloat16, device="cuda").t())
+
+    def test_more_than_four_rows(self):
+        self._check(64, 512, GS, torch.randn(5, 512, dtype=torch.bfloat16, device="cuda"))
 
 
 if __name__ == "__main__":
