@@ -46,6 +46,8 @@ class VulkanEngineHost final : public EngineHost {
 
 // Per-program Vulkan state. Each executable owns its ComputeGraph and command
 // resources while sharing this context's constant materialization tracker.
+// Mutable state is not shared yet: compile throws while another live
+// executable holds one of the method's mutable DataBinding keys.
 class VulkanEngineContext final : public EngineContext {
  private:
   friend class VulkanEngineHost;
