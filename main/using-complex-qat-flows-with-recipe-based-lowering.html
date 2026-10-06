@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Usage &#8212; ExecuTorch main documentation</title>
+    <title>Using Complex QAT Flows with Recipe-Based Lowering &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -50,14 +50,14 @@
     <script src="_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'usage';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'using-complex-qat-flows-with-recipe-based-lowering';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/usage.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/stable/using-complex-qat-flows-with-recipe-based-lowering.html" />
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -1031,9 +1031,7 @@ document.write(`
       
       
       
-        
-      
-      <div class="bd-sidebar-primary bd-sidebar hide-on-wide">
+      <div class="bd-sidebar-primary bd-sidebar">
         
 
 
@@ -1755,6 +1753,15 @@ document.write(`
     
   </div>
   
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"></div>
+</nav></div>
+    </div>
+  
   
   <div class="sidebar-primary-items__end sidebar-primary__section">
   </div>
@@ -1787,7 +1794,7 @@ document.write(`
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page">Usage</li>
+    <li class="breadcrumb-item active" aria-current="page">Using...</li>
   </ul>
 </nav>
 </div>
@@ -1829,7 +1836,7 @@ document.write(`
   <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
     
     <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <meta itemprop="name" content="Usage">
+      <meta itemprop="name" content="Using Complex QAT Flows with Recipe-Based Lowering">
       <meta itemprop="position" content="1">
     </div>
   </div>
@@ -1843,25 +1850,146 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="usage">
-<h1>Usage<a class="headerlink" href="#usage" title="Link to this heading">#</a></h1>
-<p>This section describes how to use Executorch. It covers everything from
-getting started to platform-specific implementations, runtime integration,
-troubleshooting, and frequently asked questions.</p>
-<div class="toctree-wrapper compound">
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-complex-qat-flows-with-recipe-based-lowering.html">Using Complex QAT Flows with Recipe-Based Lowering</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
-</ul>
+  <section id="using-complex-qat-flows-with-recipe-based-lowering">
+<h1>Using Complex QAT Flows with Recipe-Based Lowering<a class="headerlink" href="#using-complex-qat-flows-with-recipe-based-lowering" title="Link to this heading">#</a></h1>
+<p>How to split the declarative export recipe around the quantization boundary so
+that an arbitrary Quantization-Aware Training flow can live outside of — and
+between the two halves of — the recipe pipeline.</p>
+<section id="motivation">
+<h2>Motivation<a class="headerlink" href="#motivation" title="Link to this heading">#</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">ExportRecipe</span></code> and <code class="docutils literal notranslate"><span class="pre">ExportSession</span></code> run the full export pipeline — source
+transforms, quantize, torch.export, lower, to-executorch — as a single
+declarative call.  That works well for simple calibration flows.</p>
+<p>Complex QAT is different.  A real training run involves iterative training
+loops, periodic checkpointing, job restarts, accuracy evaluation on validation
+datasets, rollback when a checkpoint regresses, and potentially separate
+machines for training and for compilation.  None of that can fit inside a single
+<code class="docutils literal notranslate"><span class="pre">export()</span></code> call.</p>
+</section>
+<section id="how-it-works">
+<h2>How It Works<a class="headerlink" href="#how-it-works" title="Link to this heading">#</a></h2>
+<p>The recipe’s <code class="docutils literal notranslate"><span class="pre">pipeline_stages</span></code> attribute lets you restrict an <code class="docutils literal notranslate"><span class="pre">ExportSession</span></code>
+to a specific subset of stages.  Use it to split the pipeline around the
+<code class="docutils literal notranslate"><span class="pre">QUANTIZE</span></code> stage: run everything up to (but not including) quantization in one
+recipe invocation, hand the result off to your QAT flow as a <code class="docutils literal notranslate"><span class="pre">.pt2</span></code> file, and
+then continue with the post-quantize stages in a second recipe invocation.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ExportRecipe</span> <span class="p">(</span><span class="n">pre</span><span class="o">-</span><span class="n">quantize</span> <span class="nb">slice</span><span class="p">)</span>
+      <span class="o">|</span>
+      <span class="n">v</span>
+ <span class="o">.</span><span class="n">pt2</span>  <span class="o">&lt;--</span> <span class="n">cross</span><span class="o">-</span><span class="n">process</span> <span class="o">/</span> <span class="n">cross</span><span class="o">-</span><span class="n">machine</span> <span class="n">handoff</span>
+      <span class="o">|</span>
+      <span class="n">v</span>
+<span class="n">Your</span> <span class="n">QAT</span> <span class="n">training</span> <span class="n">loop</span>  <span class="p">(</span><span class="nb">any</span> <span class="n">framework</span><span class="p">,</span> <span class="nb">any</span> <span class="n">duration</span><span class="p">)</span>
+      <span class="o">|</span>
+      <span class="n">v</span>
+ <span class="o">.</span><span class="n">pt2</span>  <span class="o">&lt;--</span> <span class="n">cross</span><span class="o">-</span><span class="n">process</span> <span class="o">/</span> <span class="n">cross</span><span class="o">-</span><span class="n">machine</span> <span class="n">handoff</span>
+      <span class="o">|</span>
+      <span class="n">v</span>
+<span class="n">ExportRecipe</span> <span class="p">(</span><span class="n">post</span><span class="o">-</span><span class="n">quantize</span> <span class="nb">slice</span><span class="p">)</span>
+      <span class="o">|</span>
+      <span class="n">v</span>
+ <span class="n">model</span><span class="o">.</span><span class="n">pte</span>
+</pre></div>
 </div>
+<p>The recipe still owns all the lowering and delegation work; you are only
+carving out the <code class="docutils literal notranslate"><span class="pre">QUANTIZE</span></code> stage to replace it with your own flow.</p>
+</section>
+<section id="the-method">
+<h2>The Method<a class="headerlink" href="#the-method" title="Link to this heading">#</a></h2>
+<section id="pre-quantize-slice">
+<h3>Pre-quantize slice<a class="headerlink" href="#pre-quantize-slice" title="Link to this heading">#</a></h3>
+<p>Run only the pre-quantize stages through <code class="docutils literal notranslate"><span class="pre">ExportSession</span></code>, then export the
+resulting module to an ATEN-dialect <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> and save it as a <code class="docutils literal notranslate"><span class="pre">.pt2</span></code>
+handoff file:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span> <span class="k">as</span> <span class="n">et_export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.export.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">StageType</span>
+
+<span class="n">recipe</span><span class="o">.</span><span class="n">pipeline_stages</span> <span class="o">=</span> <span class="p">[</span><span class="n">StageType</span><span class="o">.</span><span class="n">SOURCE_TRANSFORM</span><span class="p">]</span>
+<span class="n">sess</span> <span class="o">=</span> <span class="n">et_export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="o">=</span><span class="p">[</span><span class="n">inputs</span><span class="p">],</span> <span class="n">export_recipe</span><span class="o">=</span><span class="n">recipe</span><span class="p">)</span>
+
+<span class="n">transformed</span> <span class="o">=</span> <span class="n">sess</span><span class="o">.</span><span class="n">get_stage_artifacts</span><span class="p">()[</span><span class="n">StageType</span><span class="o">.</span><span class="n">SOURCE_TRANSFORM</span><span class="p">]</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">"forward"</span><span class="p">]</span>
+
+<span class="n">ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">transformed</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="s2">"pre_qat.pt2"</span><span class="p">)</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Simplification:</strong> if you do not need any pre-quantize recipe passes (such
+as source transforms provided by the recipe), you can skip this half entirely.
+Capture the eager model directly with <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code> and save the
+result as the handoff <code class="docutils literal notranslate"><span class="pre">.pt2</span></code>. No recipe is involved in that case.</p>
+</div></blockquote>
+</section>
+<section id="your-qat-flow">
+<h3>Your QAT flow<a class="headerlink" href="#your-qat-flow" title="Link to this heading">#</a></h3>
+<p>Load the handoff, prepare it for QAT, and train:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Load the pre-quantize graph.</span>
+<span class="n">captured_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">"pre_qat.pt2"</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+
+<span class="c1"># Prepare for QAT once.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">prepare_qat_pt2e</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">move_exported_model_to_train</span>
+
+<span class="n">prepared</span> <span class="o">=</span> <span class="n">prepare_qat_pt2e</span><span class="p">(</span><span class="n">captured_gm</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+<span class="n">move_exported_model_to_train</span><span class="p">(</span><span class="n">prepared</span><span class="p">)</span>
+
+<span class="c1"># Train -- this is an open-ended process.</span>
+<span class="c1"># It can be paused and resumed from checkpoints.</span>
+<span class="c1"># It can run for hours, days, or weeks.</span>
+<span class="c1"># It can be distributed across separate machines or jobs.</span>
+<span class="c1"># Evaluate accuracy on a validation dataset periodically and</span>
+<span class="c1"># roll back to an earlier checkpoint whenever accuracy regresses.</span>
+<span class="c1"># Save checkpoints as you go:</span>
+<span class="c1">#   torch.save(prepared.state_dict(), "qat_ckpt.pt")</span>
+<span class="c1"># Resume from a checkpoint:</span>
+<span class="c1">#   prepared.load_state_dict(torch.load("qat_ckpt.pt"))</span>
+
+<span class="c1"># Only once you are satisfied with the result:</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">move_exported_model_to_eval</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span>
+
+<span class="n">move_exported_model_to_eval</span><span class="p">(</span><span class="n">prepared</span><span class="p">)</span>
+<span class="n">quantized</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared</span><span class="p">)</span>
+
+<span class="n">ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="s2">"post_qat.pt2"</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="post-quantize-slice">
+<h3>Post-quantize slice<a class="headerlink" href="#post-quantize-slice" title="Link to this heading">#</a></h3>
+<p>Continue the recipe pipeline from <code class="docutils literal notranslate"><span class="pre">TORCH_EXPORT</span></code> onward:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">recipe</span><span class="o">.</span><span class="n">pipeline_stages</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">StageType</span><span class="o">.</span><span class="n">TORCH_EXPORT</span><span class="p">,</span>
+    <span class="n">StageType</span><span class="o">.</span><span class="n">TO_EDGE_TRANSFORM_AND_LOWER</span><span class="p">,</span>
+    <span class="n">StageType</span><span class="o">.</span><span class="n">TO_EXECUTORCH</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">quantized_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">"post_qat.pt2"</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+<span class="n">sess</span> <span class="o">=</span> <span class="n">et_export</span><span class="p">(</span><span class="n">quantized_gm</span><span class="p">,</span> <span class="n">example_inputs</span><span class="o">=</span><span class="p">[</span><span class="n">inputs</span><span class="p">],</span> <span class="n">export_recipe</span><span class="o">=</span><span class="n">recipe</span><span class="p">)</span>
+<span class="n">sess</span><span class="o">.</span><span class="n">save_to_pte</span><span class="p">(</span><span class="s2">"model"</span><span class="p">)</span>  <span class="c1"># writes model.pte</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Simplification:</strong> if the recipe uses its default pipeline stages, you do
+not need to set <code class="docutils literal notranslate"><span class="pre">pipeline_stages</span></code> at all on the lowering side.  Pass the
+<code class="docutils literal notranslate"><span class="pre">.pt2</span></code> file path directly to <code class="docutils literal notranslate"><span class="pre">export()</span></code> and <code class="docutils literal notranslate"><span class="pre">ExportSession</span></code> will
+automatically skip <code class="docutils literal notranslate"><span class="pre">SOURCE_TRANSFORM</span></code>, <code class="docutils literal notranslate"><span class="pre">QUANTIZE</span></code>, and <code class="docutils literal notranslate"><span class="pre">TORCH_EXPORT</span></code> when it
+detects an <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> input, picking up at
+<code class="docutils literal notranslate"><span class="pre">TO_EDGE_TRANSFORM_AND_LOWER</span></code>.  This auto-skip only applies to the default
+pipeline; if the recipe defines a custom <code class="docutils literal notranslate"><span class="pre">pipeline_stages</span></code> list, set the
+post-quantize stages explicitly as shown above.</p>
+</div></blockquote>
+</section>
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Link to this heading">#</a></h2>
+<p>A runnable end-to-end example demonstrating both the full split and the
+simplified path is available at
+<a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/export/qat_pipeline_split"><code class="docutils literal notranslate"><span class="pre">examples/export/qat_pipeline_split/</span></code></a>.</p>
+<p>See the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/export/qat_pipeline_split/README.md">example README</a>
+for full setup instructions, expected artifacts, and notes on adapting the
+example to a different backend.</p>
+</section>
 </section>
 
 
@@ -1938,10 +2066,30 @@ troubleshooting, and frequently asked questions.</p>
 <div class="sidebar-secondary-items sidebar-secondary__inner">
     
        <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#motivation">Motivation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-it-works">How It Works</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-method">The Method</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pre-quantize-slice">Pre-quantize slice</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#your-qat-flow">Your QAT flow</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#post-quantize-slice">Post-quantize slice</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example">Example</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/usage.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/using-complex-qat-flows-with-recipe-based-lowering.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1955,7 +2103,7 @@ troubleshooting, and frequently asked questions.</p>
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/usage.md.txt">
+      <a href="_sources/using-complex-qat-flows-with-recipe-based-lowering.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -2155,11 +2303,11 @@ troubleshooting, and frequently asked questions.</p>
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Usage",
-       "headline": "Usage",
+       "name": "Using Complex QAT Flows with Recipe-Based Lowering",
+       "headline": "Using Complex QAT Flows with Recipe-Based Lowering",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
-       "url": "/usage.html",
-       "articleBody": "Usage# This section describes how to use Executorch. It covers everything from getting started to platform-specific implementations, runtime integration, troubleshooting, and frequently asked questions. Getting Started with ExecuTorch Model Export and Lowering Using Complex QAT Flows with Recipe-Based Lowering Using ExecuTorch on Android Using ExecuTorch on iOS Using ExecuTorch with C++ Runtime Integration Profiling and Debugging Building from Source Frequently Asked Questions",
+       "url": "/using-complex-qat-flows-with-recipe-based-lowering.html",
+       "articleBody": "Using Complex QAT Flows with Recipe-Based Lowering# How to split the declarative export recipe around the quantization boundary so that an arbitrary Quantization-Aware Training flow can live outside of \u2014 and between the two halves of \u2014 the recipe pipeline. Motivation# ExportRecipe and ExportSession run the full export pipeline \u2014 source transforms, quantize, torch.export, lower, to-executorch \u2014 as a single declarative call. That works well for simple calibration flows. Complex QAT is different. A real training run involves iterative training loops, periodic checkpointing, job restarts, accuracy evaluation on validation datasets, rollback when a checkpoint regresses, and potentially separate machines for training and for compilation. None of that can fit inside a single export() call. How It Works# The recipe\u2019s pipeline_stages attribute lets you restrict an ExportSession to a specific subset of stages. Use it to split the pipeline around the QUANTIZE stage: run everything up to (but not including) quantization in one recipe invocation, hand the result off to your QAT flow as a .pt2 file, and then continue with the post-quantize stages in a second recipe invocation. ExportRecipe (pre-quantize slice) | v .pt2 \u003c-- cross-process / cross-machine handoff | v Your QAT training loop (any framework, any duration) | v .pt2 \u003c-- cross-process / cross-machine handoff | v ExportRecipe (post-quantize slice) | v model.pte The recipe still owns all the lowering and delegation work; you are only carving out the QUANTIZE stage to replace it with your own flow. The Method# Pre-quantize slice# Run only the pre-quantize stages through ExportSession, then export the resulting module to an ATEN-dialect ExportedProgram and save it as a .pt2 handoff file: from executorch.export import export as et_export from executorch.export.types import StageType recipe.pipeline_stages = [StageType.SOURCE_TRANSFORM] sess = et_export(model, example_inputs=[inputs], export_recipe=recipe) transformed = sess.get_stage_artifacts()[StageType.SOURCE_TRANSFORM].data[\"forward\"] ep = torch.export.export(transformed, inputs, strict=True) torch.export.save(ep, \"pre_qat.pt2\") Simplification: if you do not need any pre-quantize recipe passes (such as source transforms provided by the recipe), you can skip this half entirely. Capture the eager model directly with torch.export.export and save the result as the handoff .pt2. No recipe is involved in that case. Your QAT flow# Load the handoff, prepare it for QAT, and train: # Load the pre-quantize graph. captured_gm = torch.export.load(\"pre_qat.pt2\").module() # Prepare for QAT once. from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e from torchao.quantization.pt2e import move_exported_model_to_train prepared = prepare_qat_pt2e(captured_gm, quantizer) move_exported_model_to_train(prepared) # Train -- this is an open-ended process. # It can be paused and resumed from checkpoints. # It can run for hours, days, or weeks. # It can be distributed across separate machines or jobs. # Evaluate accuracy on a validation dataset periodically and # roll back to an earlier checkpoint whenever accuracy regresses. # Save checkpoints as you go: # torch.save(prepared.state_dict(), \"qat_ckpt.pt\") # Resume from a checkpoint: # prepared.load_state_dict(torch.load(\"qat_ckpt.pt\")) # Only once you are satisfied with the result: from torchao.quantization.pt2e import move_exported_model_to_eval from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e move_exported_model_to_eval(prepared) quantized = convert_pt2e(prepared) ep = torch.export.export(quantized, inputs, strict=True) torch.export.save(ep, \"post_qat.pt2\") Post-quantize slice# Continue the recipe pipeline from TORCH_EXPORT onward: recipe.pipeline_stages = [ StageType.TORCH_EXPORT, StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_EXECUTORCH, ] quantized_gm = torch.export.load(\"post_qat.pt2\").module() sess = et_export(quantized_gm, example_inputs=[inputs], export_recipe=recipe) sess.save_to_pte(\"model\") # writes model.pte Simplification: if the recipe uses its default pipeline stages, you do not need to set pipeline_stages at all on the lowering side. Pass the .pt2 file path directly to export() and ExportSession will automatically skip SOURCE_TRANSFORM, QUANTIZE, and TORCH_EXPORT when it detects an ExportedProgram input, picking up at TO_EDGE_TRANSFORM_AND_LOWER. This auto-skip only applies to the default pipeline; if the recipe defines a custom pipeline_stages list, set the post-quantize stages explicitly as shown above. Example# A runnable end-to-end example demonstrating both the full split and the simplified path is available at examples/export/qat_pipeline_split/. See the example README for full setup instructions, expected artifacts, and notes on adapting the example to a different backend.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -2168,7 +2316,7 @@ troubleshooting, and frequently asked questions.</p>
        "image": "https://pytorch.org/docs/stable/_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/usage.html"
+         "@id": "/using-complex-qat-flows-with-recipe-based-lowering.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
