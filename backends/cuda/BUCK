@@ -53,6 +53,7 @@ fbcode_target(
     name = "quantize_op_dispatch",
     srcs = [
         "quantize_op_dispatch/__init__.py",
+        "quantize_op_dispatch/_gemm_family_dispatch.py",
         "quantize_op_dispatch/_library.py",
         "quantize_op_dispatch/int4_dispatch.py",
         "quantize_op_dispatch/int5_dispatch.py",
@@ -66,6 +67,7 @@ fbcode_target(
         ":coalesced_int4_tensor",
         ":dp4a_planar_int5_tensor",
         ":dp4a_planar_int6_tensor",
+        ":triton_kernels",
         "//caffe2:torch",
         "//pytorch/ao:torchao",
     ],
@@ -93,6 +95,22 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "autotune",
+    srcs = [
+        "autotune/__init__.py",
+        "autotune/cuda_graph_timing.py",
+        "autotune/inputs.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
@@ -101,6 +119,7 @@ fbcode_target(
     ],
     visibility = ["PUBLIC"],
     deps = [
+        ":autotune",
         ":cuda_passes",
         ":triton_replacement_pass",
         "//caffe2:torch",
@@ -147,7 +166,10 @@ fbcode_target(
     srcs = [
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
+        "triton/kernels/int4_quantized_gemm.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/quantized_gemm_family.py",
+        "triton/kernels/quantized_gemm_utils.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
@@ -156,6 +178,7 @@ fbcode_target(
         "//executorch/backends/cuda/...",
     ],
     deps = [
+        ":autotune",
         "//caffe2:torch",
     ],
 )
