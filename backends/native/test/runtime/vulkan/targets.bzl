@@ -39,7 +39,10 @@ def define_common_targets():
 
     runtime.cxx_test(
         name = "vulkan_passes_test",
-        srcs = ["test_insert_prepack.cpp"],
+        srcs = [
+            "test_insert_prepack.cpp",
+            "test_materialize_view_copies.cpp",
+        ],
         deps = [
             "//executorch/backends/native/runtime/vulkan:vulkan_passes",
             "//executorch/backends/native/runtime/graph:argument",
