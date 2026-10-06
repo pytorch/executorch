@@ -34,8 +34,7 @@ def define_common_targets(is_fbcode = False):
     runtime.filegroup(
         name = "custom_ops_shaders",
         srcs = native.glob([
-            "glsl/*.glsl",
-            "glsl/*.yaml",
+            "glsl/**/*",
         ]),
         visibility = ["PUBLIC"],
     )

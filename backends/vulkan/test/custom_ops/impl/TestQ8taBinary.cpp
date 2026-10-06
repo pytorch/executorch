@@ -9,8 +9,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Int8x4Staging.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taBinary.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taQuantizeDequantize.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/binary/q8ta/Q8taBinary.h>
 
 namespace vkcompute {
 
