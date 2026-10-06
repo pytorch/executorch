@@ -100,6 +100,12 @@ size_t logical_numel(const TensorMeta& meta) {
   return static_cast<size_t>(numel);
 }
 
+size_t logical_numel(const std::vector<int64_t>& sizes) {
+  TensorMeta meta;
+  meta.sizes = sizes;
+  return logical_numel(meta);
+}
+
 size_t logical_nbytes(const TensorMeta& meta) {
   const size_t element_bytes = element_size(meta.dtype);
   if (element_bytes == 0) {
@@ -123,6 +129,19 @@ std::string registry_key(const std::string& target) {
     key = "aten.relu.default";
   } else if (key == "llama.update_cache.default") {
     key = "update_cache.default";
+  } else if (key == "aten.sym_size.int") {
+    key = "sym_size.int";
+  } else {
+    constexpr std::array<std::string_view, 4> kSymbolicOps{
+        "add", "floordiv", "mul", "sub"};
+    constexpr std::string_view kOperatorPrefix = "_operator.";
+    if (key.starts_with(kOperatorPrefix)) {
+      const std::string_view candidate =
+          std::string_view(key).substr(kOperatorPrefix.size());
+      if (std::ranges::find(kSymbolicOps, candidate) != kSymbolicOps.end()) {
+        key = candidate;
+      }
+    }
   }
   return key;
 }
@@ -317,6 +336,15 @@ void validate_user_io(const Method& method) {
     throw std::runtime_error(
         "vulkan: quantized graph inputs and outputs are not supported");
   }
+  // set_input and get_output copy contiguous bytes.
+  const auto is_contiguous = [&method](ValueId id) {
+    return method.graph.value(id).tensor_meta().is_contiguous();
+  };
+  if (!std::ranges::all_of(method.graph.input_ids, is_contiguous) ||
+      !std::ranges::all_of(method.graph.output_ids, is_contiguous)) {
+    throw std::runtime_error(
+        "vulkan: graph inputs and outputs must be contiguous");
+  }
 }
 // cppcheck-suppress-end useStlAlgorithm
 
@@ -441,6 +469,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
   VkRef& vref_at(ValueId id) {
     return checked_slot(vref_, id, "vref");
   }
+  const VkRef& vref_at(ValueId id) const {
+    return checked_slot(vref_, id, "vref");
+  }
   utils::GPUMemoryLayout& layout_at(ValueId id) {
     return checked_slot(layout_, id, "layout");
   }
@@ -492,11 +523,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   std::vector<int64_t> input_sizes(size_t i) const override {
-    return meta_of(inputs_.at(i)).sizes;
+    return graph_->sizes_of(vref_at(inputs_.at(i)));
   }
 
   std::vector<int64_t> output_sizes(size_t i) const override {
-    return meta_of(outputs_.at(user_output_positions_.at(i))).sizes;
+    return graph_->sizes_of(vref_at(outputs_.at(user_output_positions_.at(i))));
   }
 
   ScalarType input_dtype(size_t i) const override {
@@ -507,12 +538,21 @@ class VulkanEngineExecutable final : public EngineExecutable {
     return meta_of(outputs_.at(user_output_positions_.at(i))).dtype;
   }
 
+  void resize_input(size_t i, const std::vector<int64_t>& sizes) override {
+    const ValueId input = inputs_.at(i);
+    if (!meta_of(input).accepts_sizes(sizes)) {
+      throw std::runtime_error(
+          "vulkan: input shape is outside serialized bounds");
+    }
+    graph_->resize_input(static_cast<int64_t>(i), sizes);
+  }
+
   void set_input(size_t i, const void* data, size_t numel, ScalarType src_dtype)
       override {
     const TensorMeta& meta = meta_of(inputs_.at(i));
-    if (numel != logical_numel(meta)) {
+    if (numel != logical_numel(input_sizes(i))) {
       throw std::runtime_error(
-          "vulkan: input element count does not match its shape");
+          "vulkan: input element count does not match its current shape");
     }
     if (numel == 0) {
       return;
@@ -536,9 +576,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
   void get_output(size_t i, void* data, size_t numel, ScalarType dst_dtype)
       override {
     const size_t output_position = user_output_positions_.at(i);
-    if (numel != logical_numel(meta_of(outputs_.at(output_position)))) {
+    if (numel != logical_numel(output_sizes(i))) {
       throw std::runtime_error(
-          "vulkan: output element count does not match its shape");
+          "vulkan: output element count does not match its current shape");
     }
     if (numel == 0) {
       return;
@@ -894,9 +934,25 @@ class VulkanEngineExecutable final : public EngineExecutable {
         const BoolArg& a = arg.as_bool();
         return valid(a.id) ? vref_at(a.id) : graph_->add_scalar<bool>(a.value);
       }
-      case ArgKind::IntList:
-        return graph_->add_scalar_list(
-            std::vector<int64_t>(arg.as_int_list().values));
+      case ArgKind::IntList: {
+        const IntListArg& list = arg.as_int_list();
+        if (list.ids.empty()) {
+          return graph_->add_scalar_list(std::vector<int64_t>(list.values));
+        }
+        if (list.ids.size() != list.values.size()) {
+          throw std::runtime_error(
+              "vulkan: symbolic IntList ids and values must have equal size");
+        }
+        std::vector<VkRef> refs;
+        refs.reserve(list.values.size());
+        for (size_t i = 0; i < list.values.size(); ++i) {
+          refs.push_back(
+              valid(list.ids.at(i))
+                  ? vref_at(list.ids.at(i))
+                  : graph_->add_scalar<int64_t>(list.values[i]));
+        }
+        return graph_->add_value_list(std::move(refs));
+      }
       case ArgKind::FloatList:
         return graph_->add_scalar_list(
             std::vector<double>(arg.as_float_list().values));
