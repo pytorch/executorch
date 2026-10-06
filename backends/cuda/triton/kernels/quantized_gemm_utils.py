@@ -1,0 +1,373 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Pieces shared by the decode-sized quantized GEMM kernels (INT4/5/6/8).
+
+* inline-PTX ``@triton.jit`` helpers (DP4A, warp sum, round-to-nearest-even);
+* BF16 -> signed INT8 activation quantization in K32 blocks, the
+  W*A8 formats' first kernel, and its launcher;
+* the deterministic split-K reduce kernel and the split-K rule;
+* the generic autotune space and its ``prune_configs_by`` pruning;
+* legality checks the formats compose into their ``unsupported_reason``.
+
+Nothing here is tuned per architecture or per shape.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Iterable, Optional, Sequence
+
+import torch
+import triton
+import triton.language as tl
+from torch.fx.experimental.symbolic_shapes import statically_known_true
+from torch.library import wrap_triton
+
+# Activation quantization granularity: one INT8 scale per K32 block, launched in
+# K256 tiles.
+Q8_BLOCK = 32
+Q8_TILE = 256
+_TL_Q8_BLOCK = tl.constexpr(Q8_BLOCK)
+_TL_Q8_TILE = tl.constexpr(Q8_TILE)
+
+# Split-K target: enough output rows in flight for two waves of eight one-row
+# warps per SM, whatever the SM count.
+_ROWS_PER_SM = 16
+# Generic autotune space: rows per CTA (one output row per warp) and pipeline
+# stages. num_stages and the kernel's PIPELINE_STAGES are the same value.
+ROWS_PER_CTA_CHOICES = (1, 2, 4, 8)
+PIPELINE_STAGE_CHOICES = (1, 2, 3)
+
+
+@triton.jit
+def _round_nearest_even_s32(value):
+    return tl.inline_asm_elementwise(
+        asm="cvt.rni.s32.f32 $0, $1;",
+        constraints="=r,f",
+        args=[value],
+        dtype=tl.int32,
+        is_pure=True,
+        pack=1,
+    )
+
+
+@triton.jit
+def _dp4a_u8_s8(a, b, acc):
+    return tl.inline_asm_elementwise(
+        asm="dp4a.u32.s32 $0, $1, $2, $3;",
+        constraints="=r,r,r,r",
+        args=[a, b, acc],
+        dtype=tl.int32,
+        is_pure=True,
+        pack=1,
+    )
+
+
+@triton.jit
+def _warp_sum_f32(value):
+    shuffled = tl.inline_asm_elementwise(
+        asm="shfl.sync.bfly.b32 $0, $1, 16, 0x1f, 0xffffffff;",
+        constraints="=f,f",
+        args=[value],
+        dtype=tl.float32,
+        is_pure=True,
+        pack=1,
+    )
+    value += shuffled
+    shuffled = tl.inline_asm_elementwise(
+        asm="shfl.sync.bfly.b32 $0, $1, 8, 0x1f, 0xffffffff;",
+        constraints="=f,f",
+        args=[value],
+        dtype=tl.float32,
+        is_pure=True,
+        pack=1,
+    )
+    value += shuffled
+    shuffled = tl.inline_asm_elementwise(
+        asm="shfl.sync.bfly.b32 $0, $1, 4, 0x1f, 0xffffffff;",
+        constraints="=f,f",
+        args=[value],
+        dtype=tl.float32,
+        is_pure=True,
+        pack=1,
+    )
+    value += shuffled
+    shuffled = tl.inline_asm_elementwise(
+        asm="shfl.sync.bfly.b32 $0, $1, 2, 0x1f, 0xffffffff;",
+        constraints="=f,f",
+        args=[value],
+        dtype=tl.float32,
+        is_pure=True,
+        pack=1,
+    )
+    value += shuffled
+    shuffled = tl.inline_asm_elementwise(
+        asm="shfl.sync.bfly.b32 $0, $1, 1, 0x1f, 0xffffffff;",
+        constraints="=f,f",
+        args=[value],
+        dtype=tl.float32,
+        is_pure=True,
+        pack=1,
+    )
+    return value + shuffled
+
+
+@triton.jit
+def _quantize_activations_q8_kernel(
+    x,
+    qwords,
+    x_scale,
+    x_sum,
+    M,
+    K: tl.constexpr,
+    STORE_SUM: tl.constexpr,
+    NATURAL_ORDER: tl.constexpr,
+):
+    """Quantize one K256 tile into eight packed signed-Q8 K32 blocks."""
+    super_block = tl.program_id(0)
+    row = tl.program_id(1)
+    valid_row = row < M
+    groups: tl.constexpr = K // _TL_Q8_BLOCK
+
+    offs_k = super_block * _TL_Q8_TILE + tl.arange(0, 256)
+    values = tl.load(
+        x + row * K + offs_k,
+        mask=valid_row,
+        other=0.0,
+    ).to(tl.float32)
+    values = tl.reshape(values, (8, 32), can_reorder=False)
+    absmax = tl.max(tl.abs(values), axis=1)
+    scale_value = absmax / 127.0
+    inv_scale = tl.where(absmax > 0.0, 1.0 / scale_value, 0.0)
+    scaled = tl.maximum(tl.minimum(values * inv_scale[:, None], 127.0), -127.0)
+    quantized = _round_nearest_even_s32(scaled)
+    quantized = tl.maximum(tl.minimum(quantized, 127), -128)
+    if STORE_SUM:
+        sum_value = tl.sum(quantized, axis=1)
+
+    thread = tl.arange(0, 256)
+    local_group = thread // 32
+    lane = thread % 32
+    group = super_block * 8 + local_group
+    if NATURAL_ORDER:
+        byte_in_group = lane
+    else:
+        byte_in_group = tl.where((lane & 1) == 0, lane // 2, 16 + lane // 2)
+    quantized_bytes = tl.reshape(quantized, (256,), can_reorder=False) & 0xFF
+    qbytes = qwords.to(tl.pointer_type(tl.uint8))
+    tl.store(
+        qbytes + (row * groups + group) * 32 + byte_in_group,
+        quantized_bytes,
+        mask=valid_row,
+    )
+    metadata_group = super_block * 8 + tl.arange(0, 8)
+    tl.store(x_scale + row * groups + metadata_group, scale_value, mask=valid_row)
+    if STORE_SUM:
+        tl.store(x_sum + row * groups + metadata_group, sum_value, mask=valid_row)
+
+
+@triton.jit
+def _splitk_reduce_kernel(
+    partial,
+    out,
+    M,
+    N: tl.constexpr,
+    stride_ps: tl.constexpr,
+    stride_pm: tl.constexpr,
+    stride_pn: tl.constexpr,
+    stride_om: tl.constexpr,
+    stride_on: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    SPLIT_K: tl.constexpr,
+):
+    pid_n = tl.program_id(0)
+    pid_m = tl.program_id(1)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    for split_id in range(SPLIT_K):
+        acc += tl.load(
+            partial
+            + split_id * stride_ps
+            + offs_m[:, None] * stride_pm
+            + offs_n[None, :] * stride_pn,
+            mask=mask,
+            other=0.0,
+        )
+    tl.store(
+        out + offs_m[:, None] * stride_om + offs_n[None, :] * stride_on,
+        acc.to(tl.bfloat16),
+        mask=mask,
+    )
+
+
+def quantize_activations_q8(
+    x: torch.Tensor,
+    store_sum: bool = True,
+    natural_order: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Quantizes BF16 ``x`` [M, K] (K % 256 == 0) to signed INT8 per K32 block.
+
+    Returns the packed INT8 values as int32 words [M, K/4], the FP32 block
+    scales [M, K/32], and the INT32 block sums [M, K/32] (a 1-element
+    placeholder when ``store_sum`` is False). The default byte layout groups
+    even then odd K values for packed sub-byte weights; ``natural_order=True``
+    stores each K32 block in increasing K order.
+    """
+    M, K = x.shape
+    groups = K // Q8_BLOCK
+    qwords = torch.empty((M, K // 4), dtype=torch.int32, device=x.device)
+    x_scale = torch.empty((M, groups), dtype=torch.float32, device=x.device)
+    x_sum = torch.empty(
+        (M, groups) if store_sum else (1,), dtype=torch.int32, device=x.device
+    )
+    wrap_triton(_quantize_activations_q8_kernel)[(K // Q8_TILE, M)](
+        x,
+        qwords,
+        x_scale,
+        x_sum,
+        M,
+        K,
+        STORE_SUM=store_sum,
+        NATURAL_ORDER=natural_order,
+        num_warps=8,
+        num_stages=1,
+    )
+    return qwords, x_scale, x_sum
+
+
+def splitk_reduce(partial: torch.Tensor, out: torch.Tensor, block_m: int) -> None:
+    """Sums ``partial`` [SPLIT_K, >=M, N] (FP32) over splits into BF16 ``out`` [M, N]."""
+    M, N = out.shape
+    wrap_triton(_splitk_reduce_kernel)[(triton.cdiv(N, 64), triton.cdiv(M, block_m))](
+        partial,
+        out,
+        M,
+        N,
+        partial.stride(0),
+        partial.stride(1),
+        partial.stride(2),
+        out.stride(0),
+        out.stride(1),
+        BLOCK_M=block_m,
+        BLOCK_N=64,
+        SPLIT_K=partial.shape[0],
+        num_warps=4,
+        num_stages=1,
+    )
+
+
+@lru_cache(maxsize=None)
+def _sm_count(device_index: int) -> int:
+    return max(1, int(torch.cuda.get_device_properties(device_index).multi_processor_count))
+
+
+def _device_index(device: Optional[torch.device] = None) -> int:
+    if device is not None and device.index is not None:
+        return device.index
+    return torch.cuda.current_device()
+
+
+def split_k_for(
+    bucket: int,
+    n: int,
+    k: int,
+    sm_count: Optional[int] = None,
+    k_per_split_unit: int = Q8_TILE,
+) -> int:
+    """Smallest power-of-two split keeping ``_ROWS_PER_SM`` output rows per SM
+    in flight, bounded by the K units (``k / k_per_split_unit``) and the
+    split-K workspace (``256 // bucket``)."""
+    if sm_count is None:
+        sm_count = _sm_count(_device_index())
+    limit = max(1, min(k // k_per_split_unit, 256 // bucket))
+    max_split = 1 << (limit.bit_length() - 1)
+    split_k = 1
+    while n * split_k < _ROWS_PER_SM * sm_count and split_k < max_split:
+        split_k *= 2
+    return split_k
+
+
+def autotune_configs(
+    implementations: Iterable[dict] = ({},),
+) -> list[triton.Config]:
+    """The generic search space: each implementation (extra constexpr kwargs)
+    x rows per CTA (BLOCK_N = num_warps, one output row per warp) x pipeline
+    stages s (PIPELINE_STAGES = num_stages = s)."""
+    return [
+        triton.Config(
+            {**implementation, "BLOCK_N": rows, "PIPELINE_STAGES": stages},
+            num_warps=rows,
+            num_stages=stages,
+        )
+        for implementation in implementations
+        for rows in ROWS_PER_CTA_CHOICES
+        for stages in PIPELINE_STAGE_CHOICES
+    ]
+
+
+def prune_by_main_loop_trips(trips_per_split, configs, named_args, **kwargs):
+    """``prune_configs_by`` early pruning: drop configs whose pipeline stage
+    count exceeds the main loop's trip count, ``trips_per_split(args)``, where
+    ``args`` holds the kernel's arguments by name. Keeps at least one config."""
+    trips = trips_per_split({**named_args, **kwargs})
+    kept = [c for c in configs if c.kwargs.get("PIPELINE_STAGES", 1) <= trips]
+    return kept or [min(configs, key=lambda c: c.kwargs.get("PIPELINE_STAGES", 1))]
+
+
+# ---------------------------------------------------------------------------
+# Legality checks the formats compose into ``unsupported_reason``. Each returns
+# None or a short reason, and never raises.
+# ---------------------------------------------------------------------------
+
+
+def check_dtypes(named: Sequence[tuple[str, torch.Tensor, Sequence[torch.dtype]]]) -> Optional[str]:
+    for name, tensor, dtypes in named:
+        if tensor.dtype not in dtypes:
+            allowed = "/".join(str(d).replace("torch.", "") for d in dtypes)
+            return f"{name} must be {allowed}, got {str(tensor.dtype).replace('torch.', '')}"
+    return None
+
+
+def check_contiguous(tensors: Sequence[torch.Tensor]) -> Optional[str]:
+    if not all(t.is_contiguous() for t in tensors):
+        return "inputs must be contiguous"
+    return None
+
+
+def check_device(x: torch.Tensor, tensors: Sequence[torch.Tensor]) -> Optional[str]:
+    from torch._subclasses.fake_tensor import is_fake
+
+    if x.device.type != "cuda" and not is_fake(x):
+        return "activation must be on a CUDA device (or fake while tracing)"
+    if any(t.device != x.device for t in tensors):
+        return "activation and weights must be on the same device"
+    return None
+
+
+def check_k(k, multiple: int) -> Optional[str]:
+    if not isinstance(k, int):
+        return "K must be static"
+    if k % multiple != 0:
+        return f"K must be a multiple of {multiple}, got {k}"
+    return None
+
+
+def check_rows(m, bucket: int) -> Optional[str]:
+    """A static M must equal the bucket; a dynamic M must provably lie in
+    [1, bucket] (the kernels skip rows at or above the runtime M)."""
+    if isinstance(m, int):
+        return None if m == bucket else f"static M must equal the bucket {bucket}, got {m}"
+    if statically_known_true(m >= 1) and statically_known_true(m <= bucket):
+        return None
+    return f"dynamic M is not provably within [1, {bucket}]"
+
+
+def first_reason(*reasons: Optional[str]) -> Optional[str]:
+    return next((r for r in reasons if r is not None), None)
