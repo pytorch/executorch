@@ -250,7 +250,6 @@ if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
     APPEND
     _aoti_cuda_shim_sources
     runtime/shims/int4mm.cu
-    runtime/shims/int5_plain_mm.cu
     runtime/shims/sort.cu
     runtime/shims/rand.cu
   )

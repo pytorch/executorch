@@ -36,7 +36,6 @@ def define_common_targets(is_fbcode = False):
         srcs = [
             "shims/cuda_guard.cpp",
             "shims/int4mm.cu",
-            "shims/int5_plain_mm.cu",
             "shims/memory.cpp",
             "shims/rand.cu",
             "shims/sort.cu",
@@ -46,8 +45,6 @@ def define_common_targets(is_fbcode = False):
             "shims/cuda_guard.h",
             "shims/int4mm.cuh",
             "shims/int4mm.h",
-            "shims/int5_plain_mm.cuh",
-            "shims/int5_plain_mm.h",
             "shims/memory.h",
             "shims/rand.h",
             "shims/sort.h",

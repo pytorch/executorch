@@ -41,8 +41,6 @@ _CUDA_FALLBACK_KERNELS = frozenset(
         "at::_ops::sort_stable::call",
         "aoti_torch_cuda_sort_stable",
         "aoti_torch_cuda_randint_low_out",
-        "executorch_cuda::int5_plain_mm",
-        "aoti_torch_cuda_int5_plain_mm",
     }
 )
 
@@ -145,12 +143,13 @@ class TestSortShim(unittest.TestCase):
 
         self.assertEqual(set(fallbacks), _CUDA_FALLBACK_KERNELS)
 
-    def test_cuda_shim_map_unchanged_by_rocm_gate(self):
-        """Same, for the C shim signatures."""
+    def test_cuda_registers_no_custom_op_c_shims(self):
+        """The decode GEMMs are Triton ops compiled into the .so, so no custom
+        op is mapped to a C shim."""
         with patch.object(torch.version, "hip", None):
             options = CudaBackend.get_aoti_compile_options([])
 
-        self.assertEqual(len(options["aot_inductor.custom_ops_to_c_shims"]), 1)
+        self.assertNotIn("aot_inductor.custom_ops_to_c_shims", options)
         self.assertNotIn("aot_inductor.precompile_headers", options)
 
     def test_rocm_advertises_no_unbuilt_shims(self):
