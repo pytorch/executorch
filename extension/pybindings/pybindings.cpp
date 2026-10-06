@@ -1286,6 +1286,9 @@ struct PyMethod final {
     input_tensors.reserve(inputs_size);
 #endif
 
+    // Method::set_inputs() does not roll back the inputs it set before
+    // failing, so execute() is refused until a set_inputs() succeeds.
+    inputs_valid_ = false;
     std::vector<std::optional<at::Tensor>> fed_inputs(inputs_size);
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
@@ -1380,6 +1383,7 @@ struct PyMethod final {
         method_->method_meta().name(),
         static_cast<uint32_t>(set_inputs_status));
     fed_inputs_ = std::move(fed_inputs);
+    inputs_valid_ = true;
     find_inputs_aliased_by_outputs();
   }
 
@@ -1433,6 +1437,14 @@ struct PyMethod final {
           c10::toString(tensor.scalar_type()) + " tensor on " +
           tensor.device().str());
     }
+    const auto dim_order = meta->dim_order();
+    for (size_t d = 0; d < dim_order.size(); ++d) {
+      if (dim_order[d] != d) {
+        throw std::runtime_error(
+            "output " + std::to_string(index) +
+            " is not contiguous (e.g. channels-last) and cannot be bound");
+      }
+    }
     if (!tensor.is_contiguous()) {
       throw std::runtime_error(
           "output " + std::to_string(index) +
@@ -1449,6 +1461,11 @@ struct PyMethod final {
   }
 
   void execute() {
+    if (!inputs_valid_) {
+      throw std::runtime_error(
+          "The last set_inputs() failed, so inputs must be set again before "
+          "execute()");
+    }
     const auto num_outputs = method_->outputs_size();
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
@@ -1504,13 +1521,13 @@ struct PyMethod final {
         method_->method_meta().name(),
         static_cast<uint32_t>(get_outputs_status));
 
-    // Retrieve outputs
-    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
-    // An output bound with set_output(), or an input the method mutates,
-    // already lives in the caller's tensor, so it is returned as that tensor,
-    // never cloned. A dynamic bound output may have been resized smaller than
-    // its (contiguous) tensor, so view it at its written size. A mutated input
-    // keeps the sizes it was fed with, and may be channels-last.
+    // An output bound with set_output(), or an output that is an input,
+    // already lives in the caller's tensor, so it is returned as that tensor
+    // and taken out of `result` before it could be cloned. A dynamic bound
+    // output may have been resized smaller than its (contiguous) tensor, so
+    // view it at its written size. An input keeps the sizes it was fed with,
+    // and may be channels-last.
+    std::vector<py::object> caller_backed(result.size());
     for (size_t i = 0; i < caller_outputs_.size() && i < result.size(); ++i) {
       if (!caller_outputs_[i].has_value() || !result[i].isTensor()) {
         continue;
@@ -1520,10 +1537,19 @@ struct PyMethod final {
       std::vector<int64_t> sizes(
           written.sizes().begin(), written.sizes().end());
       if (!is_bound_output(i) || caller.sizes().vec() == sizes) {
-        outputs[i] = py::cast(caller);
+        caller_backed[i] = py::cast(caller);
       } else {
-        outputs[i] = py::cast(
+        caller_backed[i] = py::cast(
             caller.view({-1}).narrow(0, 0, written.numel()).view(sizes));
+      }
+      result[i] = EValue();
+    }
+
+    // Retrieve outputs
+    py::list outputs = get_outputs_as_py_list(result, clone_outputs);
+    for (size_t i = 0; i < caller_backed.size(); ++i) {
+      if (caller_backed[i]) {
+        outputs[i] = caller_backed[i];
       }
     }
     return outputs;
@@ -1583,6 +1609,7 @@ struct PyMethod final {
   // Per output, the unplanned input it is, if any. Empty until the first
   // set_inputs().
   std::vector<std::optional<size_t>> inputs_aliased_by_outputs_;
+  bool inputs_valid_ = true;
 
   bool is_bound_output(size_t index) const {
     return index < bound_outputs_.size() && bound_outputs_[index].has_value();

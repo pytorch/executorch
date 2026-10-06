@@ -41,6 +41,11 @@ class ModuleDouble(torch.nn.Module):
         return x * 2
 
 
+class ModuleDoubleChannelsLast(torch.nn.Module):
+    def forward(self, x):
+        return (x * 2).contiguous(memory_format=torch.channels_last)
+
+
 class ModuleDoubleTwice(torch.nn.Module):
     def forward(self, x):
         y = x * 2
@@ -157,16 +162,28 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(torch.equal(second, torch.ones(1, 4)))
         self.assertTrue(torch.equal(first, torch.zeros(1, 4)))
 
-    def test_failed_set_inputs_keeps_previous_inputs(self):
+    def test_execute_refused_after_failed_set_inputs(self):
         x, cache, pos = _cache_inputs()
         method, _buffer = _load_cache_update_method()
         method._method.set_inputs((x, cache, pos))
+        # Fails on the position, after the new cache was already set.
+        new_cache = torch.zeros(3, 4)
         with self.assertRaises(RuntimeError):
-            method._method.set_inputs((x, torch.zeros(3, 4)))
-        method._method.execute()
-        outputs = method._method.get_outputs()
-        self.assertIs(outputs[0], cache)
-        self.assertTrue(torch.equal(cache[1], torch.ones(4)))
+            method._method.set_inputs((x, new_cache, torch.tensor([1.0])))
+        with self.assertRaises(RuntimeError):
+            method._method.execute()
+        outputs = method.execute((x, new_cache, pos))
+        self.assertIs(outputs[0], new_cache)
+        self.assertTrue(torch.equal(cache, torch.zeros(3, 4)))
+
+    def test_caller_backed_outputs_are_not_cloned(self):
+        x, cache, pos = _cache_inputs()
+        method, _buffer = _load_cache_update_method()
+        method.set_output(torch.empty(1, 4), 1)
+        with torch.profiler.profile() as profile:
+            method.execute((x, cache, pos))
+        clones = [e for e in profile.events() if e.name == "aten::clone"]
+        self.assertEqual(clones, [])
 
     def test_set_output_keeps_earlier_outputs_alive(self):
         x, cache, pos = _cache_inputs()
@@ -213,6 +230,12 @@ class RuntimeTest(unittest.TestCase):
         method, _buffer = _load_unplanned_io_method(ModuleDoubleTwice(), (x,))
         with self.subTest("returned twice"), self.assertRaises(RuntimeError):
             method.set_output(torch.empty(2), 0)
+        image = torch.ones(1, 2, 3, 4)
+        method, _buffer = _load_unplanned_io_method(
+            ModuleDoubleChannelsLast(), (image,)
+        )
+        with self.subTest("channels last"), self.assertRaises(RuntimeError):
+            method.set_output(torch.empty(1, 2, 3, 4), 0)
 
     def test_set_output_rejects_mutated_input(self):
         x, cache, pos = _cache_inputs()

@@ -182,7 +182,7 @@ class Method:
         been set: a binding made before the first call is removed by that call,
         which raises. ``tensor`` must have the output's dtype and device, be
         contiguous, and hold at least as many bytes as the output's largest
-        shape.
+        shape. The output itself must be contiguous, not e.g. channels-last.
 
         Args:
             tensor: The tensor that stores the output from now on.
