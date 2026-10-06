@@ -117,6 +117,66 @@ def test_vgf_preprocess_restores_pass_registry_on_failure(monkeypatch) -> None:
         clear_registered_pass_insertions()
 
 
+def test_compile_tosa_flatbuffer_does_not_emit_debug_info_by_default(
+    monkeypatch,
+) -> None:
+    captured_flags = None
+
+    def fake_vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name):
+        nonlocal captured_flags
+        captured_flags = list(compile_flags)
+        return b"vgf"
+
+    monkeypatch.setattr(vgf_backend, "vgf_compile", fake_vgf_compile)
+
+    result = vgf_backend.VgfBackend._compile_tosa_flatbuffer(
+        b"tosa", VgfCompileSpec(compiler_flags=["--existing-flag"])
+    )
+
+    assert result == b"vgf"
+    assert captured_flags == ["--existing-flag"]
+
+
+def test_compile_tosa_flatbuffer_emits_debug_info_when_enabled(monkeypatch) -> None:
+    captured_flags = None
+
+    def fake_vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name):
+        nonlocal captured_flags
+        captured_flags = list(compile_flags)
+        return b"vgf"
+
+    monkeypatch.setattr(vgf_backend, "vgf_compile", fake_vgf_compile)
+
+    result = vgf_backend.VgfBackend._compile_tosa_flatbuffer(
+        b"tosa",
+        VgfCompileSpec(compiler_flags=["--existing-flag"], emit_debug_info=True),
+    )
+
+    assert result == b"vgf"
+    assert captured_flags == ["--existing-flag", "--emit-debug-info"]
+
+
+def test_compile_tosa_flatbuffer_does_not_duplicate_emit_debug_info(
+    monkeypatch,
+) -> None:
+    captured_flags = None
+
+    def fake_vgf_compile(tosa_flatbuffer, compile_flags, artifact_path, tag_name):
+        nonlocal captured_flags
+        captured_flags = list(compile_flags)
+        return b"vgf"
+
+    monkeypatch.setattr(vgf_backend, "vgf_compile", fake_vgf_compile)
+
+    result = vgf_backend.VgfBackend._compile_tosa_flatbuffer(
+        b"tosa",
+        VgfCompileSpec(compiler_flags=["--emit-debug-info"], emit_debug_info=True),
+    )
+
+    assert result == b"vgf"
+    assert captured_flags == ["--emit-debug-info"]
+
+
 def test_format_repro_command_quotes_shell_metacharacters():
     command = [
         "model-converter",

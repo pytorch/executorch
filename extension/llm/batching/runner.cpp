@@ -67,6 +67,7 @@ struct GenerationHandleState {
   std::optional<FinishReason> reason;
   std::string error_message;
   GenerationMetrics metrics;
+  std::function<void()> on_settled;
   std::atomic<bool> cancelled{false};
 };
 
@@ -131,6 +132,7 @@ class TerminalCompletion {
   void finish(TerminalOutcome outcome, const GenerationMetrics& metrics) {
     assert(state_);
     auto state = std::move(state_);
+    std::function<void()> on_settled;
     {
       std::lock_guard<std::mutex> lock(state->mutex);
       assert(state->phase == CompletionPhase::DeliveringCallback);
@@ -140,6 +142,20 @@ class TerminalCompletion {
       state->phase = CompletionPhase::Done;
     }
     state->cv.notify_all();
+    // Swapping an inline callable can destroy a copy whose captures reenter
+    // the handle. Only this finisher accesses on_settled after publication.
+    on_settled.swap(state->on_settled);
+    if (on_settled) {
+#if ET_HAS_EXCEPTIONS
+      try {
+        on_settled();
+      } catch (...) {
+        // Notification failure must not change the published outcome.
+      }
+#else
+      on_settled();
+#endif
+    }
   }
 
  private:
@@ -288,7 +304,12 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       SessionId session,
       std::vector<Token> delta,
       GenConfig config,
-      GenerationCallback on_update);
+      GenerationCallback on_update,
+      std::function<void()> on_settled);
+
+  InitializationState initialization_state() const noexcept {
+    return initialization_state_.load(std::memory_order_acquire);
+  }
 
   // Engine-thread data, so only stable once that thread is joined.
   EngineMetrics metrics() const {
@@ -510,6 +531,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::condition_variable stopped_cv_;
   std::vector<Command> inbox_;
   std::atomic<Lifecycle> lifecycle_{Lifecycle::Running};
+  std::atomic<InitializationState> initialization_state_{
+      InitializationState::Pending};
   bool join_in_progress_ = false;
   std::thread::id engine_thread_id_;
 
@@ -598,9 +621,11 @@ Session::make_clone_request(Position upto) const {
 GenerationHandle Session::generate_async(
     std::vector<Token> delta,
     GenConfig config,
-    GenerationCallback on_update) const {
+    GenerationCallback on_update,
+    std::function<void()> on_settled) const {
   if (!state_) {
     auto handle_state = std::make_shared<GenerationHandleState>();
+    handle_state->on_settled = std::move(on_settled);
     GenerationHandle handle(handle_state);
     finalize_terminal(
         handle_state,
@@ -610,6 +635,7 @@ GenerationHandle Session::generate_async(
   }
   if (!state_->status->open.load(std::memory_order_acquire)) {
     auto handle_state = std::make_shared<GenerationHandleState>();
+    handle_state->on_settled = std::move(on_settled);
     GenerationHandle handle(handle_state);
     finalize_terminal(handle_state, on_update, TerminalOutcome::cancelled());
     return handle;
@@ -618,7 +644,8 @@ GenerationHandle Session::generate_async(
       state_->session,
       std::move(delta),
       std::move(config),
-      std::move(on_update));
+      std::move(on_update),
+      std::move(on_settled));
 }
 
 // --- lifecycle -------------------------------------------------------------
@@ -634,6 +661,10 @@ Runner::~Runner() {
 
 void Runner::shutdown() {
   impl_->shutdown();
+}
+
+InitializationState Runner::initialization_state() const noexcept {
+  return impl_->initialization_state();
 }
 
 EngineMetrics Runner::metrics() const {
@@ -711,8 +742,21 @@ void RunnerImpl::run_() {
   // handed a session for an executor that did not come up, and so one-time
   // setup is not charged to whichever generation happened to go first.
   const MetricsTime init_start = MetricsClock::now();
-  const bool ready = executor_.initialize();
+  bool ready = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    ready = executor_.initialize();
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    // Use the same shutdown/drain path as an explicit initialization failure.
+  }
+#endif
   metrics_.init_us = us_between(init_start, MetricsClock::now());
+  // Publish the reason before a stopped Runner can refuse an open.
+  initialization_state_.store(
+      ready ? InitializationState::Ready : InitializationState::Failed,
+      std::memory_order_release);
   if (!ready) {
     // Stop without running work. The drain below still answers whatever was
     // queued while this was starting, so no caller is left waiting.
@@ -1061,6 +1105,18 @@ bool RunnerImpl::execute_one_batch_() {
   if (ok) {
     metrics_.decode_tokens_total += decode_tokens;
     metrics_.prefill_tokens_total += prefill_tokens;
+    // Account the whole batch before any completion or shutdown can discard
+    // results. Initial input ends at the generation's first output, not at a
+    // scheduler-specific prefill/decode classification.
+    for (const auto& input : batch.inputs) {
+      auto session = sessions_.find(input.sid);
+      if (session != sessions_.end() && session->second.active_generation) {
+        auto& m = session->second.active_generation->m;
+        if (m.n_generated_tokens == 0) {
+          m.n_prefilled_tokens += input.size;
+        }
+      }
+    }
   }
   metrics_.step_latency_sum_us += latency;
   metrics_.step_latency_max_us =
@@ -1253,8 +1309,10 @@ GenerationHandle RunnerImpl::generate_async(
     SessionId session,
     std::vector<Token> delta,
     GenConfig config,
-    GenerationCallback on_update) {
+    GenerationCallback on_update,
+    std::function<void()> on_settled) {
   auto state = std::make_shared<GenerationHandleState>();
+  state->on_settled = std::move(on_settled);
   GenerationRequest request;
   request.session = session;
   request.delta = std::make_shared<const std::vector<Token>>(std::move(delta));
@@ -1270,17 +1328,14 @@ GenerationHandle RunnerImpl::generate_async(
   request.generation.m.t_submit = MetricsClock::now();
 
   auto handle = GenerationHandle(state);
-  bool admitted = false;
   {
-    std::lock_guard<std::mutex> lock(control_mutex_);
+    std::unique_lock<std::mutex> lock(control_mutex_);
     if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
       inbox_.emplace_back(StartCommand{std::move(request)});
-      admitted = true;
+      lock.unlock();
+      notify_engine_();
+      return handle;
     }
-  }
-  if (admitted) {
-    notify_engine_();
-    return handle;
   }
 
   // After shutdown nothing drains the inbox, so complete synchronously instead

@@ -12,12 +12,12 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnOpPackageManager.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnSdkCompatibility.h>
 #include <unordered_set>
 #include <vector>
 
 #include "HTP/QnnHtpCommon.h"
 #include "QnnBackend.h"
-#include "QnnCommon.h"
 #include "QnnTypes.h"
 #include "Saver/QnnSaverCommon.h"
 

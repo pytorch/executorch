@@ -334,6 +334,49 @@ def test_match_flow_offset_grid_accepts_identity_base_grid_requantization():
     assert _match_flow_offset_grid(grid_sampler) == (flow, 0)
 
 
+def test_match_flow_offset_grid_accepts_folded_identity_base_grid():
+    grid_sampler, flow = _build_flow_offset_grid_sampler()
+    grid = grid_sampler.args[1]
+    assert isinstance(grid, torch.fx.Node)
+    add = grid.args[0]
+    assert isinstance(add, torch.fx.Node)
+    quantize = add.args[0]
+    assert isinstance(quantize, torch.fx.Node)
+    dequantize = quantize.args[0]
+    assert isinstance(dequantize, torch.fx.Node)
+    base_grid = dequantize.args[0]
+    assert isinstance(base_grid, torch.fx.Node)
+
+    qparams = QuantArgs(0.007870171219110489, 0, -127, 127, torch.int8)
+    base_grid.meta["input_qparams"] = {0: qparams}
+    base_grid.meta["output_qparams"] = {0: qparams}
+    add.replace_input_with(quantize, base_grid)
+
+    assert _match_flow_offset_grid(grid_sampler) == (flow, 0)
+
+
+def test_match_flow_offset_grid_rejects_folded_requantized_base_grid():
+    grid_sampler, _ = _build_flow_offset_grid_sampler()
+    grid = grid_sampler.args[1]
+    assert isinstance(grid, torch.fx.Node)
+    add = grid.args[0]
+    assert isinstance(add, torch.fx.Node)
+    quantize = add.args[0]
+    assert isinstance(quantize, torch.fx.Node)
+    dequantize = quantize.args[0]
+    assert isinstance(dequantize, torch.fx.Node)
+    base_grid = dequantize.args[0]
+    assert isinstance(base_grid, torch.fx.Node)
+
+    base_grid.meta["input_qparams"] = {
+        0: QuantArgs(0.007870171219110489, 0, -127, 127, torch.int8)
+    }
+    base_grid.meta["output_qparams"] = {0: QuantArgs(0.01, 0, -127, 127, torch.int8)}
+    add.replace_input_with(quantize, base_grid)
+
+    assert _match_flow_offset_grid(grid_sampler) is None
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [

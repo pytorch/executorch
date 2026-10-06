@@ -30,8 +30,11 @@ endif()
 # SHARED on purpose: the caller-stream thread-local must have a single
 # definition across every shared object in the process (see export.h). A static
 # copy linked into multiple shared libraries would create multiple thread-locals
-# and silently break the caller-stream handshake.
-add_library(extension_cuda SHARED caller_stream.cpp device_guard.cpp)
+# and silently break the caller-stream handshake. The CUDA allocator lives here
+# too, so one singleton serves every delegate.
+add_library(
+  extension_cuda SHARED caller_stream.cpp cuda_allocator.cpp device_guard.cpp
+)
 if(EXECUTORCH_BUILD_SHARED)
   # Named after what it provides rather than after the target, matching the
   # other libraries the wheel ships. The target name stays as it is because the
@@ -65,7 +68,9 @@ target_compile_options(
   extension_cuda PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_common_compile_options}>"
 )
 target_compile_definitions(
-  extension_cuda PRIVATE EXECUTORCH_EXTENSION_CUDA_BUILDING
+  extension_cuda
+  PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  PRIVATE EXECUTORCH_EXTENSION_CUDA_BUILDING
 )
 if(EXECUTORCH_BUILD_ROCM)
   target_compile_definitions(extension_cuda PUBLIC EXECUTORCH_USE_HIP=1)

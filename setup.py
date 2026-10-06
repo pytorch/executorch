@@ -1335,6 +1335,52 @@ def get_executable_name(name: str) -> str:
         return name
 
 
+# Visual Studio is a multi-config generator and writes into a per-config subdirectory.
+_CFG = "%BUILD_TYPE%/" if _is_windows() else ""
+
+
+def _windows_import_libraries() -> List["BuiltFile"]:
+    """The import library beside each DLL offered to C++ consumers, which they link against."""
+    if not _is_windows():
+        return []
+    entries = [
+        ("", "executorch_shared", "executorch", []),
+        (
+            "extension/threadpool/",
+            "executorch_threadpool",
+            None,
+            ["EXECUTORCH_BUILD_PTHREADPOOL", "EXECUTORCH_BUILD_CPUINFO"],
+        ),
+        (
+            "configurations/",
+            "executorch_kernels_optimized",
+            None,
+            ["EXECUTORCH_BUILD_KERNELS_OPTIMIZED"],
+        ),
+        (
+            "kernels/quantized/",
+            "executorch_kernels_quantized",
+            None,
+            ["EXECUTORCH_BUILD_KERNELS_QUANTIZED"],
+        ),
+        (
+            "backends/xnnpack/",
+            "executorch_backend_xnnpack",
+            None,
+            ["EXECUTORCH_BUILD_XNNPACK"],
+        ),
+    ]
+    return [
+        BuiltFile(
+            src_dir=f"%CMAKE_CACHE_DIR%/{subdir}{_CFG}",
+            src_name=f"{built}.lib",
+            dst=f"executorch/lib/{shipped or built}.lib",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED", *flags],
+        )
+        for subdir, built, shipped, flags in entries
+    ]
+
+
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
 
@@ -2304,7 +2350,9 @@ class CustomBuildPy(build_py):
                 # they include. The stream helper's library is shared so the process has one copy of the
                 # caller-stream state, and that is a handshake the caller takes part in, so a consumer needs
                 # the declarations to take part at all. The device guard's own definitions are compiled into that
-                # same library, so a consumer needs this header to reach them.
+                # same library, so a consumer needs this header to reach them. The CUDA allocator is compiled into
+                # it too, so another delegate can take the same allocator; its header names CUDA types, so it and
+                # the runtime API header it includes need the CUDA toolkit to compile.
                 #
                 # Only when this wheel carries the CUDA delegate, and decided from the same CMake cache the
                 # libraries ship on. Keying it off the release row's CUDA version instead meant a build on
@@ -2312,8 +2360,10 @@ class CustomBuildPy(build_py):
                 # header, so a consumer got a component it could link and not include.
                 [
                     "extension/cuda/caller_stream.h",
+                    "extension/cuda/cuda_allocator.h",
                     "extension/cuda/device_guard.h",
                     "extension/cuda/export.h",
+                    "extension/cuda/runtime_api.h",
                 ]
                 if _cuda_libraries_built(cmake_cache_dir)
                 else []
@@ -2465,6 +2515,17 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
 
 
+def _crt_definition(build_type: str) -> str:
+    """The define naming the C++ library the Windows DLLs were built with.
+
+    A Debug build links the debug C++ library, and a consumer has to match it, so the
+    runtime headers check this against the consumer's own configuration.
+    """
+    if build_type.lower() == "debug":
+        return "ET_PREBUILT_DEBUG_CRT"
+    return "ET_PREBUILT_RELEASE_CRT"
+
+
 def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
     """Fill in the tracer placeholder in an installed CMake configuration file.
 
@@ -2481,6 +2542,8 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
     enabled = CMakeCache(cache_path=cache_path).is_enabled(
         "EXECUTORCH_ENABLE_EVENT_TRACER"
     )
+    build_type = CMakeCache(cache_path=cache_path).get("CMAKE_BUILD_TYPE")
+    crt = _crt_definition(build_type.value if build_type else get_build_type())
     with open(path) as handle:
         contents = handle.read()
     with open(path, "w") as handle:
@@ -2488,7 +2551,7 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
             contents.replace(
                 "@EXECUTORCH_TRACER_DEFINITION@",
                 "ET_EVENT_TRACER_ENABLED" if enabled else "",
-            )
+            ).replace("@EXECUTORCH_CRT_DEFINITION@", crt)
         )
 
 
@@ -2523,7 +2586,7 @@ def _substitute_tracer_definition_from_args(destination) -> None:
         text.replace(
             "@EXECUTORCH_TRACER_DEFINITION@",
             "ET_EVENT_TRACER_ENABLED" if enabled else "",
-        )
+        ).replace("@EXECUTORCH_CRT_DEFINITION@", _crt_definition(get_build_type()))
     )
 
 
@@ -2892,7 +2955,7 @@ setup(
                 # only useful where something upgrades the library independently of
                 # what links it, which never happens inside a wheel.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_dir="%CMAKE_CACHE_DIR%/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch"),
                     dst="executorch/lib/" + get_dynamic_lib_name("executorch"),
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
@@ -2901,7 +2964,7 @@ setup(
                 # code fused into the Python extension, so a process has one copy of
                 # it however many consumers load.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
+                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_etdump"),
                     dst="executorch/lib/" + get_dynamic_lib_name("executorch_etdump"),
                     # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
@@ -2915,7 +2978,7 @@ setup(
                 # library so that a process has one pool rather than one per
                 # component that uses it.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_threadpool"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_threadpool"),
@@ -2932,7 +2995,7 @@ setup(
                 # Install the merged CPU kernels beside them, so the operators are
                 # registered once per process rather than once per component.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/configurations/",
+                    src_dir="%CMAKE_CACHE_DIR%/configurations/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_kernels_optimized"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_kernels_optimized"),
@@ -2944,12 +3007,26 @@ setup(
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
                     ],
                 ),
+                # For build systems that read pkg-config rather than CMake packages.
+                # Not on Windows, where CMakeLists.txt does not generate it.
+                *(
+                    []
+                    if _is_windows()
+                    else [
+                        BuiltFile(
+                            src_dir="%CMAKE_CACHE_DIR%/",
+                            src_name="executorch-wheel.pc",
+                            dst="executorch/lib/pkgconfig/executorch.pc",
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                        ),
+                    ]
+                ),
                 # The CUDA delegate and the process-wide CUDA stream helper, for a
                 # wheel built from a CUDA index. Only present when the build asks for
                 # CUDA, so packaging requires that rather than looking for files a
                 # CPU-only build never produced.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_backend_cuda"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_backend_cuda"),
@@ -2983,7 +3060,7 @@ setup(
                 # A C++ application running a quantized model could not link
                 # them before.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
+                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_kernels_quantized"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_kernels_quantized"),
@@ -3021,7 +3098,7 @@ setup(
                 # Install the XNNPACK delegate beside them, so a process has one
                 # copy of it instead of one per component that uses it.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/" + _CFG,
                     src_name=get_dynamic_lib_name("executorch_backend_xnnpack"),
                     dst="executorch/lib/"
                     + get_dynamic_lib_name("executorch_backend_xnnpack"),
@@ -3056,6 +3133,7 @@ setup(
                         "EXECUTORCH_COREML_DELEGATE_LIBRARY_BUILT",
                     ],
                 ),
+                *_windows_import_libraries(),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
