@@ -26,6 +26,21 @@ CACHE = Path(
 HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def resolve_server_paths(server, config_dir):
+    for key in ("worker_bin", "model_path", "tokenizer_path", "hf_tokenizer", "python"):
+        if key not in server:
+            continue
+        value = server[key]
+        if key in {"worker_bin", "model_path", "tokenizer_path"} or value.startswith(
+            ("/", "~", ".")
+        ):
+            resolved = config_dir / Path(value).expanduser()
+            # Resolving an interpreter symlink bypasses its virtual environment.
+            server[key] = str(
+                resolved.absolute() if key == "python" else resolved.resolve()
+            )
+
+
 def load_config(path):
     config = tomllib.loads(path.read_text())
     if "server" not in config:
@@ -43,18 +58,7 @@ def load_config(path):
     server.setdefault("module", "executorch.examples.llm_server.python.server")
     server.setdefault("host", "0.0.0.0")
     server.setdefault("port", 8000)
-    for key in ("worker_bin", "model_path", "tokenizer_path", "hf_tokenizer", "python"):
-        if key not in server:
-            continue
-        value = server[key]
-        if key in {"worker_bin", "model_path", "tokenizer_path"} or value.startswith(
-            ("/", "~", ".")
-        ):
-            resolved = path.parent / Path(value).expanduser()
-            # Resolving an interpreter symlink bypasses its virtual environment.
-            server[key] = str(
-                resolved.absolute() if key == "python" else resolved.resolve()
-            )
+    resolve_server_paths(server, path.parent)
     defaults = {
         "tasks": ["fix-git"],
         "attempts": 1,
