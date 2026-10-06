@@ -1424,7 +1424,12 @@ class VulkanEngineExecutable final : public EngineExecutable {
         graph_->set_output_tensor(output, false);
         output_staging_.push_back(kNoOutputStaging);
       } else {
-        output_staging_.push_back(graph_->set_output_tensor(output));
+        const ScalarType output_type = meta_of(outputs_[i]).dtype;
+        const vkapi::ScalarType staging_type = output_type == ScalarType::Half
+            ? vkapi::kFloat
+            : to_vk_dtype(device_dtype(output_type));
+        output_staging_.push_back(
+            graph_->set_output_tensor(output, staging_type));
       }
     }
 

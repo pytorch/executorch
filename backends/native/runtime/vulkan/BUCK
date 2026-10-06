@@ -3,6 +3,18 @@ load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
+# Link the host engine against ET-VK configured for the selected Vulkan device,
+# exposing optional features such as integer dot product.
+fbcode_target(
+    _kind = native.cxx_library,
+    name = "xplat_vulkan_runtime",
+    exported_deps = [
+        "@fbsource//xplat/executorch/backends/vulkan:vulkan_compute_api",
+        "@fbsource//xplat/executorch/backends/vulkan:vulkan_graph_runtime",
+    ],
+    visibility = ["PUBLIC"],
+)
+
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain cell-only targets.
 
