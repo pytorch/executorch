@@ -15,4 +15,4 @@ For detailed information on how APIs evolve and the deprecation process, please 
     :members: method_names, load_method
 
 .. autoclass:: Method
-    :members: execute, metadata
+    :members: execute, set_output, metadata

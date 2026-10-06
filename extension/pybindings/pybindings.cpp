@@ -1286,14 +1286,14 @@ struct PyMethod final {
     input_tensors.reserve(inputs_size);
 #endif
 
-    fed_inputs_.assign(inputs_size, std::nullopt);
+    std::vector<std::optional<at::Tensor>> fed_inputs(inputs_size);
     // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
       auto python_input = inputs[i];
       const std::string& type_str = py::str(python_input.get_type());
       if (type_str == "<class 'torch.Tensor'>") {
         auto at_tensor = python_input.cast<at::Tensor>();
-        fed_inputs_[i] = at_tensor;
+        fed_inputs[i] = at_tensor;
 
 #ifdef USE_ATEN_LIB
         EValue evalue(at_tensor);
@@ -1379,6 +1379,7 @@ struct PyMethod final {
         "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
         method_->method_meta().name(),
         static_cast<uint32_t>(set_inputs_status));
+    fed_inputs_ = std::move(fed_inputs);
     find_inputs_aliased_by_outputs();
   }
 
@@ -1399,10 +1400,16 @@ struct PyMethod final {
       throw std::runtime_error(
           "output " + std::to_string(index) + " is not a tensor");
     }
-    if (aliased_input(index).has_value()) {
-      throw std::runtime_error(
-          "output " + std::to_string(index) +
-          " is an input the method mutates, which is already written in place");
+    if (const auto input = aliased_input(index)) {
+      throw std::runtime_error(aliased_input_message(index, *input));
+    }
+    for (size_t i = 0; i < num_outputs; ++i) {
+      if (i != index && &method_->get_output(i) == &output) {
+        throw std::runtime_error(
+            "output " + std::to_string(index) +
+            " is the same value as output " + std::to_string(i) +
+            " and cannot be bound");
+      }
     }
     const auto meta = method_->method_meta().output_tensor_meta(index);
     THROW_IF_ERROR(
@@ -1448,11 +1455,6 @@ struct PyMethod final {
     caller_outputs_.assign(num_outputs, std::nullopt);
     for (size_t i = 0; i < output_storages_.size(); ++i) {
       if (is_bound_output(i)) {
-        if (aliased_input(i).has_value()) {
-          throw std::runtime_error(
-              "output " + std::to_string(i) +
-              " is an input the method mutates and cannot be bound");
-        }
         auto& bound = bound_outputs_[i].value();
         output_storage_spans[i] = Span<uint8_t>(
             static_cast<uint8_t*>(mutable_tensor_data_ptr_no_cow(bound)),
@@ -1460,9 +1462,9 @@ struct PyMethod final {
         caller_outputs_[i] = bound;
         continue;
       }
-      // The write-back of an unplanned input the method mutates is that input,
-      // already pointing at the tensor fed for it. Giving it storage would
-      // repoint the input too.
+      // An output that is an unplanned input (e.g. the write-back of a mutated
+      // input) already points at the tensor fed for it. Giving it storage
+      // would repoint the input too.
       if (const auto input = aliased_input(i)) {
         caller_outputs_[i] = fed_inputs_[*input];
         continue;
@@ -1618,6 +1620,25 @@ struct PyMethod final {
         }
       }
     }
+    // Only possible for a binding made before the first set_inputs(), when
+    // aliases were not known yet.
+    std::string error;
+    for (size_t i = 0; i < num_outputs; ++i) {
+      if (const auto input = aliased_input(i); input && is_bound_output(i)) {
+        bound_outputs_[i].reset();
+        error +=
+            aliased_input_message(i, *input) + ", so its binding was removed. ";
+      }
+    }
+    if (!error.empty()) {
+      throw std::runtime_error(error);
+    }
+  }
+
+  static std::string aliased_input_message(size_t output, size_t input) {
+    return "output " + std::to_string(output) + " is input " +
+        std::to_string(input) +
+        ", which is returned as the tensor passed in for it";
   }
 
   void allocate_output_storages() {

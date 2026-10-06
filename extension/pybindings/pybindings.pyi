@@ -97,13 +97,12 @@ class ExecuTorchMethod:
     Outputs are cloned when ``clone_outputs`` is True, except for outputs that
     already live in a caller's tensor, which are returned as that tensor:
 
-    - an output bound with ``set_output``;
-    - the write-back of an input the method mutates, when that input is not
-      memory planned (exported with ``alloc_graph_input=False``). The mutation
-      is written into the tensor passed in for it. A memory planned input is
-      copied into the method, so the caller's tensor is not updated.
-
-    Later calls overwrite these tensors.
+    - an output bound with ``set_output``, which later calls overwrite;
+    - an output that is an input not memory planned (e.g. exported with
+      ``alloc_graph_input=False``), such as the write-back of a mutated input.
+      It is the tensor passed in for that input, mutation included. A memory
+      planned input is copied into the method, so the caller's tensor is not
+      updated.
 
     .. warning::
 
@@ -115,10 +114,7 @@ class ExecuTorchMethod:
     def execute(self) -> None: ...
     def set_output(self, tensor: torch.Tensor, index: int) -> None: ...
     # pyre-ignore[3]: "Any" in return type annotations.
-    def get_outputs(self, clone_outputs: bool = True) -> List[Any]:
-        """Returns the outputs of the last ``execute``. Outputs living in a
-        caller's tensor are never cloned, see ``ExecuTorchMethod``."""
-        ...
+    def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def call(
         self,

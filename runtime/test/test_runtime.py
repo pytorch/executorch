@@ -41,17 +41,25 @@ class ModuleDouble(torch.nn.Module):
         return x * 2
 
 
+class ModuleDoubleTwice(torch.nn.Module):
+    def forward(self, x):
+        y = x * 2
+        return y, y
+
+
 def _cache_inputs():
     return torch.ones(1, 4), torch.zeros(3, 4), torch.tensor([1])
 
 
-def _load_unplanned_io_method(module, inputs, dynamic_shapes=None, plan_inputs=False):
-    """Loads `forward` exported with neither its inputs (unless `plan_inputs`)
-    nor its outputs memory planned. Returns the program buffer too: the loaded
-    program reads it in place, so it must outlive the method."""
+def _load_unplanned_io_method(
+    module, inputs, dynamic_shapes=None, plan_inputs=False, plan_outputs=False
+):
+    """Loads `forward` exported with its inputs and outputs not memory planned,
+    unless asked. Returns the program buffer too: the loaded program reads it
+    in place, so it must outlive the method."""
     config = ExecutorchBackendConfig(
         memory_planning_pass=MemoryPlanningPass(
-            alloc_graph_input=plan_inputs, alloc_graph_output=False
+            alloc_graph_input=plan_inputs, alloc_graph_output=plan_outputs
         )
     )
     exported = torch.export.export(module, inputs, dynamic_shapes=dynamic_shapes)
@@ -138,6 +146,28 @@ class RuntimeTest(unittest.TestCase):
             self.assertIs(outputs[1], summed)
             self.assertTrue(torch.equal(summed, cache.sum(0, keepdim=True)))
 
+    def test_set_output_rebinds(self):
+        x, cache, pos = _cache_inputs()
+        method, _buffer = _load_cache_update_method()
+        first, second = torch.zeros(1, 4), torch.zeros(1, 4)
+        method.set_output(first, 1)
+        method.set_output(second, 1)
+        outputs = method.execute((x, cache, pos))
+        self.assertIs(outputs[1], second)
+        self.assertTrue(torch.equal(second, torch.ones(1, 4)))
+        self.assertTrue(torch.equal(first, torch.zeros(1, 4)))
+
+    def test_failed_set_inputs_keeps_previous_inputs(self):
+        x, cache, pos = _cache_inputs()
+        method, _buffer = _load_cache_update_method()
+        method._method.set_inputs((x, cache, pos))
+        with self.assertRaises(RuntimeError):
+            method._method.set_inputs((x, torch.zeros(3, 4)))
+        method._method.execute()
+        outputs = method._method.get_outputs()
+        self.assertIs(outputs[0], cache)
+        self.assertTrue(torch.equal(cache[1], torch.ones(4)))
+
     def test_set_output_keeps_earlier_outputs_alive(self):
         x, cache, pos = _cache_inputs()
         method, _buffer = _load_cache_update_method()
@@ -173,17 +203,32 @@ class RuntimeTest(unittest.TestCase):
             with self.subTest(name), self.assertRaises(error):
                 method.set_output(tensor, index)
 
+    def test_set_output_rejects_outputs_it_cannot_own(self):
+        x = torch.ones(2)
+        method, _buffer = _load_unplanned_io_method(
+            ModuleDouble(), (x,), plan_outputs=True
+        )
+        with self.subTest("memory planned"), self.assertRaises(RuntimeError):
+            method.set_output(torch.empty(2), 0)
+        method, _buffer = _load_unplanned_io_method(ModuleDoubleTwice(), (x,))
+        with self.subTest("returned twice"), self.assertRaises(RuntimeError):
+            method.set_output(torch.empty(2), 0)
+
     def test_set_output_rejects_mutated_input(self):
         x, cache, pos = _cache_inputs()
         method, _buffer = _load_cache_update_method()
         method.execute((x, cache, pos))
         with self.assertRaises(RuntimeError):
             method.set_output(torch.zeros(3, 4), 0)
-        # Bound before any inputs are set, the binding fails on the first call.
+        # Bound before any inputs are set, the first call removes the binding
+        # and raises, and later calls work.
         method, _buffer = _load_cache_update_method()
         method.set_output(torch.zeros(3, 4), 0)
         with self.assertRaises(RuntimeError):
             method.execute((x, cache, pos))
+        outputs = method.execute((x, cache, pos))
+        self.assertIs(outputs[0], cache)
+        self.assertTrue(torch.equal(cache[1], torch.ones(4)))
 
     def test_module_with_multiple_method_names(self):
         ep, inputs = create_program(ModuleMulti())
