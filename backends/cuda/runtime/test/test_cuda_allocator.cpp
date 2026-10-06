@@ -31,20 +31,21 @@ using executorch::runtime::etensor::DeviceIndex;
 #if defined(__linux__) && !defined(EXECUTORCH_USE_HIP)
 // Force rounding independently of how the GPU packs its allocations.
 namespace {
-constexpr uintptr_t kFakeBlock = 256;
-thread_local uintptr_t fake_block = kFakeBlock;
-thread_local bool hand_out_fake_block = false;
+alignas(4096) thread_local char fake_storage[16384];
+thread_local void* fake_block = fake_storage + 256;
+thread_local int fake_malloc_remaining = 0;
 thread_local void* freed_fake_block = nullptr;
 thread_local size_t fake_malloc_size = 0;
+thread_local int fake_free_count = 0;
 } // namespace
 
 // Weak, so the real ones win if a static CUDA runtime is linked in. The linker
 // can still leave them out, and then a stand-in has nothing to call.
 extern "C" __attribute__((weak)) cudaError_t
 cudaMalloc(void** ptr, size_t size) {
-  if (hand_out_fake_block) {
-    hand_out_fake_block = false;
-    *ptr = reinterpret_cast<void*>(fake_block);
+  if (fake_malloc_remaining > 0) {
+    --fake_malloc_remaining;
+    *ptr = fake_block;
     fake_malloc_size = size;
     return cudaSuccess;
   }
@@ -58,8 +59,11 @@ cudaMalloc(void** ptr, size_t size) {
 }
 
 extern "C" __attribute__((weak)) cudaError_t cudaFree(void* ptr) {
-  if (ptr != nullptr && reinterpret_cast<uintptr_t>(ptr) <= 4096) {
+  const auto address = reinterpret_cast<uintptr_t>(ptr);
+  const auto begin = reinterpret_cast<uintptr_t>(fake_storage);
+  if (address >= begin && address < begin + sizeof(fake_storage)) {
     freed_fake_block = ptr;
+    ++fake_free_count;
     return cudaSuccess;
   }
   static const auto real =
@@ -209,6 +213,7 @@ TEST_F(CudaAllocatorTest, AllocateOnMissingDeviceFails) {
 }
 
 TEST_F(CudaAllocatorTest, LargeAlignmentsWithLiveBlocksRoundtrip) {
+  (void)cudaGetLastError();
   CudaAllocator& a = CudaAllocator::instance();
   for (int cycle = 0; cycle < 64; ++cycle) {
     std::vector<void*> live;
@@ -235,12 +240,14 @@ TEST_F(CudaAllocatorTest, LargeAlignmentsWithLiveBlocksRoundtrip) {
     }
     for (void* ptr : live) {
       a.deallocate(ptr, 0);
+      EXPECT_EQ(cudaGetLastError(), cudaSuccess);
     }
   }
 }
 
 TEST_F(CudaAllocatorTest, ConcurrentAlignedAllocations) {
   std::vector<std::thread> threads;
+  threads.reserve(4);
   for (int i = 0; i < 4; ++i) {
     threads.emplace_back([] {
       CudaAllocator& a = CudaAllocator::instance();
@@ -250,6 +257,7 @@ TEST_F(CudaAllocatorTest, ConcurrentAlignedAllocations) {
           ASSERT_TRUE(res.ok());
           EXPECT_EQ(reinterpret_cast<uintptr_t>(res.get()) % alignment, 0u);
           a.deallocate(res.get(), 0);
+          EXPECT_EQ(cudaGetLastError(), cudaSuccess);
         }
       }
     });
@@ -279,80 +287,108 @@ TEST_F(CudaAllocatorTest, PaddingOverflowFailsBeforeAnyCudaCall) {
 }
 
 #if defined(__linux__) && !defined(EXECUTORCH_USE_HIP)
-TEST_F(CudaAllocatorTest, RoundedAllocationFreesOriginalPointer) {
-  CudaAllocator& a = CudaAllocator::instance();
-  // The default alignment is always met, so this round trip shows whether the
-  // allocator reaches the stand-ins at all.
-  hand_out_fake_block = true;
-  freed_fake_block = nullptr;
-  auto probe = a.allocate(1024, 0);
-  const bool malloc_replaced = !hand_out_fake_block;
-  hand_out_fake_block = false;
-  if (probe.ok()) {
-    a.deallocate(probe.get(), 0);
-  }
-  if (!malloc_replaced ||
-      freed_fake_block != reinterpret_cast<void*>(kFakeBlock)) {
-    GTEST_SKIP() << "cudaMalloc and cudaFree cannot be replaced in this build";
-  }
-
-  for (size_t alignment : {512, 4096}) {
-    for (int cycle = 0; cycle < 64; ++cycle) {
-      freed_fake_block = nullptr;
-      hand_out_fake_block = true;
-      auto res = a.allocate(1024, 0, alignment);
-      hand_out_fake_block = false;
-      ASSERT_TRUE(res.ok());
-      EXPECT_EQ(fake_malloc_size, 1024 + alignment - 1);
-      EXPECT_EQ(res.get(), reinterpret_cast<void*>(alignment));
-      EXPECT_EQ(freed_fake_block, nullptr);
-      a.deallocate(res.get(), 0);
-      EXPECT_EQ(freed_fake_block, reinterpret_cast<void*>(kFakeBlock));
+class CudaAllocatorStandInTest : public CudaAllocatorTest {
+ protected:
+  void SetUp() override {
+    CudaAllocatorTest::SetUp();
+    if (IsSkipped()) {
+      return;
     }
-
-    // Reusing the rounded address must not find a stale map entry.
-    fake_block = alignment;
+    auto& a = CudaAllocator::instance();
+    fake_block = fake_storage + 256;
+    fake_malloc_remaining = 1;
     freed_fake_block = nullptr;
-    hand_out_fake_block = true;
-    auto aligned = a.allocate(1024, 0, alignment);
-    hand_out_fake_block = false;
-    fake_block = kFakeBlock;
-    ASSERT_TRUE(aligned.ok());
-    EXPECT_EQ(aligned.get(), reinterpret_cast<void*>(alignment));
-    EXPECT_EQ(freed_fake_block, nullptr);
-    a.deallocate(aligned.get(), 0);
-    EXPECT_EQ(freed_fake_block, reinterpret_cast<void*>(alignment));
+    auto probe = a.allocate(1024, 0);
+    const bool malloc_replaced = fake_malloc_remaining == 0;
+    fake_malloc_remaining = 0;
+    if (probe.ok()) {
+      a.deallocate(probe.get(), 0);
+    }
+    if (!malloc_replaced || freed_fake_block != fake_block) {
+      GTEST_SKIP()
+          << "cudaMalloc and cudaFree cannot be replaced in this build";
+    }
+    fake_malloc_size = 0;
+    fake_free_count = 0;
+  }
+
+  void TearDown() override {
+    fake_malloc_remaining = 0;
+    CudaAllocatorTest::TearDown();
+  }
+};
+
+// A free inside allocate() would wait for all work queued on the device.
+TEST_F(CudaAllocatorStandInTest, AllocateMakesOneCallAndNeverFrees) {
+  auto& a = CudaAllocator::instance();
+  for (size_t alignment : {64, 256, 512, 4096}) {
+    for (size_t offset : {0, 256}) {
+      SCOPED_TRACE(testing::Message() << alignment << ", " << offset);
+      fake_block = fake_storage + offset;
+      fake_malloc_remaining = 1;
+      fake_malloc_size = 0;
+      fake_free_count = 0;
+      auto res = a.allocate(1024, 0, alignment);
+      ASSERT_TRUE(res.ok());
+      EXPECT_EQ(fake_malloc_remaining, 0);
+      EXPECT_EQ(fake_free_count, 0);
+      EXPECT_EQ(
+          fake_malloc_size, alignment > 256 ? 1024 + alignment - 1 : 1024);
+      EXPECT_EQ(reinterpret_cast<uintptr_t>(res.get()) % alignment, 0u);
+      a.deallocate(res.get(), 0);
+      EXPECT_EQ(freed_fake_block, fake_block);
+      EXPECT_EQ(fake_free_count, 1);
+    }
   }
 }
 
-TEST_F(CudaAllocatorTest, AllocateFreesAndRefusesAMisalignedPointer) {
-  CudaAllocator& a = CudaAllocator::instance();
-  hand_out_fake_block = true;
-  freed_fake_block = nullptr;
-  auto probe = a.allocate(1024, 0);
-  const bool malloc_replaced = !hand_out_fake_block;
-  hand_out_fake_block = false;
-  if (probe.ok()) {
-    a.deallocate(probe.get(), 0);
-  }
-  if (!malloc_replaced ||
-      freed_fake_block != reinterpret_cast<void*>(kFakeBlock)) {
-    GTEST_SKIP() << "cudaMalloc and cudaFree cannot be replaced in this build";
-  }
-
-  freed_fake_block = nullptr;
-  fake_block = 128;
-  hand_out_fake_block = true;
+// cudaMalloc promises 256 bytes, so a block that misses a smaller alignment
+// is a broken runtime, not something padding should hide.
+TEST_F(CudaAllocatorStandInTest, MisalignedBlockAtSmallAlignmentIsRefused) {
+  auto& a = CudaAllocator::instance();
+  fake_block = fake_storage + 128;
+  fake_malloc_remaining = 1;
+  fake_malloc_size = 0;
+  fake_free_count = 0;
   auto res = a.allocate(1024, 0, 256);
-  hand_out_fake_block = false;
-  fake_block = kFakeBlock;
-  if (res.ok()) {
-    a.deallocate(res.get(), 0);
-  }
   ASSERT_FALSE(res.ok());
   EXPECT_EQ(res.error(), Error::NotSupported);
   EXPECT_EQ(fake_malloc_size, 1024u);
-  EXPECT_EQ(freed_fake_block, reinterpret_cast<void*>(128));
+  EXPECT_EQ(fake_free_count, 1);
+  EXPECT_EQ(freed_fake_block, fake_block);
+}
+
+TEST_F(CudaAllocatorStandInTest, RoundedAllocationFreesOriginalPointer) {
+  auto& a = CudaAllocator::instance();
+  for (size_t alignment : {512, 4096}) {
+    for (int cycle = 0; cycle < 64; ++cycle) {
+      fake_block = fake_storage + 256;
+      fake_malloc_remaining = 1;
+      fake_free_count = 0;
+      auto res = a.allocate(1024, 0, alignment);
+      ASSERT_TRUE(res.ok());
+      EXPECT_EQ(res.get(), fake_storage + alignment);
+      a.deallocate(res.get(), 0);
+      EXPECT_EQ(freed_fake_block, fake_block);
+      EXPECT_EQ(fake_free_count, 1);
+    }
+
+    // A second live rounded block keeps the lock-free path from skipping the
+    // lookup, so a stale entry for the reused address would be found.
+    fake_block = fake_storage + alignment + 256;
+    fake_malloc_remaining = 1;
+    auto live = a.allocate(1024, 0, alignment);
+    ASSERT_TRUE(live.ok());
+    fake_block = fake_storage + alignment;
+    fake_malloc_remaining = 1;
+    auto reused = a.allocate(1024, 0, alignment);
+    ASSERT_TRUE(reused.ok());
+    EXPECT_EQ(reused.get(), fake_block);
+    a.deallocate(reused.get(), 0);
+    EXPECT_EQ(freed_fake_block, fake_block);
+    a.deallocate(live.get(), 0);
+    EXPECT_EQ(freed_fake_block, fake_storage + alignment + 256);
+  }
 }
 #endif
 

@@ -12,10 +12,6 @@
 #include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/device_allocator.h>
 
-#include <atomic>
-#include <mutex>
-#include <unordered_map>
-
 namespace executorch::extension::cuda {
 
 /**
@@ -32,7 +28,13 @@ namespace executorch::extension::cuda {
 class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
     : public executorch::runtime::DeviceAllocator {
  public:
-  /// Alignments above 256 bytes add up to alignment minus one bytes of padding.
+  /**
+   * Allocates device memory aligned to `alignment`, a power of two. Above 256
+   * bytes, the one cudaMalloc call reserves alignment minus one extra bytes
+   * and the result is rounded up. Free the result with deallocate(), not
+   * cudaFree() or deallocate_async(), since it may not be the pointer
+   * cudaMalloc returned.
+   */
   executorch::runtime::Result<void*> allocate(
       size_t nbytes,
       executorch::runtime::etensor::DeviceIndex index,
@@ -80,9 +82,10 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
    * Return unused memory from this allocator's shared pools to the driver.
    *
    * All delegates using this allocator share its pools and retention threshold.
-   * Trimming may release cached blocks from any of them, making their next
-   * allocation slower. Live allocations are unaffected. The device default
-   * pool is not trimmed, but unused graph memory is trimmed device-wide.
+   * Trimming may release any delegate's cached blocks, making its next
+   * allocation slower. Live allocations and the device default pool are
+   * unaffected. Unused graph memory is trimmed device-wide only on devices
+   * this allocator has a pool entry for.
    *
    * Call after device work has finished. This function does not synchronize;
    * only frees already observed by the driver can be released. The CUDA
@@ -129,11 +132,6 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
       size_t nbytes,
       cudaMemcpyKind direction,
       cudaStream_t stream);
-
- private:
-  std::mutex padded_allocations_mutex_;
-  std::unordered_map<void*, void*> padded_allocations_;
-  std::atomic<size_t> padded_allocation_count_{0};
 };
 
 } // namespace executorch::extension::cuda
