@@ -2350,7 +2350,9 @@ class CustomBuildPy(build_py):
                 # they include. The stream helper's library is shared so the process has one copy of the
                 # caller-stream state, and that is a handshake the caller takes part in, so a consumer needs
                 # the declarations to take part at all. The device guard's own definitions are compiled into that
-                # same library, so a consumer needs this header to reach them.
+                # same library, so a consumer needs this header to reach them. The CUDA allocator is compiled into
+                # it too, so another delegate can take the same allocator; its header names CUDA types, so it and
+                # the runtime API header it includes need the CUDA toolkit to compile.
                 #
                 # Only when this wheel carries the CUDA delegate, and decided from the same CMake cache the
                 # libraries ship on. Keying it off the release row's CUDA version instead meant a build on
@@ -2358,8 +2360,10 @@ class CustomBuildPy(build_py):
                 # header, so a consumer got a component it could link and not include.
                 [
                     "extension/cuda/caller_stream.h",
+                    "extension/cuda/cuda_allocator.h",
                     "extension/cuda/device_guard.h",
                     "extension/cuda/export.h",
+                    "extension/cuda/runtime_api.h",
                 ]
                 if _cuda_libraries_built(cmake_cache_dir)
                 else []
