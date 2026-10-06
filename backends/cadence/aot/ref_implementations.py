@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
+from executorch.backends.cadence.aot.weight_packing import unpack_rows
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -681,6 +682,37 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor:
 @impl_tracked(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, True, torch.uint8, torch.uint8)
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantized_fully_connected_packed")
+def quantized_fully_connected_packed(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_dim: int,
+    weight_bits: int,
+    in_zero_point: int,
+    weight_zero_point: Optional[torch.Tensor],
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Sub-byte weights: unpack, then reuse the ordinary quantized path.
+
+    Keeping the arithmetic in `quantized_linear_common` means packing cannot
+    drift from the unpacked operator, which is exactly what the tests assert.
+    """
+    return quantized_linear_common(
+        src,
+        unpack_rows(weight, in_dim, weight_bits),
+        bias,
+        in_zero_point,
+        weight_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+    )
 
 
 @impl_tracked(m, "fully_connected")
