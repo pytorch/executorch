@@ -195,8 +195,9 @@ class TrainingModuleE2ETest {
           TrainingModule.load(TestFileUtils.getTestFilePath(MISSING_PTE_NAME))
         }
     Assert.assertEquals(
+        "Cannot load model path: path does not exist: " +
+            TestFileUtils.getTestFilePath(MISSING_PTE_NAME),
         exception.message,
-        "Cannot load model path!! " + TestFileUtils.getTestFilePath(MISSING_PTE_NAME),
     )
   }
 
@@ -217,8 +218,9 @@ class TrainingModuleE2ETest {
           )
         }
     Assert.assertEquals(
+        "Cannot load data path: path does not exist: " +
+            TestFileUtils.getTestFilePath(MISSING_PTD_NAME),
         exception.message,
-        "Cannot load data path!! " + TestFileUtils.getTestFilePath(MISSING_PTD_NAME),
     )
   }
 
