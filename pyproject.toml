@@ -186,6 +186,7 @@ project-excludes = [
 
 
     # Examples: only arm and openvino are active in lintrunner
+    "examples/export/**",
     "examples/apple/**",
     "examples/arduino/**",
     "examples/cadence/**",
