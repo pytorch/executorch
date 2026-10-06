@@ -130,14 +130,19 @@ std::vector<uint8_t> make_add_program(
     fbs::ScalarType dtype,
     const std::vector<int64_t>& shape = {4},
     const std::vector<int64_t>& lower_bounds = {},
-    bool include_mutation_output = false) {
+    bool include_mutation_output = false,
+    const std::vector<int64_t>& unused_shape = {}) {
   flatbuffers::FlatBufferBuilder builder;
   const auto meta = create_tensor_meta(builder, dtype, shape, lower_bounds);
-  const std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
+  std::vector<flatbuffers::Offset<fbs::TensorValue>> tensor_values = {
       fbs::CreateTensorValueDirect(builder, "left", meta),
       fbs::CreateTensorValueDirect(builder, "right", meta),
       fbs::CreateTensorValueDirect(builder, "sum", meta),
   };
+  if (!unused_shape.empty()) {
+    tensor_values.push_back(fbs::CreateTensorValueDirect(
+        builder, "unused", create_tensor_meta(builder, dtype, unused_shape)));
+  }
 
   const std::vector<flatbuffers::Offset<fbs::Output>> left_outputs = {
       fbs::CreateOutputDirect(builder, "left")};
@@ -826,6 +831,23 @@ TEST(VulkanEngineTest, RejectsUserInputMutation) {
         std::string::npos)
         << e.what();
   }
+}
+
+TEST(VulkanEngineTest, DoesNotMaterializeUnusedTensors) {
+  CompiledProgram compiled = compile_program(make_add_program(
+      fbs::ScalarType::FLOAT, {4}, {}, false, {1 << 18, 1 << 19}));
+  const std::vector<float> left = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<float> right = {10.0f, 20.0f, 30.0f, 40.0f};
+  compiled.executable->set_input(
+      0, left.data(), left.size(), ScalarType::Float);
+  compiled.executable->set_input(
+      1, right.data(), right.size(), ScalarType::Float);
+  compiled.executable->execute();
+
+  std::vector<float> output(4);
+  compiled.executable->get_output(
+      0, output.data(), output.size(), ScalarType::Float);
+  EXPECT_EQ(output, (std::vector<float>{11.0f, 22.0f, 33.0f, 44.0f}));
 }
 
 TEST(VulkanEngineTest, ResizesInputsWithinSerializedBounds) {

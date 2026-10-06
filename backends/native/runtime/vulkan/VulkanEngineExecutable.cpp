@@ -277,6 +277,13 @@ bool exceeds_texture_limit(
   return sizes[3] > limit || sizes[2] > limit || sizes[0] * sizes[1] > limit;
 }
 
+// Load-time fusions leave the values they replace behind with no producer and
+// no consumers.
+bool is_active(const Value& value) {
+  return valid(value.producer_id) || !value.consumer_ids.empty() ||
+      value.role == ValueRole::Buffer;
+}
+
 bool requires_bias_tensor(std::string_view key) {
   return key == "aten.linear.default" || key == "aten.convolution.default";
 }
@@ -1191,6 +1198,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
         return graph_->add_value_list(std::move(refs));
       }
       case ValueKind::Tensor: {
+        if (!is_active(v)) {
+          return none_ref_;
+        }
         const TensorMeta& m = v.tensor_meta();
         const std::vector<int64_t>& sizes = m.sizes;
         const auto rope = v.attrs.find(vulkan::kRopeTableAttr);
@@ -1634,9 +1644,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
       if (binding != nullptr && (binding->has_data || binding->mutated)) {
         continue;
       }
-      const bool active = valid(value.producer_id) ||
-          !value.consumer_ids.empty() || value.role == ValueRole::Buffer;
-      if (!active) {
+      if (!is_active(value)) {
         continue;
       }
       requests.push_back(AllocationRequest{
