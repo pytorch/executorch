@@ -12,6 +12,7 @@
 #include <any>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -59,90 +60,130 @@ ValueId add_call(
   return value_id;
 }
 
-Method make_dynamic_q4_linear(ScalarType dtype = ScalarType::Float) {
+struct Q4LinearSpec {
+  ScalarType dtype = ScalarType::Float;
+  bool dynamic_activation = true;
+  // Read a constant carrying AffineGroupQuant instead of a dequantize output.
+  bool direct_weight = false;
+  bool symmetric = false;
+};
+
+// Node ids with the defaults: placeholders 0-3, choose 4, quantize 5,
+// activation dequantize 6, weight dequantize 7, linear 8, output 9.
+Method make_q4_linear(const Q4LinearSpec& spec = {}) {
+  const ScalarType dtype = spec.dtype;
   Method method;
   method.name = "forward";
   Graph& graph = method.graph;
   const ValueId activation =
       add_placeholder(graph, "activation", dtype, {1, 1, 8});
   const ValueId weight = add_placeholder(
-      graph, "weight", ScalarType::Char, {4, 8}, ValueRole::Parameter);
+      graph,
+      "weight",
+      spec.direct_weight ? ScalarType::Byte : ScalarType::Char,
+      {4, 8},
+      ValueRole::Parameter);
   const ValueId weight_scales = add_placeholder(
       graph, "weight_scales", dtype, {4, 2}, ValueRole::Parameter);
   const ValueId weight_zeros = add_placeholder(
       graph, "weight_zeros", ScalarType::Char, {4, 2}, ValueRole::Parameter);
+  for (const ValueId id : {weight, weight_scales, weight_zeros}) {
+    method.data_bindings.push_back(DataBinding{
+        .value_id = id,
+        .role = ValueRole::Parameter,
+        .key = graph.value(id).name,
+    });
+  }
+  if (spec.direct_weight) {
+    graph.value(weight).tensor_meta().quant = AffineGroupQuant{
+        .scale_data_key = "weight_scales",
+        .scale_dtype = dtype,
+        .quant_min = -8,
+        .quant_max = 7,
+        .group_size = 4,
+        .zero_point_data_key = spec.symmetric ? "" : "weight_zeros",
+        .zero_point_dtype = ScalarType::Char,
+    };
+  }
 
-  const ValueId input_scale =
-      graph.append_value(Value("input_scale", ScalarType::Float, {1, 1, 1}));
-  const ValueId input_zero =
-      graph.append_value(Value("input_zero", ScalarType::Char, {1, 1, 1}));
-  graph.nodes.push_back(Node{
-      .name = "choose",
-      .target = "torch.ops.torchao.choose_qparams_affine.default",
-      .inputs =
-          {
-              {.name = "input", .arg = TensorArg{activation}},
-              {.name = "mapping_type", .arg = StringArg{"ASYMMETRIC"}},
-              {.name = "block_size", .arg = IntListArg{{1, 1, 8}}},
-              {.name = "target_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
-              {.name = "quant_min", .arg = IntArg{-128}},
-              {.name = "quant_max", .arg = IntArg{127}},
-          },
-      .outputs = {{.value_id = input_scale}, {.value_id = input_zero}},
-  });
+  ValueId linear_input = activation;
+  if (spec.dynamic_activation) {
+    const ValueId input_scale =
+        graph.append_value(Value("input_scale", ScalarType::Float, {1, 1, 1}));
+    const ValueId input_zero =
+        graph.append_value(Value("input_zero", ScalarType::Char, {1, 1, 1}));
+    graph.nodes.push_back(Node{
+        .name = "choose",
+        .target = "torch.ops.torchao.choose_qparams_affine.default",
+        .inputs =
+            {
+                {.name = "input", .arg = TensorArg{activation}},
+                {.name = "mapping_type", .arg = StringArg{"ASYMMETRIC"}},
+                {.name = "block_size", .arg = IntListArg{{1, 1, 8}}},
+                {.name = "target_dtype",
+                 .arg = ScalarTypeArg{ScalarType::Char}},
+                {.name = "quant_min", .arg = IntArg{-128}},
+                {.name = "quant_max", .arg = IntArg{127}},
+            },
+        .outputs = {{.value_id = input_scale}, {.value_id = input_zero}},
+    });
 
-  const ValueId quantized = add_call(
-      graph,
-      "quantized",
-      "torch.ops.torchao.quantize_affine.default",
-      {
-          {.name = "input", .arg = TensorArg{activation}},
-          {.name = "block_size", .arg = IntListArg{{1, 1, 8}}},
-          {.name = "scale", .arg = TensorArg{input_scale}},
-          {.name = "zero_point", .arg = TensorArg{input_zero}},
-          {.name = "output_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
-          {.name = "quant_min", .arg = IntArg{-128}},
-          {.name = "quant_max", .arg = IntArg{127}},
-      },
-      ScalarType::Char,
-      {1, 1, 8});
-  const ValueId dequantized = add_call(
-      graph,
-      "dequantized",
-      "torch.ops.torchao.dequantize_affine.default",
-      {
-          {.name = "input", .arg = TensorArg{quantized}},
-          {.name = "block_size", .arg = IntListArg{{1, 1, 8}}},
-          {.name = "scale", .arg = TensorArg{input_scale}},
-          {.name = "zero_point", .arg = TensorArg{input_zero}},
-          {.name = "input_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
-          {.name = "quant_min", .arg = IntArg{-128}},
-          {.name = "quant_max", .arg = IntArg{127}},
-      },
-      dtype,
-      {1, 1, 8});
-  const ValueId dequantized_weight = add_call(
-      graph,
-      "dequantized_weight",
-      "torch.ops.torchao.dequantize_affine.default",
-      {
-          {.name = "input", .arg = TensorArg{weight}},
-          {.name = "block_size", .arg = IntListArg{{1, 4}}},
-          {.name = "scale", .arg = TensorArg{weight_scales}},
-          {.name = "zero_point", .arg = TensorArg{weight_zeros}},
-          {.name = "input_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
-          {.name = "quant_min", .arg = IntArg{-8}},
-          {.name = "quant_max", .arg = IntArg{7}},
-      },
-      dtype,
-      {4, 8});
+    const ValueId quantized = add_call(
+        graph,
+        "quantized",
+        "torch.ops.torchao.quantize_affine.default",
+        {
+            {.name = "input", .arg = TensorArg{activation}},
+            {.name = "block_size", .arg = IntListArg{{1, 1, 8}}},
+            {.name = "scale", .arg = TensorArg{input_scale}},
+            {.name = "zero_point", .arg = TensorArg{input_zero}},
+            {.name = "output_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
+            {.name = "quant_min", .arg = IntArg{-128}},
+            {.name = "quant_max", .arg = IntArg{127}},
+        },
+        ScalarType::Char,
+        {1, 1, 8});
+    linear_input = add_call(
+        graph,
+        "dequantized",
+        "torch.ops.torchao.dequantize_affine.default",
+        {
+            {.name = "input", .arg = TensorArg{quantized}},
+            {.name = "block_size", .arg = IntListArg{{1, 1, 8}}},
+            {.name = "scale", .arg = TensorArg{input_scale}},
+            {.name = "zero_point", .arg = TensorArg{input_zero}},
+            {.name = "input_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
+            {.name = "quant_min", .arg = IntArg{-128}},
+            {.name = "quant_max", .arg = IntArg{127}},
+        },
+        dtype,
+        {1, 1, 8});
+  }
+  ValueId linear_weight = weight;
+  if (!spec.direct_weight) {
+    linear_weight = add_call(
+        graph,
+        "dequantized_weight",
+        "torch.ops.torchao.dequantize_affine.default",
+        {
+            {.name = "input", .arg = TensorArg{weight}},
+            {.name = "block_size", .arg = IntListArg{{1, 4}}},
+            {.name = "scale", .arg = TensorArg{weight_scales}},
+            {.name = "zero_point", .arg = TensorArg{weight_zeros}},
+            {.name = "input_dtype", .arg = ScalarTypeArg{ScalarType::Char}},
+            {.name = "quant_min", .arg = IntArg{-8}},
+            {.name = "quant_max", .arg = IntArg{7}},
+        },
+        dtype,
+        {4, 8});
+  }
   const ValueId output = add_call(
       graph,
       "linear",
       "torch.ops.aten.linear.default",
       {
-          {.name = "input", .arg = TensorArg{dequantized}},
-          {.name = "weight", .arg = TensorArg{dequantized_weight}},
+          {.name = "input", .arg = TensorArg{linear_input}},
+          {.name = "weight", .arg = TensorArg{linear_weight}},
           {.name = "bias", .arg = NoneArg{}},
       },
       dtype,
@@ -159,6 +200,18 @@ Method make_dynamic_q4_linear(ScalarType dtype = ScalarType::Float) {
   return method;
 }
 
+const Node* find_target(const Graph& graph, std::string_view target) {
+  const auto found = std::ranges::find_if(graph.schedule, [&](NodeId id) {
+    return graph.node(id).target == target;
+  });
+  return found == graph.schedule.end() ? nullptr : &graph.node(*found);
+}
+
+bool has_dequantize(const Graph& graph) {
+  return find_target(graph, "torch.ops.torchao.dequantize_affine.default") !=
+      nullptr;
+}
+
 const Q4ConstantTransform& transform_of(const Value& value) {
   return std::any_cast<const Q4ConstantTransform&>(
       value.attrs.at(kQ4ConstantTransformAttr));
@@ -173,7 +226,7 @@ std::vector<uint8_t> pack_q4(const std::vector<int8_t>& weight) {
 }
 
 TEST(FuseQuantizedLinearTest, RewritesPortablePatternAtRuntime) {
-  Method method = make_dynamic_q4_linear();
+  Method method = make_q4_linear();
   EXPECT_EQ(fuse_quantized_linears(method), 1);
 
   const Graph& graph = method.graph;
@@ -209,7 +262,7 @@ TEST(FuseQuantizedLinearTest, RewritesPortablePatternAtRuntime) {
 }
 
 TEST(FuseQuantizedLinearTest, RejectsNonQ4WeightRange) {
-  Method method = make_dynamic_q4_linear();
+  Method method = make_q4_linear();
   Node& weight_dequant = method.graph.node(7);
   weight_dequant.inputs[5].arg = IntArg{-128};
 
@@ -220,7 +273,7 @@ TEST(FuseQuantizedLinearTest, RejectsNonQ4WeightRange) {
 }
 
 TEST(FuseQuantizedLinearTest, RejectsGroupSizeNotMultipleOfFour) {
-  Method method = make_dynamic_q4_linear();
+  Method method = make_q4_linear();
   method.graph.node(7).inputs[1].arg = IntListArg{{1, 2}};
   method.graph.values[2].tensor_meta().sizes = {4, 4};
 
@@ -228,10 +281,122 @@ TEST(FuseQuantizedLinearTest, RejectsGroupSizeNotMultipleOfFour) {
 }
 
 TEST(FuseQuantizedLinearTest, PreservesHalfPrecisionScales) {
-  Method method = make_dynamic_q4_linear(ScalarType::Half);
+  Method method = make_q4_linear({.dtype = ScalarType::Half});
 
   EXPECT_EQ(fuse_quantized_linears(method), 1);
   EXPECT_EQ(method.graph.value(2).tensor_meta().dtype, ScalarType::Half);
+}
+
+TEST(FuseQuantizedLinearTest, RewritesDirectWeightWithDynamicActivation) {
+  Method method = make_q4_linear({.direct_weight = true});
+  EXPECT_EQ(fuse_quantized_linears(method), 1);
+
+  const Graph& graph = method.graph;
+  const Node* linear =
+      find_target(graph, "torch.ops.et_vk.linear_dq8ca_q4gsw.default");
+  ASSERT_NE(linear, nullptr);
+  EXPECT_EQ(linear->inputs[3].arg.as_tensor().id, 1);
+  EXPECT_FALSE(has_dequantize(graph));
+
+  const Value& weight = graph.value(1);
+  EXPECT_FALSE(weight.tensor_meta().quant.has_value());
+  EXPECT_EQ(weight.tensor_meta().sizes, (std::vector<int64_t>{4, 4}));
+  EXPECT_EQ(transform_of(weight).kind, Q4ConstantTransformKind::PackWeight);
+  EXPECT_EQ(transform_of(weight).zero_points_id, 3);
+  EXPECT_EQ(transform_of(weight).group_size, 4);
+  EXPECT_EQ(
+      transform_of(graph.value(2)).kind,
+      Q4ConstantTransformKind::TransposeScales);
+  const ValueId sums_id = linear->inputs[4].arg.as_tensor().id;
+  EXPECT_EQ(
+      transform_of(graph.value(sums_id)).kind,
+      Q4ConstantTransformKind::WeightSums);
+}
+
+TEST(FuseQuantizedLinearTest, RewritesFloatActivationToWeightOnlyKernel) {
+  for (const bool direct_weight : {false, true}) {
+    for (const ScalarType dtype : {ScalarType::Float, ScalarType::Half}) {
+      Method method = make_q4_linear(
+          {.dtype = dtype,
+           .dynamic_activation = false,
+           .direct_weight = direct_weight});
+      const size_t values_before = method.graph.values.size();
+      EXPECT_EQ(fuse_quantized_linears(method), 1);
+
+      const Graph& graph = method.graph;
+      const Node* linear =
+          find_target(graph, "torch.ops.et_vk.linear_q4gsw.default");
+      ASSERT_NE(linear, nullptr);
+      ASSERT_EQ(linear->inputs.size(), 5);
+      EXPECT_EQ(linear->inputs[0].arg.as_tensor().id, 0);
+      EXPECT_EQ(linear->inputs[1].arg.as_tensor().id, 1);
+      EXPECT_EQ(linear->inputs[2].arg.as_tensor().id, 2);
+      EXPECT_EQ(linear->inputs[3].arg.as_int().value, 4);
+      EXPECT_EQ(linear->inputs[4].arg.kind(), ArgKind::None);
+      EXPECT_FALSE(has_dequantize(graph));
+      // No weight sums: the kernel does not quantize its activation.
+      EXPECT_EQ(graph.values.size(), values_before);
+
+      EXPECT_EQ(
+          transform_of(graph.value(1)).kind,
+          Q4ConstantTransformKind::PackWeight);
+      const Value& scales = graph.value(2);
+      EXPECT_EQ(scales.tensor_meta().dtype, dtype);
+      EXPECT_EQ(scales.tensor_meta().sizes, (std::vector<int64_t>{2, 4}));
+    }
+  }
+}
+
+TEST(FuseQuantizedLinearTest, SymmetricDirectWeightHasNoZeroPoints) {
+  Method method = make_q4_linear({.direct_weight = true, .symmetric = true});
+
+  EXPECT_EQ(fuse_quantized_linears(method), 1);
+  EXPECT_EQ(transform_of(method.graph.value(1)).zero_points_id, kInvalid);
+}
+
+TEST(FuseQuantizedLinearTest, RejectsDirectWeightWithUnboundScales) {
+  Method method = make_q4_linear({.direct_weight = true});
+  method.data_bindings.erase(method.data_bindings.begin() + 1);
+
+  EXPECT_EQ(fuse_quantized_linears(method), 0);
+  EXPECT_TRUE(method.graph.value(1).tensor_meta().quant.has_value());
+}
+
+TEST(FuseQuantizedLinearTest, RejectsDirectWeightOutsideQ4Range) {
+  Method method = make_q4_linear({.direct_weight = true});
+  std::get<AffineGroupQuant>(*method.graph.value(1).tensor_meta().quant)
+      .quant_max = 15;
+
+  EXPECT_EQ(fuse_quantized_linears(method), 0);
+}
+
+TEST(FuseQuantizedLinearTest, RejectsFloatActivationOfAnotherDtype) {
+  Method method =
+      make_q4_linear({.dynamic_activation = false, .direct_weight = true});
+  method.graph.value(0).tensor_meta().dtype = ScalarType::Half;
+
+  EXPECT_EQ(fuse_quantized_linears(method), 0);
+}
+
+TEST(FuseQuantizedLinearTest, KeepsWeightReadByAnUnfusedOp) {
+  Method method =
+      make_q4_linear({.dynamic_activation = false, .direct_weight = true});
+  Graph& graph = method.graph;
+  const ValueId copy =
+      graph.append_value(Value("copy", ScalarType::Byte, {4, 8}));
+  graph.insert_node_before(
+      graph.schedule.back(),
+      Node{
+          .name = "copy",
+          .target = "torch.ops.aten.clone.default",
+          .inputs = {{.name = "self", .arg = TensorArg{1}}},
+          .outputs = {{.value_id = copy}},
+      });
+  graph.rebuild_def_use();
+
+  EXPECT_EQ(fuse_quantized_linears(method), 0);
+  EXPECT_TRUE(graph.value(1).tensor_meta().quant.has_value());
+  EXPECT_FALSE(graph.value(1).attrs.contains(kQ4ConstantTransformAttr));
 }
 
 TEST(FuseQuantizedLinearTest, SumsQ4WeightGroups) {

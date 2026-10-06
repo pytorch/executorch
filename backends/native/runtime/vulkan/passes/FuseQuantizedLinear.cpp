@@ -10,6 +10,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <executorch/backends/native/runtime/graph/Argument.h>
@@ -57,6 +58,8 @@ constexpr std::string_view kDequantize =
 constexpr std::string_view kLinear = "torch.ops.aten.linear.default";
 constexpr const char* kDynamicQ4Linear =
     "torch.ops.et_vk.linear_dq8ca_q4gsw.default";
+constexpr const char* kWeightOnlyQ4Linear =
+    "torch.ops.et_vk.linear_q4gsw.default";
 
 const Argument*
 get_arg(const Node& node, std::string_view name, size_t position) {
@@ -137,166 +140,269 @@ bool mark_transform(
   return true;
 }
 
+// A q4 weight as seen by one linear: either the output of an explicit
+// dequantize_affine node, or a constant carrying AffineGroupQuant that the
+// linear reads directly and that denotes its decoded value.
+struct WeightMatch {
+  NodeId dequantize_id = kInvalid; // kInvalid when read directly
+  ValueId weight_id = kInvalid;
+  ValueId scale_id = kInvalid;
+  ValueId zero_id = kInvalid; // kInvalid when symmetric
+  ScalarType dtype = ScalarType::Float; // decoded weight dtype
+  int64_t out_channels = 0;
+  int64_t in_channels = 0;
+  int64_t group_size = 0;
+  int64_t groups = 0;
+};
+
+struct DynamicActivation {
+  NodeId quantize_id;
+  NodeId dequantize_id;
+  ValueId input_id;
+  ValueId scale_id;
+  ValueId zero_id;
+};
+
 struct Match {
   NodeId linear_id;
-  NodeId activation_quantize_id;
-  NodeId activation_dequantize_id;
-  NodeId weight_dequantize_id;
+  WeightMatch weight;
+  // nullopt when the linear reads a floating-point activation directly.
+  std::optional<DynamicActivation> dynamic;
   ValueId activation_id;
-  ValueId input_scale_id;
-  ValueId input_zero_id;
-  ValueId weight_id;
-  ValueId weight_scale_id;
-  ValueId weight_zero_id;
-  int64_t out_channels;
-  int64_t in_channels;
-  int64_t groups;
   Argument bias;
 };
 
-std::optional<Match> match_dynamic_q4_linear(
+std::optional<WeightMatch> match_dequantized_weight(
     const Graph& graph,
-    NodeId linear_id) {
-  const Node& linear = graph.node(linear_id);
-  if (!linear.is_call() || linear.target != kLinear) {
+    NodeId linear_id,
+    ValueId dequantized_id) {
+  const Node* dequantize = producer(graph, dequantized_id);
+  if (dequantize == nullptr || dequantize->target != kDequantize ||
+      !solely_consumed_by(graph, dequantized_id, linear_id)) {
     return std::nullopt;
   }
-
-  const std::optional<ValueId> activation_dq_id =
-      tensor_id(get_arg(linear, "input", 0));
-  const std::optional<ValueId> weight_dq_id =
-      tensor_id(get_arg(linear, "weight", 1));
-  if (!activation_dq_id.has_value() || !weight_dq_id.has_value()) {
-    return std::nullopt;
-  }
-  const Node* activation_dq = producer(graph, *activation_dq_id);
-  const Node* weight_dq = producer(graph, *weight_dq_id);
-  if (activation_dq == nullptr || weight_dq == nullptr ||
-      activation_dq->target != kDequantize ||
-      weight_dq->target != kDequantize ||
-      !solely_consumed_by(graph, *activation_dq_id, linear_id) ||
-      !solely_consumed_by(graph, *weight_dq_id, linear_id)) {
-    return std::nullopt;
-  }
-
-  const std::optional<ValueId> quantized_activation_id =
-      tensor_id(get_arg(*activation_dq, "input", 0));
   const std::optional<ValueId> weight_id =
-      tensor_id(get_arg(*weight_dq, "input", 0));
-  const std::optional<ValueId> weight_scale_id =
-      tensor_id(get_arg(*weight_dq, "scale", 2));
-  const std::optional<ValueId> weight_zero_id =
-      tensor_id(get_arg(*weight_dq, "zero_point", 3));
-  if (!quantized_activation_id.has_value() || !weight_id.has_value() ||
-      !weight_scale_id.has_value() || !weight_zero_id.has_value()) {
+      tensor_id(get_arg(*dequantize, "input", 0));
+  const std::optional<ValueId> scale_id =
+      tensor_id(get_arg(*dequantize, "scale", 2));
+  const std::optional<ValueId> zero_id =
+      tensor_id(get_arg(*dequantize, "zero_point", 3));
+  const IntListArg* block =
+      literal_int_list(get_arg(*dequantize, "block_size", 1));
+  if (!weight_id.has_value() || !scale_id.has_value() || !zero_id.has_value() ||
+      block == nullptr || block->values.size() != 2 || block->values[0] != 1 ||
+      !is_dtype(get_arg(*dequantize, "input_dtype", 4), ScalarType::Char) ||
+      !is_literal_int(get_arg(*dequantize, "quant_min", 5), -8) ||
+      !is_literal_int(get_arg(*dequantize, "quant_max", 6), 7) ||
+      !is_constant(graph.value(*weight_id)) ||
+      !is_constant(graph.value(*zero_id))) {
     return std::nullopt;
   }
-  const Node* quantize = producer(graph, *quantized_activation_id);
+  const TensorMeta& decoded = graph.value(dequantized_id).tensor_meta();
+  if (decoded.sizes.size() != 2) {
+    return std::nullopt;
+  }
+  return WeightMatch{
+      .dequantize_id = graph.value(dequantized_id).producer_id,
+      .weight_id = *weight_id,
+      .scale_id = *scale_id,
+      .zero_id = *zero_id,
+      .dtype = decoded.dtype,
+      .out_channels = decoded.sizes[0],
+      .in_channels = decoded.sizes[1],
+      .group_size = block->values[1],
+  };
+}
+
+std::optional<WeightMatch> match_quantized_weight(
+    const Method& method,
+    ValueId weight_id) {
+  const Value& weight = method.graph.value(weight_id);
+  const TensorMeta& meta = weight.tensor_meta();
+  const auto* quant = meta.quant.has_value()
+      ? std::get_if<AffineGroupQuant>(&*meta.quant)
+      : nullptr;
+  if (quant == nullptr || !is_constant(weight) ||
+      meta.dtype != ScalarType::Byte || meta.sizes.size() != 2 ||
+      quant->quant_min != -8 || quant->quant_max != 7) {
+    return std::nullopt;
+  }
+  const DataBinding* scales = find_data_binding(method, quant->scale_data_key);
+  const DataBinding* zeros = quant->zero_point_data_key.empty()
+      ? nullptr
+      : find_data_binding(method, quant->zero_point_data_key);
+  if (scales == nullptr ||
+      (zeros == nullptr && !quant->zero_point_data_key.empty())) {
+    return std::nullopt;
+  }
+  return WeightMatch{
+      .weight_id = weight_id,
+      .scale_id = scales->value_id,
+      .zero_id = zeros == nullptr ? kInvalid : zeros->value_id,
+      .dtype = quant->scale_dtype,
+      .out_channels = meta.sizes[0],
+      .in_channels = meta.sizes[1],
+      .group_size = quant->group_size,
+  };
+}
+
+std::optional<WeightMatch>
+match_q4_weight(const Method& method, NodeId linear_id, ValueId weight_id) {
+  const Graph& graph = method.graph;
+  std::optional<WeightMatch> match = producer(graph, weight_id) != nullptr &&
+          producer(graph, weight_id)->target == kDequantize
+      ? match_dequantized_weight(graph, linear_id, weight_id)
+      : match_quantized_weight(method, weight_id);
+  if (!match.has_value() || match->out_channels <= 0 ||
+      match->in_channels <= 0 || match->group_size <= 0 ||
+      match->in_channels % 4 != 0 || match->group_size % 4 != 0 ||
+      match->in_channels % match->group_size != 0) {
+    return std::nullopt;
+  }
+  match->groups = match->in_channels / match->group_size;
+  const Value& scales = graph.value(match->scale_id);
+  const TensorMeta& scale_meta = scales.tensor_meta();
+  if ((match->dtype != ScalarType::Float && match->dtype != ScalarType::Half) ||
+      !is_constant(scales) || scale_meta.dtype != match->dtype ||
+      scale_meta.sizes !=
+          std::vector<int64_t>{match->out_channels, match->groups}) {
+    return std::nullopt;
+  }
+  return match;
+}
+
+std::optional<DynamicActivation> match_dynamic_activation(
+    const Graph& graph,
+    NodeId linear_id,
+    ValueId dequantized_id,
+    int64_t in_channels) {
+  const Node* dequantize = producer(graph, dequantized_id);
+  if (dequantize == nullptr || dequantize->target != kDequantize ||
+      !solely_consumed_by(graph, dequantized_id, linear_id)) {
+    return std::nullopt;
+  }
+  const std::optional<ValueId> quantized_id =
+      tensor_id(get_arg(*dequantize, "input", 0));
+  if (!quantized_id.has_value()) {
+    return std::nullopt;
+  }
+  const Node* quantize = producer(graph, *quantized_id);
   if (quantize == nullptr || quantize->target != kQuantize ||
       !solely_consumed_by(
-          graph,
-          *quantized_activation_id,
-          graph.value(*activation_dq_id).producer_id)) {
+          graph, *quantized_id, graph.value(dequantized_id).producer_id)) {
     return std::nullopt;
   }
 
-  const std::optional<ValueId> activation_id =
+  const std::optional<ValueId> input_id =
       tensor_id(get_arg(*quantize, "input", 0));
-  const std::optional<ValueId> input_scale_id =
+  const std::optional<ValueId> scale_id =
       tensor_id(get_arg(*quantize, "scale", 2));
-  const std::optional<ValueId> input_zero_id =
+  const std::optional<ValueId> zero_id =
       tensor_id(get_arg(*quantize, "zero_point", 3));
-  if (!activation_id.has_value() || !input_scale_id.has_value() ||
-      !input_zero_id.has_value() ||
+  if (!input_id.has_value() || !scale_id.has_value() || !zero_id.has_value() ||
       !same_tensor(
-          get_arg(*activation_dq, "scale", 2),
-          get_arg(*quantize, "scale", 2)) ||
+          get_arg(*dequantize, "scale", 2), get_arg(*quantize, "scale", 2)) ||
       !same_tensor(
-          get_arg(*activation_dq, "zero_point", 3),
+          get_arg(*dequantize, "zero_point", 3),
           get_arg(*quantize, "zero_point", 3))) {
     return std::nullopt;
   }
 
-  const Node* choose = producer(graph, *input_scale_id);
-  if (choose == nullptr || choose != producer(graph, *input_zero_id) ||
+  const Node* choose = producer(graph, *scale_id);
+  if (choose == nullptr || choose != producer(graph, *zero_id) ||
       choose->target != kChooseQParams ||
       !same_tensor(
           get_arg(*choose, "input", 0), get_arg(*quantize, "input", 0))) {
     return std::nullopt;
   }
 
-  const IntListArg* activation_block =
+  const IntListArg* block =
       literal_int_list(get_arg(*quantize, "block_size", 1));
-  const IntListArg* activation_dq_block =
-      literal_int_list(get_arg(*activation_dq, "block_size", 1));
+  const IntListArg* dequantize_block =
+      literal_int_list(get_arg(*dequantize, "block_size", 1));
   const IntListArg* choose_block =
       literal_int_list(get_arg(*choose, "block_size", 2));
-  const IntListArg* weight_block =
-      literal_int_list(get_arg(*weight_dq, "block_size", 1));
-  if (activation_block == nullptr || activation_dq_block == nullptr ||
-      choose_block == nullptr || weight_block == nullptr ||
-      activation_block->values != activation_dq_block->values ||
-      activation_block->values != choose_block->values ||
-      weight_block->values.size() != 2 || weight_block->values[0] != 1 ||
+  if (block == nullptr || dequantize_block == nullptr ||
+      choose_block == nullptr || block->values != dequantize_block->values ||
+      block->values != choose_block->values || block->values.empty() ||
+      block->values.back() != in_channels ||
       !is_dtype(get_arg(*quantize, "output_dtype", 4), ScalarType::Char) ||
-      !is_dtype(get_arg(*activation_dq, "input_dtype", 4), ScalarType::Char) ||
-      !is_dtype(get_arg(*weight_dq, "input_dtype", 4), ScalarType::Char) ||
+      !is_dtype(get_arg(*dequantize, "input_dtype", 4), ScalarType::Char) ||
       !is_literal_int(get_arg(*quantize, "quant_min", 5), -128) ||
       !is_literal_int(get_arg(*quantize, "quant_max", 6), 127) ||
-      !is_literal_int(get_arg(*activation_dq, "quant_min", 5), -128) ||
-      !is_literal_int(get_arg(*activation_dq, "quant_max", 6), 127) ||
-      !is_literal_int(get_arg(*weight_dq, "quant_min", 5), -8) ||
-      !is_literal_int(get_arg(*weight_dq, "quant_max", 6), 7)) {
+      !is_literal_int(get_arg(*dequantize, "quant_min", 5), -128) ||
+      !is_literal_int(get_arg(*dequantize, "quant_max", 6), 127)) {
     return std::nullopt;
   }
+  return DynamicActivation{
+      .quantize_id = graph.value(*quantized_id).producer_id,
+      .dequantize_id = graph.value(dequantized_id).producer_id,
+      .input_id = *input_id,
+      .scale_id = *scale_id,
+      .zero_id = *zero_id,
+  };
+}
 
-  const TensorMeta& dequantized_weight =
-      graph.value(*weight_dq_id).tensor_meta();
-  const TensorMeta& scales = graph.value(*weight_scale_id).tensor_meta();
-  const Value& weight = graph.value(*weight_id);
-  const Value& zero_points = graph.value(*weight_zero_id);
-  if (dequantized_weight.sizes.size() != 2 || scales.sizes.size() != 2 ||
-      (dequantized_weight.dtype != ScalarType::Float &&
-       dequantized_weight.dtype != ScalarType::Half) ||
-      scales.dtype != dequantized_weight.dtype || !is_constant(weight) ||
-      !is_constant(graph.value(*weight_scale_id)) ||
-      !is_constant(zero_points)) {
+std::optional<Match> match_q4_linear(const Method& method, NodeId linear_id) {
+  const Graph& graph = method.graph;
+  const Node& linear = graph.node(linear_id);
+  if (!linear.is_call() || linear.target != kLinear) {
     return std::nullopt;
   }
-  const int64_t out_channels = dequantized_weight.sizes[0];
-  const int64_t in_channels = dequantized_weight.sizes[1];
-  const int64_t groups = scales.sizes[1];
-  const int64_t group_size = weight_block->values[1];
-  if (out_channels <= 0 || in_channels <= 0 || groups <= 0 || group_size <= 0 ||
-      in_channels % 4 != 0 || group_size % 4 != 0 ||
-      in_channels != groups * group_size || scales.sizes[0] != out_channels ||
-      activation_block->values.empty() ||
-      activation_block->values.back() != in_channels) {
+  const std::optional<ValueId> input_id =
+      tensor_id(get_arg(linear, "input", 0));
+  const std::optional<ValueId> weight_id =
+      tensor_id(get_arg(linear, "weight", 1));
+  if (!input_id.has_value() || !weight_id.has_value()) {
     return std::nullopt;
   }
-
-  const NodeId activation_dq_node_id =
-      graph.value(*activation_dq_id).producer_id;
-  const NodeId quantize_node_id =
-      graph.value(*quantized_activation_id).producer_id;
-  const NodeId weight_dq_node_id = graph.value(*weight_dq_id).producer_id;
+  const std::optional<WeightMatch> weight =
+      match_q4_weight(method, linear_id, *weight_id);
+  if (!weight.has_value()) {
+    return std::nullopt;
+  }
+  const std::optional<DynamicActivation> dynamic = match_dynamic_activation(
+      graph, linear_id, *input_id, weight->in_channels);
+  // linear_q4gsw computes in the activation dtype and packs N in fours.
+  if (!dynamic.has_value() &&
+      (graph.value(*input_id).tensor_meta().dtype != weight->dtype ||
+       weight->out_channels % 4 != 0)) {
+    return std::nullopt;
+  }
   const Argument* bias = get_arg(linear, "bias", 2);
   return Match{
       .linear_id = linear_id,
-      .activation_quantize_id = quantize_node_id,
-      .activation_dequantize_id = activation_dq_node_id,
-      .weight_dequantize_id = weight_dq_node_id,
-      .activation_id = *activation_id,
-      .input_scale_id = *input_scale_id,
-      .input_zero_id = *input_zero_id,
-      .weight_id = *weight_id,
-      .weight_scale_id = *weight_scale_id,
-      .weight_zero_id = *weight_zero_id,
-      .out_channels = out_channels,
-      .in_channels = in_channels,
-      .groups = groups,
+      .weight = *weight,
+      .dynamic = dynamic,
+      .activation_id = dynamic.has_value() ? dynamic->input_id : *input_id,
       .bias = bias == nullptr ? Argument{NoneArg{}} : *bias,
   };
+}
+
+// Constant transforms rewrite a value's metadata for every reader, so a weight
+// is fused only if each reader of it and of its scales is fused along with it.
+void drop_partially_fused_weights(
+    const Graph& graph,
+    std::vector<Match>& matches) {
+  for (bool changed = true; changed;) {
+    std::vector<NodeId> fused;
+    for (const Match& match : matches) {
+      fused.push_back(match.linear_id);
+      if (valid(match.weight.dequantize_id)) {
+        fused.push_back(match.weight.dequantize_id);
+      }
+    }
+    const auto all_readers_fused = [&](ValueId id) {
+      return std::ranges::all_of(
+          graph.value(id).consumer_ids, [&](NodeId consumer) {
+            return std::ranges::find(fused, consumer) != fused.end();
+          });
+    };
+    changed = std::erase_if(matches, [&](const Match& match) {
+                return !all_readers_fused(match.weight.weight_id) ||
+                    !all_readers_fused(match.weight.scale_id);
+              }) > 0;
+  }
 }
 
 bool rewrite_match(
@@ -304,84 +410,101 @@ bool rewrite_match(
     const Match& match,
     std::vector<std::pair<ValueId, ValueId>>& sums_by_weight) {
   Graph& graph = method.graph;
-  Value& weight = graph.value(match.weight_id);
+  const WeightMatch& w = match.weight;
+  Value& weight = graph.value(w.weight_id);
   if (!mark_transform(
           weight,
           {
               .kind = Q4ConstantTransformKind::PackWeight,
-              .source_id = match.weight_id,
-              .zero_points_id = match.weight_zero_id,
-              .group_size = match.in_channels / match.groups,
+              .source_id = w.weight_id,
+              .zero_points_id = w.zero_id,
+              .group_size = w.group_size,
           },
           TensorMeta{
               .dtype = ScalarType::Byte,
-              .sizes = {match.out_channels, match.in_channels / 2},
+              .sizes = {w.out_channels, w.in_channels / 2},
           })) {
     return false;
   }
 
-  Value& scales = graph.value(match.weight_scale_id);
+  Value& scales = graph.value(w.scale_id);
   if (!mark_transform(
           scales,
           {
               .kind = Q4ConstantTransformKind::TransposeScales,
-              .source_id = match.weight_scale_id,
+              .source_id = w.scale_id,
           },
           TensorMeta{
               .dtype = scales.tensor_meta().dtype,
-              .sizes = {match.groups, align_up(match.out_channels, 4)},
+              .sizes = {w.groups, align_up(w.out_channels, 4)},
           })) {
     return false;
   }
 
-  ValueId sums_id;
-  const auto existing_sums = std::ranges::find_if(
-      sums_by_weight,
-      [&](const auto& entry) { return entry.first == match.weight_id; });
-  if (existing_sums != sums_by_weight.end()) {
-    sums_id = existing_sums->second;
+  if (!match.dynamic.has_value()) {
+    Node& linear = graph.node(match.linear_id);
+    linear.target = kWeightOnlyQ4Linear;
+    linear.inputs = {
+        {.name = "input", .arg = TensorArg{match.activation_id}},
+        {.name = "weight", .arg = TensorArg{w.weight_id}},
+        {.name = "weight_scales", .arg = TensorArg{w.scale_id}},
+        {.name = "group_size", .arg = IntArg{w.group_size}},
+        {.name = "bias", .arg = match.bias},
+    };
   } else {
-    Value sums(
-        weight.name + "_q4_group_sums",
-        ScalarType::Int,
-        {match.groups, align_up(match.out_channels, 8)});
-    sums.role = ValueRole::ConstantTensor;
-    sums.attrs.emplace(
-        kQ4ConstantTransformAttr,
-        Q4ConstantTransform{
-            .kind = Q4ConstantTransformKind::WeightSums,
-            .source_id = match.weight_id,
-            .zero_points_id = match.weight_zero_id,
-            .group_size = match.in_channels / match.groups,
-        });
-    sums_id = graph.append_value(std::move(sums));
-    graph.insert_node_before(
-        graph.schedule.front(),
-        Node{
-            .name = graph.value(sums_id).name,
-            .op_kind = OpKind::Placeholder,
-            .outputs = {{.value_id = sums_id}},
-        });
-    sums_by_weight.emplace_back(match.weight_id, sums_id);
+    ValueId sums_id;
+    const auto existing_sums = std::ranges::find_if(
+        sums_by_weight,
+        [&](const auto& entry) { return entry.first == w.weight_id; });
+    if (existing_sums != sums_by_weight.end()) {
+      sums_id = existing_sums->second;
+    } else {
+      Value sums(
+          weight.name + "_q4_group_sums",
+          ScalarType::Int,
+          {w.groups, align_up(w.out_channels, 8)});
+      sums.role = ValueRole::ConstantTensor;
+      sums.attrs.emplace(
+          kQ4ConstantTransformAttr,
+          Q4ConstantTransform{
+              .kind = Q4ConstantTransformKind::WeightSums,
+              .source_id = w.weight_id,
+              .zero_points_id = w.zero_id,
+              .group_size = w.group_size,
+          });
+      sums_id = graph.append_value(std::move(sums));
+      graph.insert_node_before(
+          graph.schedule.front(),
+          Node{
+              .name = graph.value(sums_id).name,
+              .op_kind = OpKind::Placeholder,
+              .outputs = {{.value_id = sums_id}},
+          });
+      sums_by_weight.emplace_back(w.weight_id, sums_id);
+    }
+
+    Node& linear = graph.node(match.linear_id);
+    linear.target = kDynamicQ4Linear;
+    linear.inputs = {
+        {.name = "input", .arg = TensorArg{match.activation_id}},
+        {.name = "input_scale", .arg = TensorArg{match.dynamic->scale_id}},
+        {.name = "input_zero_point", .arg = TensorArg{match.dynamic->zero_id}},
+        {.name = "weight", .arg = TensorArg{w.weight_id}},
+        {.name = "weight_sums", .arg = TensorArg{sums_id}},
+        {.name = "weight_scales", .arg = TensorArg{w.scale_id}},
+        {.name = "group_size", .arg = IntArg{w.group_size}},
+        {.name = "bias", .arg = match.bias},
+    };
   }
 
-  Node& linear = graph.node(match.linear_id);
-  linear.target = kDynamicQ4Linear;
-  linear.inputs = {
-      {.name = "input", .arg = TensorArg{match.activation_id}},
-      {.name = "input_scale", .arg = TensorArg{match.input_scale_id}},
-      {.name = "input_zero_point", .arg = TensorArg{match.input_zero_id}},
-      {.name = "weight", .arg = TensorArg{match.weight_id}},
-      {.name = "weight_sums", .arg = TensorArg{sums_id}},
-      {.name = "weight_scales", .arg = TensorArg{match.weight_scale_id}},
-      {.name = "group_size", .arg = IntArg{match.in_channels / match.groups}},
-      {.name = "bias", .arg = match.bias},
-  };
-
   graph.rebuild_def_use();
-  graph.erase_node(match.activation_dequantize_id);
-  graph.erase_node(match.activation_quantize_id);
-  graph.erase_node(match.weight_dequantize_id);
+  if (match.dynamic.has_value()) {
+    graph.erase_node(match.dynamic->dequantize_id);
+    graph.erase_node(match.dynamic->quantize_id);
+  }
+  if (valid(w.dequantize_id)) {
+    graph.erase_node(w.dequantize_id);
+  }
   return true;
 }
 
@@ -411,11 +534,12 @@ size_t fuse_quantized_linears(Method& method) {
   const std::vector<NodeId> schedule = graph.schedule;
   std::vector<Match> matches;
   for (const NodeId node_id : schedule) {
-    const std::optional<Match> match = match_dynamic_q4_linear(graph, node_id);
+    const std::optional<Match> match = match_q4_linear(method, node_id);
     if (match.has_value()) {
       matches.push_back(*match);
     }
   }
+  drop_partially_fused_weights(graph, matches);
 
   std::vector<std::pair<ValueId, ValueId>> sums_by_weight;
   size_t count = 0;

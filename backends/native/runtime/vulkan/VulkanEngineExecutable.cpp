@@ -176,13 +176,14 @@ bool is_functional_in_place(const std::string& target) {
 // Ops whose ET-VK implementations require width-packed operands. This list
 // seeds layout assignment; propagation below determines the final layouts.
 bool is_width_packed_op(std::string_view key) {
-  constexpr std::array<std::string_view, 10> kOps{
+  constexpr std::array<std::string_view, 11> kOps{
       "aten.linear.default",
       "aten.addmm.default",
       "aten.mm.default",
       "aten.bmm.default",
       "et_vk.apply_rotary_emb_hf.default",
       "et_vk.linear_dq8ca_q4gsw.default",
+      "et_vk.linear_q4gsw.default",
       "et_vk.rms_norm.default",
       "llama.custom_sdpa.default",
       "update_cache.default",
@@ -862,6 +863,11 @@ class VulkanEngineExecutable final : public EngineExecutable {
       const Package& package,
       const DataBinding& b,
       const Value& v) {
+    if (v.tensor_meta().quant.has_value()) {
+      throw std::runtime_error(
+          "vulkan: quantized constant '" + b.key +
+          "' is read by an op the Vulkan engine does not lower");
+    }
     const std::optional<ConstantInfo> info = package.constant_info(b.key);
     if (!info) {
       throw std::runtime_error(
@@ -961,6 +967,9 @@ class VulkanEngineExecutable final : public EngineExecutable {
   }
 
   void validate_zero_points(const Package& package, ValueId zero_points_id) {
+    if (!valid(zero_points_id)) {
+      return;
+    }
     validate_zero_constant(package, zero_points_id, "q4 weight zero points");
   }
 
@@ -1480,6 +1489,7 @@ class VulkanEngineExecutable final : public EngineExecutable {
     std::optional<utils::StorageType> activation_storage;
     if (key == "aten.linear.default" ||
         key == "et_vk.linear_dq8ca_q4gsw.default" ||
+        key == "et_vk.linear_q4gsw.default" ||
         key == "et_vk.apply_rotary_emb_hf.default") {
       const auto output =
           std::ranges::find_if(n.outputs, [this](const Output& candidate) {
