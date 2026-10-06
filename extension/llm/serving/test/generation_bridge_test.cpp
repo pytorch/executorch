@@ -1007,8 +1007,7 @@ TEST_F(
   auto next = std::get<RequestHandle>(std::move(result));
   EXPECT_NE(next.id(), handle.id());
   // Control and engine can bind and execute, but the sole dispatcher is held.
-  // The pending token is wrapped separately from the prepared suffix.
-  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 3; }));
+  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 2; }));
   EXPECT_FALSE(handle.done());
   EXPECT_FALSE(next.done());
   EXPECT_FALSE(next.error());
@@ -1048,15 +1047,8 @@ TEST_F(
   executor.subsequent.hold();
   other_sink_gate.hold();
   sink_gate.hold();
-  cleanup_gate.hold();
   auto target_events = std::make_shared<Events>();
   auto target_input = request("target", target_events, 1);
-  target_input.on_prepare_complete =
-      [this, prepare = target_input.on_prepare_complete](
-          const GenerationCompletion& completion) {
-        prepare(completion);
-        cleanup_gate.arrive();
-      };
   target_input.on_complete = [this, commit = target_input.on_complete](
                                  const GenerationCompletion& completion) {
     commit(completion);
@@ -1077,14 +1069,10 @@ TEST_F(
   };
   auto blocker =
       accepted(GenerationBridge::submit(*runtime, std::move(blocker_input)));
-  opened("blocker");
+  opened("blocker"); // Both starts precede the gated target finalizer.
   executor.executing.release();
-  // Hold target before finalizer publication, leaving control free to consume
-  // blocker's asynchronous preparation and bind its generation.
-  ASSERT_TRUE(cleanup_gate.wait_for());
-  ASSERT_TRUE(executor.subsequent.wait_for());
-  cleanup_gate.release();
   ASSERT_TRUE(other_sink_gate.wait_for());
+  ASSERT_TRUE(executor.subsequent.wait_for());
   executor.subsequent.release();
   ASSERT_TRUE(sink_gate.wait_for());
   other_sink_gate.release();
@@ -1820,11 +1808,8 @@ TEST_F(
   EXPECT_FALSE(next.error());
   expect_terminal(next_events, batching::FinishReason::NewTokenLimit);
   const auto seen = executor.seen();
-  ASSERT_EQ(seen.size(), 3u);
+  ASSERT_EQ(seen.size(), 2u);
   EXPECT_EQ(seen[0].session, seen[1].session);
-  EXPECT_EQ(seen[0].session, seen[2].session);
-  EXPECT_EQ(seen[1].size, 1u);
-  EXPECT_EQ(seen[2].effective_position(), seen[1].effective_position() + 1);
   EXPECT_EQ(executor.opened().size(), 1u);
   {
     std::lock_guard<std::mutex> lock(events->mutex);

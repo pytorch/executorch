@@ -8,6 +8,8 @@
 
 #include <executorch/extension/llm/batching/runner.h>
 
+#include <executorch/extension/llm/batching/detail/input_validation.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -293,9 +295,7 @@ GenerationMetrics GenerationHandle::metrics() const {
 class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
  public:
   RunnerImpl(Executor& executor, std::unique_ptr<Scheduler> scheduler)
-      : executor_(executor),
-        preparation_config_(executor.preparation_config()),
-        scheduler_(std::move(scheduler)) {
+      : executor_(executor), scheduler_(std::move(scheduler)) {
     assert(scheduler_ != nullptr && "Runner requires a scheduler");
   }
 
@@ -322,10 +322,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
-      PreparedInputPtr delta,
-      std::size_t offset,
-      std::size_t size,
-      std::shared_ptr<PreparationInput> raw,
+      InputPayload delta,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled);
@@ -334,10 +331,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       PreparationInput input,
       CancellationToken cancellation,
       std::function<void(bool, PreparedInputPtr)> on_complete);
-
-  const PreparationConfig& preparation_config() const {
-    return preparation_config_;
-  }
 
   InitializationState initialization_state() const noexcept {
     return initialization_state_.load(std::memory_order_acquire);
@@ -351,8 +344,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
  private:
   enum class Lifecycle { Running, Stopping, Stopped };
 
-  struct Reservation;
-
   // Runtime state for the one generation currently active on a session.
   struct Generation {
     std::int32_t remaining_tokens = 0;
@@ -365,22 +356,14 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     // Engine-side only. An inter-token gap needs the previous delivery, and
     // the published metrics keep only the summary, not the last timestamp.
     MetricsTime last_token_at{};
-    // Held through settlement so unrelated preparations cannot consume the
-    // capacity needed for this generation's next feedback backing.
-    std::shared_ptr<Reservation> feedback_reservation;
-    std::weak_ptr<const PreparedInput> feedback_backing;
   };
 
   // Start-only data. The sampling policy is installed on the executor at
   // admission. Scheduler tasks own the delta after submission.
   struct GenerationRequest {
     SessionId session = 0;
-    PreparedInputPtr delta;
-    std::size_t offset = 0;
+    InputPayload delta;
     std::size_t size = 0;
-    std::shared_ptr<Reservation> raw_reservation;
-    std::shared_ptr<PreparationInput> raw;
-    bool counted = false;
     SamplingParams sampling;
     std::optional<std::uint64_t> seed;
     Generation generation;
@@ -413,7 +396,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     Generation* generation;
     GenerationUpdate update;
     Position position;
-    std::shared_ptr<const std::vector<Token>> input;
+    Token pending_token;
   };
 
   using PreparedOutput = std::variant<PreparedCompletion, PreparedContinuation>;
@@ -437,7 +420,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     // if generation ends first, the next generation carries it with its delta.
     std::optional<Token> pending;
     std::optional<Generation> active_generation;
-    std::shared_ptr<GenerationHandleState> preparing;
 
     // Engine thread only, so its own reads need no ordering; the release pairs
     // with the acquire in Session::position().
@@ -481,19 +463,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     std::optional<Generation> active_generation;
   };
 
-  struct Reservation {
-    std::shared_ptr<std::atomic<std::size_t>> used;
-    std::size_t bytes;
-    ~Reservation() {
-      used->fetch_sub(bytes);
-    }
-  };
   struct PreparationState {
     std::shared_ptr<const PreparationInput> input;
     CancellationToken cancellation;
     std::function<void(bool, PreparedInputPtr)> on_complete;
-    std::shared_ptr<Reservation> reservation;
-    bool protect_feedback = false;
   };
   struct PrepareCommand {
     std::shared_ptr<PreparationState> state;
@@ -514,20 +487,9 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void process_command_(StartCommand command);
   void process_command_(PrepareCommand command);
   void execute_preparation_(PrepareTask task);
-  void prepare_async_(
-      PreparationInput input,
-      CancellationToken cancellation,
-      std::function<void(bool, PreparedInputPtr)> on_complete,
-      std::shared_ptr<GenerationRequest> generation_request);
   void finish_preparation_(
       std::shared_ptr<PreparationState> state,
       PreparedInputPtr output = {});
-  std::shared_ptr<Reservation> reserve_preparation_(
-      std::size_t source_bytes = 0);
-  PreparedInputPtr retain_prepared_(
-      PreparedInputPtr output,
-      std::shared_ptr<Reservation> reservation,
-      bool shrink = true);
   std::optional<RetiredSession> retire_session_(SessionId session);
   void reap_cancelled_();
   bool execute_one_batch_();
@@ -535,12 +497,9 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::optional<TerminalOutcome> validate_generation_start_(
       const GenerationRequest& request,
       const SessionRecord& record) const;
-  bool wrap_tokens_(
-      std::shared_ptr<const std::vector<Token>> tokens,
-      PreparedInputPtr& out,
-      std::shared_ptr<Reservation> reservation = {});
+  bool create_feedback_(Token token, TokenInputPtr& out);
 
-  // Split `tokens` into chunks, the last of which produces output.
+  // Split the selected payload range into chunks; the last produces output.
   //
   // `is_continuation` distinguishes what the executor handed back from the
   // caller's opening delta. Only a continuation of exactly one token is a
@@ -548,7 +507,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   // continuation is re-fed as prefill too.
   std::vector<Task> create_tasks_(
       SessionId session,
-      PreparedInputPtr prepared,
+      InputPayload payload,
       std::size_t offset,
       std::size_t size,
       Position position,
@@ -564,10 +523,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       SessionId session,
       std::optional<Output> output);
   void dispatch_prepared_output_(SessionId session, PreparedOutput prepared);
-  void resume_generation_(
-      SessionId session,
-      Position position,
-      std::shared_ptr<const std::vector<Token>> input);
+  void
+  resume_generation_(SessionId session, Position position, Token pending_token);
   void handle_output_(SessionId session, std::optional<Output> output);
   void submit_(SessionId session, std::vector<Task> tasks);
 
@@ -606,8 +563,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void notify_engine_();
 
   Executor& executor_;
-  const PreparationConfig preparation_config_;
-  // Owned,
   // Owned, so that a Session outliving its Runner still finds a live scheduler
   // on the close and cancel paths.
   std::unique_ptr<Scheduler> scheduler_;
@@ -630,8 +585,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   // Kept after records close to enforce executor IDs are lifetime-unique.
   std::unordered_set<SessionId> issued_session_ids_;
   std::unordered_map<TaskId, std::shared_ptr<PreparationState>> preparations_;
-  std::shared_ptr<std::atomic<std::size_t>> retained_bytes_ =
-      std::make_shared<std::atomic<std::size_t>>(0);
   TaskId next_tid_ = 1;
   EngineMetrics metrics_;
 
@@ -710,49 +663,13 @@ Session::make_clone_request(Position upto) const {
 }
 
 GenerationHandle Session::generate_async(
-    std::vector<Token> delta,
-    GenConfig config,
-    GenerationCallback on_update,
-    std::function<void()> on_settled) const {
-  if (!state_) {
-    auto handle_state = std::make_shared<GenerationHandleState>();
-    handle_state->on_settled = std::move(on_settled);
-    GenerationHandle handle(handle_state);
-    finalize_terminal(
-        handle_state,
-        on_update,
-        TerminalOutcome::failed("session is not initialized"));
-    return handle;
-  }
-  if (!state_->status->open.load(std::memory_order_acquire)) {
-    auto handle_state = std::make_shared<GenerationHandleState>();
-    handle_state->on_settled = std::move(on_settled);
-    GenerationHandle handle(handle_state);
-    finalize_terminal(handle_state, on_update, TerminalOutcome::cancelled());
-    return handle;
-  }
-  const auto size = delta.size();
-  auto raw = std::make_shared<PreparationInput>();
-  raw->segments.emplace_back(std::move(delta));
-  return state_->impl->generate_async(
-      state_->session,
-      nullptr,
-      0,
-      size,
-      std::move(raw),
-      std::move(config),
-      std::move(on_update),
-      std::move(on_settled));
-}
-
-GenerationHandle Session::generate_async(
-    PreparedInputPtr prepared,
-    std::size_t offset,
-    std::size_t size,
+    GenerationInput delta,
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) const {
   if (!state_ || !state_->status->open.load(std::memory_order_acquire)) {
+    // Release backing before notifying synchronous rejection.
+    delta.emplace<std::vector<Token>>();
     auto state = std::make_shared<GenerationHandleState>();
     state->on_settled = std::move(on_settled);
     GenerationHandle handle(state);
@@ -763,12 +680,15 @@ GenerationHandle Session::generate_async(
                : TerminalOutcome::failed("session is not initialized"));
     return handle;
   }
+  InputPayload payload;
+  if (auto* tokens = std::get_if<std::vector<Token>>(&delta)) {
+    payload = std::make_shared<const std::vector<Token>>(std::move(*tokens));
+  } else if (auto* prepared = std::get_if<PreparedInputPtr>(&delta)) {
+    payload = std::move(*prepared);
+  }
   return state_->impl->generate_async(
       state_->session,
-      std::move(prepared),
-      offset,
-      size,
-      nullptr,
+      std::move(payload),
       std::move(config),
       std::move(on_update),
       std::move(on_settled));
@@ -807,10 +727,6 @@ void Runner::prepare_async(
     std::function<void(bool, PreparedInputPtr)> on_complete) {
   impl_->prepare_async(
       std::move(input), std::move(cancellation), std::move(on_complete));
-}
-
-const PreparationConfig& Runner::preparation_config() const {
-  return impl_->preparation_config();
 }
 
 // --- RunnerImpl ------------------------------------------------------------
@@ -973,9 +889,6 @@ void RunnerImpl::reap_cancelled_() {
   for (const auto& entry : sessions_) {
     const std::optional<Generation>& generation =
         entry.second.active_generation;
-    if (entry.second.preparing && !entry.second.status->open.load()) {
-      entry.second.preparing->cancelled.store(true);
-    }
     if (generation &&
         (generation->state->cancelled.load() ||
          !entry.second.status->open.load(std::memory_order_acquire))) {
@@ -1115,71 +1028,35 @@ void RunnerImpl::process_command_(StartCommand command) {
   start_generation_(std::move(command.request));
 }
 
-std::shared_ptr<RunnerImpl::Reservation> RunnerImpl::reserve_preparation_(
-    std::size_t source_bytes) {
-  const auto& config = preparation_config();
-  if (config.max_retained_bytes == 0 || config.max_positions == 0 ||
-      source_bytes > config.max_total_retained_bytes ||
-      config.max_retained_bytes >
-          config.max_total_retained_bytes - source_bytes) {
-    return {};
-  }
-  const auto bytes = config.max_retained_bytes + source_bytes;
-  auto reservation =
-      std::make_shared<Reservation>(Reservation{retained_bytes_, 0});
-  auto used = retained_bytes_->load();
-  while (used <= config.max_total_retained_bytes - bytes) {
-    if (retained_bytes_->compare_exchange_weak(used, used + bytes)) {
-      // Construct before publishing any task. Reservation follows the backing,
-      // including after Runner shutdown, through the shared counter.
-      reservation->bytes = bytes;
-      return reservation;
-    }
-  }
-  return {};
-}
-
 void RunnerImpl::prepare_async(
     PreparationInput input,
     CancellationToken cancellation,
     std::function<void(bool, PreparedInputPtr)> on_complete) {
-  prepare_async_(
-      std::move(input), std::move(cancellation), std::move(on_complete), {});
-}
-
-void RunnerImpl::prepare_async_(
-    PreparationInput input,
-    CancellationToken cancellation,
-    std::function<void(bool, PreparedInputPtr)> on_complete,
-    std::shared_ptr<GenerationRequest> generation_request) {
   std::shared_ptr<PreparationState> state;
-  bool admitted = false;
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
     state = std::make_shared<PreparationState>();
-    state->cancellation = std::move(cancellation);
-    state->on_complete = std::move(on_complete);
-    if (generation_request) {
-      state->reservation = std::move(generation_request->raw_reservation);
-    } else if (
-        auto source_bytes = preparation_config().input_retained_bytes(input)) {
-      state->reservation = reserve_preparation_(*source_bytes);
-    }
-    if (state->reservation) {
-      state->protect_feedback = generation_request &&
-          generation_request->generation.remaining_tokens > 1;
-      if (state->protect_feedback) {
-        generation_request->generation.feedback_reservation =
-            state->reservation;
-      }
-      state->input = std::make_shared<const PreparationInput>(std::move(input));
-      std::lock_guard<std::mutex> lock(control_mutex_);
-      if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running &&
-          (!state->cancellation || !state->cancellation->load())) {
-        inbox_.emplace_back(PrepareCommand{state});
-        admitted = true;
-      }
+#if ET_HAS_EXCEPTIONS
+  } catch (...) {
+    input = {};
+    notify_preparation(std::move(on_complete));
+    return;
+  }
+#endif
+  // Only the allocation-failure path above uses the original callback.
+  state->cancellation = std::move(cancellation);
+  state->on_complete = std::move(on_complete);
+  bool admitted = false;
+#if ET_HAS_EXCEPTIONS
+  try {
+#endif
+    state->input = std::make_shared<const PreparationInput>(std::move(input));
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running &&
+        (!state->cancellation || !state->cancellation->load())) {
+      inbox_.emplace_back(PrepareCommand{state});
+      admitted = true;
     }
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
@@ -1189,11 +1066,7 @@ void RunnerImpl::prepare_async_(
     notify_engine_();
   } else {
     input = {};
-    if (state) {
-      finish_preparation_(std::move(state));
-    } else {
-      notify_preparation(std::move(on_complete));
-    }
+    finish_preparation_(std::move(state));
   }
 }
 
@@ -1220,45 +1093,10 @@ void RunnerImpl::process_command_(PrepareCommand command) {
   }
 }
 
-PreparedInputPtr RunnerImpl::retain_prepared_(
-    PreparedInputPtr output,
-    std::shared_ptr<Reservation> reservation,
-    bool shrink) {
-  struct Backing {
-    std::shared_ptr<Reservation> reservation;
-    PreparedInputPtr output;
-  };
-  // Keep the original address: an executor's checked cast still names its
-  // private object, while the alias owns both payload and reservation.
-  const auto* pointer = output.get();
-  const auto bytes = shrink ? output->retained_bytes()
-                            : preparation_config().max_retained_bytes;
-  reservation->used->fetch_sub(reservation->bytes - bytes);
-  reservation->bytes = bytes;
-  auto backing = std::make_shared<Backing>(
-      Backing{std::move(reservation), std::move(output)});
-  return PreparedInputPtr(std::move(backing), pointer);
-}
-
 void RunnerImpl::finish_preparation_(
     std::shared_ptr<PreparationState> state,
     PreparedInputPtr output) {
   state->input.reset();
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    if (output) {
-      output = retain_prepared_(
-          std::move(output),
-          std::move(state->reservation),
-          !state->protect_feedback);
-    }
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    output.reset();
-  }
-#endif
-  state->reservation.reset();
   auto callback = std::move(state->on_complete);
   state.reset();
   notify_preparation(std::move(callback), std::move(output));
@@ -1279,7 +1117,7 @@ void RunnerImpl::execute_preparation_(PrepareTask task) {
     if (is_running_() &&
         (!state->cancellation || !state->cancellation->load())) {
       ok = executor_.prepare(*state->input, output) &&
-          executor_.valid_prepared(output);
+          detail::valid_prepared(output);
     }
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
@@ -1301,9 +1139,6 @@ std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
   }
   session->second.status->open.store(false, std::memory_order_release);
   RetiredSession retired{std::move(session->second.active_generation)};
-  if (session->second.preparing) {
-    session->second.preparing->cancelled.store(true);
-  }
   // Retire before callback delivery so reentrant requests see the session
   // closed. Cancellation is unconditional because queued tasks may outlive the
   // generation that submitted them.
@@ -1442,17 +1277,17 @@ bool RunnerImpl::execute_one_batch_() {
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
-    ok = executor_.validate_batch(batch) && executor_.execute(batch, out);
+    ok = detail::validate_batch(batch) && executor_.execute(batch, out);
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
     // Execution failures retain the whole-batch poisoning contract.
   }
 #endif
   const MetricsTime step_end = MetricsClock::now();
-  // Execution is synchronous. Drop every consumed backing before callbacks or
-  // feedback reuse the generation's protected capacity; range metadata remains.
+  // Execution is synchronous. Drop Runner's consumed backing before callbacks
+  // or feedback allocation; range metadata and independent owners remain.
   for (auto& input : batch.inputs) {
-    input.prepared.reset();
+    input.payload = TokenInputPtr{};
   }
 
   const std::int64_t latency = us_between(exec_start, step_end);
@@ -1669,10 +1504,7 @@ void RunnerImpl::request_close(SessionId session) noexcept {
 
 GenerationHandle RunnerImpl::generate_async(
     SessionId session,
-    PreparedInputPtr delta,
-    std::size_t offset,
-    std::size_t size,
-    std::shared_ptr<PreparationInput> raw,
+    InputPayload delta,
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) {
@@ -1681,9 +1513,6 @@ GenerationHandle RunnerImpl::generate_async(
   GenerationRequest request;
   request.session = session;
   request.delta = std::move(delta);
-  request.offset = offset;
-  request.size = size;
-  request.raw = std::move(raw);
   request.seed = config.seed;
   request.sampling = std::move(config.sampling);
   request.generation.remaining_tokens = config.max_new_tokens;
@@ -1696,55 +1525,21 @@ GenerationHandle RunnerImpl::generate_async(
   request.generation.m.t_submit = MetricsClock::now();
 
   auto handle = GenerationHandle(state);
-  bool input_reserved = !request.raw && !request.delta;
   auto rejection = TerminalOutcome::cancelled();
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
-    // The command inbox owns token storage too, including while execute blocks.
-    // Transfer this reservation to preparation instead of charging it again.
-    if (request.raw) {
-      if (auto bytes =
-              preparation_config().input_retained_bytes(*request.raw)) {
-        request.raw_reservation = reserve_preparation_(*bytes);
-        input_reserved = static_cast<bool>(request.raw_reservation);
-      }
-    } else if (
-        request.delta &&
-        request.delta->retained_bytes() <=
-            preparation_config().max_retained_bytes) {
-      // The caller may construct compatible backing outside this Runner. Charge
-      // each request independently, including already-accounted prepared
-      // owners.
-      auto reservation = reserve_preparation_();
-      if (reservation && request.generation.remaining_tokens > 1) {
-        request.generation.feedback_reservation = reserve_preparation_();
-        if (!request.generation.feedback_reservation) {
-          reservation.reset();
-        }
-      }
-      if (reservation) {
-        request.delta = retain_prepared_(
-            std::move(request.delta), std::move(reservation), false);
-        input_reserved = true;
-      }
-    }
     {
       std::unique_lock<std::mutex> lock(control_mutex_);
       if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
-        if (input_reserved) {
-          // Allocate before moving the request, preserving settlement on
-          // failure.
-          static_assert(noexcept(request = std::move(request)));
-          inbox_.emplace_back(StartCommand{});
-          std::get<StartCommand>(inbox_.back()).request = std::move(request);
-          lock.unlock();
-          notify_engine_();
-          return handle;
-        } else {
-          rejection =
-              TerminalOutcome::failed("insufficient preparation capacity");
-        }
+        // Allocate before moving the request, preserving settlement on
+        // failure.
+        static_assert(noexcept(request = std::move(request)));
+        inbox_.emplace_back(StartCommand{});
+        std::get<StartCommand>(inbox_.back()).request = std::move(request);
+        lock.unlock();
+        notify_engine_();
+        return handle;
       }
     }
 #if ET_HAS_EXCEPTIONS
@@ -1753,7 +1548,7 @@ GenerationHandle RunnerImpl::generate_async(
   }
 #endif
 
-  // Rejected work never enters the inbox; release its source and reservation
+  // Rejected work never enters the inbox; release its source
   // before synchronous terminal delivery, including after shutdown.
   complete_request_(
       std::move(request), std::move(rejection), /*on_engine_thread=*/false);
@@ -1769,12 +1564,6 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   if (request.size == 0) {
     return TerminalOutcome::failed("generation delta must not be empty");
   }
-  if (!request.raw &&
-      (!executor_.valid_prepared(request.delta) ||
-       request.offset > request.delta->position_count() ||
-       request.size > request.delta->position_count() - request.offset)) {
-    return TerminalOutcome::failed("invalid prepared generation range");
-  }
 
   const auto start_position = record.position();
   if (start_position < 0) {
@@ -1783,15 +1572,7 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   const auto room = static_cast<std::size_t>(
       std::numeric_limits<Position>::max() - start_position);
   const auto pending_tokens = record.pending ? 1u : 0u;
-  const auto base = static_cast<std::int64_t>(start_position) + pending_tokens -
-      static_cast<std::int64_t>(std::min(
-          request.offset,
-          static_cast<std::size_t>(std::numeric_limits<Position>::max())));
-  if (request.offset >
-          static_cast<std::size_t>(std::numeric_limits<Position>::max()) ||
-      base < std::numeric_limits<Position>::min() ||
-      base > std::numeric_limits<Position>::max() || pending_tokens > room ||
-      request.size > room - pending_tokens) {
+  if (pending_tokens > room || request.size > room - pending_tokens) {
     return TerminalOutcome::failed(
         "generation delta exceeds the session position range");
   }
@@ -1799,52 +1580,33 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
     return TerminalOutcome::failed(
         "session cannot continue after an executor failure");
   }
-  if (record.active_generation || record.preparing) {
+  if (record.active_generation) {
     return TerminalOutcome::failed("session already has an active generation");
   }
   return std::nullopt;
 }
 
-bool RunnerImpl::wrap_tokens_(
-    std::shared_ptr<const std::vector<Token>> tokens,
-    PreparedInputPtr& out,
-    std::shared_ptr<Reservation> reservation) {
-  const auto count = tokens->size();
-  const bool protected_feedback = static_cast<bool>(reservation);
+bool RunnerImpl::create_feedback_(Token token, TokenInputPtr& out) {
+  out.reset();
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
-    if (!reservation) {
-      reservation = reserve_preparation_();
-    }
-    if (reservation && executor_.wrap_tokens(std::move(tokens), out) &&
-        executor_.valid_prepared(out) && out->position_count() == count) {
-      out = retain_prepared_(
-          std::move(out), std::move(reservation), !protected_feedback);
-      return true;
-    }
+    out = std::make_shared<const std::vector<Token>>(1, token);
+    return true;
 #if ET_HAS_EXCEPTIONS
   } catch (...) {
+    return false;
   }
 #endif
-  out.reset();
-  return false;
 }
 
 void RunnerImpl::start_generation_(GenerationRequest request) {
   // Counted on arrival at the engine, not on successful install: every path
   // below ends in a completion, so deferring this would let completions
   // exceed starts.
-  if (!request.counted) {
-    ++metrics_.generations_started;
-    request.counted = true;
-  }
+  ++metrics_.generations_started;
   std::vector<Task> tasks;
-  // Keep an owner here even while constructing the preparation callback. A
-  // failed allocation must leave either request or pending able to settle.
-  std::shared_ptr<GenerationRequest> pending;
   SessionRecord* staged_record = nullptr;
-  bool handed_to_preparation = false;
   auto stage = [&]() -> std::optional<TerminalOutcome> {
     if (!is_running_() || request.generation.state->cancelled.load()) {
       return TerminalOutcome::cancelled();
@@ -1854,106 +1616,49 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
       return TerminalOutcome::failed("session is not open");
     }
     auto& record = session->second;
+    const auto* raw = std::get_if<TokenInputPtr>(&request.delta);
+    const auto* prepared = std::get_if<PreparedInputPtr>(&request.delta);
+    request.size = raw ? (*raw ? (*raw)->size() : 0)
+                       : (*prepared ? (*prepared)->size() : 0);
     if (auto rejection = validate_generation_start_(request, record)) {
       return rejection;
-    }
-
-    if (request.raw) {
-      pending = std::make_shared<GenerationRequest>(std::move(request));
-      record.preparing = pending->generation.state;
-      auto raw = std::move(pending->raw);
-      CancellationToken cancellation(
-          pending->generation.state, &pending->generation.state->cancelled);
-      prepare_async_(
-          std::move(*raw),
-          std::move(cancellation),
-          [this, pending](bool ok, PreparedInputPtr prepared) mutable {
-            auto session = sessions_.find(pending->session);
-            if (session != sessions_.end() &&
-                session->second.preparing == pending->generation.state) {
-              session->second.preparing.reset();
-            }
-            std::optional<TerminalOutcome> rejection;
-#if ET_HAS_EXCEPTIONS
-            try {
-#endif
-              if (!ok) {
-                const bool cancelled = !is_running_() ||
-                    pending->generation.state->cancelled.load() ||
-                    session == sessions_.end() ||
-                    !session->second.status->open.load();
-                rejection = cancelled
-                    ? TerminalOutcome::cancelled()
-                    : TerminalOutcome::failed(
-                          "executor failed to prepare generation input");
-              } else {
-                pending->delta = std::move(prepared);
-                if (pending->generation.feedback_reservation) {
-                  pending->generation.feedback_backing = pending->delta;
-                }
-                pending->size = pending->delta->position_count();
-              }
-#if ET_HAS_EXCEPTIONS
-            } catch (...) {
-              rejection = TerminalOutcome::failed({});
-            }
-#endif
-            if (rejection) {
-              prepared.reset();
-              complete_request_(
-                  std::move(*pending), std::move(*rejection), true);
-            } else {
-              start_generation_(std::move(*pending));
-            }
-          },
-          pending);
-      // This also covers inline refusal: its callback has already consumed
-      // pending, so neither that case nor deferred ownership may install here.
-      handed_to_preparation = true;
-      return std::nullopt;
-    }
-
-    if (request.generation.remaining_tokens > 1 &&
-        !request.generation.feedback_reservation) {
-      request.generation.feedback_reservation = reserve_preparation_();
-      if (!request.generation.feedback_reservation) {
-        return TerminalOutcome::failed(
-            "insufficient capacity for generation feedback");
-      }
     }
 
     const auto start_position = record.position();
     request.generation.m.n_prompt_tokens =
         static_cast<std::int64_t>(request.size);
-    if (record.pending) {
-      PreparedInputPtr carried;
-      if (!wrap_tokens_(
-              std::make_shared<const std::vector<Token>>(
-                  std::vector<Token>{*record.pending}),
-              carried)) {
-        return TerminalOutcome::failed("executor failed to wrap pending token");
-      }
+    Position base = start_position;
+    if (record.pending && raw) {
+      std::vector<Token> carried;
+      carried.reserve(request.size + 1);
+      carried.push_back(*record.pending);
+      carried.insert(carried.end(), (*raw)->begin(), (*raw)->end());
+      request.delta =
+          std::make_shared<const std::vector<Token>>(std::move(carried));
+      ++request.size;
+    } else if (record.pending) {
       tasks = create_tasks_(
           request.session,
-          std::move(carried),
+          std::make_shared<const std::vector<Token>>(1, *record.pending),
           0,
           1,
-          start_position,
+          base++,
           false,
           false);
     }
-    const auto base = static_cast<Position>(
-        static_cast<std::int64_t>(start_position) + (record.pending ? 1 : 0) -
-        static_cast<std::int64_t>(request.offset));
     auto suffix = create_tasks_(
         request.session,
         std::move(request.delta),
-        request.offset,
+        0,
         request.size,
         base,
         false);
-    for (auto& task : suffix) {
-      tasks.push_back(std::move(task));
+    if (tasks.empty()) {
+      tasks = std::move(suffix);
+    } else {
+      for (auto& task : suffix) {
+        tasks.push_back(std::move(task));
+      }
     }
     if (!is_running_() ||
         !record.status->open.load(std::memory_order_acquire) ||
@@ -1978,18 +1683,9 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
 #endif
   if (rejection) {
     tasks.clear();
-    auto& failed = pending ? *pending : request;
-    auto session = sessions_.find(failed.session);
-    if (session != sessions_.end() &&
-        session->second.preparing == failed.generation.state) {
-      session->second.preparing.reset();
-    }
     // Terminal delivery stays outside the staging catch, preserving callback
     // failure semantics and releasing all staged backing before notification.
-    complete_request_(std::move(failed), std::move(*rejection), true);
-    return;
-  }
-  if (handed_to_preparation) {
+    complete_request_(std::move(request), std::move(*rejection), true);
     return;
   }
 
@@ -2021,7 +1717,7 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
 
 std::vector<Task> RunnerImpl::create_tasks_(
     SessionId session,
-    PreparedInputPtr prepared,
+    InputPayload payload,
     std::size_t offset,
     std::size_t size,
     Position position,
@@ -2049,7 +1745,7 @@ std::vector<Task> RunnerImpl::create_tasks_(
     t.input.produce_output = produce_output && last;
     t.input.offset = offset + i;
     t.input.size = n;
-    t.input.prepared = prepared;
+    t.input.payload = payload;
     t.input.position = position;
     tasks.push_back(std::move(t));
     i += n;
@@ -2197,14 +1893,12 @@ std::optional<RunnerImpl::PreparedOutput> RunnerImpl::prepare_output_(
             // Only the last token still has to reach the executor; it committed
             // the rest while producing them. It belongs where the session now
             // stands.
-            auto continuation = std::make_shared<const std::vector<Token>>(
-                std::vector<Token>{continuation_action.pending_token});
             return PreparedContinuation{
                 &generation,
                 GenerationUpdate{
                     std::move(interpreted.emitted_tokens), std::nullopt, {}},
                 record.position(),
-                std::move(continuation)};
+                continuation_action.pending_token};
           }},
       std::move(interpreted.next));
 }
@@ -2232,9 +1926,7 @@ void RunnerImpl::dispatch_prepared_output_(
               return;
             }
             resume_generation_(
-                session_id,
-                continuation.position,
-                std::move(continuation.input));
+                session_id, continuation.position, continuation.pending_token);
           }},
       std::move(prepared));
 }
@@ -2242,7 +1934,7 @@ void RunnerImpl::dispatch_prepared_output_(
 void RunnerImpl::resume_generation_(
     SessionId session_id,
     Position position,
-    std::shared_ptr<const std::vector<Token>> input) {
+    Token pending_token) {
   if (!is_running_()) {
     return; // shutdown callback; cleanup cancels this generation
   }
@@ -2254,27 +1946,20 @@ void RunnerImpl::resume_generation_(
     return;
   }
 
-  auto& generation = *session->second.active_generation;
-  if (!generation.feedback_backing.expired()) {
+  // Allocate after callback delivery. Independently owned immutable inputs may
+  // remain live while the next feedback vector is consumed.
+  TokenInputPtr input;
+  if (!create_feedback_(pending_token, input)) {
     complete_active_generation_(
         session_id,
-        TerminalOutcome::failed("executor retained consumed feedback backing"));
+        TerminalOutcome::failed("could not allocate decode token input"));
     return;
   }
-  PreparedInputPtr prepared;
-  if (!wrap_tokens_(
-          std::move(input), prepared, generation.feedback_reservation)) {
-    complete_active_generation_(
-        session_id,
-        TerminalOutcome::failed("executor failed to wrap decode token"));
-    return;
-  }
-  generation.feedback_backing = prepared;
   submit_(
       session_id,
       create_tasks_(
           session_id,
-          std::move(prepared),
+          std::move(input),
           0,
           1,
           position,
@@ -2322,7 +2007,6 @@ void RunnerImpl::complete_generation_(
     TerminalOutcome outcome,
     bool on_engine_thread) {
   generation.m.t_end = MetricsClock::now();
-  generation.feedback_reservation.reset();
   std::optional<TerminalCompletion> completion;
   {
     // The claim is taken under the runner lock. User code still runs only after
@@ -2389,9 +2073,7 @@ void RunnerImpl::complete_request_(
     GenerationRequest request,
     TerminalOutcome outcome,
     bool on_engine_thread) {
-  request.delta.reset();
-  request.raw.reset();
-  request.raw_reservation.reset();
+  request.delta = TokenInputPtr{};
   complete_generation_(
       std::move(request.generation), std::move(outcome), on_engine_thread);
 }
@@ -2435,7 +2117,6 @@ void RunnerImpl::fail_active_generation_after_callback_(
     return;
   }
   active->m.t_end = MetricsClock::now();
-  active->feedback_reservation.reset();
   auto completion = TerminalCompletion::try_claim(active->state);
   if (!completion) {
     return;

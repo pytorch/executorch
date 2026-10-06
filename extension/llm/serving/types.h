@@ -27,9 +27,9 @@ namespace serving {
 // The full prompt, not a session delta. Preparation encodes each text segment
 // separately and appends ID segments verbatim, in order, without adding
 // BOS/EOS. Segment boundaries therefore matter even between adjacent text
-// segments. Encoded images require an enabled CPU hook and image-capable
-// executor. Unsupported modalities, encoding failures, and an empty prepared
-// prompt are rejected with InvalidArgument before changing session history.
+// segments. Only text and token segments are currently supported; other
+// modalities, encoding failures, and an empty prepared prompt are rejected with
+// InvalidArgument before changing session history.
 struct ET_EXPERIMENTAL PromptInput {
   std::vector<MultimodalInput> segments;
 };
@@ -75,11 +75,8 @@ struct ET_EXPERIMENTAL ServingError {
 };
 
 struct ET_EXPERIMENTAL GenerationStats {
-  // Text tokenizer/ID count, excluding image decoder positions.
+  // Full prepared prompt size, including any reused prefix.
   std::size_t prompt_tokens = 0;
-  std::size_t prompt_positions = 0;
-  std::size_t reused_prompt_positions = 0;
-  std::size_t prefilled_prompt_positions = 0;
   // Tokens processed by text output, excluding EOS/stop tokens but including
   // the token that completes a string stop. Later discarded tokens do not
   // count. Neither this count nor visible text describes logical session
@@ -88,9 +85,7 @@ struct ET_EXPERIMENTAL GenerationStats {
   // Committed prompt prefix reused without execution. A pending prediction
   // fed by this request counts as prefilled, not reused.
   std::size_t reused_prompt_tokens = 0;
-  // Actually consumed text-only prompt tokens; may be partial on cancellation
-  // or failure. Zero for image prompts: opaque positions cannot be mapped back
-  // to tokenizer tokens. Use prefilled_prompt_positions for decoder work.
+  // Actually consumed prompt tokens; may be partial on cancellation or failure.
   std::size_t prefilled_prompt_tokens = 0;
   double prefill_ms = 0.0;
   double decode_ms = 0.0;
@@ -137,11 +132,6 @@ struct ET_EXPERIMENTAL ServingInfo {
   // Logical serving slots, including slots reserved during reset/reopen.
   // This is not a count of physically live executor sessions.
   std::size_t active_sessions = 0;
-  // All zero when image preprocessing/execution is unsupported.
-  std::size_t max_images = 0;
-  std::size_t max_image_encoded_bytes = 0;
-  std::size_t max_image_dimension = 0;
-  std::size_t max_image_pixels = 0;
 };
 
 } // namespace serving

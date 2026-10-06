@@ -37,6 +37,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <executorch/extension/llm/batching/executor.h>
@@ -89,6 +90,9 @@ struct ET_EXPERIMENTAL GenerationUpdate {
 // serviced by this runner. An exception from a callback is contained and ends
 // that generation as Failed.
 using GenerationCallback = std::function<void(const GenerationUpdate&)>;
+
+using GenerationInput ET_EXPERIMENTAL =
+    std::variant<std::vector<Token>, PreparedInputPtr>;
 
 struct ET_EXPERIMENTAL GenConfig {
   std::int32_t max_new_tokens = 256;
@@ -217,6 +221,10 @@ class ET_EXPERIMENTAL Session {
   // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
+  // Prepared backing must come from this Runner's executor. The whole backing
+  // is executed without repeating preparation; a pending prediction is separate
+  // raw prefill before it. Shared backing may outlive generation.
+  //
   // The delta must be non-empty and its exclusive end must fit in Position.
   // Invalid input and a second concurrent generation end as Failed. A default
   // or moved-from Session also completes synchronously as Failed; a retained
@@ -231,20 +239,7 @@ class ET_EXPERIMENTAL Session {
   // This signals generation settlement, not Runner idleness or physical
   // session-close completion. Handle wait/done do not wait for it to return.
   GenerationHandle generate_async(
-      std::vector<Token> delta,
-      GenConfig config,
-      GenerationCallback on_update,
-      std::function<void()> on_settled = {}) const;
-
-  // Execute only this nonempty range of owned prepared backing. Preparation is
-  // not repeated; a carried prediction is forwarded separately before it.
-  // Admission reserves max_retained_bytes for this request's input plus another
-  // max_retained_bytes if feedback may be needed, even for an already-accounted
-  // prepare_async owner. Insufficient capacity completes inline as Failed.
-  GenerationHandle generate_async(
-      PreparedInputPtr prepared,
-      std::size_t offset,
-      std::size_t size,
+      GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled = {}) const;
@@ -288,19 +283,15 @@ class ET_EXPERIMENTAL Runner {
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
 
-  // Context-free preparation on the existing engine thread. Exactly one
-  // completion, including rejection (which may run inline). The callback must
-  // not block. Cancellation discards queued/in-flight preparation results.
-  // Completion is exactly once: admission failures may complete inline;
-  // admitted work completes on the engine thread. Cancellation discards the
-  // result after any in-flight synchronous preparation returns. The returned
-  // owner keeps its retained-memory charge even if it outlives this Runner.
+  // General preparation, selected by the scheduler and run on the engine
+  // thread. Completes once, inline on admission refusal or on that thread after
+  // admission. Cancellation discards queued/in-flight results; an executor call
+  // cannot be interrupted. Sources are released before completion; returned
+  // owners may outlive Runner. Callbacks must not block or destroy Runner.
   void prepare_async(
       PreparationInput input,
       CancellationToken cancellation,
       std::function<void(bool, PreparedInputPtr)> on_complete);
-
-  const PreparationConfig& preparation_config() const;
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended, and every owned session is closed. A generation that

@@ -599,9 +599,6 @@ def test_eof_or_protocol_failure_settles_all_operations_and_reaps(frame):
             "completion_tokens",
             "reused_prompt_tokens",
             "prefilled_prompt_tokens",
-            "prompt_positions",
-            "reused_prompt_positions",
-            "prefilled_prompt_positions",
         )
         for value in (True, -1, 1.5)
     ]

@@ -40,7 +40,6 @@ from starlette.requests import ClientDisconnect
 from .chat_template import ChatTemplate
 from .errors import APIError
 from .protocol import ChatCompletionRequest, ModelCard, ModelList
-from .request_body import BoundedChatBody
 from .serving_chat import ServingChat
 from .session_runtime import SessionRuntime
 from .tool_parsers import HermesDetector
@@ -184,13 +183,6 @@ def build_app(
     instances retain FastAPI's default lifespan and are not closed by this app.
     """
     app = _create_serving_app(serving, serving_factory)
-    app.add_middleware(
-        BoundedChatBody,
-        # Resolve at request time: lifespan factories populate app.state only
-        # after build_app. Legacy adapters keep their existing body limits.
-        enabled=lambda: getattr(app.state.serving, "uses_native_transport", False)
-        is True,
-    )
 
     @app.get("/health")
     async def health():

@@ -30,60 +30,34 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-using Token = std::uint64_t;
-using SessionId = std::int64_t;
-using Position = std::int32_t;
+using Token ET_EXPERIMENTAL = std::uint64_t;
+using SessionId ET_EXPERIMENTAL = std::int64_t;
+using Position ET_EXPERIMENTAL = std::int32_t;
 // Wide enough that a monotonically issued id cannot wrap in any realistic
 // lifetime, so ids never have to be recycled.
-using TaskId = std::int64_t;
+using TaskId ET_EXPERIMENTAL = std::int64_t;
 
 // Tokenized text and CPU-preprocessed images in prompt order. Source text and
 // encoded images must be resolved before preparation.
 struct ET_EXPERIMENTAL PreparationInput {
   std::vector<MultimodalInput> segments;
 };
-using CancellationToken = std::shared_ptr<const std::atomic<bool>>;
+using CancellationToken ET_EXPERIMENTAL =
+    std::shared_ptr<const std::atomic<bool>>;
 
-// Immutable executor-private owned backing, executable over every valid range.
-// retained_bytes() accounts for all owned backing, not merely a borrowing view.
-// Metadata queries must be thread-safe and independent of Executor lifetime;
-// admission may inspect them on the caller's thread without model/device work.
-// Tags identify payload contracts by stable addresses, without requiring RTTI.
+// Immutable owned backing for the executor that prepared it, valid over every
+// selected range. Metadata is thread-safe and independent of executor lifetime.
 class ET_EXPERIMENTAL PreparedInput {
  public:
   virtual ~PreparedInput() = default;
-  virtual std::size_t position_count() const = 0;
-  virtual std::size_t retained_bytes() const = 0;
-  virtual const void* compatibility_tag() const = 0;
+  // Number of decoder positions in the complete backing, not bytes.
+  virtual std::size_t size() const = 0;
 };
-using PreparedInputPtr = std::shared_ptr<const PreparedInput>;
-
-// Optional text implementation; generic scheduling never depends on this type.
-class ET_EXPERIMENTAL TokenPreparedInput final : public PreparedInput {
- public:
-  explicit TokenPreparedInput(std::shared_ptr<const std::vector<Token>> tokens)
-      : tokens_(std::move(tokens)) {}
-  std::size_t position_count() const override {
-    return tokens_ ? tokens_->size() : 0;
-  }
-  std::size_t retained_bytes() const override {
-    return sizeof(*this) + sizeof(std::vector<Token>) +
-        (tokens_ ? tokens_->capacity() * sizeof(Token) : 0);
-  }
-  static const void* tag() {
-    static const char identity = 0;
-    return &identity;
-  }
-  const void* compatibility_tag() const override {
-    return tag();
-  }
-  const std::vector<Token>& tokens() const {
-    return *tokens_;
-  }
-
- private:
-  std::shared_ptr<const std::vector<Token>> tokens_;
-};
+using PreparedInputPtr ET_EXPERIMENTAL = std::shared_ptr<const PreparedInput>;
+using TokenInputPtr ET_EXPERIMENTAL = std::shared_ptr<const std::vector<Token>>;
+// Prepared prompts are opaque; generated token feedback needs no preparation.
+using InputPayload ET_EXPERIMENTAL =
+    std::variant<TokenInputPtr, PreparedInputPtr>;
 
 // Sampling policy for a generation. Installed on the session before its tasks
 // are submitted, so it does not ride on every Input.
@@ -97,13 +71,13 @@ struct ET_EXPERIMENTAL Input {
   SessionId sid;
   bool produce_output;
 
-  // The selected slice is prepared[offset : offset + size]. It starts at the
+  // The selected slice is payload[offset : offset + size]. It starts at the
   // absolute logical position `position + offset`; `position` is the base of
   // the complete backing, not of the slice. The base may be negative.
   size_t offset;
   size_t size;
 
-  PreparedInputPtr prepared;
+  InputPayload payload;
   Position position;
 };
 
@@ -127,11 +101,11 @@ struct ET_EXPERIMENTAL PrepareTask {
   std::shared_ptr<const PreparationInput> input;
 };
 
-using Task = std::variant<PrepareTask, ExecutionTask>;
+using Task ET_EXPERIMENTAL = std::variant<PrepareTask, ExecutionTask>;
 struct ET_EXPERIMENTAL ExecutionBatch {
   std::vector<ExecutionTask> tasks;
 };
-using Work = std::variant<PrepareTask, ExecutionBatch>;
+using Work ET_EXPERIMENTAL = std::variant<PrepareTask, ExecutionBatch>;
 
 struct ET_EXPERIMENTAL BatchInput {
   std::vector<Input> inputs;

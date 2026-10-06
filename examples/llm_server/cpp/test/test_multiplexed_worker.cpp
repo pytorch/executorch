@@ -13,11 +13,9 @@
 
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
 #include <executorch/examples/llm_server/cpp/multiplexed_worker_test.h>
-#include <executorch/examples/llm_server/cpp/test_image_executor.h>
 
 #include <poll.h>
 #include <unistd.h>
-#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -42,7 +40,6 @@ namespace batching = executorch::extension::llm::batching;
 namespace serving = executorch::extension::llm::serving;
 using executorch::examples::llm_server::MultiplexedWorkerConfig;
 using executorch::examples::llm_server::testing::Checkpoint;
-using executorch::examples::llm_server::testing::ImageExecutor;
 using executorch::examples::llm_server::testing::run_multiplexed_worker;
 using executorch::examples::llm_server::testing::WorkerTestHooks;
 using Json = nlohmann::json;
@@ -70,61 +67,21 @@ class Tokenizer : public tokenizers::Tokenizer {
   }
 };
 
-class Executor : public ImageExecutor {
+class Executor : public batching::testing::FakeExecutor {
  public:
-  explicit Executor(bool images = false) : ImageExecutor(images) {}
-
   // Installed before start(); invoked only on the engine thread.
   std::function<void(std::size_t)> before_execute;
-  std::function<void(std::size_t)> before_prepare;
-  std::atomic<std::size_t> prepare_calls{0};
-  std::atomic<std::size_t> clone_calls{0};
-  bool allow_clones = false;
-
-  bool prepare(
-      const batching::PreparationInput& input,
-      batching::PreparedInputPtr& out) override {
-    const auto call = ++prepare_calls;
-    if (before_prepare)
-      before_prepare(call);
-    return ImageExecutor::prepare(input, out);
-  }
-
-  std::optional<batching::SessionId> clone(
-      batching::SessionId,
-      batching::Position) override {
-    ++clone_calls;
-    // FakeExecutor has no KV storage; an independent row is a sufficient
-    // snapshot for tests that only observe whether caching is attempted.
-    return allow_clones ? open_session() : std::nullopt;
-  }
-
-  std::vector<std::vector<batching::Token>> supplied() const {
-    std::lock_guard<std::mutex> lock(supplied_mutex_);
-    return supplied_;
-  }
 
   bool execute(const batching::BatchInput& batch, batching::BatchOutput& out)
       override {
     if (before_execute)
       before_execute(++execute_count_);
     std::this_thread::sleep_for(2ms);
-    {
-      std::lock_guard<std::mutex> lock(supplied_mutex_);
-      for (const auto& input : batch.inputs) {
-        std::vector<batching::Token> tokens;
-        for (std::size_t i = 0; i < input.size; ++i)
-          tokens.push_back(input_token(*input.prepared, input.offset + i));
-        supplied_.push_back(std::move(tokens));
-      }
-    }
-    return ImageExecutor::execute(batch, out);
+    return FakeExecutor::execute(batch, out);
   }
 
  private:
   std::size_t execute_count_ = 0;
-  mutable std::mutex supplied_mutex_;
-  std::vector<std::vector<batching::Token>> supplied_;
 };
 
 class CheckpointGate {
@@ -161,9 +118,6 @@ class CheckpointGate {
 
 class ProtocolTest : public ::testing::Test {
  protected:
-  explicit ProtocolTest(bool images = false)
-      : executor_(images), images_(images) {}
-
   void start(
       MultiplexedWorkerConfig config = {},
       std::size_t max_sessions = 4,
@@ -179,10 +133,6 @@ class ProtocolTest : public ::testing::Test {
     runtime_config.max_pending_operations = max_pending_operations;
     runtime_config.max_events_per_request = 128;
     runtime_config.max_tokens_per_request = 8192;
-    if (images_)
-      ImageExecutor::enable_images(runtime_config);
-    if (configure_runtime_)
-      configure_runtime_(runtime_config);
     runtime_ = std::make_unique<serving::ServingRuntime>(
         executor_,
         batching::DecodeFirstScheduler::create(16, 8, 8),
@@ -193,7 +143,6 @@ class ProtocolTest : public ::testing::Test {
           *runtime_, input_[0], output_[1], config, hooks_);
     });
     auto ready = receive();
-    ready_ = ready;
     ASSERT_TRUE(ready.value("ready", false));
     ASSERT_TRUE(ready.value("multiplexed", false));
     ASSERT_FALSE(ready.contains("request_id"));
@@ -283,8 +232,6 @@ class ProtocolTest : public ::testing::Test {
     return result_.get();
   }
 
-  Json ready_;
-  std::function<void(serving::ServingRuntimeConfig&)> configure_runtime_;
   WorkerTestHooks hooks_;
   std::vector<std::shared_ptr<CheckpointGate>> gates_;
   Tokenizer tokenizer_;
@@ -292,481 +239,7 @@ class ProtocolTest : public ::testing::Test {
   std::unique_ptr<serving::ServingRuntime> runtime_;
   std::future<int> result_;
   int input_[2]{-1, -1}, output_[2]{-1, -1};
-  const bool images_;
 };
-
-std::vector<std::uint8_t> png_bytes(bool white = false) {
-  // Complete 1x1 PNG; header mutations below exercise bounds, not a codec.
-  std::vector<std::uint8_t> bytes = {
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-      0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00,
-      0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x60, 0xf8, 0x0f, 0x00,
-      0x01, 0x02, 0x01, 0x00, 0x42, 0xbe, 0xbc, 0x68, 0x00, 0x00, 0x00, 0x00,
-      0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
-  if (white) {
-    const std::uint8_t idat[] = {
-        0x78,
-        0x9c,
-        0x63,
-        0xf8,
-        0xff,
-        0x1f,
-        0x00,
-        0x03,
-        0x00,
-        0x01,
-        0xff,
-        0xfc,
-        0x25,
-        0xdc,
-        0x51};
-    std::copy(std::begin(idat), std::end(idat), bytes.begin() + 41);
-  }
-  return bytes;
-}
-
-std::string base64(const std::vector<std::uint8_t>& bytes) {
-  constexpr char alphabet[] =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  std::string result;
-  for (std::size_t i = 0; i < bytes.size(); i += 3) {
-    const unsigned a = bytes[i];
-    const unsigned b = i + 1 < bytes.size() ? bytes[i + 1] : 0;
-    const unsigned c = i + 2 < bytes.size() ? bytes[i + 2] : 0;
-    result += alphabet[a >> 2];
-    result += alphabet[((a & 3) << 4) | (b >> 4)];
-    result += i + 1 < bytes.size() ? alphabet[((b & 15) << 2) | (c >> 6)] : '=';
-    result += i + 2 < bytes.size() ? alphabet[c & 63] : '=';
-  }
-  return result;
-}
-
-Json image_segment(const std::vector<std::uint8_t>& bytes = png_bytes()) {
-  return {{"image", {{"mime_type", "image/png"}, {"data", base64(bytes)}}}};
-}
-
-class ImageProtocolTest : public ProtocolTest {
- protected:
-  ImageProtocolTest() : ProtocolTest(true) {}
-
-  Json image_request(uint64_t id, int count = 3) {
-    auto request = generate(id, count);
-    request.erase("prompt");
-    request["prompt_segments"] = Json::array(
-        {{{"text", "abcdef"}},
-         image_segment(),
-         {{"ids", {7, 8}}},
-         {{"text", "z"}}});
-    return request;
-  }
-
-  Json terminal(uint64_t id) {
-    for (;;) {
-      auto message = receive();
-      EXPECT_EQ(message.value("request_id", uint64_t{0}), id) << message;
-      if (!message.contains("token"))
-        return message;
-    }
-  }
-
-  void expect_invalid(const Json& request, const std::string& reason = {}) {
-    SCOPED_TRACE(request.dump());
-    send(request);
-    const auto error = receive();
-    EXPECT_EQ(error.at("request_id"), request.at("request_id"));
-    EXPECT_EQ(error.at("code"), "invalid_argument") << error;
-    EXPECT_FALSE(error.contains("done"));
-    if (!reason.empty())
-      EXPECT_NE(
-          error.at("error").get<std::string>().find(reason), std::string::npos)
-          << error;
-  }
-};
-
-TEST_F(ProtocolTest, ImagesAreUnsupportedByDefault) {
-  start();
-  EXPECT_FALSE(ready_.at("supports_images").get<bool>());
-  EXPECT_EQ(ready_.at("max_images"), 0);
-  EXPECT_EQ(runtime_->info().max_images, 0u);
-  auto request = generate(1);
-  request.erase("prompt");
-  request["prompt_segments"] = Json::array({image_segment()});
-  send(request);
-  const auto error = receive();
-  EXPECT_EQ(error.at("request_id"), 1);
-  EXPECT_EQ(error.at("code"), "invalid_argument");
-  EXPECT_EQ(executor_.prepare_calls.load(), 0u);
-  EXPECT_TRUE(executor_.opened().empty());
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(
-    ImageProtocolTest,
-    InterleavedSegmentsPreservePositionsAndTokenFeedback) {
-  executor_.stop_token = 1000;
-  start();
-  EXPECT_TRUE(ready_.at("supports_images").get<bool>());
-  EXPECT_EQ(ready_.at("max_images"), 1);
-  EXPECT_EQ(ready_.at("max_image_bytes"), 512 * 1024);
-  EXPECT_EQ(ready_.at("max_image_dimension"), 4096);
-  EXPECT_EQ(ready_.at("max_image_pixels"), 4 * 1024 * 1024);
-  send(image_request(1));
-  std::string text;
-  Json done;
-  do {
-    done = receive();
-    ASSERT_EQ(done.at("request_id"), 1);
-    ASSERT_FALSE(done.contains("error")) << done;
-    if (done.contains("token"))
-      text += done.at("token").get<std::string>();
-  } while (done.contains("token"));
-  ASSERT_TRUE(done.value("done", false));
-  EXPECT_EQ(text, tokenizer_.piece + tokenizer_.piece + tokenizer_.piece);
-  EXPECT_EQ(done.at("finish_reason"), "length");
-  EXPECT_EQ(done.at("generated_token_ids"), Json::array({1000, 1000, 1000}));
-  EXPECT_EQ(done.at("completion_tokens"), 3);
-  EXPECT_EQ(done.at("prompt_tokens"), 9);
-  EXPECT_EQ(done.at("prompt_positions"), 13);
-  // Opaque image positions have no tokenizer-token mapping for partial work.
-  EXPECT_EQ(done.at("prefilled_prompt_tokens"), 0);
-  EXPECT_EQ(done.at("prefilled_prompt_positions"), 13);
-  EXPECT_EQ(done.at("reused_prompt_tokens"), 0);
-  EXPECT_EQ(done.at("reused_prompt_positions"), 0);
-  EXPECT_EQ(executor_.prepare_calls.load(), 1u);
-  const auto seen = executor_.seen();
-  const auto supplied = executor_.supplied();
-  ASSERT_EQ(seen.size(), 4u);
-  ASSERT_EQ(supplied.size(), seen.size());
-  EXPECT_EQ(seen[0].effective_position(), 0);
-  EXPECT_EQ(seen[0].size, 8u);
-  EXPECT_EQ(seen[1].effective_position(), 8);
-  EXPECT_EQ(seen[1].size, 5u);
-  EXPECT_EQ(seen[2].effective_position(), 13);
-  EXPECT_EQ(seen[3].effective_position(), 14);
-  // The image straddles the 8-position prefill boundary.
-  std::uint8_t hash = 0;
-  for (auto byte : png_bytes())
-    hash = static_cast<std::uint8_t>(hash * 31 + byte);
-  EXPECT_EQ(
-      supplied[0],
-      (std::vector<batching::Token>{
-          'a', 'b', 'c', 'd', 'e', 'f', hash, batching::Token(hash) + 1}));
-  EXPECT_EQ(
-      supplied[1],
-      (std::vector<batching::Token>{
-          batching::Token(hash) + 2, batching::Token(hash) + 3, 7, 8, 'z'}));
-  EXPECT_EQ(supplied[2], (std::vector<batching::Token>{1000}));
-  EXPECT_EQ(supplied[3], (std::vector<batching::Token>{1000}));
-  send({{"op", "close"}, {"request_id", 2}, {"session_id", "absent"}});
-  const auto fence = receive();
-  EXPECT_EQ(fence.at("request_id"), 2); // No second generation terminal.
-  EXPECT_TRUE(fence.value("closed", false));
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(ImageProtocolTest, StrictImageFieldsAndCanonicalBase64AreIsolated) {
-  start();
-  uint64_t id = 1;
-  const auto valid = image_segment().at("image");
-  std::vector<Json> invalid_images = {
-      nullptr,
-      true,
-      "data",
-      Json::object(),
-      {{"mime_type", "image/png"}},
-      {{"data", valid.at("data")}},
-      {{"mime_type", "image/gif"}, {"data", valid.at("data")}},
-      {{"mime_type", "image/jpeg"}, {"data", valid.at("data")}},
-      {{"mime_type", true}, {"data", valid.at("data")}},
-      {{"mime_type", "image/png"}, {"data", 1}},
-      {{"mime_type", "image/png"},
-       {"data", valid.at("data")},
-       {"url", "file:///x"}}};
-  for (const auto* data :
-       {"",
-        "a",
-        "abc",
-        "!!!!",
-        "AA A",
-        "AA\nA",
-        "AA_A",
-        "AA-A",
-        "=AAA",
-        "A===",
-        "AA==AAAA",
-        "AB==",
-        "AAB="}) {
-    invalid_images.push_back({{"mime_type", "image/png"}, {"data", data}});
-  }
-  // Nonzero pad bits on otherwise valid PNG data must not be accepted.
-  auto bad_padding = valid.at("data").get<std::string>();
-  bad_padding[bad_padding.size() - 2] = 'J'; // canonical final I= -> J=
-  invalid_images.push_back({{"mime_type", "image/png"}, {"data", bad_padding}});
-  for (const auto& image : invalid_images) {
-    auto request = image_request(id++);
-    request["prompt_segments"] = Json::array({{{"image", image}}});
-    const bool pad_bits = image.is_object() && image.contains("data") &&
-        (image.at("data") == "AB==" || image.at("data") == "AAB=");
-    expect_invalid(request, pad_bits ? "canonical base64" : "");
-  }
-  for (const auto& segments : std::vector<Json>{
-           Json::array(),
-           Json::array({Json::object()}),
-           Json::array({image_segment(), image_segment()}),
-           Json::array({{{"image", valid}, {"text", "x"}}}),
-           Json::array({{{"image", valid}, {"ids", {1}}}}),
-           Json::array({{{"image", valid}, {"unknown", 1}}})}) {
-    auto request = image_request(id++);
-    request["prompt_segments"] = segments;
-    expect_invalid(request);
-  }
-  EXPECT_EQ(executor_.prepare_calls.load(), 0u);
-  EXPECT_TRUE(executor_.opened().empty());
-  send(image_request(id, 1));
-  EXPECT_TRUE(terminal(id).value("done", false));
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(ImageProtocolTest, DuplicateImageKeysAreRejectedBeforePreparation) {
-  start();
-  const auto image = image_segment().at("image").dump();
-  const auto data = image_segment().at("image").at("data").dump();
-  const std::vector<std::string> segments = {
-      "{\"image\":" + image + ",\"image\":" + image + "}",
-      "{\"image\":{\"mime_type\":\"image/png\",\"mime_type\":\"image/png\",\"data\":" +
-          data + "}}",
-      "{\"image\":{\"mime_type\":\"image/png\",\"data\":" + data +
-          ",\"data\":" + data + "}}"};
-  uint64_t id = 1;
-  for (const auto& segment : segments) {
-    send_raw(
-        "{\"op\":\"generate\",\"request_id\":" + std::to_string(id) +
-        ",\"max_new_tokens\":1,\"prompt_segments\":[" + segment + "]}\n");
-    const auto error = receive();
-    EXPECT_EQ(error.at("request_id"), id++);
-    EXPECT_EQ(error.at("code"), "invalid_argument") << error;
-  }
-  EXPECT_EQ(executor_.prepare_calls.load(), 0u);
-  EXPECT_TRUE(executor_.opened().empty());
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(
-    ImageProtocolTest,
-    EncodedByteDimensionAndPixelBoundsPrecedePreparation) {
-  configure_runtime_ = [](auto& config) {
-    config.max_image_encoded_bytes = png_bytes().size();
-    config.max_image_dimension = 4;
-    config.max_image_pixels = 8;
-  };
-  start();
-  EXPECT_EQ(ready_.at("max_image_bytes"), png_bytes().size());
-  EXPECT_EQ(ready_.at("max_image_dimension"), 4);
-  EXPECT_EQ(ready_.at("max_image_pixels"), 8);
-  std::vector<std::vector<std::uint8_t>> invalid;
-  auto bytes = png_bytes();
-  bytes.push_back(0);
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes[19] = 5; // Width above per-dimension bound.
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes[23] = 5; // Height above per-dimension bound.
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes[19] = bytes[23] = 3; // Individually bounded, but 9 > 8 pixels.
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes[19] = 0; // Zero width.
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes.resize(8); // Signature without IHDR.
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes[12] = 'X'; // First chunk must be IHDR.
-  invalid.push_back(bytes);
-  bytes = png_bytes();
-  bytes.resize(24); // Truncated IHDR.
-  invalid.push_back(bytes);
-  uint64_t id = 1;
-  for (const auto& source : invalid) {
-    auto request = image_request(id++);
-    request["prompt_segments"] = Json::array({image_segment(source)});
-    expect_invalid(request);
-  }
-  EXPECT_EQ(executor_.prepare_calls.load(), 0u);
-  EXPECT_TRUE(executor_.opened().empty());
-  auto request = image_request(id, 1);
-  request["prompt_segments"] = Json::array({image_segment()});
-  send(request); // Exact byte bound and an image-only prompt are accepted.
-  const auto done = terminal(id);
-  ASSERT_TRUE(done.value("done", false)) << done;
-  EXPECT_EQ(done.at("prompt_tokens"), 0);
-  EXPECT_EQ(done.at("prompt_positions"), 4);
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(ImageProtocolTest, EqualPatchCountsColdReplayAndBypassPrefixCapture) {
-  configure_runtime_ = [](auto& config) { config.prefix_cache_capacity = 2; };
-  executor_.stop_token = 1000;
-  executor_.allow_clones = true;
-  start();
-  auto seed = image_request(10, 1);
-  seed["prompt_segments"].erase(seed["prompt_segments"].begin() + 1);
-  send(seed);
-  ASSERT_TRUE(terminal(10).value("done", false));
-  const auto cached_clones = executor_.clone_calls.load();
-  ASSERT_GT(cached_clones, 0u);
-  const auto seed_slices = executor_.seen().size();
-  auto first = image_request(1, 1);
-  first["session_id"] = "images";
-  send(first);
-  ASSERT_TRUE(terminal(1).value("done", false));
-  const auto changed = png_bytes(true); // New pixel, same four synthetic rows.
-  auto replay = first;
-  replay["request_id"] = 2;
-  replay["prompt_segments"][1] = image_segment(changed);
-  send(replay);
-  const auto done = terminal(2);
-  ASSERT_TRUE(done.value("done", false)) << done;
-  EXPECT_EQ(done.at("prompt_positions"), 13);
-  EXPECT_EQ(done.at("reused_prompt_positions"), 0);
-  EXPECT_EQ(done.at("prefilled_prompt_positions"), 13);
-  EXPECT_EQ(done.at("reused_prompt_tokens"), 0);
-  const auto all_seen = executor_.seen();
-  const std::vector<Executor::Seen> seen(
-      all_seen.begin() + seed_slices, all_seen.end());
-  ASSERT_EQ(seen.size(), 4u);
-  EXPECT_NE(seen[0].session, seen[2].session);
-  EXPECT_EQ(seen[2].effective_position(), 0);
-  EXPECT_EQ(seen[2].size, 8u);
-  EXPECT_EQ(executor_.prepare_calls.load(), 3u);
-  EXPECT_EQ(executor_.clone_calls.load(), cached_clones);
-  EXPECT_NE(
-      executor_.supplied()[seed_slices], executor_.supplied()[seed_slices + 2]);
-  replay["request_id"] = 3;
-  replay["session_id"] = "new-images";
-  send(replay);
-  const auto fresh = terminal(3);
-  ASSERT_TRUE(fresh.value("done", false)) << fresh;
-  EXPECT_EQ(fresh.at("reused_prompt_positions"), 0);
-  EXPECT_EQ(fresh.at("prefilled_prompt_positions"), 13);
-  EXPECT_EQ(executor_.clone_calls.load(), cached_clones);
-  // Even removing the image from a resident history requires cold replay.
-  auto text = generate(4, 1);
-  text["session_id"] = "images";
-  send(text);
-  const auto text_done = terminal(4);
-  ASSERT_TRUE(text_done.value("done", false)) << text_done;
-  EXPECT_EQ(text_done.at("reused_prompt_tokens"), 0);
-  EXPECT_EQ(text_done.at("prompt_positions"), 2);
-  EXPECT_EQ(executor_.seen().back().effective_position(), 0);
-  EXPECT_NE(executor_.seen().back().session, seen[2].session);
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(
-    ImageProtocolTest,
-    QueuedAndInFlightPreparationCancellationAvoidsPrefill) {
-  auto preparing = gate();
-  auto queued = gate();
-  executor_.before_prepare = [preparing](std::size_t call) {
-    if (call == 1)
-      preparing->pause();
-  };
-  hooks_.checkpoint = [queued](Checkpoint point, uint64_t id) {
-    if (point == Checkpoint::Bound && id == 2)
-      queued->signal();
-  };
-  start();
-  send(image_request(1));
-  ASSERT_TRUE(preparing->wait());
-  send(image_request(2));
-  ASSERT_TRUE(queued->wait());
-  // This control-thread fence proves the second preparation has been queued
-  // to Runner's inbox; its engine cannot submit scheduler work while blocked.
-  send({{"op", "close"}, {"request_id", 6}, {"session_id", "unrelated"}});
-  const auto fence = receive();
-  ASSERT_EQ(fence.at("request_id"), 6);
-  ASSERT_TRUE(fence.value("closed", false));
-  send({{"op", "cancel"}, {"request_id", 3}, {"target_request_id", 2}});
-  EXPECT_EQ(receive().at("request_id"), 3);
-  send({{"op", "cancel"}, {"request_id", 4}, {"target_request_id", 1}});
-  // Queued cancellation may already publish its terminal before the next ACK.
-  std::map<uint64_t, int> terminals;
-  bool acknowledged = false;
-  while (!acknowledged) {
-    auto message = receive();
-    const auto id = message.at("request_id").get<uint64_t>();
-    if (id == 4) {
-      EXPECT_TRUE(message.value("cancelled", false));
-      acknowledged = true;
-    } else {
-      ASSERT_TRUE(id == 1 || id == 2) << message;
-      EXPECT_TRUE(message.value("cancelled", false));
-      EXPECT_EQ(++terminals[id], 1);
-    }
-  }
-  EXPECT_TRUE(executor_.seen().empty());
-  EXPECT_TRUE(executor_.opened().empty());
-  preparing->release();
-  while (terminals.size() < 2) {
-    auto message = receive();
-    const auto id = message.at("request_id").get<uint64_t>();
-    ASSERT_TRUE(id == 1 || id == 2) << message;
-    EXPECT_TRUE(message.value("done", false));
-    EXPECT_TRUE(message.value("cancelled", false));
-    EXPECT_EQ(message.at("completion_tokens"), 0);
-    EXPECT_EQ(++terminals[id], 1);
-  }
-  EXPECT_EQ(executor_.prepare_calls.load(), 1u);
-  EXPECT_TRUE(executor_.seen().empty());
-  send(image_request(5, 1));
-  EXPECT_TRUE(terminal(5).value("done", false));
-  EXPECT_EQ(finish(), 0);
-}
-
-TEST_F(ImageProtocolTest, CloseDuringPreparationFencesReplacementAndTerminal) {
-  auto preparing = gate();
-  executor_.before_prepare = [preparing](std::size_t call) {
-    if (call == 1)
-      preparing->pause();
-  };
-  start();
-  auto old = image_request(1);
-  old["session_id"] = "images";
-  send(old);
-  ASSERT_TRUE(preparing->wait());
-  send({{"op", "close"}, {"request_id", 2}, {"session_id", "images"}});
-  auto next = image_request(3, 1);
-  next["session_id"] = "images";
-  send(next);
-  send({{"op", "close"}, {"request_id", 4}, {"session_id", "unrelated"}});
-  const auto unrelated = receive();
-  ASSERT_EQ(unrelated.at("request_id"), 4);
-  ASSERT_TRUE(unrelated.value("closed", false));
-  EXPECT_EQ(executor_.prepare_calls.load(), 1u);
-  EXPECT_TRUE(executor_.seen().empty());
-  EXPECT_TRUE(executor_.opened().empty());
-  preparing->release();
-  const auto cancelled = receive();
-  ASSERT_EQ(cancelled.at("request_id"), 1);
-  EXPECT_TRUE(cancelled.value("done", false));
-  EXPECT_TRUE(cancelled.value("cancelled", false));
-  EXPECT_EQ(cancelled.at("completion_tokens"), 0);
-  const auto closed = receive();
-  ASSERT_EQ(closed.at("request_id"), 2);
-  EXPECT_TRUE(closed.value("closed", false));
-  const auto replacement = terminal(3);
-  ASSERT_TRUE(replacement.value("done", false)) << replacement;
-  EXPECT_FALSE(replacement.value("cancelled", false));
-  EXPECT_EQ(replacement.at("reused_prompt_positions"), 0);
-  EXPECT_EQ(replacement.at("prefilled_prompt_positions"), 13);
-  EXPECT_EQ(executor_.prepare_calls.load(), 2u);
-  EXPECT_EQ(executor_.opened().size(), 1u);
-  EXPECT_EQ(finish(), 0);
-}
 
 TEST_F(ProtocolTest, InterleavedIdsAndOutOfOrderCompletion) {
   start();

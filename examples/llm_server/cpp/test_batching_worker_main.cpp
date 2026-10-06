@@ -7,8 +7,8 @@
  */
 
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
-#include <executorch/examples/llm_server/cpp/test_image_executor.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
+#include <executorch/extension/llm/batching/test/fake_executor.h>
 
 #include <pytorch/tokenizers/tokenizer.h>
 
@@ -17,7 +17,6 @@
 #include <chrono>
 #include <csignal>
 #include <fstream>
-#include <iterator>
 #include <map>
 #include <mutex>
 #include <set>
@@ -35,20 +34,17 @@ class InitialBatchGate final : public batching::Scheduler {
  public:
   explicit InitialBatchGate(bool gate)
       : inner_(batching::DecodeFirstScheduler::create(512, 8, 256)),
-        preparation_(batching::DecodeFirstScheduler::create()),
         released_(!gate) {}
 
   bool submit(std::vector<batching::Task> tasks) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    // Preparation must finish before either session can reach the batch gate.
-    if (tasks.size() == 1 &&
-        std::holds_alternative<batching::PrepareTask>(tasks.front())) {
-      return preparation_->submit(std::move(tasks));
-    }
     std::set<batching::SessionId> ids;
     if (!released_) {
       for (const auto& task : tasks) {
-        ids.insert(std::get<batching::ExecutionTask>(task).input.sid);
+        if (const auto* execution =
+                std::get_if<batching::ExecutionTask>(&task)) {
+          ids.insert(execution->input.sid);
+        }
       }
     }
     if (!inner_->submit(std::move(tasks))) {
@@ -66,21 +62,12 @@ class InitialBatchGate final : public batching::Scheduler {
 
   bool has_work() const override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return preparation_->has_work() || (released_ && inner_->has_work());
+    return released_ && inner_->has_work();
   }
 
   std::optional<batching::Work> get_work() override {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (auto work = preparation_->get_work()) {
-      return work;
-    }
     return released_ ? inner_->get_work() : std::nullopt;
-  }
-
-  std::vector<batching::Task> cancel_task(batching::TaskId tid) override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto dropped = preparation_->cancel_task(tid);
-    return dropped.empty() ? inner_->cancel_task(tid) : std::move(dropped);
   }
 
   std::vector<batching::Task> cancel(batching::SessionId sid) override {
@@ -89,14 +76,15 @@ class InitialBatchGate final : public batching::Scheduler {
     return inner_->cancel(sid);
   }
 
+  std::vector<batching::Task> cancel_task(batching::TaskId tid) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return inner_->cancel_task(tid);
+  }
+
   std::vector<batching::Task> clear() override {
     std::lock_guard<std::mutex> lock(mutex_);
     queued_.clear();
-    auto dropped = inner_->clear();
-    auto preparation = preparation_->clear();
-    std::move(
-        preparation.begin(), preparation.end(), std::back_inserter(dropped));
-    return dropped;
+    return inner_->clear();
   }
 
   std::size_t max_prefill_chunk_size() const override {
@@ -105,20 +93,17 @@ class InitialBatchGate final : public batching::Scheduler {
 
  private:
   std::unique_ptr<batching::DecodeFirstScheduler> inner_;
-  std::unique_ptr<batching::DecodeFirstScheduler> preparation_;
   mutable std::mutex mutex_;
   std::set<batching::SessionId> queued_;
   bool released_;
 };
 
-class TraceExecutor final
-    : public executorch::examples::llm_server::testing::ImageExecutor {
+class TraceExecutor final : public batching::testing::FakeExecutor {
  public:
-  explicit TraceExecutor(std::ostream* trace, bool images)
-      : ImageExecutor(images), trace_(trace) {}
+  explicit TraceExecutor(std::ostream* trace) : trace_(trace) {}
 
   std::optional<batching::SessionId> open_session() override {
-    auto session = ImageExecutor::open_session();
+    auto session = FakeExecutor::open_session();
     if (session) {
       history_.emplace(*session, std::vector<batching::Token>{});
     }
@@ -127,7 +112,7 @@ class TraceExecutor final
 
   void close_session(batching::SessionId session) override {
     history_.erase(session);
-    ImageExecutor::close_session(session);
+    FakeExecutor::close_session(session);
   }
 
   std::optional<batching::SessionId> clone(
@@ -160,25 +145,24 @@ class TraceExecutor final
     }
     // Give subprocess readers time to exercise cancellation/backpressure.
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    if (!ImageExecutor::execute(batch, output)) {
+    if (!FakeExecutor::execute(batch, output)) {
       return false;
     }
     for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
       const auto& input = batch.inputs[i];
       const auto it = history_.find(input.sid);
-      const auto position = static_cast<std::size_t>(
-          static_cast<std::int64_t>(input.position) +
-          static_cast<std::int64_t>(input.offset));
+      const auto position =
+          static_cast<std::size_t>(input.position) + input.offset;
       if (it == history_.end() || position > it->second.size()) {
         return false;
       }
       auto& tokens = it->second;
       tokens.resize(position);
-      for (std::size_t offset = input.offset;
-           offset < input.offset + input.size;
-           ++offset) {
-        tokens.push_back(input_token(*input.prepared, offset));
-      }
+      const auto& source = *std::get<batching::TokenInputPtr>(input.payload);
+      tokens.insert(
+          tokens.end(),
+          source.begin() + input.offset,
+          source.begin() + input.offset + input.size);
       if (output.outputs[i] && !output.outputs[i]->tokens.empty()) {
         const auto& generated = output.outputs[i]->tokens;
         tokens.insert(tokens.end(), generated.begin(), generated.end() - 1);
@@ -229,7 +213,6 @@ int main(int argc, char** argv) {
   bool gate = false;
   bool stop_immediately = false;
   bool prefix_cache = false;
-  bool images = false;
   std::string trace_path;
   for (int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
@@ -239,8 +222,6 @@ int main(int argc, char** argv) {
       stop_immediately = true;
     } else if (arg == "--prefix-cache") {
       prefix_cache = true;
-    } else if (arg == "--images") {
-      images = true;
     } else if (arg == "--trace" && i + 1 < argc) {
       trace_path = argv[++i];
     } else {
@@ -255,7 +236,7 @@ int main(int argc, char** argv) {
     }
   }
   std::signal(SIGPIPE, SIG_IGN);
-  TraceExecutor executor(trace.is_open() ? &trace : nullptr, images);
+  TraceExecutor executor(trace.is_open() ? &trace : nullptr);
   if (stop_immediately) {
     executor.stop_token = 9;
   }
@@ -264,9 +245,6 @@ int main(int argc, char** argv) {
   config.max_sessions = 8;
   config.max_context_length = 4096;
   config.prefix_cache_capacity = prefix_cache ? 2 : 0;
-  if (images) {
-    TraceExecutor::enable_images(config);
-  }
   executor.capacity = static_cast<int>(
       config.max_sessions +
       (prefix_cache ? config.prefix_cache_capacity + 1 : 0));

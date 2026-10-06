@@ -66,10 +66,6 @@ class WorkerStats:
     prefill_tok_s: float = 0.0
     decode_tok_s: float = 0.0
     vision_encoder_ms: Optional[float] = None
-    # Image-expanded decoder positions, separate from tokenizer token identity.
-    prompt_positions: Optional[int] = None
-    reused_prompt_positions: Optional[int] = None
-    prefilled_prompt_positions: Optional[int] = None
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
@@ -95,9 +91,6 @@ class WorkerStats:
             prefill_tok_s=msg.get("prefill_tok_s", 0.0),
             decode_tok_s=msg.get("decode_tok_s", 0.0),
             vision_encoder_ms=msg.get("vision_encoder_ms"),
-            prompt_positions=msg.get("prompt_positions"),
-            reused_prompt_positions=msg.get("reused_prompt_positions"),
-            prefilled_prompt_positions=msg.get("prefilled_prompt_positions"),
             cancelled=bool(msg.get("cancelled", False)),
             generated_token_ids=msg.get("generated_token_ids"),
         )

@@ -20,8 +20,6 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from .errors import APIError
-from .image_input import ImageLimits, MAX_IMAGE_DIMENSION, validate_image
 from .worker_client import (
     _decode_worker_json,
     _PROCESS_WAIT_TIMEOUT_SECONDS,
@@ -29,6 +27,7 @@ from .worker_client import (
     WorkerError,
     WorkerStats,
 )
+
 
 logger = logging.getLogger(__name__)
 _MAX_REQUEST_BYTES = 1024 * 1024
@@ -233,7 +232,6 @@ class MultiplexedWorkerClient:
         mailbox_capacity: int = 64,
         max_buffered_chars: int = 1024 * 1024,
         max_message_bytes: int = _MAX_MESSAGE_BYTES,
-        image_limits: Optional[ImageLimits] = None,
     ):
         _validate_limits(
             max_named_sessions=max_named_sessions,
@@ -245,8 +243,6 @@ class MultiplexedWorkerClient:
         if proc.stdin is None or proc.stdout is None:
             raise WorkerError("worker requires stdin and stdout pipes")
         self._loop = asyncio.get_running_loop()
-        self.image_limits = image_limits
-        self.supports_images = image_limits is not None
         self.max_named_sessions = max_named_sessions
         self.max_inflight_requests = max_inflight_requests
         self._mailbox_capacity = mailbox_capacity
@@ -564,9 +560,6 @@ class MultiplexedWorkerClient:
             "completion_tokens",
             "reused_prompt_tokens",
             "prefilled_prompt_tokens",
-            "prompt_positions",
-            "reused_prompt_positions",
-            "prefilled_prompt_positions",
         ):
             if key in msg and (type(msg[key]) is not int or msg[key] < 0):
                 raise WorkerError(f"invalid worker statistic: {key}")
@@ -713,7 +706,6 @@ class MultiplexedWorkerClient:
                 "stop": list(getattr(config, "stop", []) or []),
             }
             segments = getattr(config, "prompt_segments", None)
-            _validate_image_segments(segments, self.image_limits)
             request["prompt_segments" if segments is not None else "prompt"] = (
                 segments if segments is not None else prompt
             )
@@ -774,39 +766,6 @@ class MultiplexedWorkerClient:
             raise WorkerError("worker could not be reaped after termination")
 
 
-def _validate_image_segments(segments, limits: Optional[ImageLimits]) -> None:
-    images = [segment["image"] for segment in segments or [] if "image" in segment]
-    if not images:
-        return
-    if limits is None:
-        raise WorkerError("worker does not support images", code="invalid_argument")
-    if len(images) > min(1, limits.max_images):
-        raise WorkerError("at most one image is supported", code="invalid_argument")
-    for image in images:
-        if not isinstance(image, dict):
-            raise WorkerError("image must be an object", code="invalid_argument")
-        try:
-            validate_image(image.get("mime_type"), image.get("data"), limits)
-        except APIError as error:
-            raise WorkerError(str(error), code="invalid_argument") from error
-
-
-def _read_image_limits(msg) -> Optional[ImageLimits]:
-    if "supports_images" in msg and type(msg["supports_images"]) is not bool:
-        raise WorkerError("invalid supports_images capability")
-    if msg.get("supports_images") is not True:
-        return None
-    try:
-        return ImageLimits(
-            max_images=msg.get("max_images"),
-            max_image_bytes=msg.get("max_image_bytes"),
-            max_image_pixels=msg.get("max_image_pixels"),
-            max_image_dimension=msg.get("max_image_dimension", MAX_IMAGE_DIMENSION),
-        )
-    except ValueError as error:
-        raise WorkerError(f"invalid image capability: {error}") from error
-
-
 async def spawn_multiplexed_worker(
     cmd: Sequence[str],
     env: Optional[dict] = None,
@@ -843,10 +802,8 @@ async def spawn_multiplexed_worker(
                 "worker does not support required multiplexing",
                 code="unsupported_multiplexing",
             )
-        image_limits = _read_image_limits(msg)
         return MultiplexedWorkerClient(
             proc,
-            image_limits=image_limits,
             max_named_sessions=msg.get("max_named_sessions", 0),
             max_inflight_requests=msg.get("max_inflight_requests", 64),
             mailbox_capacity=mailbox_capacity,

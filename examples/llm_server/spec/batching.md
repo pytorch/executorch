@@ -1,16 +1,16 @@
-# Batching-Backed Serving
+# Batching-Backed Text Serving
 
 The multiplexed worker connects the existing OpenAI server to one shared
 `batching::Runner`. Each persistent public key owns a move-only batching session;
 anonymous requests get independent ephemeral sessions. The serving layer handles
-source preparation, history reconciliation, rendering, and delivery. Model
-preparation, scheduling, and generation remain inside the runner and executor.
+text preparation, history reconciliation, rendering, and delivery. Scheduling and
+speculative drafting/verification remain inside the runner and executor.
 
 ## Supported Boundary
 
-- Prompts are full inputs, made from ordered text, exact token-ID, and supported
-  image segments. Text segments are encoded separately without implicit BOS/EOS.
-  Chat templates must supply the model's required markers.
+- Prompts are full inputs, made from ordered text and exact token-ID segments.
+  Text segments are encoded separately without implicit BOS/EOS. Chat templates
+  must supply the model's required markers.
 - Exact strict history extensions reuse the existing session. Equal, mismatched,
   or dirty histories cold-replay. Reset destroys the old session and reopens
   under the same reserved key; failed reopen leaves that key unavailable.
@@ -34,53 +34,10 @@ preparation, scheduling, and generation remain inside the runner and executor.
   stdout reader and bounded per-request mailboxes. Native HTTP consumers read
   those streams directly, without an executor or a second token queue. A paused
   consumer does not stall peers, but consumers must not block the event loop.
-- Image support is capability-gated; the default `ModuleExecutor` remains
-  text-only. An image integration supplies bounded CPU preprocessing and an
-  image-capable executor. Initial transport support is one inline JPEG/PNG image
-  per full history, with no remote fetching or filesystem access. Audio remains
-  unsupported. The existing Muse image path remains on its legacy worker; this
-  interface does not adapt its exports or promise packed image batching.
-
-## Preparation and Images
-
-Every unprepared prompt, including text, passes through scheduled executor
-preparation before decoder state is opened or replaced. The synchronous
-`prepare(input, out)` hook returns `bool`; failure leaves existing history intact.
-Prepared backing is immutable, owned, and executor-defined. Runner and Scheduler
-see decoder-position counts and slice ranges, not tokens, tensors, or embeddings.
-Generated decode tokens use the executor's lightweight `wrap_tokens` hook without
-another scheduled preparation operation.
-
-Text prefix reuse prepares the full prompt, then executes only the uncached
-range. Cache identity and capture use the full token prompt. Both exact hits and
-sampled requests retain the final-token forward. Image-bearing incoming or
-resident history cold-replays without token-keyed cache lookup or capture.
-
-Native image segments have the sole-key form
-`{"image":{"mime_type":"image/png","data":"<canonical base64>"}}`, alongside
-`{"text":"..."}` and `{"ids":[1,2]}`. Readiness advertises `supports_images`,
-`max_images`, `max_image_bytes`, `max_image_dimension`, and `max_image_pixels`.
-The JSONL frame limit remains 1 MiB including JSON/base64 overhead. HTTP content
-uses inline `image_url` data URIs; image bindings must survive template rendering
-exactly once and in order. Missing or altered bindings fail instead of dropping
-image content.
-
-Native HTTP bounds body aggregation before parsing; legacy body limits remain
-unchanged. Source image dimensions are checked before the bounded CPU hook runs
-on the serving control path, never the model engine or delivery thread. The hook
-owns codec validation and its scratch-memory bound. Executor construction fixes
-preparation output and workspace bounds. Aggregate reservations include queued
-CPU input and follow prepared ownership; generation admission protects token
-feedback capacity from competing preparation work.
-
-A synchronous image encoder cannot be preempted: cancellation during encoding
-is observed after return and discards the result. The existing request admission,
-same-key fences, and single terminal lifecycle cover both preparation and decoding.
-
-`prompt_tokens` counts text tokenizer IDs; `prompt_positions` counts full prepared
-decoder positions. `reused_prompt_positions` and `prefilled_prompt_positions`
-report decoder work. Token-only partial-prefill accounting is not inferred from
-opaque image rows.
+- Image/audio preparation is not implemented by this worker. The existing
+  muse-glimmer image-serving path remains on its legacy worker. This change does
+  not make existing glimmer embedding-forward exports compatible with the packed
+  `ModuleExecutor` or implement solo/DFlash executors for MLX or CUDA.
 
 ## Select the Worker Explicitly
 
@@ -168,11 +125,8 @@ These checks prove concurrent admission and a multi-session executor batch,
 including requests through the OpenAI endpoint. They also exercise cancellation,
 slow Python consumer isolation, exact-ID continuation, reset/close, out-of-order reserved
 request IDs, creation-only prefix caching through the Python runtime, and
-unknown-versus-empty replay metadata. The test worker's `--images` option enables
-a synthetic bounded CPU preprocessor and an executor-private image-row payload.
-Image checks exercise ordered content, expanded positions, cold replay, limits,
-and request lifecycle through native and HTTP clients. They do not establish
-real image-codec correctness or a combined real-model forward.
+unknown-versus-empty replay metadata. They do not prove a combined real-model
+forward.
 
 ## Real-Model Checks
 

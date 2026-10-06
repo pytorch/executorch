@@ -14,6 +14,7 @@
 #include <random>
 #include <utility>
 
+#include <executorch/extension/llm/batching/detail/input_validation.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -65,7 +66,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
   // own writes, so consecutive chunks of one prompt abut and only the first can
   // reopen committed ground. Every input is checked before any is truncated, so
   // a refusal leaves the cache untouched.
-  if (!validate_batch(batch)) {
+  if (!detail::validate_batch(batch)) {
     return Error::InvalidArgument;
   }
   Step step;
@@ -88,10 +89,10 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
       return Error::InvalidArgument;
     }
     const std::int32_t seq_id = seq_it->second.seq_id;
-    const auto& tokens =
-        static_cast<const TokenPreparedInput&>(*input.prepared).tokens();
-    if (input.size == 0 || input.offset > tokens.size() ||
-        input.size > tokens.size() - input.offset) {
+    const auto* tokens = std::get_if<TokenInputPtr>(&input.payload);
+    const auto* token_input = tokens && *tokens ? tokens->get() : nullptr;
+    if (!token_input || input.size == 0 || input.offset > token_input->size() ||
+        input.size > token_input->size() - input.offset) {
       ET_LOG(
           Error,
           "build_step: session %" PRId64 " gave a slice its tokens do not hold",
@@ -149,7 +150,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
       return Error::OutOfResources;
     }
 
-    const Token* slice = tokens.data() + input.offset;
+    const Token* slice = token_input->data() + input.offset;
     for (std::size_t k = 0; k < input.size; ++k) {
       step.tokens.push_back(static_cast<std::int64_t>(slice[k]));
     }
@@ -171,30 +172,6 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
   return step;
 }
 
-namespace {
-PreparationConfig module_preparation_config(
-    int max_sessions,
-    int max_positions) {
-  const auto positions = static_cast<std::uint64_t>(max_positions);
-  const auto output = positions * sizeof(Token) + sizeof(TokenPreparedInput) +
-      sizeof(std::vector<Token>);
-  const auto workspace = positions * (sizeof(Token) + sizeof(MultimodalInput)) +
-      sizeof(PreparationInput);
-  // create() bounds sessions * positions. Clamp byte bounds for 32-bit hosts.
-  const auto clamp = [](std::uint64_t bytes) {
-    return static_cast<std::size_t>(std::min<std::uint64_t>(
-        bytes, std::numeric_limits<std::size_t>::max()));
-  };
-  return PreparationConfig{
-      static_cast<std::size_t>(positions),
-      clamp(output),
-      clamp(workspace),
-      clamp(
-          static_cast<std::uint64_t>(max_sessions) * (workspace + 2 * output)),
-      0};
-}
-} // namespace
-
 ModuleExecutor::ModuleExecutor(
     std::unique_ptr<Module> module,
     std::shared_ptr<cache::Cache> cache,
@@ -205,8 +182,7 @@ ModuleExecutor::ModuleExecutor(
     std::int32_t vocab_size,
     int max_step_tokens,
     LogitsToKeepMode logits_to_keep_mode)
-    : Executor(module_preparation_config(max_sessions, max_session_tokens)),
-      install_guard_(cache),
+    : install_guard_(cache),
       module_(std::move(module)),
       ctl_(cache->as<cache::BatchControl>()),
       max_sessions_(max_sessions),

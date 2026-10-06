@@ -130,7 +130,7 @@ class ET_EXPERIMENTAL DecodeFirstScheduler : public Scheduler {
         if (auto* preparation = std::get_if<PrepareTask>(&queued.task)) {
           preparation->input.reset();
         } else {
-          queued.execution().input.prepared.reset();
+          queued.execution().input.payload = TokenInputPtr{};
         }
         pending_.erase(it);
       }

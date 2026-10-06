@@ -39,7 +39,6 @@ struct TextRequest {
   GenerationOptions options;
   std::function<void(GenerationEvent)> sink;
   std::vector<batching::Token> prompt;
-  std::optional<batching::Token> previous_token;
   std::vector<batching::Token> raw_tokens;
   std::vector<batching::Token> history;
   std::unique_ptr<TextOutput> output;
@@ -49,7 +48,6 @@ struct TextRequest {
   batching::MetricsTime submitted = batching::MetricsClock::now();
   std::size_t start_position = 0;
   bool started = false;
-  bool has_images = false;
   bool capture_lane = false;
   std::optional<batching::PrefixCache::PromptCapture> prefix_capture;
 
@@ -74,7 +72,6 @@ struct TextRequest {
 
 struct RequestState {
   enum class Delivery { Streaming, Settling, Finalizing };
-  enum class Preparation { None, Pending, Ready, Consumed };
 
   RequestState(GenerationRequest&& request, const ServingRuntimeConfig& limits)
       : fence_key(request.key),
@@ -207,13 +204,6 @@ struct RequestState {
   // finalized is published, until delivery cleanup. Engine callbacks and
   // handles never read it.
   GenerationCompletion completion;
-  // Preparation state is protected by the runtime mutex. Once consumed,
-  // control owns the result until dispatcher callback cleanup.
-  Preparation preparation = Preparation::None;
-  batching::PreparedInputPtr prepared;
-  std::size_t prepared_offset = 0;
-  std::size_t prepared_reservation = 0;
-  bool opening = false;
 };
 
 } // namespace detail
@@ -232,7 +222,6 @@ struct ServingRuntime::Impl {
     RequestId active_request = 0;
     std::vector<batching::Token> logical_history;
     bool dirty = false;
-    bool has_images = false;
   };
 
   struct Command {
@@ -243,7 +232,6 @@ struct ServingRuntime::Impl {
     Request request;
     RequestId fence_through = 0;
     bool processed = false;
-    bool waiting_preparation = false;
     LifecycleResult result = std::nullopt;
   };
 
@@ -257,7 +245,7 @@ struct ServingRuntime::Impl {
             scheduler && config.max_sessions > 0 &&
             config.max_pending_operations > 0 && config.max_requests > 0 &&
             config.max_events_per_request > 0 &&
-            config.max_tokens_per_request > 0 && config.max_prepared_bytes > 0),
+            config.max_tokens_per_request > 0),
         tokenizer_(tokenizer),
         prefix_cache_(config.prefix_cache_capacity) {
     if (valid_config_) {
@@ -402,7 +390,6 @@ struct ServingRuntime::Impl {
       it->second.incarnation = next_incarnation_++;
       it->second.logical_history.clear();
       it->second.dirty = false;
-      it->second.has_images = false;
       retired = std::move(it->second.session);
       it->second.session.reset();
     }
@@ -551,13 +538,9 @@ struct ServingRuntime::Impl {
     if (text.started) {
       // The carried pending token is not physically resident: charge its
       // forward pass as prompt work, rather than counting it as free reuse.
-      stats.reused_prompt_positions =
-          std::min(text.start_position, stats.prompt_positions);
-      stats.prefilled_prompt_positions = completion.metrics.n_prefilled_tokens;
-      if (!text.has_images) {
-        stats.reused_prompt_tokens = stats.reused_prompt_positions;
-        stats.prefilled_prompt_tokens = stats.prefilled_prompt_positions;
-      }
+      stats.reused_prompt_tokens =
+          std::min(text.start_position, stats.prompt_tokens);
+      stats.prefilled_prompt_tokens = completion.metrics.n_prefilled_tokens;
     }
     const bool completed = terminal.finish_reason == FinishReason::Stop ||
         terminal.finish_reason == FinishReason::Length;
@@ -569,11 +552,11 @@ struct ServingRuntime::Impl {
     }
     // Execution can finish a batch after cancellation retires its logical
     // result. Physical work alone is not proof that Runner retained the prompt.
-    const bool full_prompt = stats.prompt_positions > 0 &&
+    const bool full_prompt = stats.prompt_tokens > 0 &&
         (completion.metrics.n_generated_tokens > 0 ||
          (completion.position &&
           *completion.position >=
-              static_cast<batching::Position>(stats.prompt_positions)));
+              static_cast<batching::Position>(stats.prompt_tokens)));
     const bool all_output =
         static_cast<std::size_t>(completion.metrics.n_generated_tokens) ==
         text.raw_tokens.size();
@@ -592,7 +575,6 @@ struct ServingRuntime::Impl {
     } else {
       it->second.logical_history.clear();
     }
-    it->second.has_images = text.has_images;
     it->second.dirty = !completed || !full_prompt || !all_output ||
         (text.output && text.output->string_stopped());
   }
@@ -636,10 +618,26 @@ struct ServingRuntime::Impl {
         };
   }
 
-  LifecycleResult prepare_text(
-      const Request& request,
-      batching::PreparationInput& input) {
+  LifecycleResult prepare_text(const Request& request) {
     auto& text = *request->text;
+    const SessionKey key = request->request.key
+        ? SessionKey(*request->request.key)
+        : SessionKey(request->id);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (lifecycle_ != Lifecycle::Running || request->cancelled.load()) {
+        return std::nullopt;
+      }
+      auto it = sessions_.find(key);
+      if (it != sessions_.end() && it->second.active_request) {
+        return ServingError{
+            ErrorCode::SessionBusy, "session already has an active request"};
+      }
+      if (it != sessions_.end() && it->second.phase != SessionPhase::Open) {
+        return ServingError{
+            ErrorCode::NotReady, "session is unavailable; reset first"};
+      }
+    }
     const auto& options = text.options;
     if ((options.max_new_tokens && *options.max_new_tokens <= 0) ||
         !std::isfinite(options.sampling.temperature) ||
@@ -658,44 +656,16 @@ struct ServingRuntime::Impl {
     const auto context_limit = config_.max_context_length
         ? std::min(config_.max_context_length, position_limit)
         : position_limit;
-    auto prepared = detail::prepare_prompt(
-        *tokenizer_,
-        text.input,
-        context_limit,
-        &config_,
-        &runner_->preparation_config());
+    auto prepared =
+        detail::prepare_prompt(*tokenizer_, text.input, context_limit);
     if (!prepared.ok()) {
       return ServingError{
           ErrorCode::InvalidArgument, "prompt preparation failed"};
     }
     text.prompt = std::move(prepared->tokens);
-    text.has_images = prepared->has_images;
-    text.previous_token = prepared->previous_token;
-    input = std::move(prepared->input);
     text.input = {};
     text.terminal.stats.prompt_tokens = text.prompt.size();
-    return std::nullopt;
-  }
-
-  LifecycleResult select_text(const Request& request) {
-    auto& text = *request->text;
-    const auto& options = text.options;
-    const SessionKey key = request->request.key
-        ? SessionKey(*request->request.key)
-        : SessionKey(request->id);
-    const auto position_limit = static_cast<std::size_t>(
-        std::numeric_limits<batching::Position>::max());
-    const auto context_limit = config_.max_context_length
-        ? std::min(config_.max_context_length, position_limit)
-        : position_limit;
-    const auto positions = request->prepared->position_count();
-    text.terminal.stats.prompt_positions = positions;
-    if (positions == 0 || positions >= context_limit ||
-        (!text.has_images && positions != text.prompt.size())) {
-      return ServingError{
-          ErrorCode::InvalidArgument, "invalid prepared prompt length"};
-    }
-    const auto available = context_limit - positions;
+    const auto available = context_limit - text.prompt.size();
     const auto wanted = options.max_new_tokens.value_or(
         config_.max_context_length
             ? static_cast<std::int32_t>(
@@ -717,7 +687,7 @@ struct ServingRuntime::Impl {
         options.stop_tokens.end());
     text.output = std::make_unique<detail::TextOutput>(
         *tokenizer_,
-        text.previous_token,
+        text.prompt.back(),
         config.stop_tokens,
         options.stop_strings,
         [state = &text](const std::string& piece) {
@@ -730,55 +700,29 @@ struct ServingRuntime::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       if (it != sessions_.end()) {
-        plan = (text.has_images || it->second.has_images)
-            ? PrefillPlan{PrefillPlan::kFull, 0, "image_history"}
-            : plan_prefill(
-                  it->second.logical_history, text.prompt, it->second.dirty);
-        reset = it->second.session && plan.action == PrefillPlan::kFull &&
-            (it->second.dirty || it->second.has_images ||
-             !it->second.logical_history.empty() ||
+        plan = plan_prefill(
+            it->second.logical_history, text.prompt, it->second.dirty);
+        reset = plan.action == PrefillPlan::kFull &&
+            (it->second.dirty || !it->second.logical_history.empty() ||
              it->second.session->position() != 0);
       }
     }
     text.terminal.stats.session_reset_reason = plan.reason;
-    request->prepared_offset = plan.suffix_start;
+    request->request.delta.assign(
+        text.prompt.begin() + plan.suffix_start, text.prompt.end());
     // All fallible preparation precedes destructive cold replacement.
     if (request->cancelled.load()) {
       return std::nullopt;
     }
     if (reset) {
-      // This replacement belongs to the same logical request, unlike an
-      // external reset: preserve its claim and do not cancel its own input.
-      std::optional<batching::Session> retired;
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto& slot = sessions_.at(key);
-        slot.phase = SessionPhase::Reopening;
-        slot.logical_history.clear();
-        slot.has_images = false;
-        slot.dirty = false;
-        retired = std::move(slot.session);
-        slot.session.reset();
-      }
-      retired.reset();
-      auto opened = runner_->open_session_async().get();
-      std::lock_guard<std::mutex> lock(mutex_);
-      auto& slot = sessions_.at(key);
-      slot.session = std::move(opened);
-      slot.phase =
-          slot.session ? SessionPhase::Open : SessionPhase::Unavailable;
-      if (!slot.session) {
-        return ServingError{
-            ErrorCode::CapacityExceeded,
-            "session reopen failed; old state is gone and key is unavailable"};
-      }
+      Command command{Operation::Reset, *request->request.key, {}, {}};
+      return process(command);
     }
     return std::nullopt;
   }
 
   std::optional<batching::PrefixMatch> lookup_prefix(const Request& request) {
-    if (!request->text || request->text->has_images ||
-        config_.prefix_cache_capacity == 0) {
+    if (!request->text || config_.prefix_cache_capacity == 0) {
       return std::nullopt;
     }
     // A lookup clone uses the new request's reserved working-session slot.
@@ -818,6 +762,22 @@ struct ServingRuntime::Impl {
   }
 
   void generate(const Request& request) {
+    if (request->text) {
+      LifecycleResult error;
+#if ET_HAS_EXCEPTIONS
+      try {
+#endif
+        error = prepare_text(request);
+#if ET_HAS_EXCEPTIONS
+      } catch (...) {
+        error = ServingError{ErrorCode::Internal, "prompt preparation failed"};
+      }
+#endif
+      if (error) {
+        request->reject(std::move(error));
+        return;
+      }
+    }
     const SessionKey key = request->request.key
         ? SessionKey(*request->request.key)
         : SessionKey(request->id);
@@ -851,121 +811,6 @@ struct ServingRuntime::Impl {
     }
     it->second.active_request = request->id;
     request->completion.incarnation = it->second.incarnation;
-    request->opening = opening;
-    const auto& preparation = runner_->preparation_config();
-    const auto available = config_.max_prepared_bytes - prepared_bytes_;
-    // Raw CPU input (including container capacity) can be much larger than
-    // prepared output. Runner validates it against the workspace bound before
-    // queueing. Reserve both bounds before CPU preparation, without overflow.
-    if (preparation.max_retained_bytes > available ||
-        preparation.max_workspace_bytes >
-            available - preparation.max_retained_bytes) {
-      lock.unlock();
-      request->reject(ServingError{
-          ErrorCode::CapacityExceeded, "prepared input memory limit reached"});
-      return;
-    }
-    const auto reservation =
-        preparation.max_retained_bytes + preparation.max_workspace_bytes;
-    prepared_bytes_ += reservation;
-    request->prepared_reservation = reservation;
-    lock.unlock();
-    batching::PreparationInput input;
-    LifecycleResult error;
-#if ET_HAS_EXCEPTIONS
-    try {
-#endif
-      if (request->text) {
-        error = prepare_text(request, input);
-      } else {
-        input.segments.emplace_back(std::move(request->request.delta));
-      }
-      if (!error && !preparation.input_retained_bytes(input)) {
-        error = ServingError{
-            ErrorCode::InvalidArgument, "CPU input exceeds preparation bounds"};
-      }
-      if (error || request->cancelled.load()) {
-        request->reject(std::move(error));
-        return;
-      }
-      {
-        std::lock_guard<std::mutex> guard(mutex_);
-        request->preparation = detail::RequestState::Preparation::Pending;
-      }
-      // Register before submission: rejection is allowed to complete inline.
-      runner_->prepare_async(
-          std::move(input),
-          std::shared_ptr<const std::atomic<bool>>(
-              request, &request->cancelled),
-          [this, request](bool ok, batching::PreparedInputPtr prepared) {
-            {
-              std::lock_guard<std::mutex> guard(mutex_);
-              request->prepared = ok ? std::move(prepared) : nullptr;
-              request->preparation = detail::RequestState::Preparation::Ready;
-              preparations_.push_back(request);
-            }
-            cv_.notify_one();
-          });
-#if ET_HAS_EXCEPTIONS
-    } catch (...) {
-      {
-        std::lock_guard<std::mutex> guard(mutex_);
-        request->preparation = detail::RequestState::Preparation::Consumed;
-      }
-      request->reject(
-          ServingError{ErrorCode::Internal, "prompt preparation failed"});
-    }
-#endif
-  }
-
-  void resume_generation(const Request& request) {
-    const SessionKey key = request->request.key
-        ? SessionKey(*request->request.key)
-        : SessionKey(request->id);
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      request->preparation = detail::RequestState::Preparation::Consumed;
-      const auto it = sessions_.find(key);
-      if (lifecycle_ != Lifecycle::Running || request->cancelled.load() ||
-          it == sessions_.end() ||
-          it->second.incarnation != request->completion.incarnation ||
-          it->second.active_request != request->id) {
-        request->cancelled.store(true);
-      }
-    }
-    if (request->cancelled.load()) {
-      request->reject();
-      return;
-    }
-    if (!request->prepared) {
-      request->reject(ServingError{
-          runner_->initialization_state() ==
-                  batching::InitializationState::Failed
-              ? ErrorCode::NotReady
-              : ErrorCode::InvalidArgument,
-          "executor preparation failed"});
-      return;
-    }
-    if (request->text) {
-      LifecycleResult error;
-#if ET_HAS_EXCEPTIONS
-      try {
-#endif
-        error = select_text(request);
-#if ET_HAS_EXCEPTIONS
-      } catch (...) {
-        error = ServingError{
-            ErrorCode::Internal, "prepared prompt selection failed"};
-      }
-#endif
-      if (error) {
-        request->reject(std::move(error));
-        return;
-      }
-    }
-    std::unique_lock<std::mutex> lock(mutex_);
-    auto it = sessions_.find(key);
-    const bool opening = request->opening;
     if (opening) {
       lock.unlock();
       std::optional<batching::Session> opened;
@@ -973,7 +818,9 @@ struct ServingRuntime::Impl {
       if (match) {
         opened = std::move(match->session);
         // Lookup always leaves the final prompt token for a fresh forward.
-        request->prepared_offset = match->matched_tokens;
+        request->request.delta.erase(
+            request->request.delta.begin(),
+            request->request.delta.begin() + match->matched_tokens);
       }
 #if ET_HAS_EXCEPTIONS
       try {
@@ -1032,8 +879,8 @@ struct ServingRuntime::Impl {
             request->emit(update);
             schedule(request);
           };
-      if (opening && request->text && !request->text->has_images &&
-          config_.prefix_cache_capacity != 0 && !capture_lane_busy_) {
+      if (opening && request->text && config_.prefix_cache_capacity != 0 &&
+          !capture_lane_busy_) {
         // Only a capture needs an extra row beyond the working-session slots.
         capture_lane_busy_ = true;
         request->text->capture_lane = true;
@@ -1050,9 +897,7 @@ struct ServingRuntime::Impl {
 #endif
       }
       auto handle = session.generate_async(
-          request->prepared,
-          request->prepared_offset,
-          request->prepared->position_count() - request->prepared_offset,
+          std::move(request->request.delta),
           std::move(request->request.config),
           std::move(callback),
           [this, weak = std::weak_ptr<detail::RequestState>(request)] {
@@ -1085,9 +930,9 @@ struct ServingRuntime::Impl {
       owns_session = it != sessions_.end() &&
           it->second.incarnation == request->completion.incarnation &&
           it->second.active_request == request->id;
-      request->completion.current_session = owns_session &&
-          it->second.session && lifecycle_ == Lifecycle::Running;
-      if (request->completion.current_session && it->second.session) {
+      request->completion.current_session =
+          owns_session && lifecycle_ == Lifecycle::Running;
+      if (request->completion.current_session) {
         request->completion.position = it->second.session->position();
       }
     }
@@ -1128,11 +973,10 @@ struct ServingRuntime::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = sessions_.find(key);
       it->second.active_request = 0;
-      if (!request->request.key || failed || !it->second.session) {
+      if (!request->request.key || failed) {
         retired = std::move(it->second.session);
         it->second.session.reset();
-        if (!request->request.key ||
-            it->second.phase == SessionPhase::Opening) {
+        if (!request->request.key) {
           sessions_.erase(it);
         } else {
           it->second.phase = SessionPhase::Unavailable;
@@ -1275,12 +1119,6 @@ struct ServingRuntime::Impl {
     // Callback quiescence includes capture destruction, outside runtime locks.
     request->request = {};
     request->text.reset();
-    request->prepared.reset();
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      prepared_bytes_ -= request->prepared_reservation;
-      request->prepared_reservation = 0;
-    }
     {
       std::lock_guard<std::mutex> lock(request->mutex);
       request->terminal.reset();
@@ -1356,17 +1194,6 @@ struct ServingRuntime::Impl {
     }
   }
 
-  // mutex_ held. A reset may cancel encoding without making control wait for
-  // the engine to return from it. Its logical reservation remains fenced.
-  bool preparation_pending(const Command& command) const {
-    return std::any_of(
-        requests_.begin(), requests_.end(), [&](const auto& entry) {
-          return precedes(entry.second, command) &&
-              entry.second->preparation ==
-              detail::RequestState::Preparation::Pending;
-        });
-  }
-
   // mutex_ held. A deferred fence blocks only subsequent commands for its key.
   // Scanning this bounded inbox avoids another queue or a polling wakeup.
   auto runnable_command() {
@@ -1375,9 +1202,6 @@ struct ServingRuntime::Impl {
           std::any_of(inbox_.begin(), it, [&](const Command& earlier) {
             return earlier.key == it->key;
           })) {
-        continue;
-      }
-      if (it->waiting_preparation && preparation_pending(*it)) {
         continue;
       }
       if (!it->processed || !fence_pending(*it)) {
@@ -1392,19 +1216,14 @@ struct ServingRuntime::Impl {
       Command command;
       std::size_t command_index = 0;
       Request finalizer;
-      Request prepared;
       {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] {
-          return !preparations_.empty() || !finalizers_.empty() ||
-              runnable_command() != inbox_.end() ||
+          return !finalizers_.empty() || runnable_command() != inbox_.end() ||
               (lifecycle_ != Lifecycle::Running && inbox_.empty() &&
                requests_.empty() && !retiring_);
         });
-        if (!preparations_.empty()) {
-          prepared = std::move(preparations_.front());
-          preparations_.pop_front();
-        } else if (!finalizers_.empty()) {
+        if (!finalizers_.empty()) {
           finalizer = std::move(finalizers_.front());
           finalizers_.pop_front();
         } else if (auto it = runnable_command(); it != inbox_.end()) {
@@ -1414,11 +1233,6 @@ struct ServingRuntime::Impl {
         } else {
           break;
         }
-      }
-      if (prepared) {
-        resume_generation(prepared);
-        schedule(prepared);
-        continue;
       }
       if (finalizer) {
         finalize(finalizer);
@@ -1431,18 +1245,6 @@ struct ServingRuntime::Impl {
         } else {
           if (is_fence(command)) {
             cancel_predecessors(command);
-          }
-          if (command.operation == Operation::Reset) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (preparation_pending(command)) {
-              auto slot = sessions_.find(command.key);
-              if (slot != sessions_.end() && !slot->second.session) {
-                slot->second.phase = SessionPhase::Reopening;
-              }
-              command.waiting_preparation = true;
-              inbox_.insert(inbox_.begin() + command_index, std::move(command));
-              continue;
-            }
           }
           command.result = process(command);
         }
@@ -1474,12 +1276,6 @@ struct ServingRuntime::Impl {
     prefix_cache_.clear();
   }
 
-  bool image_support() const {
-    return runner_ &&
-        detail::image_preparation_supported(
-               config_, runner_->preparation_config());
-  }
-
   ServingInfo info() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return {
@@ -1488,11 +1284,7 @@ struct ServingRuntime::Impl {
                 batching::InitializationState::Ready,
         config_.max_context_length,
         config_.max_sessions,
-        sessions_.size(),
-        image_support() ? config_.max_images : 0,
-        image_support() ? config_.max_image_encoded_bytes : 0,
-        image_support() ? config_.max_image_dimension : 0,
-        image_support() ? config_.max_image_pixels : 0};
+        sessions_.size()};
   }
 
   void shutdown() {
@@ -1546,8 +1338,6 @@ struct ServingRuntime::Impl {
   std::condition_variable stopped_cv_;
   Lifecycle lifecycle_ = Lifecycle::Running;
   std::size_t outstanding_ = 0;
-  std::size_t prepared_bytes_ = 0;
-  std::deque<Request> preparations_;
   std::deque<Command> inbox_;
   std::unordered_map<SessionKey, Slot> sessions_;
   std::uint64_t next_incarnation_ = 1;

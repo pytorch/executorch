@@ -19,7 +19,6 @@ et_cxx_test(
   text_output_test.cpp
   text_generation_test.cpp
   prefix_reuse_test.cpp
-  image_preparation_test.cpp
   EXTRA_LIBS
   extension_llm_serving
 )

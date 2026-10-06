@@ -35,8 +35,7 @@ class ET_EXPERIMENTAL MultimodalInput {
     IMAGE, ///< Processed image input
     AUDIO, ///< Processed audio input
     RAW_AUDIO, ///< Raw unprocessed audio input (straight from audio file)
-    UNSUPPORTED, ///< Unsupported input type
-    ENCODED_IMAGE ///< Encoded image file bytes, not decoded pixels
+    UNSUPPORTED ///< Unsupported input type
   };
 
   /**
@@ -55,8 +54,6 @@ class ET_EXPERIMENTAL MultimodalInput {
         return "audio";
       case Type::RAW_AUDIO:
         return "raw_audio";
-      case Type::ENCODED_IMAGE:
-        return "encoded_image";
       default:
         return "unknown";
     }
@@ -76,8 +73,6 @@ class ET_EXPERIMENTAL MultimodalInput {
       : data_(std::move(tokens)) {}
   explicit MultimodalInput(const Image& image) : data_(image) {}
   explicit MultimodalInput(Image&& image) : data_(std::move(image)) {}
-  explicit MultimodalInput(const EncodedImage& image) : data_(image) {}
-  explicit MultimodalInput(EncodedImage&& image) : data_(std::move(image)) {}
   explicit MultimodalInput(const Audio& audio) : data_(audio) {}
   explicit MultimodalInput(Audio&& audio) : data_(std::move(audio)) {}
   explicit MultimodalInput(const RawAudio& raw_audio) : data_(raw_audio) {}
@@ -118,10 +113,6 @@ class ET_EXPERIMENTAL MultimodalInput {
     return std::holds_alternative<Image>(data_);
   }
 
-  bool is_encoded_image() const noexcept {
-    return std::holds_alternative<EncodedImage>(data_);
-  }
-
   /**
    * Check if this input contains audio data.
    * @return true if this input contains audio, false otherwise.
@@ -150,8 +141,6 @@ class ET_EXPERIMENTAL MultimodalInput {
       return Type::TOKENS;
     if (is_image())
       return Type::IMAGE;
-    if (is_encoded_image())
-      return Type::ENCODED_IMAGE;
     if (is_audio())
       return Type::AUDIO;
     if (is_raw_audio())
@@ -327,26 +316,6 @@ class ET_EXPERIMENTAL MultimodalInput {
     return std::get_if<Image>(&data_);
   }
 
-  const EncodedImage& get_encoded_image() const& {
-    return std::get<EncodedImage>(data_);
-  }
-
-  EncodedImage& get_encoded_image() & {
-    return std::get<EncodedImage>(data_);
-  }
-
-  EncodedImage&& get_encoded_image() && {
-    return std::get<EncodedImage>(std::move(data_));
-  }
-
-  const EncodedImage* try_get_encoded_image() const noexcept {
-    return std::get_if<EncodedImage>(&data_);
-  }
-
-  EncodedImage* try_get_encoded_image() noexcept {
-    return std::get_if<EncodedImage>(&data_);
-  }
-
   /** Try to get the tokens from this input safely. */
   const std::vector<uint64_t>* try_get_tokens() const noexcept {
     return std::get_if<std::vector<uint64_t>>(&data_);
@@ -394,13 +363,7 @@ class ET_EXPERIMENTAL MultimodalInput {
   }
 
  private:
-  std::variant<
-      std::string,
-      std::vector<uint64_t>,
-      Image,
-      Audio,
-      RawAudio,
-      EncodedImage>
+  std::variant<std::string, std::vector<uint64_t>, Image, Audio, RawAudio>
       data_;
 };
 
@@ -418,14 +381,6 @@ inline MultimodalInput make_image_input(const Image& image) noexcept {
 }
 
 inline MultimodalInput make_image_input(Image&& image) noexcept {
-  return MultimodalInput(std::move(image));
-}
-
-inline MultimodalInput make_encoded_image_input(const EncodedImage& image) {
-  return MultimodalInput(image);
-}
-
-inline MultimodalInput make_encoded_image_input(EncodedImage&& image) {
   return MultimodalInput(std::move(image));
 }
 

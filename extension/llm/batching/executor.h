@@ -9,8 +9,8 @@
 #pragma once
 
 // The seam between the batched runner and whatever actually runs a forward.
-// Preparation accepts owned CPU inputs; execution carries opaque backing and
-// position ranges, so a fake needs neither a .pte nor a GPU.
+// Preparation accepts owned CPU inputs; execution carries opaque prepared
+// prompts or standard token feedback, so a fake needs neither a .pte nor a GPU.
 //
 // Sessions live here because the cache owns their identity. Until a batched
 // cache exists an implementation may number them however it likes.
@@ -54,7 +54,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <vector>
 
@@ -66,148 +65,18 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-// Fixed for an executor's lifetime. Implementations must enforce workspace
-// bounds before allocating/encoding, not merely inspect the final output.
-struct ET_EXPERIMENTAL PreparationConfig {
-  std::size_t max_positions = 1024 * 1024;
-  std::size_t max_retained_bytes = 64 * 1024 * 1024;
-  std::size_t max_workspace_bytes = 64 * 1024 * 1024;
-  std::size_t max_total_retained_bytes = 256 * 1024 * 1024;
-  std::size_t max_images = 0;
-
-  // Capacity-based source ownership, including container storage. Returning
-  // nullopt rejects unsupported vocabulary or source storage above workspace.
-  std::optional<std::size_t> input_retained_bytes(
-      const PreparationInput& input) const {
-    if (input.segments.empty() ||
-        max_workspace_bytes < sizeof(PreparationInput)) {
-      return std::nullopt;
-    }
-    std::size_t bytes = sizeof(PreparationInput);
-    if (input.segments.capacity() >
-        (max_workspace_bytes - bytes) / sizeof(MultimodalInput)) {
-      return std::nullopt;
-    }
-    bytes += input.segments.capacity() * sizeof(MultimodalInput);
-    std::size_t images = 0;
-    for (const auto& segment : input.segments) {
-      std::size_t count = 0;
-      std::size_t width = 1;
-      if (segment.is_tokens()) {
-        count = segment.get_tokens().capacity();
-        width = sizeof(Token);
-      } else if (segment.is_image()) {
-        ++images;
-        const auto& image = segment.get_image();
-        count = image.is_uint8() ? image.get_uint8_data().capacity()
-                                 : image.get_float_data().capacity();
-        width = image.is_uint8() ? sizeof(uint8_t) : sizeof(float);
-      } else {
-        return std::nullopt;
-      }
-      if (count > (max_workspace_bytes - bytes) / width) {
-        return std::nullopt;
-      }
-      bytes += count * width;
-    }
-    return images <= max_images ? std::optional<std::size_t>{bytes}
-                                : std::nullopt;
-  }
-};
-
 class ET_EXPERIMENTAL Executor {
  public:
-  explicit Executor(PreparationConfig config = {})
-      : preparation_config_(config) {}
   virtual ~Executor() = default;
 
-  // Immutable, safe to inspect from any thread, including before initialize().
-  const PreparationConfig& preparation_config() const {
-    return preparation_config_;
-  }
-
-  // Context-free model preparation on the engine thread. Failure must not
-  // mutate decoder sessions. Default text support rejects all other modalities.
-  virtual bool prepare(const PreparationInput& input, PreparedInputPtr& out) {
-    out.reset();
-    std::size_t count = 0;
-    for (const auto& segment : input.segments) {
-      if (!segment.is_tokens() ||
-          segment.get_tokens().size() >
-              preparation_config_.max_positions - count) {
-        return false;
-      }
-      count += segment.get_tokens().size();
-    }
-    const auto overhead =
-        sizeof(TokenPreparedInput) + sizeof(std::vector<Token>);
-    if (count == 0 || preparation_config_.max_retained_bytes < overhead ||
-        count > (preparation_config_.max_retained_bytes - overhead) /
-                sizeof(Token) ||
-        count > preparation_config_.max_workspace_bytes / sizeof(Token)) {
-      return false;
-    }
-    auto tokens = std::make_shared<std::vector<Token>>();
-    tokens->reserve(count);
-    for (const auto& segment : input.segments) {
-      tokens->insert(
-          tokens->end(),
-          segment.get_tokens().begin(),
-          segment.get_tokens().end());
-    }
-    return wrap_tokens(std::move(tokens), out);
-  }
-
-  // Lightweight token feedback only: no model execution or session mutation.
-  // Own the supplied storage; never route decode through scheduled preparation.
-  virtual bool wrap_tokens(
-      std::shared_ptr<const std::vector<Token>> tokens,
+  // Context-free preparation on the engine thread. Supported inputs and
+  // resource limits are executor-defined. Failure must not mutate sessions;
+  // successful backing must be consumed by this same executor.
+  virtual bool prepare(
+      const PreparationInput& /*input*/,
       PreparedInputPtr& out) {
     out.reset();
-    if (!tokens || tokens->empty() ||
-        tokens->size() > preparation_config_.max_positions) {
-      return false;
-    }
-    auto prepared =
-        std::make_shared<const TokenPreparedInput>(std::move(tokens));
-    if (prepared->retained_bytes() > preparation_config_.max_retained_bytes) {
-      return false;
-    }
-    out = std::move(prepared);
-    return true;
-  }
-
-  virtual bool accepts(const PreparedInput& input) const {
-    return input.compatibility_tag() == TokenPreparedInput::tag();
-  }
-
-  bool valid_prepared(const PreparedInputPtr& input) const {
-    return input && accepts(*input) && input->position_count() > 0 &&
-        input->position_count() <= preparation_config_.max_positions &&
-        input->position_count() <=
-        static_cast<std::size_t>(std::numeric_limits<Position>::max()) &&
-        input->retained_bytes() <= preparation_config_.max_retained_bytes;
-  }
-
-  // Validate the ENTIRE batch before any decoder state mutation, including
-  // implementations called directly without Runner. Payload-specific checks
-  // belong in execute(), also before its first mutation.
-  bool validate_batch(const BatchInput& batch) const {
-    for (const auto& input : batch.inputs) {
-      if (!valid_prepared(input.prepared) || input.size == 0 ||
-          input.offset > input.prepared->position_count() ||
-          input.size > input.prepared->position_count() - input.offset) {
-        return false;
-      }
-      const auto start = static_cast<std::int64_t>(input.position) +
-          static_cast<std::int64_t>(input.offset);
-      if (start < 0 || start > std::numeric_limits<Position>::max() ||
-          input.size > static_cast<std::size_t>(
-                           std::numeric_limits<Position>::max() - start)) {
-        return false;
-      }
-    }
-    return true;
+    return false;
   }
 
   // Optional one-time setup, called on the engine thread before any other
@@ -262,7 +131,9 @@ class ET_EXPERIMENTAL Executor {
       std::optional<std::uint64_t> seed) = 0;
 
   // Run one batch. `out.outputs` is resized to batch.inputs.size() and filled
-  // position-wise: outputs[i] answers inputs[i].
+  // position-wise: outputs[i] answers inputs[i]. Validate the entire batch's
+  // bounds and executor-specific storage before any decoder/cache mutation.
+  // Prepared backing must have been produced by this executor.
   //
   // The batch arrives shaped as the scheduler packed it, and every input must
   // be answered. An implementation whose model needs static shapes pads or
@@ -290,9 +161,6 @@ class ET_EXPERIMENTAL Executor {
   // runner completes every task in it as Failed and poisons their sessions,
   // because what was written before the failure is unknown.
   virtual bool execute(const BatchInput& batch, BatchOutput& out) = 0;
-
- private:
-  const PreparationConfig preparation_config_;
 };
 
 } // namespace batching

@@ -35,10 +35,11 @@ using executorch::extension::llm::batching::ExecutionTask;
 using executorch::extension::llm::batching::Input;
 using executorch::extension::llm::batching::Position;
 using executorch::extension::llm::batching::PreparationInput;
+using executorch::extension::llm::batching::PreparedInputPtr;
 using executorch::extension::llm::batching::PrepareTask;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::SessionId;
-using executorch::extension::llm::batching::TokenPreparedInput;
+using executorch::extension::llm::batching::TokenInputPtr;
 using SchedulerTask = executorch::extension::llm::batching::Task;
 // The original execution-only regression cases use this short name.
 using Task = ExecutionTask;
@@ -142,12 +143,7 @@ ExecutionTask make_task(
   task.cancelled = false;
   task.is_decode = is_decode;
   task.input = Input{
-      session,
-      produce_output,
-      0,
-      n_tokens,
-      std::make_shared<const TokenPreparedInput>(tokens),
-      position};
+      session, produce_output, 0, n_tokens, TokenInputPtr{tokens}, position};
   return task;
 }
 
@@ -415,8 +411,7 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   auto tokens = std::make_shared<std::vector<Token>>(
       std::initializer_list<Token>{10, 11, 12, 13, 14, 15});
   Task task = prefill(1, 40, 4, 90, /*produce_output=*/false);
-  auto prepared = std::make_shared<const TokenPreparedInput>(tokens);
-  task.input.prepared = prepared;
+  task.input.payload = TokenInputPtr{tokens};
   task.input.offset = 1;
   EXPECT_TRUE(submit(*scheduler, std::move(task)));
 
@@ -426,9 +421,25 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   EXPECT_FALSE(work[0].input.produce_output);
   EXPECT_EQ(work[0].input.offset, 1u);
   EXPECT_EQ(work[0].input.size, 4u);
-  EXPECT_EQ(work[0].input.prepared.get(), prepared.get());
-  EXPECT_EQ(&prepared->tokens(), tokens.get());
+  EXPECT_EQ(std::get<TokenInputPtr>(work[0].input.payload).get(), tokens.get());
   EXPECT_EQ(work[0].input.position, 90);
+}
+
+TEST(PayloadTest, RawPendingTokenRemainsPrefillAndKeepsIdentity) {
+  SchedulerPtr scheduler = make_scheduler(1, 8);
+  TokenInputPtr tokens = std::make_shared<const std::vector<Token>>(1, 42);
+  auto pending = prefill(1, 40, 1, 7, false);
+  pending.input.payload = tokens;
+  ASSERT_TRUE(submit(*scheduler, std::move(pending)));
+  ASSERT_TRUE(submit(*scheduler, decode(2, 50)));
+
+  auto work = scheduler->get_work();
+  ASSERT_EQ(work.size(), 2u);
+  EXPECT_EQ(ids(work), (std::vector<TaskId>{2, 1}));
+  EXPECT_FALSE(work[1].is_decode);
+  EXPECT_FALSE(work[1].input.produce_output);
+  EXPECT_EQ(std::get<TokenInputPtr>(work[1].input.payload), tokens);
+  EXPECT_EQ(work[1].input.position, 7);
 }
 
 TEST(PayloadTest, BatchInputKeepsTaskOrderAndSlices) {

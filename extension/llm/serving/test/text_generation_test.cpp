@@ -145,12 +145,10 @@ class Executor : public batching::testing::FakeExecutor {
     }
     for (std::size_t i = 0; i < input.inputs.size(); ++i) {
       const auto& slice = input.inputs[i];
-      const auto& tokens =
-          static_cast<const batching::TokenPreparedInput&>(*slice.prepared)
-              .tokens();
+      const auto& source = *std::get<batching::TokenInputPtr>(slice.payload);
       fed.emplace_back(
-          tokens.begin() + slice.offset,
-          tokens.begin() + slice.offset + slice.size);
+          source.begin() + slice.offset,
+          source.begin() + slice.offset + slice.size);
       if (output.outputs[i]) {
         auto& tokens = output.outputs[i]->tokens;
         tokens.clear();
@@ -394,11 +392,9 @@ TEST_F(
   EXPECT_EQ(second->terminal->stats.reused_prompt_tokens, 2u);
   EXPECT_EQ(second->terminal->stats.prefilled_prompt_tokens, 3u);
   EXPECT_EQ(executor.opened().size(), 1u);
-  ASSERT_EQ(executor.fed.size(), 3u);
-  EXPECT_EQ(executor.fed[1], (std::vector<Token>{100}));
-  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{12, 13}));
-  EXPECT_EQ(executor.seen()[1].effective_position(), 2);
-  EXPECT_EQ(executor.seen().back().effective_position(), 3);
+  ASSERT_EQ(executor.fed.size(), 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12, 13}));
+  EXPECT_EQ(executor.seen().back().effective_position(), 2);
   EXPECT_EQ(tokenizer.encode_calls.load(), 0);
 }
 
@@ -491,12 +487,10 @@ TEST_F(
       continued->terminal->stats.generated_token_ids,
       (std::vector<Token>{101}));
   EXPECT_EQ(executor.opened().size(), 1u);
-  ASSERT_EQ(executor.fed.size(), 3u);
+  ASSERT_EQ(executor.fed.size(), 2u);
   EXPECT_EQ(executor.fed.front(), (std::vector<Token>{10, 11}));
-  EXPECT_EQ(executor.fed[1], (std::vector<Token>{100}));
-  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{12, 13}));
-  EXPECT_EQ(executor.seen()[1].effective_position(), 2);
-  EXPECT_EQ(executor.seen().back().effective_position(), 3);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12, 13}));
+  EXPECT_EQ(executor.seen().back().effective_position(), 2);
 }
 
 TEST_F(TextGenerationTest, EqualShorterAndMismatchedHistoriesColdReplay) {
@@ -564,10 +558,8 @@ TEST_F(TextGenerationTest, UnsupportedModalitiesPreserveExistingHistory) {
   start();
   submit(output(), ids({10, 11})).wait();
   const auto steps = executor.steps.load();
-  EXPECT_EQ(runtime->info().max_images, 0u);
   for (const auto& segment : {
            make_image_input(Image{}),
-           make_encoded_image_input(EncodedImage{{1}, "image/png"}),
            make_audio_input(Audio{}),
            make_raw_audio_input(RawAudio{}),
        }) {
@@ -636,9 +628,7 @@ TEST_F(TextGenerationTest, EosIsLogicalHistoryButNotVisibleTextOrReplayIds) {
   EXPECT_EQ(second->terminal->stats.session_reset_reason, "exact_prefix");
   EXPECT_EQ(second->terminal->stats.reused_prompt_tokens, 3u);
   EXPECT_EQ(second->terminal->stats.prefilled_prompt_tokens, 2u);
-  ASSERT_GE(executor.fed.size(), 2u);
-  EXPECT_EQ(executor.fed[executor.fed.size() - 2], (std::vector<Token>{9}));
-  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{12}));
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{9, 12}));
 }
 
 TEST_F(
@@ -1132,9 +1122,7 @@ TEST_P(
   EXPECT_EQ(continued->terminal->stats.session_reset_reason, "exact_prefix");
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 4u);
   EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
-  ASSERT_EQ(executor.fed.size(), 5u);
-  EXPECT_EQ(executor.fed[3], (std::vector<Token>{100}));
-  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{13}));
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 13}));
   // Neither deferred fence polling nor old text finalization reopens again.
   EXPECT_EQ(executor.opened().size(), 3u);
 }
@@ -1245,7 +1233,7 @@ TEST_P(TextGenerationFenceTest, AckWaitsForEveryPriorPublicGeneration) {
   second->block_terminal = true;
   second->terminal_blocked.hold();
   const auto prior = submit(second, ids({10, 11, 100, 12}));
-  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 3; }));
+  ASSERT_TRUE(wait_until([&] { return executor.seen().size() == 2; }));
   auto ack = transition();
   auto control = runtime->open_session_async("other");
   ASSERT_EQ(control.wait_for(5s), std::future_status::ready);
@@ -1443,11 +1431,9 @@ TEST_F(
         continued->terminal->stats.generated_token_ids,
         (std::vector<Token>{102}));
     EXPECT_EQ(executor.opened().size(), opened_before + 1);
-    ASSERT_EQ(executor.fed.size(), fed_before + 3);
-    EXPECT_EQ(executor.fed[fed_before + 1], (std::vector<Token>{101}));
-    EXPECT_EQ(executor.fed.back(), (std::vector<Token>{12}));
-    EXPECT_EQ(executor.seen()[fed_before + 1].effective_position(), 3);
-    EXPECT_EQ(executor.seen().back().effective_position(), 4);
+    ASSERT_EQ(executor.fed.size(), fed_before + 2);
+    EXPECT_EQ(executor.fed.back(), (std::vector<Token>{101, 12}));
+    EXPECT_EQ(executor.seen().back().effective_position(), 3);
     handle.cancel();
     runtime->shutdown();
     EXPECT_TRUE(handle.done());
@@ -1517,9 +1503,8 @@ TEST_F(
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 2u);
   EXPECT_EQ(continued->terminal->stats.prefilled_prompt_tokens, 2u);
   EXPECT_EQ(executor.opened().size(), 1u);
-  ASSERT_EQ(executor.fed.size(), 3u);
-  EXPECT_EQ(executor.fed[1], (std::vector<Token>{100}));
-  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{12}));
+  ASSERT_EQ(executor.fed.size(), 2u);
+  EXPECT_EQ(executor.fed.back(), (std::vector<Token>{100, 12}));
   handle.cancel();
   runtime->shutdown();
   ASSERT_TRUE(handle.error());

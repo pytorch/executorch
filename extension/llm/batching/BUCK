@@ -11,6 +11,7 @@ fbcode_target(_kind = runtime.cxx_library,
     ],
     exported_headers = [
         "decode_first_scheduler.h",
+        "detail/input_validation.h",
         "executor.h",
         "metrics.h",
         "prefix_cache.h",
