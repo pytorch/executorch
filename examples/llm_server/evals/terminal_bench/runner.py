@@ -62,6 +62,7 @@ def load_config(path):
         "max_output_tokens": 512,
         "temperature": 0.0,
         "agent_host": None,
+        "session_affinity": None,
     }
     options = config.get("terminal_bench", {})
     if unknown := options.keys() - defaults.keys():
@@ -75,6 +76,9 @@ def load_config(path):
         raise ValueError("Choose tasks and positive attempt/step limits")
     if not 0 <= options["temperature"] <= 2:
         raise ValueError("temperature must be between 0 and 2")
+    affinity = options["session_affinity"]
+    if affinity is not None and (not isinstance(affinity, str) or not affinity.strip()):
+        raise ValueError("[terminal_bench].session_affinity must be a nonempty string")
     return config
 
 
@@ -403,15 +407,14 @@ def main(argv=None):
         output = args.output.expanduser().resolve()
         serve, harbor, probe = commands(config, output)
         output.mkdir(parents=True, exist_ok=False)
+        model_kwargs = {"temperature": config["terminal_bench"]["temperature"]}
+        if affinity := config["terminal_bench"]["session_affinity"]:
+            model_kwargs["extra_headers"] = {"x-session-affinity": affinity}
         (output / "agent.yaml").write_text(
             json.dumps(
                 {
                     "agent": {"step_limit": config["terminal_bench"]["step_limit"]},
-                    "model": {
-                        "model_kwargs": {
-                            "temperature": config["terminal_bench"]["temperature"]
-                        }
-                    },
+                    "model": {"model_kwargs": model_kwargs},
                 }
             )
         )
