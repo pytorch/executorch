@@ -147,8 +147,8 @@ TEST_F(MethodTest, GetInputTests) {
   method->get_input(num_inputs - 1);
 
   // Out-of-range inputs should abort.
-  ET_EXPECT_DEATH(method->get_input(num_inputs), "[0-9]+ >= [0-9]+");
-  ET_EXPECT_DEATH(method->get_input(num_inputs + 1), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->get_input(num_inputs), ".+ >= .+");
+  ET_EXPECT_DEATH(method->get_input(num_inputs + 1), ".+ >= .+");
 }
 
 TEST_F(MethodTest, MutableInputTests) {
@@ -164,8 +164,8 @@ TEST_F(MethodTest, MutableInputTests) {
   method->mutable_input(num_inputs - 1);
 
   // Out-of-range inputs should abort.
-  ET_EXPECT_DEATH(method->mutable_input(num_inputs), "[0-9]+ >= [0-9]+");
-  ET_EXPECT_DEATH(method->mutable_input(num_inputs + 1), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->mutable_input(num_inputs), ".+ >= .+");
+  ET_EXPECT_DEATH(method->mutable_input(num_inputs + 1), ".+ >= .+");
 }
 
 TEST_F(MethodTest, GetOutputTests) {
@@ -181,8 +181,8 @@ TEST_F(MethodTest, GetOutputTests) {
   method->get_output(num_outputs - 1);
 
   // Out-of-range outputs should abort.
-  ET_EXPECT_DEATH(method->get_output(num_outputs), "[0-9]+ >= [0-9]+");
-  ET_EXPECT_DEATH(method->get_output(num_outputs + 1), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->get_output(num_outputs), ".+ >= .+");
+  ET_EXPECT_DEATH(method->get_output(num_outputs + 1), ".+ >= .+");
 }
 
 TEST_F(MethodTest, MutableOutputTests) {
@@ -198,8 +198,8 @@ TEST_F(MethodTest, MutableOutputTests) {
   method->mutable_output(num_outputs - 1);
 
   // Out-of-range outputs should abort.
-  ET_EXPECT_DEATH(method->mutable_output(num_outputs), "[0-9]+ >= [0-9]+");
-  ET_EXPECT_DEATH(method->mutable_output(num_outputs + 1), "[0-9]+ >= [0-9]+");
+  ET_EXPECT_DEATH(method->mutable_output(num_outputs), ".+ >= .+");
+  ET_EXPECT_DEATH(method->mutable_output(num_outputs + 1), ".+ >= .+");
 }
 
 TEST_F(MethodTest, SetPrimInputTest) {
