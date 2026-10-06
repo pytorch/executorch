@@ -7,6 +7,8 @@
 #pragma once
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 namespace vkcompute {
 struct GraphConfig;
@@ -19,10 +21,15 @@ struct Method;
 class Package;
 class VulkanConstantMaterializationTracker;
 
+// Non-empty mutable DataBinding keys held by the live executables of one
+// context, each mapped to the method whose executable holds it.
+using VulkanMutableStateOwners = std::unordered_map<std::string, std::string>;
+
 std::unique_ptr<EngineExecutable> create_vulkan_engine_executable(
     const Method& method,
     const Package& package,
     VulkanConstantMaterializationTracker& materializations,
+    VulkanMutableStateOwners& mutable_state_owners,
     const vkcompute::GraphConfig& config);
 
 } // namespace ptn

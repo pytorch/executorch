@@ -29,6 +29,7 @@ struct VulkanEngineHost::Impl {
 struct VulkanEngineContext::Impl {
   GraphConfig config;
   VulkanConstantMaterializationTracker materializations;
+  VulkanMutableStateOwners mutable_state_owners;
 };
 
 VulkanEngineHost::VulkanEngineHost(std::unique_ptr<Impl> impl)
@@ -101,7 +102,11 @@ size_t VulkanEngineContext::materialized_constant_bytes() const {
 std::unique_ptr<EngineExecutable> VulkanEngineContext::compile_method(
     const Method& method) {
   return create_vulkan_engine_executable(
-      method, package(), impl_->materializations, impl_->config);
+      method,
+      package(),
+      impl_->materializations,
+      impl_->mutable_state_owners,
+      impl_->config);
 }
 
 } // namespace ptn
