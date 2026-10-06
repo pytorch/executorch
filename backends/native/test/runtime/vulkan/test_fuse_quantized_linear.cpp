@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -163,6 +164,14 @@ const Q4ConstantTransform& transform_of(const Value& value) {
       value.attrs.at(kQ4ConstantTransformAttr));
 }
 
+std::vector<uint8_t> pack_q4(const std::vector<int8_t>& weight) {
+  std::vector<uint8_t> packed;
+  for (size_t i = 0; i < weight.size(); i += 2) {
+    packed.push_back((weight[i] + 8) | ((weight[i + 1] + 8) << 4));
+  }
+  return packed;
+}
+
 TEST(FuseQuantizedLinearTest, RewritesPortablePatternAtRuntime) {
   Method method = make_dynamic_q4_linear();
   EXPECT_EQ(fuse_quantized_linears(method), 1);
@@ -223,6 +232,44 @@ TEST(FuseQuantizedLinearTest, PreservesHalfPrecisionScales) {
 
   EXPECT_EQ(fuse_quantized_linears(method), 1);
   EXPECT_EQ(method.graph.value(2).tensor_meta().dtype, ScalarType::Half);
+}
+
+TEST(FuseQuantizedLinearTest, SumsQ4WeightGroups) {
+  // Two rows of six q4 weights, laid out as [rows, cols].
+  const std::vector<int8_t> weight = {-8, 7, 1, 2, -3, 0, 3, 3, 3, -1, -1, -1};
+  const std::vector<uint8_t> packed = pack_q4(weight);
+  const std::vector<uint8_t> unpacked(weight.begin(), weight.end());
+  // [groups, output_cols], with a zero column past the last row.
+  const std::vector<int32_t> odd_group_sums = {0, 9, 0, -1, -3, 0};
+  const std::vector<int32_t> even_group_sums = {-1, 6, 3, 2, -3, -2};
+
+  EXPECT_EQ(
+      q4_group_sums(
+          packed,
+          {.rows = 2,
+           .cols = 6,
+           .group_size = 3,
+           .output_cols = 3,
+           .packed = true}),
+      odd_group_sums);
+  EXPECT_EQ(
+      q4_group_sums(
+          unpacked,
+          {.rows = 2,
+           .cols = 6,
+           .group_size = 3,
+           .output_cols = 3,
+           .packed = false}),
+      odd_group_sums);
+  EXPECT_EQ(
+      q4_group_sums(
+          packed,
+          {.rows = 2,
+           .cols = 6,
+           .group_size = 2,
+           .output_cols = 2,
+           .packed = true}),
+      even_group_sums);
 }
 
 } // namespace

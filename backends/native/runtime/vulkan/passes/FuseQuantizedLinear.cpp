@@ -20,6 +20,34 @@
 namespace ptn::vulkan {
 namespace {
 
+int32_t packed_q4_group_sum(const uint8_t* row, size_t start, size_t count) {
+  const size_t end = start + count;
+  size_t col = start;
+  int32_t sum = 0;
+  if (col % 2 != 0) {
+    sum += row[col / 2] >> 4;
+    ++col;
+  }
+  const uint8_t* bytes = row + col / 2;
+  const size_t whole_bytes = (end - col) / 2;
+  for (size_t i = 0; i < whole_bytes; ++i) {
+    sum += (bytes[i] & 0x0F) + (bytes[i] >> 4);
+  }
+  col += 2 * whole_bytes;
+  if (col < end) {
+    sum += row[col / 2] & 0x0F;
+  }
+  return sum - 8 * static_cast<int32_t>(count);
+}
+
+int32_t int8_group_sum(const uint8_t* row, size_t start, size_t count) {
+  int32_t sum = 0;
+  for (size_t col = start; col < start + count; ++col) {
+    sum += static_cast<int8_t>(row[col]);
+  }
+  return sum;
+}
+
 constexpr std::string_view kChooseQParams =
     "torch.ops.torchao.choose_qparams_affine.default";
 constexpr std::string_view kQuantize =
@@ -358,6 +386,24 @@ bool rewrite_match(
 }
 
 } // namespace
+
+std::vector<int32_t> q4_group_sums(
+    std::span<const uint8_t> weight,
+    const Q4GroupSumsLayout& layout) {
+  const size_t groups = layout.cols / layout.group_size;
+  const size_t stored_cols = layout.packed ? layout.cols / 2 : layout.cols;
+  std::vector<int32_t> sums(groups * layout.output_cols, 0);
+  for (size_t row = 0; row < layout.rows; ++row) {
+    const uint8_t* row_bytes = weight.data() + row * stored_cols;
+    for (size_t group = 0; group < groups; ++group) {
+      const size_t start = group * layout.group_size;
+      sums[group * layout.output_cols + row] = layout.packed
+          ? packed_q4_group_sum(row_bytes, start, layout.group_size)
+          : int8_group_sum(row_bytes, start, layout.group_size);
+    }
+  }
+  return sums;
+}
 
 size_t fuse_quantized_linears(Method& method) {
   Graph& graph = method.graph;
