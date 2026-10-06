@@ -395,6 +395,10 @@ def display_or_print_df(df: pd.DataFrame, file: IO[str] = sys.stdout):
 
 
 def plot_metric(result: List[Optional[float]], metric_name: str):
+    # Nothing to plot (no outputs to compare), so don't write an empty chart.
+    if len(result) == 0:
+        return
+
     import matplotlib.pyplot as plt
     import numpy as np
 

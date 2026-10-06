@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import math
+import os
 import tempfile
 import unittest
 from typing import Dict, Tuple
@@ -43,6 +44,7 @@ from executorch.devtools.inspector._inspector_utils import (
     map_runtime_aot_intermediate_outputs,
     merge_runtime_overlapping_debug_handles,
     NodeFilter,
+    plot_metric,
     propagate_back_debug_handle,
     TimeScale,
 )
@@ -258,6 +260,24 @@ class TestInspectorUtils(unittest.TestCase):
         for ref, out, expected_snr in ((a, a.clone(), math.inf), (zeros, a, -math.inf)):
             results = compare_results([ref], [out], plot=True)
             self.assertEqual(results["snr"], [expected_snr])
+
+    def test_plot_metric_empty_result(self):
+        # No values to plot: return without creating a figure or writing a file.
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cwd = os.getcwd()
+            os.chdir(tmp_dir)
+            try:
+                plot_metric([], "snr")
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(os.listdir(tmp_dir), [])
+        self.assertEqual(plt.get_fignums(), [])
 
     def test_merge_overlapping_debug_handles_basic(self):
         big_tensor = torch.rand(100, 100)
