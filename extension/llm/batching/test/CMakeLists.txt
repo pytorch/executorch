@@ -11,7 +11,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs scheduler_test.cpp runner_test.cpp prefix_cache_test.cpp
-               preparation_test.cpp
+               opaque_input_test.cpp
 )
 
 et_cxx_test(

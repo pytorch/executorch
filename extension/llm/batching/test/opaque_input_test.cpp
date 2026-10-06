@@ -115,7 +115,7 @@ GenConfig config(int tokens = 1) {
   return result;
 }
 
-TEST(PreparationTest, WarmOpaqueChunksAndOrdinaryRawText) {
+TEST(OpaqueInputTest, WarmOpaqueChunksAndOrdinaryRawText) {
   for (bool chunked : {false, true}) {
     SCOPED_TRACE(chunked);
     Harness h;
@@ -176,7 +176,7 @@ TEST(PreparationTest, WarmOpaqueChunksAndOrdinaryRawText) {
   }
 }
 
-TEST(PreparationTest, SharedOpaqueChunksKeepOwnershipAndUseRawFeedback) {
+TEST(OpaqueInputTest, SharedOpaqueChunksKeepOwnershipAndUseRawFeedback) {
   Harness h;
   auto session = h.session();
   PreparedInputPtr opaque = std::make_shared<Payload>();
@@ -217,7 +217,7 @@ TEST(PreparationTest, SharedOpaqueChunksKeepOwnershipAndUseRawFeedback) {
   EXPECT_EQ(handle.metrics().n_decode_steps, 1);
 }
 
-TEST(PreparationTest, DefaultExecutorRejectsOpaqueWithoutPoisoningSession) {
+TEST(OpaqueInputTest, DefaultExecutorRejectsOpaqueWithoutPoisoningSession) {
   testing::FakeExecutor executor;
   Runner runner{executor, DecodeFirstScheduler::create(3, 1, 2)};
   auto future = runner.open_session_async();
@@ -240,7 +240,7 @@ TEST(PreparationTest, DefaultExecutorRejectsOpaqueWithoutPoisoningSession) {
   EXPECT_EQ(session->position(), 1);
 }
 
-TEST(PreparationTest, WrongKindDoesNotFailConcurrentRawGeneration) {
+TEST(OpaqueInputTest, WrongKindDoesNotFailConcurrentRawGeneration) {
   Harness h;
   auto raw_session = h.session();
   auto bad_session = h.session();
@@ -278,7 +278,7 @@ TEST(PreparationTest, WrongKindDoesNotFailConcurrentRawGeneration) {
   }
 }
 
-TEST(PreparationTest, InvalidOpaqueMetadata) {
+TEST(OpaqueInputTest, InvalidOpaqueMetadata) {
   auto empty = std::make_shared<Payload>(std::vector<Token>{});
   auto oversized = std::make_shared<Payload>();
   oversized->count = std::size_t{1} + std::numeric_limits<Position>::max();
