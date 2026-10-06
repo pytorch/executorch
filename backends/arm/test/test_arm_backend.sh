@@ -74,6 +74,12 @@ enable_vgf_vulkan_validation() {
     export VK_KHRONOS_VALIDATION_LOG_FILENAME="stdout"
     export VK_KHRONOS_VALIDATION_DEBUG_ACTION="VK_DBG_LAYER_ACTION_LOG_MSG"
 
+    # Keep object-lifetime and core validation explicit. They are enabled by
+    # default by current VVL releases, but VGF lifetime coverage should not
+    # depend on an implicit SDK default.
+    export VK_LAYER_OBJECT_LIFETIME="1"
+    export VK_LAYER_VALIDATE_CORE="1"
+
     # Temporary workarounds for known VKML / Model Converter validation
     # defects. Keep validation enabled, but mute only these tracked VUIDs.
     #
