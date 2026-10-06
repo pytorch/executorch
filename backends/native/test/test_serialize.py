@@ -66,6 +66,7 @@ from executorch.backends.native.serialization.schema import (
     TensorMeta,
     TensorValue,
 )
+from executorch.backends.native.test.utils import lifted_constant_program
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as edge_ops
 
@@ -821,6 +822,58 @@ class MultiMethodTest(unittest.TestCase):
                     "b": _edge_method(nn.Linear(4, 4), (torch.randn(1, 4),)),
                 }
             )
+
+
+class LiftedConstantSerializationTest(unittest.TestCase):
+    def _roundtrip_constants(self, first, second):
+        expected = {"forward": (first, second), "reverse": (second, first)}
+        methods = {}
+        for name, tensors in expected.items():
+            ep = lifted_constant_program(tensors)
+            methods[name] = (
+                ep.graph_module,
+                ep.graph_signature,
+                ep.state_dict,
+                ep.constants,
+            )
+        blob, constants = serialize_program(methods)
+        program = deserialize_program(blob)
+        validate_program(program, set(constants))
+        for method in program.methods:
+            self.assertEqual(
+                len(method.constants), len({ref.data_key for ref in method.constants})
+            )
+            for ref, tensor in zip(
+                method.constants, expected[method.name], strict=True
+            ):
+                torch.testing.assert_close(constants[ref.data_key], tensor)
+        return constants
+
+    def test_equal_bytes_with_different_shapes_remain_distinct(self):
+        constants = self._roundtrip_constants(torch.zeros(4), torch.zeros(2, 2))
+        self.assertEqual(len(constants), 4)
+
+    def test_equal_bytes_with_different_dtypes_remain_distinct(self):
+        constants = self._roundtrip_constants(
+            torch.zeros(4, dtype=torch.float32), torch.zeros(4, dtype=torch.int32)
+        )
+        self.assertEqual(len(constants), 4)
+
+    def test_identical_tensors_keep_distinct_bindings_across_methods(self):
+        tensor = torch.arange(4, dtype=torch.float32)
+        constants = self._roundtrip_constants(tensor.clone(), tensor.clone())
+        self.assertEqual(len(constants), 2)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_cuda_constants_keep_device_and_match_cpu_keys(self):
+        tensor = torch.arange(4, dtype=torch.float32)
+        cpu_constants = self._roundtrip_constants(tensor, tensor.clone())
+        cuda_constants = self._roundtrip_constants(tensor.cuda(), tensor.cuda())
+
+        self.assertEqual(set(cuda_constants), set(cpu_constants))
+        for key, constant in cuda_constants.items():
+            self.assertEqual(constant.device.type, "cuda")
+            torch.testing.assert_close(constant.cpu(), cpu_constants[key])
 
 
 class MutableBufferTest(unittest.TestCase):

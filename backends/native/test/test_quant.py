@@ -9,7 +9,8 @@ import unittest
 import torch
 import torch.nn as nn
 
-from executorch.backends.native.serialization import deserialize_program
+from executorch.backends.native import get_default_compile_config
+from executorch.backends.native.serialization import deserialize_program, serialize_graph
 from executorch.backends.native.serialization.graph_serialize import _pack_signed_int4
 from executorch.backends.native.serialization.schema import (
     AffineGroup,
@@ -22,7 +23,9 @@ from executorch.backends.native.test.utils import (
     _get_delegate_blob,
     _lower,
 )
+from executorch.exir import to_edge
 from executorch.exir.native import to_native
+from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 from torchao.quantization import (
     Int8DynamicActivationIntxWeightConfig,
@@ -263,6 +266,45 @@ class FoldTorchaoQ4DequantizeTest(unittest.TestCase):
     def test_folds_constant_weight_read_by_linear(self):
         self.assertEqual(self._weight_dequantizes(_DequantizedLinear()), 0)
         self.assertEqual(len(self._packed_constants(_DequantizedLinear())), 1)
+
+    def test_lifted_quantization_parameters_resolve_to_shipped_data(self):
+        model = _DequantizedLinear()
+        config = get_default_compile_config()
+        config.preserve_ops.append(torch.ops.aten.linear.default)
+        ep = to_edge(
+            torch.export.export(model, model.example_inputs()),
+            compile_config=config,
+        ).exported_program()
+        nodes = {node.name: node for node in ep.graph.nodes}
+        # Model a transform that materializes qparams as get_attr constants.
+        # The lifting pass must generate their partition-local buffer names.
+        for spec in list(ep.graph_signature.input_specs):
+            if spec.target not in ("scale", "zero_point"):
+                continue
+            node = nodes[spec.arg.name]
+            ep.graph_module.register_buffer(spec.target, ep.state_dict.pop(spec.target))
+            with ep.graph.inserting_before(node):
+                constant = ep.graph.get_attr(spec.target)
+            constant.meta = node.meta.copy()
+            node.replace_all_uses_with(constant)
+            ep.graph.erase_node(node)
+            ep.graph_signature.input_specs.remove(spec)
+        lift_constant_tensor_pass(ep)
+
+        blob, constants = serialize_graph(
+            ep.graph_module, ep.graph_signature, ep.state_dict, ep.constants
+        )
+        method = deserialize_program(blob).methods[0]
+        [weight] = [c for c in method.constants if c.meta.quant is not None]
+        scheme = weight.meta.quant.scheme
+        self.assertIsInstance(scheme, AffineGroup)
+        keys = {c.data_key for c in method.constants}
+        self.assertIn(scheme.scale_data_key, keys)
+        self.assertIn(scheme.zero_point_data_key, keys)
+        torch.testing.assert_close(constants[scheme.scale_data_key], model.scale)
+        torch.testing.assert_close(
+            constants[scheme.zero_point_data_key], model.zero_point
+        )
 
     def test_keeps_unfolded_weight_unpacked(self):
         for model in (

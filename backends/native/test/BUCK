@@ -1,7 +1,47 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//tools/build_defs:default_platform_defs.bzl", "CXX")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
+
+fbcode_target(
+    _kind = runtime.python_binary,
+    name = "export_lifted_constants",
+    srcs = ["export_lifted_constants.py"],
+    main_function = "executorch.backends.native.test.export_lifted_constants.main",
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
+        "//executorch/exir:lib",
+        "//executorch/exir/native:native",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.genrule,
+    name = "lifted_constants_fixture",
+    out = "lifted_constants.ptn",
+    cmd = "$(exe :export_lifted_constants) --output $OUT",
+    env = {"PYTORCH_DISABLE_JUSTKNOBS": "1"},
+)
+
+fbcode_target(
+    _kind = runtime.cxx_test,
+    name = "lifted_constants_runtime_test",
+    srcs = ["runtime/test_lifted_constants.cpp"],
+    env = {
+        "ET_LIFTED_CONSTANTS_PATH": "$(location :lifted_constants_fixture)",
+    },
+    platforms = [CXX],
+    deps = [
+        "//executorch/backends/native/runtime:runtime",
+        "//executorch/backends/native/runtime:validation",
+        "//executorch/backends/native/runtime/api:api",
+        "//executorch/backends/native/runtime/deserialize:package",
+    ],
+)
+
 
 fbcode_target(
     _kind = runtime.python_test,
@@ -10,6 +50,7 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
         "//executorch/exir:lib",
     ],
 )
@@ -21,6 +62,8 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native:lib",
+        "//executorch/backends/native/test:utils",
+        "//executorch/backends/transforms:fuse_batch_norm_with_conv",
         "//executorch/exir:lib",
         "//executorch/extension/llm/export:gguf",
     ],

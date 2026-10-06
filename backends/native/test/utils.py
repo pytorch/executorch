@@ -13,6 +13,32 @@ from executorch.backends.native.partitioner import NativePartitioner
 from executorch.backends.native.passes import get_default_passes
 from executorch.backends.native.serialization.schema import OpKind
 from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.exir.program._program import lift_constant_tensor_pass
+from torch.export.graph_signature import OutputKind, OutputSpec, TensorArgument
+
+
+def lifted_constant_program(tensors):
+    """An edge program returning its input and constants created by a transform."""
+    ep = to_edge(
+        torch.export.export(
+            torch.nn.Identity(), (torch.zeros(1, device=tensors[0].device),)
+        )
+    ).exported_program()
+    output = next(node for node in ep.graph.nodes if node.op == "output")
+    constants = []
+    with ep.graph.inserting_before(output):
+        for index, tensor in enumerate(tensors):
+            name = f"constant{index}"
+            ep.graph_module.register_buffer(name, tensor)
+            constants.append(ep.graph.get_attr(name))
+    output.args = ((*output.args[0], *constants),)
+    lift_constant_tensor_pass(ep)
+    ep.graph_signature.output_specs = [
+        OutputSpec(OutputKind.USER_OUTPUT, TensorArgument(name=node.name), None)
+        for node in output.args[0]
+    ]
+    ep.validate()
+    return ep
 
 
 def _transformed(model, example_inputs, passes):
