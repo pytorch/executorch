@@ -110,6 +110,12 @@ class CudaAllocatorTest : public testing::Test {
   int device_count_ = 0;
 };
 
+TEST(CudaAllocatorCompatibilityTest, BackendAliasSharesTheExtensionSingleton) {
+  EXPECT_EQ(
+      &CudaAllocator::instance(),
+      &executorch::extension::cuda::CudaAllocator::instance());
+}
+
 TEST_F(CudaAllocatorTest, CopyRoundtrip) {
   CudaAllocator& a = CudaAllocator::instance();
   constexpr size_t N = 1024;

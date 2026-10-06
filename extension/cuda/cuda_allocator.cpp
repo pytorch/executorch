@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 
 #include <executorch/extension/cuda/caller_stream.h>
-#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 
 #include <limits>
 
@@ -18,7 +18,7 @@
 #include <vector>
 #endif
 
-namespace executorch::backends::cuda {
+namespace executorch::extension::cuda {
 
 using executorch::runtime::Error;
 using executorch::runtime::Result;
@@ -27,6 +27,15 @@ using executorch::runtime::etensor::DeviceType;
 
 namespace {
 
+struct PalInitializer final {
+  PalInitializer() {
+    // A static-runtime build gives this library its own platform state.
+    et_pal_init();
+  }
+};
+
+const PalInitializer kPalInitializer{};
+
 #if !defined(EXECUTORCH_USE_HIP)
 // The stream ordered allocator hands physical memory back to the driver
 // whenever a synchronization observes a pending free, so with the default
@@ -34,13 +43,8 @@ namespace {
 // and every allocation has to map memory again, which measured three orders of
 // magnitude slower on an embedded board.
 //
-// The delegate allocates from a pool it creates rather than the device default
-// pool, because the default one is shared with every other user of the async
-// allocator in this process. Raising the threshold there would make that shared
-// pool hold on to memory on their behalf, and trimming it on teardown would
-// throw their cached blocks away. Owning the pool means the threshold and the
-// trim only ever affect this backend, with no attempt to remember and restore
-// somebody else's setting.
+// A separate pool leaves the device default pool's policy unchanged. Delegates
+// using this allocator share both its retention threshold and its cache trims.
 constexpr uint64_t kMemPoolReleaseThreshold = UINT64_MAX;
 
 struct MemPoolState {
@@ -72,7 +76,7 @@ int resolve_device(DeviceIndex index) {
   return current;
 }
 
-// The pool this backend allocates from on a device, creating it on first use.
+// The shared allocator pool on a device, creating it on first use.
 // Returns nullptr when the pool cannot be created, in which case the caller
 // falls back to the device default pool and only loses speed.
 cudaMemPool_t mem_pool_for(int device) {
@@ -427,7 +431,7 @@ Result<void*> CudaAllocator::allocate_async(
 #if defined(EXECUTORCH_USE_HIP)
   err = cudaMallocAsync(&ptr, nbytes, stream);
 #else
-  // Allocating from this backend's own pool keeps its retained memory out of
+  // Allocating from this allocator's pool keeps its retained memory out of
   // the device default pool, which other users of the async allocator share.
   //
   // The pool has to belong to the device the stream runs on. A pool from
@@ -514,7 +518,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
       }
       targets.emplace_back(it->first, it->second);
     } else {
-      // A caller asking for everything gets every pool this backend created,
+      // A caller asking for everything gets every pool this allocator created,
       // not whichever device the calling thread happens to be current on, since
       // the delegate that ran is often not on that device.
       targets.assign(state.pools.begin(), state.pools.end());
@@ -545,7 +549,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
     // to the device graph pool, which the pool trim cannot reach, so a
     // graph-enabled method would otherwise hold its footprint for the life of
     // the process. Outside the branch above because graph memory is a device
-    // resource and exists whether or not this backend has a pool here.
+    // resource and exists whether or not this allocator has a pool here.
     //
     // Device scoped, unlike everything else in this function: it releases
     // unused graph memory cached by every user of the device, so another
@@ -582,4 +586,4 @@ Error CudaAllocator::memcpy_async(
   return Error::Ok;
 }
 
-} // namespace executorch::backends::cuda
+} // namespace executorch::extension::cuda
