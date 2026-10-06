@@ -158,11 +158,12 @@ class PerChannelParamObserver(PerChannelMinMaxObserver):
 
     def calculate_qparams(self):
         scale, zero_point = super().calculate_qparams()
-        # A channel whose scale sits at the eps floor has (near-)zero weights, e.g.
-        # one that BatchNorm has killed, and any scale quantizes them to 0. Give it
-        # the median live-channel scale instead: at the floor its int32 bias scale
+        # A channel at the eps floor, e.g. one that BatchNorm has killed, has
+        # negligible weights (|w| <= eps * quant_max), so the median live-channel
+        # scale zeroes them harmlessly. At the floor its int32 bias scale
         # (s_in * s_w) is too small to hold the bias, and the HTP miscomputes a
-        # channel whose scale is ~1e6x below its neighbours'.
+        # channel whose scale is ~1e6x below its neighbours'. Assumes symmetric
+        # weights: the zero point is not recomputed for the new scale.
         floored = scale <= self.eps
         if floored.any() and not floored.all():
             scale = scale.clone()

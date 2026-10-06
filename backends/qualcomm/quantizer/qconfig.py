@@ -603,10 +603,7 @@ def get_16a8w_qnn_qat_config(
 
 
 def _per_channel_weight_eps(weight_dtype, eps: float = None) -> float:
-    # The smallest per-channel weight scale follows the weight width, not the
-    # activation width. With a 16-bit eps, a channel that BatchNorm has all but
-    # zeroed keeps a scale ~1e6x below its neighbours, and the HTP computes that
-    # channel as garbage.
+    # The per-channel weight scale floor follows the weight width.
     if eps:
         return eps
     return DEFAULT_EPS_16BIT if weight_dtype == torch.int16 else DEFAULT_EPS_8BIT

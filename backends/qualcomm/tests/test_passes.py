@@ -1455,14 +1455,7 @@ class TestActivationSpecSharing(unittest.TestCase):
 
 
 class TestDeadChannelWeightScale(unittest.TestCase):
-    """Near-dead weight channels get a live per-channel scale.
-
-    8-bit weights floor at the 8-bit eps, not the 16-bit one, and a channel at
-    the floor takes the median live-channel scale. Otherwise a channel that
-    BatchNorm has all but killed keeps a scale ~1e6x below its neighbours, which
-    the HTP miscomputes, and an int32 bias scale (s_in * s_w) too small to hold
-    its bias, which saturates to ~0.
-    """
+    """Near-dead weight channels get a live per-channel scale and keep their bias."""
 
     BIAS = 0.9
 
