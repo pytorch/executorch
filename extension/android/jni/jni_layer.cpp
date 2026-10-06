@@ -104,8 +104,11 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
   }
 
   static TensorPtr newTensorFromJTensor(
+      facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor);
+
+  static TensorPtr newTensorFromJTensor(
       facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor,
-      std::vector<executorch::aten::DimOrderType> dim_order = {}) {
+      std::vector<executorch::aten::DimOrderType> dim_order) {
     static auto cls = TensorHybrid::javaClassStatic();
     static const auto dtypeMethod = cls->getMethod<jint()>("dtypeJniCode");
     jint jdtype = dtypeMethod(jtensor);
@@ -178,6 +181,11 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
   friend HybridBase;
 };
 
+TensorPtr TensorHybrid::newTensorFromJTensor(
+    facebook::jni::alias_ref<TensorHybrid::javaobject> jtensor) {
+  return newTensorFromJTensor(jtensor, {});
+}
+
 class JEValue : public facebook::jni::JavaClass<JEValue> {
  public:
   constexpr static const char* kJavaDescriptor =
@@ -234,8 +242,11 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
   }
 
   static TensorPtr JEValueToTensorImpl(
+      facebook::jni::alias_ref<JEValue> JEValue);
+
+  static TensorPtr JEValueToTensorImpl(
       facebook::jni::alias_ref<JEValue> JEValue,
-      std::vector<executorch::aten::DimOrderType> dim_order = {}) {
+      std::vector<executorch::aten::DimOrderType> dim_order) {
     static const auto typeCodeField =
         JEValue::javaClassStatic()->getField<jint>("mTypeCode");
     const auto typeCode = JEValue->getFieldValue(typeCodeField);
@@ -254,6 +265,11 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
     return {};
   }
 };
+
+TensorPtr JEValue::JEValueToTensorImpl(
+    facebook::jni::alias_ref<JEValue> JEValue) {
+  return JEValueToTensorImpl(JEValue, {});
+}
 
 class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
