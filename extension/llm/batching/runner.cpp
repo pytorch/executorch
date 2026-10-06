@@ -8,8 +8,6 @@
 
 #include <executorch/extension/llm/batching/runner.h>
 
-#include <executorch/extension/llm/batching/detail/input_validation.h>
-
 #include <algorithm>
 #include <atomic>
 #include <cassert>
@@ -46,24 +44,6 @@ bool valid_output(const Output& output, SessionId expected, std::size_t room) {
 // Output, which condemns only its own generation.
 bool batch_answered(bool ok, const BatchInput& batch, const BatchOutput& out) {
   return ok && out.outputs.size() == batch.inputs.size();
-}
-
-void notify_preparation(
-    std::function<void(bool, PreparedInputPtr)> callback,
-    PreparedInputPtr output = {}) {
-  if (!callback) {
-    return;
-  }
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    const bool ok = static_cast<bool>(output);
-    callback(ok, std::move(output));
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    // Client notification cannot stop the engine or affect peer tasks.
-  }
-#endif
 }
 
 template <class... Visitors>
@@ -322,15 +302,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void request_close(SessionId session) noexcept;
   GenerationHandle generate_async(
       SessionId session,
-      InputPayload delta,
+      GenerationInput delta,
       GenConfig config,
       GenerationCallback on_update,
       std::function<void()> on_settled);
-
-  void prepare_async(
-      PreparationInput input,
-      CancellationToken cancellation,
-      std::function<void(bool, PreparedInputPtr)> on_complete);
 
   InitializationState initialization_state() const noexcept {
     return initialization_state_.load(std::memory_order_acquire);
@@ -396,7 +371,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     Generation* generation;
     GenerationUpdate update;
     Position position;
-    Token pending_token;
+    std::shared_ptr<const std::vector<Token>> input;
   };
 
   using PreparedOutput = std::variant<PreparedCompletion, PreparedContinuation>;
@@ -463,21 +438,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
     std::optional<Generation> active_generation;
   };
 
-  struct PreparationState {
-    std::shared_ptr<const PreparationInput> input;
-    CancellationToken cancellation;
-    std::function<void(bool, PreparedInputPtr)> on_complete;
-  };
-  struct PrepareCommand {
-    std::shared_ptr<PreparationState> state;
-  };
-
-  using Command = std::variant<
-      OpenCommand,
-      CloseCommand,
-      CloneCommand,
-      StartCommand,
-      PrepareCommand>;
+  using Command =
+      std::variant<OpenCommand, CloseCommand, CloneCommand, StartCommand>;
 
   void run_();
   void process_pending_commands_();
@@ -485,11 +447,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   void process_command_(CloseCommand command);
   void process_command_(CloneCommand command);
   void process_command_(StartCommand command);
-  void process_command_(PrepareCommand command);
-  void execute_preparation_(PrepareTask task);
-  void finish_preparation_(
-      std::shared_ptr<PreparationState> state,
-      PreparedInputPtr output = {});
   std::optional<RetiredSession> retire_session_(SessionId session);
   void reap_cancelled_();
   bool execute_one_batch_();
@@ -497,9 +454,11 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::optional<TerminalOutcome> validate_generation_start_(
       const GenerationRequest& request,
       const SessionRecord& record) const;
-  bool create_feedback_(Token token, TokenInputPtr& out);
+  InputPayload build_initial_delta_(
+      GenerationRequest& request,
+      const SessionRecord& record) const;
 
-  // Split the selected payload range into chunks; the last produces output.
+  // Split `payload` into chunks, the last of which may produce output.
   //
   // `is_continuation` distinguishes what the executor handed back from the
   // caller's opening delta. Only a continuation of exactly one token is a
@@ -508,7 +467,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::vector<Task> create_tasks_(
       SessionId session,
       InputPayload payload,
-      std::size_t offset,
       std::size_t size,
       Position position,
       bool is_continuation,
@@ -523,8 +481,10 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
       SessionId session,
       std::optional<Output> output);
   void dispatch_prepared_output_(SessionId session, PreparedOutput prepared);
-  void
-  resume_generation_(SessionId session, Position position, Token pending_token);
+  void resume_generation_(
+      SessionId session,
+      Position position,
+      std::shared_ptr<const std::vector<Token>> input);
   void handle_output_(SessionId session, std::optional<Output> output);
   void submit_(SessionId session, std::vector<Task> tasks);
 
@@ -584,7 +544,6 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::unordered_map<SessionId, SessionRecord> sessions_;
   // Kept after records close to enforce executor IDs are lifetime-unique.
   std::unordered_set<SessionId> issued_session_ids_;
-  std::unordered_map<TaskId, std::shared_ptr<PreparationState>> preparations_;
   TaskId next_tid_ = 1;
   EngineMetrics metrics_;
 
@@ -667,28 +626,26 @@ GenerationHandle Session::generate_async(
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) const {
-  if (!state_ || !state_->status->open.load(std::memory_order_acquire)) {
-    // Release backing before notifying synchronous rejection.
-    delta.emplace<std::vector<Token>>();
-    auto state = std::make_shared<GenerationHandleState>();
-    state->on_settled = std::move(on_settled);
-    GenerationHandle handle(state);
+  if (!state_) {
+    auto handle_state = std::make_shared<GenerationHandleState>();
+    handle_state->on_settled = std::move(on_settled);
+    GenerationHandle handle(handle_state);
     finalize_terminal(
-        state,
+        handle_state,
         on_update,
-        state_ ? TerminalOutcome::cancelled()
-               : TerminalOutcome::failed("session is not initialized"));
+        TerminalOutcome::failed("session is not initialized"));
     return handle;
   }
-  InputPayload payload;
-  if (auto* tokens = std::get_if<std::vector<Token>>(&delta)) {
-    payload = std::make_shared<const std::vector<Token>>(std::move(*tokens));
-  } else if (auto* prepared = std::get_if<PreparedInputPtr>(&delta)) {
-    payload = std::move(*prepared);
+  if (!state_->status->open.load(std::memory_order_acquire)) {
+    auto handle_state = std::make_shared<GenerationHandleState>();
+    handle_state->on_settled = std::move(on_settled);
+    GenerationHandle handle(handle_state);
+    finalize_terminal(handle_state, on_update, TerminalOutcome::cancelled());
+    return handle;
   }
   return state_->impl->generate_async(
       state_->session,
-      std::move(payload),
+      std::move(delta),
       std::move(config),
       std::move(on_update),
       std::move(on_settled));
@@ -719,14 +676,6 @@ EngineMetrics Runner::metrics() const {
 
 std::future<std::optional<Session>> Runner::open_session_async() {
   return impl_->open_session_async();
-}
-
-void Runner::prepare_async(
-    PreparationInput input,
-    CancellationToken cancellation,
-    std::function<void(bool, PreparedInputPtr)> on_complete) {
-  impl_->prepare_async(
-      std::move(input), std::move(cancellation), std::move(on_complete));
 }
 
 // --- RunnerImpl ------------------------------------------------------------
@@ -836,11 +785,6 @@ void RunnerImpl::run_() {
   process_pending_commands_();
 
   scheduler_->clear();
-  auto preparations = std::move(preparations_);
-  preparations_.clear();
-  for (auto& entry : preparations) {
-    finish_preparation_(std::move(entry.second));
-  }
 
   std::vector<SessionId> session_ids;
   session_ids.reserve(sessions_.size());
@@ -873,18 +817,6 @@ void RunnerImpl::run_() {
 // Cancellation and logical closure take effect before get_work(), even when
 // their CloseCommand arrived while an earlier command was running.
 void RunnerImpl::reap_cancelled_() {
-  std::vector<TaskId> cancelled_preparations;
-  for (const auto& entry : preparations_) {
-    if (entry.second->cancellation && entry.second->cancellation->load()) {
-      cancelled_preparations.push_back(entry.first);
-    }
-  }
-  for (auto tid : cancelled_preparations) {
-    scheduler_->cancel_task(tid);
-    auto state = std::move(preparations_.at(tid));
-    preparations_.erase(tid);
-    finish_preparation_(std::move(state));
-  }
   std::vector<SessionId> doomed;
   for (const auto& entry : sessions_) {
     const std::optional<Generation>& generation =
@@ -912,9 +844,8 @@ void RunnerImpl::process_pending_commands_() {
             [this](OpenCommand& open) { process_command_(std::move(open)); },
             [this](CloseCommand& close) { process_command_(std::move(close)); },
             [this](CloneCommand& clone) { process_command_(std::move(clone)); },
-            [this](StartCommand& start) { process_command_(std::move(start)); },
-            [this](PrepareCommand& prepare) {
-              process_command_(std::move(prepare));
+            [this](StartCommand& start) {
+              process_command_(std::move(start));
             }},
         command);
   }
@@ -1028,109 +959,6 @@ void RunnerImpl::process_command_(StartCommand command) {
   start_generation_(std::move(command.request));
 }
 
-void RunnerImpl::prepare_async(
-    PreparationInput input,
-    CancellationToken cancellation,
-    std::function<void(bool, PreparedInputPtr)> on_complete) {
-  std::shared_ptr<PreparationState> state;
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    state = std::make_shared<PreparationState>();
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    input = {};
-    notify_preparation(std::move(on_complete));
-    return;
-  }
-#endif
-  // Only the allocation-failure path above uses the original callback.
-  state->cancellation = std::move(cancellation);
-  state->on_complete = std::move(on_complete);
-  bool admitted = false;
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    state->input = std::make_shared<const PreparationInput>(std::move(input));
-    std::lock_guard<std::mutex> lock(control_mutex_);
-    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running &&
-        (!state->cancellation || !state->cancellation->load())) {
-      inbox_.emplace_back(PrepareCommand{state});
-      admitted = true;
-    }
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-  }
-#endif
-  if (admitted) {
-    notify_engine_();
-  } else {
-    input = {};
-    finish_preparation_(std::move(state));
-  }
-}
-
-void RunnerImpl::process_command_(PrepareCommand command) {
-  auto state = std::move(command.state);
-  if (!is_running_() || (state->cancellation && state->cancellation->load())) {
-    finish_preparation_(std::move(state));
-    return;
-  }
-  const auto tid = next_tid_++;
-  bool submitted = false;
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    preparations_.emplace(tid, state);
-    submitted = scheduler_->submit({PrepareTask{tid, state->input}});
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-  }
-#endif
-  if (!submitted) {
-    preparations_.erase(tid);
-    finish_preparation_(std::move(state));
-  }
-}
-
-void RunnerImpl::finish_preparation_(
-    std::shared_ptr<PreparationState> state,
-    PreparedInputPtr output) {
-  state->input.reset();
-  auto callback = std::move(state->on_complete);
-  state.reset();
-  notify_preparation(std::move(callback), std::move(output));
-}
-
-void RunnerImpl::execute_preparation_(PrepareTask task) {
-  auto entry = preparations_.find(task.tid);
-  if (entry == preparations_.end()) {
-    return;
-  }
-  auto state = std::move(entry->second);
-  preparations_.erase(entry);
-  PreparedInputPtr output;
-  bool ok = false;
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    if (is_running_() &&
-        (!state->cancellation || !state->cancellation->load())) {
-      ok = executor_.prepare(*state->input, output) &&
-          detail::valid_prepared(output);
-    }
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-  }
-#endif
-  if (!ok || !is_running_() ||
-      (state->cancellation && state->cancellation->load())) {
-    output.reset();
-  }
-  task.input.reset();
-  finish_preparation_(std::move(state), std::move(output));
-}
-
 std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
     SessionId session_id) {
   auto session = sessions_.find(session_id);
@@ -1148,23 +976,15 @@ std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
 }
 
 bool RunnerImpl::execute_one_batch_() {
-  std::optional<Work> work;
+  std::vector<Task> tasks;
   {
     // Work reservation and the stop transition have a total order.
     std::lock_guard<std::mutex> lock(control_mutex_);
     if (lifecycle_.load(std::memory_order_relaxed) != Lifecycle::Running) {
       return false;
     }
-    work = scheduler_->get_work();
+    tasks = scheduler_->get_work();
   }
-  if (!work) {
-    return false;
-  }
-  if (auto* preparation = std::get_if<PrepareTask>(&*work)) {
-    execute_preparation_(std::move(*preparation));
-    return true;
-  }
-  auto tasks = std::move(std::get<ExecutionBatch>(*work).tasks);
   if (tasks.empty()) {
     return false;
   }
@@ -1184,7 +1004,7 @@ bool RunnerImpl::execute_one_batch_() {
   std::uint64_t prefill_tokens = 0;
   std::vector<SessionId> prefilling; // small: bounded by the batch width
   const MetricsTime step_start = MetricsClock::now();
-  for (const ExecutionTask& task : tasks) {
+  for (const Task& task : tasks) {
     bool first_chunk = false;
     if (task.is_decode) {
       ++decode_sessions;
@@ -1246,7 +1066,7 @@ bool RunnerImpl::execute_one_batch_() {
   // across several chunks of one step is one context, not one per chunk, and
   // scheduler.h lets a session appear more than once for exactly that reason.
   std::vector<std::pair<SessionId, std::int64_t>> context_ends;
-  for (const ExecutionTask& task : tasks) {
+  for (const Task& task : tasks) {
     const auto end = static_cast<std::int64_t>(task.input.position) +
         static_cast<std::int64_t>(task.input.offset) +
         static_cast<std::int64_t>(task.input.size);
@@ -1273,22 +1093,8 @@ bool RunnerImpl::execute_one_batch_() {
   const MetricsTime exec_start = MetricsClock::now();
   BatchInput batch = to_batch_input(tasks);
   BatchOutput out;
-  bool ok = false;
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    ok = detail::validate_batch(batch) && executor_.execute(batch, out);
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    // Execution failures retain the whole-batch poisoning contract.
-  }
-#endif
+  const bool ok = executor_.execute(batch, out);
   const MetricsTime step_end = MetricsClock::now();
-  // Execution is synchronous. Drop Runner's consumed backing before callbacks
-  // or feedback allocation; range metadata and independent owners remain.
-  for (auto& input : batch.inputs) {
-    input.payload = TokenInputPtr{};
-  }
 
   const std::int64_t latency = us_between(exec_start, step_end);
   ++metrics_.steps;
@@ -1504,7 +1310,7 @@ void RunnerImpl::request_close(SessionId session) noexcept {
 
 GenerationHandle RunnerImpl::generate_async(
     SessionId session,
-    InputPayload delta,
+    GenerationInput delta,
     GenConfig config,
     GenerationCallback on_update,
     std::function<void()> on_settled) {
@@ -1512,7 +1318,14 @@ GenerationHandle RunnerImpl::generate_async(
   state->on_settled = std::move(on_settled);
   GenerationRequest request;
   request.session = session;
-  request.delta = std::move(delta);
+  request.delta = std::visit(
+      Overloaded{
+          [](std::vector<Token> tokens) -> InputPayload {
+            return std::make_shared<const std::vector<Token>>(
+                std::move(tokens));
+          },
+          [](PreparedInputPtr prepared) -> InputPayload { return prepared; }},
+      std::move(delta));
   request.seed = config.seed;
   request.sampling = std::move(config.sampling);
   request.generation.remaining_tokens = config.max_new_tokens;
@@ -1525,33 +1338,22 @@ GenerationHandle RunnerImpl::generate_async(
   request.generation.m.t_submit = MetricsClock::now();
 
   auto handle = GenerationHandle(state);
-  auto rejection = TerminalOutcome::cancelled();
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    {
-      std::unique_lock<std::mutex> lock(control_mutex_);
-      if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
-        // Allocate before moving the request, preserving settlement on
-        // failure.
-        static_assert(noexcept(request = std::move(request)));
-        inbox_.emplace_back(StartCommand{});
-        std::get<StartCommand>(inbox_.back()).request = std::move(request);
-        lock.unlock();
-        notify_engine_();
-        return handle;
-      }
+  {
+    std::unique_lock<std::mutex> lock(control_mutex_);
+    if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+      inbox_.emplace_back(StartCommand{std::move(request)});
+      lock.unlock();
+      notify_engine_();
+      return handle;
     }
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    rejection = TerminalOutcome::failed("could not queue generation");
   }
-#endif
 
-  // Rejected work never enters the inbox; release its source
-  // before synchronous terminal delivery, including after shutdown.
+  // After shutdown nothing drains the inbox, so complete synchronously instead
+  // of admitting a start that can never report completion.
   complete_request_(
-      std::move(request), std::move(rejection), /*on_engine_thread=*/false);
+      std::move(request),
+      TerminalOutcome::cancelled(),
+      /*on_engine_thread=*/false);
   return handle;
 }
 
@@ -1586,18 +1388,21 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   return std::nullopt;
 }
 
-bool RunnerImpl::create_feedback_(Token token, TokenInputPtr& out) {
-  out.reset();
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    out = std::make_shared<const std::vector<Token>>(1, token);
-    return true;
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    return false;
+InputPayload RunnerImpl::build_initial_delta_(
+    GenerationRequest& request,
+    const SessionRecord& record) const {
+  auto delta = std::move(request.delta);
+  const auto* tokens = std::get_if<TokenInputPtr>(&delta);
+  if (!record.pending || !tokens) {
+    return delta;
   }
-#endif
+
+  std::vector<Token> carried;
+  carried.reserve((*tokens)->size() + 1);
+  carried.push_back(*record.pending);
+  carried.insert(carried.end(), (*tokens)->begin(), (*tokens)->end());
+  ++request.size;
+  return std::make_shared<const std::vector<Token>>(std::move(carried));
 }
 
 void RunnerImpl::start_generation_(GenerationRequest request) {
@@ -1605,92 +1410,52 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   // below ends in a completion, so deferring this would let completions
   // exceed starts.
   ++metrics_.generations_started;
-  std::vector<Task> tasks;
-  SessionRecord* staged_record = nullptr;
-  auto stage = [&]() -> std::optional<TerminalOutcome> {
-    if (!is_running_() || request.generation.state->cancelled.load()) {
-      return TerminalOutcome::cancelled();
-    }
-    auto session = sessions_.find(request.session);
-    if (session == sessions_.end()) {
-      return TerminalOutcome::failed("session is not open");
-    }
-    auto& record = session->second;
-    const auto* raw = std::get_if<TokenInputPtr>(&request.delta);
-    const auto* prepared = std::get_if<PreparedInputPtr>(&request.delta);
-    request.size = raw ? (*raw ? (*raw)->size() : 0)
-                       : (*prepared ? (*prepared)->size() : 0);
-    if (auto rejection = validate_generation_start_(request, record)) {
-      return rejection;
-    }
-
-    const auto start_position = record.position();
-    request.generation.m.n_prompt_tokens =
-        static_cast<std::int64_t>(request.size);
-    Position base = start_position;
-    if (record.pending && raw) {
-      std::vector<Token> carried;
-      carried.reserve(request.size + 1);
-      carried.push_back(*record.pending);
-      carried.insert(carried.end(), (*raw)->begin(), (*raw)->end());
-      request.delta =
-          std::make_shared<const std::vector<Token>>(std::move(carried));
-      ++request.size;
-    } else if (record.pending) {
-      tasks = create_tasks_(
-          request.session,
-          std::make_shared<const std::vector<Token>>(1, *record.pending),
-          0,
-          1,
-          base++,
-          false,
-          false);
-    }
-    auto suffix = create_tasks_(
-        request.session,
-        std::move(request.delta),
-        0,
-        request.size,
-        base,
-        false);
-    if (tasks.empty()) {
-      tasks = std::move(suffix);
-    } else {
-      for (auto& task : suffix) {
-        tasks.push_back(std::move(task));
-      }
-    }
-    if (!is_running_() ||
-        !record.status->open.load(std::memory_order_acquire) ||
-        request.generation.state->cancelled.load()) {
-      return TerminalOutcome::cancelled();
-    }
-    executor_.set_sampling(request.session, request.sampling, request.seed);
-    staged_record = &record;
-    return std::nullopt;
-  };
-
-  std::optional<TerminalOutcome> rejection;
-#if ET_HAS_EXCEPTIONS
-  try {
-#endif
-    rejection = stage();
-#if ET_HAS_EXCEPTIONS
-  } catch (...) {
-    // Do not allocate a diagnostic while recovering from allocation failure.
-    rejection = TerminalOutcome::failed({});
-  }
-#endif
-  if (rejection) {
-    tasks.clear();
-    // Terminal delivery stays outside the staging catch, preserving callback
-    // failure semantics and releasing all staged backing before notification.
-    complete_request_(std::move(request), std::move(*rejection), true);
+  if (!is_running_() || request.generation.state->cancelled.load()) {
+    complete_request_(
+        std::move(request),
+        TerminalOutcome::cancelled(),
+        /*on_engine_thread=*/true);
     return;
   }
 
-  assert(staged_record);
-  auto& record = *staged_record;
+  auto session = sessions_.find(request.session);
+  if (session == sessions_.end()) {
+    complete_request_(
+        std::move(request),
+        TerminalOutcome::failed("session is not open"),
+        /*on_engine_thread=*/true);
+    return;
+  }
+  auto& record = session->second;
+  request.size = std::visit(
+      [](const auto& payload) -> std::size_t {
+        return payload ? payload->size() : 0;
+      },
+      request.delta);
+  if (auto rejection = validate_generation_start_(request, record)) {
+    complete_request_(
+        std::move(request), std::move(*rejection), /*on_engine_thread=*/true);
+    return;
+  }
+
+  auto start_position = record.position();
+  // The caller's own delta, captured before build_initial_delta_ moves it and
+  // before any carried token is prepended. The generation tier counts what
+  // callers gave; tokens actually fed to the model are EngineMetrics'
+  // model_input_tokens().
+  request.generation.m.n_prompt_tokens =
+      static_cast<std::int64_t>(request.size);
+  auto delta = build_initial_delta_(request, record);
+  if (!is_running_() || !record.status->open.load(std::memory_order_acquire) ||
+      request.generation.state->cancelled.load()) {
+    complete_request_(
+        std::move(request),
+        TerminalOutcome::cancelled(),
+        /*on_engine_thread=*/true);
+    return;
+  }
+  executor_.set_sampling(request.session, request.sampling, request.seed);
+
   bool installed = false;
   {
     std::lock_guard<std::mutex> lock(control_mutex_);
@@ -1703,7 +1468,6 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   }
   if (!installed) {
     // Sampling began before the stop transition, but no task was submitted.
-    tasks.clear();
     complete_request_(
         std::move(request),
         TerminalOutcome::cancelled(),
@@ -1711,6 +1475,30 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
     return;
   }
 
+  // Opaque backing cannot be prepended to: carry the pending token separately.
+  std::vector<Task> tasks;
+  if (record.pending && std::holds_alternative<PreparedInputPtr>(delta)) {
+    tasks = create_tasks_(
+        request.session,
+        std::make_shared<const std::vector<Token>>(1, *record.pending),
+        1,
+        start_position++,
+        /*is_continuation=*/false,
+        /*produce_output=*/false);
+  }
+  auto suffix = create_tasks_(
+      request.session,
+      std::move(delta),
+      request.size,
+      start_position,
+      /*is_continuation=*/false);
+  if (tasks.empty()) {
+    tasks = std::move(suffix);
+  } else {
+    for (auto& task : suffix) {
+      tasks.push_back(std::move(task));
+    }
+  }
   // advance() clears a carried token only after the input holding it runs.
   submit_(request.session, std::move(tasks));
 }
@@ -1718,37 +1506,38 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
 std::vector<Task> RunnerImpl::create_tasks_(
     SessionId session,
     InputPayload payload,
-    std::size_t offset,
     std::size_t size,
     Position position,
     bool is_continuation,
     bool produce_output) {
+  const auto total = static_cast<std::int32_t>(size);
   // The scheduler owns this limit, so the runner cannot split a prompt into
-  // chunks the scheduler would then refuse. It is non-zero, so the loop below
-  // always advances by the actual emitted length, including the final chunk.
-  const auto chunk = scheduler_->max_prefill_chunk_size();
+  // chunks the scheduler would then refuse. It is non-zero and clamped to the
+  // token count, so the loop below always advances.
+  const auto limit = scheduler_->max_prefill_chunk_size();
+  const auto chunk = limit >= static_cast<std::size_t>(total)
+      ? total
+      : static_cast<std::int32_t>(limit);
   // A one-token continuation is the decode step. Anything else is prefill,
   // including an opening delta that happens to be a single token.
-  const auto decode = is_continuation && size == 1;
+  const auto decode = is_continuation && total == 1;
   std::vector<Task> tasks;
 
-  for (std::size_t i = 0; i < size;) {
-    const auto remaining = size - i;
-    const auto n = std::min(chunk, remaining);
-    const auto last = n == remaining;
+  for (std::int32_t i = 0; i < total; i += chunk) {
+    const auto n = std::min(chunk, total - i);
+    const auto last = (i + n) == total;
 
-    ExecutionTask t;
+    Task t;
     t.tid = next_tid_++;
     t.cancelled = false;
     t.is_decode = decode;
     t.input.sid = session;
     t.input.produce_output = produce_output && last;
-    t.input.offset = offset + i;
-    t.input.size = n;
+    t.input.offset = static_cast<size_t>(i);
+    t.input.size = static_cast<size_t>(n);
     t.input.payload = payload;
     t.input.position = position;
     tasks.push_back(std::move(t));
-    i += n;
   }
   return tasks;
 }
@@ -1893,12 +1682,14 @@ std::optional<RunnerImpl::PreparedOutput> RunnerImpl::prepare_output_(
             // Only the last token still has to reach the executor; it committed
             // the rest while producing them. It belongs where the session now
             // stands.
+            auto continuation = std::make_shared<const std::vector<Token>>(
+                std::vector<Token>{continuation_action.pending_token});
             return PreparedContinuation{
                 &generation,
                 GenerationUpdate{
                     std::move(interpreted.emitted_tokens), std::nullopt, {}},
                 record.position(),
-                continuation_action.pending_token};
+                std::move(continuation)};
           }},
       std::move(interpreted.next));
 }
@@ -1926,7 +1717,9 @@ void RunnerImpl::dispatch_prepared_output_(
               return;
             }
             resume_generation_(
-                session_id, continuation.position, continuation.pending_token);
+                session_id,
+                continuation.position,
+                std::move(continuation.input));
           }},
       std::move(prepared));
 }
@@ -1934,7 +1727,7 @@ void RunnerImpl::dispatch_prepared_output_(
 void RunnerImpl::resume_generation_(
     SessionId session_id,
     Position position,
-    Token pending_token) {
+    std::shared_ptr<const std::vector<Token>> input) {
   if (!is_running_()) {
     return; // shutdown callback; cleanup cancels this generation
   }
@@ -1946,21 +1739,11 @@ void RunnerImpl::resume_generation_(
     return;
   }
 
-  // Allocate after callback delivery. Independently owned immutable inputs may
-  // remain live while the next feedback vector is consumed.
-  TokenInputPtr input;
-  if (!create_feedback_(pending_token, input)) {
-    complete_active_generation_(
-        session_id,
-        TerminalOutcome::failed("could not allocate decode token input"));
-    return;
-  }
   submit_(
       session_id,
       create_tasks_(
           session_id,
           std::move(input),
-          0,
           1,
           position,
           /*is_continuation=*/true));
@@ -2073,7 +1856,6 @@ void RunnerImpl::complete_request_(
     GenerationRequest request,
     TerminalOutcome outcome,
     bool on_engine_thread) {
-  request.delta = TokenInputPtr{};
   complete_generation_(
       std::move(request.generation), std::move(outcome), on_engine_thread);
 }

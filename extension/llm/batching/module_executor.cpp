@@ -14,7 +14,6 @@
 #include <random>
 #include <utility>
 
-#include <executorch/extension/llm/batching/detail/input_validation.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -66,9 +65,6 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
   // own writes, so consecutive chunks of one prompt abut and only the first can
   // reopen committed ground. Every input is checked before any is truncated, so
   // a refusal leaves the cache untouched.
-  if (!detail::validate_batch(batch)) {
-    return Error::InvalidArgument;
-  }
   Step step;
   const std::size_t total = batch.size();
   step.tokens.reserve(total);
@@ -91,7 +87,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
     const std::int32_t seq_id = seq_it->second.seq_id;
     const auto* tokens = std::get_if<TokenInputPtr>(&input.payload);
     const auto* token_input = tokens && *tokens ? tokens->get() : nullptr;
-    if (!token_input || input.size == 0 || input.offset > token_input->size() ||
+    if (input.size == 0 || !token_input || input.offset > token_input->size() ||
         input.size > token_input->size() - input.offset) {
       ET_LOG(
           Error,

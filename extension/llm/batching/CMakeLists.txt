@@ -6,9 +6,9 @@
 
 # Batched LLM serving: the scheduler that packs batches, the executor seam they
 # run through, and the runner that carries whole generations across them. The
-# scheduler and executor seam are header-only; the common CPU image vocabulary
-# includes tensor types. The runner owns a thread, so this is a static library
-# rather than an INTERFACE target.
+# scheduler and the executor seam are header-only and free of ExecuTorch runtime
+# types; the runner owns a thread, so this is a static library rather than an
+# INTERFACE target.
 #
 # extension_llm_batching_module is a separate target because it implements that
 # seam against a program and a KV cache, and so carries the runtime types the
@@ -28,9 +28,7 @@ target_compile_options(extension_llm_batching PUBLIC ${_common_compile_options})
 
 # std::thread and friends need -pthread on glibc; a no-op where they do not.
 find_package(Threads REQUIRED)
-target_link_libraries(
-  extension_llm_batching PUBLIC Threads::Threads extension_tensor
-)
+target_link_libraries(extension_llm_batching PUBLIC Threads::Threads)
 
 add_library(extension_llm_batching_module module_executor.cpp)
 target_link_libraries(

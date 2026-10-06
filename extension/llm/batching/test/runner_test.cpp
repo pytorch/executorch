@@ -48,10 +48,8 @@ using executorch::extension::llm::batching::Session;
 using executorch::extension::llm::batching::SessionId;
 using executorch::extension::llm::batching::stamped;
 using executorch::extension::llm::batching::Task;
-using executorch::extension::llm::batching::TaskId;
 using executorch::extension::llm::batching::Token;
 using executorch::extension::llm::batching::TokenInputPtr;
-using executorch::extension::llm::batching::Work;
 using executorch::extension::llm::batching::testing::FakeExecutor;
 
 namespace {
@@ -350,13 +348,10 @@ class RejectingScheduler : public Scheduler {
   bool has_work() const override {
     return false;
   }
-  std::optional<Work> get_work() override {
+  std::vector<Task> get_work() override {
     return {};
   }
   std::vector<Task> cancel(SessionId) override {
-    return {};
-  }
-  std::vector<Task> cancel_task(TaskId) override {
     return {};
   }
   std::size_t max_prefill_chunk_size() const override {

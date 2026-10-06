@@ -1,31 +1,21 @@
 # Batched generation, session cloning, and prefix reuse
 
-`Runner` schedules token deltas through an `Executor`. `ModuleExecutor` runs
-those batches against a registered off-graph KV cache. Session cloning is a
-runtime operation; token matching and snapshot eviction are a separate,
+`Runner` schedules generation inputs through an `Executor`. `ModuleExecutor`
+runs raw-token batches against a registered off-graph KV cache. Session cloning
+is a runtime operation; token matching and snapshot eviction are a separate,
 caller-owned policy in `batching::PrefixCache`.
 
-## Prepared prompts
+## Opaque inputs
 
-Ordinary text and decode use raw token IDs. Supporting executors can also accept
-explicit `Runner::prepare_async(input, cancellation, callback)` requests.
-Supported segment combinations are executor-defined; images are not required.
-Sources hold resolved text IDs and owned, CPU-preprocessed images in prompt order.
+Ordinary text and decode use raw token IDs. Supporting executors can also consume
+an opaque `PreparedInputPtr` through `session.generate_async(input, config,
+callback)`. Its model-specific representation must be compatible with that
+executor; the framework provides no preparation or construction API.
 
-Preparation enters the command inbox, then a `PrepareTask`. The scheduler
-alternates queued preparation with execution batches. The selected preparation
-runs synchronously on the same engine thread as every other executor operation;
-a long preparation cannot be preempted. Completion happens once, including
-cancellation or refusal, with sources released before notification. Callbacks
-must not block. Cancellation during preparation discards its result after return.
-
-After validation, submit `session.generate_async(prepared, config, callback)`.
-The complete immutable backing must come from that executor; foreign objects
-are unsupported. Prefill chunks share the owner and slice its expanded positions;
-decode feedback remains raw tokens. Input metrics count positions, not necessarily
-text tokens. This change provides the batching seam only: image file decoding,
-serving/HTTP integration, and production vision executors are deferred.
-`ModuleExecutor` remains raw-token-only.
+The complete backing reports a fixed decoder-position count through `size()`.
+Prefill chunks share its owner and slice its logical positions; decode feedback
+remains raw tokens. Input metrics count positions, not necessarily text tokens.
+Metadata and logical contents stay immutable. `ModuleExecutor` remains raw-token-only.
 
 ## Cloning a session
 

@@ -221,9 +221,9 @@ class ET_EXPERIMENTAL Session {
   // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
-  // Prepared backing must come from this Runner's executor. The whole backing
-  // is executed without repeating preparation; a pending prediction is separate
-  // raw prefill before it. Shared backing may outlive generation.
+  // Opaque backing must be compatible with this Runner's executor and have a
+  // stable logical size and layout. A pending prediction is submitted as
+  // separate raw prefill before the opaque chunks.
   //
   // The delta must be non-empty and its exclusive end must fit in Position.
   // Invalid input and a second concurrent generation end as Failed. A default
@@ -282,16 +282,6 @@ class ET_EXPERIMENTAL Runner {
   //
   // nullopt = the executor is at capacity, or the runner is shutting down.
   std::future<std::optional<Session>> open_session_async();
-
-  // General preparation, selected by the scheduler and run on the engine
-  // thread. Completes once, inline on admission refusal or on that thread after
-  // admission. Cancellation discards queued/in-flight results; an executor call
-  // cannot be interrupted. Sources are released before completion; returned
-  // owners may outlive Runner. Callbacks must not block or destroy Runner.
-  void prepare_async(
-      PreparationInput input,
-      CancellationToken cancellation,
-      std::function<void(bool, PreparedInputPtr)> on_complete);
 
   // Idempotent. External callers block until the engine is joined, every live
   // generation has ended, and every owned session is closed. A generation that

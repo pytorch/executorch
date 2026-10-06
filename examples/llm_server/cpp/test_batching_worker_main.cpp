@@ -41,10 +41,7 @@ class InitialBatchGate final : public batching::Scheduler {
     std::set<batching::SessionId> ids;
     if (!released_) {
       for (const auto& task : tasks) {
-        if (const auto* execution =
-                std::get_if<batching::ExecutionTask>(&task)) {
-          ids.insert(execution->input.sid);
-        }
+        ids.insert(task.input.sid);
       }
     }
     if (!inner_->submit(std::move(tasks))) {
@@ -65,20 +62,15 @@ class InitialBatchGate final : public batching::Scheduler {
     return released_ && inner_->has_work();
   }
 
-  std::optional<batching::Work> get_work() override {
+  std::vector<batching::Task> get_work() override {
     std::lock_guard<std::mutex> lock(mutex_);
-    return released_ ? inner_->get_work() : std::nullopt;
+    return released_ ? inner_->get_work() : std::vector<batching::Task>{};
   }
 
   std::vector<batching::Task> cancel(batching::SessionId sid) override {
     std::lock_guard<std::mutex> lock(mutex_);
     queued_.erase(sid);
     return inner_->cancel(sid);
-  }
-
-  std::vector<batching::Task> cancel_task(batching::TaskId tid) override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return inner_->cancel_task(tid);
   }
 
   std::vector<batching::Task> clear() override {

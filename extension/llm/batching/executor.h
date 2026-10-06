@@ -9,8 +9,8 @@
 #pragma once
 
 // The seam between the batched runner and whatever actually runs a forward.
-// Preparation accepts owned CPU inputs; execution carries opaque prepared
-// prompts or standard token feedback, so a fake needs neither a .pte nor a GPU.
+// Execution carries raw tokens or opaque inputs and logical positions, so a
+// fake needs neither a .pte nor a GPU.
 //
 // Sessions live here because the cache owns their identity. Until a batched
 // cache exists an implementation may number them however it likes.
@@ -69,16 +69,6 @@ class ET_EXPERIMENTAL Executor {
  public:
   virtual ~Executor() = default;
 
-  // Context-free preparation on the engine thread. Supported inputs and
-  // resource limits are executor-defined. Failure must not mutate sessions;
-  // successful backing must be consumed by this same executor.
-  virtual bool prepare(
-      const PreparationInput& /*input*/,
-      PreparedInputPtr& out) {
-    out.reset();
-    return false;
-  }
-
   // Optional one-time setup, called on the engine thread before any other
   // method.
   //
@@ -131,9 +121,8 @@ class ET_EXPERIMENTAL Executor {
       std::optional<std::uint64_t> seed) = 0;
 
   // Run one batch. `out.outputs` is resized to batch.inputs.size() and filled
-  // position-wise: outputs[i] answers inputs[i]. Validate the entire batch's
-  // bounds and executor-specific storage before any decoder/cache mutation.
-  // Prepared backing must have been produced by this executor.
+  // position-wise: outputs[i] answers inputs[i]. Opaque backing must be
+  // compatible with this executor and have stable logical size and layout.
   //
   // The batch arrives shaped as the scheduler packed it, and every input must
   // be answered. An implementation whose model needs static shapes pads or
@@ -155,7 +144,9 @@ class ET_EXPERIMENTAL Executor {
   //
   // A session may appear in more than one input of a batch when consecutive
   // prefill chunks of its prompt land together. They arrive in order, with
-  // contiguous ranges, and at most one has produce_output set.
+  // contiguous ranges, and at most one has produce_output set. Their payload
+  // alternatives may differ: raw pending-token prefill can immediately precede
+  // prepared chunks for the same session, including within one batch.
   //
   // false = the batch failed as a whole; there is no partial success. The
   // runner completes every task in it as Failed and poisons their sessions,

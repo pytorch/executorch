@@ -11,18 +11,15 @@
 // The vocabulary shared by the runner, the scheduler, and the executor.
 //
 // An Input is one slice of work for one session, either a decode token or one
-// chunk of a prompt, never a whole generation. Tasks distinguish context-free
-// preparation from session execution and carry scheduling/cancellation
-// identity.
+// chunk of a prompt, never a whole generation. A Task is an Input plus the
+// scheduling identity used to order and cancel it.
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <variant>
 #include <vector>
 
-#include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/runtime/platform/compiler.h> // ET_EXPERIMENTAL
 
 namespace executorch {
@@ -30,23 +27,16 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-using Token ET_EXPERIMENTAL = std::uint64_t;
-using SessionId ET_EXPERIMENTAL = std::int64_t;
-using Position ET_EXPERIMENTAL = std::int32_t;
+using Token = std::uint64_t;
+using SessionId = std::int64_t;
+using Position = std::int32_t;
 // Wide enough that a monotonically issued id cannot wrap in any realistic
 // lifetime, so ids never have to be recycled.
-using TaskId ET_EXPERIMENTAL = std::int64_t;
+using TaskId = std::int64_t;
 
-// Tokenized text and CPU-preprocessed images in prompt order. Source text and
-// encoded images must be resolved before preparation.
-struct ET_EXPERIMENTAL PreparationInput {
-  std::vector<MultimodalInput> segments;
-};
-using CancellationToken ET_EXPERIMENTAL =
-    std::shared_ptr<const std::atomic<bool>>;
-
-// Immutable owned backing for the executor that prepared it, valid over every
-// selected range. Metadata is thread-safe and independent of executor lifetime.
+// Opaque owned backing, compatible with its consuming executor as a caller
+// precondition. Logical contents, size and layout are fixed before scheduling
+// and immutable for the backing's lifetime.
 class ET_EXPERIMENTAL PreparedInput {
  public:
   virtual ~PreparedInput() = default;
@@ -73,7 +63,7 @@ struct ET_EXPERIMENTAL Input {
 
   // The selected slice is payload[offset : offset + size]. It starts at the
   // absolute logical position `position + offset`; `position` is the base of
-  // the complete backing, not of the slice. The base may be negative.
+  // the complete backing, not of the slice.
   size_t offset;
   size_t size;
 
@@ -89,23 +79,12 @@ struct ET_EXPERIMENTAL Output {
   std::vector<Token> tokens;
 };
 
-struct ET_EXPERIMENTAL ExecutionTask {
+struct ET_EXPERIMENTAL Task {
   TaskId tid;
   bool cancelled;
   Input input;
   bool is_decode;
 };
-
-struct ET_EXPERIMENTAL PrepareTask {
-  TaskId tid;
-  std::shared_ptr<const PreparationInput> input;
-};
-
-using Task ET_EXPERIMENTAL = std::variant<PrepareTask, ExecutionTask>;
-struct ET_EXPERIMENTAL ExecutionBatch {
-  std::vector<ExecutionTask> tasks;
-};
-using Work ET_EXPERIMENTAL = std::variant<PrepareTask, ExecutionBatch>;
 
 struct ET_EXPERIMENTAL BatchInput {
   std::vector<Input> inputs;
@@ -123,11 +102,10 @@ struct ET_EXPERIMENTAL BatchInput {
 //
 // Moves each Input out of its Task, preserving task order, so outputs[i]
 // answers batch.inputs[i].
-ET_EXPERIMENTAL inline BatchInput to_batch_input(
-    std::vector<ExecutionTask>& tasks) {
+ET_EXPERIMENTAL inline BatchInput to_batch_input(std::vector<Task>& tasks) {
   BatchInput batch;
   batch.inputs.reserve(tasks.size());
-  for (ExecutionTask& t : tasks) {
+  for (Task& t : tasks) {
     batch.inputs.push_back(std::move(t.input));
   }
   return batch;

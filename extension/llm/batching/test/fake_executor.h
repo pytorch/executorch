@@ -89,13 +89,6 @@ class FakeExecutor : public Executor {
   }
 
   bool execute(const BatchInput& batch, BatchOutput& out) override {
-    for (const auto& input : batch.inputs) {
-      const auto* tokens = std::get_if<TokenInputPtr>(&input.payload);
-      if (!tokens || !*tokens || input.offset > (*tokens)->size() ||
-          input.size > (*tokens)->size() - input.offset) {
-        return false;
-      }
-    }
     {
       std::unique_lock<std::mutex> lock(gate_mutex_);
       in_execute_.store(true);
