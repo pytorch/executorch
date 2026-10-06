@@ -1,0 +1,26 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.cxx_library,
+    name = "batching",
+    srcs = [
+        "metrics.cpp",
+        "runner.cpp",
+    ],
+    exported_headers = [
+        "decode_first_scheduler.h",
+        "executor.h",
+        "metrics.h",
+        "prefix_cache.h",
+        "runner.h",
+        "scheduler.h",
+        "types.h",
+    ],
+    header_namespace = "executorch/extension/llm/batching",
+    exported_deps = [
+        "//executorch/runtime/platform:compiler",
+    ],
+    visibility = ["PUBLIC"],
+)
