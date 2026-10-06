@@ -93,4 +93,20 @@ void merge_accum_amin(inout Accum accum, const Accum other) {
   }
 }
 
+// Any
+
+void update_accum_any(inout Accum accum, T in_val, uint idx) {
+  if (in_val != T(0)) {
+    accum.val = ACCUM_T(1);
+    accum.idx = idx;
+  }
+}
+
+void merge_accum_any(inout Accum accum, const Accum other) {
+  if (other.val != ACCUM_T(0)) {
+    accum.val = ACCUM_T(1);
+    accum.idx = other.idx;
+  }
+}
+
 #endif // REDUCE_OP_DEFS_GLSLH

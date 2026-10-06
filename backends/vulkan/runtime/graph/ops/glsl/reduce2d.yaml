@@ -29,5 +29,5 @@ reduce2d:
       POSTPROCESS: accum
     - NAME: any2d
       INIT_ACCUM: first_val
-      UPDATE_ACCUM: max(accum, new_val)
+      UPDATE_ACCUM: sign(abs(accum) + abs(new_val))
       POSTPROCESS: accum

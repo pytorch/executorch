@@ -61,3 +61,8 @@ unary_op:
     - NAME: bitwise_not_uint8
       OPERATOR: 1 - X
       DTYPE: uint8
+    - NAME: logical_not
+      OPERATOR: "VEC4_T(1.0) - sign(abs(X))"
+    - NAME: logical_not_uint8
+      OPERATOR: 1 - X
+      DTYPE: uint8

@@ -59,7 +59,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 function(gen_vulkan_shader_lib_cpp shaders_path)
   set(VULKAN_SHADERGEN_ENV "")
-  set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/vulkan_compute_shaders)
+  set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/vulkan_compute_shaders)
 
   set(GEN_SPV_ARGS "--optimize")
   if(DEFINED ENV{ETVK_USING_SWIFTSHADER})
