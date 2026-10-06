@@ -53,6 +53,7 @@ fbcode_target(
     name = "quantize_op_dispatch",
     srcs = [
         "quantize_op_dispatch/__init__.py",
+        "quantize_op_dispatch/_gemm_family_dispatch.py",
         "quantize_op_dispatch/_library.py",
         "quantize_op_dispatch/int4_dispatch.py",
         "quantize_op_dispatch/int5_dispatch.py",
@@ -165,6 +166,7 @@ fbcode_target(
         "triton/kernels/__init__.py",
         "triton/kernels/fused_moe.py",
         "triton/kernels/int4_matmul.py",
+        "triton/kernels/quantized_gemm_family.py",
         "triton/kernels/sdpa.py",
         "triton/kernels/topk.py",
         "triton/kernels/tq4_sdpa.py",
