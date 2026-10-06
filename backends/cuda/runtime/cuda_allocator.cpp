@@ -12,9 +12,9 @@
 #include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <limits>
+
 #if !defined(EXECUTORCH_USE_HIP)
-#include <mutex>
-#include <unordered_map>
 #include <vector>
 #endif
 
@@ -240,19 +240,15 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
       "CudaAllocator::allocate: alignment must be a power of 2, got %zu",
       alignment);
 
-  // cudaMalloc is documented to return memory aligned to at least 256 bytes,
-  // which trivially satisfies kDefaultAlignment (alignof(void*)). For any
-  // requested alignment <= 256 bytes, the returned pointer is already aligned.
-  // Stricter alignment would require over-allocation plus bookkeeping that
-  // deallocate() does not currently support, so reject that case.
+  // cudaMalloc guarantees only 256-byte alignment.
   constexpr size_t kCudaMallocAlignment = 256;
+  const size_t padding = alignment > kCudaMallocAlignment ? alignment - 1 : 0;
   ET_CHECK_OR_RETURN_ERROR(
-      alignment <= kCudaMallocAlignment,
-      NotSupported,
-      "CudaAllocator::allocate: requested alignment %zu exceeds cudaMalloc's "
-      "guaranteed alignment of %zu bytes; stricter alignment is not supported",
-      alignment,
-      kCudaMallocAlignment);
+      nbytes <= std::numeric_limits<size_t>::max() - padding,
+      InvalidArgument,
+      "CudaAllocator::allocate: size %zu with alignment %zu overflows",
+      nbytes,
+      alignment);
 
   void* ptr = nullptr;
   int prev_device = 0;
@@ -293,7 +289,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
     }
   }
 
-  cudaError_t err = cudaMalloc(&ptr, nbytes);
+  cudaError_t err = cudaMalloc(&ptr, nbytes + padding);
 
   if (switch_device) {
     (void)cudaSetDevice(prev_device);
@@ -309,9 +305,17 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
     return Error::MemoryAllocationFailed;
   }
 
-  // Sanity check: the pointer returned by cudaMalloc should already meet the
-  // requested alignment. If a future CUDA runtime weakens this guarantee, we
-  // want to fail loudly rather than silently return a misaligned pointer.
+  if (padding != 0) {
+    void* aligned_ptr = reinterpret_cast<void*>(
+        (reinterpret_cast<uintptr_t>(ptr) + padding) & ~uintptr_t(padding));
+    if (aligned_ptr != ptr) {
+      const std::lock_guard<std::mutex> lock(padded_allocations_mutex_);
+      padded_allocations_.emplace(aligned_ptr, ptr);
+      padded_allocation_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+    return aligned_ptr;
+  }
+
   if ((reinterpret_cast<uintptr_t>(ptr) & (alignment - 1)) != 0) {
     ET_LOG(
         Error,
@@ -319,7 +323,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
         ptr,
         alignment);
     (void)cudaFree(ptr);
-    return Error::MemoryAllocationFailed;
+    return Error::NotSupported;
   }
 
   return ptr;
@@ -328,6 +332,17 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
 void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   if (ptr == nullptr) {
     return;
+  }
+
+  // Avoid locking when no rounded pointers are live.
+  if (padded_allocation_count_.load(std::memory_order_relaxed) != 0) {
+    const std::lock_guard<std::mutex> lock(padded_allocations_mutex_);
+    const auto it = padded_allocations_.find(ptr);
+    if (it != padded_allocations_.end()) {
+      ptr = it->second;
+      padded_allocations_.erase(it);
+      padded_allocation_count_.fetch_sub(1, std::memory_order_relaxed);
+    }
   }
 
   int prev_device = 0;

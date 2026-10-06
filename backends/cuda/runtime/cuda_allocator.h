@@ -11,6 +11,10 @@
 #include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/device_allocator.h>
 
+#include <atomic>
+#include <mutex>
+#include <unordered_map>
+
 namespace executorch::backends::cuda {
 
 /**
@@ -25,6 +29,7 @@ namespace executorch::backends::cuda {
  */
 class CudaAllocator final : public executorch::runtime::DeviceAllocator {
  public:
+  /// Alignments above 256 bytes add up to alignment minus one bytes of padding.
   executorch::runtime::Result<void*> allocate(
       size_t nbytes,
       executorch::runtime::etensor::DeviceIndex index,
@@ -125,6 +130,11 @@ class CudaAllocator final : public executorch::runtime::DeviceAllocator {
       size_t nbytes,
       cudaMemcpyKind direction,
       cudaStream_t stream);
+
+ private:
+  std::mutex padded_allocations_mutex_;
+  std::unordered_map<void*, void*> padded_allocations_;
+  std::atomic<size_t> padded_allocation_count_{0};
 };
 
 } // namespace executorch::backends::cuda
