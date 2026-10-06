@@ -18,10 +18,12 @@ def define_common_targets():
         name = "vulkan_passes",
         srcs = [
             "passes/InsertPrepack.cpp",
+            "passes/LowerRMSNorm.cpp",
             "passes/MaterializeViewCopies.cpp",
         ],
         exported_headers = [
             "passes/InsertPrepack.h",
+            "passes/LowerRMSNorm.h",
             "passes/MaterializeViewCopies.h",
         ],
         exported_deps = [
