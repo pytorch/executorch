@@ -53,8 +53,8 @@ if(EXECUTORCH_BUILD_ROCM)
 else()
   target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 endif()
-# device_guard.cpp logs, so this needs the ExecuTorch runtime. Where one shared
-# runtime exists, the helper retains it, so a process has a single registry.
+# The allocator and device guard log through the ExecuTorch runtime. Where one
+# shared runtime exists, the helper retains it so there is a single registry.
 # Where it does not, the helper does nothing, and this library carries the parts
 # of the static core it needs instead.
 if(EXECUTORCH_BUILD_SHARED)
