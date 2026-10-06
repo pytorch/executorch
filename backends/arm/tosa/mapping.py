@@ -36,14 +36,14 @@ UNSUPPORTED_DTYPES = (
 class TosaSpecialDtype(Enum):
     """Special TOSA dtypes not natively expressed in PyTorch."""
 
-    FP4E2M1 = ts.DType.FP4E2M1
-    FP6E2M3 = ts.DType.FP6E2M3
-    FP6E3M2 = ts.DType.FP6E3M2
-    INT48 = ts.DType.INT48
-    INT4 = ts.DType.INT4
-    SHAPE = ts.DType.SHAPE
+    FP4E2M1 = ts.DType.FP4E2M1  # pyrefly: ignore [missing-attribute]
+    FP6E2M3 = ts.DType.FP6E2M3  # pyrefly: ignore [missing-attribute]
+    FP6E3M2 = ts.DType.FP6E3M2  # pyrefly: ignore [missing-attribute]
+    INT48 = ts.DType.INT48  # pyrefly: ignore [missing-attribute]
+    INT4 = ts.DType.INT4  # pyrefly: ignore [missing-attribute]
+    SHAPE = ts.DType.SHAPE  # pyrefly: ignore [missing-attribute]
 
-    def get_tosa_dtype(self) -> ts.DType:
+    def get_tosa_dtype(self) -> ts.DType:  # pyrefly: ignore [missing-attribute]
         """Return the underlying ``ts.DType`` enumerant.
 
         Returns:
@@ -98,25 +98,25 @@ def map_dtype(data_type: torch.dtype) -> Any:
         raise ValueError(f"Unsupported type: {data_type}")
 
     dtype_map = {
-        torch.float32: ts.DType.FP32,
-        torch.float: ts.DType.FP32,
-        torch.float16: ts.DType.FP16,
-        torch.half: ts.DType.FP16,
-        torch.bfloat16: ts.DType.BF16,
-        torch.float8_e4m3fn: ts.DType.FP8E4M3,
-        torch.float8_e5m2: ts.DType.FP8E5M2,
-        torch.float8_e8m0fnu: ts.DType.FP8UE8M0,
-        torch.float4_e2m1fn_x2: ts.DType.FP4E2M1,
-        torch.int8: ts.DType.INT8,
+        torch.float32: ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+        torch.float: ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+        torch.float16: ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+        torch.half: ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+        torch.bfloat16: ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
+        torch.float8_e4m3fn: ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+        torch.float8_e5m2: ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
+        torch.float8_e8m0fnu: ts.DType.FP8UE8M0,  # pyrefly: ignore [missing-attribute]
+        torch.float4_e2m1fn_x2: ts.DType.FP4E2M1,  # pyrefly: ignore [missing-attribute]
+        torch.int8: ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
         # TOSA uses signless int8; unsigned semantics are expressed via RESCALE.
-        torch.uint8: ts.DType.INT8,
-        torch.int16: ts.DType.INT16,
-        torch.short: ts.DType.INT16,
-        torch.int32: ts.DType.INT32,
-        torch.int: ts.DType.INT32,
-        torch.bool: ts.DType.BOOL,
-        torch.float8_e4m3fn: ts.DType.FP8E4M3,
-        torch.float8_e5m2: ts.DType.FP8E5M2,
+        torch.uint8: ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+        torch.int16: ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+        torch.short: ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+        torch.int32: ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+        torch.int: ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+        torch.bool: ts.DType.BOOL,  # pyrefly: ignore [missing-attribute]
+        torch.float8_e4m3fn: ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+        torch.float8_e5m2: ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
     }
     if data_type not in dtype_map:
         raise ValueError(f"Unknown type: {data_type}")
@@ -235,31 +235,31 @@ class TosaArg:
 
     def __validate(self, tosa_spec: TosaSpecification) -> bool:
         match getattr(self, "dtype", None):
-            case ts.DType.FP32:
+            case ts.DType.FP32:  # pyrefly: ignore [missing-attribute]
                 if not tosa_spec.support_float():
                     return False
-            case ts.DType.INT4:
+            case ts.DType.INT4:  # pyrefly: ignore [missing-attribute]
                 if not tosa_spec.support_extension("int4"):
                     return False
-            case ts.DType.BF16:
+            case ts.DType.BF16:  # pyrefly: ignore [missing-attribute]
                 if not tosa_spec.support_extension("bf16"):
                     return False
-            case ts.DType.FP8E4M3:
+            case ts.DType.FP8E4M3:  # pyrefly: ignore [missing-attribute]
                 if not (
                     tosa_spec.support_extension("fp8e4m3")
                     or tosa_spec.support_extension("mxfp")
                 ):
                     return False
-            case ts.DType.FP8E5M2:
+            case ts.DType.FP8E5M2:  # pyrefly: ignore [missing-attribute]
                 if not (
                     tosa_spec.support_extension("fp8e5m2")
                     or tosa_spec.support_extension("mxfp")
                 ):
                     return False
-            case ts.DType.FP4E2M1:
+            case ts.DType.FP4E2M1:  # pyrefly: ignore [missing-attribute]
                 if not tosa_spec.support_extension("mxfp"):
                     return False
-            case ts.DType.FP6E2M3:
+            case ts.DType.FP6E2M3:  # pyrefly: ignore [missing-attribute]
                 if not tosa_spec.support_extension("mxfp"):
                     return False
             case ts.DType.FP6E3M2:

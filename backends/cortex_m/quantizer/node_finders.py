@@ -8,7 +8,7 @@ from typing import Callable, Iterator, List
 from executorch.backends.arm.quantizer.arm_quantizer_utils import NodeFinder
 from torch._ops import OpOverload
 from torch.fx import GraphModule, Node
-from torchao.quantization.pt2e.quantizer.utils import get_module_name_filter
+from torchao.quantization.pt2e.quantizer.utils import get_module_name_filter  # pyrefly: ignore [missing-import]
 
 
 def make_list(item_or_list):
@@ -151,9 +151,9 @@ class ModuleTypeNodeFinder(NodeFinder):
     def __init__(self, module_types: Callable | List[Callable]) -> None:
         super().__init__()
         module_types = make_list(module_types)
-        self.module_type_names = [m.__name__ for m in module_types]
+        self.module_type_names = [m.__name__ for m in module_types]  # pyrefly: ignore [not-iterable]
 
-        module_type_filters = [self._get_module_type_filter(tp) for tp in module_types]
+        module_type_filters = [self._get_module_type_filter(tp) for tp in module_types]  # pyrefly: ignore [not-iterable]
         self.module_type_filter = lambda node: any(
             module_type_filter(node) for module_type_filter in module_type_filters
         )

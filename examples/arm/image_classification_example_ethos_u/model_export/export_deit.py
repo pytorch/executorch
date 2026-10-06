@@ -28,8 +28,8 @@ from torchao.quantization.pt2e.quantize_pt2e import (  # type: ignore[import]
     convert_pt2e,
     prepare_pt2e,
 )
-from transformers import AutoImageProcessor
-from transformers.models.vit.modeling_vit import ViTForImageClassification
+from transformers import AutoImageProcessor  # pyrefly: ignore [missing-import]
+from transformers.models.vit.modeling_vit import ViTForImageClassification  # pyrefly: ignore [missing-import]
 
 
 def make_transform(preprocessor):

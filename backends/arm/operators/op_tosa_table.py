@@ -36,11 +36,11 @@ class TableVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
-        supported_input_dtypes = [ts.DType.INT8]
-        supported_output_dtypes = [ts.DType.INT8]
+        supported_input_dtypes = [ts.DType.INT8]  # pyrefly: ignore [missing-attribute]
+        supported_output_dtypes = [ts.DType.INT8]  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("int16"):
-            supported_input_dtypes.append(ts.DType.INT16)
-            supported_output_dtypes.append(ts.DType.INT32)
+            supported_input_dtypes.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
+            supported_output_dtypes.append(ts.DType.INT32)  # pyrefly: ignore [missing-attribute]
 
         validate_valid_dtype(
             self.target, inputs, supported_input_dtypes, self.tosa_spec
@@ -56,12 +56,12 @@ class TableVisitor(NodeVisitor):
         input, table_buffer = inputs
         tosa_table_buffer_name = table_buffer.name
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.TableAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.TABLE,
+            ts.Op.TABLE,  # pyrefly: ignore [missing-attribute]
             [input.name, tosa_table_buffer_name],
             [output.name],
             attr,

@@ -198,7 +198,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
 prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)  # type: ignore[arg-type]
@@ -362,7 +362,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (  # noqa
 
 # Lower the module
 lowered_module: LoweredBackendModule = to_backend(  # type: ignore[call-arg]
-    "BackendWithCompilerDemo", to_be_lowered_module, []
+    "BackendWithCompilerDemo", to_be_lowered_module, []  # pyrefly: ignore [bad-argument-count]
 )
 print(lowered_module)
 print(lowered_module.backend_id)

@@ -73,7 +73,7 @@ def dim_check(shape=torch.Size) -> bool:
     """
     check = True
     for dim in shape[1:]:
-        check &= 1 <= dim <= 65536
+        check &= 1 <= dim <= 65536  # pyrefly: ignore [unsupported-operation]
     return check
 
 

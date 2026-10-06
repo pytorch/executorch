@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import BinaryIO, Callable, Collection, Iterator
 
 import torch
-from huggingface_hub import hf_hub_url
-from huggingface_hub.utils import build_hf_headers, get_session
-from safetensors import safe_open
+from huggingface_hub import hf_hub_url  # pyrefly: ignore [missing-import]
+from huggingface_hub.utils import build_hf_headers, get_session  # pyrefly: ignore [missing-import]
+from safetensors import safe_open  # pyrefly: ignore [missing-import]
 
 
 NSS_DATASET_REVISION = "main"

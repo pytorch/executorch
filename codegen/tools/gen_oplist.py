@@ -20,7 +20,7 @@ try:
 except ImportError:
     # If we build from source, executorch.codegen is not available.
     # We can use relative import instead.
-    from ..parse import strip_et_fields
+    from ..parse import strip_et_fields  # pyrefly: ignore [missing-import]
 
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator

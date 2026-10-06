@@ -36,15 +36,15 @@ class MinVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         valid_dtypes = [
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.FP16,
-            ts.DType.FP32,
-            ts.DType.BF16,
+            ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+            ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+            ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+            ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
         ]
         if self.tosa_spec.is_U55_subset:
-            valid_dtypes.remove(ts.DType.INT32)
+            valid_dtypes.remove(ts.DType.INT32)  # pyrefly: ignore [missing-attribute]
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
@@ -54,15 +54,15 @@ class MinVisitor(NodeVisitor):
 
         input = inputs[0]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         nan_mode = getattr(
-            ts.NanPropagationMode, cast(str, node.kwargs.get("nan_mode", "PROPAGATE"))
+            ts.NanPropagationMode, cast(str, node.kwargs.get("nan_mode", "PROPAGATE"))  # pyrefly: ignore [missing-attribute]
         )
         attr.ReduceMinAttribute(axis=node.kwargs["axis"], nan_mode=nan_mode)
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_MIN,
+            ts.Op.REDUCE_MIN,  # pyrefly: ignore [missing-attribute]
             [input.name],
             [output.name],
             attr,

@@ -13,11 +13,11 @@ import time
 from typing import Any, Dict, Optional
 
 import torch
-from PIL import Image
+from PIL import Image  # pyrefly: ignore [missing-import]
 
 try:
-    from diffusers import LCMScheduler
-    from transformers import CLIPTokenizer
+    from diffusers import LCMScheduler  # pyrefly: ignore [missing-import]
+    from transformers import CLIPTokenizer  # pyrefly: ignore [missing-import]
 except ImportError:
     raise ImportError(
         "Please install diffusers and transformers: pip install diffusers transformers"
@@ -144,7 +144,7 @@ class OpenVINOLCMPipeline:
             )
 
             # Set timesteps for LCM
-            self.scheduler.set_timesteps(num_steps)
+            self.scheduler.set_timesteps(num_steps)  # pyrefly: ignore [missing-attribute]
 
             # Get UNet method
             load_start = time.time()
@@ -157,10 +157,10 @@ class OpenVINOLCMPipeline:
             logger.info(f"Running LCM denoising with {num_steps} steps...")
             denoise_start = time.time()
 
-            for step, timestep in enumerate(self.scheduler.timesteps):
+            for step, timestep in enumerate(self.scheduler.timesteps):  # pyrefly: ignore [missing-attribute]
                 step_start = time.time()
 
-                latent_model_input = self.scheduler.scale_model_input(latents, timestep)
+                latent_model_input = self.scheduler.scale_model_input(latents, timestep)  # pyrefly: ignore [missing-attribute]
                 if latent_model_input.dtype != self.dtype:
                     latent_model_input = latent_model_input.to(self.dtype)
 
@@ -174,7 +174,7 @@ class OpenVINOLCMPipeline:
                 if guidance_scale != 1.0:
                     noise_pred = noise_pred * guidance_scale
 
-                latents = self.scheduler.step(noise_pred, timestep, latents).prev_sample
+                latents = self.scheduler.step(noise_pred, timestep, latents).prev_sample  # pyrefly: ignore [missing-attribute]
                 logger.info(
                     f"  Step {step+1}/{num_steps} completed ({time.time() - step_start:.3f}s)"
                 )

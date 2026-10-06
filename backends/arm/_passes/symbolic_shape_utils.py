@@ -21,7 +21,7 @@ def materialize_symints(
         list[torch.fx.Node | int]: Materialized graph nodes or static integers.
 
     """
-    materialized = graph.materialize_symints(values)
+    materialized = graph.materialize_symints(values)  # pyrefly: ignore [missing-attribute]
     if not any(isinstance(value, torch.SymInt) for value in materialized):
         return materialized
     raise AssertionError("materialize_symints returned a raw SymInt")

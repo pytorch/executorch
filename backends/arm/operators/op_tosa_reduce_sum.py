@@ -37,19 +37,19 @@ class SumVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            [ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
 
         tensor = inputs[0]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ReduceSumAttribute(node.kwargs["axis"])
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_SUM,
+            ts.Op.REDUCE_SUM,  # pyrefly: ignore [missing-attribute]
             [tensor.name],
             [output.name],
             attr,

@@ -31,8 +31,8 @@ from executorch.examples.models.llama.export_llama_lib import (
 
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 
-from transformers import GenerationConfig, LlamaConfig, LlamaForCausalLM
-from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
+from transformers import GenerationConfig, LlamaConfig, LlamaForCausalLM  # pyrefly: ignore [missing-import]
+from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM  # pyrefly: ignore [missing-import]
 
 input_t = Tuple[torch.Tensor, ...]
 input_th = Tuple[torch.Tensor, torch.Tensor]

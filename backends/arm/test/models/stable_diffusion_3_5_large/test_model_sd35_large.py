@@ -17,7 +17,7 @@ from executorch.backends.arm.test.models.stable_diffusion_3_5_large.test_configs
 from executorch.examples.models.stable_diffusion_3_5_large import (
     model as sd35_large_model,
 )
-from transformers import CLIPTextModelWithProjection, T5EncoderModel
+from transformers import CLIPTextModelWithProjection, T5EncoderModel  # pyrefly: ignore [missing-import]
 
 
 @pytest.mark.parametrize(

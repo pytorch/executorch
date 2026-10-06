@@ -9,7 +9,7 @@ import argparse
 import json
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image  # pyrefly: ignore [missing-import]
 
 RUNTIME_DEMO_CROP = ("demo", 60, 420)
 CALIBRATION_CROPS = (

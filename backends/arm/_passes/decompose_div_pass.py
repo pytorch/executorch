@@ -42,7 +42,7 @@ class DecomposeDivPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
     target_ops = edge_div_ops + aten_div_ops
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 

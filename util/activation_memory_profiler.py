@@ -77,7 +77,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             )
             stack_trace = node.meta.get("stack_trace")
             fqn = _get_module_hierarchy(node)
-            for j in range(start, end + 1):
+            for j in range(start, end + 1):  # pyrefly: ignore [bad-argument-type, unsupported-operation]
                 memory_timeline_j = memory_timeline[j]
                 if memory_timeline_j is None:
                     memory_timeline_j = MemoryTimeline()
@@ -88,7 +88,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
                         node.name,
                         node.target,
                         tensor_spec.mem_id,
-                        tensor_spec.mem_offset,
+                        tensor_spec.mem_offset,  # pyrefly: ignore [bad-argument-type]
                         size,
                         fqn,
                         stack_trace,

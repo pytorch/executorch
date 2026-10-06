@@ -17,7 +17,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
-from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3  # pyrefly: ignore [missing-import]
 
 
 class _Conv2dModule(torch.nn.Module):

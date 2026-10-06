@@ -18,7 +18,7 @@ from executorch.exir.program._program import ExecutorchProgramManager
 from torch import nn
 from torch.export import Dim
 
-from ..end2end.exported_module import ExportedModule
+from ..end2end.exported_module import ExportedModule  # pyrefly: ignore [missing-import]
 
 """Traces and exports nn.Modules to ExecuTorch .pte program files.
 

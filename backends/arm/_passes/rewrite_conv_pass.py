@@ -1167,7 +1167,7 @@ class RewriteConvPass(ArmPass):
                 isinstance(p, torch.SymInt) for p in pad
             ):
                 with graph_module.graph.inserting_before(node):
-                    materialized_pad = graph_module.graph.materialize_symints(pad)
+                    materialized_pad = graph_module.graph.materialize_symints(pad)  # pyrefly: ignore [missing-attribute]
                 new_conv_args = list(conv_args)
                 new_conv_args[4] = materialized_pad
                 conv_args = tuple(new_conv_args)

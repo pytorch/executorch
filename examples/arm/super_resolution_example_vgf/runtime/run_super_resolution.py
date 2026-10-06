@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image  # pyrefly: ignore [missing-import]
 
 STRING_TO_NUMPY_DTYPE = {
     "float16": np.float16,

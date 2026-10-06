@@ -59,9 +59,9 @@ def _prepare_const_values_for_tosa_dtype(
     values: np.ndarray, tosa_arg: TosaArg
 ) -> np.ndarray:
     """Normalize constant storage to the expected TOSA serializer dtype."""
-    if tosa_arg.dtype == ts.DType.INT48 and values.dtype != np.int64:
+    if tosa_arg.dtype == ts.DType.INT48 and values.dtype != np.int64:  # pyrefly: ignore [missing-attribute]
         return values.astype(np.int64)
-    if tosa_arg.dtype in (ts.DType.FP6E2M3, ts.DType.FP6E3M2):
+    if tosa_arg.dtype in (ts.DType.FP6E2M3, ts.DType.FP6E3M2):  # pyrefly: ignore [missing-attribute]
         if values.dtype == np.uint8:
             try:
                 import ml_dtypes  # type: ignore[import-not-found]
@@ -71,8 +71,8 @@ def _prepare_const_values_for_tosa_dtype(
                     "Have you run setup.sh?"
                 ) from e
             ml_dtype = {
-                ts.DType.FP6E2M3: ml_dtypes.float6_e2m3fn,
-                ts.DType.FP6E3M2: ml_dtypes.float6_e3m2fn,
+                ts.DType.FP6E2M3: ml_dtypes.float6_e2m3fn,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP6E3M2: ml_dtypes.float6_e3m2fn,  # pyrefly: ignore [missing-attribute]
             }[tosa_arg.dtype]
             return values.view(ml_dtype)
     return values
@@ -80,7 +80,7 @@ def _prepare_const_values_for_tosa_dtype(
 
 def _get_const_shape(values: np.ndarray, tosa_arg: TosaArg) -> list[int]:
     """Return the TOSA logical shape for a serialized constant."""
-    if tosa_arg.dtype == ts.DType.FP4E2M1:
+    if tosa_arg.dtype == ts.DType.FP4E2M1:  # pyrefly: ignore [missing-attribute]
         return normalize_symint(tosa_arg.shape)
     return normalize_symint(values.shape)
 
@@ -94,9 +94,9 @@ def _is_packed_fp4_const(values: np.ndarray, tosa_arg: TosaArg) -> bool:
     """
 
     return (
-        tosa_arg.dtype == ts.DType.FP4E2M1
+        tosa_arg.dtype == ts.DType.FP4E2M1  # pyrefly: ignore [missing-attribute]
         and values.dtype == np.uint8
-        and values.shape[-1] * 2 == tosa_arg.shape[-1]
+        and values.shape[-1] * 2 == tosa_arg.shape[-1]  # pyrefly: ignore [unsupported-operation]
     )
 
 
@@ -119,12 +119,12 @@ def _add_const(
         # then set TOSA dtype and shape correctly on the tensor metadata.
         tosa_graph.addUnpooledConst(
             normalize_symint(values.shape),
-            ts.DType.INT8,
+            ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
             values,
             name=name,
         )
         tensor = tosa_graph.currRegion.currBasicBlock.tensors[name]
-        tensor.setDtype(ts.DType.FP4E2M1)
+        tensor.setDtype(ts.DType.FP4E2M1)  # pyrefly: ignore [missing-attribute]
         for dim, size in enumerate(normalize_symint(tosa_arg.shape)):
             tensor.SetDimSize(dim, size)
         return
@@ -159,7 +159,7 @@ def process_call_function(
             "Is the original torch function supported?"
         ) from e
 
-    tosa_graph = cast(ts.TosaSerializer, tosa_graph)
+    tosa_graph = cast(ts.TosaSerializer, tosa_graph)  # pyrefly: ignore [missing-attribute]
     if not output.multiple_output_names and not is_shape_op_node(node):
         tosa_graph.currRegion.currBasicBlock.addTensor(
             output.name, normalize_symint(output.shape), output.dtype
@@ -197,7 +197,7 @@ def process_inputs(
         ) from e
 
     input_shape = tosa_arg.shape
-    tensor = ts.TosaSerializerTensor(
+    tensor = ts.TosaSerializerTensor(  # pyrefly: ignore [missing-attribute]
         tosa_arg.name,
         normalize_symint(input_shape),
         tosa_arg.dtype,

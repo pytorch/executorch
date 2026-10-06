@@ -77,7 +77,7 @@ class TestTosaSpecification(unittest.TestCase):
     def test_version_string(self, version_string: str, expected_type):
         tosa_spec = TosaSpecification.create_from_string(version_string)
         assert isinstance(tosa_spec, expected_type)
-        assert [profile in ["INT", "FP"] for profile in tosa_spec.profiles].count(
+        assert [profile in ["INT", "FP"] for profile in tosa_spec.profiles].count(  # pyrefly: ignore [missing-attribute]
             True
         ) > 0
 
@@ -85,7 +85,7 @@ class TestTosaSpecification(unittest.TestCase):
         assert version_key in test_valid_extensions
 
         allowed_extensions = set()
-        for profile in tosa_spec.profiles:
+        for profile in tosa_spec.profiles:  # pyrefly: ignore [missing-attribute]
             allowed_extensions.update(test_valid_extensions[version_key][profile])
         assert set(tosa_spec.extensions).issubset(allowed_extensions)
 

@@ -133,6 +133,144 @@ license-files = ["LICENSE"]
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
 
+[tool.pyrefly]
+python-version = "3.10"
+
+# Reduces noise from checks mypy never flagged; required for a clean mypy migration.
+preset = "legacy"
+
+# Match mypy's default: skip bodies of unannotated functions.
+check-unannotated-defs = false
+infer-return-types = "never"
+
+# Mirror mypy's `mypy_path = executorch,src`
+search-path = ["src"]
+
+project-excludes = [
+    # Third-party and generated files
+    "**/third-party/**",
+    "shim_et/**",
+
+    # src/ is a search-path for imports only; entries are symlinks to top-level dirs
+    # (following them would double-count every file pyrefly already checks at root)
+    "src/**",
+
+    # Directories lintrunner had commented out (gradual mypy rollout in progress)
+    "exir/**",
+    "extension/**",
+
+    # Not in lintrunner active includes
+    "export/**",
+    "tools/**",
+    "zephyr/**",
+
+    # Backends: only arm, cortex_m, openvino are active in lintrunner
+    "backends/aoti/**",
+    "backends/apple/**",
+    "backends/cadence/**",
+    "backends/cpu/**",
+    "backends/cuda/**",
+    "backends/example/**",
+    "backends/mediatek/**",
+    "backends/mlx/**",
+    "backends/native/**",
+    "backends/nxp/**",
+    "backends/qualcomm/**",
+    "backends/samsung/**",
+    "backends/test/**",
+    "backends/transforms/**",
+    "backends/vulkan/**",
+    "backends/vulkan_shared/**",
+    "backends/webgpu/**",
+    "backends/xnnpack/**",
+
+
+    # Examples: only arm and openvino are active in lintrunner
+    "examples/apple/**",
+    "examples/arduino/**",
+    "examples/cadence/**",
+    "examples/cuda/**",
+    "examples/demo-apps/**",
+    "examples/devtools/**",
+    "examples/espressif/**",
+    "examples/llm_manual/**",
+    "examples/llm_pte_finetuning/**",
+    "examples/llm_server/**",
+    "examples/mediatek/**",
+    "examples/models/**",
+    "examples/native/**",
+    "examples/nxp/**",
+    "examples/portable/**",
+    "examples/qualcomm/**",
+    "examples/raspberry_pi/**",
+    "examples/riscv/**",
+    "examples/samsung/**",
+    "examples/selective_build/**",
+    "examples/systemone/**",
+    "examples/vulkan/**",
+    "examples/wasm/**",
+    "examples/xnnpack/**",
+    "examples/zephyr/**",
+
+    # Devtools: only visualization is active in lintrunner
+    "devtools/backend_debug/**",
+    "devtools/bundled_program/**",
+    "devtools/debug_format/**",
+    "devtools/etdump/**",
+    "devtools/etrecord/**",
+    "devtools/inspector/**",
+    "devtools/intermediate_output_tap/**",
+    "devtools/pte_tool/**",
+    "devtools/scripts/**",
+    "devtools/size_analysis_tool/**",
+
+    # Per-file exclusions carried over from lintrunner
+    "scripts/check_binary_dependencies.py",
+    "profiler/test/test_profiler_e2e.py",
+    "backends/arm/test/ops/*.py",
+
+    # Jupyter notebooks: pyrefly cannot insert inline suppression comments in .ipynb files
+    "backends/arm/scripts/TOSA_minimal_example.ipynb",
+    "examples/arm/cortex_m_mv2_example.ipynb",
+    "examples/arm/ethos_u_cmsis_nn_fallback_example.ipynb",
+    "examples/arm/ethos_u_minimal_example.ipynb",
+    "examples/arm/pruning_minimal_example.ipynb",
+    "examples/arm/quantizer_tutorial.ipynb",
+    "examples/arm/vgf_minimal_example.ipynb",
+]
+
+# Mirror mypy's per-module `ignore_missing_imports = True` blocks
+ignore-missing-imports = [
+    "buck_util",
+    "docutils.*",
+    "executorch.version",
+    "pandas",
+    "pytorch_sphinx_theme",
+    "pytorch_sphinx_theme2",
+    "ruamel",
+    "serializer.*",
+    "setuptools.*",
+    "sphinx.*",
+    "tomllib",
+    "tosa_serializer",
+    "tosa_serializer.*",
+    "tosa_tools.*",
+    "yaml",
+    "zstd",
+]
+
+# Mirror mypy's per-module `follow_untyped_imports = True` for third-party packages
+replace-untyped-imports-with-any = [
+    "functorch.*",
+    "torchao.*",
+    "torchgen.*",
+]
+
+# Honor existing `# type: ignore` and mypy-style ignores during transition.
+# Narrow to ["type", "pyrefly"] once mypy is fully removed.
+enabled-ignores = ["type", "mypy", "pyrefly"]
+
+
 [tool.usort]
 # Do not try to put "first-party" imports in their own section.
 first_party_detection = false

@@ -25,8 +25,8 @@ pytest.importorskip("transformers.models.phi3")
 from executorch.backends.arm.test.models.phi3.phi3_module_test_configs import (
     get_phi3_test_config,
 )
-from transformers.models.phi3.configuration_phi3 import Phi3Config  # noqa: E402
-from transformers.models.phi3.modeling_phi3 import (  # noqa: E402
+from transformers.models.phi3.configuration_phi3 import Phi3Config  # noqa: E402  # pyrefly: ignore [missing-import]
+from transformers.models.phi3.modeling_phi3 import (  # noqa: E402  # pyrefly: ignore [missing-import]
     Phi3Attention,
     Phi3DecoderLayer,
     Phi3MLP,

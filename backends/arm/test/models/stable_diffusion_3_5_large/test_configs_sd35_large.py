@@ -16,7 +16,7 @@ from executorch.backends.arm._passes import (
     ConvertInt64OutputOpsToInt32Pass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
 )
-from transformers import CLIPTextConfig, T5Config
+from transformers import CLIPTextConfig, T5Config  # pyrefly: ignore [missing-import]
 
 
 _EXECUTORCH_SD35_UPSTREAM_SYNC_ENV_VAR = "EXECUTORCH_SD35_UPSTREAM_SYNC"
@@ -106,7 +106,7 @@ _SD35_LARGE_UPSTREAM_FINGERPRINTS: dict[str, tuple[tuple[str, ...], str]] = {
 
 def _load_upstream_sd35_large_config(subfolder: str) -> dict[str, Any]:
     from executorch.examples.models.stable_diffusion_3_5_large.model import MODEL_ID
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download  # pyrefly: ignore [missing-import]
 
     config_path = hf_hub_download(  # nosec B615
         repo_id=MODEL_ID,

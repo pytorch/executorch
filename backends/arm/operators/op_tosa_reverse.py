@@ -43,12 +43,12 @@ class TosaReverseVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ReverseAttribute(node.kwargs["axis"])
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REVERSE,
+            ts.Op.REVERSE,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,

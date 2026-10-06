@@ -39,14 +39,14 @@ class AvgPool2dVisitor(NodeVisitor):
 
         input, input_zp, output_zp, kernel, stride, pad, acc_arg = inputs
 
-        supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
+        supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]  # pyrefly: ignore [missing-attribute]
 
         if self.tosa_spec.support_extension("int16"):
-            supported.append(ts.DType.INT16)
+            supported.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("fp8e4m3"):
-            supported.append(ts.DType.FP8E4M3)
+            supported.append(ts.DType.FP8E4M3)  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("fp8e5m2"):
-            supported.append(ts.DType.FP8E5M2)
+            supported.append(ts.DType.FP8E5M2)  # pyrefly: ignore [missing-attribute]
 
         validate_valid_dtype(self.target, [input, output], supported, self.tosa_spec)
 
@@ -55,7 +55,7 @@ class AvgPool2dVisitor(NodeVisitor):
         output_zp_name = output_zp.name
 
         # Attributes for AVG_POOL2D; acc_type is set in decomposition pass
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.AvgPool2dAttribute(
             kernel=kernel.special,
             stride=stride.special,
@@ -66,7 +66,7 @@ class AvgPool2dVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.AVG_POOL2D,
+            ts.Op.AVG_POOL2D,  # pyrefly: ignore [missing-attribute]
             [input.name, input_zp_name, output_zp_name],
             [output.name],
             attr,

@@ -35,5 +35,5 @@ class ArmAnnotationInfo(dict):
             raise TypeError(
                 "ArmAnnotationInfo expects a mapping with a 'quantized' entry or a keyword 'quantized'."
             )
-        dict.__init__(self, quantized=resolved)
+        dict.__init__(self, quantized=resolved)  # pyrefly: ignore [no-matching-overload]
         object.__setattr__(self, "quantized", resolved)

@@ -505,11 +505,11 @@ class QuantizeClampArgumentsPass(ArmPass):
                 max_val = None if len(n.args) <= 2 else n.args[2]
 
                 if min_val is not None:
-                    quantized_min_val = qargs.quantize_value(min_val).item()
+                    quantized_min_val = qargs.quantize_value(min_val).item()  # pyrefly: ignore [bad-argument-type]
                     n.update_arg(1, quantized_min_val)
 
                 if max_val is not None:
-                    quantized_max_val = qargs.quantize_value(max_val).item()
+                    quantized_max_val = qargs.quantize_value(max_val).item()  # pyrefly: ignore [bad-argument-type]
                     n.update_arg(2, quantized_max_val)
 
                 modified = True

@@ -30,7 +30,7 @@ class RewriteInplaceArithmeticPass(ArmOpTargetedPass):
     target_ops = tuple(OP_MAP)
     check_allowed_to_transform = True
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 

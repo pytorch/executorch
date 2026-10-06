@@ -19,7 +19,7 @@ from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .arm_pass_utils import create_node, get_first_fake_tensor
+from .arm_pass_utils import create_node, get_first_fake_tensor  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger(__name__)
 

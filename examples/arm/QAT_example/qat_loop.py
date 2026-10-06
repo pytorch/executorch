@@ -37,11 +37,11 @@ import torch
 import torch.nn.functional as F
 from PIL import Image  # type: ignore[import-untyped]
 from torch.export import export
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     move_exported_model_to_eval,
     move_exported_model_to_train,
 )
-from torchao.quantization.pt2e.quantize_pt2e import (
+from torchao.quantization.pt2e.quantize_pt2e import (  # pyrefly: ignore [missing-import]
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
@@ -50,7 +50,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
-from examples.arm.QAT_example.rife_vgf import (  # noqa: E402
+from examples.arm.QAT_example.rife_vgf import (  # noqa: E402  # pyrefly: ignore [missing-import]
     configure_rife_vgf,
     configure_rife_vgf_quantizer,
 )

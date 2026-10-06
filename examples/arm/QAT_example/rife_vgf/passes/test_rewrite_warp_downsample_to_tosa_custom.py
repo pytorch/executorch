@@ -7,11 +7,11 @@ import json
 
 import pytest
 import torch
-from examples.arm.QAT_example.rife_vgf import shaders as warp_downsample_shaders
-from examples.arm.QAT_example.rife_vgf.extension import (
+from examples.arm.QAT_example.rife_vgf import shaders as warp_downsample_shaders  # pyrefly: ignore [missing-import]
+from examples.arm.QAT_example.rife_vgf.extension import (  # pyrefly: ignore [missing-import]
     _ensure_warp_downsample_ops_registered,
 )
-from examples.arm.QAT_example.rife_vgf.passes.rewrite_warp_downsample_to_tosa_custom import (
+from examples.arm.QAT_example.rife_vgf.passes.rewrite_warp_downsample_to_tosa_custom import (  # pyrefly: ignore [missing-import]
     _restore_normalized_boundary_input,
     _target_scale,
     RewriteWarpDownsampleToTosaCustomPass,

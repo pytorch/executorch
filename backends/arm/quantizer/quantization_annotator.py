@@ -24,14 +24,14 @@ from executorch.backends.arm.quantizer.quantization_config import QuantizationCo
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 from torch.fx import Node
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
     MovingAveragePerChannelMinMaxObserver,
     PartialWrapper,
 )
 
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     annotate_input_qspec_map,
     annotate_output_qspec,
     FixedQParamsQuantizationSpec,
@@ -40,7 +40,7 @@ from torchao.quantization.pt2e.quantizer import (
     SharedQuantizationSpec,
 )
 
-from .arm_quantizer_utils import (
+from .arm_quantizer_utils import (  # pyrefly: ignore [missing-import]
     is_annotated,
     is_output_annotated,
     mark_node_as_annotated,

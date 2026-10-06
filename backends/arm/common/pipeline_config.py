@@ -125,7 +125,7 @@ class ArmPassPipelineConfig:
             else:
                 # The field is an enum
                 enum_type = f.type
-                setattr(config, f.name, enum_type[raw_value])
+                setattr(config, f.name, enum_type[raw_value])  # pyrefly: ignore [unsupported-operation]
         return config
 
     def serialize(self) -> bytes:

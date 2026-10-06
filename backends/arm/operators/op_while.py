@@ -51,7 +51,7 @@ class WhileLoopVisitor(NodeVisitor):
                 "Additional inputs is not supported, use carried inputs instead."
             )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         cond_graph, body_graph = (
             cast(Node, arg).meta.get(
                 TOSA_CONTROL_FLOW_REGION_NAME_META, str(cast(Node, arg).target)
@@ -98,7 +98,7 @@ class WhileLoopVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.WHILE_LOOP,
+            ts.Op.WHILE_LOOP,  # pyrefly: ignore [missing-attribute]
             input_names,
             output.multiple_output_names,
             attr,

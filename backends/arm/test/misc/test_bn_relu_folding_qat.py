@@ -17,7 +17,7 @@ from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.test.harness.tester import Quantize
 from torch import nn
 from torch.fx import Node
-from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import prepare_qat_pt2e  # pyrefly: ignore [missing-import]
 
 
 input_t1 = Tuple[torch.Tensor]  # Input x

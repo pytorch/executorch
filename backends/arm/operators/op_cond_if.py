@@ -38,10 +38,10 @@ class CondVisitor(NodeVisitor):
     ) -> None:
 
         validate_num_inputs(self.target, inputs, 4)
-        validate_valid_dtype(self.target, [inputs[0]], ts.DType.BOOL, self.tosa_spec)
+        validate_valid_dtype(self.target, [inputs[0]], ts.DType.BOOL, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
         validate_cf_extension(self.target, self.tosa_spec)
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         if_graph, else_graph = (
             cast(Node, arg).meta.get(
                 TOSA_CONTROL_FLOW_REGION_NAME_META, str(cast(Node, arg).target)
@@ -53,7 +53,7 @@ class CondVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.COND_IF,
+            ts.Op.COND_IF,  # pyrefly: ignore [missing-attribute]
             [
                 inputs[0].name,
                 *(

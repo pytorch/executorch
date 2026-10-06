@@ -46,14 +46,14 @@ class ViewVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        tosa_graph = cast(ts.TosaSerializer, tosa_graph)
+        tosa_graph = cast(ts.TosaSerializer, tosa_graph)  # pyrefly: ignore [missing-attribute]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ReshapeAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.RESHAPE,
+            ts.Op.RESHAPE,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name],
             [output.name],
             attr,

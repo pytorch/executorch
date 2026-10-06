@@ -16,7 +16,7 @@ from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
-from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2  # pyrefly: ignore [missing-import]
 
 INT_SPECS = TosaSpecification.all_versions_for_profile("INT")
 FP_SPECS = TosaSpecification.all_versions_for_profile("FP")

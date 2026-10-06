@@ -18,11 +18,11 @@ class PassC(ArmPass):
 
 
 class PassB(ArmPass):
-    _passes_required_after = {PassC}
+    _passes_required_after = {PassC}  # pyrefly: ignore [bad-override]
 
 
 class PassA(ArmPass):
-    _passes_required_after = {PassB, PassC}
+    _passes_required_after = {PassB, PassC}  # pyrefly: ignore [bad-override]
 
 
 class IndependentPass(ArmPass):

@@ -310,7 +310,7 @@ is not built.
 
 SkipIfNoModelConverter = pytest.mark.skipif(  # type: ignore[call-arg]
     condition=not (model_converter_installed()),
-    raises=FileNotFoundError,
+    raises=FileNotFoundError,  # pyrefly: ignore [unexpected-keyword]
     reason="Did not find model-converter on path",
 )
 """Skips a test if model-converter is not installed."""

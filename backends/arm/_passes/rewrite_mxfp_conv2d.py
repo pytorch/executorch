@@ -27,7 +27,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule, Node
-from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2  # pyrefly: ignore [missing-import]
 
 
 def _get_weights_payload_dtype(

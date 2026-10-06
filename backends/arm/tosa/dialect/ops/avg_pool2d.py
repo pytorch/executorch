@@ -153,21 +153,21 @@ def compute_avg_pool2d_output_shape(
     p_top, p_bot, p_left, p_right = pad
 
     h_expr = (
-        FloorDiv(
-            _to_sympy_expr(h) + _to_sympy_expr(p_top) + _to_sympy_expr(p_bot) - k_h,
+        FloorDiv(  # pyrefly: ignore [unsupported-operation]
+            _to_sympy_expr(h) + _to_sympy_expr(p_top) + _to_sympy_expr(p_bot) - k_h,  # pyrefly: ignore [unsupported-operation]
             s_h,
         )
         + 1
     )
     w_expr = (
-        FloorDiv(
-            _to_sympy_expr(w) + _to_sympy_expr(p_left) + _to_sympy_expr(p_right) - k_w,
+        FloorDiv(  # pyrefly: ignore [unsupported-operation]
+            _to_sympy_expr(w) + _to_sympy_expr(p_left) + _to_sympy_expr(p_right) - k_w,  # pyrefly: ignore [unsupported-operation]
             s_w,
         )
         + 1
     )
 
-    h_out = _from_sympy_expr(h_expr)
-    w_out = _from_sympy_expr(w_expr)
+    h_out = _from_sympy_expr(h_expr)  # pyrefly: ignore [bad-argument-type]
+    w_out = _from_sympy_expr(w_expr)  # pyrefly: ignore [bad-argument-type]
 
     return [n, h_out, w_out, c]

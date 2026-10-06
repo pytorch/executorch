@@ -63,7 +63,7 @@ class NodeVisitor:
         self,
         node: torch.fx.Node,
         tosa_graph: Any,
-        tosa_op: ts.Op,
+        tosa_op: ts.Op,  # pyrefly: ignore [missing-attribute]
         inputs: List[str],
         outputs: List[str],
         attributes: Optional[Any] = None,
@@ -142,17 +142,17 @@ class NodeVisitor:
         node: torch.fx.Node,
         tosa_graph: Any,
         *,
-        tosa_op: ts.Op,
+        tosa_op: ts.Op,  # pyrefly: ignore [missing-attribute]
         inputs: List[TosaArg],
         output: TosaArg,
         attr_method: Optional[str] = None,
         attr_kwargs: Optional[dict[str, Any]] = None,
-        attr_builder: Optional[Callable[[ts.TosaSerializerAttribute], None]] = None,
+        attr_builder: Optional[Callable[[ts.TosaSerializerAttribute], None]] = None,  # pyrefly: ignore [missing-attribute]
         extra_input_builders: Optional[
             List[Callable[[torch.fx.Node, Any, List[TosaArg], TosaArg, Any], str]]
         ] = None,
     ) -> None:
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         if attr_method is not None:
             getattr(attr, attr_method)(**(attr_kwargs or {}))
         elif attr_builder is not None:

@@ -36,20 +36,20 @@ class WhereVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
 
-        supported_dtypes = [ts.DType.BOOL]
+        supported_dtypes = [ts.DType.BOOL]  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_integer():
             supported_dtypes += [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
+                ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
             ]
         if self.tosa_spec.support_float():
-            supported_dtypes += [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
+            supported_dtypes += [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]  # pyrefly: ignore [missing-attribute]
 
         validate_num_inputs(self.target, inputs, 3)
         # Not first input, which is condition tensor.
         validate_same_dtype(self.target, inputs[1:], ts)
-        validate_valid_dtype(self.target, inputs[0], ts.DType.BOOL, self.tosa_spec)
+        validate_valid_dtype(self.target, inputs[0], ts.DType.BOOL, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
         validate_valid_dtype(
             self.target,
             [*inputs[1:], output],
@@ -57,12 +57,12 @@ class WhereVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.SelectAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.SELECT,
+            ts.Op.SELECT,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name, inputs[2].name],
             [output.name],
             attr,

@@ -17,8 +17,8 @@ from executorch.backends.arm.quantizer import (
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.passes import ToDevicePass
 from torch._subclasses.fake_tensor import FakeTensor
-from torchao.quantization.pt2e import move_exported_model_to_eval
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
+from torchao.quantization.pt2e import move_exported_model_to_eval  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e  # pyrefly: ignore [missing-import]
 
 
 class AddAlpha(torch.nn.Module):

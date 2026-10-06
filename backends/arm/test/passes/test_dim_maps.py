@@ -173,7 +173,7 @@ def _propose_reduction_view_swap(
     proposal = view_map.map_reduction_after_view(input_shape, source_dims)
     if proposal is None:
         return None
-    view_shape, target_dims = proposal
+    view_shape, target_dims = proposal  # pyrefly: ignore [bad-assignment]
     return cast(list[_DimT], view_shape), target_dims
 
 
@@ -329,7 +329,7 @@ def test_dim_map_allows_output_singleton_rank_change_reduction_swap() -> None:
     proposal = view_map.map_reduction_after_view([6, 4], [0])
 
     assert proposal == ([6, 1, 4], [0, 1])
-    view_shape, target_dims = proposal
+    view_shape, target_dims = proposal  # pyrefly: ignore [not-iterable]
     original = x.sum(dim=0, keepdim=True).reshape(1, 1, 4)
     candidate = x.reshape(view_shape).sum(dim=tuple(target_dims), keepdim=True)
     assert _same(original, candidate)

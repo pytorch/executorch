@@ -36,27 +36,27 @@ class ArgMaxVisitor(NodeVisitor):
             self.target,
             inputs[0],
             [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
+                ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
             ],
             self.tosa_spec,
         )
-        validate_valid_dtype(self.target, output, ts.DType.INT32, self.tosa_spec)
+        validate_valid_dtype(self.target, output, ts.DType.INT32, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
 
         axis = inputs[1].number
         if axis < 0:
             tensor = get_first_fake_tensor(node)
             axis += len(tensor.size())
 
-        attr = ts.TosaSerializerAttribute()
-        attr.ArgMaxAttribute(axis, ts.NanPropagationMode.PROPAGATE)
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
+        attr.ArgMaxAttribute(axis, ts.NanPropagationMode.PROPAGATE)  # pyrefly: ignore [missing-attribute]
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.ARGMAX,
+            ts.Op.ARGMAX,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,

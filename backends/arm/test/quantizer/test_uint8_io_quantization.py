@@ -15,8 +15,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     QuantizationPipeline,
     TosaPipelineINT,
 )
-from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
 
 class SimpleMLP(torch.nn.Module):

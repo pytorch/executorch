@@ -54,24 +54,24 @@ class MatMulTBlockScaledVisitor(NodeVisitor):
             self.target,
             [A_data, B_data],
             [
-                ts.DType.FP4E2M1,
-                ts.DType.FP6E2M3,
-                ts.DType.FP6E3M2,
-                ts.DType.FP8E4M3,
-                ts.DType.FP8E5M2,
+                ts.DType.FP4E2M1,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP6E2M3,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP6E3M2,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
             ],
             self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [A_scale, B_scale],
-            ts.DType.FP8UE8M0,
+            ts.DType.FP8UE8M0,  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             output,
-            ts.DType.FP32,
+            ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
         if block_size != 32:
@@ -82,13 +82,13 @@ class MatMulTBlockScaledVisitor(NodeVisitor):
                 f"{self.target}: payload dtypes must match, got {inputs[0].dtype} and {inputs[2].dtype}"
             )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.MatMulTBlockScaledAttribute(block_size)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MATMUL_T_BLOCK_SCALED,
+            ts.Op.MATMUL_T_BLOCK_SCALED,  # pyrefly: ignore [missing-attribute]
             [
                 inputs[0].name,
                 inputs[1].name,

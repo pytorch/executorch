@@ -74,7 +74,7 @@ is_lean_mode = kernel_mode == "lean"
 from torch import nn
 from torch.utils import _pytree as torch_pytree
 
-from .exported_module import ExportedModule
+from .exported_module import ExportedModule  # pyrefly: ignore [missing-import]
 
 
 RUN_SKIPPED = int(os.environ.get("RUN_SKIPPED", "0"))
@@ -548,7 +548,7 @@ def maketest(
                     flatten_inputs, inputs_spec = pytree.tree_flatten(*inputs)
                     executorch_result = executorch_module.forward([*flatten_inputs])
                     # pyre-fixme[16]: Module `pytree` has no attribute `TreeSpec`.
-                    executorch_result_unflatten = pytree.TreeSpec.from_str(
+                    executorch_result_unflatten = pytree.TreeSpec.from_str(  # pyrefly: ignore [missing-attribute]
                         program.execution_plan[0].container_meta_type.encoded_out_str
                     ).tree_unflatten(executorch_result)
                     actual = executorch_result_unflatten

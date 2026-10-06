@@ -21,7 +21,7 @@ from executorch.backends.arm.tosa.specification import TosaSpecification
 
 
 def _build_conv2d_block_scaled_attr(
-    attr: ts.TosaSerializerAttribute,
+    attr: ts.TosaSerializerAttribute,  # pyrefly: ignore [missing-attribute]
     *,
     block_size: int,
 ) -> None:
@@ -58,30 +58,30 @@ class Conv2dBlockScaledVisitor(NodeVisitor):
             self.target,
             [inputs[0], inputs[2]],
             [
-                ts.DType.FP4E2M1,
-                ts.DType.FP6E2M3,
-                ts.DType.FP6E3M2,
-                ts.DType.FP8E4M3,
-                ts.DType.FP8E5M2,
+                ts.DType.FP4E2M1,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP6E2M3,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP6E3M2,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
             ],
             self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [inputs[1], inputs[3]],
-            ts.DType.FP8UE8M0,
+            ts.DType.FP8UE8M0,  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
-        validate_valid_dtype(self.target, inputs[4], ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, inputs[4], ts.DType.FP32, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
         validate_valid_dtype(
             self.target,
             [inputs[5], inputs[6], inputs[7]],
-            ts.DType.SHAPE,
+            ts.DType.SHAPE,  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
-        validate_valid_dtype(self.target, output, ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, output, ts.DType.FP32, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
 
-        if not hasattr(ts.Op, "CONV2D_BLOCK_SCALED"):
+        if not hasattr(ts.Op, "CONV2D_BLOCK_SCALED"):  # pyrefly: ignore [missing-attribute]
             raise NotImplementedError(
                 "tosa_serializer does not provide CONV2D_BLOCK_SCALED yet"
             )
@@ -89,7 +89,7 @@ class Conv2dBlockScaledVisitor(NodeVisitor):
         # TosaArg.number is float | int, but the fake-op schema guarantees int.
         block_size = cast(int, inputs[8].number)
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         _build_conv2d_block_scaled_attr(
             attr,
             block_size=block_size,
@@ -98,7 +98,7 @@ class Conv2dBlockScaledVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CONV2D_BLOCK_SCALED,
+            ts.Op.CONV2D_BLOCK_SCALED,  # pyrefly: ignore [missing-attribute]
             [
                 inputs[0].name,
                 inputs[1].name,

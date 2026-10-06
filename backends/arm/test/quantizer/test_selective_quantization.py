@@ -19,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import QuantizationPipeli
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.cortex_m.test.tester import ramp_tensor
 from executorch.backends.test.harness.stages import StageType
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 from torchvision import models, transforms  # type: ignore[import-untyped]
 from torchvision.ops.misc import Conv2dNormActivation  # type: ignore[import-untyped]
 

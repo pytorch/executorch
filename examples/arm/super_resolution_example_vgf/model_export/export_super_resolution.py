@@ -23,7 +23,7 @@ from executorch.exir import (
 )
 from executorch.extension.export_util.utils import save_pte_program
 from torch.utils.data import DataLoader
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 # Keep script-compatible imports without requiring package execution.
 if __package__ is None or __package__ == "":
@@ -39,7 +39,7 @@ if __package__ is None or __package__ == "":
         write_json,
     )
 else:
-    from .common import (
+    from .common import (  # pyrefly: ignore [missing-import]
         create_model_bundle,
         evaluate_super_resolution_model,
         load_calibration_inputs,

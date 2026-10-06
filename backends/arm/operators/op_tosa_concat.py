@@ -48,13 +48,13 @@ class CatVisitor(NodeVisitor):
 
         dim = node.kwargs["axis"]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ConcatAttribute(dim)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CONCAT,
+            ts.Op.CONCAT,  # pyrefly: ignore [missing-attribute]
             [tensor.name for tensor in input_tosa_args],
             [output.name],
             attr,

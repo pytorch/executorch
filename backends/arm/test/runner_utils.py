@@ -1306,7 +1306,7 @@ def run_tosa_graph(
 
     # Convert output numpy arrays to tensors with same dim_order as the output nodes
     result = [
-        numpy_to_torch_tensor(output_array, node)
+        numpy_to_torch_tensor(output_array, node)  # pyrefly: ignore [bad-argument-type]
         for output_array, node in zip(outputs_np, output_node.args[0])  # type: ignore[arg-type]
     ]
 

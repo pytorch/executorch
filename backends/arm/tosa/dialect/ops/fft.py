@@ -76,7 +76,7 @@ def _same_fft_dimension(lhs: int | torch.SymInt, rhs: int | torch.SymInt) -> boo
     if not isinstance(lhs, torch.SymInt) and not isinstance(rhs, torch.SymInt):
         return lhs == rhs
 
-    diff = sympy.simplify(_to_sympy_expr(lhs) - _to_sympy_expr(rhs))
+    diff = sympy.simplify(_to_sympy_expr(lhs) - _to_sympy_expr(rhs))  # pyrefly: ignore [unsupported-operation]
     if diff == 0:
         return True
 

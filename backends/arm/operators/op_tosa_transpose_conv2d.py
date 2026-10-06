@@ -50,46 +50,46 @@ class TransposeConv2dVisitor(NodeVisitor):
 
         valid_input_dtypes = []
         if self.tosa_spec.support_float():
-            valid_input_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+            valid_input_dtypes.extend([ts.DType.FP16, ts.DType.FP32])  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_integer():
-            valid_input_dtypes.append(ts.DType.INT8)
+            valid_input_dtypes.append(ts.DType.INT8)  # pyrefly: ignore [missing-attribute]
 
         if self.tosa_spec.support_extension("int16"):
-            valid_input_dtypes.append(ts.DType.INT16)
-            if inputs[0].dtype == ts.DType.INT16:
+            valid_input_dtypes.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
+            if inputs[0].dtype == ts.DType.INT16:  # pyrefly: ignore [missing-attribute]
                 validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.INT8], self.tosa_spec
+                    self.target, [inputs[1]], [ts.DType.INT8], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
                 validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec
+                    self.target, [inputs[2]], [ts.DType.INT48], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
 
         if self.tosa_spec.support_extension("bf16"):
-            valid_input_dtypes.append(ts.DType.BF16)
-            if inputs[0].dtype == ts.DType.BF16:
+            valid_input_dtypes.append(ts.DType.BF16)  # pyrefly: ignore [missing-attribute]
+            if inputs[0].dtype == ts.DType.BF16:  # pyrefly: ignore [missing-attribute]
                 validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.BF16], self.tosa_spec
+                    self.target, [inputs[1]], [ts.DType.BF16], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
                 validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.BF16], self.tosa_spec
+                    self.target, [inputs[2]], [ts.DType.BF16], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
         if self.tosa_spec.support_extension("fp8e4m3"):
-            valid_input_dtypes.append(ts.DType.FP8E4M3)
-            if inputs[0].dtype == ts.DType.FP8E4M3:
+            valid_input_dtypes.append(ts.DType.FP8E4M3)  # pyrefly: ignore [missing-attribute]
+            if inputs[0].dtype == ts.DType.FP8E4M3:  # pyrefly: ignore [missing-attribute]
                 validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.FP8E4M3], self.tosa_spec
+                    self.target, [inputs[1]], [ts.DType.FP8E4M3], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
                 validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec
+                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
         if self.tosa_spec.support_extension("fp8e5m2"):
-            valid_input_dtypes.append(ts.DType.FP8E5M2)
-            if inputs[0].dtype == ts.DType.FP8E5M2:
+            valid_input_dtypes.append(ts.DType.FP8E5M2)  # pyrefly: ignore [missing-attribute]
+            if inputs[0].dtype == ts.DType.FP8E5M2:  # pyrefly: ignore [missing-attribute]
                 validate_valid_dtype(
-                    self.target, [inputs[1]], [ts.DType.FP8E5M2], self.tosa_spec
+                    self.target, [inputs[1]], [ts.DType.FP8E5M2], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
                 validate_valid_dtype(
-                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec
+                    self.target, [inputs[2]], [ts.DType.FP16], self.tosa_spec  # pyrefly: ignore [missing-attribute]
                 )
 
         validate_valid_dtype(
@@ -104,19 +104,19 @@ class TransposeConv2dVisitor(NodeVisitor):
 
         output_name = output.name
         acc_type = output.dtype
-        if input.dtype in [ts.DType.FP8E4M3, ts.DType.FP8E5M2]:
-            acc_type = ts.DType.FP16
+        if input.dtype in [ts.DType.FP8E4M3, ts.DType.FP8E5M2]:  # pyrefly: ignore [missing-attribute]
+            acc_type = ts.DType.FP16  # pyrefly: ignore [missing-attribute]
         elif output.dtype in [
-            ts.DType.BF16,
-            ts.DType.FP16,
+            ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
         ]:
             # Accumulate BF16 and FP16 inputs in FP32 for better precision.
-            acc_type = ts.DType.FP32
+            acc_type = ts.DType.FP32  # pyrefly: ignore [missing-attribute]
         input_zp_name, weight_zp_name = add_input_weight_zp_consts(
             tosa_graph, node, inputs, output_name
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         self._get_attr_func(attr)(
             out_pad=out_pad_attr,
             stride=stride_attr,

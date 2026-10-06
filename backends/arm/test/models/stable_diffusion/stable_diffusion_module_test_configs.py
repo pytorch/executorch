@@ -16,7 +16,7 @@
 # limitations under the License.
 
 
-from transformers import CLIPTextConfig, T5Config
+from transformers import CLIPTextConfig, T5Config  # pyrefly: ignore [missing-import]
 
 """
 This file defines test configs used to initialize Stable Diffusion module tests.

@@ -12,19 +12,19 @@ _ConstantKey = tuple[Any, tuple[int, ...], bytes | None]
 
 
 def _constant_key(shape, dtype, values) -> _ConstantKey:
-    if dtype == ts.DType.SHAPE:
+    if dtype == ts.DType.SHAPE:  # pyrefly: ignore [missing-attribute]
         if len(shape) > 1:
             raise ValueError(f"CONST_SHAPE expects rank metadata, got {shape}")
         rank = 0 if len(shape) == 0 else shape[0]
-        constant = ts.TosaSerializerShape("", rank, values)
+        constant = ts.TosaSerializerShape("", rank, values)  # pyrefly: ignore [missing-attribute]
     else:
-        constant = ts.TosaSerializerTensor("", shape, dtype, values)
+        constant = ts.TosaSerializerTensor("", shape, dtype, values)  # pyrefly: ignore [missing-attribute]
 
     data = None if constant.data is None else bytes(constant.data)
     return constant.dtype, tuple(constant.shape), data
 
 
-class TosaSerializerWithConstantPool(ts.TosaSerializer):
+class TosaSerializerWithConstantPool(ts.TosaSerializer):  # pyrefly: ignore [missing-attribute]
     """Pool generated constants independently within each TOSA basic block."""
 
     def __init__(self, *args, **kwargs) -> None:

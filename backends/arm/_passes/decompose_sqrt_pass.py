@@ -31,7 +31,7 @@ class DecomposeSqrtPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
     target_ops = edge_sqrt_ops + aten_sqrt_ops
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         """Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support."""
 
         if op not in self.target_ops or not self.allowed_to_transform(meta):

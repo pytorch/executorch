@@ -15,7 +15,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 
-from install_requirements import (
+from install_requirements import (  # pyrefly: ignore [missing-import]
     install_optional_example_requirements,
     install_requirements,
     python_is_compatible,

@@ -12,7 +12,7 @@ from executorch.backends.arm.quantizer import (
     TOSAQuantizer,
 )
 from executorch.backends.arm.tosa import TosaSpecification
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 class SimpleModule(torch.nn.Module):

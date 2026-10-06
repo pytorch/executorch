@@ -32,12 +32,12 @@ from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
 from nncf.torch.model_graph_manager import (  # type: ignore[import-untyped]
     get_weight_tensor_port_ids,
 )
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     HistogramObserver,
     PerChannelMinMaxObserver,
     UniformQuantizationObserverBase,
 )
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     EdgeOrNode,
     QuantizationAnnotation,
     QuantizationSpec,

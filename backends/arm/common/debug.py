@@ -69,7 +69,7 @@ def debug_tosa_dump(tosa_graph: bytes, path: str, suffix: str = ""):
 def debug_fail(
     node,
     graph_module,
-    tosa_graph: Optional[ts.TosaSerializer] = None,
+    tosa_graph: Optional[ts.TosaSerializer] = None,  # pyrefly: ignore [missing-attribute]
     path: Optional[str] = None,
 ):
     logger.warning("Internal error due to poorly handled node:")

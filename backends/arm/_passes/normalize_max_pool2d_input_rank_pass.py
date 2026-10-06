@@ -51,7 +51,7 @@ class NormalizeMaxPool2dInputRankPass(ArmOpTargetedPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         modified = False
-        pool_nodes = graph.find_nodes(op="call_function", target=self.target_ops[0])
+        pool_nodes = graph.find_nodes(op="call_function", target=self.target_ops[0])  # pyrefly: ignore [bad-index]
 
         for pool_node in pool_nodes:
             input_node = pool_node.args[0]

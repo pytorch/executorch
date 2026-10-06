@@ -12,7 +12,7 @@ from executorch.backends.transforms.permute_view_meta import refresh_permute_vie
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .arm_pass import ArmPass
+from .arm_pass import ArmPass  # pyrefly: ignore [missing-import]
 
 
 class MoveDataMovementOpsToSmallerDtypePass(ArmPass):

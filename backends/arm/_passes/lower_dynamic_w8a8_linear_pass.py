@@ -237,7 +237,7 @@ class LowerDynamicW8A8LinearPass(ArmPass):
         graph = graph_module.graph
         n_x = len(flat_x_shape)
         n_y = len(flat_y_shape)
-        sizes = graph.materialize_symints([*flat_x_shape, *flat_y_shape, *out_shape])
+        sizes = graph.materialize_symints([*flat_x_shape, *flat_y_shape, *out_shape])  # pyrefly: ignore [missing-attribute]
         flat_x_shape = sizes[:n_x]
         flat_y_shape = sizes[n_x : n_x + n_y]
         output_size = sizes[n_x + n_y :]

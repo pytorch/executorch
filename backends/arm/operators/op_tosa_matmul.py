@@ -49,33 +49,33 @@ class MatmulVisitor(NodeVisitor):
             self.target,
             [*inputs],
             [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-                ts.DType.FP8E4M3,
-                ts.DType.FP8E5M2,
+                ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
             ],
             self.tosa_spec,
         )
         validate_valid_dtype(
             self.target,
             [output],
-            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP16, ts.DType.FP32],
+            [ts.DType.INT32, ts.DType.INT48, ts.DType.FP16, ts.DType.FP32],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
 
         # We need to get the zero points and add an intermediate tensor for INT16 case
         dynamic_meta = node.meta.get(ARM_DYNAMIC_W8A8_LINEAR_META_KEY)
         if (
-            inputs[0].dtype == ts.DType.INT8
+            inputs[0].dtype == ts.DType.INT8  # pyrefly: ignore [missing-attribute]
             and isinstance(dynamic_meta, dict)
             and dynamic_meta.get("symmetric_zero_points") is True
         ):
             input0_zp, input1_zp = 0, 0
-        elif inputs[0].dtype in (ts.DType.INT8, ts.DType.INT16):
+        elif inputs[0].dtype in (ts.DType.INT8, ts.DType.INT16):  # pyrefly: ignore [missing-attribute]
             input_qparams = get_input_qparams(node)
             input0_zp = input_qparams[0].get_zp_per_tensor()
             input1_zp = input_qparams[1].get_zp_per_tensor()
@@ -92,13 +92,13 @@ class MatmulVisitor(NodeVisitor):
         )
 
         # Add the MATMUL to the TOSA graph.
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.MatMulAttribute()
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MATMUL,
+            ts.Op.MATMUL,  # pyrefly: ignore [missing-attribute]
             [
                 inputs[0].name,
                 inputs[1].name,

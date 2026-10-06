@@ -51,7 +51,7 @@ class GatherVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [indices],
-            [ts.DType.INT32],
+            [ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
         validate_valid_dtype(
@@ -61,13 +61,13 @@ class GatherVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.GatherAttribute()
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.GATHER,
+            ts.Op.GATHER,  # pyrefly: ignore [missing-attribute]
             [values.name, indices.name],
             [output.name],
             attr,

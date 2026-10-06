@@ -44,12 +44,12 @@ class RepeatVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.TileAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.TILE,
+            ts.Op.TILE,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name],
             [output.name],
             attr,

@@ -15,8 +15,8 @@ from executorch.backends.arm.quantizer.quantization_config import (
 )
 from executorch.backends.arm.vgf import VgfCompileSpec
 from torch.export import export
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torchao.quantization.pt2e.quantizer import QuantizationSpec
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantizer import QuantizationSpec  # pyrefly: ignore [missing-import]
 
 
 class FlowOffsetSamplerChain(torch.nn.Module):

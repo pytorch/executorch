@@ -18,7 +18,7 @@ from executorch.backends.cortex_m.utils import (
     is_foldable_alpha,
 )
 from torch.fx import Node
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
     SharedQuantizationSpec,
@@ -95,8 +95,8 @@ class CortexMDivCheck(PatternCheck):
         is_valid_dtype = (
             isinstance(input_qspec, QuantizationSpec)
             and isinstance(output_qspec, QuantizationSpec)
-            and input_qspec.dtype in allowed_dtypes
-            and output_qspec.dtype in allowed_dtypes
+            and input_qspec.dtype in allowed_dtypes  # pyrefly: ignore [missing-attribute]
+            and output_qspec.dtype in allowed_dtypes  # pyrefly: ignore [missing-attribute]
             and input_qspec.dtype == output_qspec.dtype
         )
         return is_per_tensor and is_valid_dtype
@@ -127,7 +127,7 @@ class CortexMConv2DCheck(PatternCheck):
         weight_qspec = quantization_config.get_weight_qspec(conv_node)
         if not isinstance(weight_qspec, QuantizationSpec):
             return False
-        is_ch_axis_0 = weight_qspec.ch_axis == 0 or weight_qspec.ch_axis is None
+        is_ch_axis_0 = weight_qspec.ch_axis == 0 or weight_qspec.ch_axis is None  # pyrefly: ignore [missing-attribute]
         return is_int8 and is_ch_axis_0
 
 
@@ -218,8 +218,8 @@ class CortexMSoftmaxCheck(PatternCheck):
         )
         if not isinstance(output_qspec, FixedQParamsQuantizationSpec):
             return False
-        correct_output_scale = output_qspec.scale == CMSIS_SOFTMAX_SCALE
-        correct_output_zero_point = output_qspec.zero_point == CMSIS_SOFTMAX_ZERO_POINT
+        correct_output_scale = output_qspec.scale == CMSIS_SOFTMAX_SCALE  # pyrefly: ignore [missing-attribute]
+        correct_output_zero_point = output_qspec.zero_point == CMSIS_SOFTMAX_ZERO_POINT  # pyrefly: ignore [missing-attribute]
 
         return (
             is_int8
@@ -296,7 +296,7 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         weight_qspec = quantization_config.get_weight_qspec(transpose_conv_node)
         if not isinstance(weight_qspec, QuantizationSpec):
             return False
-        is_ch_axis_1 = weight_qspec.ch_axis == 1 or weight_qspec.ch_axis is None
+        is_ch_axis_1 = weight_qspec.ch_axis == 1 or weight_qspec.ch_axis is None  # pyrefly: ignore [missing-attribute]
 
         return is_int8 and is_ch_axis_1
 
@@ -404,6 +404,6 @@ class CortexMMaxPool2DCheck(PatternCheck):
             input_qspec, (QuantizationSpec, FixedQParamsQuantizationSpec)
         ):
             return False
-        is_int8 = input_qspec.dtype == torch.int8
+        is_int8 = input_qspec.dtype == torch.int8  # pyrefly: ignore [missing-attribute]
         is_per_tensor = cls.is_per_tensor(input_qspec)
         return is_int8 and is_per_tensor

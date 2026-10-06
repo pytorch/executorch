@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
+from transformers.models.qwen2.configuration_qwen2 import Qwen2Config  # pyrefly: ignore [missing-import]
 
 
 def get_deepseek_r1_distill_qwen_1_5b_checkpoint_config() -> Qwen2Config:

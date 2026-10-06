@@ -11,6 +11,6 @@ may change without notice.
 
 """
 
-from .specification import TosaSpecification
+from .specification import TosaSpecification  # pyrefly: ignore [missing-import]
 
 __all__ = ["TosaSpecification"]

@@ -40,7 +40,7 @@ from nncf.torch.quantization.layers import (  # type: ignore[import-untyped]
     INT8AsymmetricWeightsDecompressor,
     INT8SymmetricWeightsDecompressor,
 )
-from torchao.quantization.pt2e import ObserverBase
+from torchao.quantization.pt2e import ObserverBase  # pyrefly: ignore [missing-import]
 
 
 class WeightObserverBase(ObserverBase, ABC):

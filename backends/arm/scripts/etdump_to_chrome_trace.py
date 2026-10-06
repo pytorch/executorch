@@ -84,16 +84,16 @@ def main() -> None:
                         "name": event.name,
                         "cat": event_block.name,
                         "ph": "X",
-                        "ts": float(start_time) * source_to_us,
-                        "dur": float(duration_us),
+                        "ts": float(start_time) * source_to_us,  # pyrefly: ignore [bad-assignment]
+                        "dur": float(duration_us),  # pyrefly: ignore [bad-assignment]
                         "pid": 1,
                         "tid": block_idx,
                         "args": {
                             "event_block": event_block.name,
-                            "iteration": iter_idx,
-                            "is_delegated_op": event.is_delegated_op,
-                            "delegate_backend_name": event.delegate_backend_name,
-                            "op_types": event.op_types,
+                            "iteration": iter_idx,  # pyrefly: ignore [bad-assignment]
+                            "is_delegated_op": event.is_delegated_op,  # pyrefly: ignore [bad-assignment]
+                            "delegate_backend_name": event.delegate_backend_name,  # pyrefly: ignore [bad-assignment]
+                            "op_types": event.op_types,  # pyrefly: ignore [bad-assignment]
                         },
                     }
                 )

@@ -8,7 +8,7 @@ Module tests in the same directory will import these configs.
 
 """
 
-from transformers.models.gemma3n.configuration_gemma3n import (
+from transformers.models.gemma3n.configuration_gemma3n import (  # pyrefly: ignore [missing-import]
     Gemma3nAudioConfig,
     Gemma3nTextConfig,
 )

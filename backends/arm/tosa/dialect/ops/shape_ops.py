@@ -36,7 +36,7 @@ def _to_sympy_expr(value: IntLikeType) -> sympy.Expr:
 
 def _to_lowest_concrete_int(value: IntLikeType, op: str, name: str) -> int:
     expr = _to_sympy_expr(value)
-    if expr.is_integer is False:
+    if expr.is_integer is False:  # pyrefly: ignore [missing-attribute]
         raise TosaValueError(f"{op} requires integer {name}", op=op)
     if expr.is_number:
         return int(expr)
@@ -60,7 +60,7 @@ def _require_known_nonnegative(value: IntLikeType, op: str, name: str) -> None:
     expr = _to_sympy_expr(value)
     if expr.is_number and int(expr) < 0:
         raise TosaValueError(f"{op} requires {name} >= 0", op=op)
-    if expr.is_nonnegative is False:
+    if expr.is_nonnegative is False:  # pyrefly: ignore [missing-attribute]
         raise TosaValueError(f"{op} requires {name} >= 0", op=op)
 
 
@@ -68,7 +68,7 @@ def _require_known_positive(value: IntLikeType, op: str, name: str) -> None:
     expr = _to_sympy_expr(value)
     if expr.is_number and int(expr) < 1:
         raise TosaValueError(f"{op} requires {name} > 0", op=op)
-    if expr.is_positive is False or expr.is_zero is True:
+    if expr.is_positive is False or expr.is_zero is True:  # pyrefly: ignore [missing-attribute]
         raise TosaValueError(f"{op} requires {name} > 0", op=op)
 
 
@@ -95,7 +95,7 @@ def _get_expr_range(expr: sympy.Expr):
 
 
 def _is_definitely_value(expr: sympy.Expr, value: int) -> bool:
-    if sympy.simplify(expr - value) == 0:
+    if sympy.simplify(expr - value) == 0:  # pyrefly: ignore [unsupported-operation]
         return True
 
     value_range = _get_expr_range(expr)
@@ -144,7 +144,7 @@ def _to_finite_int_values(
     max_values: int,
 ) -> list[int] | None:
     expr = _to_sympy_expr(value)
-    if expr.is_integer is False:
+    if expr.is_integer is False:  # pyrefly: ignore [missing-attribute]
         raise TosaValueError(f"{op} requires integer {name}", op=op)
     if expr.is_number:
         return [int(expr)]
@@ -203,7 +203,7 @@ def _combine_shapes(
     result: list[IntLikeType] = []
     for a, b in zip(expr_lhs, expr_rhs):
         expr = combine(a, b)
-        if expr.is_number and expr.is_integer:
+        if expr.is_number and expr.is_integer:  # pyrefly: ignore [missing-attribute]
             result.append(int(expr))
             continue
 
@@ -221,7 +221,7 @@ def ADD_SHAPE(
     shape2: list[IntLikeType],
 ) -> list[IntLikeType]:
     _require_shape_extension("ADD_SHAPE")
-    return _combine_shapes(shape1, shape2, lambda a, b: a + b)
+    return _combine_shapes(shape1, shape2, lambda a, b: a + b)  # pyrefly: ignore [unsupported-operation]
 
 
 @register_fake_tosa_op(
@@ -312,7 +312,7 @@ def DIV_CEIL_SHAPE(
     return _combine_shapes(
         shape1,
         shape2,
-        lambda a, b: FloorDiv(a + b - sympy.Integer(1), b),
+        lambda a, b: FloorDiv(a + b - sympy.Integer(1), b),  # pyrefly: ignore [bad-argument-type, unsupported-operation]
     )
 
 
@@ -328,7 +328,7 @@ def DIV_FLOOR_SHAPE(
     for lhs, rhs in zip(shape1, shape2):
         _require_known_nonnegative(lhs, "DIV_FLOOR_SHAPE", "input1")
         _require_known_positive(rhs, "DIV_FLOOR_SHAPE", "input2")
-    return _combine_shapes(shape1, shape2, lambda a, b: FloorDiv(a, b))
+    return _combine_shapes(shape1, shape2, lambda a, b: FloorDiv(a, b))  # pyrefly: ignore [bad-argument-type]
 
 
 @register_fake_tosa_op(
@@ -359,7 +359,7 @@ def LOG2_CEIL_SHAPE(input: list[IntLikeType]) -> list[IntLikeType]:
     return _combine_shapes(
         input,
         [0] * len(input),
-        lambda a, _: sympy.ceiling(sympy.log(a, 2)),
+        lambda a, _: sympy.ceiling(sympy.log(a, 2)),  # pyrefly: ignore [bad-argument-type]
     )
 
 
@@ -374,7 +374,7 @@ def LOG2_FLOOR_SHAPE(input: list[IntLikeType]) -> list[IntLikeType]:
     return _combine_shapes(
         input,
         [0] * len(input),
-        lambda a, _: sympy.floor(sympy.log(a, 2)),
+        lambda a, _: sympy.floor(sympy.log(a, 2)),  # pyrefly: ignore [bad-argument-type]
     )
 
 
@@ -414,7 +414,7 @@ def MOD_SHAPE(
     for lhs, rhs in zip(shape1, shape2):
         _require_known_nonnegative(lhs, "MOD_SHAPE", "input1")
         _require_known_positive(rhs, "MOD_SHAPE", "input2")
-    return _combine_shapes(shape1, shape2, lambda a, b: a % b)
+    return _combine_shapes(shape1, shape2, lambda a, b: a % b)  # pyrefly: ignore [unsupported-operation]
 
 
 @register_fake_tosa_op(
@@ -426,7 +426,7 @@ def MUL_SHAPE(
     shape2: list[IntLikeType],
 ) -> list[IntLikeType]:
     _require_shape_extension("MUL_SHAPE")
-    return _combine_shapes(shape1, shape2, lambda a, b: a * b)
+    return _combine_shapes(shape1, shape2, lambda a, b: a * b)  # pyrefly: ignore [unsupported-operation]
 
 
 @register_fake_tosa_op(
@@ -485,7 +485,7 @@ def SLICE_SHAPE(
                 for start_value in start_values
             ]
         )
-        if expr.is_number and expr.is_integer:
+        if expr.is_number and expr.is_integer:  # pyrefly: ignore [missing-attribute]
             result.append(int(expr))
             continue
 
@@ -503,4 +503,4 @@ def SUB_SHAPE(
     shape2: list[IntLikeType],
 ) -> list[IntLikeType]:
     _require_shape_extension("SUB_SHAPE")
-    return _combine_shapes(shape1, shape2, lambda a, b: a - b)
+    return _combine_shapes(shape1, shape2, lambda a, b: a - b)  # pyrefly: ignore [unsupported-operation]

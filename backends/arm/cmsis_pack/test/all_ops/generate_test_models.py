@@ -203,8 +203,8 @@ def _export_cortex_m(
     from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
     from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
     from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-    from torchao.quantization.pt2e import move_exported_model_to_eval
-    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+    from torchao.quantization.pt2e import move_exported_model_to_eval  # pyrefly: ignore [missing-import]
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
     # The pass manager sizes each op's AoT scratch buffer for this core's
     # CMSIS-NN path (M55 -> MVE, M7/M4 -> DSP, M0+ -> SCALAR). Sizing for the
@@ -282,7 +282,7 @@ def _export_ethos_u(
         ExecutorchBackendConfig,
         to_edge_transform_and_lower,
     )
-    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
     # ethos-u85-256 must match the FVP's mps4_board.subsystem.ethosu.num_macs=256
     # (run.sh). The memory mode governs which AXI port Vela expects const

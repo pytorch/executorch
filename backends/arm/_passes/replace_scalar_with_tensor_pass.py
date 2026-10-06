@@ -18,7 +18,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
 
-from .arm_pass import ArmPass
+from .arm_pass import ArmPass  # pyrefly: ignore [missing-import]
 
 
 # Operators that are included for both TOSA profiles

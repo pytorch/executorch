@@ -711,8 +711,8 @@ def test_div_ceil_shape_symbolic() -> None:
     assert isinstance(result[0], torch.SymInt)
     assert _expr_equals(
         result[0],
-        sympy.floor(
-            (sympy.Symbol("s0") + sympy.Symbol("s1") - sympy.Integer(1))
+        sympy.floor(  # pyrefly: ignore [bad-argument-type]
+            (sympy.Symbol("s0") + sympy.Symbol("s1") - sympy.Integer(1))  # pyrefly: ignore [unsupported-operation]
             / sympy.Symbol("s1")
         ),
     )
@@ -736,8 +736,8 @@ def test_div_ceil_shape_mixed() -> None:
     assert isinstance(result[0], torch.SymInt)
     assert _expr_equals(
         result[0],
-        sympy.floor(
-            (sympy.Integer(8) + sympy.Symbol("s0") - sympy.Integer(1))
+        sympy.floor(  # pyrefly: ignore [bad-argument-type]
+            (sympy.Integer(8) + sympy.Symbol("s0") - sympy.Integer(1))  # pyrefly: ignore [unsupported-operation]
             / sympy.Symbol("s0")
         ),
     )

@@ -8,7 +8,7 @@ from executorch.backends.arm.ao_ext import MXFPOpConfig, to_mxfp
 from executorch.backends.arm.ao_ext.mxfp import mxfp_dtype_to_str, MXFPDType
 from executorch.backends.arm.ao_ext.ops import MXFPConv2dOp
 from torch.export import export
-from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2  # pyrefly: ignore [missing-import]
 
 
 IN_CHANNELS = 64

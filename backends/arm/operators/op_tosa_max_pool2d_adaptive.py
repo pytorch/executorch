@@ -20,7 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 
-if hasattr(ts.Op, "MAX_POOL2D_ADAPTIVE"):
+if hasattr(ts.Op, "MAX_POOL2D_ADAPTIVE"):  # pyrefly: ignore [missing-attribute]
 
     @register_node_visitor
     class MaxPool2dAdaptiveVisitor(NodeVisitor):
@@ -40,20 +40,20 @@ if hasattr(ts.Op, "MAX_POOL2D_ADAPTIVE"):
 
             input_tensor, kernel, stride, pad = inputs
 
-            supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
+            supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]  # pyrefly: ignore [missing-attribute]
             if self.tosa_spec.support_extension("int16"):
-                supported.append(ts.DType.INT16)
+                supported.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
             validate_valid_dtype(
                 self.target, [input_tensor, output], supported, self.tosa_spec
             )
 
-            attr = ts.TosaSerializerAttribute()
-            attr.MaxPool2dAdaptiveAttribute(nan_mode=ts.NanPropagationMode.PROPAGATE)
+            attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
+            attr.MaxPool2dAdaptiveAttribute(nan_mode=ts.NanPropagationMode.PROPAGATE)  # pyrefly: ignore [missing-attribute]
 
             self._serialize_operator(
                 node,
                 tosa_graph,
-                ts.Op.MAX_POOL2D_ADAPTIVE,
+                ts.Op.MAX_POOL2D_ADAPTIVE,  # pyrefly: ignore [missing-attribute]
                 [input_tensor.name, kernel.name, stride.name, pad.name],
                 [output.name],
                 attr,

@@ -57,7 +57,7 @@ class DummyTargetedPass(ArmOpTargetedPass):
         super().__init__(*args, **kwargs)
         self.call_operator_count = 0
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         self.call_operator_count += 1
         return super().call_operator(op, args, kwargs, meta)
 

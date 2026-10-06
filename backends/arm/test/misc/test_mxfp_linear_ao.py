@@ -9,7 +9,7 @@ from executorch.backends.arm.ao_ext.mxfp import mxfp_dtype_to_str, MXFPDType
 from executorch.backends.arm.ao_ext.ops import MXFPLinearOp
 
 from torch.export import export
-from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2  # pyrefly: ignore [missing-import]
 
 
 class LinearModule(torch.nn.Module):

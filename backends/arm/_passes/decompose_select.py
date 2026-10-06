@@ -61,7 +61,7 @@ class DecomposeSelectPass(ArmOpTargetedPass):
                 # ``index + 1`` (from negative-index wrap-around against a
                 # dynamic shape) into graph nodes in a single call (shares
                 # producer-discovery + hash-cons). Static ints pass through.
-                start_arg, end_arg = graph_module.graph.materialize_symints(
+                start_arg, end_arg = graph_module.graph.materialize_symints(  # pyrefly: ignore [missing-attribute]
                     [index, index + 1]
                 )
                 slice_node = create_node(

@@ -96,7 +96,7 @@ def test_process_placeholder_int48_normalizes_int32_const_values() -> None:
         tosa_spec=TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
     )
 
-    assert tosa_graph.dtype == ts.DType.INT48
+    assert tosa_graph.dtype == ts.DType.INT48  # pyrefly: ignore [missing-attribute]
     assert tosa_graph.values is not None
     assert tosa_graph.values.dtype == np.int64
     assert tosa_graph.serialized_bytes == _expected_int48_bytes(module.bias)
@@ -110,7 +110,7 @@ def test_add_const_fp4_in_packed_storage() -> None:
     )
     tosa_arg = cast(
         TosaArg,
-        SimpleNamespace(dtype=ts.DType.FP4E2M1, shape=(1, 1, 8)),
+        SimpleNamespace(dtype=ts.DType.FP4E2M1, shape=(1, 1, 8)),  # pyrefly: ignore [missing-attribute]
     )
     tosa_graph = TosaSerializerWithConstantPool()
 
@@ -124,7 +124,7 @@ def test_add_const_fp4_in_packed_storage() -> None:
     }
     tensor = tensors["fp4_weight"]
 
-    assert tensor.Type() == ts.DType.FP4E2M1
+    assert tensor.Type() == ts.DType.FP4E2M1  # pyrefly: ignore [missing-attribute]
     assert [tensor.Shape(index) for index in range(tensor.ShapeLength())] == [1, 1, 8]
     assert [tensor.Data(index) for index in range(tensor.DataLength())] == [
         0xDE,
@@ -166,8 +166,8 @@ def _test_add_const_fp6_in_packed_storage(dtype: int) -> None:
 
 
 def test_add_const_fp6e2m3_in_packed_storage() -> None:
-    _test_add_const_fp6_in_packed_storage(ts.DType.FP6E2M3)
+    _test_add_const_fp6_in_packed_storage(ts.DType.FP6E2M3)  # pyrefly: ignore [missing-attribute]
 
 
 def test_add_const_fp6e3m2_in_packed_storage() -> None:
-    _test_add_const_fp6_in_packed_storage(ts.DType.FP6E3M2)
+    _test_add_const_fp6_in_packed_storage(ts.DType.FP6E3M2)  # pyrefly: ignore [missing-attribute]

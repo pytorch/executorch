@@ -9,13 +9,13 @@ from typing import Optional
 
 import torch
 from torch.fx import GraphModule
-from torchao.quantization.pt2e.observer import HistogramObserver
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.observer import HistogramObserver  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     QuantizationAnnotation,
     QuantizationSpec,
     Quantizer,
 )
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
 
 @dataclass(eq=True, frozen=True)

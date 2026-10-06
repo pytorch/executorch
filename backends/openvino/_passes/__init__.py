@@ -4,6 +4,6 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
-from .decompose_floor_divide_pass import DecomposeFloorDividePass
+from .decompose_floor_divide_pass import DecomposeFloorDividePass  # pyrefly: ignore [missing-import]
 
 __all__ = ["DecomposeFloorDividePass"]

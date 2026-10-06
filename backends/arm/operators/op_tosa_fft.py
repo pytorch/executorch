@@ -33,9 +33,9 @@ class FFT2dVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, inputs, ts)
-        validate_valid_dtype(self.target, inputs, ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, inputs, ts.DType.FP32, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.FFT2dAttribute(
             node.kwargs.get("inverse", False),
             node.kwargs.get("local_bound", False),
@@ -43,7 +43,7 @@ class FFT2dVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.FFT2D,
+            ts.Op.FFT2D,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name],
             output.multiple_output_names,
             attr,
@@ -62,14 +62,14 @@ class RFFT2dVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        validate_valid_dtype(self.target, inputs, ts.DType.FP32, self.tosa_spec)
+        validate_valid_dtype(self.target, inputs, ts.DType.FP32, self.tosa_spec)  # pyrefly: ignore [missing-attribute]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.RFFT2dAttribute(node.kwargs.get("local_bound", False))
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.RFFT2D,
+            ts.Op.RFFT2D,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             output.multiple_output_names,
             attr,

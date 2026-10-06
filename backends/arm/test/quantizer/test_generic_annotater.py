@@ -20,7 +20,7 @@ from executorch.backends.test.harness.stages import StageType
 
 from torch.export import export
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
 
 input_t1 = Tuple[torch.Tensor]  # Input x

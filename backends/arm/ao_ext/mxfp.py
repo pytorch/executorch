@@ -8,15 +8,15 @@ from typing import Callable, Optional
 
 import torch
 from executorch.exir._warnings import experimental
-from torchao.core.config import AOBaseConfig
-from torchao.prototype.mx_formats.config import ScaleCalculationMode
-from torchao.prototype.mx_formats.mx_tensor import (
+from torchao.core.config import AOBaseConfig  # pyrefly: ignore [missing-import]
+from torchao.prototype.mx_formats.config import ScaleCalculationMode  # pyrefly: ignore [missing-import]
+from torchao.prototype.mx_formats.mx_tensor import (  # pyrefly: ignore [missing-import]
     DTYPE_FP6_E2M3,
     DTYPE_FP6_E3M2,
     to_dtype,
     to_mx,
 )
-from torchao.quantization import quantize_
+from torchao.quantization import quantize_  # pyrefly: ignore [missing-import]
 
 
 # Pytorch lacks dtypes for the FP6 types, so we use ao's string representations for those.

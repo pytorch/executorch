@@ -39,13 +39,13 @@ class MaxPool2dVisitor(NodeVisitor):
 
         input_tensor, kernel, stride, pad = inputs
 
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("int16"):
-            supported_dtypes.append(ts.DType.INT16)
+            supported_dtypes.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("fp8e4m3"):
-            supported_dtypes.append(ts.DType.FP8E4M3)
+            supported_dtypes.append(ts.DType.FP8E4M3)  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("fp8e5m2"):
-            supported_dtypes.append(ts.DType.FP8E5M2)
+            supported_dtypes.append(ts.DType.FP8E5M2)  # pyrefly: ignore [missing-attribute]
         validate_valid_dtype(
             self.target,
             [input_tensor, output],
@@ -53,18 +53,18 @@ class MaxPool2dVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.MaxPool2dAttribute(
             kernel=kernel.special,
             stride=stride.special,
             pad=pad.special,
-            nan_mode=ts.NanPropagationMode.PROPAGATE,
+            nan_mode=ts.NanPropagationMode.PROPAGATE,  # pyrefly: ignore [missing-attribute]
         )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MAX_POOL2D,
+            ts.Op.MAX_POOL2D,  # pyrefly: ignore [missing-attribute]
             [input_tensor.name],
             [output.name],
             attr,

@@ -30,7 +30,7 @@ from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 from torch import nn
 from torch.fx import GraphModule
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 def _assert_one_delegate(graph_module: GraphModule):

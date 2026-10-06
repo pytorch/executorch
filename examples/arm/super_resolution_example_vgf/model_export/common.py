@@ -13,9 +13,9 @@ from typing import Any, Iterable
 import numpy as np
 import torch
 import torch.nn.functional as F
-from PIL import Image
+from PIL import Image  # pyrefly: ignore [missing-import]
 from torch.utils.data import Dataset
-from transformers import Swin2SRForImageSuperResolution
+from transformers import Swin2SRForImageSuperResolution  # pyrefly: ignore [missing-import]
 
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
 SUPPORTED_MODELS = ("swin2sr",)

@@ -21,7 +21,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from transformers.models.qwen2.modeling_qwen2 import (  # noqa: E402
+from transformers.models.qwen2.modeling_qwen2 import (  # noqa: E402  # pyrefly: ignore [missing-import]
     Qwen2ForCausalLM,
     Qwen2Model,
 )

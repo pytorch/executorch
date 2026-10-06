@@ -22,7 +22,7 @@ from executorch.backends.test.harness.stages import StageType
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 @dataclass(frozen=True)

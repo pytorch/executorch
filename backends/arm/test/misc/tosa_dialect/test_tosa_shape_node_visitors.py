@@ -44,30 +44,30 @@ SHAPE_VISITOR_TARGETS = {
 }
 
 SHAPE_OP_TEST_CASES = [
-    ("tosa.ADD_SHAPE.default", ts.Op.ADD_SHAPE, ["lhs", "rhs"], {}),
+    ("tosa.ADD_SHAPE.default", ts.Op.ADD_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
     (
         "tosa.ASSERT_EQUAL_SHAPE.default",
-        ts.Op.ASSERT_EQUAL_SHAPE,
+        ts.Op.ASSERT_EQUAL_SHAPE,  # pyrefly: ignore [missing-attribute]
         ["lhs", "rhs"],
         {"allow_broadcast": True},
     ),
     (
         "tosa.ASSERT_EQUAL_SHAPE.default",
-        ts.Op.ASSERT_EQUAL_SHAPE,
+        ts.Op.ASSERT_EQUAL_SHAPE,  # pyrefly: ignore [missing-attribute]
         ["lhs", "rhs"],
         {"allow_broadcast": False},
     ),
-    ("tosa.DIV_CEIL_SHAPE.default", ts.Op.DIV_CEIL_SHAPE, ["lhs", "rhs"], {}),
-    ("tosa.DIV_FLOOR_SHAPE.default", ts.Op.DIV_FLOOR_SHAPE, ["lhs", "rhs"], {}),
-    ("tosa.EXP2_SHAPE.default", ts.Op.EXP2_SHAPE, ["input"], {}),
-    ("tosa.LOG2_CEIL_SHAPE.default", ts.Op.LOG2_CEIL_SHAPE, ["input"], {}),
-    ("tosa.LOG2_FLOOR_SHAPE.default", ts.Op.LOG2_FLOOR_SHAPE, ["input"], {}),
-    ("tosa.MAX_SHAPE.default", ts.Op.MAX_SHAPE, ["lhs", "rhs"], {}),
-    ("tosa.MIN_SHAPE.default", ts.Op.MIN_SHAPE, ["lhs", "rhs"], {}),
-    ("tosa.MOD_SHAPE.default", ts.Op.MOD_SHAPE, ["lhs", "rhs"], {}),
-    ("tosa.MUL_SHAPE.default", ts.Op.MUL_SHAPE, ["lhs", "rhs"], {}),
-    ("tosa.SLICE_SHAPE.default", ts.Op.SLICE_SHAPE, ["input", "start", "size"], {}),
-    ("tosa.SUB_SHAPE.default", ts.Op.SUB_SHAPE, ["lhs", "rhs"], {}),
+    ("tosa.DIV_CEIL_SHAPE.default", ts.Op.DIV_CEIL_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.DIV_FLOOR_SHAPE.default", ts.Op.DIV_FLOOR_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.EXP2_SHAPE.default", ts.Op.EXP2_SHAPE, ["input"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.LOG2_CEIL_SHAPE.default", ts.Op.LOG2_CEIL_SHAPE, ["input"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.LOG2_FLOOR_SHAPE.default", ts.Op.LOG2_FLOOR_SHAPE, ["input"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.MAX_SHAPE.default", ts.Op.MAX_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.MIN_SHAPE.default", ts.Op.MIN_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.MOD_SHAPE.default", ts.Op.MOD_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.MUL_SHAPE.default", ts.Op.MUL_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.SLICE_SHAPE.default", ts.Op.SLICE_SHAPE, ["input", "start", "size"], {}),  # pyrefly: ignore [missing-attribute]
+    ("tosa.SUB_SHAPE.default", ts.Op.SUB_SHAPE, ["lhs", "rhs"], {}),  # pyrefly: ignore [missing-attribute]
 ]
 
 
@@ -75,7 +75,7 @@ def _shape_spec() -> TosaSpecification:
     return TosaSpecification.create_from_string("TOSA-1.1+FP+shape")
 
 
-def _serializer() -> ts.TosaSerializer:
+def _serializer() -> ts.TosaSerializer:  # pyrefly: ignore [missing-attribute]
     return TosaSerializerWithConstantPool(
         "",
         targetMajor=1,
@@ -85,7 +85,7 @@ def _serializer() -> ts.TosaSerializer:
     )
 
 
-def _serialized_op_codes(tosa_graph: ts.TosaSerializer) -> list[ts.Op]:
+def _serialized_op_codes(tosa_graph: ts.TosaSerializer) -> list[ts.Op]:  # pyrefly: ignore [missing-attribute]
     graph = TosaGraph.GetRootAsTosaGraph(tosa_graph.serialize(), 0)
     block = graph.Regions(0).Blocks(0)
     return [block.Operators(index).Op() for index in range(block.OperatorsLength())]
@@ -94,7 +94,7 @@ def _serialized_op_codes(tosa_graph: ts.TosaSerializer) -> list[ts.Op]:
 def _define_node(
     visitor: NodeVisitor,
     node: Any,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: ts.TosaSerializer,  # pyrefly: ignore [missing-attribute]
     inputs: list[Any],
     output: Any,
 ) -> None:
@@ -107,7 +107,7 @@ def _define_node(
 
 
 def _serialized_tensor_shapes(tosa_buffer: bytes) -> dict[str, list[int]]:
-    graph = TosaGraph.TosaGraph.GetRootAsTosaGraph(tosa_buffer, 0)
+    graph = TosaGraph.TosaGraph.GetRootAsTosaGraph(tosa_buffer, 0)  # pyrefly: ignore [missing-attribute]
     block = graph.Regions(0).Blocks(0)
     return {
         block.Tensors(index)
@@ -122,7 +122,7 @@ def _serialized_tensor_shapes(tosa_buffer: bytes) -> dict[str, list[int]]:
 
 def _add_const_shape(
     visitors: dict[str, NodeVisitor],
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: ts.TosaSerializer,  # pyrefly: ignore [missing-attribute]
     name: str,
     values: list[int],
 ) -> str:
@@ -137,17 +137,17 @@ def _add_const_shape(
 
 
 def _add_const_tensor(
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: ts.TosaSerializer,  # pyrefly: ignore [missing-attribute]
     name: str,
     values: list[int],
 ) -> str:
-    tosa_graph.addConst([len(values)], ts.DType.INT32, values, name=name)
+    tosa_graph.addConst([len(values)], ts.DType.INT32, values, name=name)  # pyrefly: ignore [missing-attribute]
     return name
 
 
 def _add_shape_op(
     visitors: dict[str, NodeVisitor],
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: ts.TosaSerializer,  # pyrefly: ignore [missing-attribute]
     target: str,
     name: str,
     input_names: list[str],
@@ -173,7 +173,7 @@ def _add_shape_op(
 
 
 def _add_reshape_from_shape(
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: ts.TosaSerializer,  # pyrefly: ignore [missing-attribute]
     input_shapes: dict[str, list[int]],
     expected_outputs: dict[str, list[int]],
     name: str,
@@ -183,18 +183,18 @@ def _add_reshape_from_shape(
     data_name = f"data_{name}"
     output_name = f"out_{name}"
     tosa_graph.addInputTensor(
-        ts.TosaSerializerTensor(data_name, [-1], ts.DType.INT32, data=None)
+        ts.TosaSerializerTensor(data_name, [-1], ts.DType.INT32, data=None)  # pyrefly: ignore [missing-attribute]
     )
     input_shapes[data_name] = [math.prod(expected_shape)]
     tosa_graph.currRegion.currBasicBlock.addTensor(
         output_name,
         [-1] * len(expected_shape),
-        ts.DType.INT32,
+        ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
     )
-    attr = ts.TosaSerializerAttribute()
+    attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
     attr.ReshapeAttribute()
     tosa_graph.addOperator(
-        ts.Op.RESHAPE,
+        ts.Op.RESHAPE,  # pyrefly: ignore [missing-attribute]
         [data_name, shape_name],
         [output_name],
         attr,
@@ -207,7 +207,7 @@ def _add_reshape_from_shape(
 
 def _run_infer_shapes(
     infer_shapes: str,
-    tosa_graph: ts.TosaSerializer,
+    tosa_graph: ts.TosaSerializer,  # pyrefly: ignore [missing-attribute]
     input_shapes: dict[str, list[int]],
     tmp_path: Path,
 ) -> dict[str, list[int]]:
@@ -237,7 +237,7 @@ def test_all_tosa_shape_ops_have_node_visitors() -> None:
 )
 def test_shape_node_visitors_serialize_operator(
     target: str,
-    expected_op: ts.Op,
+    expected_op: ts.Op,  # pyrefly: ignore [missing-attribute]
     input_names: list[str],
     kwargs: dict[str, object],
 ) -> None:
@@ -272,7 +272,7 @@ def test_concat_shape_node_visitor_serializes_operator() -> None:
         SimpleNamespace(name="output", shape=(2,)),
     )
 
-    assert _serialized_op_codes(tosa_graph) == [ts.Op.CONCAT_SHAPE]
+    assert _serialized_op_codes(tosa_graph) == [ts.Op.CONCAT_SHAPE]  # pyrefly: ignore [missing-attribute]
 
 
 def test_const_shape_node_visitor_serializes_const_operator() -> None:
@@ -287,13 +287,13 @@ def test_const_shape_node_visitor_serializes_const_operator() -> None:
         SimpleNamespace(name="output", shape=(2,)),
     )
 
-    assert _serialized_op_codes(tosa_graph) == [ts.Op.CONST_SHAPE]
+    assert _serialized_op_codes(tosa_graph) == [ts.Op.CONST_SHAPE]  # pyrefly: ignore [missing-attribute]
 
 
 def test_const_shape_node_visitor_preserves_output_name() -> None:
     visitor = get_node_visitors(_shape_spec())["tosa.CONST_SHAPE.default"]
     tosa_graph = _serializer()
-    tosa_graph.addConst([2], ts.DType.SHAPE, [2, 3], name="helper")
+    tosa_graph.addConst([2], ts.DType.SHAPE, [2, 3], name="helper")  # pyrefly: ignore [missing-attribute]
 
     _define_node(
         visitor,
@@ -309,7 +309,7 @@ def test_const_shape_node_visitor_preserves_output_name() -> None:
 def test_dim_shape_node_visitor_serializes_operator() -> None:
     visitor = get_node_visitors(_shape_spec())["tosa.DIM.default"]
     tosa_graph = _serializer()
-    tosa_graph.currRegion.currBasicBlock.addTensor("input", [1, 2], ts.DType.FP32)
+    tosa_graph.currRegion.currBasicBlock.addTensor("input", [1, 2], ts.DType.FP32)  # pyrefly: ignore [missing-attribute]
 
     _define_node(
         visitor,
@@ -319,7 +319,7 @@ def test_dim_shape_node_visitor_serializes_operator() -> None:
         SimpleNamespace(name="output", shape=(1,)),
     )
 
-    assert _serialized_op_codes(tosa_graph) == [ts.Op.DIM]
+    assert _serialized_op_codes(tosa_graph) == [ts.Op.DIM]  # pyrefly: ignore [missing-attribute]
 
 
 def test_shape_node_visitors_round_trip_through_infer_shapes(tmp_path: Path) -> None:
@@ -342,7 +342,7 @@ def test_shape_node_visitors_round_trip_through_infer_shapes(tmp_path: Path) -> 
     )
 
     tosa_graph.addInputTensor(
-        ts.TosaSerializerTensor("dim_source", [-1], ts.DType.INT32, data=None)
+        ts.TosaSerializerTensor("dim_source", [-1], ts.DType.INT32, data=None)  # pyrefly: ignore [missing-attribute]
     )
     input_shapes["dim_source"] = [6]
     _add_reshape_from_shape(

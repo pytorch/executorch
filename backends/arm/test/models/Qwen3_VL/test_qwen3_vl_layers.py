@@ -19,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     VgfPipeline,
 )
-from transformers.models.qwen3_vl.modeling_qwen3_vl import (
+from transformers.models.qwen3_vl.modeling_qwen3_vl import (  # pyrefly: ignore [missing-import]
     apply_rotary_pos_emb,
     apply_rotary_pos_emb_vision,
     Qwen3VLTextAttention,

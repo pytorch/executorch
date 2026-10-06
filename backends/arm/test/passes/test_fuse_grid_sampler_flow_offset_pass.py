@@ -36,7 +36,7 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Graph
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
 )

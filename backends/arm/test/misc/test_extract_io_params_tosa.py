@@ -21,7 +21,7 @@ from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.quantize_io_pass import extract_io_quant_params
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 class SimpleAdd(torch.nn.Module):

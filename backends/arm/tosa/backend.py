@@ -165,10 +165,11 @@ class TOSABackend(BackendDetails):
             tosa_graph.setExperimentalDevVersion()
 
         if not (
-            tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
-            and tosa_spec.version.minor <= ts.TOSA_VERSION_MINOR
+            tosa_spec.version.major == ts.TOSA_VERSION_MAJOR  # pyrefly: ignore [missing-attribute]
+            and tosa_spec.version.minor <= ts.TOSA_VERSION_MINOR  # pyrefly: ignore [missing-attribute]
         ):
             raise RuntimeError(
+                # pyrefly: ignore [missing-attribute]
                 f"TOSA serializer version "
                 f"({ts.TOSA_VERSION_MAJOR}.{ts.TOSA_VERSION_MINOR}) "
                 f"doesn't match specification {tosa_spec}"

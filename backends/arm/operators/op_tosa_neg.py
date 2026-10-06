@@ -45,12 +45,12 @@ class NegVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         supported_dtypes = [
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.FP16,
-            ts.DType.BF16,
-            ts.DType.FP32,
+            ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+            ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+            ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+            ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
         ]
 
         validate_num_inputs(self.target, inputs, 1)
@@ -60,7 +60,7 @@ class NegVisitor(NodeVisitor):
         )
 
         input_zp, output_zp = get_negate_zero_points(
-            node, inputs[0].dtype == ts.DType.INT8
+            node, inputs[0].dtype == ts.DType.INT8  # pyrefly: ignore [missing-attribute]
         )
         input_zp_tensor = tosa_graph.addConst(
             (1,), inputs[0].dtype, [input_zp], name=output.name + "_input_zp"
@@ -69,12 +69,12 @@ class NegVisitor(NodeVisitor):
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.NegateAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.NEGATE,
+            ts.Op.NEGATE,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],
             attr,

@@ -4,9 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-from .backend import EthosUBackend  # noqa: F401
-from .compile_spec import EthosUCompileSpec, VelaExternalBlockPlacements  # noqa: F401
-from .partitioner import EthosUPartitioner  # noqa: F401
+from .backend import EthosUBackend  # noqa: F401  # pyrefly: ignore [missing-import]
+from .compile_spec import EthosUCompileSpec, VelaExternalBlockPlacements  # noqa: F401  # pyrefly: ignore [missing-import]
+from .partitioner import EthosUPartitioner  # noqa: F401  # pyrefly: ignore [missing-import]
 
 __all__ = [
     "EthosUBackend",

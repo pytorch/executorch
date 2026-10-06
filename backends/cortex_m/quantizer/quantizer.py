@@ -34,7 +34,7 @@ from executorch.backends.cortex_m.quantizer.quantizer_support import (
 from executorch.backends.cortex_m.quantizer_reporter import QuantizerReporter
 from torch._ops import OpOverload
 from torch.fx import GraphModule
-from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
+from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer  # pyrefly: ignore [missing-import]
 
 
 def mark_node_as_annotated(

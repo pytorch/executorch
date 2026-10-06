@@ -23,8 +23,8 @@ class LogVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.LOG,
+            tosa_op=ts.Op.LOG,  # pyrefly: ignore [missing-attribute]
             attr_method="LogAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
         )

@@ -170,9 +170,9 @@ class LCMOpenVINOExporter:
             self.calibration_dataset_name,
             self.calibration_dataset_column,
         )
-        model = model.module()
+        model = model.module()  # pyrefly: ignore [bad-assignment]
         quantized_model = quantize_model(
-            model,
+            model,  # pyrefly: ignore [bad-argument-type]
             mode=QuantizationMode.INT8_TRANSFORMER,
             calibration_dataset=calibration_dataset,  # type: ignore[arg-type]
             smooth_quant=True,
@@ -187,7 +187,7 @@ class LCMOpenVINOExporter:
         dummy_inputs,
     ) -> torch.export.ExportedProgram:
         """Apply weights-only compression for non-UNet components."""
-        model = model.module()
+        model = model.module()  # pyrefly: ignore [bad-assignment]
         ov_quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8WO_ASYM)
         quantized_model = nncf.experimental.torch.fx.compress_pt2e(
             model, quantizer=ov_quantizer

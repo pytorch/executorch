@@ -45,12 +45,12 @@ class SliceVisitor(NodeVisitor):
         )
 
         input_node, starts, sizes = inputs
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.SliceAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.SLICE,
+            ts.Op.SLICE,  # pyrefly: ignore [missing-attribute]
             [input_node.name, starts.name, sizes.name],
             [output.name],
             attr,

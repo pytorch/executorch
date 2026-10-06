@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .quantization_configs import (  # noqa
+from .quantization_configs import (  # noqa  # pyrefly: ignore [missing-import]
     CMSIS_SOFTMAX_SCALE,
     CMSIS_SOFTMAX_ZERO_POINT,
     CortexMQuantizationConfig,

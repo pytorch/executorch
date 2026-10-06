@@ -245,7 +245,7 @@ class DecomposeGroupedConvPass(ArmOpTargetedPass):
 
         return meta_copy
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         groups, transposed = DecomposeGroupedConvPass._get_groups_and_transposed(
             op, args
         )

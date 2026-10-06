@@ -143,7 +143,7 @@ class CustomVisitor(NodeVisitor):
         elif isinstance(implementation_attrs, list):
             # NOTE: PyTorch schemas do not support a bytes type; we pass
             # implementation_attrs as int[] representing raw bytes.
-            impl_list = [int(x) for x in implementation_attrs]
+            impl_list = [int(x) for x in implementation_attrs]  # pyrefly: ignore [bad-argument-type]
         else:
             raise TypeError(
                 "implementation_attrs must be None or list[int]; "
@@ -158,7 +158,7 @@ class CustomVisitor(NodeVisitor):
             output=output,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.CustomAttribute(
             operator_name=operator_name,
             domain_name=domain_name,
@@ -179,7 +179,7 @@ class CustomVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CUSTOM,
+            ts.Op.CUSTOM,  # pyrefly: ignore [missing-attribute]
             input_names,
             output_names,
             attr,

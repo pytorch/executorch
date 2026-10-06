@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 import torch
 
-from examples.arm.mobilesam_prompt_segmentation_example_ethos_u.model_export.export_mobilesam import (
+from examples.arm.mobilesam_prompt_segmentation_example_ethos_u.model_export.export_mobilesam import (  # pyrefly: ignore [missing-import]
     iou,
     mask,
 )
-from examples.arm.mobilesam_prompt_segmentation_example_ethos_u.runtime.visualize_fvp_output import (
+from examples.arm.mobilesam_prompt_segmentation_example_ethos_u.runtime.visualize_fvp_output import (  # pyrefly: ignore [missing-import]
     load_mask,
     OUTPUT_SIZE,
 )

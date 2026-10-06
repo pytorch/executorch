@@ -10,8 +10,8 @@ unavailable.
 
 """
 
-from .quantization_config import QuantizationConfig  # noqa  # usort: skip
-from .arm_quantizer import (  # noqa
+from .quantization_config import QuantizationConfig  # noqa  # usort: skip  # pyrefly: ignore [missing-import]
+from .arm_quantizer import (  # noqa  # pyrefly: ignore [missing-import]
     EthosUQuantizer,
     get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
@@ -22,7 +22,7 @@ from .arm_quantizer import (  # noqa
 )
 
 # Used in tests
-from .arm_quantizer_utils import is_annotated  # noqa
+from .arm_quantizer_utils import is_annotated  # noqa  # pyrefly: ignore [missing-import]
 
 # Load quantized ops library.
 try:

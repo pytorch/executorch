@@ -16,8 +16,8 @@ from executorch.backends.cortex_m.quantizer_reporter import (
     QuantizerReporterUser,
 )
 from torch.export import export
-from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     DerivedQuantizationSpec,
     QuantizationSpec,
     SharedQuantizationSpec,

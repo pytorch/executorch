@@ -12,9 +12,9 @@ from typing import cast, List, Optional
 
 import executorch
 
-import timm
+import timm  # pyrefly: ignore [missing-import]
 import torch
-import torchvision.models as torchvision_models
+import torchvision.models as torchvision_models  # pyrefly: ignore [missing-import]
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.backends.openvino.quantizer import quantize_model
 from executorch.exir import (
@@ -24,13 +24,13 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.runtime import Runtime
-from sklearn.metrics import accuracy_score
-from timm.data import resolve_data_config
-from timm.data.transforms_factory import create_transform
+from sklearn.metrics import accuracy_score  # pyrefly: ignore [missing-import]
+from timm.data import resolve_data_config  # pyrefly: ignore [missing-import]
+from timm.data.transforms_factory import create_transform  # pyrefly: ignore [missing-import]
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
-from torchvision import datasets
-from transformers import AutoModel
+from torchvision import datasets  # pyrefly: ignore [missing-import]
+from transformers import AutoModel  # pyrefly: ignore [missing-import]
 
 
 # Function to load a model based on the selected suite

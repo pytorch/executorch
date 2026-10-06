@@ -11,7 +11,7 @@ import platform
 import subprocess
 import sys
 
-from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
+from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible  # pyrefly: ignore [missing-import]
 
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.

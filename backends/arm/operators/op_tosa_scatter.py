@@ -38,7 +38,7 @@ class ScatterVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[1]],
-            [ts.DType.INT32],
+            [ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
         validate_valid_dtype(
@@ -48,13 +48,13 @@ class ScatterVisitor(NodeVisitor):
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ScatterAttribute()
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.SCATTER,
+            ts.Op.SCATTER,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name, inputs[2].name],
             [output.name],
             attr,

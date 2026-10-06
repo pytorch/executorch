@@ -40,8 +40,8 @@ class ToDimOrderCopyVisitor(NodeVisitor):
         output: TosaArg,
     ) -> None:
         validate_num_inputs(self.target, inputs, 1)
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.CastAttribute()
         self._serialize_operator(
-            node, tosa_graph, ts.Op.CAST, [inputs[0].name], [output.name], attr
+            node, tosa_graph, ts.Op.CAST, [inputs[0].name], [output.name], attr  # pyrefly: ignore [missing-attribute]
         )

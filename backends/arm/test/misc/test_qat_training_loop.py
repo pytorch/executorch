@@ -13,11 +13,11 @@ from executorch.backends.arm.quantizer import (
 
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.export import export
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     move_exported_model_to_eval,
     move_exported_model_to_train,
 )
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger(__name__)
 

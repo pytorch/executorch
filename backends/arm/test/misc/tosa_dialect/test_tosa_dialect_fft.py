@@ -67,8 +67,8 @@ def test_fft2d_accepts_matching_symbolic_shape() -> None:
 
     assert isinstance(output_real.shape[2], torch.SymInt)
     assert isinstance(output_imag.shape[2], torch.SymInt)
-    assert sympy.simplify(_expr(output_real.shape[2]) - sympy.Symbol("w")) == 0
-    assert sympy.simplify(_expr(output_imag.shape[2]) - sympy.Symbol("w")) == 0
+    assert sympy.simplify(_expr(output_real.shape[2]) - sympy.Symbol("w")) == 0  # pyrefly: ignore [unsupported-operation]
+    assert sympy.simplify(_expr(output_imag.shape[2]) - sympy.Symbol("w")) == 0  # pyrefly: ignore [unsupported-operation]
 
 
 def test_rfft2d_tosa_fp_fft() -> None:
@@ -114,8 +114,8 @@ def test_rfft2d_preserves_symbolic_width() -> None:
             mode.from_tensor(input_real)
         )
 
-    expected = sympy.floor(sympy.Symbol("w") / 2) + sympy.Integer(1)
+    expected = sympy.floor(sympy.Symbol("w") / 2) + sympy.Integer(1)  # pyrefly: ignore [unsupported-operation]
     assert isinstance(output_real.shape[2], torch.SymInt)
     assert isinstance(output_imag.shape[2], torch.SymInt)
-    assert sympy.simplify(_expr(output_real.shape[2]) - expected) == 0
-    assert sympy.simplify(_expr(output_imag.shape[2]) - expected) == 0
+    assert sympy.simplify(_expr(output_real.shape[2]) - expected) == 0  # pyrefly: ignore [unsupported-operation]
+    assert sympy.simplify(_expr(output_imag.shape[2]) - expected) == 0  # pyrefly: ignore [unsupported-operation]

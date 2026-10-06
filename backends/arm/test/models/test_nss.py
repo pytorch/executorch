@@ -41,13 +41,13 @@ from ng_model_gym.usecases.nss.model.model_blocks_v1 import (  # type: ignore[im
     AutoEncoderV1,
 )
 from torch.export import Dim
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     allow_exported_model_train_eval,
     FixedQParamsFakeQuantize,
     FixedQParamsObserver,
     move_exported_model_to_eval,
 )
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_qat_pt2e  # pyrefly: ignore [missing-import]
 
 input_t = Tuple[torch.Tensor]  # Input x
 

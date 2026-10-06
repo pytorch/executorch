@@ -33,7 +33,7 @@ from executorch.backends.arm.scripts.neural_graphics_test_data import (
     nss_test_verification_path,
     NSS_VERIFICATION_SAMPLES,
 )
-from safetensors.torch import save_file
+from safetensors.torch import save_file  # pyrefly: ignore [missing-import]
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 

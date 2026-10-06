@@ -116,7 +116,7 @@ class DebugHook:
         self._debug_events: list[DebugSchema] = []
         self.mode = debug_mode
 
-    def add(self, node: torch.fx.Node, tosa_op: Any, tosa_op_id: ts.Op) -> DebugSchema:
+    def add(self, node: torch.fx.Node, tosa_op: Any, tosa_op_id: ts.Op) -> DebugSchema:  # pyrefly: ignore [missing-attribute]
         tosa_debug_info = None
 
         # If the debug data is being embedded into the TOSA flatbuffer

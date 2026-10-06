@@ -24,7 +24,7 @@ PTQ_AND_QAT_DATA = {
 
 def download_model_weights(*, repo_id: str, filename: str, revision: str) -> str:
     """Reuse the HF cache, retrying read-only CI caches in writable storage."""
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download  # pyrefly: ignore [missing-import]
 
     try:
         return hf_hub_download(  # nosec B615

@@ -27,24 +27,24 @@ def supported_data_layout_dtypes(
     """Return serializer dtypes supported by TOSA data-layout ops."""
     supported_dtypes = []
     if include_bool:
-        supported_dtypes.append(ts.DType.BOOL)
+        supported_dtypes.append(ts.DType.BOOL)  # pyrefly: ignore [missing-attribute]
     if tosa_spec.support_integer():
         if allow_int16_without_extension:
-            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])  # pyrefly: ignore [missing-attribute]
         else:
-            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT32])
+            supported_dtypes.extend([ts.DType.INT8, ts.DType.INT32])  # pyrefly: ignore [missing-attribute]
             if tosa_spec.support_extension("int16"):
-                supported_dtypes.append(ts.DType.INT16)
+                supported_dtypes.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
     if tosa_spec.support_float():
-        supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])
+        supported_dtypes.extend([ts.DType.FP16, ts.DType.FP32])  # pyrefly: ignore [missing-attribute]
     if tosa_spec.support_extension("bf16"):
-        supported_dtypes.append(ts.DType.BF16)
+        supported_dtypes.append(ts.DType.BF16)  # pyrefly: ignore [missing-attribute]
     if tosa_spec.support_extension("fp8e4m3"):
-        supported_dtypes.append(ts.DType.FP8E4M3)
+        supported_dtypes.append(ts.DType.FP8E4M3)  # pyrefly: ignore [missing-attribute]
     if tosa_spec.support_extension("fp8e5m2"):
-        supported_dtypes.append(ts.DType.FP8E5M2)
+        supported_dtypes.append(ts.DType.FP8E5M2)  # pyrefly: ignore [missing-attribute]
     if include_mxfp and tosa_spec.support_extension("mxfp"):
-        for dtype in (ts.DType.FP8E4M3, ts.DType.FP8E5M2):
+        for dtype in (ts.DType.FP8E4M3, ts.DType.FP8E5M2):  # pyrefly: ignore [missing-attribute]
             if dtype not in supported_dtypes:
                 supported_dtypes.append(dtype)
     return supported_dtypes

@@ -37,7 +37,7 @@ def test_evaluate_symbolic_expr_values_returns_singleton_for_constant_expr() -> 
         symint.node.expr - symint.node.expr, shape_env
     ) == {0}
     assert evaluate_symbolic_expr_values(
-        sympy.floor(symint.node.expr / symint.node.expr), shape_env
+        sympy.floor(symint.node.expr / symint.node.expr), shape_env  # pyrefly: ignore [bad-argument-type]
     ) == {1}
 
 
@@ -59,10 +59,10 @@ def test_evaluate_symbolic_expr_values_tracks_exact_modulo_residue() -> None:
     shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
     expr = sympy.Mod(16 * symint.node.expr - 7, 4)
 
-    value_range = shape_env.bound_sympy(expr)
+    value_range = shape_env.bound_sympy(expr)  # pyrefly: ignore [bad-argument-type]
     assert value_range.lower == 0
     assert value_range.upper == 3
-    assert evaluate_symbolic_expr_values(expr, shape_env) == {1}
+    assert evaluate_symbolic_expr_values(expr, shape_env) == {1}  # pyrefly: ignore [bad-argument-type]
 
 
 def test_evaluate_symbolic_expr_values_bails_out_for_large_symbol_ranges() -> None:
@@ -88,7 +88,7 @@ def test_evaluate_symbolic_expr_values_handles_python_mod() -> None:
     shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
 
     assert evaluate_symbolic_expr_values(
-        PythonMod(16 * symint.node.expr - 7, 4), shape_env
+        PythonMod(16 * symint.node.expr - 7, 4), shape_env  # pyrefly: ignore [bad-argument-type]
     ) == {1}
 
 
@@ -101,5 +101,5 @@ def test_evaluate_symbolic_expr_values_handles_python_floordiv() -> None:
     shape_env, symint = _make_shape_env(hint=3, compiler_min=2, compiler_max=6)
 
     assert evaluate_symbolic_expr_values(
-        PythonFloorDiv(symint.node.expr, 2), shape_env
+        PythonFloorDiv(symint.node.expr, 2), shape_env  # pyrefly: ignore [bad-argument-type]
     ) == {1, 2, 3}

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import torchgen.api.cpp as aten_cpp
 
-from .types import contextArg
+from .types import contextArg  # pyrefly: ignore [missing-module-attribute]
 
 
 if TYPE_CHECKING:
@@ -74,4 +74,4 @@ class ExecutorchCppSignature:
         )
 
 
-from .. import et_cpp
+from .. import et_cpp  # pyrefly: ignore [missing-import]
