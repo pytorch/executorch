@@ -8,7 +8,13 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb, l2norm
+import transformers.models.qwen3_5.modeling_qwen3_5 as qwen_modeling
 
+def rotate_half_split(x):
+    x1, x2 = torch.split(x, x.shape[-1] // 2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+
+qwen_modeling.rotate_half = rotate_half_split
 
 class Backbone(nn.Module):
     """Qwen3.5 prefill with explicit convolution, DeltaNet, and attention state."""
@@ -48,9 +54,10 @@ class Backbone(nn.Module):
                 dtype=torch.float32,
             )
         history = torch.cat((conv.expand(batch, -1, -1), qkv), dim=-1)
-        conv_out = history[:, :, -attn.conv_kernel_size :].contiguous()
+        conv_out = torch.split(history, [history.shape[2] - attn.conv_kernel_size, attn.conv_kernel_size], dim=2)[1].contiguous()
+        conv_res = F.conv1d(history, attn.conv1d.weight, groups=attn.conv_dim)
         qkv = F.silu(
-            F.conv1d(history, attn.conv1d.weight, groups=attn.conv_dim)[:, :, -length:]
+            torch.split(conv_res, [conv_res.shape[2] - length, length], dim=2)[1]
         ).transpose(1, 2)
         q, k, v = qkv.split((attn.key_dim, attn.key_dim, attn.value_dim), dim=-1)
         q = l2norm(q.reshape(batch, length, -1, attn.head_k_dim).float())

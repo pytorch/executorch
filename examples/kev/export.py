@@ -20,7 +20,10 @@ from kev.checkpoint import Checkpoint, LoadOptions
 from kev.model import MAX_BRANCH, MAX_STATE, SPECIAL
 from model import Backbone, Prefill, Score
 from torch.export import Dim
+import operator
 
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
 
 def export_model(backbone, head, limits, metadata):
     max_prefix, max_context, max_questions, max_options = limits
@@ -103,7 +106,8 @@ def export_model(backbone, head, limits, metadata):
             partitioner = VulkanPartitioner(
                 {"require_dynamic_shapes": True}
             )  # TODO: Configure correctly based on failures
-            passes = []
+            from executorch.exir.passes.spec_prop_pass import SpecPropPass
+            passes = [SpecPropPass()]
         else:
             from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
                 XnnpackPartitioner,
@@ -169,6 +173,9 @@ def main():
     ):
         parser.error("Checkpoint temperature must be finite and positive")
     dtype = {"fp32": torch.float32, "bf16": torch.bfloat16}[args.dtype]
+    if args.backend == "vulkan" and dtype == torch.bfloat16:
+        print("Vulkan backend does not support bfloat16, casting to float16.")
+        dtype = torch.float16
     tokenizer, model = checkpoint.load("cpu", LoadOptions(dtype=dtype, attn="sdpa"))
     backbone = Backbone(model.lm, args.backend).eval()
     limits = (args.max_prefix, args.max_context, 8, 255)

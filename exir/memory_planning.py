@@ -275,6 +275,10 @@ class Verifier:
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
+                    if nd.op == "placeholder":
+                        graph_input_allocated = self.alloc_graph_input
+                    else:
+                        graph_output_allocated = self.alloc_graph_output
                     continue
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
