@@ -959,7 +959,7 @@ TEST_F(ServingRuntimeTest, InvalidKeysAndMissingResetDoNotAllocateSlots) {
 }
 
 TEST_F(ServingRuntimeTest, InvalidConfigurationIsInertWithoutExceptions) {
-  for (const auto config :
+  for (const auto& config :
        {ServingRuntimeConfig{0, 128, 4}, ServingRuntimeConfig{1, 128, 0}}) {
     start(config);
     EXPECT_FALSE(runtime->info().ready);
