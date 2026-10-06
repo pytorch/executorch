@@ -6,15 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/im2col/Q8taConv2dIm2Col.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dDirect.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dPW.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <algorithm>
 #include <limits>
@@ -372,7 +375,7 @@ void q8ta_conv2d_im2col_impl(
           full_im2col_sizes.at(3),
           graph.max_buffer_numel());
   if (!stream_plan.feasible) {
-    q8ta_conv2d_general(graph, args);
+    q8ta_conv2d_general_impl(graph, args);
     return;
   }
   VK_CHECK_COND(

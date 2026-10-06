@@ -6,13 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Q8taConv2d.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/transposed/Q8taConv2dTransposed.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dCommon.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/q8ta/Q8taConv2dDirect.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/convolution/conv2d/ConvolutionUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -228,7 +231,7 @@ void add_q8ta_conv2d_transposed_node(
       resize_q8ta_conv2d_transposed_node));
 }
 
-void q8ta_conv2d_transposed(
+void q8ta_conv2d_transposed_impl(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   int32_t idx = 0;
@@ -313,7 +316,8 @@ void q8ta_conv2d_transposed(
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(et_vk.q8ta_conv2d_transposed.default, q8ta_conv2d_transposed);
+  VK_REGISTER_OP(
+      et_vk.q8ta_conv2d_transposed.default, q8ta_conv2d_transposed_impl);
 }
 
 } // namespace vkcompute
