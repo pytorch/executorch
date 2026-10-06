@@ -47,8 +47,9 @@ struct RoundedAllocations {
 };
 
 RoundedAllocations& rounded_allocations() {
-  static RoundedAllocations state;
-  return state;
+  // Static destructors may still return rounded allocations.
+  static auto* state = new RoundedAllocations();
+  return *state;
 }
 
 #if !defined(EXECUTORCH_USE_HIP)
@@ -68,8 +69,9 @@ struct MemPoolState {
 };
 
 MemPoolState& mem_pool_state() {
-  static MemPoolState state;
-  return state;
+  // Delegate teardown may trim pools during static destruction.
+  static auto* state = new MemPoolState();
+  return *state;
 }
 
 // Resolves the "current device" sentinel that callers are allowed to pass.
@@ -440,8 +442,9 @@ DeviceType CudaAllocator::device_type() const {
 }
 
 CudaAllocator& CudaAllocator::instance() {
-  static CudaAllocator allocator;
-  return allocator;
+  // Registered allocators can be called until the process exits.
+  static auto* allocator = new CudaAllocator();
+  return *allocator;
 }
 
 Result<void*> CudaAllocator::allocate_async(

@@ -76,6 +76,18 @@ if(EXECUTORCH_BUILD_ROCM)
   target_compile_definitions(extension_cuda PUBLIC EXECUTORCH_USE_HIP=1)
 endif()
 
+if(BUILD_TESTING
+   AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND NOT EXECUTORCH_BUILD_ROCM
+)
+  # Interposes CUDA allocation calls and must not load the backend's registrar.
+  add_executable(test_cuda_allocator_exit test/cuda_allocator_exit.cpp)
+  target_link_libraries(
+    test_cuda_allocator_exit PRIVATE extension_cuda executorch_core
+  )
+  add_test(NAME test_cuda_allocator_exit COMMAND test_cuda_allocator_exit)
+endif()
+
 install(
   TARGETS extension_cuda
   EXPORT ExecuTorchTargets
