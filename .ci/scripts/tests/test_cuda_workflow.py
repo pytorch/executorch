@@ -181,8 +181,14 @@ sys.modules['torch'] = SimpleNamespace(
         self.assertIn("--run_only", script)
         self.assertGreaterEqual(script.count('"${MODEL_DIR}"'), 2)
 
-    def test_model_e2e_does_not_transfer_artifacts(self):
+    def test_model_e2e_only_uploads_benchmark_results(self):
         self.assertNotIn("test-cuda-pybind", WORKFLOW["jobs"])
-        keys = set(_all_keys(WORKFLOW["jobs"]["test-model-cuda-e2e"]))
-        self.assertNotIn("upload-artifact", keys)
-        self.assertNotIn("download-artifact", keys)
+        job = WORKFLOW["jobs"]["test-model-cuda-e2e"]
+        self.assertNotIn("download-artifact", set(_all_keys(job)))
+        self.assertTrue(job["with"]["upload-artifact"].startswith("cuda-bench-"))
+        # Exported .pte/.ptd live outside RUNNER_ARTIFACT_DIR; only the
+        # benchmark JSON under bench/ is uploaded.
+        script = job["with"]["script"]
+        self.assertIn('MODEL_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/', script)
+        self.assertEqual(1, script.count("RUNNER_ARTIFACT_DIR"))
+        self.assertIn('BENCH_RESULTS_DIR="${RUNNER_ARTIFACT_DIR}/bench"', script)

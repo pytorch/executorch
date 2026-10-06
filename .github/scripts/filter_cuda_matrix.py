@@ -52,12 +52,22 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 # ExecuTorch wheel for the same CUDA version, and a missing version means that consumer has
 # nothing to depend on:
 #
-#   cu130   the floor, the generator's stable choice, and the default for accelerator consumers
-#   cu132   a current TensorRT build target
+#   cu132   the floor, the generator's stable choice, the default for accelerator consumers,
+#           and a current TensorRT build target
 #   cu134   the newest, which consumers building against the latest CUDA need
 #
 # Skip wholly absent trains so an upstream removal cannot block the remaining releases.
 # Offered trains must still cover every supported Python version.
+#
+# cu126 was the floor until PyTorch stopped offering it on the nightly channel. The generator
+# still offers it when a release is cut, so keeping it here would publish a train that no
+# nightly has built since, and a release is the wrong place to find out that it no longer
+# builds. A machine on CUDA 12.6 can still build from source, where the pinned torch comes
+# from a channel that carries 12.6.
+#
+# cu130 is not published. PyTorch keeps it on its nightly builds only as a temporary hold for
+# other projects, and its release-candidate builds do not carry it, so a release would have
+# no cu130 train even while nightlies do.
 #
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
@@ -73,7 +83,7 @@ SUPPORTED_CUDA_VERSIONS: List[str] = _DEPENDENCY_CONFIG["CUDA_WHEEL_VERSIONS"]
 SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 # The single row built for a pull request. A full matrix on every push would cost hours for
-# little signal, and cu130 is the version with a machine on hand that can run a model on it.
+# little signal, and cu132 is the version with a machine on hand that can run a model on it.
 #
 # The python is not a free choice. When a pull request is limited, the shared generator replaces
 # the offered python list with its first entry, so that entry is the only python any row can
@@ -81,7 +91,7 @@ SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 # the pull request silently built whichever python the generator had left, so the constant
 # described a row that was never built.
 PR_PYTHON_VERSION: str = SUPPORTED_PYTHON_VERSIONS[0]
-PR_CUDA_VERSION: str = "cu130"
+PR_CUDA_VERSION: str = "cu132"
 
 # Jetson devices are their own row: a JetPack image, one Python version, and one CUDA
 # version. Kept empty on purpose today, so no Jetson row is emitted.

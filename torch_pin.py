@@ -16,4 +16,4 @@ ROCM_PYTORCH_VERSION = "2.14.0"
 
 # CUDA wheel trains supported by main. Release preparation owns any temporary
 # filtering needed for a particular release.
-CUDA_WHEEL_VERSIONS = ["cu130", "cu132", "cu134"]
+CUDA_WHEEL_VERSIONS = ["cu132", "cu134"]

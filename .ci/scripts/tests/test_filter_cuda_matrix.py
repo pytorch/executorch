@@ -288,7 +288,7 @@ class TestPublishedSets(unittest.TestCase):
     def test_published_cuda_versions(self):
         self.assertEqual(
             DEPENDENCY_CONFIG["CUDA_WHEEL_VERSIONS"],
-            ["cu130", "cu132", "cu134"],
+            ["cu132", "cu134"],
         )
         self.assertEqual(
             FILTER.SUPPORTED_CUDA_VERSIONS,

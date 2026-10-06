@@ -761,6 +761,8 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/serving') ||
         contains(needs.changed-files.outputs.changed-files, 'examples/models/muse-glimmer/tests') ||
         contains(needs.changed-files.outputs.changed-files, 'examples/models/muse_glimmer') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/batching') ||
+        contains(needs.changed-files.outputs.changed-files, 'extension/llm/serving') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/llm/runner') ||
         contains(needs.changed-files.outputs.changed-files, 'extension/llm/tokenizers') ||
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/_get-changed-files.yml') ||
@@ -1702,6 +1704,7 @@ jobs:
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
         python -m unittest backends/vulkan/test/test_vulkan_graph_builder.py
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
 
   test-coreml-bc-macos:
     needs: [changed-files, run-decision]
