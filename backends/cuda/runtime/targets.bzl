@@ -82,31 +82,16 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    # Deprecated stub left behind after the move to extension/cuda; depend on
+    # //executorch/extension/cuda:cuda_allocator directly instead.
     runtime.cxx_library(
         name = "cuda_allocator",
-        srcs = [
-            "cuda_allocator.cpp",
-        ],
         headers = [
             "cuda_allocator.h",
         ],
-        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
-        link_whole = True,
-        supports_python_dlopen = True,
         visibility = ["PUBLIC"],
         exported_deps = [
-            "//executorch/runtime/core:device_allocator",
-        ],
-        deps = [
-            "//executorch/extension/cuda:caller_stream",
-            "//executorch/runtime/platform:platform",
-        ],
-        nvcc_flags = get_nvcc_arch_args() + [
-            "-_NVCC_HOST_COMPILER_FLAG_",
-            "gcc",
-        ],
-        external_deps = [
-            ("cuda", None, "cuda-lazy"),
+            "//executorch/extension/cuda:cuda_allocator",
         ],
     )
 
@@ -147,13 +132,13 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":cuda_platform",
             ":runtime_shims",
-            ":cuda_allocator",
             ":cuda_platform",
             "//executorch/backends/aoti:aoti_common_slim",
             "//executorch/backends/aoti/slim/factory:empty",
             "//executorch/backends/aoti/slim/factory:from_blob",
             "//executorch/backends/aoti/slim/factory:from_etensor",
             "//executorch/extension/cuda:caller_stream",
+            "//executorch/extension/cuda:cuda_allocator",
             "//executorch/extension/tensor:tensor",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
