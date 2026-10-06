@@ -36,7 +36,11 @@ def main() -> None:
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return
+        # pyrefly failed to start or produced invalid output (not type errors).
+        # Propagate stderr so CI shows the actual failure, then exit non-zero.
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, end="")
+        sys.exit(result.returncode if result.returncode != 0 else 1)
 
     for error in data.get("errors", []):
         severity = error.get("severity", "error")

@@ -22,7 +22,7 @@ docformatter==1.7.5
 ruff==0.15.4
 
 # Pyrefly
-pyrefly>=1.3.2
+pyrefly==1.3.2
 
 # Cppcheck and dependencies
 cppcheck==1.5.1

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PYTHON_VERSION="${PYTHON_VERSION:-3.11.0}"
-ENV_DIR="${ENV_DIR:-.venvs/repro_mypy_ci}"
+ENV_DIR="${ENV_DIR:-.venvs/repro_pyrefly_ci}"
 TARGET_FILE="${1:-backends/arm/_passes/fold_scalar_mul_into_conv_pass.py}"
 
 if ! command -v pyenv >/dev/null 2>&1; then
@@ -37,12 +37,12 @@ echo "=== Versions ==="
 run_in_env python - <<'PY'
 import sys
 import torch
-import mypy.version
+import pyrefly
 
 print("python", sys.version)
 print("torch", torch.__version__)
-print("mypy", mypy.version.__version__)
+print("pyrefly", pyrefly.__version__)
 PY
 
-echo "=== lintrunner --take MYPY ${TARGET_FILE} ==="
-run_in_env lintrunner --take MYPY "${TARGET_FILE}"
+echo "=== lintrunner --take PYREFLY ${TARGET_FILE} ==="
+run_in_env lintrunner --take PYREFLY "${TARGET_FILE}"
