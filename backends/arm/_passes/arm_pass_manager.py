@@ -292,6 +292,22 @@ def register_pass_insertions_after(
     _registered_pass_insertions[target_pass_type].after_passes.extend(passes)
 
 
+def unregister_pass_insertion_before(
+    target_pass_type: type, graph_pass: ExportPass
+) -> None:
+    """Remove one globally registered before-pass by identity."""
+    insertions = _registered_pass_insertions.get(target_pass_type)
+    if insertions is None:
+        return
+    insertions.before_passes = [
+        registered_pass
+        for registered_pass in insertions.before_passes
+        if registered_pass is not graph_pass
+    ]
+    if not insertions.before_passes and not insertions.after_passes:
+        del _registered_pass_insertions[target_pass_type]
+
+
 def clear_registered_pass_insertions() -> None:
     """Clear all globally registered pass insertions."""
     _registered_pass_insertions.clear()
