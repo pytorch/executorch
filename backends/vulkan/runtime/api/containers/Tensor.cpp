@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <iostream>
 
 namespace vkcompute {
 namespace api {
@@ -691,10 +692,9 @@ vkapi::VulkanBuffer allocate_buffer(
       element_size(dtype) * static_cast<size_t>(numel),
       static_cast<size_t>(16));
 
-  // TODO: this check is incorrect. max_buffer_numel() returns
-  // maxStorageBufferRange, which is a size in bytes, so the comparison should
+  // maxStorageBufferRange is a size in bytes, so the comparison should
   // use the buffer's byte size (alloc_nbytes), not the element count.
-  VK_CHECK_COND(numel <= context_ptr->adapter_ptr()->max_buffer_numel());
+  VK_CHECK_COND(alloc_nbytes <= context_ptr->adapter_ptr()->max_buffer_numel());
 
   return adapter_ptr->vma().create_storage_buffer(
       alloc_nbytes, allocate_memory);
@@ -1264,11 +1264,21 @@ size_t vTensor::get_max_ubo_nbytes(const size_t nbytes_per_ubo) const {
 }
 
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
+  if (sizes_.size() > 4) {
+    std::cerr << "FATAL: Tensor has " << sizes_.size() << " dimensions: [";
+    for(auto s : sizes_) std::cerr << s << ", ";
+    std::cerr << "]" << std::endl;
+  }
   VK_CHECK_COND(sizes_.size() <= 4);
   return metadata_ubo_impl(&sizes_uniform_offset_, uniform_data_->sizes_v);
 }
 
 const vkapi::BufferBindInfo vTensor::dim_order_ubo() {
+  if (sizes_.size() > 4) {
+    std::cerr << "FATAL: Tensor in dim_order_ubo has " << sizes_.size() << " dimensions: [";
+    for(auto s : sizes_) std::cerr << s << ", ";
+    std::cerr << "]" << std::endl;
+  }
   VK_CHECK_COND(sizes_.size() <= 4);
   return metadata_ubo_impl(
       &dim_order_uniform_offset_, uniform_data_->dim_order_v);
