@@ -27,12 +27,12 @@ namespace extension {
 namespace llm {
 namespace batching {
 
-using Token = std::uint64_t;
-using SessionId = std::int64_t;
-using Position = std::int32_t;
+using Token ET_EXPERIMENTAL = std::uint64_t;
+using SessionId ET_EXPERIMENTAL = std::int64_t;
+using Position ET_EXPERIMENTAL = std::int32_t;
 // Wide enough that a monotonically issued id cannot wrap in any realistic
 // lifetime, so ids never have to be recycled.
-using TaskId = std::int64_t;
+using TaskId ET_EXPERIMENTAL = std::int64_t;
 
 // Opaque owned backing, compatible with its consuming executor as a caller
 // precondition. Logical contents, size and layout are fixed before scheduling
