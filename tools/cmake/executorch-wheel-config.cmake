@@ -78,8 +78,10 @@
 # executorch::kernels_torchao    The TorchAO kernels. Linux and macOS on
 #                                aarch64 only.
 # executorch::backend_cuda       The CUDA delegate. Linux only.
-# executorch::extension_cuda     The CUDA stream and device helpers. Linux
-#                                only.
+# executorch::extension_cuda     The CUDA allocator, stream and device helpers.
+#                                Linux only. The allocator header requires a
+#                                CUDA toolkit, found through CUDAToolkit_ROOT
+#                                or CMake's standard toolkit search.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
 #                                OpenVINO runtime by name, which a C++ program
 #                                installs and points OPENVINO_LIB_PATH at.
@@ -771,6 +773,17 @@ _executorch_define_component(backend_openvino executorch_backend_openvino)
 # while configuring.
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
+if(TARGET executorch::extension_cuda)
+  # Keep toolkit-free stream/guard consumers working without a development kit.
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    set_property(
+      TARGET executorch::extension_cuda
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES CUDA::cudart
+    )
+  endif()
+endif()
 # The Qualcomm delegate, present only in a wheel whose build found the QNN SDK,
 # which today means Linux x86_64. Like the OpenVINO delegate it carries no
 # undefined vendor symbols, so it links without the SDK present and resolves the
