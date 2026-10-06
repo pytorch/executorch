@@ -235,6 +235,10 @@ def find_rms_norm_patterns(
 
     matched_pattern = RmsNormMatch(node)
     if matched_pattern.match_found:
+        weight = matched_pattern.weight_node
+        if isinstance(weight, torch.fx.Node):
+            if weight.op not in ["placeholder", "get_attr"]:
+                return None
         return matched_pattern
 
     return None

@@ -159,6 +159,7 @@ def update_features(aten_op):
         torch.ops.aten.sym_size.int,
         operator.add,
         operator.sub,
+        operator.neg,
         operator.floordiv,
         operator.mul,
         operator.lt,
@@ -175,6 +176,7 @@ def register_ephemeral_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
@@ -1360,6 +1362,7 @@ def register_cat():
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        supports_highdim=True,
     )
 
 
@@ -1393,19 +1396,7 @@ def register_slice_copy():
     )
 
 
-# =============================================================================
-# Split.cpp
-# =============================================================================
 
-
-@update_features(exir_ops.edge.aten.split_with_sizes_copy.default)
-def register_split_with_sizes_copy():
-    return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
-        inputs_dtypes=utils.FP_INT_BOOL_T,
-        supports_resize=True,
-        supports_highdim=True,
-    )
 
 
 # =============================================================================
@@ -1932,6 +1923,19 @@ def register_q4gsw_requant():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
+    )
+
+
+# =============================================================================
+# Split.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.split_with_sizes_copy.default)
+def register_split_with_sizes_copy():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
     )
 
 
