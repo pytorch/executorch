@@ -27,6 +27,11 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+from executorch.backends.arm._passes.decompose_topk_pass import (
+    is_topk_indices_getitem,
+    is_topk_indices_int32_cast,
+    TOPK_OPS,
+)
 from executorch.backends.arm._passes.prepare_gather_indices_pass import (
     is_safe_int32_to_int64_gather_boundary,
 )
@@ -308,6 +313,32 @@ def _find_connected_components(nodes: set[torch.fx.Node]) -> list[set[torch.fx.N
         remaining -= component
         components.append(component)
     return components
+
+
+def _detag_incomplete_topk_chains(nodes: Iterable[torch.fx.Node]) -> set[str]:
+    """Keep TopK, tuple extraction, and index narrowing in one delegate."""
+    affected_tags: set[str] = set()
+    for topk in nodes:
+        if topk.target not in TOPK_OPS:
+            continue
+        chain = {topk, *topk.users}
+        for extraction in topk.users:
+            if is_topk_indices_getitem(extraction):
+                chain.update(
+                    user
+                    for user in extraction.users
+                    if is_topk_indices_int32_cast(user)
+                )
+        tag = topk.meta.get("delegation_tag")
+        if tag is not None and all(
+            node.meta.get("delegation_tag") == tag for node in chain
+        ):
+            continue
+        for node in chain:
+            node_tag = node.meta.pop("delegation_tag", None)
+            if node_tag is not None:
+                affected_tags.add(node_tag)
+    return affected_tags
 
 
 def _detag_mixed_delegate_gather_boundaries(
@@ -739,6 +770,7 @@ class TOSAPartitioner(Partitioner):
                     if active_tag in tags:
                         tags.remove(active_tag)
         affected_tags = _detag_mixed_delegate_gather_boundaries(module.graph.nodes)
+        affected_tags.update(_detag_incomplete_topk_chains(module.graph.nodes))
         if affected_tags:
             _retag_affected_partitions(
                 module.graph.nodes,
