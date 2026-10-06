@@ -97,6 +97,7 @@ fbcode_target(
     srcs = [
         "autotune/__init__.py",
         "autotune/cuda_graph_timing.py",
+        "autotune/inputs.py",
     ],
     visibility = [
         "//executorch/...",
@@ -172,6 +173,7 @@ fbcode_target(
         "//executorch/backends/cuda/...",
     ],
     deps = [
+        ":autotune",
         "//caffe2:torch",
     ],
 )
