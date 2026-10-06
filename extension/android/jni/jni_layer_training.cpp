@@ -8,6 +8,7 @@
 
 #include <executorch/extension/android/jni/jni_helper.h>
 #include <executorch/extension/android/jni/jni_layer_constants.h>
+#include <executorch/extension/android/jni/jni_layer_types.h>
 #include <executorch/extension/android/jni/log.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -28,37 +29,6 @@ using namespace executorch::extension::training;
 using namespace torch::executor;
 
 namespace executorch::extension {
-
-// Forward declarations from jni_layer.cpp
-class JTensor : public facebook::jni::JavaClass<JTensor> {
- public:
-  constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/Tensor;";
-
-  static facebook::jni::local_ref<JTensor::javaobject> newJTensorFromTensor(
-      const executorch::aten::Tensor& tensor);
-
-  static TensorPtr newTensorFromJTensor(
-      facebook::jni::alias_ref<JTensor::javaobject> jtensor);
-};
-
-class JEValue : public facebook::jni::JavaClass<JEValue> {
- public:
-  constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/EValue;";
-
-  constexpr static int kTypeCodeTensor = 1;
-  constexpr static int kTypeCodeString = 2;
-  constexpr static int kTypeCodeDouble = 3;
-  constexpr static int kTypeCodeInt = 4;
-  constexpr static int kTypeCodeBool = 5;
-
-  static facebook::jni::local_ref<JEValue> newJEValueFromEValue(
-      runtime::EValue evalue);
-
-  static TensorPtr JEValueToTensorImpl(
-      facebook::jni::alias_ref<JEValue> JEValue);
-};
 
 class ExecuTorchTrainingJni
     : public facebook::jni::HybridClass<ExecuTorchTrainingJni> {

@@ -151,5 +151,6 @@ runtime.cxx_library(
     exported_headers = [
         "jni_layer_constants.h",
         "jni_helper.h",
+        "jni_layer_types.h",
     ]
 )
