@@ -138,7 +138,7 @@ signature = "VgfBackend.preprocess(edge_program: torch.export.exported_program.E
 
 [python.VgfCompileSpec]
 kind = "class"
-signature = "VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None)"
+signature = "VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False)"
 
 [python.VgfCompileSpec.DebugMode]
 kind = "enum"
