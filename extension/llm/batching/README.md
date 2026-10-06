@@ -11,6 +11,10 @@ Ordinary text and decode use raw token IDs. Supporting executors can also consum
 an opaque `PreparedInputPtr` through `session.generate_async(input, config,
 callback)`. Its model-specific representation must be compatible with that
 executor; the framework provides no preparation or construction API.
+Executors opt in through `Executor::accepts()`, which defaults to false. The runner
+checks it before scheduling, so rejected opaque input fails only its generation.
+`PreparedInput::kind()` provides a process-local type identity for this check,
+without RTTI; matching a type does not establish model or device compatibility.
 
 The complete backing reports a fixed decoder-position count through `size()`.
 Prefill chunks share its owner and slice its logical positions; decode feedback

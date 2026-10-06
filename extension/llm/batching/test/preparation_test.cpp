@@ -15,18 +15,35 @@
 #include <future>
 #include <limits>
 #include <string>
+#include <thread>
 
 namespace executorch::extension::llm::batching {
 namespace {
 constexpr std::chrono::seconds kTimeout{5};
 
 struct Payload final : PreparedInput {
+  inline static const char kKind = 0;
+
   explicit Payload(std::vector<Token> rows = {11, 7, 7, 7, 22})
       : values(std::move(rows)), count(values.size()) {}
   std::vector<Token> values;
   std::size_t count;
+  const void* kind() const override {
+    return &kKind;
+  }
   std::size_t size() const override {
     return count;
+  }
+};
+
+struct WrongPayload final : PreparedInput {
+  inline static const char kKind = 0;
+
+  const void* kind() const override {
+    return &kKind;
+  }
+  std::size_t size() const override {
+    return 1;
   }
 };
 
@@ -37,6 +54,10 @@ struct RecordingExecutor : testing::FakeExecutor {
   std::vector<std::vector<Token>> values;
   std::vector<std::weak_ptr<const void>> consumed;
 
+  bool accepts(const PreparedInput& input) const override {
+    return input.kind() == &Payload::kKind;
+  }
+
   bool execute(const BatchInput& batch, BatchOutput& out) override {
     BatchInput raw = batch;
     for (std::size_t i = 0; i < batch.inputs.size(); ++i) {
@@ -44,6 +65,10 @@ struct RecordingExecutor : testing::FakeExecutor {
       auto& translated = raw.inputs[i];
       if (const auto* prepared =
               std::get_if<PreparedInputPtr>(&input.payload)) {
+        if (!accepts(**prepared)) {
+          ADD_FAILURE() << "unsupported input reached execute";
+          return false;
+        }
         const auto& rows = static_cast<const Payload&>(**prepared).values;
         if (input.offset > rows.size() ||
             input.size > rows.size() - input.offset) {
@@ -192,6 +217,67 @@ TEST(PreparationTest, SharedOpaqueChunksKeepOwnershipAndUseRawFeedback) {
   EXPECT_EQ(handle.metrics().n_decode_steps, 1);
 }
 
+TEST(PreparationTest, DefaultExecutorRejectsOpaqueWithoutPoisoningSession) {
+  testing::FakeExecutor executor;
+  Runner runner{executor, DecodeFirstScheduler::create(3, 1, 2)};
+  auto future = runner.open_session_async();
+  ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
+  auto session = future.get();
+  ASSERT_TRUE(session);
+
+  auto rejected = session->generate_async(
+      PreparedInputPtr{std::make_shared<Payload>()}, config(), {});
+  rejected.wait();
+  EXPECT_EQ(rejected.finish_reason(), FinishReason::Failed);
+  EXPECT_EQ(session->position(), 0);
+  EXPECT_TRUE(executor.seen().empty());
+  EXPECT_FALSE(executor.has_sampling_state(executor.opened().front()));
+
+  auto raw = session->generate_async(std::vector<Token>{1}, config(), {});
+  raw.wait();
+  runner.shutdown();
+  EXPECT_EQ(raw.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(session->position(), 1);
+}
+
+TEST(PreparationTest, WrongKindDoesNotFailConcurrentRawGeneration) {
+  Harness h;
+  auto raw_session = h.session();
+  auto bad_session = h.session();
+  ASSERT_TRUE(raw_session.valid());
+  ASSERT_TRUE(bad_session.valid());
+  const auto raw_sid = h.executor.opened().front();
+
+  h.executor.hold();
+  auto raw =
+      raw_session.generate_async(std::vector<Token>{1, 2}, config(2), {});
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!h.executor.in_execute() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  ASSERT_TRUE(h.executor.in_execute());
+  EXPECT_FALSE(raw.done());
+  auto rejected = bad_session.generate_async(
+      PreparedInputPtr{std::make_shared<WrongPayload>()}, config(), {});
+  h.executor.release();
+  rejected.wait();
+  raw.wait();
+  h.runner.shutdown();
+
+  EXPECT_EQ(rejected.finish_reason(), FinishReason::Failed);
+  EXPECT_EQ(bad_session.position(), 0);
+  EXPECT_EQ(raw.finish_reason(), FinishReason::NewTokenLimit);
+  EXPECT_EQ(raw.metrics().n_generated_tokens, 2);
+  EXPECT_EQ(raw_session.position(), 3);
+  EXPECT_EQ(h.executor.batch_sizes(), (std::vector<int>{1, 1}));
+  ASSERT_EQ(h.executor.slices.size(), 2u);
+  for (const auto& slice : h.executor.slices) {
+    EXPECT_EQ(slice.sid, raw_sid);
+    EXPECT_TRUE(std::holds_alternative<TokenInputPtr>(slice.payload));
+  }
+}
+
 TEST(PreparationTest, InvalidOpaqueMetadata) {
   auto empty = std::make_shared<Payload>(std::vector<Token>{});
   auto oversized = std::make_shared<Payload>();
@@ -201,8 +287,8 @@ TEST(PreparationTest, InvalidOpaqueMetadata) {
         PreparedInputPtr{empty},
         PreparedInputPtr{oversized}}) {
     SCOPED_TRACE(input ? std::to_string(input->size()) : "null");
-    // The fake ignores payloads, so rejection must happen in admission.
-    testing::FakeExecutor executor;
+    // This executor accepts Payload, so rejection must be due to its metadata.
+    RecordingExecutor executor;
     Runner runner{executor, DecodeFirstScheduler::create(3, 1, 2)};
     auto future = runner.open_session_async();
     ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);

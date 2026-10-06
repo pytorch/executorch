@@ -120,9 +120,19 @@ class ET_EXPERIMENTAL Executor {
       const SamplingParams& params,
       std::optional<std::uint64_t> seed) = 0;
 
+  // Metadata-only admission check on the engine thread. False rejects just
+  // this generation before any tasks are queued. Raw tokens bypass this check.
+  virtual bool accepts(const PreparedInput& /*input*/) const {
+    return false;
+  }
+
   // Run one batch. `out.outputs` is resized to batch.inputs.size() and filled
   // position-wise: outputs[i] answers inputs[i]. Opaque backing must be
   // compatible with this executor and have stable logical size and layout.
+  // Lazy cache mutation is engine-thread-only and must preserve logical
+  // contents. Backing can outlive this executor and be released on another
+  // thread, so its destruction must be thread-safe and must not depend on this
+  // executor's life.
   //
   // The batch arrives shaped as the scheduler packed it, and every input must
   // be answered. An implementation whose model needs static shapes pads or

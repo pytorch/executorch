@@ -221,8 +221,8 @@ class ET_EXPERIMENTAL Session {
   // Session until the asynchronous generation ends;
   // destroying it requests close and completes active work as Cancelled.
   //
-  // Opaque backing must be compatible with this Runner's executor and have a
-  // stable logical size and layout. A pending prediction is submitted as
+  // Opaque backing must pass this Runner's Executor::accepts() check and have
+  // a stable logical size and layout. A pending prediction is submitted as
   // separate raw prefill before the opaque chunks.
   //
   // The delta must be non-empty and its exclusive end must fit in Position.

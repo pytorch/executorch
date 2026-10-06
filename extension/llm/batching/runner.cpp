@@ -15,6 +15,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <exception>
+#include <iterator>
 #include <limits>
 #include <mutex>
 #include <thread>
@@ -454,7 +455,8 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   std::optional<TerminalOutcome> validate_generation_start_(
       const GenerationRequest& request,
       const SessionRecord& record) const;
-  InputPayload build_initial_delta_(
+  // Merge a pending token into raw input, or return it as a separate prefix.
+  std::optional<Token> build_initial_delta_(
       GenerationRequest& request,
       const SessionRecord& record) const;
 
@@ -1385,16 +1387,23 @@ std::optional<TerminalOutcome> RunnerImpl::validate_generation_start_(
   if (record.active_generation) {
     return TerminalOutcome::failed("session already has an active generation");
   }
+  if (const auto* prepared = std::get_if<PreparedInputPtr>(&request.delta);
+      prepared && !executor_.accepts(**prepared)) {
+    return TerminalOutcome::failed("executor does not accept prepared input");
+  }
   return std::nullopt;
 }
 
-InputPayload RunnerImpl::build_initial_delta_(
+std::optional<Token> RunnerImpl::build_initial_delta_(
     GenerationRequest& request,
     const SessionRecord& record) const {
-  auto delta = std::move(request.delta);
-  const auto* tokens = std::get_if<TokenInputPtr>(&delta);
-  if (!record.pending || !tokens) {
-    return delta;
+  if (!record.pending) {
+    return std::nullopt;
+  }
+  const auto* tokens = std::get_if<TokenInputPtr>(&request.delta);
+  if (!tokens) {
+    // Opaque backing cannot be prepended to: send a separate raw prefill.
+    return record.pending;
   }
 
   std::vector<Token> carried;
@@ -1402,7 +1411,9 @@ InputPayload RunnerImpl::build_initial_delta_(
   carried.push_back(*record.pending);
   carried.insert(carried.end(), (*tokens)->begin(), (*tokens)->end());
   ++request.size;
-  return std::make_shared<const std::vector<Token>>(std::move(carried));
+  request.delta =
+      std::make_shared<const std::vector<Token>>(std::move(carried));
+  return std::nullopt;
 }
 
 void RunnerImpl::start_generation_(GenerationRequest request) {
@@ -1439,13 +1450,11 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   }
 
   auto start_position = record.position();
-  // The caller's own delta, captured before build_initial_delta_ moves it and
-  // before any carried token is prepended. The generation tier counts what
-  // callers gave; tokens actually fed to the model are EngineMetrics'
-  // model_input_tokens().
+  // Count the caller's own delta before adding a carried token. EngineMetrics'
+  // model_input_tokens() counts all positions actually fed to the model.
   request.generation.m.n_prompt_tokens =
       static_cast<std::int64_t>(request.size);
-  auto delta = build_initial_delta_(request, record);
+  const auto prefix = build_initial_delta_(request, record);
   if (!is_running_() || !record.status->open.load(std::memory_order_acquire) ||
       request.generation.state->cancelled.load()) {
     complete_request_(
@@ -1475,12 +1484,11 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
     return;
   }
 
-  // Opaque backing cannot be prepended to: carry the pending token separately.
   std::vector<Task> tasks;
-  if (record.pending && std::holds_alternative<PreparedInputPtr>(delta)) {
+  if (prefix) {
     tasks = create_tasks_(
         request.session,
-        std::make_shared<const std::vector<Token>>(1, *record.pending),
+        std::make_shared<const std::vector<Token>>(1, *prefix),
         1,
         start_position++,
         /*is_continuation=*/false,
@@ -1488,17 +1496,14 @@ void RunnerImpl::start_generation_(GenerationRequest request) {
   }
   auto suffix = create_tasks_(
       request.session,
-      std::move(delta),
+      std::move(request.delta),
       request.size,
       start_position,
       /*is_continuation=*/false);
-  if (tasks.empty()) {
-    tasks = std::move(suffix);
-  } else {
-    for (auto& task : suffix) {
-      tasks.push_back(std::move(task));
-    }
-  }
+  tasks.insert(
+      tasks.end(),
+      std::make_move_iterator(suffix.begin()),
+      std::make_move_iterator(suffix.end()));
   // advance() clears a carried token only after the input holding it runs.
   submit_(request.session, std::move(tasks));
 }

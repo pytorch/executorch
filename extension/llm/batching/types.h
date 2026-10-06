@@ -36,10 +36,19 @@ using TaskId ET_EXPERIMENTAL = std::int64_t;
 
 // Opaque owned backing, compatible with its consuming executor as a caller
 // precondition. Logical contents, size and layout are fixed before scheduling
-// and immutable for the backing's lifetime.
+// and immutable for the backing's lifetime. Backend-private lazy caches may
+// only be mutated on the consuming Runner's engine thread; sharing mutable
+// caches across Runners requires backend synchronization.
 class ET_EXPERIMENTAL PreparedInput {
  public:
+  // The last owner may release on any thread, after the executor is gone.
+  // Destruction must be thread-safe and independent of the executor's lifetime.
   virtual ~PreparedInput() = default;
+  // Stable, process-local identity for the concrete backing type. Use one
+  // canonical token address per type, shared by producers and consumers even
+  // across shared-library boundaries. This does not identify weights or
+  // devices.
+  virtual const void* kind() const = 0;
   // Number of decoder positions in the complete backing, not bytes.
   virtual std::size_t size() const = 0;
 };
