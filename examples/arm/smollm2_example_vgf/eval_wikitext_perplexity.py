@@ -368,7 +368,7 @@ def main() -> None:
             tokenizer=tokenizer,
             prompts=prompts,
             window=args.window,
-            pad_id=pad_id,
+            pad_id=pad_id,  # pyrefly: ignore [bad-argument-type]
             max_tokens_per_prompt=args.max_tokens_per_prompt,
             use_kv_cache=args.use_kv_cache,
         )

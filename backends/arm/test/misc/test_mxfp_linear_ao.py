@@ -37,8 +37,8 @@ def _test_mxfp_linear_quantize_swaps_module(
     assert model.linear.weight_qdata.dtype == expected_weight_qdata_dtype
     assert model.linear.weight_dtype == mxfp_dtype_to_str(weight_dtype)
     assert model.linear.weight_scale.dtype == torch.float8_e8m0fnu
-    assert tuple(model.linear.weight_qdata.shape) == expected_weight_qdata_shape
-    assert tuple(model.linear.weight_scale.shape) == (1, 8, 1)
+    assert tuple(model.linear.weight_qdata.shape) == expected_weight_qdata_shape  # pyrefly: ignore [bad-argument-type]
+    assert tuple(model.linear.weight_scale.shape) == (1, 8, 1)  # pyrefly: ignore [bad-argument-type]
 
 
 def test_mxfp8_e4m3_linear_quantize_swaps_module() -> None:
@@ -122,15 +122,15 @@ def test_mxfp_linear_op_output_dtype_constructor_arg() -> None:
     assert isinstance(model.linear, MXFPLinearOp)
 
     fp32_linear = MXFPLinearOp(
-        model.linear.weight_qdata,
-        model.linear.weight_scale,
+        model.linear.weight_qdata,  # pyrefly: ignore [bad-argument-type]
+        model.linear.weight_scale,  # pyrefly: ignore [bad-argument-type]
         model.linear.bias,
         config.weight_dtype,
         config.block_size,
     )
     bf16_linear = MXFPLinearOp(
-        model.linear.weight_qdata,
-        model.linear.weight_scale,
+        model.linear.weight_qdata,  # pyrefly: ignore [bad-argument-type]
+        model.linear.weight_scale,  # pyrefly: ignore [bad-argument-type]
         model.linear.bias,
         config.weight_dtype,
         config.block_size,

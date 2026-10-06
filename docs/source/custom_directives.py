@@ -60,7 +60,7 @@ def _get_relpath(target, base):
 
 class BaseShield(Image, SphinxDirective):
     def run(self, params, alt, section) -> List[nodes.Node]:
-        url = f"https://img.shields.io/static/v1?{urlencode(params, quote_via=quote)}"
+        url = f"https://img.shields.io/static/v1?{urlencode(params, quote_via=quote)}"  # pyrefly: ignore [bad-argument-type]
         path = _fetch_image(url)
         self.arguments = [path]
         self.options["alt"] = alt

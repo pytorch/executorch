@@ -46,7 +46,7 @@ def get_static_roll_parameters(
         if not -rank <= dim < rank:
             return None
         normalized_dim = dim % rank
-        dim_size = int(input_shape[normalized_dim])
+        dim_size = int(input_shape[normalized_dim])  # pyrefly: ignore [bad-argument-type]
         parameters.append((shift % dim_size, normalized_dim, dim_size))
     return tuple(parameters)
 

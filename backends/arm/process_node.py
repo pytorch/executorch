@@ -306,7 +306,7 @@ def process_placeholder(
 
     if node.name in edge_program.graph_signature.user_inputs:
         process_inputs(node, tosa_graph, tosa_spec)
-    elif containing_graph_module and _is_submodule_input(node, containing_graph_module):
+    elif containing_graph_module and _is_submodule_input(node, containing_graph_module):  # pyrefly: ignore [not-callable]
         process_inputs(node, tosa_graph, tosa_spec)
     elif is_param(edge_program, node):
         process_inputs_to_parameters(node, tosa_graph, edge_program, tosa_spec)

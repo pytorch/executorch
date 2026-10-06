@@ -67,8 +67,8 @@ def _test_mxfp_conv2d_quantize_swaps_module(
     assert model.conv.weight_qdata.dtype == expected_weight_qdata_dtype
     assert model.conv.weight_dtype == mxfp_dtype_to_str(weight_dtype)
     assert model.conv.weight_scale.dtype == torch.float8_e8m0fnu
-    assert tuple(model.conv.weight_qdata.shape) == expected_weight_qdata_shape
-    assert tuple(model.conv.weight_scale.shape) == (
+    assert tuple(model.conv.weight_qdata.shape) == expected_weight_qdata_shape  # pyrefly: ignore [bad-argument-type]
+    assert tuple(model.conv.weight_scale.shape) == (  # pyrefly: ignore [bad-argument-type]
         OUT_CHANNELS,
         3,
         3,
@@ -145,13 +145,13 @@ def test_mxfp_conv2d_quantize_supports_fp4_weights() -> None:
     assert isinstance(model.conv, MXFPConv2dOp)
     assert model.conv.weight_qdata.dtype == torch.uint8
     assert model.conv.weight_scale.dtype == torch.float8_e8m0fnu
-    assert tuple(model.conv.weight_qdata.shape) == (
+    assert tuple(model.conv.weight_qdata.shape) == (  # pyrefly: ignore [bad-argument-type]
         OUT_CHANNELS,
         3,
         3,
         IN_CHANNELS // 2,
     )
-    assert tuple(model.conv.weight_scale.shape) == (
+    assert tuple(model.conv.weight_scale.shape) == (  # pyrefly: ignore [bad-argument-type]
         OUT_CHANNELS,
         3,
         3,
@@ -183,8 +183,8 @@ def test_mxfp_conv2d_op_output_dtype_constructor_arg() -> None:
     assert isinstance(model.conv, MXFPConv2dOp)
 
     fp32_conv = MXFPConv2dOp(
-        model.conv.weight_qdata,
-        model.conv.weight_scale,
+        model.conv.weight_qdata,  # pyrefly: ignore [bad-argument-type]
+        model.conv.weight_scale,  # pyrefly: ignore [bad-argument-type]
         model.conv.bias,
         model.conv.stride,
         model.conv.padding,
@@ -194,8 +194,8 @@ def test_mxfp_conv2d_op_output_dtype_constructor_arg() -> None:
         config.block_size,
     )
     bf16_conv = MXFPConv2dOp(
-        model.conv.weight_qdata,
-        model.conv.weight_scale,
+        model.conv.weight_qdata,  # pyrefly: ignore [bad-argument-type]
+        model.conv.weight_scale,  # pyrefly: ignore [bad-argument-type]
         model.conv.bias,
         model.conv.stride,
         model.conv.padding,

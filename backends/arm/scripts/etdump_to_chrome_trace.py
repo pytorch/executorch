@@ -80,7 +80,7 @@ def main() -> None:
                 zip(start_times, durations_us)
             ):
                 trace_events.append(
-                    {
+                    {  # pyrefly: ignore [bad-argument-type]
                         "name": event.name,
                         "cat": event_block.name,
                         "ph": "X",

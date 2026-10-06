@@ -6,21 +6,32 @@ its JSON output to the NDJSON format lintrunner expects. The file list passed
 by lintrunner is intentionally ignored — pyrefly's project-excludes handle
 scope, and the inline # pyrefly: ignore comments handle pre-existing errors.
 
-Prerequisites: pyrefly must be installed in the active Python environment.
-Run `lintrunner init` to install it via requirements-lintrunner.txt.
+pyrefly is told explicitly which site-packages to use (via --site-package-path)
+so it resolves imports from the same Python environment that runs this script,
+not whatever Python 3.10 interpreter it auto-discovers on the system. This is
+critical on machines that have a separate Python 3.10 install (e.g. a venv or
+pyenv) that lacks torch and other project dependencies.
+
+Prerequisites: pyrefly and all project dependencies (torch, etc.) must be
+installed in the active Python environment. Run `lintrunner init` to install
+pyrefly via requirements-lintrunner.txt; install torch separately per
+https://pytorch.org/get-started/locally/.
 """
 
 import json
 import subprocess
 import sys
+import sysconfig
 
 
 def main() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "pyrefly", "check", "--output-format", "json"],
-        capture_output=True,
-        text=True,
-    )
+    site_packages = sysconfig.get_path("purelib")
+
+    cmd = [sys.executable, "-m", "pyrefly", "check", "--output-format", "json"]
+    if site_packages:
+        cmd += ["--site-package-path", site_packages]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
 
     try:
         data = json.loads(result.stdout)

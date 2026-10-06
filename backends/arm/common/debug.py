@@ -25,7 +25,7 @@ def get_node_debug_info(
 ) -> str:
     output = (
         f"  {inspect_node(graph=graph_module.graph, node=node)}\n"
-        if graph_module
+        if graph_module  # pyrefly: ignore [not-callable]
         else ""
         "-- NODE DEBUG INFO --\n"
         f"  Op is {node.op}\n"
