@@ -46,9 +46,8 @@ if(EXECUTORCH_BUILD_SHARED)
   # Ships beside libexecutorch.so in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(extension_cuda)
 endif()
-# device_guard.cpp calls into the runtime, so this needs it. Only built under an
-# accelerator build, where the toolkit is present by definition.
-# caller_stream.cpp still calls nothing and treats its handle as opaque.
+# The allocator and device guard call the runtime. The caller-stream helper
+# treats its handle as opaque. The toolkit is present in accelerator builds.
 if(EXECUTORCH_BUILD_ROCM)
   target_link_libraries(extension_cuda PUBLIC hip::host)
 else()
