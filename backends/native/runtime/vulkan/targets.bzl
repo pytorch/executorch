@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
@@ -8,4 +8,50 @@ def define_common_targets():
             "VulkanConstantMaterializationTracker.h",
         ],
         visibility = ["//executorch/backends/native/..."],
+    )
+
+    # Host-only for now; Android integration is not wired up.
+    if is_xplat():
+        return
+
+    # The Vulkan engine: implements the EngineContext / EngineExecutable
+    # boundary by lowering a native Method's Graph onto ET-VK's ComputeGraph,
+    # reusing every ET-VK compute shader and prepack path via the operator
+    # registry.
+    runtime.cxx_library(
+        name = "vulkan_engine",
+        srcs = [
+            "VulkanEngine.cpp",
+            "VulkanEngineExecutable.cpp",
+        ],
+        headers = ["VulkanEngineExecutable.h"],
+        exported_headers = [
+            "VulkanEngine.h",
+        ],
+        exported_deps = [
+            # The header exposes only the interface; ET-VK stays internal.
+            "//executorch/backends/native/runtime/engine:engine",
+        ],
+        deps = [
+            "//executorch/backends/native/runtime:method",
+            "//executorch/backends/native/runtime/deserialize:package",
+            "//executorch/backends/native/runtime/vulkan:constant_materialization_tracker",
+            "//executorch/backends/native/runtime/graph:argument",
+            "//executorch/backends/native/runtime/graph:graph",
+            "//executorch/backends/native/runtime/graph:ids",
+            "//executorch/backends/native/runtime/graph:node",
+            "//executorch/backends/native/runtime/graph:memory_planning",
+            "//executorch/backends/native/runtime/graph:scalar",
+            "//executorch/backends/native/runtime/graph:scalar_type",
+            "//executorch/backends/native/runtime/graph:tensor_meta",
+            "//executorch/backends/native/runtime/graph:value",
+            "//executorch/backends/native/runtime/graph:graph_utils",
+            "//executorch/runtime/core:core",
+            # ET-VK: ComputeGraph + operator registry + shaders (link_whole, so
+            # the static op registrations survive), and the Vulkan API layer
+            # (Runtime / Adapter / Context; SwiftShader on a headless host).
+            "//executorch/backends/vulkan:vulkan_graph_runtime",
+            "//executorch/backends/vulkan:vulkan_compute_api",
+        ],
+        visibility = ["PUBLIC"],
     )
