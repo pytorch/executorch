@@ -38,7 +38,18 @@ from typing import Optional
 import torch
 import triton
 import triton.language as tl
+from executorch.backends.cuda.autotune.inputs import autotune_inputs
 from torch.library import triton_op, wrap_triton
+
+
+
+def _kv_len_scenarios(args) -> list[int]:
+    """KV lengths to autotune the kernels that read KV_LEN_ptr at: a short, a
+    middle and a full cache, never fewer than the queries. Autotuning would
+    otherwise see a zero-filled length and time empty sweeps."""
+    lk = int(args["Lk"])
+    lq = int(args.get("Lq", args.get("LQ", 1)))
+    return sorted({min(lk, max(lq, length)) for length in (1024, lk // 8, lk)})
 
 
 def _is_power_of_2(n: int) -> bool:
@@ -713,6 +724,7 @@ def _sdpa_prefill_prune(configs, nargs, **kwargs):
     return kept
 
 
+@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios)
 @triton.autotune(
     configs=_SDPA_PREFILL_CONFIGS,
     key=[
@@ -1436,6 +1448,7 @@ def _sdpa_abstract(
 # then reduces partial results in a second kernel.
 
 
+@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios)
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_N": 32}, num_warps=2, num_stages=1),
@@ -1892,6 +1905,7 @@ def _sdpa_decode_splitk_abstract(
 # occupancy, then reduces per-query partial results in a second kernel.
 
 
+@autotune_inputs(KV_LEN_ptr=_kv_len_scenarios)
 @triton.autotune(
     configs=[
         triton.Config({"BLOCK_N": 32}, num_warps=2, num_stages=1),
