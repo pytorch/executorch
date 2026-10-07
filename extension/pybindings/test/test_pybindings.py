@@ -833,9 +833,11 @@ class PybindingsTest(unittest.TestCase):
         self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
 
     def test_unplanned_device_output_is_device_memory(self):
-        # With alloc_graph_output=False the caller owns the outputs, and a device-resident program
-        # tags them for the device. A host buffer there works only on a GPU that can read pageable
-        # host memory, so the bindings must give such an output device memory.
+        # A program exported with alloc_graph_output=False leaves its outputs to the caller, and a
+        # device-resident one tags them for the device, so the bindings supply that memory. They
+        # used to supply host memory, which the CUDA backend rejects (InvalidArgument) and which a
+        # delegate without that check writes into, failing later wherever the GPU cannot read
+        # pageable host memory. This checks that the output buffer is real device memory.
         if "CudaBackend" not in self.runtime._get_registered_backend_names():
             self.skipTest("needs a build with the CUDA backend linked in")
         if not torch.cuda.is_available():
@@ -888,8 +890,10 @@ class PybindingsTest(unittest.TestCase):
             )
             cuda_inputs = [tensor.cuda() for tensor in inputs]
             output = method._method(cuda_inputs, clone_outputs=False)[0]
-            # CU_POINTER_ATTRIBUTE_MEMORY_TYPE is 2 and CU_MEMORYTYPE_DEVICE is 2. The driver does
-            # not know a pageable host pointer at all, and returns an error for it.
+            # Ask the driver what the uncloned output points at, not the tensor's device tag,
+            # which says cuda either way. CU_POINTER_ATTRIBUTE_MEMORY_TYPE is 2 and
+            # CU_MEMORYTYPE_DEVICE is 2. The driver does not know a pageable host pointer at
+            # all, and returns an error for it.
             memory_type = ctypes.c_uint(0)
             status = ctypes.CDLL("libcuda.so.1").cuPointerGetAttribute(
                 ctypes.byref(memory_type), 2, ctypes.c_uint64(output.data_ptr())
