@@ -319,8 +319,14 @@ def release_torch_requirement(build_version: Optional[str]) -> Optional[str]:
     torch the wheel was built on. A floor with a0 also lets pip pick a torch pre-release when the
     index it installs from hosts one. PyPI and the stable PyTorch indexes host none.
     """
+    import packaging.version
+
     public = (build_version or "").strip().split("+", 1)[0]
-    if not re.fullmatch(r"\d+(\.\d+)*", public):
+    try:
+        version = packaging.version.Version(public)
+    except packaging.version.InvalidVersion:
+        return None
+    if version.is_prerelease or version.is_devrelease:
         return None
     torch_version = importlib.metadata.version("torch").split("+", 1)[0]
     major, minor = (int(part) for part in torch_version.split(".")[:2])

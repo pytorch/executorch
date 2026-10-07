@@ -41,15 +41,23 @@ class TestReleaseTorchRequirement(unittest.TestCase):
         return requirement
 
     def test_release_and_candidate_builds_declare_the_built_minor(self):
-        # Linux and Windows carry the build variant after a plus sign, macOS carries none.
-        for build_version in ("1.6.0+cpu", "1.6.0+cu132", "1.6.0"):
+        # Linux and Windows carry the build variant after a plus sign, macOS carries none. A post
+        # release is a hotfix of a release, so it ships against the same torch.
+        for build_version in ("1.6.0+cpu", "1.6.0+cu132", "1.6.0", "1.6.0.post1+cpu"):
             with self.subTest(build_version=build_version):
                 self.assertEqual(
                     self.requirement(build_version), "torch>=2.14.0a0,<2.15"
                 )
 
     def test_nightly_and_local_builds_declare_nothing(self):
-        for build_version in ("1.6.0.dev20261001+cpu", "1.6.0.dev20261001", "", None):
+        for build_version in (
+            "1.6.0.dev20261001+cpu",
+            "1.6.0.dev20261001",
+            "1.6.0rc1",
+            "1.6.0.post1.dev2",
+            "",
+            None,
+        ):
             with self.subTest(build_version=build_version):
                 self.assertIsNone(self.requirement(build_version))
 

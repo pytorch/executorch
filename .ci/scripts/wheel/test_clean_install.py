@@ -21,7 +21,6 @@ user, and names the package it wanted.
 
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -222,16 +221,23 @@ def test_release_declares_torch() -> None:
     The native code links torch's C++ library, so a release that declares no torch lets pip pair
     it with any torch at all. 1.5.0 and 1.5.1 shipped that way.
 
-    Release means what it means to setup.py: BUILD_VERSION is a plain version. The installed
-    version cannot tell, because a local build without BUILD_VERSION is also a plain version
-    followed by its git hash.
+    Release means what it means to setup.py: BUILD_VERSION is a final version, including a post
+    release. The installed version cannot tell, because a local build without BUILD_VERSION is
+    also a plain version followed by its git hash. The rule is restated here rather than imported
+    from install_utils, so this check of the built wheel stays independent of the code it checks.
     """
     import importlib.metadata as metadata
 
     from packaging.requirements import Requirement
+    from packaging.version import InvalidVersion, Version
 
     build_version = os.environ.get("BUILD_VERSION", "").strip()
-    if not re.fullmatch(r"\d+(\.\d+)*", build_version.split("+", 1)[0]):
+    try:
+        parsed = Version(build_version.split("+", 1)[0])
+        is_release = not (parsed.is_prerelease or parsed.is_devrelease)
+    except InvalidVersion:
+        is_release = False
+    if not is_release:
         print(
             f"BUILD_VERSION {build_version!r} is not a release, so no torch is declared"
         )
