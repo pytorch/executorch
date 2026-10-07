@@ -117,7 +117,9 @@ def _greedy(model: ToyDecoder, prompt) -> list:
             n_kv_heads=N_KV_HEADS,
             head_dim=HEAD_DIM,
             capacity=MAX_CONTEXT,
-            layers=tuple(LayerPolicy.ring(w) if w else LayerPolicy.flat() for w in WINDOWS),
+            layers=tuple(
+                LayerPolicy.ring(w) if w else LayerPolicy.flat() for w in WINDOWS
+            ),
         )
     )
     key = "toy-decoder-greedy"
@@ -224,7 +226,9 @@ def export(output_dir: str, min_prefill: int) -> None:
     program = to_edge_transform_and_lower(
         programs,
         partitioner={name: [partitioner(name)] for name in programs},
-        compile_config=EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True),
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False, _skip_dim_order=True
+        ),
         constant_methods=constant_methods,
     ).to_executorch(
         config=ExecutorchBackendConfig(

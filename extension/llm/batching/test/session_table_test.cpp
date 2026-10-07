@@ -44,9 +44,11 @@ class SessionTableTest : public ::testing::Test {
   // Declares and places a step, as a forward would.
   void run(const util::PackedStep& step) {
     ASSERT_TRUE(cells_->declare_step(step.seq_ids));
-    std::vector<int32_t> positions(step.positions.begin(), step.positions.end());
+    std::vector<int32_t> positions(
+        step.positions.begin(), step.positions.end());
     ASSERT_NE(
-        cells_->place_step(0, positions.data(), static_cast<int>(positions.size())),
+        cells_->place_step(
+            0, positions.data(), static_cast<int>(positions.size())),
         nullptr);
   }
 
@@ -57,7 +59,8 @@ class SessionTableTest : public ::testing::Test {
       bool produce_output = true,
       std::size_t offset = 0,
       std::size_t size = 0) {
-    auto shared = std::make_shared<std::vector<batching::Token>>(std::move(tokens));
+    auto shared =
+        std::make_shared<std::vector<batching::Token>>(std::move(tokens));
     batching::Input in;
     in.sid = sid;
     in.payload = batching::TokenInputPtr(shared);

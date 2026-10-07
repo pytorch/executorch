@@ -112,7 +112,6 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       int max_step_tokens,
       int min_prefill_tokens);
 
-
   // Ordered so the module dies first, releasing the delegates that resolved
   // the cache before the registry entry naming it goes.
   llm_cache::InstallGuard install_guard_;

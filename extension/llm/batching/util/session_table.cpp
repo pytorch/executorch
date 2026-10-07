@@ -224,7 +224,9 @@ Result<PackedStep> SessionTable::pack(const BatchInput& batch) {
       if (start == 0) {
         // Emptying a sequence hands its id back, and the step names it.
         ET_LOG(
-            Error, "pack: session %" PRId64 " reopens from the start", input.sid);
+            Error,
+            "pack: session %" PRId64 " reopens from the start",
+            input.sid);
         return Error::InvalidArgument;
       }
       rewinds.emplace_back(seq_id, static_cast<int>(start));
