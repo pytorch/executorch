@@ -9,7 +9,7 @@
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
 /backends/mediatek @neuropilot-captain
-/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @abhinaykukkadapu @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
+/backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
 /backends/test
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
@@ -31,7 +31,7 @@
 /examples/mediatek
 /examples/models @lucylq @jackzhxng
 /examples/portable @larryliu0820 @manuelcandales
-/examples/qualcomm @abhinaykukkadapu @psiddh
+/examples/qualcomm @psiddh
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai @mcr229
 /examples/nxp @robert-kalmar
@@ -90,5 +90,4 @@ CMakePresets.json @larryliu0820 @kirklandsign
 /tools/cmake @larryliu0820 @kirklandsign
 
 # Tribal knowledge base ---------------------------------------------------------
-/.wiki/ @abhinaykukkadapu
-/.claude/skills/ @abhinaykukkadapu @psiddh
+/.claude/skills/ @psiddh
