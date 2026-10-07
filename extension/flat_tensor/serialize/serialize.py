@@ -271,6 +271,10 @@ def _extract_named_data(
                     Cord(data_payload.buffers[buffer_idx]), data_entry.alignment
                 )
             )
+        else:
+            segments[segment_index].alignment = math.lcm(
+                segments[segment_index].alignment, data_entry.alignment or 1
+            )
         named_data.append(
             NamedData(
                 key=key,

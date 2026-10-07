@@ -1193,6 +1193,48 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(deserialized2.mutable_data, None)
         self._check_named_data_store_output(deserialized2.named_data, named_data)
 
+    def test_named_data_aliases_combine_alignment(self) -> None:
+        for alignments in ((16, 256), (256, 16)):
+            with self.subTest(alignments=alignments):
+                # Keep the segment base 256-byte aligned to isolate alias alignment.
+                prefix_key = "prefix" + "p" * 160
+                named_data = NamedDataStoreOutput(
+                    buffers=[b"x", b"abcd"],
+                    pte_data={
+                        prefix_key: DataEntry(0, 128, None),
+                        "first": DataEntry(1, alignments[0], None),
+                        "second": DataEntry(1, alignments[1], None),
+                    },
+                    external_data={},
+                )
+                pte_data = bytes(
+                    serialize_pte_binary(
+                        PTEFile(program=get_test_program(), named_data=named_data),
+                        segment_alignment=128,
+                    )
+                )
+
+                header = self.get_and_validate_extended_header(pte_data)
+                required_alignment = math.lcm(*alignments)
+                self.assertEqual(
+                    header.segment_base_offset % required_alignment,
+                    0,
+                )
+
+                program = _flatbuffer_to_program(pte_data)
+                alias_entries = [
+                    entry
+                    for entry in program.named_data
+                    if entry.key in ("first", "second")
+                ]
+                self.assertEqual(len(alias_entries), 2)
+                self.assertEqual(
+                    alias_entries[0].segment_index, alias_entries[1].segment_index
+                )
+                segment = program.segments[alias_entries[0].segment_index]
+                absolute_offset = header.segment_base_offset + segment.offset
+                self.assertEqual(absolute_offset % required_alignment, 0)
+
 
 # Common data for extended header tests. The two example values should produce
 # the example data.
