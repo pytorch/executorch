@@ -9,7 +9,6 @@ linear_q4gsw_tiled:
     DTYPE: float
     IO_STORAGE: texture3d
     WEIGHT_STORAGE: texture2d
-    TILE_M4: 1
     TILE_M: 4
     TILE_K4: 1
     TILE_N8: 1
