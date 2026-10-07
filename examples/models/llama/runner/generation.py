@@ -109,31 +109,16 @@ class LlamaRunner(ABC):
                     else None
                 ),
             )
-        else:
-            # Sequential prefill processes one token per call and uses the KV cache
-            # to preserve context across calls.
+        # Sequential prefill processes one token per call and uses the KV cache
+        # to preserve context across calls.
+        for offset, token in enumerate(prompt_tokens):
             logits = self.forward(
-                tokens=torch.tensor(
-                    [[prompt_tokens[0]]], dtype=torch.long, device=self.device
-                ),
+                tokens=torch.tensor([[token]], dtype=torch.long, device=self.device),
                 input_pos=torch.tensor(
-                    [start_pos],
-                    dtype=torch.long,
-                    device=self.device,
+                    [start_pos + offset], dtype=torch.long, device=self.device
                 ),
             )
-            for prompt_pos, prompt_token in enumerate(prompt_tokens[1:], start=1):
-                logits = self.forward(
-                    tokens=torch.tensor(
-                        [[prompt_token]], dtype=torch.long, device=self.device
-                    ),
-                    input_pos=torch.tensor(
-                        [start_pos + prompt_pos],
-                        dtype=torch.long,
-                        device=self.device,
-                    ),
-                )
-            return logits
+        return logits
 
     def generate(  # noqa: C901
         self,
