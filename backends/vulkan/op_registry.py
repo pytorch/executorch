@@ -1612,6 +1612,10 @@ def register_full_cpp_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: node.target
+        not in (exir_ops.edge.aten.full.default, exir_ops.edge.aten.full_like.default)
+        or is_scalar_value_supported(node.args[1], node.meta["val"].dtype),
     )
 
 
