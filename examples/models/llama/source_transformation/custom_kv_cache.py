@@ -930,9 +930,14 @@ class CustomRingKVCache(CustomKVCache):
         head_dim,
         dtype=torch.float32,
         *,
-        window_size: int,
+        window_size: Optional[int] = None,
         max_seq_len: Optional[int] = None,
     ):
+        if window_size is None:
+            # Legacy callers pass the window as max_context_length and expect
+            # twice that capacity for the retained window and incoming chunk.
+            window_size = max_context_length
+            max_context_length *= 2
         self.full_context_length = max_context_length
         self.max_seq_len = (
             max_context_length if max_seq_len is None else int(max_seq_len)

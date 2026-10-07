@@ -272,10 +272,6 @@ def _get_ring_cache_size(
     if max_seq_len is None:
         max_seq_len = max_context_length
     assert max_seq_len > 0, "Maximum sequence length must be positive"
-    assert window_size <= max_context_length, (
-        f"Sliding-window size ({window_size}) cannot exceed the full context "
-        f"length ({max_context_length})"
-    )
     return min(max_context_length, window_size + max_seq_len)
 
 

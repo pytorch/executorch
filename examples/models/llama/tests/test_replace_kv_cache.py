@@ -22,6 +22,7 @@ from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
     CustomKVCache,
     CustomRingKVCache,
+    QuantizedCacheType,
     QuantizedKVCache,
     QuantizedRingKVCache,
     replace_kv_cache_with_custom_kv_cache,
@@ -118,6 +119,67 @@ class TestReplaceKVCache(unittest.TestCase):
         # Verify that CustomKVCache has been replaced with CustomRingKVCache
         self.assertIsInstance(model.layers[0].attention.kv_cache, CustomRingKVCache)
         self.assertEqual(model.layers[0].attention.kv_cache.k_cache.size(1), 12)
+
+    def test_custom_ring_kv_cache_legacy_constructor(self):
+        window_size = 4
+        cache = CustomRingKVCache(
+            max_batch_size=1,
+            max_context_length=window_size,
+            n_heads=self.n_kv_heads,
+            head_dim=self.head_dim,
+            dtype=torch.float32,
+        )
+        self.assertEqual(cache.window_size, window_size)
+        self.assertEqual(cache.max_context_length, 2 * window_size)
+        shape = (1, self.n_kv_heads, window_size, self.head_dim)
+        first_k, first_v = torch.randn(shape), torch.randn(shape)
+        second_k, second_v = torch.randn(shape), torch.randn(shape)
+
+        cache.update(torch.tensor([0]), first_k, first_v)
+        k_out, v_out = cache.update(torch.tensor([window_size]), second_k, second_v)
+        torch.testing.assert_close(k_out[:, :, :window_size], first_k)
+        torch.testing.assert_close(v_out[:, :, :window_size], first_v)
+        torch.testing.assert_close(k_out[:, :, window_size:], second_k)
+        torch.testing.assert_close(v_out[:, :, window_size:], second_v)
+        mask = cache.create_causal_mask_for_ring_buffer(window_size, window_size)
+        positions = torch.arange(2 * window_size)
+        queries = torch.arange(window_size, 2 * window_size).unsqueeze(1)
+        expected = (positions <= queries) & (positions > queries - window_size)
+        torch.testing.assert_close(torch.isfinite(mask), expected)
+
+    def test_ring_cache_window_larger_than_context(self):
+        self.batch_size = self.args.max_batch_size = 1
+        window_size = 2 * self.max_context_len
+        for cache_type in (KVCache, CustomKVCache, QuantizedKVCache):
+            with self.subTest(cache_type=cache_type):
+                attention = self._create_attention_with_kv_cache()
+                model = self._create_mock_model([attention])
+                if cache_type is CustomKVCache:
+                    replace_kv_cache_with_custom_kv_cache(model)
+                elif cache_type is QuantizedKVCache:
+                    attention.kv_cache = QuantizedKVCache.from_float(
+                        attention.kv_cache,
+                        QuantizedCacheType.AffineAsymmetric,
+                        use_custom_update_cache_op=True,
+                    )
+                replace_kv_cache_with_ring_kv_cache(
+                    model, [window_size], max_seq_len=self.max_context_len
+                )
+                cache = attention.kv_cache
+                self.assertEqual(cache.window_size, window_size)
+                self.assertEqual(cache.max_context_length, self.max_context_len)
+                shape = (
+                    self.batch_size,
+                    self.n_kv_heads,
+                    self.max_context_len,
+                    self.head_dim,
+                )
+                cache.update(torch.tensor([0]), torch.randn(shape), torch.randn(shape))
+                mask = cache.create_causal_mask_for_ring_buffer(0, self.max_context_len)
+                expected = torch.ones(
+                    self.max_context_len, self.max_context_len, dtype=torch.bool
+                ).tril()
+                torch.testing.assert_close(torch.isfinite(mask), expected)
 
     def test_replace_quantized_kv_cache_with_quantized_ring_kv_cache(self):
         """Test replacing QuantizedKVCache with QuantizedRingKVCache."""
