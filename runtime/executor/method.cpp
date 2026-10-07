@@ -1212,6 +1212,21 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         executorch::runtime::toString(t_dst.scalar_type()),
         executorch::runtime::toString(t_src.scalar_type()));
+    ET_CHECK_OR_RETURN_ERROR(
+        t_src.dim() == t_dst.dim(),
+        InvalidArgument,
+        "Input %" ET_PRIsize_t
+        " has unexpected rank: expected %zd but was %zd.",
+        input_idx,
+        t_dst.dim(),
+        t_src.dim());
+    ET_CHECK_OR_RETURN_ERROR(
+        static_cast<size_t>(t_src.dim()) <= kTensorDimensionLimit,
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " rank %zd exceeds the maximum rank %zu.",
+        input_idx,
+        t_src.dim(),
+        kTensorDimensionLimit);
 
     ssize_t numel = 1;
     for (ssize_t i = 0; i < t_src.dim(); i++) {
@@ -1239,13 +1254,48 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         input_idx,
         numel,
         executorch::runtime::elementSize(t_src.scalar_type()));
+    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
+    std::array<executorch::aten::DimOrderType, kTensorDimensionLimit>
+        input_dim_order;
+    const Error input_dim_order_error =
+        get_dim_order(t_src, input_dim_order.data(), t_src.dim());
+    if (input_dim_order_error == Error::Ok) {
+      ET_CHECK_OR_RETURN_ERROR(
+          validate_dim_order(input_dim_order.data(), t_src.dim()),
+          InvalidArgument,
+          "Input %" ET_PRIsize_t " has an invalid dim order.",
+          input_idx);
+      const auto expected_dim_order = tensor_meta->dim_order();
+      size_t expected_index = 0;
+      bool dim_orders_match = true;
+      for (const auto input_index : c10::irange(t_src.dim())) {
+        const auto input_dim = input_dim_order[input_index];
+        if (t_src.size(input_dim) <= 1) {
+          continue;
+        }
+        while (expected_index < expected_dim_order.size() &&
+               t_src.size(expected_dim_order[expected_index]) <= 1) {
+          ++expected_index;
+        }
+        if (expected_index == expected_dim_order.size() ||
+            input_dim != expected_dim_order[expected_index++]) {
+          dim_orders_match = false;
+          break;
+        }
+      }
+      ET_CHECK_OR_RETURN_ERROR(
+          dim_orders_match,
+          InvalidArgument,
+          "Input %" ET_PRIsize_t
+          " dim order does not match the method input dim order.",
+          input_idx);
+    }
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     ET_CHECK_OK_OR_RETURN_ERROR(
         resize_tensor(t_dst, t_src.sizes()),
         "Error resizing tensor at input %" ET_PRIsize_t,
         input_idx);
-    auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
       ET_CHECK_OK_OR_RETURN_ERROR(
           internal::copy_tensor_data(t_dst, t_src),

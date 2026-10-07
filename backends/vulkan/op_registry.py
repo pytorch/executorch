@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import math
 import operator
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -318,13 +319,26 @@ def register_bool_binary_ops():
 # =============================================================================
 
 
+def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
+    if type(value) not in (bool, int, float):
+        return False
+    if isinstance(value, float) and math.isnan(value):
+        return False
+    if dtype in utils.INT_T:
+        return -(2**31) <= value <= 2**31 - 1
+    return True
+
+
 @update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
-def register_pow_tensor_scalar():
+def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.meta["val"].dtype
+        ),
     )
 
 
@@ -336,6 +350,9 @@ def register_eq_scalar():
         outputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.args[0].meta["val"].dtype
+        ),
     )
 
 
@@ -646,7 +663,12 @@ def register_q8ta_pixel_shuffle():
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     ndim = utils.ndim_of(node.args[0])
     assert ndim is not None
-    dims_reduced = None
+    dims_reduced = (
+        []
+        if node.target
+        in (exir_ops.edge.aten.amax.default, exir_ops.edge.aten.amin.default)
+        else None
+    )
     if len(node.args) >= 2:
         dims_reduced = node.args[1]
 
@@ -690,7 +712,7 @@ def is_reduce_node_supported_by_per_row_impl(node: torch.fx.Node) -> bool:
 def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     dims_reduced = get_dims_reduced(node)
     # Only 1D and 2D reductions are supported at the moment.
-    if isinstance(dims_reduced, (list, tuple)) and len(dims_reduced) > 2:
+    if isinstance(dims_reduced, (list, tuple)) and not 1 <= len(dims_reduced) <= 2:
         return False
 
     keepdim = get_keepdim_setting(node)
@@ -698,10 +720,24 @@ def is_reduce_node_supported_by_general_impl(node: torch.fx.Node) -> bool:
     if isinstance(keepdim, bool) and not keepdim:
         return False
 
+    if utils.ndim_of(node.args[0]) == 4:
+        dims = [dims_reduced] if isinstance(dims_reduced, int) else dims_reduced
+        # Textures fold batch into channels; neither axis can be reduced across batches.
+        if 0 in dims or (
+            1 in dims and utils.upper_bound_size(node.args[0].meta["val"].shape[0]) != 1
+        ):
+            return False
+
     return True
 
 
 def is_reduce_node_supported(node: torch.fx.Node) -> bool:
+    if (
+        node.target in (exir_ops.edge.aten.sum.dim_IntList, exir_ops.edge.aten.mean.dim)
+        and (len(node.args) < 2 or node.args[1] is None)
+        and utils.ndim_of(node.args[0]) != 1
+    ):
+        return False
     return is_reduce_node_supported_by_per_row_impl(
         node
     ) or is_reduce_node_supported_by_general_impl(node)
@@ -776,6 +812,15 @@ def register_reduce_cpp_ops():
 # =============================================================================
 
 
+def is_argreduce_node_supported(node: torch.fx.Node) -> bool:
+    ndim = utils.ndim_of(node.args[0])
+    assert ndim is not None
+    dim = node.args[1] if len(node.args) > 1 else None
+    if dim is None:
+        return ndim == 1
+    return ndim > 0 and utils.normalize_dims(dim, ndim) == ndim - 1
+
+
 @update_features(
     [
         exir_ops.edge.aten.argmax.default,
@@ -784,13 +829,12 @@ def register_reduce_cpp_ops():
 )
 def register_argreduce_cpp_ops():
     return OpFeatures(
-        inputs_storage=utils.ANY_STORAGE,
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
         inputs_dtypes=utils.FP_T,
         outputs_dtypes=utils.INT_T,
         supports_resize=True,
         supports_highdim=True,
-        are_node_inputs_supported_fn=is_reduce_node_supported,
-        pick_io_storage_fn=pick_storage_for_reduce,
+        are_node_inputs_supported_fn=is_argreduce_node_supported,
     )
 
 
@@ -1863,6 +1907,9 @@ def register_compare_scalar_ops():
         outputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.args[0].meta["val"].dtype
+        ),
     )
 
 
