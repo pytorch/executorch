@@ -20,6 +20,9 @@
 #include <vector>
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
+#include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/aoti/slim/factory/from_blob.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
