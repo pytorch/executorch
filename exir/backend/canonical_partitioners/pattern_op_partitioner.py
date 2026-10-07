@@ -117,7 +117,7 @@ def generate_pattern_op_partitions(
         graph_module: Module that we want to partition
         patterns: A list of patterns in the form of torch.fx.Graph. These graphs
             can be obtained through the `graph` field from a GraphModule obtained by
-            exir.capture (recommended) or symbolic tracing (which might not result
+            torch.export (recommended) or symbolic tracing (which might not result
             in an accurate edge dialect graph), or by manual crafting a graph
             module.
         partitions_list: A list of node lists whose nodes are intended to be tagged
