@@ -750,14 +750,15 @@ struct ServingRuntime::Impl {
           return std::nullopt;
         }
       }
-      if (!acceptance.ok()) {
-        if (acceptance.error() == runtime::Error::InvalidState) {
+      if (const auto* error =
+              std::get_if<batching::AcceptanceError>(&acceptance)) {
+        if (*error == batching::AcceptanceError::Unavailable) {
           return ServingError{ErrorCode::NotReady, "runner is not ready"};
         }
         return ServingError{
             ErrorCode::Internal, "prepared input acceptance check failed"};
       }
-      if (!*acceptance) {
+      if (!std::get<bool>(acceptance)) {
         return ServingError{
             ErrorCode::InvalidArgument,
             "executor does not accept prepared input"};

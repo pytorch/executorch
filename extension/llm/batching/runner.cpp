@@ -296,7 +296,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   }
 
   void shutdown();
-  std::future<runtime::Result<bool>> accepts_async(PreparedInputPtr input);
+  std::future<AcceptanceResult> accepts_async(PreparedInputPtr input);
   std::future<std::optional<Session>> open_session_async();
   std::future<std::optional<Session>> clone_async(
       SessionId source,
@@ -438,7 +438,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
 
   struct AcceptsCommand {
     PreparedInputPtr input;
-    std::shared_ptr<std::promise<runtime::Result<bool>>> ack;
+    std::shared_ptr<std::promise<AcceptanceResult>> ack;
   };
 
   struct RetiredSession {
@@ -691,8 +691,7 @@ std::future<std::optional<Session>> Runner::open_session_async() {
   return impl_->open_session_async();
 }
 
-std::future<runtime::Result<bool>> Runner::accepts_async(
-    PreparedInputPtr input) {
+std::future<AcceptanceResult> Runner::accepts_async(PreparedInputPtr input) {
   return impl_->accepts_async(std::move(input));
 }
 
@@ -979,9 +978,9 @@ void RunnerImpl::process_command_(StartCommand command) {
 }
 
 void RunnerImpl::process_command_(AcceptsCommand command) {
-  auto result = [&]() -> runtime::Result<bool> {
+  auto result = [&]() -> AcceptanceResult {
     if (!is_running_()) {
-      return runtime::Error::InvalidState;
+      return AcceptanceError::Unavailable;
     }
 #if ET_HAS_EXCEPTIONS
     try {
@@ -989,7 +988,7 @@ void RunnerImpl::process_command_(AcceptsCommand command) {
       return command.input && executor_.accepts(*command.input);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      return runtime::Error::Internal;
+      return AcceptanceError::Failed;
     }
 #endif
   }();
@@ -1000,7 +999,7 @@ void RunnerImpl::process_command_(AcceptsCommand command) {
   if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
     command.ack->set_value(std::move(result));
   } else {
-    command.ack->set_value(runtime::Error::InvalidState);
+    command.ack->set_value(AcceptanceError::Unavailable);
   }
 }
 
@@ -1309,11 +1308,10 @@ std::future<std::optional<Session>> RunnerImpl::open_session_async() {
   return f;
 }
 
-std::future<runtime::Result<bool>> RunnerImpl::accepts_async(
+std::future<AcceptanceResult> RunnerImpl::accepts_async(
     PreparedInputPtr input) {
   AcceptsCommand command{
-      std::move(input),
-      std::make_shared<std::promise<runtime::Result<bool>>>()};
+      std::move(input), std::make_shared<std::promise<AcceptanceResult>>()};
   auto future = command.ack->get_future();
   {
     std::unique_lock<std::mutex> lock(control_mutex_);
@@ -1325,7 +1323,7 @@ std::future<runtime::Result<bool>> RunnerImpl::accepts_async(
     }
   }
   command.input.reset();
-  command.ack->set_value(runtime::Error::InvalidState);
+  command.ack->set_value(AcceptanceError::Unavailable);
   return future;
 }
 

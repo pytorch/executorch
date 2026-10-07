@@ -179,7 +179,9 @@ TEST(PromptPreparerTest, NormalizesAndValidatesDirectAndDeferredRawPrompts) {
       std::optional<PromptPreparation> prepare;
       if (deferred) {
         input = PreparedPromptInput{nullptr, batching::Token{99}};
-        prepare = [raw](const auto&) { return GenerationPrompt{raw}; };
+        prepare = [prompt = raw](const auto&) {
+          return GenerationPrompt{prompt};
+        };
       }
       auto result = serving::detail::prepare_prompt(context, input, prepare);
       EXPECT_FALSE(prepare.has_value());
