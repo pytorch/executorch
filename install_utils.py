@@ -316,7 +316,8 @@ def release_torch_requirement(build_version: Optional[str]) -> Optional[str]:
     The floor is a0 so that a torch built from source, which reports a version like
     2.14.0a0+git0123abc, still satisfies it. A nightly snapshot such as 2.14.0.dev20260810 sorts
     below a0, so a build on one uses that snapshot as the floor, or the range would exclude the
-    torch the wheel was built on.
+    torch the wheel was built on. A floor with a0 also lets pip pick a torch pre-release when the
+    index it installs from hosts one. PyPI and the stable PyTorch indexes host none.
     """
     public = (build_version or "").strip().split("+", 1)[0]
     if not re.fullmatch(r"\d+(\.\d+)*", public):
