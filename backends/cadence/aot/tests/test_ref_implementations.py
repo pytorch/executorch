@@ -3272,6 +3272,7 @@ class TestRefImplementations(unittest.TestCase):
             # X=5, zp=4 → dequant=0.8*(5-4)=0.8; Y=5, zp=4 → dequant=0.8
             # mul=0.64; quantize: round(0.64/0.8)+4=1+4=5
             ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int8),
+            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int16),
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.uint8),
         ]
     )
