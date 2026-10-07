@@ -20,6 +20,7 @@ Uses the "runtime flatc" pattern: the schema and the flatc binary are shipped as
 package resources, and flatc is invoked to convert between JSON and binary.
 """
 
+import hashlib
 import importlib.resources
 import json
 import operator
@@ -81,8 +82,10 @@ from executorch.backends.native.serialization.schema import (
 
 from executorch.exir._serialize._dataclass import _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
+from executorch.exir._serialize._named_data_store import _tensor_to_bytes
 from executorch.exir.tensor import dim_order_from_stride, stride_from_dim_order
 
+from torch._subclasses.fake_tensor import FakeTensor
 from torch.export.graph_signature import InputKind, TensorArgument
 from torch.fx.experimental.symbolic_shapes import statically_known_true
 from torch.utils._sympy.value_ranges import bound_sympy
@@ -881,6 +884,27 @@ def _build_output_specs(
     return specs, mutated_fqns
 
 
+_LIFTED_CONSTANT_PREFIX = "_lifted_tensor_constant"
+
+
+def _data_key(target_fqn: str, tensor: torch.Tensor) -> str:
+    """Disambiguate lifted constants across partitions with a dtype/shape/bytes hash.
+
+    Keep local names for distinct bindings; identical bytes still share storage.
+    """
+    suffix = target_fqn.removeprefix(_LIFTED_CONSTANT_PREFIX)
+    if (
+        suffix == target_fqn
+        or not (suffix.isascii() and suffix.isdigit())
+        or isinstance(tensor, FakeTensor)
+    ):
+        return target_fqn
+    metadata = json.dumps((str(tensor.dtype), tuple(tensor.shape))).encode("utf-8")
+    digest = hashlib.sha256(metadata)
+    digest.update(_tensor_to_bytes(tensor.detach().cpu()))
+    return f"{target_fqn}_{digest.hexdigest()}"
+
+
 def _extract_constants_and_mutable_buffers(
     graph_signature: object,
     state_dict: dict[str, object],
@@ -890,6 +914,7 @@ def _extract_constants_and_mutable_buffers(
 ) -> tuple[list[NamedTensorRef], dict[str, torch.Tensor], list[MutableBufferSpec]]:
     constant_refs: list[NamedTensorRef] = []
     constant_data: dict[str, torch.Tensor] = {}
+    data_key_by_fqn: dict[str, str] = {}
     mutable_buffers: list[MutableBufferSpec] = []
     packed_quant = packed_quant or {}
 
@@ -951,16 +976,30 @@ def _extract_constants_and_mutable_buffers(
                     )
                 ),
             )
+        data_key = _data_key(target_fqn, tensor)
+        data_key_by_fqn[target_fqn] = data_key
         constant_refs.append(
             NamedTensorRef(
                 name=name,
-                data_key=target_fqn,
+                data_key=data_key,
                 meta=meta,
                 kind=_INPUT_KIND_MAP[ispec.kind],
                 mutated=target_fqn in mutated_fqns,
             )
         )
-        constant_data[target_fqn] = tensor
+        constant_data[data_key] = tensor
+
+    # Qparams can follow their weight in the input signature.
+    for ref in constant_refs:
+        scheme = ref.meta.quant.scheme if ref.meta.quant is not None else None
+        if isinstance(scheme, AffineGroup):
+            scheme.scale_data_key = data_key_by_fqn.get(
+                scheme.scale_data_key, scheme.scale_data_key
+            )
+            if scheme.zero_point_data_key is not None:
+                scheme.zero_point_data_key = data_key_by_fqn.get(
+                    scheme.zero_point_data_key, scheme.zero_point_data_key
+                )
 
     return constant_refs, constant_data, mutable_buffers
 
@@ -1015,10 +1054,22 @@ def _build_method_graph(
             graph_signature, state_dict, constants, mutated_fqns, packed_quant
         )
     )
-    constant_names = {c.name for c in constant_refs}
+    data_key_by_name = {c.name: c.data_key for c in constant_refs}
+    buffer_data_keys = {
+        ispec.target: data_key_by_name[ispec.arg.name]
+        for ispec in getattr(graph_signature, "input_specs", []) or []
+        if ispec.kind == InputKind.BUFFER
+        and isinstance(ispec.arg, TensorArgument)
+        and ispec.arg.name in data_key_by_name
+    }
+    # Mutation targets resolve in the runtime's data-key namespace.
+    for spec in output_specs:
+        if spec.kind == OutputKind.BUFFER_MUTATION:
+            spec.target = buffer_data_keys.get(spec.target, spec.target)
+
     tensor_values = _tensor_values_from(
         val_by_name,
-        [n for n in val_by_name if n not in constant_names],
+        [n for n in val_by_name if n not in data_key_by_name],
     )
     user_inputs = list(getattr(graph_signature, "user_inputs", []) or [])
     graph = Graph(
@@ -1313,9 +1364,10 @@ def serialize_program(
 
     ``methods`` maps a method name (e.g. "forward") to a
     ``(graph_module, graph_signature, state_dict, constants)`` tuple. Returns
-    (flatbuffer_bytes, constant_data), where constant_data maps a fully-qualified
-    name to the constant tensor, merged (deduped by fqn) across all methods. The
-    caller ships constant_data as the external constant file.
+    (flatbuffer_bytes, constant_data), where constant_data maps each data key to
+    its constant tensor, merged across all methods. Model state uses its fqn;
+    constants generated by ``lift_constant_tensor_pass`` use content-based keys.
+    The caller ships constant_data as the external constant file.
 
     Cross-method sharing is by fqn: bundling methods asserts they come from a single
     model namespace, so an fqn is the same buffer/constant everywhere. That assertion

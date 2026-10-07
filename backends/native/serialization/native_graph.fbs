@@ -29,8 +29,8 @@
 //       zero_point_data_key, MutableBufferSpec.fqn.
 //   Not value references: NamedArgument.name (operator-schema parameter name),
 //   GraphArg.name (submodule attr label, debug only), Method.name (program-level).
-//   OutputSpec.target is dual-namespace by kind: an fqn (3) for BUFFER_MUTATION,
-//   a user-input SSA name (2) for USER_INPUT_MUTATION.
+//   OutputSpec.target is dual-namespace by kind: a data key / buffer fqn (3) for
+//   BUFFER_MUTATION, a user-input SSA name (2) for USER_INPUT_MUTATION.
 
 namespace native_backend;
 
@@ -378,9 +378,9 @@ table OutputSpec {
     // SSA name of the output value (matches an entry in the method's Graph.outputs).
     name: string (required);
     kind: OutputKind;
-    // For BUFFER_MUTATION: the mutated buffer's fqn (data namespace 3). For
-    // USER_INPUT_MUTATION: the mutated user input's SSA name (method graph,
-    // namespace 2). Empty for USER_OUTPUT.
+    // For BUFFER_MUTATION: the mutated binding's data_key or MutableBufferSpec.fqn
+    // (data namespace 3). For USER_INPUT_MUTATION: the mutated user input's SSA
+    // name (method graph, namespace 2). Empty for USER_OUTPUT.
     target: string;
 }
 

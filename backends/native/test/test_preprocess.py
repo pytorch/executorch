@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import io
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -27,9 +28,19 @@ from executorch.backends.native.serialization import (
     deserialize_graph,
     deserialize_program,
 )
+from executorch.backends.native.serialization.graph_serialize import (
+    _extract_constants_and_mutable_buffers,
+)
 from executorch.backends.native.serialization.schema import OpKind, OutputKind
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.native.test.utils import lifted_constant_program
+from executorch.backends.transforms.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
+from executorch.exir import load, save, to_edge, to_edge_transform_and_lower
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.program._program import lift_constant_tensor_pass
+from torch.export.graph_signature import InputKind, TensorArgument
 
 
 def _lower(model, example_inputs):
@@ -189,3 +200,161 @@ class PreprocessSerializationTest(unittest.TestCase):
         self.assertTrue(method.constants)
         data_keys = {c.data_key for c in method.constants}
         self.assertTrue(any("weight" in k for k in data_keys))
+
+
+class LiftedParameterPreprocessTest(unittest.TestCase):
+    def setUp(self):
+        model = nn.Sequential(nn.Conv2d(4, 8, 3), nn.BatchNorm2d(8)).eval()
+        self.ep = to_edge(
+            torch.export.export(model, (torch.randn(1, 4, 8, 8),), strict=True),
+            compile_config=get_default_compile_config(),
+        ).exported_program()
+        FuseBatchNormWithConvPass(self.ep)(self.ep.graph_module)
+        lift_constant_tensor_pass(self.ep)
+        self.lifted_by_name = {
+            spec.arg.name: self.ep.state_dict[spec.target]
+            for spec in self.ep.graph_signature.input_specs
+            if spec.kind == InputKind.BUFFER
+            and spec.target.startswith("_lifted_tensor_constant")
+        }
+        self.assertEqual(len(self.lifted_by_name), 2)
+        self.assertTrue(all(t.requires_grad for t in self.lifted_by_name.values()))
+
+    def test_lifted_parameters_shipped_as_named_data(self):
+        result = NativeBackend.preprocess(self.ep, [])
+        method = deserialize_program(result.processed_bytes).methods[0]
+        refs = {ref.name: ref for ref in method.constants}
+        store = result.data_store_output
+        self.assertIsNotNone(store)
+        self.assertEqual({ref.data_key for ref in refs.values()}, set(store.pte_data))
+        for name, tensor in self.lifted_by_name.items():
+            entry = store.pte_data[refs[name].data_key]
+            self.assertEqual(
+                store.buffers[entry.buffer_index], tensor.detach().numpy().tobytes()
+            )
+            self.assertTrue(tensor.requires_grad)
+
+    def test_lifted_parameters_handed_off_for_ptn(self):
+        result = NativeBackend.preprocess(
+            self.ep, [CompileSpec(PTN_SERIALIZATION_KEY, b"1")]
+        )
+        method = deserialize_program(result.processed_bytes).methods[0]
+        refs = {ref.name: ref for ref in method.constants}
+        info = result._delegate_info_meta
+        self.assertIsInstance(info, NativeDelegateInfo)
+        self.assertEqual({ref.data_key for ref in refs.values()}, set(info.constants))
+        for name, tensor in self.lifted_by_name.items():
+            captured = info.constants[refs[name].data_key]
+            torch.testing.assert_close(captured, tensor)
+            self.assertFalse(captured.requires_grad)
+            self.assertTrue(tensor.requires_grad)
+
+
+def _partition_store(fqn, tensor):
+    """Serialize the constants of one partition into its own data store."""
+    signature = SimpleNamespace(
+        input_specs=[
+            SimpleNamespace(
+                kind=InputKind.BUFFER,
+                arg=TensorArgument(name=f"b_{fqn}"),
+                target=fqn,
+                persistent=True,
+            )
+        ]
+    )
+    refs, data, _ = _extract_constants_and_mutable_buffers(
+        signature,
+        {fqn: tensor},
+        None,
+        set(),
+    )
+    store = NamedDataStore()
+    for ref in refs:
+        store.add_named_data(ref.data_key, data[ref.data_key])
+    return refs[0].data_key, store.get_named_data_store_output()
+
+
+def _merge(*outputs):
+    merged = NamedDataStore()
+    for output in outputs:
+        merged.merge_named_data_store(output)
+    return merged
+
+
+class LiftedConstantDataKeyTest(unittest.TestCase):
+    def test_same_local_name_different_data_after_save_load(self):
+        expected_keys = set()
+        outputs = []
+        for start in (0, 16):
+            ep = lifted_constant_program(
+                (torch.arange(start, start + 16, dtype=torch.float32),)
+            )
+            before = NativeBackend.preprocess(ep, [])
+            [ref] = deserialize_program(before.processed_bytes).methods[0].constants
+            expected_keys.add(ref.data_key)
+
+            archive = io.BytesIO()
+            save(ep, archive)
+            archive.seek(0)
+            restored = load(archive)
+            outputs.append(NativeBackend.preprocess(restored, []).data_store_output)
+
+        merged = _merge(*outputs)
+        self.assertEqual(set(merged.pte_data), expected_keys)
+        self.assertEqual(len(merged.buffers), 2)
+
+    def test_same_local_name_different_data_across_partitions(self):
+        # Equal-sized, as in the Conformer failure.
+        partitions = []
+        for start in (0, 16):
+            ep = lifted_constant_program(
+                (torch.arange(start, start + 16, dtype=torch.float32),)
+            )
+            result = NativeBackend.preprocess(ep, [])
+            [ref] = deserialize_program(result.processed_bytes).methods[0].constants
+            partitions.append((ref.data_key, result.data_store_output))
+        (key_a, out_a), (key_b, out_b) = partitions
+        self.assertNotEqual(key_a, key_b)
+        merged = _merge(out_a, out_b)
+        self.assertEqual({key_a, key_b}, set(merged.pte_data))
+        self.assertEqual(2, len(merged.buffers))
+
+    def test_same_local_name_different_size_across_partitions(self):
+        key_a, out_a = _partition_store(
+            "_lifted_tensor_constant12", torch.ones(4, dtype=torch.float32)
+        )
+        key_b, out_b = _partition_store(
+            "_lifted_tensor_constant12", torch.ones(8, dtype=torch.float32)
+        )
+        self.assertNotEqual(key_a, key_b)
+        self.assertEqual(2, len(_merge(out_a, out_b).buffers))
+
+    def test_identical_constants_keep_distinct_keys_and_share_buffer(self):
+        tensor = torch.arange(16, dtype=torch.float32)
+        key_a, out_a = _partition_store("_lifted_tensor_constant4", tensor.clone())
+        key_b, out_b = _partition_store("_lifted_tensor_constant7", tensor.clone())
+        self.assertNotEqual(key_a, key_b)
+        merged = _merge(out_a, out_b)
+        self.assertEqual({key_a, key_b}, set(merged.pte_data))
+        self.assertEqual(1, len(merged.buffers))
+
+    def test_same_local_name_and_data_share_key_across_partitions(self):
+        tensor = torch.arange(16, dtype=torch.float32)
+        key_a, out_a = _partition_store("_lifted_tensor_constant4", tensor.clone())
+        key_b, out_b = _partition_store("_lifted_tensor_constant4", tensor.clone())
+        self.assertEqual(key_a, key_b)
+        self.assertEqual(1, len(_merge(out_a, out_b).buffers))
+
+    def test_real_fqn_is_unchanged(self):
+        key, _ = _partition_store("linear.weight", torch.randn(4, 4))
+        self.assertEqual("linear.weight", key)
+
+    def test_identical_lora_weights_keep_their_fqns(self):
+        fqn_a = "layers.0.attention.wq.lora_b.weight"
+        fqn_b = "layers.1.attention.wq.lora_b.weight"
+        key_a, out_a = _partition_store(fqn_a, torch.zeros(4, 4))
+        key_b, out_b = _partition_store(fqn_b, torch.zeros(4, 4))
+        self.assertEqual((fqn_a, fqn_b), (key_a, key_b))
+        merged = _merge(out_a, out_b)
+        self.assertEqual({fqn_a, fqn_b}, set(merged.pte_data))
+        self.assertEqual(1, len(merged.buffers))
