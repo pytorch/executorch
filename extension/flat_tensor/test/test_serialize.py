@@ -34,6 +34,7 @@ from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
     _FLAT_TENSOR_VERSION,
     _FLATBUFFER_ALIGNMENT,
+    _get_extended_header,
     FlatTensorConfig,
     FlatTensorHeader,
     FlatTensorSerializer,
@@ -283,6 +284,21 @@ class TestSerialize(unittest.TestCase):
         self._check_named_data_entries(
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
+
+    def test_get_extended_header_reads_only_header_bytes(self) -> None:
+        # Slicing to the end of the data would copy the whole file.
+        class NoSliceToEnd(bytes):
+            def __getitem__(self, key):
+                if isinstance(key, slice) and key.stop is None:
+                    raise AssertionError("sliced to the end of the data")
+                return super().__getitem__(key)
+
+        serializer: DataSerializer = FlatTensorSerializer(FlatTensorConfig())
+        serialized_data = NoSliceToEnd(serializer.serialize(TEST_DATA_PAYLOAD))
+        header = _get_extended_header(serialized_data)
+
+        self.assertIsNotNone(header)
+        self.assertTrue(header.is_valid())
 
     def test_deserialize_refuses_newer_version(self) -> None:
         # A file whose version is newer than this reader understands must be

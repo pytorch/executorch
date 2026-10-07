@@ -1300,6 +1300,21 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
         self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
 
+    def test_get_extended_header_reads_only_header_bytes(self) -> None:
+        # Slicing to the end of the data would copy the whole file.
+        class NoSliceToEnd(bytes):
+            def __getitem__(self, key):
+                if isinstance(key, slice) and key.stop is None:
+                    raise AssertionError("sliced to the end of the data")
+                return super().__getitem__(key)
+
+        pte_data = NoSliceToEnd(b"\x00" * 8 + EXAMPLE_HEADER_DATA + b"\x55" * 1024)
+        eh = _get_extended_header(pte_data)
+
+        self.assertIsNotNone(eh)
+        self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
+        self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+
     def test_from_bytes_larger_than_needed_header_size_field(self) -> None:
         # Simulate a backwards-compatibility situation. Parse a header
         # with a larger-than expected size. This would typically mean that
