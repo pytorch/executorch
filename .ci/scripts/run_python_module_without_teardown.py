@@ -30,6 +30,10 @@ def main() -> None:
 
     module = sys.argv.pop(1)
     sys.argv[0] = module
+    # Running this helper as a script puts .ci/scripts at sys.path[0], while
+    # ``python -m`` puts the current working directory there. Match ``-m`` so
+    # repository modules such as ``backends`` remain importable.
+    sys.path[0] = os.getcwd()
     try:
         runpy.run_module(module, run_name="__main__")
     except SystemExit as error:
