@@ -26,6 +26,8 @@ from executorch.backends.nxp.tests.nsys_testing import (
     ReferenceModel,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+
+
 from executorch.examples.nxp.models.mlperf_tiny.visual_wake_words.mlperf_tiny_visual_wake_words import (
     MLPerfTinyVisualWakeWords,
 )

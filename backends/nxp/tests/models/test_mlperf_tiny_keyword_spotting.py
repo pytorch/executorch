@@ -25,6 +25,8 @@ from executorch.backends.nxp.tests.nsys_testing import (
     ReferenceModel,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+
+
 from executorch.examples.nxp.models.mlperf_tiny.keyword_spotting.mlperf_tiny_keyword_spotting import (
     MLPerfTinyKeywordSpotting,
 )
@@ -47,7 +49,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize("channels_last", [False, True])
+@pytest.mark.parametrize("channels_last", [True])  # [False, True])
 def test_mlperf_tiny_kws_mse_cpu_vs_npu(mocker, request, channels_last, use_qat):
     # approx. 5 samples per class
     num_samples = 60

@@ -27,6 +27,8 @@ from executorch.backends.nxp.tests.nsys_testing import (
     ReferenceModel,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+
+
 from executorch.examples.nxp.models.mlperf_tiny.image_classification.mlperf_tiny_image_classification import (
     MLPerfTinyImageClassification,
 )

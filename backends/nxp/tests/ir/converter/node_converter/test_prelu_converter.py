@@ -38,6 +38,8 @@ from executorch.backends.nxp.tests.simple_models import (
 )
 from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+
+
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 
 

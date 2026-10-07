@@ -28,6 +28,8 @@ from executorch.backends.nxp.tests.nsys_testing import (
     OUTPUTS_DIR,
 )
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
+
+
 from executorch.examples.nxp.models.mlperf_tiny.anomaly_detection.mlperf_tiny_anomaly_detection import (
     MLPerfTinyAnomalyDetection,
 )

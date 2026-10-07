@@ -469,7 +469,7 @@ class TestProfiling:
     def test__ds_cnn(self, caplog, request):
         # Depthwise Separable CNN used for keyword spotting in MLCommons Tiny.
         caplog.set_level(logging.INFO)
-        model = DSCNNKWS()
+        model = DSCNNKWS().eval()
         input_shape = (1, 1, 49, 10)
 
         lower_run_compare(
@@ -550,7 +550,7 @@ class TestProfiling:
     def test__deep_autoencoder(self, caplog, request):
         # MLPerf Tiny anomaly detection deep autoencoder.
         caplog.set_level(logging.INFO)
-        model = DeepAutoEncoder()
+        model = DeepAutoEncoder().eval()
         input_shape = (1, 640)
 
         lower_run_compare(
