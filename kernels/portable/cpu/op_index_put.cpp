@@ -200,7 +200,7 @@ bool check_special_case_in_place_args(
       Long, Int, index.scalar_type(), ctx, "index_put_", CTYPE, [&]() {
         const CTYPE* const index_arr = index.const_data_ptr<CTYPE>();
         for (const auto i : c10::irange(index.numel())) {
-          if (index_arr[i] < 0 ||
+          if (index_arr[i] < -static_cast<CTYPE>(in.size(*dim)) ||
               index_arr[i] >= static_cast<CTYPE>(in.size(*dim))) {
             ET_LOG(
                 Error,
@@ -220,14 +220,6 @@ bool check_special_case_in_place_args(
       is_valid_index,
       "Some index values are not within bounds of input tensor at indexed dim");
 
-  ET_CHECK_OR_RETURN_FALSE(
-      values.size(*dim) == index.size(0),
-      "Special case in-place index_put requires values to match index length at the indexed dim; values.size(%zu) = %" ET_PRI_TENSOR_SIZE
-      ", index_length = %zd",
-      *dim,
-      values.size(*dim),
-      index.size(0));
-
   Tensor::SizesType expected_values_size[kTensorDimensionLimit] = {};
   size_t in_ndim = static_cast<size_t>(in.dim());
   for (const auto i : c10::irange(in_ndim)) {
@@ -236,6 +228,15 @@ bool check_special_case_in_place_args(
     }
   }
   expected_values_size[*dim] = static_cast<Tensor::SizesType>(index.size(0));
+
+  size_t leading_unit_dims = 0;
+  while (in_ndim - leading_unit_dims > static_cast<size_t>(values.dim()) &&
+         expected_values_size[leading_unit_dims] == 1) {
+    ++leading_unit_dims;
+  }
+  const bool values_shape_matches = tensor_has_expected_size(
+      values,
+      {expected_values_size + leading_unit_dims, in_ndim - leading_unit_dims});
 
 #if ET_LOG_ENABLED
   auto in_shape_str = executorch::runtime::tensor_shape_to_c_string(
@@ -246,14 +247,14 @@ bool check_special_case_in_place_args(
           values.sizes().data(), values.sizes().size()));
 
   ET_CHECK_OR_RETURN_FALSE(
-      tensor_has_expected_size(values, {expected_values_size, in_ndim}),
-      "Special case in-place index_put requires values to match input shape except for indexed dim; got input shape %s and values shape %s",
+      values_shape_matches,
+      "Special case in-place index_put requires values to match input shape except for indexed dim, allowing omitted leading unit dimensions; got input shape %s and values shape %s",
       in_shape_str.data(),
       values_shape_str.data());
 #else
   ET_CHECK_OR_RETURN_FALSE(
-      tensor_has_expected_size(values, {expected_values_size, in_ndim}),
-      "Special case in-place index_put requires values to match input shape except for indexed dim");
+      values_shape_matches,
+      "Special case in-place index_put requires values to match input shape except for indexed dim, allowing omitted leading unit dimensions");
 #endif // ET_LOG_ENABLED
 
   return true;
@@ -299,7 +300,7 @@ Tensor& index_put_(
     return in;
   }
 
-  size_t values_dim_length = values.size(dim);
+  size_t values_dim_length = index.size(0);
   size_t in_dim_length = in.size(dim);
 
   size_t length_per_step = trailing_dims * in.element_size();
@@ -316,10 +317,13 @@ Tensor& index_put_(
             VALUE_T* dest = in.mutable_data_ptr<VALUE_T>();
             for (const auto i : c10::irange(leading_dims)) {
               for (const auto j : c10::irange(values_dim_length)) {
+                const auto index = index_arr[j] < 0
+                    ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
+                    : index_arr[j];
                 const size_t src_offset =
                     (i * values_dim_length + j) * trailing_dims;
                 const size_t dest_offset =
-                    (i * in_dim_length + index_arr[j]) * trailing_dims;
+                    (i * in_dim_length + index) * trailing_dims;
                 for (const auto k : c10::irange(trailing_dims)) {
                   dest[dest_offset + k] += src[src_offset + k];
                 }
@@ -331,8 +335,11 @@ Tensor& index_put_(
         const char* src = values_data + i * values_dim_length * length_per_step;
         char* dest = in_data + i * in_dim_length * length_per_step;
         for (const auto j : c10::irange(values_dim_length)) {
+          const auto index = index_arr[j] < 0
+              ? index_arr[j] + static_cast<CTYPE>(in_dim_length)
+              : index_arr[j];
           const char* copy_src = src + j * length_per_step;
-          char* copy_dest = dest + index_arr[j] * length_per_step;
+          char* copy_dest = dest + index * length_per_step;
           memcpy(copy_dest, copy_src, length_per_step);
         }
       }
