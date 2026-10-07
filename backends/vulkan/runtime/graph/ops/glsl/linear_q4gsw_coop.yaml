@@ -10,10 +10,7 @@ linear_q4gsw_coop:
     IO_STORAGE: texture3d
     WEIGHT_STORAGE: texture2d
     PACKED_INPUT_STORAGE: buffer
-    TILE_M: 1
-    TILE_K4: 1
-    TILE_N8: 1
-    WGS: 64
+    MAX_WG_SIZE: 256
     DYNAMIC_QUANT_VARIANT: false
     ZP_DTYPE_MODE: zpint8
   generate_variant_forall:
