@@ -110,8 +110,9 @@ class HistoryExecutor final : public Executor {
       }
       state.tokens.resize(static_cast<std::size_t>(start));
       Tokens supplied(
-          input.tokens->begin() + input.offset,
-          input.tokens->begin() + input.offset + input.size);
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset,
+          std::get<TokenInputPtr>(input.payload)->begin() + input.offset +
+              input.size);
       state.tokens.insert(state.tokens.end(), supplied.begin(), supplied.end());
       state.written =
           std::max(state.written, static_cast<Position>(state.tokens.size()));

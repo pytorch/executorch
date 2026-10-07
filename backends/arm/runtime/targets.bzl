@@ -54,6 +54,7 @@ def define_common_targets():
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
             "VGFVulkanFeatures.h",
+            "VGFZeroCopy.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
