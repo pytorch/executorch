@@ -194,7 +194,7 @@ def test_stop_trimmed_turn_not_spliced(make_client):
     # P1/P2 guard: a stop-trimmed turn (worker omits generated_token_ids ->
     # recorded ids=None) is never spliced, even when the turn fingerprint matches,
     # so unseen post-stop tokens can't be injected into a later prompt.
-    client, fake = make_client(max_named_sessions=2, gen_ids=[])  # [] => ids None
+    client, fake = make_client(max_named_sessions=2, gen_ids=None)
     _chat_msgs(client, [{"role": "user", "content": "hi"}], "s")
     turn2 = [
         {"role": "user", "content": "hi"},

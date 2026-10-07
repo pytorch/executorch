@@ -153,6 +153,16 @@ TEST_F(TensorUtilTest, EmptyTensor) {
   ET_CHECK_SAME_SHAPE_AND_DTYPE3(t, t, t);
 }
 
+TEST_F(TensorUtilTest, CopyEmptyTensorData) {
+  Tensor destination = tf_int_.zeros({3, 0});
+  Tensor source = tf_int_.zeros({3, 0});
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::internal::copy_tensor_data(
+          destination, source),
+      executorch::runtime::Error::Ok);
+}
+
 TEST_F(TensorUtilTest, GetLeadingDimsSmokeTest) {
   // Create a tensor with some dimensions
   Tensor t = tf_int_.ones({2, 3, 4});
@@ -574,6 +584,38 @@ TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
       executorch::runtime::Error::Ok);
   EXPECT_EQ(a.dim(), 0);
 }
+
+TEST_F(TensorUtilTest, GetDimOrderPreservesCanonicalChannelsLast) {
+  Tensor tensor = tf_float_.full_channels_last({1, 1, 28, 28}, 1);
+  executorch::aten::DimOrderType dim_order[4];
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::get_dim_order(tensor, dim_order, 4),
+      executorch::runtime::Error::Ok);
+  const executorch::aten::DimOrderType expected[4] = {0, 2, 3, 1};
+  for (const auto i : c10::irange(4)) {
+    EXPECT_EQ(dim_order[i], expected[i]);
+  }
+}
+
+#ifdef USE_ATEN_LIB
+TEST_F(TensorUtilTest, ResizePreservesChannelsLastDimOrder) {
+  Tensor tensor = tf_float_.full_channels_last({1, 1, 28, 28}, 1);
+
+  EXPECT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::resize_tensor(tensor, {1, 1, 14, 56}),
+      executorch::runtime::Error::Ok);
+
+  executorch::aten::DimOrderType dim_order[4];
+  ASSERT_EQ(
+      executorch::ET_RUNTIME_NAMESPACE::get_dim_order(tensor, dim_order, 4),
+      executorch::runtime::Error::Ok);
+  const executorch::aten::DimOrderType expected[4] = {0, 2, 3, 1};
+  for (const auto i : c10::irange(4)) {
+    EXPECT_EQ(dim_order[i], expected[i]);
+  }
+}
+#endif
 
 TEST_F(TensorUtilTest, SameDimOrderContiguous) {
   using namespace torch::executor;
