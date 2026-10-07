@@ -67,15 +67,19 @@ def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
     if not isinstance(maximum_capacity, int) or maximum_capacity <= 0:
         raise ValueError("off-graph maximum_capacity must be positive")
     max_write = manifest.get("max_write")
-    if not isinstance(max_write, int) or not 0 < max_write <= maximum_capacity:
-        raise ValueError("off-graph max_write must be in [1, maximum_capacity]")
+    if not isinstance(max_write, int) or max_write <= 0:
+        raise ValueError("off-graph max_write must be positive")
     layout = manifest.setdefault("layout", "sequence")
     if layout not in ("sequence", "cell"):
         raise ValueError(f"invalid off-graph KV layout {layout!r}")
     if layout == "cell":
+        # A cell step packs tokens of several sequences into the shared pool,
+        # so the pool bounds its width, not one sequence's capacity.
         max_cells = manifest.get("max_cells")
         if not isinstance(max_cells, int) or max_cells < max_write:
             raise ValueError("off-graph cell layout needs max_cells >= max_write")
+    elif max_write > maximum_capacity:
+        raise ValueError("off-graph max_write must be in [1, maximum_capacity]")
     layers = manifest.get("layers")
     if not isinstance(layers, list) or not layers:
         raise ValueError("off-graph manifest must contain layers")

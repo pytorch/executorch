@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/cuda/batching/step_plan.h>
+#include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
 
@@ -74,4 +75,10 @@ TEST(StepPlanTest, ShortSlicesBelowThePrefillBoundRunAsDecodes) {
 
 TEST(StepPlanTest, EmptyBatchPlansNothing) {
   expect_plan(0, 8, 2, {});
+}
+
+TEST(StepPlanTest, NonPositiveStepWidthIsRejected) {
+  // A zero-wide slice never advances, so planning would never return.
+  ET_EXPECT_DEATH(cb::plan_slices(1, 0, 2), "max_step_tokens");
+  ET_EXPECT_DEATH(cb::plan_slices(1, -1, 2), "max_step_tokens");
 }
