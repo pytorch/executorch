@@ -4056,42 +4056,16 @@ bool VgfRepr::process_vgf(
         io_idx);
   }
 
-  model_input_io_index.clear();
-  model_output_io_index.clear();
-  for (size_t i = 0; i < serialized_model_input_count; ++i) {
-    if (!mutable_model_inputs[i]) {
-      model_input_io_index.push_back(serialized_model_input_io_index[i]);
-    }
-  }
-  for (size_t i = 0; i < serialized_model_output_count; ++i) {
-    if (!mutable_model_outputs[i]) {
-      model_output_io_index.push_back(serialized_model_output_io_index[i]);
-    }
-  }
+  auto external_io = vgf_resolve_external_io_mapping(
+      serialized_model_input_io_index,
+      serialized_model_output_io_index,
+      mutable_model_inputs,
+      mutable_model_outputs,
+      zero_copy_io_metadata);
+  model_input_io_index = std::move(external_io.inputs);
+  model_output_io_index = std::move(external_io.outputs);
   this->model_input_count = model_input_io_index.size();
   this->model_output_count = model_output_io_index.size();
-
-  for (size_t input_idx = 0; input_idx < model_input_io_index.size();
-       ++input_idx) {
-    const int io_idx = model_input_io_index[input_idx];
-    if (io_idx >= 0 &&
-        static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
-      auto& metadata = zero_copy_io_metadata[io_idx];
-      metadata.mapped_to_model_boundary = true;
-      metadata.executorch_argument_index = static_cast<int64_t>(input_idx);
-    }
-  }
-  for (size_t output_idx = 0; output_idx < model_output_io_index.size();
-       ++output_idx) {
-    const int io_idx = model_output_io_index[output_idx];
-    if (io_idx >= 0 &&
-        static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
-      auto& metadata = zero_copy_io_metadata[io_idx];
-      metadata.mapped_to_model_boundary = true;
-      metadata.executorch_argument_index =
-          static_cast<int64_t>(this->model_input_count + output_idx);
-    }
-  }
 
   for (size_t io_idx = 0; io_idx < zero_copy_io_metadata.size(); ++io_idx) {
     auto& metadata = zero_copy_io_metadata[io_idx];

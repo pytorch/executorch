@@ -185,6 +185,52 @@ TEST(VgfZeroCopyMetadataTest, ImageAndAliasedResourcesAreRejected) {
   EXPECT_FALSE(vgf_zero_copy_io_structurally_eligible(aliased_tensor_metadata));
 }
 
+TEST(VgfZeroCopyMetadataTest, MutableEndpointsDoNotShiftExternalArguments) {
+  std::vector<VgfZeroCopyIoMetadata> metadata(
+      5, make_eligible_linear_tensor_metadata_for_test());
+  for (size_t i = 0; i < metadata.size(); ++i) {
+    auto& entry = metadata[i];
+    entry.mapped_to_model_boundary = false;
+    entry.executorch_argument_index = -1;
+    entry.external_tensor_query_performed = true;
+    entry.external_tensor_host_allocation_supported = true;
+    entry.bindings.push_back(VgfBoundaryBindingRef{
+        .segment_index = 0,
+        .set_index = 0,
+        .binding = static_cast<uint32_t>(i),
+    });
+  }
+  metadata[0].has_alias_group = true;
+  metadata[3].has_alias_group = true;
+  metadata[3].is_input = false;
+  metadata[4].is_input = false;
+
+  const auto mapping = vgf_resolve_external_io_mapping(
+      /*serialized_inputs=*/{1, 0, -1, 2},
+      /*serialized_outputs=*/{3, 4},
+      /*mutable_inputs=*/{false, true, false, false},
+      /*mutable_outputs=*/{true, false},
+      metadata);
+
+  EXPECT_EQ(mapping.inputs, (std::vector<int>{1, -1, 2}));
+  EXPECT_EQ(mapping.outputs, (std::vector<int>{4}));
+  EXPECT_EQ(metadata[1].executorch_argument_index, 0);
+  EXPECT_EQ(metadata[2].executorch_argument_index, 2);
+  EXPECT_EQ(metadata[4].executorch_argument_index, 3);
+  for (size_t i : {0u, 3u}) {
+    EXPECT_FALSE(metadata[i].mapped_to_model_boundary);
+    EXPECT_EQ(metadata[i].executorch_argument_index, -1);
+  }
+  for (auto& entry : metadata) {
+    vgf_finalize_zero_copy_io_metadata(&entry);
+  }
+  EXPECT_FALSE(metadata[0].eligible);
+  EXPECT_FALSE(metadata[3].eligible);
+  EXPECT_TRUE(metadata[1].eligible);
+  EXPECT_TRUE(metadata[2].eligible);
+  EXPECT_TRUE(metadata[4].eligible);
+}
+
 TEST(VgfZeroCopyMetadataTest, NonTensorDescriptorIsRejected) {
   VgfHostMemoryImportCapabilities host_capabilities{};
   host_capabilities.logical_device_enabled = true;
