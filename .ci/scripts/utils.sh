@@ -108,6 +108,25 @@ install_pytorch_and_domains() {
     git show ad2cbdaf1791a1add8119eec8efb2ad7cb4adebe -- "${mps_loss_ops}" | git apply
   fi
 
+  # This snapshot predates the corrected MPS stream serialization fix. Apply
+  # its cache-locking prerequisite and the reland, which uses separate queue
+  # ownership rules for synchronization and encoding-time hooks. Without it,
+  # concurrent MPS compilation can exit with SIGSEGV.
+  if [[ "$(uname)" == "Darwin" ]]; then
+    local mps_cache_cleanup=82e11efd09479cfbae9c03a174fa4714b09d1f89
+    local mps_stream_fixed=c8bb60779d0c8878e64a0b20b74fc66643f2baba
+    local mps_stream_paths=(
+      aten/src/ATen/mps/MPSHooks.mm
+      aten/src/ATen/mps/MPSStream.h
+      aten/src/ATen/native/mps/operations/Eye.mm
+      aten/src/ATen/native/mps/operations/RangeFactories.mm
+      aten/src/ATen/native/mps/operations/RenormKernel.mm
+      test/test_mps.py
+    )
+    git show "${mps_cache_cleanup}" | git apply
+    git show "${mps_stream_fixed}" -- "${mps_stream_paths[@]}" | git apply
+  fi
+
   local system_name=$(uname)
   if [[ "${system_name}" == "Darwin" ]]; then
     local platform=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
@@ -119,7 +138,10 @@ install_pytorch_and_domains() {
   # like `release/2.14` would otherwise produce `+gitrelease` here and
   # never hit the cache.
   local torch_short_hash=$(git rev-parse --short=7 HEAD)
-  local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
+  # Keep source-patch revisions in separate cache namespaces. The wheel's
+  # filename only contains the pinned commit, so changing a dirty-tree patch
+  # otherwise reuses a wheel built with an older workaround.
+  local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/mps-stream-fix-v1/${system_name}/${python_version}"
   local torch_wheel_name="torch-${torch_release}%2Bgit${torch_short_hash}-cp${python_version}-cp${python_version}-${platform:-}.whl"
 
   local cached_torch_wheel="https://gha-artifacts.s3.us-east-1.amazonaws.com/${torch_wheel_path}/${torch_wheel_name}"
