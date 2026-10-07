@@ -22,7 +22,7 @@ from importlib import import_module as _import_module
 logger = logging.getLogger(__name__)
 
 
-class _LightweightExperimentalWarning(UserWarning):
+class _LightweightExperimentalWarning(DeprecationWarning):
     pass
 
 

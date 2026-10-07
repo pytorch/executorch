@@ -18,7 +18,6 @@
 #include <stdexcept>
 #include <tuple>
 
-#include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -343,12 +342,38 @@ class BufferTensor final {
   executorch::aten::ScalarType scalar_type_;
 };
 
-bool is_torch_tensor(const py::handle& value) {
-  const auto modules = py::module_::import("sys").attr("modules");
-  if (!modules.contains("torch")) {
-    return false;
+PyObject* loaded_torch_module() {
+  // Retain the module for the interpreter's lifetime. This avoids repeated
+  // sys.modules lookups without creating a static py::object whose destructor
+  // could run after Python has finalized.
+  static PyObject* torch_module = nullptr;
+  if (torch_module == nullptr) {
+    PyObject* loaded = PyDict_GetItemString(PyImport_GetModuleDict(), "torch");
+    if (loaded != nullptr) {
+      Py_INCREF(loaded);
+      torch_module = loaded;
+    }
   }
-  return py::isinstance(value, modules["torch"].attr("Tensor"));
+  return torch_module;
+}
+
+bool is_torch_tensor(const py::handle& value) {
+  static PyObject* tensor_type = nullptr;
+  if (tensor_type == nullptr) {
+    PyObject* torch_module = loaded_torch_module();
+    if (torch_module == nullptr) {
+      return false;
+    }
+    tensor_type = PyObject_GetAttrString(torch_module, "Tensor");
+    if (tensor_type == nullptr) {
+      throw py::error_already_set();
+    }
+  }
+  const int result = PyObject_IsInstance(value.ptr(), tensor_type);
+  if (result < 0) {
+    throw py::error_already_set();
+  }
+  return result == 1;
 }
 
 void validate_tensor_input(
@@ -385,8 +410,9 @@ void validate_tensor_input(
       sizes.size(),
       expected_strides.data());
   THROW_IF_ERROR(status, "Invalid dimension order for input %zu", index);
+  const bool is_empty = std::find(sizes.begin(), sizes.end(), 0) != sizes.end();
   for (size_t dim = 0; dim < sizes.size(); ++dim) {
-    if (sizes[dim] > 1 && strides[dim] != expected_strides[dim]) {
+    if ((sizes[dim] > 1 || is_empty) && strides[dim] != expected_strides[dim]) {
       throw py::value_error(
           "Input " + std::to_string(index) + " has stride " +
           std::to_string(strides[dim]) + " at dimension " +
@@ -423,14 +449,17 @@ class TorchTensorView final {
       throw py::value_error(
           "Lazy conjugate and negative torch tensor views must be resolved before execution");
     }
-    const auto device_type = py::str(owner_.attr("device").attr("type"));
-    if (device_type.cast<std::string>() != "cpu") {
+    const auto numel = owner_.attr("numel")().cast<int64_t>();
+    const auto device_type =
+        py::str(owner_.attr("device").attr("type")).cast<std::string>();
+    if (device_type != "cpu" && numel != 0) {
       throw std::runtime_error(
-          "Torch tensor is on device " + device_type.cast<std::string>() +
+          "Torch tensor is on device " + device_type +
           ", and only CPU tensors can be passed to portable bindings until "
           "DLPack is enabled.");
     }
-    scalar_type_ = scalar_type_from_torch(py::str(owner_.attr("dtype")));
+    scalar_type_ = scalar_type_from_torch_dtype(
+        py::str(owner_.attr("dtype")).cast<std::string>());
     sizes_ = checked_vector(owner_.attr("shape"), "dimension");
     strides_ = checked_vector(owner_.attr("stride")(), "stride");
     if (sizes_.size() > runtime::kTensorDimensionLimit ||
@@ -444,8 +473,9 @@ class TorchTensorView final {
           return strides_[a] > strides_[b];
         });
     validate_dense_layout();
-    const auto address = owner_.attr("data_ptr")().cast<uintptr_t>();
-    if (address == 0 && owner_.attr("numel")().cast<int64_t>() != 0) {
+    const auto address =
+        numel == 0 ? 0 : owner_.attr("data_ptr")().cast<uintptr_t>();
+    if (address == 0 && numel != 0) {
       throw py::value_error("Torch tensor data is not allocated");
     }
     data_ = reinterpret_cast<void*>(address);
@@ -486,58 +516,6 @@ class TorchTensorView final {
       result.push_back(static_cast<int>(number));
     }
     return result;
-  }
-
-  static executorch::aten::ScalarType scalar_type_from_torch(
-      const py::str& dtype) {
-    const auto name = dtype.cast<std::string>();
-    using executorch::aten::ScalarType;
-    if (name == "torch.uint8") {
-      return ScalarType::Byte;
-    }
-    if (name == "torch.int8") {
-      return ScalarType::Char;
-    }
-    if (name == "torch.int16") {
-      return ScalarType::Short;
-    }
-    if (name == "torch.int32") {
-      return ScalarType::Int;
-    }
-    if (name == "torch.int64") {
-      return ScalarType::Long;
-    }
-    if (name == "torch.float16") {
-      return ScalarType::Half;
-    }
-    if (name == "torch.float32") {
-      return ScalarType::Float;
-    }
-    if (name == "torch.float64") {
-      return ScalarType::Double;
-    }
-    if (name == "torch.complex64") {
-      return ScalarType::ComplexFloat;
-    }
-    if (name == "torch.complex128") {
-      return ScalarType::ComplexDouble;
-    }
-    if (name == "torch.bool") {
-      return ScalarType::Bool;
-    }
-    if (name == "torch.bfloat16") {
-      return ScalarType::BFloat16;
-    }
-    if (name == "torch.uint16") {
-      return ScalarType::UInt16;
-    }
-    if (name == "torch.uint32") {
-      return ScalarType::UInt32;
-    }
-    if (name == "torch.uint64") {
-      return ScalarType::UInt64;
-    }
-    throw py::value_error("Unsupported torch dtype: " + name);
   }
 
   void validate_dense_layout() const {
@@ -589,9 +567,8 @@ class BorrowedInput final {
  private:
   std::pair<const void*, size_t> torch_storage() const {
     const auto numel = torch_tensor_.attr("numel")().cast<size_t>();
-    const auto address = numel == 0
-        ? 0
-        : torch_tensor_.attr("data_ptr")().cast<uintptr_t>();
+    const auto address =
+        numel == 0 ? 0 : torch_tensor_.attr("data_ptr")().cast<uintptr_t>();
     const auto element_size =
         torch_tensor_.attr("element_size")().cast<size_t>();
     return {reinterpret_cast<const void*>(address), numel * element_size};
@@ -617,15 +594,19 @@ py::sequence normalize_inputs(const py::object& inputs) {
 }
 
 #ifndef USE_ATEN_LIB
-py::object portable_tensor_result(const executorch::aten::Tensor& tensor) {
-  auto result = std::make_shared<PyExecuTorchResult>(tensor);
+py::object portable_tensor_result(
+    const executorch::aten::Tensor& tensor,
+    bool clone = true,
+    py::object owner = py::none()) {
+  auto result = std::make_shared<PyExecuTorchResult>(
+      tensor, clone, clone ? py::none() : std::move(owner));
   py::object python_result = py::cast(result);
   if (portable_tensor_output() == PortableTensorOutput::ExecuTorch) {
     return python_result;
   }
 
-  const auto modules = py::module_::import("sys").attr("modules");
-  if (!modules.contains("torch")) {
+  PyObject* loaded_torch = loaded_torch_module();
+  if (loaded_torch == nullptr) {
     throw std::runtime_error(
         "PyTorch tensor output was requested, but torch is not imported. "
         "Import torch before executing the portable bindings or set "
@@ -633,7 +614,7 @@ py::object portable_tensor_result(const executorch::aten::Tensor& tensor) {
         "them to receive ExecuTorchResult outputs.");
   }
 
-  const auto torch_module = modules["torch"];
+  const auto torch_module = py::reinterpret_borrow<py::object>(loaded_torch);
   const auto dtype = torch_module.attr(result->torch_dtype_name());
   if (result->nbytes() == 0) {
     return torch_module.attr("empty")(
@@ -818,7 +799,8 @@ inline std::unique_ptr<Module> load_module_from_data_loader(
 
 inline py::list get_outputs_as_py_list(
     const std::vector<EValue>& outputs,
-    bool clone_outputs = true) {
+    bool clone_outputs = true,
+    py::object owner = py::none()) {
   const auto outputs_size = outputs.size();
   py::list list(outputs_size);
   for (size_t i = 0; i < outputs_size; ++i) {
@@ -843,8 +825,7 @@ inline py::list get_outputs_as_py_list(
         list[i] = py::cast(v.toTensor());
       }
 #else
-      (void)clone_outputs;
-      list[i] = portable_tensor_result(v.toTensor());
+      list[i] = portable_tensor_result(v.toTensor(), clone_outputs, owner);
 #endif
     } else {
       ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -1428,7 +1409,10 @@ struct PyModule final {
         static_cast<uint32_t>(outputs.error()));
 
     // Retrieve outputs
-    return get_outputs_as_py_list(outputs.get(), clone_outputs);
+    return get_outputs_as_py_list(
+        outputs.get(),
+        clone_outputs,
+        py::cast(this, py::return_value_policy::reference));
   }
 
   py::list forward(const py::object& inputs, bool clone_outputs = true) {
@@ -1483,7 +1467,10 @@ struct PyModule final {
         output.error(),
         "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
         static_cast<uint32_t>(output.error()));
-    return get_outputs_as_py_list(output.get(), clone_outputs);
+    return get_outputs_as_py_list(
+        output.get(),
+        clone_outputs,
+        py::cast(this, py::return_value_policy::reference));
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
@@ -2061,7 +2048,10 @@ struct PyMethod final {
 #ifdef USE_ATEN_LIB
     return py::cast(attr.get());
 #else
-    return portable_tensor_result(attr.get());
+    return portable_tensor_result(
+        attr.get(),
+        /*clone=*/false,
+        py::cast(this, py::return_value_policy::reference));
 #endif
   }
 
@@ -2153,8 +2143,10 @@ struct PyMethod final {
           list[i] = py::cast(v.toTensor());
         }
 #else
-        (void)clone_outputs;
-        list[i] = portable_tensor_result(v.toTensor());
+        list[i] = portable_tensor_result(
+            v.toTensor(),
+            clone_outputs,
+            py::cast(this, py::return_value_policy::reference));
 #endif
       } else {
         ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
@@ -2403,9 +2395,9 @@ py::bool_ is_available(const std::string& backend_name) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  // Redirects cout and cerr for function calls this guards to the python env.
-  auto call_guard = py::
-      call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
+  // scoped_ostream_redirect mutates process-wide stream buffers and is not
+  // thread-safe when Python operations inside a binding release the GIL.
+  auto call_guard = py::call_guard<>();
 
 #ifdef USE_ATEN_LIB
   m.attr("_uses_aten") = true;
@@ -2417,17 +2409,30 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
                                                               : "executorch";
 #endif
   py::class_<PyExecuTorchResult, std::shared_ptr<PyExecuTorchResult>>(
-      m, "ExecuTorchResult", py::buffer_protocol())
+      m, "ExecuTorchResult", py::buffer_protocol(), py::module_local())
       .def_property_readonly("shape", &PyExecuTorchResult::shape)
       .def_property_readonly("strides", &PyExecuTorchResult::strides)
       .def_property_readonly("dtype", &PyExecuTorchResult::dtype)
       .def_property_readonly("nbytes", &PyExecuTorchResult::nbytes)
+      .def(
+          "__array__",
+          [](const std::shared_ptr<PyExecuTorchResult>& result,
+             const py::object& dtype,
+             ET_UNUSED const py::object& copy) {
+            py::array array = result->numpy_array(py::cast(result));
+            return dtype.is_none() ? array : array.attr("astype")(dtype);
+          },
+          py::arg("dtype") = py::none(),
+          py::arg("copy") = py::none())
       .def_buffer(&PyExecuTorchResult::buffer);
 #ifndef USE_ATEN_LIB
   py::class_<
       PyExecuTorchResultFlatBuffer,
       std::shared_ptr<PyExecuTorchResultFlatBuffer>>(
-      m, "_ExecuTorchResultFlatBuffer", py::buffer_protocol())
+      m,
+      "_ExecuTorchResultFlatBuffer",
+      py::buffer_protocol(),
+      py::module_local())
       .def_buffer(&PyExecuTorchResultFlatBuffer::buffer);
 #endif
 
@@ -2700,19 +2705,29 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
 
 namespace {
 
-// Our logs work by writing to stderr. By default this is done through fprintf
-// (as defined in posix.cpp) which then does not show up in python environments.
-// Here we override the pal to use std::cerr which can be properly redirected by
-// scoped_estream_redirect.
+// Forward runtime logs to Python without mutating std::cerr's process-wide
+// stream buffer.
 void emit_log_message(
-    et_timestamp_t timestamp,
-    et_pal_log_level_t level,
+    ET_UNUSED et_timestamp_t timestamp,
+    ET_UNUSED et_pal_log_level_t level,
     const char* filename,
     ET_UNUSED const char* function,
     size_t line,
     const char* message,
-    ET_UNUSED size_t length) {
-  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
+    size_t length) {
+  const std::string formatted_message = "[" + std::string(filename) + ":" +
+      std::to_string(line) + "] " + std::string(message, length) + "\n";
+  if (Py_IsInitialized()) {
+    try {
+      py::gil_scoped_acquire gil;
+      py::module_::import("sys").attr("stderr").attr("write")(
+          formatted_message);
+      return;
+    } catch (py::error_already_set& error) {
+      error.clear();
+    }
+  }
+  std::cerr << formatted_message << std::flush;
 }
 
 runtime::PalImpl build_pal() {

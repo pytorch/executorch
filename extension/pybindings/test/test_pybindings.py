@@ -7,6 +7,7 @@
 # pyre-unsafe
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -88,6 +89,75 @@ class PybindingsTest(unittest.TestCase):
 
         method = self.load_prog_fn(exported_program.buffer).load_method("forward")
         self.assertTrue(torch.equal(method(array)[0], inputs[0] + inputs[0]))
+
+    def test_torch_inputs_are_safe_across_threads(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only portable bindings use the Python torch adapter")
+
+        script = """
+import threading
+
+import torch
+from executorch.exir import to_edge
+from executorch.extension.pybindings import portable_lib
+
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+
+inputs = (torch.ones(2, 2), torch.ones(2, 2))
+program = to_edge(torch.export.export(Add(), inputs)).to_executorch()
+data = program.buffer
+loaded = portable_lib._load_program_from_buffer(data)
+
+
+def run(method):
+    for _ in range(300):
+        method.set_inputs([torch.ones(2, 2), torch.ones(2, 2)])
+        method.execute()
+        method.get_outputs()
+
+
+threads = [
+    threading.Thread(target=run, args=(loaded.load_method("forward"),))
+    for _ in range(4)
+]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join()
+print("all calls finished")
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertIn("all calls finished", completed.stdout)
+
+    def test_bfloat16_output_preserves_dtype(self):
+        class ModuleAddBFloat16(ModuleAdd):
+            def get_inputs(self):
+                return (
+                    torch.ones(2, dtype=torch.bfloat16),
+                    torch.ones(2, dtype=torch.bfloat16),
+                )
+
+        exported_program, inputs = create_program(ModuleAddBFloat16())
+        output = self.load_fn(exported_program.buffer)(inputs)[0]
+
+        self.assertEqual(output.dtype, torch.bfloat16)
+        torch.testing.assert_close(output, inputs[0] + inputs[1])
+
     def test_default_numpy_integer_dtype_error_is_descriptive(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -212,6 +282,21 @@ class PybindingsTest(unittest.TestCase):
         executorch_output = executorch_module(inputs)[0]
         expected = inputs[0] + inputs[1]
         self.assertEqual(str(expected), str(executorch_output))
+
+    def test_clone_outputs_false_returns_a_view(self):
+        eager_module = ModuleAddWithAttributes()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_prog = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(emit_mutable_buffer_names=True)
+        )
+        executorch_module = self.load_fn(exec_prog.buffer)
+
+        output = executorch_module(inputs, clone_outputs=False)[0]
+        snapshot = output.clone()
+        executorch_module(inputs)
+
+        self.assertFalse(torch.equal(output, snapshot))
 
     def test_module_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
@@ -728,6 +813,20 @@ class PybindingsTest(unittest.TestCase):
             str(executorch_method.get_attribute("state")), str(torch.ones(2, 2))
         )
 
+    def test_method_attribute_is_a_view(self):
+        eager_module = ModuleAddWithAttributes()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_prog = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(emit_mutable_buffer_names=True)
+        )
+        executorch_method = self.load_prog_fn(exec_prog.buffer).load_method("forward")
+
+        state = executorch_method.get_attribute("state")
+        executorch_method(inputs)
+
+        self.assertTrue(torch.equal(state, torch.ones(2, 2)))
+
     def test_program_method_meta(self) -> None:
         eager_module = ModuleAddWithAttributes()
         inputs = eager_module.get_inputs()
@@ -961,6 +1060,26 @@ class PybindingsTest(unittest.TestCase):
         # index-less name would not match what the caller passed.
         self.assertIn("is on device meta", message)
         self.assertIn("only CPU tensors", message)
+
+    def test_rejects_noncanonical_empty_strides(self):
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+        empty_view = torch.empty(5, 7)[0:0, 0:2]
+
+        with self.assertRaisesRegex(ValueError, "stride"):
+            executorch_module.forward([empty_view, inputs[1]])
+
+    def test_empty_input_does_not_require_device_memory(self):
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable build converts the input tensor")
+
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaises(RuntimeError) as caught:
+            executorch_module.forward([torch.empty(0, 2, device="meta"), inputs[1]])
+
+        self.assertNotIn("is on device meta", str(caught.exception))
 
     def test_method_accepts_a_cpu_input_after_the_device_check(self):
         # The rejection tests above pass for a change that throws on every input, so this

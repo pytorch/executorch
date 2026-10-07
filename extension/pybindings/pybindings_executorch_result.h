@@ -11,6 +11,7 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <pybind11/numpy.h>
@@ -23,20 +24,95 @@ namespace executorch::extension::pybindings {
 
 namespace py = pybind11;
 
-/** Owned tensor result returned by portable Python bindings. */
+struct PyTensorDType final {
+  executorch::aten::ScalarType scalar_type;
+  const char* torch_name;
+  const char* numpy_name;
+  const char* buffer_format;
+};
+
+inline const PyTensorDType& python_dtype(
+    executorch::aten::ScalarType scalar_type) {
+  using executorch::aten::ScalarType;
+  static constexpr PyTensorDType kDTypes[] = {
+      {ScalarType::Byte, "uint8", "uint8", "B"},
+      {ScalarType::Char, "int8", "int8", "b"},
+      {ScalarType::Short, "int16", "int16", "h"},
+      {ScalarType::Int, "int32", "int32", "i"},
+      {ScalarType::Long, "int64", "int64", "q"},
+      {ScalarType::Half, "float16", "float16", "e"},
+      {ScalarType::Float, "float32", "float32", "f"},
+      {ScalarType::Double, "float64", "float64", "d"},
+      {ScalarType::ComplexHalf, "complex32", nullptr, nullptr},
+      {ScalarType::ComplexFloat, "complex64", "complex64", "Zf"},
+      {ScalarType::ComplexDouble, "complex128", "complex128", "Zd"},
+      {ScalarType::Bool, "bool", "bool", "?"},
+      {ScalarType::QInt8, "qint8", nullptr, nullptr},
+      {ScalarType::QUInt8, "quint8", nullptr, nullptr},
+      {ScalarType::QInt32, "qint32", nullptr, nullptr},
+      {ScalarType::BFloat16, "bfloat16", nullptr, nullptr},
+      {ScalarType::QUInt4x2, "quint4x2", nullptr, nullptr},
+      {ScalarType::QUInt2x4, "quint2x4", nullptr, nullptr},
+      {ScalarType::Bits1x8, "bits1x8", nullptr, nullptr},
+      {ScalarType::Bits2x4, "bits2x4", nullptr, nullptr},
+      {ScalarType::Bits4x2, "bits4x2", nullptr, nullptr},
+      {ScalarType::Bits8, "bits8", nullptr, nullptr},
+      {ScalarType::Bits16, "bits16", nullptr, nullptr},
+      {ScalarType::Float8_e5m2, "float8_e5m2", nullptr, nullptr},
+      {ScalarType::Float8_e4m3fn, "float8_e4m3fn", nullptr, nullptr},
+      {ScalarType::Float8_e5m2fnuz, "float8_e5m2fnuz", nullptr, nullptr},
+      {ScalarType::Float8_e4m3fnuz, "float8_e4m3fnuz", nullptr, nullptr},
+      {ScalarType::UInt16, "uint16", "uint16", "H"},
+      {ScalarType::UInt32, "uint32", "uint32", "I"},
+      {ScalarType::UInt64, "uint64", "uint64", "Q"},
+  };
+  const auto index = static_cast<size_t>(scalar_type);
+  if (index >= sizeof(kDTypes) / sizeof(kDTypes[0]) ||
+      kDTypes[index].scalar_type != scalar_type) {
+    throw std::runtime_error("Unsupported ExecuTorch result dtype");
+  }
+  return kDTypes[index];
+}
+
+inline executorch::aten::ScalarType scalar_type_from_torch_dtype(
+    const std::string& torch_dtype) {
+  using executorch::aten::ScalarType;
+  for (int8_t value = 0; value < static_cast<int8_t>(ScalarType::NumOptions);
+       ++value) {
+    const auto scalar_type = static_cast<ScalarType>(value);
+    const auto& dtype = python_dtype(scalar_type);
+    if (torch_dtype == std::string("torch.") + dtype.torch_name) {
+      return scalar_type;
+    }
+  }
+  throw py::value_error("Unsupported torch dtype: " + torch_dtype);
+}
+
+/** Tensor result returned by portable Python bindings. */
 class PyExecuTorchResult final {
  public:
-  explicit PyExecuTorchResult(const executorch::aten::Tensor& tensor)
-      : storage_(tensor.nbytes()),
-        sizes_(tensor.sizes().begin(), tensor.sizes().end()),
+  explicit PyExecuTorchResult(
+      const executorch::aten::Tensor& tensor,
+      bool clone = true,
+      py::object owner = py::none())
+      : sizes_(tensor.sizes().begin(), tensor.sizes().end()),
         strides_(tensor.strides().begin(), tensor.strides().end()),
-        scalar_type_(tensor.scalar_type()) {
+        scalar_type_(tensor.scalar_type()),
+        nbytes_(tensor.nbytes()),
+        owner_(std::move(owner)) {
     if (!tensor.device().is_cpu()) {
       throw std::runtime_error(
           "ExecuTorch results only support CPU outputs until DLPack is enabled");
     }
-    if (!storage_.empty()) {
-      std::memcpy(storage_.data(), tensor.const_data_ptr(), storage_.size());
+    if (clone) {
+      storage_.resize(nbytes_);
+      if (!storage_.empty()) {
+        std::memcpy(storage_.data(), tensor.const_data_ptr(), storage_.size());
+      }
+      data_ = storage_.data();
+      owner_ = py::none();
+    } else {
+      data_ = const_cast<void*>(tensor.const_data_ptr());
     }
   }
 
@@ -50,9 +126,9 @@ class PyExecuTorchResult final {
     }
     const auto ndim = shape.size();
     return py::buffer_info(
-        storage_.data(),
+        data_,
         itemsize,
-        buffer_format(scalar_type_),
+        require_buffer_format(),
         ndim,
         std::move(shape),
         std::move(byte_strides),
@@ -60,14 +136,15 @@ class PyExecuTorchResult final {
   }
 
   py::buffer_info flat_buffer() {
-    const auto itemsize = executorch::runtime::elementSize(scalar_type_);
+    // torch.frombuffer receives the real dtype separately. Export raw bytes so
+    // this facade also works for dtypes that PEP 3118 cannot describe.
     return py::buffer_info(
-        storage_.data(),
-        itemsize,
-        buffer_format(scalar_type_),
+        data_,
+        /*itemsize=*/1,
+        /*format=*/"B",
         /*ndim=*/1,
-        {static_cast<py::ssize_t>(storage_.size() / itemsize)},
-        {static_cast<py::ssize_t>(itemsize)},
+        {static_cast<py::ssize_t>(nbytes_)},
+        {1},
         /*readonly=*/false);
   }
 
@@ -97,133 +174,49 @@ class PyExecuTorchResult final {
   }
 
   py::dtype dtype() const {
-    return py::dtype(numpy_dtype_name(scalar_type_));
+    const auto* name = python_dtype(scalar_type_).numpy_name;
+    if (name == nullptr) {
+      throw std::runtime_error(
+          std::string("ExecuTorch result dtype ") +
+          executorch::runtime::toString(scalar_type_) +
+          " cannot be represented by NumPy");
+    }
+    return py::dtype(name);
+  }
+
+  py::array numpy_array(const py::object& base) {
+    const auto array_dtype = dtype();
+    auto info = buffer();
+    return py::array(array_dtype, info.shape, info.strides, info.ptr, base);
   }
 
   size_t nbytes() const {
-    return storage_.size();
+    return nbytes_;
   }
 
   const char* torch_dtype_name() const {
-    using executorch::aten::ScalarType;
-    switch (scalar_type_) {
-      case ScalarType::Byte:
-        return "uint8";
-      case ScalarType::Char:
-        return "int8";
-      case ScalarType::Short:
-        return "int16";
-      case ScalarType::Int:
-        return "int32";
-      case ScalarType::Long:
-        return "int64";
-      case ScalarType::Half:
-        return "float16";
-      case ScalarType::Float:
-        return "float32";
-      case ScalarType::Double:
-        return "float64";
-      case ScalarType::ComplexFloat:
-        return "complex64";
-      case ScalarType::ComplexDouble:
-        return "complex128";
-      case ScalarType::Bool:
-        return "bool";
-      case ScalarType::BFloat16:
-        return "bfloat16";
-      case ScalarType::UInt16:
-        return "uint16";
-      case ScalarType::UInt32:
-        return "uint32";
-      case ScalarType::UInt64:
-        return "uint64";
-      default:
-        throw std::runtime_error(
-            "ExecuTorch result dtype cannot be represented by PyTorch");
-    }
+    return python_dtype(scalar_type_).torch_name;
   }
 
  private:
-  static const char* numpy_dtype_name(executorch::aten::ScalarType type) {
-    using executorch::aten::ScalarType;
-    switch (type) {
-      case ScalarType::Byte:
-        return "uint8";
-      case ScalarType::Char:
-        return "int8";
-      case ScalarType::Short:
-        return "int16";
-      case ScalarType::Int:
-        return "int32";
-      case ScalarType::Long:
-        return "int64";
-      case ScalarType::Half:
-        return "float16";
-      case ScalarType::Float:
-        return "float32";
-      case ScalarType::Double:
-        return "float64";
-      case ScalarType::ComplexFloat:
-        return "complex64";
-      case ScalarType::ComplexDouble:
-        return "complex128";
-      case ScalarType::Bool:
-        return "bool";
-      case ScalarType::BFloat16:
-      case ScalarType::UInt16:
-        return "uint16";
-      case ScalarType::UInt32:
-        return "uint32";
-      case ScalarType::UInt64:
-        return "uint64";
-      default:
-        throw std::runtime_error(
-            "ExecuTorch result dtype cannot be represented by NumPy");
+  const char* require_buffer_format() const {
+    const auto* format = python_dtype(scalar_type_).buffer_format;
+    if (format == nullptr) {
+      throw py::buffer_error(
+          std::string("ExecuTorch result dtype ") +
+          executorch::runtime::toString(scalar_type_) +
+          " cannot use the Python buffer protocol");
     }
+    return format;
   }
 
-  static const char* buffer_format(executorch::aten::ScalarType type) {
-    using executorch::aten::ScalarType;
-    switch (type) {
-      case ScalarType::Byte:
-        return "B";
-      case ScalarType::Char:
-        return "b";
-      case ScalarType::Short:
-        return "h";
-      case ScalarType::Int:
-        return "i";
-      case ScalarType::Long:
-        return "q";
-      case ScalarType::Half:
-        return "e";
-      case ScalarType::Float:
-        return "f";
-      case ScalarType::Double:
-        return "d";
-      case ScalarType::ComplexFloat:
-        return "Zf";
-      case ScalarType::ComplexDouble:
-        return "Zd";
-      case ScalarType::Bool:
-        return "?";
-      case ScalarType::BFloat16:
-      case ScalarType::UInt16:
-        return "H";
-      case ScalarType::UInt32:
-        return "I";
-      case ScalarType::UInt64:
-        return "Q";
-      default:
-        throw std::runtime_error(
-            "ExecuTorch result dtype cannot use the Python buffer protocol");
-    }
-  }
-
+  void* data_ = nullptr;
   std::vector<uint8_t> storage_;
   std::vector<executorch::aten::SizesType> sizes_;
   std::vector<executorch::aten::StridesType> strides_;
   executorch::aten::ScalarType scalar_type_;
+  size_t nbytes_;
+  py::object owner_;
 };
 
 /** Contiguous buffer facade used to construct a strided torch.Tensor result. */
