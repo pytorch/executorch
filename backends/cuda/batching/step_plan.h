@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <vector>
 
+#include <executorch/runtime/platform/assert.h>
+
 namespace executorch::backends::cuda::batching {
 
 // Which exported method runs a slice of a batch.
@@ -33,9 +35,14 @@ struct StepSlice {
 // Slices take up to `max_step_tokens` each. A one-token slice runs Decode. A
 // slice shorter than `min_prefill_tokens` -- the lower bound the prefill
 // method was exported with -- runs as that many Decode forwards; anything
-// else runs Prefill.
+// else runs Prefill. `max_step_tokens` must be positive, or no slice would
+// advance through the batch.
 inline std::vector<StepSlice>
 plan_slices(int total, int max_step_tokens, int min_prefill_tokens) {
+  ET_CHECK_MSG(
+      max_step_tokens > 0,
+      "plan_slices: max_step_tokens must be positive, got %d",
+      max_step_tokens);
   std::vector<StepSlice> slices;
   for (int offset = 0; offset < total;) {
     const int length = std::min(max_step_tokens, total - offset);

@@ -14,5 +14,6 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/extension/llm/batching:batching",
+            "//executorch/runtime/platform:platform",
         ],
     )

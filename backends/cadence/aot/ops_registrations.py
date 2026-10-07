@@ -482,6 +482,13 @@ lib.define(
     "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset) -> (Tensor Z)"
 )
+# Sub-byte weights: `weight` is a [out_dim, packed_row_bytes] int8 blob, so
+# in_dim and the bit width can no longer be read off its shape.
+lib.define(
+    "quantized_fully_connected_packed(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, "
+    "int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, "
+    "Tensor? offset) -> (Tensor Z)"
+)
 lib.define("where_Scalar(Tensor condition, float self, float other) -> (Tensor Z)")
 lib.define(
     "where_Scalar.out(Tensor condition, float self, float other, *, Tensor(a!) out) -> Tensor(a!)"
@@ -665,6 +672,11 @@ lib.define(
 lib.define(
     "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor_out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, "
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "quantized_fully_connected_packed.out(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, "
+    "int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, "
+    "Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
@@ -2766,6 +2778,33 @@ def quantized_fully_connected_per_tensor_meta(
     weight_size = list(weight.size())
     assert len(weight_size) == 2
     out_size[-1] = weight_size[0]
+    return src.new_empty(out_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_fully_connected_packed")
+def quantized_fully_connected_packed_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    in_dim: int,
+    weight_bits: int,
+    in_zero_point: int,
+    weight_zero_point: Optional[torch.Tensor],
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+    out_zero_point: int,
+    offset: Optional[torch.Tensor],
+) -> torch.Tensor:
+    torch._check(bias.dtype == torch.int32, lambda: "expected int32")
+    torch._check(weight.dim() == 2, lambda: "expected 2D tensor")
+    torch._check(src.size(0) == 1, lambda: "expected batch size of 1")
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [out_dim, packed_row_bytes], so out_dim is still
+    # size(0) - that is what packing per row buys us - but in_dim is an
+    # argument rather than size(1).
+    torch._check(src.size(-1) == in_dim, lambda: "src last dim must equal in_dim")
+    out_size = list(src.size())
+    out_size[-1] = weight.size(0)
     return src.new_empty(out_size, dtype=src.dtype)
 
 

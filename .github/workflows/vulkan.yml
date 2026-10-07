@@ -81,6 +81,8 @@ jobs:
         # the pt2e/torchao e2e tests below execute on the GPU (default is OFF).
         CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" PYTHON_EXECUTABLE=python ./install_executorch.sh
 
+        python -m unittest backends/vulkan/test/test_vulkan_dynamic.py
+
         # Model coverage (mirrors test-vulkan-models-linux, on real hardware).
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
 
