@@ -11,6 +11,7 @@
 
 import ast
 import importlib.util
+import os
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -98,6 +99,35 @@ class TestReleaseTorchRequirement(unittest.TestCase):
 
 
 class TestSetupDeclaresIt(unittest.TestCase):
+    def torch_dependencies(self, build_version):
+        # Runs the real _torch_dependencies from setup.py, which cannot be imported because
+        # importing it runs setup().
+        path = ROOT / "setup.py"
+        function = next(
+            node
+            for node in ast.parse(path.read_text()).body
+            if isinstance(node, ast.FunctionDef) and node.name == "_torch_dependencies"
+        )
+        namespace = {"List": list, "install_utils": INSTALL_UTILS, "os": os}
+        exec(
+            compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
+            namespace,
+        )
+        environment = {} if build_version is None else {"BUILD_VERSION": build_version}
+        with mock.patch.dict(os.environ, environment, clear=True):
+            with mock.patch.object(
+                INSTALL_UTILS.importlib.metadata, "version", return_value="2.14.1"
+            ):
+                return namespace["_torch_dependencies"]()
+
+    def test_setup_reads_build_version(self):
+        self.assertEqual(
+            self.torch_dependencies("1.6.0+cpu"), ["torch>=2.14.0a0,<2.15"]
+        )
+        for build_version in ("1.6.0.dev20261001+cpu", None):
+            with self.subTest(build_version=build_version):
+                self.assertEqual(self.torch_dependencies(build_version), [])
+
     def test_only_the_full_wheel_declares_it(self):
         # setup.py is read rather than imported, because importing it runs setup().
         module = ast.parse((ROOT / "setup.py").read_text())
