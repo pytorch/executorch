@@ -160,7 +160,7 @@ QNN runtime version used by the
 
 ```kotlin
 dependencies {
-    implementation("com.qualcomm.qti:qnn-runtime:2.50.0")
+    implementation("com.qualcomm.qti:qnn-runtime:2.37.0")
 }
 ```
 
