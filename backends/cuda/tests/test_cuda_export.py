@@ -31,9 +31,7 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
         original = simd.prologue_preserves_zero_mask
 
         def buggy_analysis(_prologue):
-            raise AttributeError(
-                "'NotImplementedType' object has no attribute 'expr'"
-            )
+            raise AttributeError("'NotImplementedType' object has no attribute 'expr'")
 
         simd.prologue_preserves_zero_mask = buggy_analysis
         try:
