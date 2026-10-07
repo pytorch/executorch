@@ -799,10 +799,33 @@ void quantized_linear_impl(
   // Otherwise, use input and weight quantized linear computed with integer
   // accumulation
 
-  // Input scale/zero point only used for activation & weight quantized linear
+  // Input scale/zero point only used for activation & weight quantized linear.
+  // Without precomputed ones, the per-row qparams of a dynamically quantized
+  // input are computed here, and skipped for GEMV.
+  const int64_t M = graph.size_at<int64_t>(-2, fp_input);
+  TmpTensor computed_input_scale(
+      &graph,
+      {1, M},
+      graph.dtype_of(fp_input),
+      utils::kTexture3D,
+      utils::kWidthPacked);
+  TmpTensor computed_input_zp(
+      &graph, {1, M}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
   ValueRef packed_input_scale = input_scale;
   ValueRef packed_input_zp = input_zp;
-  if (graph.val_is_tref(input_scale)) {
+  if (graph.val_is_none(input_scale)) {
+    VK_CHECK_COND(input_quant_config.is_dynamic);
+    packed_input_scale = computed_input_scale.vref;
+    packed_input_zp = computed_input_zp.vref;
+    add_choose_qparams_per_row_node(
+        graph,
+        fp_input,
+        graph.add_none(),
+        graph.add_none(),
+        packed_input_scale,
+        packed_input_zp,
+        /*skip_for_gemv=*/true);
+  } else if (graph.val_is_tref(input_scale)) {
     VK_CHECK_COND(graph.val_is_tref(packed_input_zp));
     packed_input_scale = prepack_standard(
         graph, input_scale, utils::kTexture3D, utils::kWidthPacked);
@@ -873,7 +896,6 @@ void quantized_linear_impl(
   // num_groups * M4 ivec4 texels, sized by the input row count M -- NOT K.
   // dtype is kInt to match the shaders' `int`/ivec4 binding (each texel is 4
   // int32 sums = 16 bytes).
-  const int64_t M = utils::val_at(-2, input_sizes);
   const int64_t M4 = utils::div_up(M, int64_t(4));
   TmpTensor int_input_sums(
       &graph,
