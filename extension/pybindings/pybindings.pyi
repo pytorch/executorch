@@ -7,10 +7,11 @@
 # pyre-strict
 from __future__ import annotations
 
-from typing import Any, Dict, Enum, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Enum, List, Optional, Tuple, TypeVar
 
-from executorch.exir._warnings import experimental
+_T = TypeVar("_T")
 
+def experimental(message: str) -> Callable[[_T], _T]: ...
 @experimental("This API is experimental and subject to change without notice.")
 class Verification(Enum):
     """Verification maps C++ Program::Verification to Python.
@@ -22,6 +23,20 @@ class Verification(Enum):
 
     Minimal: ...
     InternalConsistency: ...
+
+@experimental("This API is experimental and subject to change without notice.")
+class ExecuTorchResult:
+    """Read-only tensor result storage used when ATen is not linked."""
+
+    @property
+    def shape(self) -> Tuple[int, ...]: ...
+    @property
+    def strides(self) -> Tuple[int, ...]: ...
+    @property
+    def dtype(self) -> Any: ...
+    @property
+    def nbytes(self) -> int: ...
+    def __array__(self, dtype: Any = None, copy: Any = None) -> Any: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 class ExecuTorchModule:
@@ -38,13 +53,13 @@ class ExecuTorchModule:
     def run_method(
         self,
         method_name: str,
-        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        inputs: Any,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def forward(
         self,
-        inputs: Sequence[Any],  # pyre-ignore[2]: "Any" in parameter type annotations.
+        inputs: Any,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
@@ -99,20 +114,20 @@ class ExecuTorchMethod:
     """
 
     # pyre-ignore[2]: "Any" in parameter type annotations.
-    def set_inputs(self, inputs: Sequence[Any]) -> None: ...
+    def set_inputs(self, inputs: Any) -> None: ...
     def execute(self) -> None: ...
     # pyre-ignore[3]: "Any" in return type annotations.
     def get_outputs(self, clone_outputs: bool = True) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def call(
         self,
-        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     # pyre-ignore[2, 3]: "Any" in parameter and return type annotations.
     def __call__(
         self,
-        inputs: Sequence[Any] = ...,  # pyre-ignore[2]
+        inputs: Any = ...,
         clone_outputs: bool = True,
     ) -> List[Any]: ...
     def method_meta(self) -> MethodMeta: ...
