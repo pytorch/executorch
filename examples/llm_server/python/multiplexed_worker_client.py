@@ -219,6 +219,12 @@ class MultiplexedWorkerClient:
     budget. Cancellation operations have an independent, equally bounded budget.
     A supplied process must have binary pipes and a stdout stream limit at least
     max_message_bytes. The factory configures those pipes before readiness.
+
+    max_request_bytes is a client-side limit, not worker configuration. It must
+    not exceed the worker's max_input_frame_bytes (or max_frame_bytes fallback).
+    The shipped module worker uses a 1 MiB input limit. Raising the client limit
+    requires a separately configured worker: an oversized frame terminates the
+    worker and fails all in-flight requests.
     """
 
     supports_multiplexing = True
@@ -787,6 +793,10 @@ async def spawn_multiplexed_worker(
 
     Use from async application startup and await client.close() at shutdown.
     Sequential workers continue to use the synchronous spawn_worker factory.
+
+    max_request_bytes must not exceed the worker's configured input-frame limit
+    (1 MiB for the shipped module worker). This factory does not negotiate or
+    raise that limit; oversized frames terminate the worker and all its requests.
     """
     _validate_limits(
         mailbox_capacity=mailbox_capacity,

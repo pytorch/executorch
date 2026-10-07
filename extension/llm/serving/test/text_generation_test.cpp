@@ -423,18 +423,49 @@ TEST_F(
   EXPECT_EQ(continued->terminal->stats.reused_prompt_tokens, 0u);
 }
 
+TEST_F(TextGenerationTest, DeferredCapturesAreReleasedBeforeExecution) {
+  start();
+  executor.executing.hold();
+  auto capture = std::make_shared<Token>(10);
+  std::weak_ptr<Token> owner = capture;
+  auto event = output();
+  auto result = runtime->generate(
+      "s",
+      [capture = std::move(capture)](
+          const PromptPreparationContext&) -> PromptPreparationResult {
+        return GenerationPrompt{ids({*capture, 11})};
+      },
+      {},
+      [event](GenerationEvent update) { event->accept(std::move(update)); });
+  ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
+  const auto handle = std::get<RequestHandle>(result);
+  ASSERT_TRUE(executor.executing.wait());
+  EXPECT_TRUE(owner.expired());
+  EXPECT_FALSE(handle.done());
+  executor.executing.release();
+  handle.wait();
+  EXPECT_FALSE(handle.error());
+  EXPECT_EQ(event->terminals, 1u);
+}
+
 TEST_F(TextGenerationTest, DeferredFailuresAndInvalidOptionsPreserveHistory) {
   start();
   submit(output(), ids({10, 11})).wait();
   std::atomic<int> calls{0};
   for (int mode = 0; mode != 4; ++mode) {
     auto event = output();
+    event->block_terminal = true;
+    event->terminal_blocked.hold();
+    auto capture = std::make_shared<int>(0);
+    std::weak_ptr<int> owner = capture;
     GenerationOptions options;
     options.max_new_tokens = mode == 0 ? 0 : 1;
     PromptPreparation prepare;
     if (mode != 3) {
       prepare =
-          [&](const PromptPreparationContext&) -> PromptPreparationResult {
+          [&, capture = std::move(capture)](
+              const PromptPreparationContext&) -> PromptPreparationResult {
+        ++*capture;
         ++calls;
 #if ET_HAS_EXCEPTIONS
         if (mode == 2) {
@@ -450,6 +481,12 @@ TEST_F(TextGenerationTest, DeferredFailuresAndInvalidOptionsPreserveHistory) {
         });
     ASSERT_TRUE(std::holds_alternative<RequestHandle>(result));
     auto handle = std::get<RequestHandle>(result);
+    ASSERT_TRUE(event->terminal_blocked.wait());
+    if (mode == 1 || mode == 2) {
+      EXPECT_TRUE(owner.expired());
+    }
+    EXPECT_FALSE(handle.done());
+    event->terminal_blocked.release();
     handle.wait();
     ASSERT_TRUE(handle.error());
     EXPECT_EQ(
@@ -1585,9 +1622,11 @@ TEST_P(
   EXPECT_EQ(next_calls->load(), 0);
   EXPECT_EQ(ack.wait_for(0s), std::future_status::timeout);
   auto other = runtime->open_session_async("other");
+  // Invoked preparation captures are now destroyed on control before dispatch.
+  EXPECT_EQ(other.wait_for(0s), std::future_status::timeout);
+  cleanup_checkpoint.release();
   ASSERT_EQ(other.wait_for(5s), std::future_status::ready);
   EXPECT_FALSE(other.get());
-  cleanup_checkpoint.release();
   ASSERT_EQ(ack.wait_for(5s), std::future_status::ready);
   EXPECT_FALSE(ack.get());
   EXPECT_TRUE(old.done());

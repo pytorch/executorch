@@ -679,44 +679,26 @@ struct ServingRuntime::Impl {
     const auto context_limit = config_.max_context_length
         ? std::min(config_.max_context_length, position_limit)
         : position_limit;
-    if (text.prepare) {
-      if (request->cancelled.load()) {
-        return std::nullopt;
-      }
-      if (!*text.prepare) {
-        return ServingError{
-            ErrorCode::InvalidArgument, "empty prompt preparation callback"};
-      }
-      auto prepared = (*text.prepare)(PromptPreparationContext{
-          *tokenizer_, context_limit, [state = request.get()] {
-            return state->cancelled.load();
-          }});
-      if (request->cancelled.load()) {
-        return std::nullopt;
-      }
-      if (auto* error = std::get_if<ServingError>(&prepared)) {
-        return std::move(*error);
-      }
-      text.input = std::get<GenerationPrompt>(std::move(prepared));
+    auto prepared = detail::prepare_prompt(
+        PromptPreparationContext{
+            *tokenizer_,
+            context_limit,
+            [state = request.get()] { return state->cancelled.load(); }},
+        text.input,
+        text.prepare);
+    if (std::holds_alternative<std::monostate>(prepared)) {
+      return std::nullopt;
+    }
+    if (auto* error = std::get_if<ServingError>(&prepared)) {
+      return std::move(*error);
     }
     batching::Token previous_token;
-    if (auto* opaque = std::get_if<PreparedPromptInput>(&text.input)) {
-      const auto size = opaque->input ? opaque->input->size() : 0;
-      if (size == 0 || size > context_limit) {
-        return ServingError{
-            ErrorCode::InvalidArgument, "invalid prepared prompt size"};
-      }
-      text.terminal.stats.prompt_tokens = size;
+    if (auto* opaque = std::get_if<PreparedPromptInput>(&prepared)) {
+      text.terminal.stats.prompt_tokens = opaque->input->size();
       previous_token = opaque->previous_token;
       request->request.delta = std::move(opaque->input);
     } else {
-      auto prepared = detail::prepare_prompt(
-          *tokenizer_, std::get<PromptInput>(text.input), context_limit);
-      if (!prepared.ok()) {
-        return ServingError{
-            ErrorCode::InvalidArgument, "prompt preparation failed"};
-      }
-      text.prompt = std::move(prepared->tokens);
+      text.prompt = std::get<std::vector<batching::Token>>(std::move(prepared));
       text.input = PromptInput{};
       text.terminal.stats.prompt_tokens = text.prompt.size();
       previous_token = text.prompt.back();
@@ -768,18 +750,17 @@ struct ServingRuntime::Impl {
           return std::nullopt;
         }
       }
-      switch (acceptance) {
-        case batching::PreparedInputAcceptance::Accepted:
-          break;
-        case batching::PreparedInputAcceptance::Rejected:
-          return ServingError{
-              ErrorCode::InvalidArgument,
-              "executor does not accept prepared input"};
-        case batching::PreparedInputAcceptance::Unavailable:
+      if (!acceptance.ok()) {
+        if (acceptance.error() == runtime::Error::InvalidState) {
           return ServingError{ErrorCode::NotReady, "runner is not ready"};
-        case batching::PreparedInputAcceptance::Failed:
-          return ServingError{
-              ErrorCode::Internal, "prepared input acceptance check failed"};
+        }
+        return ServingError{
+            ErrorCode::Internal, "prepared input acceptance check failed"};
+      }
+      if (!*acceptance) {
+        return ServingError{
+            ErrorCode::InvalidArgument,
+            "executor does not accept prepared input"};
       }
     }
 

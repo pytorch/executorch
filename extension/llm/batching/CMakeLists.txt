@@ -28,7 +28,9 @@ target_compile_options(extension_llm_batching PUBLIC ${_common_compile_options})
 
 # std::thread and friends need -pthread on glibc; a no-op where they do not.
 find_package(Threads REQUIRED)
-target_link_libraries(extension_llm_batching PUBLIC Threads::Threads)
+target_link_libraries(
+  extension_llm_batching PUBLIC Threads::Threads executorch_core
+)
 
 add_library(extension_llm_batching_module module_executor.cpp)
 target_link_libraries(

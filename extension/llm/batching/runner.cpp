@@ -296,7 +296,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
   }
 
   void shutdown();
-  std::future<PreparedInputAcceptance> accepts_async(PreparedInputPtr input);
+  std::future<runtime::Result<bool>> accepts_async(PreparedInputPtr input);
   std::future<std::optional<Session>> open_session_async();
   std::future<std::optional<Session>> clone_async(
       SessionId source,
@@ -438,7 +438,7 @@ class RunnerImpl : public std::enable_shared_from_this<RunnerImpl> {
 
   struct AcceptsCommand {
     PreparedInputPtr input;
-    std::shared_ptr<std::promise<PreparedInputAcceptance>> ack;
+    std::shared_ptr<std::promise<runtime::Result<bool>>> ack;
   };
 
   struct RetiredSession {
@@ -691,7 +691,7 @@ std::future<std::optional<Session>> Runner::open_session_async() {
   return impl_->open_session_async();
 }
 
-std::future<PreparedInputAcceptance> Runner::accepts_async(
+std::future<runtime::Result<bool>> Runner::accepts_async(
     PreparedInputPtr input) {
   return impl_->accepts_async(std::move(input));
 }
@@ -979,28 +979,29 @@ void RunnerImpl::process_command_(StartCommand command) {
 }
 
 void RunnerImpl::process_command_(AcceptsCommand command) {
-  auto result = PreparedInputAcceptance::Unavailable;
-  if (is_running_()) {
+  auto result = [&]() -> runtime::Result<bool> {
+    if (!is_running_()) {
+      return runtime::Error::InvalidState;
+    }
 #if ET_HAS_EXCEPTIONS
     try {
 #endif
-      result = command.input && executor_.accepts(*command.input)
-          ? PreparedInputAcceptance::Accepted
-          : PreparedInputAcceptance::Rejected;
+      return command.input && executor_.accepts(*command.input);
 #if ET_HAS_EXCEPTIONS
     } catch (...) {
-      result = PreparedInputAcceptance::Failed;
+      return runtime::Error::Internal;
     }
 #endif
-  }
+  }();
   // Backing destruction may reenter the runner; release outside its locks and
   // before acknowledging, including for commands drained during shutdown.
   command.input.reset();
   std::lock_guard<std::mutex> lock(control_mutex_);
-  command.ack->set_value(
-      lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running
-          ? result
-          : PreparedInputAcceptance::Unavailable);
+  if (lifecycle_.load(std::memory_order_relaxed) == Lifecycle::Running) {
+    command.ack->set_value(std::move(result));
+  } else {
+    command.ack->set_value(runtime::Error::InvalidState);
+  }
 }
 
 std::optional<RunnerImpl::RetiredSession> RunnerImpl::retire_session_(
@@ -1308,11 +1309,11 @@ std::future<std::optional<Session>> RunnerImpl::open_session_async() {
   return f;
 }
 
-std::future<PreparedInputAcceptance> RunnerImpl::accepts_async(
+std::future<runtime::Result<bool>> RunnerImpl::accepts_async(
     PreparedInputPtr input) {
   AcceptsCommand command{
       std::move(input),
-      std::make_shared<std::promise<PreparedInputAcceptance>>()};
+      std::make_shared<std::promise<runtime::Result<bool>>>()};
   auto future = command.ack->get_future();
   {
     std::unique_lock<std::mutex> lock(control_mutex_);
@@ -1324,7 +1325,7 @@ std::future<PreparedInputAcceptance> RunnerImpl::accepts_async(
     }
   }
   command.input.reset();
-  command.ack->set_value(PreparedInputAcceptance::Unavailable);
+  command.ack->set_value(runtime::Error::InvalidState);
   return future;
 }
 

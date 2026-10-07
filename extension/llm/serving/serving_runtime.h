@@ -168,9 +168,10 @@ class ET_EXPERIMENTAL ServingRuntime {
   // Invoked at most once on control, after options/session validation and
   // before destructive replacement; cancelled or rejected work may skip
   // invocation. Errors leave history intact. Exceptions become Internal errors
-  // when enabled. Captures are released outside locks before done()/wait() and
-  // close/reset acknowledgement. The callback must not wait for runtime work or
-  // shutdown.
+  // when enabled. Invoked callback captures are released on control when the
+  // invocation exits. All captures are released outside locks before
+  // done()/wait() and close/reset acknowledgement. Neither the callback nor its
+  // capture destructors may wait for runtime work or shutdown.
   GenerateResult generate(
       std::optional<std::string> key,
       PromptPreparation prepare,

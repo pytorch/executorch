@@ -43,7 +43,6 @@ using executorch::extension::llm::batching::GenerationUpdate;
 using executorch::extension::llm::batching::InitializationState;
 using executorch::extension::llm::batching::Position;
 using executorch::extension::llm::batching::PreparedInput;
-using executorch::extension::llm::batching::PreparedInputAcceptance;
 using executorch::extension::llm::batching::PreparedInputPtr;
 using executorch::extension::llm::batching::Runner;
 using executorch::extension::llm::batching::SamplingParams;
@@ -55,6 +54,8 @@ using executorch::extension::llm::batching::Task;
 using executorch::extension::llm::batching::Token;
 using executorch::extension::llm::batching::TokenInputPtr;
 using executorch::extension::llm::batching::testing::FakeExecutor;
+using executorch::runtime::Error;
+using executorch::runtime::Result;
 
 namespace {
 
@@ -3199,10 +3200,13 @@ TEST_P(InitializeStateTest, AcceptanceWaitsForInitializationAndDrainsFailure) {
 
   ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
   const bool succeeds = GetParam() == InitializeOutcome::Success;
-  EXPECT_EQ(
-      future.get(),
-      succeeds ? PreparedInputAcceptance::Accepted
-               : PreparedInputAcceptance::Unavailable);
+  const auto result = future.get();
+  EXPECT_EQ(result.ok(), succeeds);
+  if (result.ok()) {
+    EXPECT_TRUE(*result);
+  } else {
+    EXPECT_EQ(result.error(), Error::InvalidState);
+  }
   EXPECT_TRUE(retained.expired());
   EXPECT_EQ(executor.accept_calls.load(), succeeds ? 1 : 0);
   if (!succeeds) {
@@ -3210,7 +3214,7 @@ TEST_P(InitializeStateTest, AcceptanceWaitsForInitializationAndDrainsFailure) {
         fixture.runner.accepts_async(std::make_shared<AcceptanceInput>());
     ASSERT_EQ(
         refused.wait_for(std::chrono::seconds(0)), std::future_status::ready);
-    EXPECT_EQ(refused.get(), PreparedInputAcceptance::Unavailable);
+    EXPECT_EQ(refused.get().error(), Error::InvalidState);
   }
   fixture.runner.shutdown();
   EXPECT_TRUE(executor.opened().empty());
@@ -3229,15 +3233,16 @@ TEST(AcceptanceTest, ChecksMetadataWithoutSessionsAndRejectsNull) {
     for (int i = 0; i < 2; ++i) {
       auto future = fixture.runner.accepts_async(input);
       ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
-      EXPECT_EQ(
-          future.get(),
-          compatible ? PreparedInputAcceptance::Accepted
-                     : PreparedInputAcceptance::Rejected);
+      const auto result = future.get();
+      ASSERT_TRUE(result.ok());
+      EXPECT_EQ(*result, compatible);
     }
   }
   auto null = fixture.runner.accepts_async(nullptr);
   ASSERT_EQ(null.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_EQ(null.get(), PreparedInputAcceptance::Rejected);
+  const auto null_result = null.get();
+  ASSERT_TRUE(null_result.ok());
+  EXPECT_FALSE(*null_result);
   fixture.runner.shutdown();
   EXPECT_NE(executor.engine_thread, std::this_thread::get_id());
   EXPECT_EQ(executor.accept_calls.load(), 4);
@@ -3254,7 +3259,9 @@ TEST(AcceptanceTest, GenerationStillChecksAcceptedInput) {
   PreparedInputPtr input = std::make_shared<AcceptanceInput>();
   auto future = fixture.runner.accepts_async(input);
   ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_EQ(future.get(), PreparedInputAcceptance::Accepted);
+  const auto result = future.get();
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(*result);
   auto session = open(fixture.runner);
   auto updates = std::make_shared<Updates>();
   auto handle = session.generate_async(
@@ -3283,7 +3290,7 @@ TEST(AcceptanceTest, ExceptionsFailTheQueryAndLeaveEngineUsable) {
     std::weak_ptr<const PreparedInput> retained = input;
     auto future = fixture.runner.accepts_async(std::move(input));
     ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
-    EXPECT_EQ(future.get(), PreparedInputAcceptance::Failed);
+    EXPECT_EQ(future.get().error(), Error::Internal);
     EXPECT_TRUE(retained.expired());
     EXPECT_TRUE(executor.opened().empty());
     auto session = open(fixture.runner);
@@ -3301,7 +3308,7 @@ TEST(AcceptanceTest, ReleasesInputBeforeAcknowledgementEvenWithDroppedFuture) {
     AcceptanceExecutor executor;
     Fixture fixture(executor);
     EXPECT_TRUE(executor.wait_for_initialize());
-    std::future<PreparedInputAcceptance> future;
+    std::future<Result<bool>> future;
     auto input = std::make_shared<AcceptanceInput>();
     std::weak_ptr<const PreparedInput> retained = input;
     input->on_destroy = [&] {
@@ -3321,11 +3328,15 @@ TEST(AcceptanceTest, ReleasesInputBeforeAcknowledgementEvenWithDroppedFuture) {
     auto barrier = fixture.runner.accepts_async(nullptr);
     executor.release_initialize();
     ASSERT_EQ(barrier.wait_for(kTimeout), std::future_status::ready);
-    EXPECT_EQ(barrier.get(), PreparedInputAcceptance::Rejected);
+    const auto barrier_result = barrier.get();
+    ASSERT_TRUE(barrier_result.ok());
+    EXPECT_FALSE(*barrier_result);
     EXPECT_TRUE(retained.expired());
     if (!dropped) {
       ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
-      EXPECT_EQ(future.get(), PreparedInputAcceptance::Accepted);
+      const auto result = future.get();
+      ASSERT_TRUE(result.ok());
+      EXPECT_TRUE(*result);
     }
     EXPECT_EQ(executor.accept_calls.load(), 1);
   }
@@ -3349,12 +3360,12 @@ TEST(AcceptanceTest, ShutdownDuringCheckDiscardsResultAndDrainsQueuedInput) {
   EXPECT_EQ(checking.wait_for(kTimeout), std::future_status::ready);
   auto queued_input = std::make_shared<AcceptanceInput>();
   std::weak_ptr<const PreparedInput> queued_retained = queued_input;
-  std::future<PreparedInputAcceptance> queued;
+  std::future<Result<bool>> queued;
   queued_input->on_destroy = [&] {
     EXPECT_EQ(
         queued.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
     auto refused = fixture.runner.accepts_async(nullptr);
-    EXPECT_EQ(refused.get(), PreparedInputAcceptance::Unavailable);
+    EXPECT_EQ(refused.get().error(), Error::InvalidState);
   };
   queued = fixture.runner.accepts_async(std::move(queued_input));
   std::thread stopping([&] { fixture.runner.shutdown(); });
@@ -3364,7 +3375,7 @@ TEST(AcceptanceTest, ShutdownDuringCheckDiscardsResultAndDrainsQueuedInput) {
     auto probe = fixture.runner.accepts_async(nullptr);
     if (probe.wait_for(std::chrono::milliseconds(1)) ==
         std::future_status::ready) {
-      stopped_admission = probe.get() == PreparedInputAcceptance::Unavailable;
+      stopped_admission = probe.get().error() == Error::InvalidState;
       break;
     }
   }
@@ -3373,8 +3384,8 @@ TEST(AcceptanceTest, ShutdownDuringCheckDiscardsResultAndDrainsQueuedInput) {
   EXPECT_TRUE(stopped_admission);
   ASSERT_EQ(active.wait_for(kTimeout), std::future_status::ready);
   ASSERT_EQ(queued.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_EQ(active.get(), PreparedInputAcceptance::Unavailable);
-  EXPECT_EQ(queued.get(), PreparedInputAcceptance::Unavailable);
+  EXPECT_EQ(active.get().error(), Error::InvalidState);
+  EXPECT_EQ(queued.get().error(), Error::InvalidState);
   EXPECT_TRUE(active_input.expired());
   EXPECT_TRUE(queued_retained.expired());
   EXPECT_EQ(executor.accept_calls.load(), 1);
@@ -3390,7 +3401,7 @@ TEST(AcceptanceTest, ShutdownDuringInputReleaseWinsBeforePublication) {
   auto future = fixture.runner.accepts_async(std::move(input));
   executor.release_initialize();
   ASSERT_EQ(future.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_EQ(future.get(), PreparedInputAcceptance::Unavailable);
+  EXPECT_EQ(future.get().error(), Error::InvalidState);
   EXPECT_EQ(executor.accept_calls.load(), 1);
   fixture.runner.shutdown();
 
@@ -3398,12 +3409,12 @@ TEST(AcceptanceTest, ShutdownDuringInputReleaseWinsBeforePublication) {
   std::weak_ptr<const PreparedInput> retained = refused_input;
   refused_input->on_destroy = [&] {
     auto nested = fixture.runner.accepts_async(nullptr);
-    EXPECT_EQ(nested.get(), PreparedInputAcceptance::Unavailable);
+    EXPECT_EQ(nested.get().error(), Error::InvalidState);
   };
   auto refused = fixture.runner.accepts_async(std::move(refused_input));
   ASSERT_EQ(
       refused.wait_for(std::chrono::seconds(0)), std::future_status::ready);
-  EXPECT_EQ(refused.get(), PreparedInputAcceptance::Unavailable);
+  EXPECT_EQ(refused.get().error(), Error::InvalidState);
   EXPECT_TRUE(retained.expired());
   EXPECT_EQ(executor.accept_calls.load(), 1);
 }
@@ -3500,7 +3511,7 @@ TEST_P(
   stopping.join();
 
   ASSERT_EQ(acceptance.wait_for(kTimeout), std::future_status::ready);
-  EXPECT_EQ(acceptance.get(), PreparedInputAcceptance::Unavailable);
+  EXPECT_EQ(acceptance.get().error(), Error::InvalidState);
   EXPECT_TRUE(retained.expired());
   EXPECT_EQ(executor.accept_calls.load(), 0);
   for (auto& opened : opens) {
