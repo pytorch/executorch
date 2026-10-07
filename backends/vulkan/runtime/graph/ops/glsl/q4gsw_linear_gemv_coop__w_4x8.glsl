@@ -109,11 +109,11 @@ ${layout_declare_ubo(B, "ivec4", "input_sizes")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "0")}
-// Aligned with the rest of the q4gsw_linear shader family. K is unused here
-// (the local one derived from input_sizes shadows it); kept to share
-// descriptor + spec-constant layout.
+// FP16 decode specializes logical K and weight N.
 ${layout_declare_spec_const(C, "int", "K", "1024")}
 ${layout_declare_spec_const(C, "int", "group_size", "32")}
+$if DTYPE == "half":
+  ${layout_declare_spec_const(C, "int", "weight_N", "0")}
 
 // Shared memory for the cooperative reduction. Each lane writes 8 partial
 // floats (one per N row in the n8 tile = 2 vec4) at the end of its K loop;
@@ -151,8 +151,11 @@ void main() {
   // Per-group base offset into the shared-mem partial-sum slabs.
   const int group_slab_base = group_id * WGS;
 
-  const int N = output_sizes.x;
-  const int K = input_sizes.x;
+  $if DTYPE == "half":
+    const int N = weight_N > 0 ? weight_N : output_sizes.x;
+  $else:
+    const int N = output_sizes.x;
+    const int K = input_sizes.x;
   const int N4 = (N + 3) / 4;
   const int N2 = N / 2;
   const int K4 = K / 4; // texels along K
@@ -200,9 +203,10 @@ void main() {
   // the per-group tree reduction stays well-defined for valid peer groups.
   const int K4_eff = group_valid ? K4 : 0;
   for (int k4 = lid; k4 < K4_eff; k4 += WGS) {
-    // Update scales when crossing into a new group.
+    // A stride spanning a whole quantization group cannot reuse scales;
+    // specialize out the cache check in that case.
     const int group_idx = k4 / blocks_per_group;
-    if (group_idx != cur_group) {
+    if (blocks_per_group <= WGS || group_idx != cur_group) {
       sc_a_lo = load_scale_pair(n2_a_lo, group_idx, N2);
       sc_a_hi = load_scale_pair(n2_a_hi, group_idx, N2);
       sc_b_lo = load_scale_pair(n2_b_lo, group_idx, N2);
