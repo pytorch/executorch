@@ -13,6 +13,14 @@ ${define_required_extensions("buffer", DTYPE)}
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
+$if DTYPE == "half" or DTYPE == "float":
+  #define FILL_DTYPE float
+$elif DTYPE == "int32":
+  #define FILL_DTYPE int
+$elif DTYPE == "uint8":
+  #define FILL_DTYPE uint
+$else:
+  #error Unsupported full dtype
 
 ${define_active_storage_type("buffer")}
 
@@ -22,7 +30,7 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "buffer")}
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
-${layout_declare_ubo(B, accum_scalar_type(DTYPE), "fill_value")}
+${layout_declare_ubo(B, "FILL_DTYPE", "fill_value")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
