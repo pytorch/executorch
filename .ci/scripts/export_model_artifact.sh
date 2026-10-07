@@ -684,10 +684,7 @@ elif [ "$DEVICE" = "metal" ]; then
 fi
 
 if [ "$DEVICE" = "metal" ]; then
-  # Use the same registered command path as the optimum-cli executable. The
-  # optimum.exporters.executorch module has a stale standalone parser that is
-  # missing arguments expected by its entry point (for example cache_dir).
-  run_python_module optimum.commands.optimum_cli export executorch \
+  run_python_module "${SCRIPT_DIR}/export_optimum_executorch.py" \
       --model "$HF_MODEL" \
       --task "$TASK" \
       --recipe "$DEVICE" \
