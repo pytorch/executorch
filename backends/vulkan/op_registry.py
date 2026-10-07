@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import math
 import operator
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -271,6 +272,16 @@ def register_binaryop_cpp_ops():
     )
 
 
+@update_features(exir_ops.edge.et_vk.swiglu.default)
+def register_swiglu():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
 @update_features(
     [
         exir_ops.edge.aten.eq.Tensor,
@@ -318,13 +329,26 @@ def register_bool_binary_ops():
 # =============================================================================
 
 
+def is_scalar_value_supported(value: Any, dtype: torch.dtype) -> bool:
+    if type(value) not in (bool, int, float):
+        return False
+    if isinstance(value, float) and math.isnan(value):
+        return False
+    if dtype in utils.INT_T:
+        return -(2**31) <= value <= 2**31 - 1
+    return True
+
+
 @update_features(exir_ops.edge.aten.pow.Tensor_Scalar)
-def register_pow_tensor_scalar():
+def register_binary_scalar_ops():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.meta["val"].dtype
+        ),
     )
 
 
@@ -336,6 +360,9 @@ def register_eq_scalar():
         outputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.args[0].meta["val"].dtype
+        ),
     )
 
 
@@ -1593,12 +1620,21 @@ def register_full_cpp_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.scalar_tensor.default)
+@update_features(
+    [
+        exir_ops.edge.aten.scalar_tensor.default,
+        # EXIR deliberately keeps scalar_tensor in the ATen dialect.
+        torch.ops.aten.scalar_tensor.default,
+    ]
+)
 def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[0], node.meta["val"].dtype
+        ),
     )
 
 
@@ -1890,6 +1926,9 @@ def register_compare_scalar_ops():
         outputs_dtypes=utils.BOOL_T,
         supports_resize=True,
         supports_highdim=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[1], node.args[0].meta["val"].dtype
+        ),
     )
 
 

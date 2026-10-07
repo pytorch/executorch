@@ -251,6 +251,21 @@ class BufferTensor final {
     return info.item_type_is_equivalent_to<T>();
   }
 
+  static bool has_half_format(const py::buffer_info& info) {
+    if (info.itemsize != 2) {
+      return false;
+    }
+    if (info.format == "e" || info.format == "@e" || info.format == "=e") {
+      return true;
+    }
+    const uint16_t one = 1;
+    const bool native_is_little_endian =
+        *reinterpret_cast<const uint8_t*>(&one) == 1;
+    return (native_is_little_endian && info.format == "<e") ||
+        (!native_is_little_endian &&
+         (info.format == ">e" || info.format == "!e"));
+  }
+
   static executorch::aten::ScalarType scalar_type_from_buffer(
       const py::buffer_info& info) {
     if (has_format<uint8_t>(info)) {
@@ -268,7 +283,7 @@ class BufferTensor final {
     if (has_format<int64_t>(info)) {
       return executorch::aten::ScalarType::Long;
     }
-    if (info.itemsize == 2 && info.format == "e") {
+    if (has_half_format(info)) {
       return executorch::aten::ScalarType::Half;
     }
     if (has_format<float>(info)) {
@@ -318,9 +333,14 @@ class BufferTensor final {
 };
 
 bool is_torch_tensor(const py::handle& value) {
-  static const py::object tensor_type =
-      py::module_::import("torch").attr("Tensor");
-  return py::isinstance(value, tensor_type);
+  const py::str module_name("torch");
+  py::object torch_module =
+      py::reinterpret_steal<py::object>(PyImport_GetModule(module_name.ptr()));
+  if (!torch_module) {
+    PyErr_Clear();
+    return false;
+  }
+  return py::isinstance(value, torch_module.attr("Tensor"));
 }
 
 void validate_tensor_input(
@@ -1141,10 +1161,6 @@ struct PyModule final {
             at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
-            at_tensor.dim() == 5) {
-          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
@@ -1678,9 +1694,8 @@ struct PyMethod final {
         }
         saw_torch = true;
         auto at_tensor = python_input.cast<at::Tensor>();
-        const auto input_meta =
-            method_->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
+        const auto input_meta = method_->method_meta().input_tensor_meta(i);
+        if (input_meta.ok() && !input_meta->is_memory_planned()) {
           borrowed_inputs.emplace_back(i, at_tensor);
         }
 #ifdef USE_ATEN_LIB
@@ -1709,10 +1724,6 @@ struct PyMethod final {
             at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
-            at_tensor.dim() == 5) {
-          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
@@ -1766,9 +1777,9 @@ struct PyMethod final {
         buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
         const auto& buffer = buffer_inputs.back();
         validate_buffer_input(method_->method_meta(), i, *buffer);
-        const auto input_meta =
-            method_->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned() && buffer->borrows_data()) {
+        const auto input_meta = method_->method_meta().input_tensor_meta(i);
+        if (input_meta.ok() && !input_meta->is_memory_planned() &&
+            buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
         }
 #ifdef USE_ATEN_LIB

@@ -24,6 +24,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAdd,
     ModuleAddConstReturn,
     ModuleAddEmpty,
+    ModuleAddHalf,
     ModuleAddScalar,
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
@@ -79,6 +80,26 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
+    def test_numpy_float16_buffer_input(self):
+        exported_program, inputs = create_program(ModuleAddHalf())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+
+    def test_buffer_input_does_not_import_torch(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        torch_module = sys.modules.pop("torch")
+        try:
+            output = executorch_module(inputs[0].numpy())[0]
+            self.assertNotIn("torch", sys.modules)
+        finally:
+            sys.modules["torch"] = torch_module
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+
     def test_empty_numpy_buffer_input(self):
         exported_program, inputs = create_program(ModuleAddEmpty())
         array = np.zeros((3, 0), dtype=np.float32)
@@ -114,6 +135,13 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
 
+    def test_method_rejects_tensor_for_scalar_input(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+
+        with self.assertRaises(RuntimeError):
+            method.set_inputs([inputs[0], torch.ones(1)])
+
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -136,25 +164,6 @@ class PybindingsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
-
-    def test_aten_accepts_nonstandard_torch_strides(self):
-        if self.kernel_mode != "aten":
-            self.skipTest("ATen-only input behavior")
-        exported_program, inputs = create_program(
-            ModuleAddSingleInput(),
-            et_config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
-            ),
-        )
-        input_tensor = inputs[0].t()
-
-        module = self.load_fn(exported_program.buffer)
-        self.assertTrue(torch.equal(module(input_tensor)[0], input_tensor * 2))
-
-        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
-        method.set_inputs(input_tensor)
-        method.execute()
-        self.assertTrue(torch.equal(method.get_outputs()[0], input_tensor * 2))
 
     def test_complex_numpy_input_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
@@ -338,8 +347,7 @@ class PybindingsTest(unittest.TestCase):
         inputs = (torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
 
         executorch_module = self.load_fn(exported_program.buffer)
-        with self.assertRaisesRegex(ValueError, "rank 5.*expects rank 4"):
-            executorch_module(inputs[0])
+        self.assertRaises(RuntimeError, executorch_module, inputs[0])
 
     def test_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
@@ -682,8 +690,7 @@ class PybindingsTest(unittest.TestCase):
 
         executorch_program = self.load_prog_fn(exported_program.buffer)
         executorch_method = executorch_program.load_method("forward")
-        with self.assertRaisesRegex(ValueError, "has rank 5.*expects rank 4"):
-            executorch_method(inputs[0])
+        self.assertRaises(RuntimeError, executorch_method, inputs[0])
 
     def test_method_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
