@@ -87,12 +87,23 @@ facebook::jni::local_ref<JTensor::javaobject> JTensor::newJTensorFromTensor(
           (uint8_t*)tensor.data_ptr(), tensor.nbytes());
   jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
 
+#ifdef EXECUTORCH_USE_GENERIC_JNI
   static const auto jMethodNewTensor =
       cls->getStaticMethod<facebook::jni::local_ref<JTensor::javaobject>(
           facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
           facebook::jni::alias_ref<jlongArray>,
           jint)>("nativeNewTensor");
   return jMethodNewTensor(cls, jTensorBuffer, jTensorShape, jdtype);
+#else
+  static const auto jMethodNewTensor =
+      cls->getStaticMethod<facebook::jni::local_ref<JTensor::javaobject>(
+          facebook::jni::alias_ref<facebook::jni::JByteBuffer>,
+          facebook::jni::alias_ref<jlongArray>,
+          jint,
+          facebook::jni::alias_ref<jhybriddata>)>("nativeNewTensor");
+  return jMethodNewTensor(
+      cls, jTensorBuffer, jTensorShape, jdtype, makeCxxInstance(tensor));
+#endif
 }
 
 TensorPtr JTensor::newTensorFromJTensor(
@@ -687,6 +698,7 @@ extern void register_natives_for_llm();
 // No op if we don't build LLM
 void register_natives_for_llm() {}
 #endif
+extern void register_natives_for_runtime();
 
 #ifdef EXECUTORCH_BUILD_EXTENSION_TRAINING
 extern void register_natives_for_training();
@@ -699,6 +711,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     executorch::extension::ExecuTorchJni::registerNatives();
     register_natives_for_llm();
+    register_natives_for_runtime();
     register_natives_for_training();
   });
 }
