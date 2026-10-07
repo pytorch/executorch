@@ -155,7 +155,8 @@ inline cudaError_t cudaMemcpy2DAsync(
     size_t height,
     cudaMemcpyKind kind,
     cudaStream_t stream) {
-  return hipMemcpy2DAsync(dst, dpitch, src, spitch, width, height, kind, stream);
+  return hipMemcpy2DAsync(
+      dst, dpitch, src, spitch, width, height, kind, stream);
 }
 
 inline cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
