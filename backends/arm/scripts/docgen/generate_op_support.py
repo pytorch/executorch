@@ -356,6 +356,7 @@ DECOMPOSED_OPS = {
     "torch.ops.aten.native_layer_norm.default",
     "torch.ops.aten.embedding.default",
     "torch.ops.aten.pow.Tensor_Tensor",
+    "torch.ops.aten.scaled_dot_product_attention.default",
 }
 
 
@@ -404,6 +405,18 @@ VGF_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.embedding.default"},
     },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_vgf_no_quant",
+    ): {
+        "FP": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_vgf_quant",
+    ): {
+        "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
 }
 
 # Existing U55 runtime tests below intentionally suppress direct ATen/Edge
@@ -446,6 +459,12 @@ U55_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
     ): {
         "INT": {"torch.ops.aten.pow.Tensor_Tensor"},
     },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_u55_INT",
+    ): {
+        "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
+    },
 }
 
 # Existing U85 runtime tests below intentionally suppress direct ATen/Edge
@@ -477,6 +496,12 @@ U85_EXPLICIT_BACKEND_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
         "test_pow_tensor_tensor_u85_INT",
     ): {
         "INT": {"torch.ops.aten.pow.Tensor_Tensor"},
+    },
+    (
+        "backends/arm/test/ops/test_sdpa.py",
+        "test_sdpa_u85_INT",
+    ): {
+        "INT": {"torch.ops.aten.scaled_dot_product_attention.default"},
     },
 }
 
@@ -573,6 +598,7 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.logical_xor.default": ("torch.logical_xor",),
     "torch.ops.aten.logical_not.default": ("torch.logical_not",),
     # Linear algebra and neural-network layers.
+    "torch.ops.aten.softplus.default": ("torch.nn.functional.softplus",),
     "torch.ops.aten.linear.default": ("torch.nn.Linear", "torch.nn.functional.linear"),
     "torch.ops.aten.mm.default": ("torch.mm",),
     "torch.ops.aten.bmm.default": ("torch.bmm",),
@@ -609,6 +635,9 @@ PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
     "torch.ops.aten.embedding.default": (
         "torch.nn.Embedding",
         "torch.nn.functional.embedding",
+    ),
+    "torch.ops.aten.scaled_dot_product_attention.default": (
+        "torch.nn.functional.scaled_dot_product_attention",
     ),
     # Activations.
     "torch.ops.aten.relu.default": ("torch.relu", "torch.nn.ReLU"),
