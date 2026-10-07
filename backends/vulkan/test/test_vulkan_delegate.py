@@ -1609,6 +1609,23 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_split_with_sizes_dynamic(self):
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.split(x, (3, 6, 1, 3), dim=-1)
+
+        sample_inputs = (torch.randn(size=(1, 8, 13), dtype=torch.float32),)
+        seq_len = Dim("seq_len", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq_len}},
+            test_inputs=[
+                (torch.randn(size=(1, 3, 13), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 13), dtype=torch.float32),),
+            ],
+        )
+
     def test_vulkan_backend_split_tensor(self):
         class TestModule(torch.nn.Module):
             def __init__(self):
