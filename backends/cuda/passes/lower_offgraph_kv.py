@@ -59,7 +59,7 @@ def ring_physical_capacity(window: int, max_write: int) -> int:
     return window + max_write - 1
 
 
-def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:
+def parse_offgraph_kv_manifest(value: bytes) -> dict[str, Any]:  # noqa: C901
     manifest = json.loads(value.decode("utf-8"))
     if manifest.get("version") != 1:
         raise ValueError("off-graph KV manifest version must be 1")
