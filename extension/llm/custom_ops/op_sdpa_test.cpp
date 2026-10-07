@@ -498,7 +498,7 @@ TEST(OpScaledDotProductAttentionTest, QuantizedSparseMaskTrimmedBoundary) {
       key_scales,
       value_zero_points,
       value_scales,
-      /*is_seq_at_dim_2=*/false,
+      /*is_seq_at_dim_1=*/false,
       out);
 
   auto expected = tfFloat.make({1, 1, 1, 1}, {49.5f});
