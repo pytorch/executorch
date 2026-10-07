@@ -5,15 +5,16 @@
 # LICENSE file in the root directory of this source tree.
 
 # Step slicing for the CUDA batching executor: cuts a batch of packed tokens
-# into forwards the exported decode/prefill methods can run. Added from the
-# root after extension/llm/batching.
+# into forwards the exported decode/prefill methods can run. Added from the root
+# after extension/llm/batching.
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
-install(FILES step_plan.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cuda/batching
+install(
+  FILES step_plan.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cuda/batching
 )
 
 if(BUILD_TESTING)
