@@ -22,10 +22,45 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
-    def test_constant_and_index_propagation_is_disabled(self):
-        options = CudaBackend.get_aoti_compile_options([])
+    def test_zero_mask_analysis_falls_back_on_pinned_pytorch_bug(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _fall_back_on_inductor_zero_mask_analysis_bug,
+        )
+        from torch._inductor.codegen import simd
 
-        self.assertFalse(options["constant_and_index_propagation"])
+        original = simd.prologue_preserves_zero_mask
+
+        def buggy_analysis(_prologue):
+            raise AttributeError(
+                "'NotImplementedType' object has no attribute 'expr'"
+            )
+
+        simd.prologue_preserves_zero_mask = buggy_analysis
+        try:
+            with _fall_back_on_inductor_zero_mask_analysis_bug():
+                self.assertFalse(simd.prologue_preserves_zero_mask(object()))
+            self.assertIs(simd.prologue_preserves_zero_mask, buggy_analysis)
+        finally:
+            simd.prologue_preserves_zero_mask = original
+
+    def test_zero_mask_analysis_propagates_unrelated_attribute_errors(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _fall_back_on_inductor_zero_mask_analysis_bug,
+        )
+        from torch._inductor.codegen import simd
+
+        original = simd.prologue_preserves_zero_mask
+
+        def buggy_analysis(_prologue):
+            raise AttributeError("unrelated failure")
+
+        simd.prologue_preserves_zero_mask = buggy_analysis
+        try:
+            with _fall_back_on_inductor_zero_mask_analysis_bug():
+                with self.assertRaisesRegex(AttributeError, "unrelated failure"):
+                    simd.prologue_preserves_zero_mask(object())
+        finally:
+            simd.prologue_preserves_zero_mask = original
 
     def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
         from executorch.backends.cuda.cuda_backend import (
