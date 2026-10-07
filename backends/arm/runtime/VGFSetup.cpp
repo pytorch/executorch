@@ -897,13 +897,8 @@ VkResult create_tensor_unbound(
     VkTensorDescriptionARM* description,
     VkTensorARM* tensor,
     VkMemoryRequirements2* memory_requirements) {
-  VkTensorUsageFlagsARM tensor_usage = VK_TENSOR_USAGE_SHADER_BIT_ARM |
-      VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM |
-      VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM | VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
-
-  if (image_aliasing) {
-    tensor_usage |= VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM;
-  }
+  const VkTensorUsageFlagsARM tensor_usage =
+      vgf_tensor_usage_flags(image_aliasing);
 
   *description = VkTensorDescriptionARM{
       .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
@@ -949,6 +944,64 @@ VkResult create_tensor_unbound(
       device, &memory_requirements_info, memory_requirements);
 
   return VK_SUCCESS;
+}
+
+static void cache_external_tensor_host_allocation_capabilities(
+    VkPhysicalDevice physical_device,
+    uint32_t resource_index,
+    const VkTensorDescriptionARM& tensor_description,
+    VgfZeroCopyIoMetadata* metadata) {
+  // In this fuction we try to decide:
+  // for this exact VGF tensor, does the physical GPU support
+  // importing host memory as external memory.
+  // We don't import memory here and we don't change execution.
+  // We only fills feilds in VgfZeroCopyIoMetadata for later.
+  if (metadata == nullptr ||
+      !vgf_zero_copy_io_structurally_eligible(*metadata) ||
+      !metadata->host_memory_import_advertised) {
+    return;
+  }
+
+#if defined(VK_EXT_external_memory_host)
+  // This is a physical-device capability query.
+  if (vkGetPhysicalDeviceExternalTensorPropertiesARM == nullptr) {
+    ET_LOG(
+        Info,
+        "VGF resource %u cannot query external tensor properties; marking "
+        "zero-copy metadata ineligible",
+        resource_index);
+    return;
+  }
+
+  const VkPhysicalDeviceExternalTensorInfoARM external_tensor_info{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM,
+      .pNext = nullptr,
+      .flags = metadata->tensor_create_flags,
+      .pDescription = &tensor_description,
+      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
+  };
+  VkExternalTensorPropertiesARM external_tensor_properties{
+      .sType = VK_STRUCTURE_TYPE_EXTERNAL_TENSOR_PROPERTIES_ARM,
+      .pNext = nullptr,
+  };
+
+  vkGetPhysicalDeviceExternalTensorPropertiesARM(
+      physical_device, &external_tensor_info, &external_tensor_properties);
+  vgf_cache_external_tensor_properties(
+      metadata, external_tensor_properties.externalMemoryProperties);
+
+  if (metadata->external_tensor_requires_dedicated_allocation) {
+    ET_LOG(
+        Info,
+        "VGF resource %u reports dedicated-only external tensor allocation; "
+        "zero-copy host import is ineligible",
+        resource_index);
+  }
+#else
+  (void)physical_device;
+  (void)resource_index;
+  (void)tensor_description;
+#endif
 }
 
 VkResult bind_tensor_memory_and_create_view(
@@ -2027,6 +2080,24 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+
+            auto zero_copy_metadata = make_vgf_zero_copy_io_metadata(
+                /*is_model_boundary_resource=*/true,
+                is_in,
+                VK_DESCRIPTOR_TYPE_TENSOR_ARM,
+                resource_format,
+                /*tensor_backed=*/true,
+                uses_alias_group,
+                image_aliasing,
+                &tensor_description,
+                host_memory_import_capabilities_);
+            cache_external_tensor_host_allocation_capabilities(
+                vk_physical,
+                static_cast<uint32_t>(i),
+                tensor_description,
+                &zero_copy_metadata);
+            zero_copy_io_metadata.push_back(std::move(zero_copy_metadata));
+
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -2120,6 +2191,16 @@ bool VgfRepr::process_vgf(
                    owns_memory,
                    true,
                    is_in});
+            zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
+                /*is_model_boundary_resource=*/true,
+                is_in,
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                resource_format,
+                /*tensor_backed=*/false,
+                uses_alias_group,
+                image_aliasing,
+                nullptr,
+                host_memory_import_capabilities_));
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -2336,6 +2417,16 @@ bool VgfRepr::process_vgf(
                    true,
                    owns_image_memory,
                    is_in});
+            zero_copy_io_metadata.push_back(make_vgf_zero_copy_io_metadata(
+                /*is_model_boundary_resource=*/true,
+                is_in,
+                resource_type,
+                resource_format,
+                /*tensor_backed=*/false,
+                uses_alias_group,
+                needs_tensor_aliasing,
+                nullptr,
+                host_memory_import_capabilities_));
             resource_index_to_io_index[i] = static_cast<int>(IOs.size() - 1);
 
             resource_bindings[i] = ResourceBinding{
@@ -3077,6 +3168,33 @@ bool VgfRepr::process_vgf(
           auto mrt_i =
               sequence_decoder->getBindingSlotMrtIndex(descriptor_slots, i);
           const auto& binding_info = resource_bindings[mrt_i];
+
+          if (mrt_i < resource_index_to_io_index.size()) {
+            const int boundary_io_index = resource_index_to_io_index[mrt_i];
+            if (boundary_io_index >= 0 &&
+                static_cast<size_t>(boundary_io_index) <
+                    zero_copy_io_metadata.size()) {
+              const VgfBoundaryBindingRef binding_ref{
+                  .segment_index = static_cast<uint32_t>(segment_id),
+                  .set_index = set_index,
+                  .binding = binding,
+              };
+              if (!vgf_record_boundary_binding(
+                      &zero_copy_io_metadata,
+                      static_cast<size_t>(boundary_io_index),
+                      binding_ref)) {
+                ET_LOG(
+                    Info,
+                    "VGF boundary descriptor mapping is ambiguous: "
+                    "segment=%u set=%u binding=%u mrt=%u; zero-copy "
+                    "metadata is ineligible",
+                    static_cast<uint32_t>(segment_id),
+                    set_index,
+                    binding,
+                    mrt_i);
+              }
+            }
+          }
           if (binding_info.descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
             ET_LOG(
                 Debug,
@@ -3674,6 +3792,12 @@ bool VgfRepr::process_vgf(
     }
 
     model_input_io_index[model_input_idx] = io_idx;
+    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
+      auto& metadata = zero_copy_io_metadata[io_idx];
+      metadata.mapped_to_model_boundary = true;
+      metadata.executorch_argument_index =
+          static_cast<int64_t>(model_input_idx);
+    }
 
     ET_LOG(
         Debug,
@@ -3720,6 +3844,12 @@ bool VgfRepr::process_vgf(
     // sequence output binding slots in model-output order, matching the output
     // names vector, so map outputs by binding-slot position.
     model_output_io_index[output_idx] = io_idx;
+    if (static_cast<size_t>(io_idx) < zero_copy_io_metadata.size()) {
+      auto& metadata = zero_copy_io_metadata[io_idx];
+      metadata.mapped_to_model_boundary = true;
+      metadata.executorch_argument_index =
+          static_cast<int64_t>(model_input_count + output_idx);
+    }
 
     ET_LOG(
         Debug,
@@ -3728,6 +3858,29 @@ bool VgfRepr::process_vgf(
         binding,
         mrt_idx,
         io_idx);
+  }
+
+  for (size_t io_idx = 0; io_idx < zero_copy_io_metadata.size(); ++io_idx) {
+    auto& metadata = zero_copy_io_metadata[io_idx];
+    vgf_finalize_zero_copy_io_metadata(&metadata);
+    ET_LOG(
+        Info,
+        "VGF zero-copy boundary metadata: io=%zu arg=%lld input=%d "
+        "eligible=%d type=%u tiling=%u alias=%d bindings=%zu "
+        "host_import_enabled=%d external_tensor_supported=%d "
+        "dedicated_only=%d",
+        io_idx,
+        static_cast<long long>(metadata.executorch_argument_index),
+        static_cast<int>(metadata.is_input),
+        static_cast<int>(metadata.eligible),
+        static_cast<uint32_t>(metadata.descriptor_type),
+        static_cast<uint32_t>(metadata.tiling),
+        static_cast<int>(metadata.has_alias_group),
+        metadata.bindings.size(),
+        static_cast<int>(metadata.host_memory_import_enabled),
+        static_cast<int>(metadata.external_tensor_host_allocation_supported),
+        static_cast<int>(
+            metadata.external_tensor_requires_dedicated_allocation));
   }
 
   {
@@ -4296,6 +4449,7 @@ void VgfRepr::free_vgf() {
     }
   }
   IOs.clear();
+  zero_copy_io_metadata.clear();
   for (const auto& alloc : extra_allocs) {
     if (alloc.descriptor_type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
       if (alloc.owns_memory) {
