@@ -32,7 +32,7 @@ from executorch.exir import (
     memory,
     to_edge,
 )
-from executorch.exir.capture._capture import patch_forward
+from executorch.exir.capture._utils import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import InternalError
 from executorch.exir.inplace_aliasing import is_inplace_node
