@@ -111,7 +111,7 @@ say "Package The Test Suite"
 xcodebuild build-for-testing \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
-  -destination platform="iOS" \
+  -destination "generic/platform=iOS" \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM=78E7V7QP35 \
   CODE_SIGN_STYLE=Manual \

@@ -13,7 +13,7 @@ APP_PATH="extension/benchmark/apple/Benchmark/Benchmark"
 xcodebuild build-for-testing \
   -project "${APP_PATH}.xcodeproj" \
   -scheme Benchmark \
-  -destination "platform=iOS" \
+  -destination "generic/platform=iOS" \
   -sdk iphoneos \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM=78E7V7QP35 \
