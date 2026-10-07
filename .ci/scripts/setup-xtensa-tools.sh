@@ -16,7 +16,7 @@
 #
 # Usage:
 #   XTENSA_S3_BUCKET=<bucket> .ci/scripts/setup-xtensa-tools.sh <backend>
-#     backend = hifi4 | vision | fusion_g3
+#     backend = hifi4 | vision | fusion_g3 | hifi1s | hifi5s
 #
 # In GitHub Actions this appends the toolchain env to $GITHUB_ENV so later
 # steps inherit it. Run locally to populate a workspace for manual builds.
@@ -27,7 +27,7 @@ set -euo pipefail
 
 BACKEND="${1:-}"
 if [[ -z "${BACKEND}" ]]; then
-  echo "ERROR: usage: XTENSA_S3_BUCKET=<bucket> $0 <hifi4|vision|fusion_g3>" >&2
+  echo "ERROR: usage: XTENSA_S3_BUCKET=<bucket> $0 <hifi4|vision|fusion_g3|hifi1s|hifi5s>" >&2
   exit 1
 fi
 
@@ -45,6 +45,9 @@ S3_CORE_PREFIX="${XTENSA_S3_CORE_PREFIX:-}"
 # The toolchain's clang major must match the core's codegen plugin:
 #   hifi4 / fusion_g3 cores (RI-2022.10, clang 10) -> RI-2022.9 host tools
 #   vision core           (RJ-2025.5,  clang 15)   -> RJ-2025.5 host tools
+#   hifi1s / hifi5s SDKs  (RJ-2026.6,  LLVM 19)    -> RJ-2026.6 host tools
+# An empty OPT flag builds the generic Cadence kernels. hifi1s and hifi5s have no
+# HiFi 4 ISA (XCHAL_HAVE_HIFI4=0), so the hifi4 nnlib kernels do not apply.
 case "${BACKEND}" in
   hifi4)
     CORE_NAME="hifi4_ss_spfpu_7_et_ci2"
@@ -67,15 +70,29 @@ case "${BACKEND}" in
     TOOLCHAIN_VER="RJ-2025.5-linux"
     OPT_FLAG="EXECUTORCH_VISION_OPT"
     ;;
+  hifi1s)
+    CORE_NAME="hifi1s_ao_7"
+    CORE_TARBALL="hifi1s_ao_7.tgz"
+    TOOLCHAIN_TARBALL="XtensaTools_RJ_2026_6_linux.tgz"
+    TOOLCHAIN_VER="RJ-2026.6-linux"
+    OPT_FLAG=""
+    ;;
+  hifi5s)
+    CORE_NAME="hifi5s_ao_7"
+    CORE_TARBALL="hifi5s_ao_7.tgz"
+    TOOLCHAIN_TARBALL="XtensaTools_RJ_2026_6_linux.tgz"
+    TOOLCHAIN_VER="RJ-2026.6-linux"
+    OPT_FLAG=""
+    ;;
   *)
-    echo "ERROR: unknown backend '${BACKEND}' (expected hifi4|vision|fusion_g3)" >&2
+    echo "ERROR: unknown backend '${BACKEND}' (expected hifi4|vision|fusion_g3|hifi1s|hifi5s)" >&2
     exit 1
     ;;
 esac
 
 XTENSA_ROOT="${XTENSA_ROOT:-/tmp/xtensa}"
 TOOLS_ROOT="${XTENSA_ROOT}/tools"     # contains <ver>-linux/XtensaTools
-CORES_ROOT="${XTENSA_ROOT}/cores"     # contains <corever>-linux/<core>
+CORES_ROOT="${XTENSA_ROOT}/cores"     # contains <corever>-linux/<core> or <core>
 REGISTRY_ROOT="${XTENSA_ROOT}/registry/${CORE_NAME}"
 DL_DIR="${XTENSA_ROOT}/download"
 mkdir -p "${TOOLS_ROOT}" "${CORES_ROOT}" "${REGISTRY_ROOT}" "${DL_DIR}"
@@ -114,8 +131,10 @@ fi
 # 2. Core config (ISA libs, params, examples, bundled magic-key license).
 s3_get "${S3_CORE_PREFIX:+${S3_CORE_PREFIX}/}${CORE_TARBALL}" "${DL_DIR}/${CORE_TARBALL}"
 extract_tgz "${DL_DIR}/${CORE_TARBALL}" "${CORES_ROOT}"
-CORE_DIR=$(echo "${CORES_ROOT}"/*/"${CORE_NAME}")
-if [[ ! -d "${CORE_DIR}" ]]; then
+# The et_ci2 core tarballs wrap the core in a <corever>-linux/ directory; the
+# SDKs exported straight from XPG put it at the top level.
+CORE_DIR=$(find "${CORES_ROOT}" -maxdepth 2 -type d -name "${CORE_NAME}" | head -1)
+if [[ -z "${CORE_DIR}" || ! -d "${CORE_DIR}" ]]; then
   echo "ERROR: core dir for ${CORE_NAME} not found under ${CORES_ROOT}" >&2
   exit 1
 fi
