@@ -1510,9 +1510,12 @@ struct PyMethod final {
 #ifndef USE_ATEN_LIB
       // The delegate and the output clone treat a device-tagged output as
       // device memory. A host buffer there only works on a device that can
-      // read pageable host memory, and fails everywhere else.
+      // read pageable host memory, and fails everywhere else. An empty output
+      // needs no memory on any device, and whether an allocator accepts a zero
+      // size is up to the allocator, so it keeps the empty host buffer below,
+      // which setup_output_storage skips.
       const auto device = method_->get_output(i).toTensor().device();
-      if (!device.is_cpu()) {
+      if (!device.is_cpu() && output_size > 0) {
         auto buffer = DeviceMemoryBuffer::create(
             output_size, device.type(), device.index());
         THROW_IF_ERROR(
