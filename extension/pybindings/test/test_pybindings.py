@@ -24,6 +24,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAdd,
     ModuleAddConstReturn,
     ModuleAddEmpty,
+    ModuleAddHalf,
     ModuleAddScalar,
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
@@ -78,6 +79,14 @@ class PybindingsTest(unittest.TestCase):
         output = executorch_module.forward([value.numpy() for value in inputs])[0]
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_numpy_float16_buffer_input(self):
+        exported_program, inputs = create_program(ModuleAddHalf())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
 
     def test_buffer_input_does_not_import_torch(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())

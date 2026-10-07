@@ -251,6 +251,21 @@ class BufferTensor final {
     return info.item_type_is_equivalent_to<T>();
   }
 
+  static bool has_half_format(const py::buffer_info& info) {
+    if (info.itemsize != 2) {
+      return false;
+    }
+    if (info.format == "e" || info.format == "@e" || info.format == "=e") {
+      return true;
+    }
+    const uint16_t one = 1;
+    const bool native_is_little_endian =
+        *reinterpret_cast<const uint8_t*>(&one) == 1;
+    return (native_is_little_endian && info.format == "<e") ||
+        (!native_is_little_endian &&
+         (info.format == ">e" || info.format == "!e"));
+  }
+
   static executorch::aten::ScalarType scalar_type_from_buffer(
       const py::buffer_info& info) {
     if (has_format<uint8_t>(info)) {
@@ -268,7 +283,7 @@ class BufferTensor final {
     if (has_format<int64_t>(info)) {
       return executorch::aten::ScalarType::Long;
     }
-    if (info.itemsize == 2 && info.format == "e") {
+    if (has_half_format(info)) {
       return executorch::aten::ScalarType::Half;
     }
     if (has_format<float>(info)) {
