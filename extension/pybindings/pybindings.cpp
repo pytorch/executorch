@@ -1476,10 +1476,14 @@ struct PyMethod final {
     if (output_storages_.size() == num_outputs) {
       return;
     }
+    // Built in locals and moved in only once every output has its buffer, so
+    // an allocation that throws partway leaves nothing behind for the next
+    // call to append to.
+    std::vector<std::vector<uint8_t>> output_storages;
+    std::vector<DeviceMemoryBuffer> device_output_storages(num_outputs);
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
-    output_storages_.reserve(num_outputs);
-    device_output_storages_.resize(num_outputs);
+    output_storages.reserve(num_outputs);
     auto meta = method_->method_meta();
     for (size_t i = 0; i < num_outputs; ++i) {
       auto output_type = meta.output_tag(i);
@@ -1487,7 +1491,7 @@ struct PyMethod final {
           output_type.error(), "Failed to get output type for output %zu", i);
       if (output_type.get() != Tag::Tensor) {
         // Skip allocating storage for non-tensor outputs.
-        output_storages_.emplace_back();
+        output_storages.emplace_back();
         continue;
       }
       const auto& output_tensor_meta =
@@ -1498,7 +1502,7 @@ struct PyMethod final {
           i);
       if (output_tensor_meta.get().is_memory_planned()) {
         // Skip allocating storage for planned memory outputs.
-        output_storages_.emplace_back();
+        output_storages.emplace_back();
         continue;
       }
       // Allocate storage for the output tensor.
@@ -1518,13 +1522,15 @@ struct PyMethod final {
             static_cast<int>(device.type()),
             static_cast<int>(device.index()),
             i);
-        device_output_storages_[i] = std::move(buffer.get());
-        output_storages_.emplace_back();
+        device_output_storages[i] = std::move(buffer.get());
+        output_storages.emplace_back();
         continue;
       }
 #endif
-      output_storages_.emplace_back(output_size);
+      output_storages.emplace_back(output_size);
     }
+    output_storages_ = std::move(output_storages);
+    device_output_storages_ = std::move(device_output_storages);
   }
 
   py::list get_outputs_as_py_list(
