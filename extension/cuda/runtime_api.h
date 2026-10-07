@@ -66,12 +66,20 @@ inline cudaError_t cudaEventRecord(cudaEvent_t event, cudaStream_t stream) {
   return hipEventRecord(event, stream);
 }
 
+inline cudaError_t cudaEventSynchronize(cudaEvent_t event) {
+  return hipEventSynchronize(event);
+}
+
 inline cudaError_t cudaFree(void* ptr) {
   return hipFree(ptr);
 }
 
 inline cudaError_t cudaFreeAsync(void* ptr, cudaStream_t stream) {
   return hipFreeAsync(ptr, stream);
+}
+
+inline cudaError_t cudaFreeHost(void* ptr) {
+  return hipHostFree(ptr);
 }
 
 inline cudaError_t cudaGetDevice(int* device) {
@@ -118,6 +126,10 @@ inline cudaError_t cudaMalloc(void** ptr, size_t size) {
 inline cudaError_t
 cudaMallocAsync(void** ptr, size_t size, cudaStream_t stream) {
   return hipMallocAsync(ptr, size, stream);
+}
+
+inline cudaError_t cudaMallocHost(void** ptr, size_t size) {
+  return hipHostMalloc(ptr, size, 0);
 }
 
 inline cudaError_t

@@ -113,6 +113,40 @@ def _keep_triton_reduction_loads_loop_scoped():
         IndexingOptions.has_rmask = orig_has_rmask
 
 
+_SMALL_GPU_GUARD = threading.local()
+
+
+@contextlib.contextmanager
+def _allow_triton_templates_on_small_gpus():
+    """Let Inductor use Triton templates on GPUs below its 68-SM floor. This
+    backend autotunes with Triton only, so otherwise a matmul or convolution
+    has no Triton choices left.
+
+    Only threads inside this context get the override; other threads get the
+    original answer.
+
+    TODO: remove once Inductor skips the floor when ATen is not an allowed
+    backend (https://github.com/pytorch/pytorch/issues/141690).
+    """
+    from torch._inductor import utils as inductor_utils
+
+    orig_is_big_gpu = inductor_utils.is_big_gpu
+
+    def _is_big_gpu(index_or_device=0) -> bool:
+        return getattr(_SMALL_GPU_GUARD, "active", False) or orig_is_big_gpu(
+            index_or_device
+        )
+
+    prev_active = getattr(_SMALL_GPU_GUARD, "active", False)
+    inductor_utils.is_big_gpu = _is_big_gpu
+    _SMALL_GPU_GUARD.active = True
+    try:
+        yield
+    finally:
+        _SMALL_GPU_GUARD.active = prev_active
+        inductor_utils.is_big_gpu = orig_is_big_gpu
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
@@ -769,7 +803,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         Return CUDA-specific passes: ReplaceEdgeOpWithTritonOpPass.
 
         The Triton kernel replacement behavior can be controlled via compile_specs:
-        - triton_kernel_mode="ON": Always use Triton kernels
+        - triton_kernel_mode="ON": Use Triton kernels for the calls they support; other calls use the regular lowering
         - triton_kernel_mode="OFF": Never use Triton kernels and fallback to other implementations like cuda or decomposed operator.
         """
         # Parse compile_specs for triton_kernel_mode
@@ -904,8 +938,10 @@ class CudaBackend(AotiBackend, BackendDetails):
         compilation for the CUDA backend. Each manager is documented at
         its own `enter_context` call site below.
 
-        The optional shared-memory target applies to every CUDA compilation.
-        The low-memory export monkey-patch (CPU clones for mutated buffers)
+        The optional shared-memory target applies to every CUDA compilation,
+        and so does the small-GPU override that lets Inductor use Triton
+        templates below 68 SMs (skipped on ROCm). The low-memory export
+        monkey-patch (CPU clones for mutated buffers)
         is gated on the ``low_memory_mode`` compile spec — only models that
         explicitly opt in (currently Qwen3.5 MoE) get it. Other models go
         through the unmodified AOTI codepath, which avoids regressions in
@@ -934,10 +970,12 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # Force any remaining PyTorch SDPA ops to use the MATH
                 # backend during compilation so AOTI can lower / decompose
                 # them. SDPA ops already replaced by Triton kernels via
-                # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
-                # only the fallback for the `triton_kernel_mode="OFF"` path.
+                # `ReplaceEdgeOpWithTritonOpPass` are unaffected.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 stack.enter_context(target_smem_context())
+                # On ROCm, is_big_gpu gates on architecture, not SM count.
+                if torch.version.hip is None:
+                    stack.enter_context(_allow_triton_templates_on_small_gpus())
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
                     # compile so we stay under tight GPU memory caps (e.g.

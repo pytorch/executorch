@@ -60,7 +60,7 @@ class SessionTableTest : public ::testing::Test {
     auto shared = std::make_shared<std::vector<batching::Token>>(std::move(tokens));
     batching::Input in;
     in.sid = sid;
-    in.tokens = shared;
+    in.payload = batching::TokenInputPtr(shared);
     in.offset = offset;
     in.size = size == 0 ? shared->size() - offset : size;
     in.position = position;

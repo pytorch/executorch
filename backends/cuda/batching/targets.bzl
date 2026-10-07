@@ -11,6 +11,9 @@ def define_common_targets(is_fbcode = False):
             "step_plan.h",
         ],
         visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/platform:platform",
+        ],
     )
 
     runtime.cxx_library(
@@ -51,6 +54,7 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             ":step_plan",
+            "//executorch/test/utils:utils",
         ],
     )
 
