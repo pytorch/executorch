@@ -9,11 +9,47 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <ATen/Tensor.h> // @manual
+#include <c10/core/MemoryFormat.h>
 #include <c10/util/irange.h>
+#include <c10/util/strides.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
+namespace {
+
+Error get_dim_order_from_sizes_and_strides(
+    at::IntArrayRef sizes,
+    at::IntArrayRef strides,
+    executorch::aten::DimOrderType* out_dim_order) {
+  if (strides == c10::contiguous_strides(sizes)) {
+    for (const auto i : c10::irange(sizes.size())) {
+      out_dim_order[i] = static_cast<executorch::aten::DimOrderType>(i);
+    }
+    return Error::Ok;
+  }
+  if (sizes.size() == 4 &&
+      strides == c10::get_channels_last_strides_2d(sizes)) {
+    constexpr executorch::aten::DimOrderType channels_last[] = {0, 2, 3, 1};
+    std::copy(
+        std::begin(channels_last), std::end(channels_last), out_dim_order);
+    return Error::Ok;
+  }
+  if (sizes.size() == 5 &&
+      strides == c10::get_channels_last_strides_3d(sizes)) {
+    constexpr executorch::aten::DimOrderType channels_last_3d[] = {
+        0, 2, 3, 4, 1};
+    std::copy(
+        std::begin(channels_last_3d),
+        std::end(channels_last_3d),
+        out_dim_order);
+    return Error::Ok;
+  }
+  return stride_to_dim_order(strides.data(), strides.size(), out_dim_order);
+}
+
+} // namespace
+
 /**
  * Implementation for ATen tensor util, should only be included in
  * `<target>_aten` target and only be used in ATen mode. Explicitly taking
@@ -30,8 +66,8 @@ Error get_dim_order(
       "out_dim_order_size needs to be equal to the number of dimensions of the tensor. out_dim_order_size %zu, tensor.dim() %" PRId64,
       out_dim_order_size,
       tensor.dim());
-  return stride_to_dim_order(
-      tensor.strides().data(), tensor.dim(), out_dim_order);
+  return get_dim_order_from_sizes_and_strides(
+      tensor.sizes(), tensor.strides(), out_dim_order);
 }
 
 bool tensor_has_valid_dim_order(at::Tensor t) {
@@ -158,23 +194,21 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
                            ->data_ptr()
                            .get();
 
-  // Currently even 0 sized tensors receive a dataptr in pre_allocated
-  // memory planning so we can do this check.
-  // TODO(jakeszwe, shunting, gasoonjia): this should be clear in design if
-  // other people make their own memory plans
   ET_CHECK_OR_RETURN_ERROR(
-      dst_data_ptr != nullptr,
+      t_dst.nbytes() == t_src.nbytes(),
+      InvalidArgument,
+      "t_dst.nbytes() %lu != t_src.nbytes(). %lu",
+      t_dst.nbytes(),
+      t_src.nbytes());
+
+  // A zero-sized planned tensor may legitimately have no allocated storage.
+  ET_CHECK_OR_RETURN_ERROR(
+      dst_data_ptr != nullptr || t_dst.nbytes() == 0,
       InvalidArgument,
       "Destination tensor data pointer must not be null.");
 
   // Sources with a size 0 dimension can be nullptr
   if (t_src.const_data_ptr() != nullptr) {
-    ET_CHECK_OR_RETURN_ERROR(
-        t_dst.nbytes() == t_src.nbytes(),
-        InvalidArgument,
-        "t_dst.nbytes() %lu != t_src.nbytes(). %lu",
-        t_dst.nbytes(),
-        t_src.nbytes());
     // Copy the source data to the preallocated memory of the destination, which
     // must be the same size as the source.
     //
@@ -232,8 +266,24 @@ Error resize_tensor_impl(
         new_sizes.size());
     return torch::executor::Error::NotSupported;
   }
-  // Will panic on failure.
-  impl->set_sizes_contiguous(new_sizes);
+  if (impl->sizes() == new_sizes) {
+    return torch::executor::Error::Ok;
+  }
+
+  std::array<executorch::aten::DimOrderType, kTensorDimensionLimit> dim_order;
+  Error error = get_dim_order_from_sizes_and_strides(
+      impl->sizes(), impl->strides(), dim_order.data());
+  if (error != Error::Ok) {
+    return error;
+  }
+  std::array<executorch::aten::StridesType, kTensorDimensionLimit> new_strides;
+  error = dim_order_to_stride(
+      new_sizes.data(), dim_order.data(), new_sizes.size(), new_strides.data());
+  if (error != Error::Ok) {
+    return error;
+  }
+  impl->set_sizes_and_strides(
+      new_sizes, {new_strides.data(), new_sizes.size()});
   return torch::executor::Error::Ok;
 }
 
