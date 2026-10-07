@@ -20,10 +20,10 @@ REPO_ROOT="${1:-$(pwd)}"
 # shellcheck source=/dev/null
 source "${REPO_ROOT}/.ci/scripts/utils.sh"
 
-# Create a conda environment with Python 3.10 for compatibility with old ET versions
-# ET 1.0.0 only supports Python >=3.10,<3.13
+# Create a conda environment with Python 3.11 for compatibility with old and current ET versions
+# ET 1.0.0 supports Python >=3.10,<3.13
 CONDA_ENV_NAME="coreml_bc_test_env"
-conda create -y -n "${CONDA_ENV_NAME}" python=3.10 pip packaging
+conda create -y -n "${CONDA_ENV_NAME}" python=3.11 pip packaging
 
 # Use conda run to execute commands in the new environment
 CONDA_RUN="conda run --no-capture-output -n ${CONDA_ENV_NAME}"

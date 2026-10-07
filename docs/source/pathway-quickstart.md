@@ -70,7 +70,7 @@ Follow the {doc}`llm/llama` guide for the complete Llama export and deployment w
 
 ## The 5-Minute Setup
 
-If you have not yet installed ExecuTorch, run the following in a Python 3.10–3.14 virtual environment:
+If you have not yet installed ExecuTorch, run the following in a Python 3.11–3.15 virtual environment:
 
 ```bash
 pip install executorch

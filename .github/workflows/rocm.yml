@@ -187,7 +187,7 @@ jobs:
       script: |
         set -eux
         eval "$(conda shell.bash hook)"
-        conda create -n executorch-rocm-ci python=3.10 -y
+        conda create -n executorch-rocm-ci python=3.11 -y
         conda activate executorch-rocm-ci
         ROCM_VERSION=${{ matrix.rocm-version }} bash .ci/scripts/test-rocm-aoti.sh
 
@@ -221,7 +221,7 @@ jobs:
       script: |
         set -eux
         eval "$(conda shell.bash hook)"
-        conda create -n executorch-rocm-ci python=3.10 -y
+        conda create -n executorch-rocm-ci python=3.11 -y
         conda activate executorch-rocm-ci
         EXPECTED_ROCM_ARCH=gfx950 EXPECTED_WARP_SIZE=64 \
           ROCM_VERSION=${{ matrix.rocm-version }} \
@@ -263,7 +263,7 @@ jobs:
       script: |
         set -eux
         eval "$(conda shell.bash hook)"
-        conda create -n executorch-rocm-ci python=3.10 -y
+        conda create -n executorch-rocm-ci python=3.11 -y
         conda activate executorch-rocm-ci
         EXPECTED_ROCM_ARCH=gfx1100 EXPECTED_WARP_SIZE=32 \
           ROCM_VERSION=${{ matrix.rocm-version }} \

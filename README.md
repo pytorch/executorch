@@ -77,7 +77,7 @@ new language-model architecture, see the
 
 ## Install
 
-Install the latest stable Python package in a Python 3.10–3.14 environment:
+Install the latest stable Python package in a Python 3.11–3.15 environment:
 
 ```bash
 pip install executorch
