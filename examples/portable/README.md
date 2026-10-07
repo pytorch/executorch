@@ -76,6 +76,40 @@ Output 0: tensor(sizes=[1, 1000], [
 ])
 ```
 
+## Streaming wakeword
+
+Export the MLPerf Tiny streaming wakeword model using the existing portable exporter:
+
+```bash
+python3 -m examples.portable.scripts.export --model_name=streaming_wakeword
+```
+
+The Python runtime allocates zero-filled buffers, providing the model's initial
+history. Keep one loaded program across frames and load a fresh instance for
+another recording or replay:
+
+```python
+import torch
+from executorch.runtime import Runtime
+
+frames = torch.randn(40, 1, 40, 1, 1)
+for _ in range(2):
+    program = Runtime.get().load_program("streaming_wakeword.pte")
+    forward = program.load_method("forward")
+    for frame in frames:
+        probabilities = forward.execute((frame,))[0]
+```
+
+Each input is one LFBE frame of shape `(1, 40, 1, 1)`. The first 29 outputs are
+warmup outputs after each load. The random frames above illustrate the calling
+convention; the example model also uses randomly initialized weights.
+
+Run the portable export and streaming tests with:
+
+```bash
+python3 -m pytest examples/models/test/test_streaming_wakeword_export.py
+```
+
 ## Custom Operator Registration
 
 Explore the demos in the [`custom_ops/`](custom_ops) directory to learn how to register custom operators into ExecuTorch as well as register its kernels into ExecuTorch runtime.
