@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include <sys/types.h>
+#include <tuple>
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
@@ -1137,4 +1138,180 @@ TEST_F(OpIndexPutInplaceTest, AccumulateHalfRepeatedIndices) {
   Tensor values = tf.make({2}, {2, 3});
   op_index_put_(x, indices, values, /*accumulate=*/true);
   EXPECT_TENSOR_EQ(x, tf.make({3}, {1, 6, 1}));
+}
+
+class OpIndexPutInplaceNegativeIndexTest
+    : public OpIndexPutInplaceTest,
+      public WithParamInterface<std::tuple<ScalarType, bool>> {};
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, MixedIndicesInMiddleDimension) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({3}, {-1, -3, 1})
+                                                : tfi.make({3}, {-1, -3, 1});
+  optional<Tensor> indices[] = {std::nullopt, index};
+  Tensor x = tf.ones({2, 3, 2});
+  Tensor values = tf.make({2, 3, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected = accumulate
+      ? tf.make({2, 3, 2}, {4, 5, 6, 7, 2, 3, 10, 11, 12, 13, 8, 9})
+      : tf.make({2, 3, 2}, {3, 4, 5, 6, 1, 2, 9, 10, 11, 12, 7, 8});
+
+  Tensor ret = op_index_put_(x, indices, values, accumulate);
+  EXPECT_TENSOR_EQ(ret, x);
+  EXPECT_TENSOR_EQ(x, expected);
+  EXPECT_TENSOR_EQ(
+      index,
+      index_type == ScalarType::Long ? tfl.make({3}, {-1, -3, 1})
+                                     : tfi.make({3}, {-1, -3, 1}));
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, NegativeIndexOutOfBounds) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({2}, {-1, -4})
+                                                : tfi.make({2}, {-1, -4});
+  optional<Tensor> indices[] = {std::nullopt, index};
+  Tensor x = tf.ones({2, 3, 2});
+  Tensor values = tf.zeros({2, 2, 2});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_index_put_(x, indices, values, accumulate));
+#ifndef USE_ATEN_LIB
+  EXPECT_TENSOR_EQ(x, tf.ones({2, 3, 2}));
+#endif
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, PositiveIndexOutOfBounds) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({2}, {-1, 3})
+                                                : tfi.make({2}, {-1, 3});
+  optional<Tensor> indices[] = {std::nullopt, index};
+  Tensor x = tf.ones({2, 3, 2});
+  Tensor values = tf.zeros({2, 2, 2});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_index_put_(x, indices, values, accumulate));
+#ifndef USE_ATEN_LIB
+  EXPECT_TENSOR_EQ(x, tf.ones({2, 3, 2}));
+#endif
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, NegativeIndexIntoEmptyDimension) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({1}, {-1})
+                                                : tfi.make({1}, {-1});
+  Tensor x = tf.zeros({0});
+  Tensor values = tf.ones({1});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_index_put_(x, {index}, values, accumulate));
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, OmittedLeadingUnitDimensions) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({1}, {-1})
+                                                : tfi.make({1}, {-1});
+  Tensor values = tf.make({2, 1, 2}, {2, 3, 4, 5});
+
+  for (const std::vector<int32_t>& shape :
+       {std::vector<int32_t>{1, 2, 4, 2}, {1, 1, 2, 4, 2}}) {
+    Tensor x = tf.ones(shape);
+    std::vector<optional<Tensor>> indices(shape.size() - 1, std::nullopt);
+    indices.back() = index;
+    Tensor expected = accumulate
+        ? tf.make(shape, {1, 1, 1, 1, 1, 1, 3, 4, 1, 1, 1, 1, 1, 1, 5, 6})
+        : tf.make(shape, {1, 1, 1, 1, 1, 1, 2, 3, 1, 1, 1, 1, 1, 1, 4, 5});
+
+    Tensor ret =
+        op_index_put_(x, {indices.data(), indices.size()}, values, accumulate);
+    EXPECT_TENSOR_EQ(ret, x);
+    EXPECT_TENSOR_EQ(x, expected);
+  }
+  EXPECT_TENSOR_EQ(values, tf.make({2, 1, 2}, {2, 3, 4, 5}));
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, OmittedIndexedLeadingDimension) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({1}, {-1})
+                                                : tfi.make({1}, {-1});
+  Tensor x = tf.ones({3, 1, 2});
+  Tensor values = tf.make({2}, {2, 3});
+  Tensor expected = accumulate ? tf.make({3, 1, 2}, {1, 1, 1, 1, 3, 4})
+                               : tf.make({3, 1, 2}, {1, 1, 1, 1, 2, 3});
+
+  op_index_put_(x, {index}, values, accumulate);
+  EXPECT_TENSOR_EQ(x, expected);
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, ScalarValuesForSingleElement) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({1}, {-1})
+                                                : tfi.make({1}, {-1});
+  optional<Tensor> indices[] = {std::nullopt, index};
+  Tensor x = tf.ones({1, 3, 1});
+  Tensor values = tf.make({}, {5});
+  Tensor expected = accumulate ? tf.make({1, 3, 1}, {1, 1, 6})
+                               : tf.make({1, 3, 1}, {1, 1, 5});
+
+  op_index_put_(x, indices, values, accumulate);
+  EXPECT_TENSOR_EQ(x, expected);
+}
+
+TEST_P(OpIndexPutInplaceNegativeIndexTest, IncompatibleValuesShape) {
+  const auto [index_type, accumulate] = GetParam();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor index = index_type == ScalarType::Long ? tfl.make({1}, {-1})
+                                                : tfi.make({1}, {-1});
+  optional<Tensor> indices[] = {std::nullopt, std::nullopt, index};
+  Tensor x = tf.ones({1, 2, 4, 2});
+  Tensor values = tf.zeros({2, 2, 1});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_index_put_(x, indices, values, accumulate));
+#ifndef USE_ATEN_LIB
+  EXPECT_TENSOR_EQ(x, tf.ones({1, 2, 4, 2}));
+#endif
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    IndexTypesAndAccumulation,
+    OpIndexPutInplaceNegativeIndexTest,
+    Combine(Values(ScalarType::Long, ScalarType::Int), Bool()));
+
+TEST_F(OpIndexPutInplaceTest, AccumulateNegativeAndPositiveAliases) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  TensorFactory<ScalarType::Int> tfi;
+  Tensor values = tf.make({2, 3, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected =
+      tf.make({2, 3, 2}, {6, 7, 1, 1, 5, 7, 12, 13, 1, 1, 17, 19});
+
+  for (const Tensor& index :
+       {tfl.make({3}, {-1, 2, -3}), tfi.make({3}, {-1, 2, -3})}) {
+    optional<Tensor> indices[] = {std::nullopt, index};
+    Tensor x = tf.ones({2, 3, 2});
+    op_index_put_(x, indices, values, /*accumulate=*/true);
+    EXPECT_TENSOR_EQ(x, expected);
+  }
 }
