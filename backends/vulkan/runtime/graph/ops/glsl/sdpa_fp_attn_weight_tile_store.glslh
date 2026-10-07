@@ -151,6 +151,42 @@ void apply_bias(
 }
 #endif // HAS_BIAS
 
+#ifdef HAS_MASK
+/*
+ * Adds the LLM SDPA additive attn_mask, a 2D [S, C] tensor shared by every
+ * head, to the tile. Requires t_mask and mask_sizes. The mask is read element
+ * by element: a buffer-backed mask is not padded along its width, so its rows
+ * cannot be addressed in texels unless C is a multiple of 4.
+ */
+void apply_attn_mask(
+    inout FPOutTile tile,
+    const int c_idx_start,
+    const int s_idx_start) {
+  const int mask_C = mask_sizes.x;
+  const int mask_S = mask_sizes.y;
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    const int s_idx = s_idx_start + s;
+    if (s_idx >= mask_S) {
+      continue;
+    }
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      [[unroll]] for (int c4i = 0; c4i < 4; ++c4i) {
+        const int c_idx = c_idx_start + mul_4(c4) + c4i;
+        if (c_idx < mask_C) {
+#ifdef INPUT_BUFFER
+          const float mask_val = float(t_mask[s_idx * mask_C + c_idx]);
+#else
+          const float mask_val = float(texelFetch(
+              t_mask, ivec3(div_4(c_idx), s_idx, 0), 0)[mod_4(c_idx)]);
+#endif
+          tile.data[s][c4][c4i] += T(mask_val);
+        }
+      }
+    }
+  }
+}
+#endif // HAS_MASK
+
 void set_out_tile_to_vec(out FPOutTile tile, const LINEAR_FP_OUTPUT_TILE_VEC4_T vec) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {
     [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) { tile.data[s][c4] = vec; }
