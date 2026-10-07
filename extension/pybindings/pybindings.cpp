@@ -334,8 +334,8 @@ class BufferTensor final {
 
 bool is_torch_tensor(const py::handle& value) {
   const py::str module_name("torch");
-  py::object torch_module = py::reinterpret_steal<py::object>(
-      PyImport_GetModule(module_name.ptr()));
+  py::object torch_module =
+      py::reinterpret_steal<py::object>(PyImport_GetModule(module_name.ptr()));
   if (!torch_module) {
     PyErr_Clear();
     return false;
