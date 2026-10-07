@@ -28,7 +28,7 @@
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
 /examples/mediatek
-/examples/portable @larryliu0820 @manuelcandales
+/examples/portable @larryliu0820
 /examples/qualcomm @psiddh
 /examples/selective_build @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai
@@ -44,7 +44,6 @@
 /extension/benchmark @Gasoonjia
 /extension/data_loader @JacobSzwejbka
 /extension/gguf_util @larryliu0820
-/extension/kernel_util @manuelcandales
 /extension/llm @larryliu0820 @mergennachin
 /extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
@@ -54,8 +53,6 @@
 /extension/tensor @shoumikhin
 /extension/testing_util
 /extension/training @JacobSzwejbka
-
-/kernels @manuelcandales
 
 /profiler @Gasoonjia
 
