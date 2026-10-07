@@ -1,0 +1,81 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Stores an FPOutTile computed over the concatenated output channels of a
+ * linear whose output is split along the channel dim into t_output, t_output1
+ * and t_output2, with split_sizes channels each. An output may reshape its
+ * channels (e.g. into heads): every element is written at the contiguous index
+ * it has in the [M, split_size] chunk.
+ *
+ * Requires:
+ * - t_output, t_output1, t_output2 and their WHCN sizes UBOs output_sizes,
+ *   output1_sizes, output2_sizes to be declared in the shader layout
+ * - split_sizes (ivec4) to be declared
+ *
+ * Settings:
+ * - OUTPUT_BUFFER to indicate the outputs are vec4 buffers, otherwise width
+ *   packed textures are assumed.
+ */
+
+#ifndef LINEAR_FP_OUTPUT_TILE_SPLIT_STORE_GLSLH
+#define LINEAR_FP_OUTPUT_TILE_SPLIT_STORE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_output_tile.glslh"
+
+#ifdef OUTPUT_BUFFER
+#define STORE_SPLIT_X4(t_out, sizes, idx, texel) \
+  t_out[(idx) >> 2] = VEC4_T(texel)
+#else
+#define STORE_SPLIT_X4(t_out, sizes, idx, texel) \
+  imageStore(                                    \
+      t_out,                                     \
+      ivec3(                                     \
+          ((idx) % sizes.x) >> 2,                \
+          ((idx) / sizes.x) % sizes.y,           \
+          (idx) / (sizes.x * sizes.y)),          \
+      VEC4_T(texel))
+#endif
+
+void write_split_output_x4(
+    const LINEAR_FP_OUTPUT_TILE_VEC4_T texel,
+    const int n4,
+    const int m) {
+  int n = mul_4(n4);
+  if (n < split_sizes.x) {
+    STORE_SPLIT_X4(t_output, output_sizes, m * split_sizes.x + n, texel);
+    return;
+  }
+  n -= split_sizes.x;
+  if (n < split_sizes.y) {
+    STORE_SPLIT_X4(t_output1, output1_sizes, m * split_sizes.y + n, texel);
+    return;
+  }
+  n -= split_sizes.y;
+  STORE_SPLIT_X4(t_output2, output2_sizes, m * split_sizes.z + n, texel);
+}
+
+void write_output_tile_split_with_checks(
+    const FPOutTile out_tile,
+    const int n4_start,
+    const int m_start,
+    const int N4,
+    const int M) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      if (m_start + m < M && n4_start + n4 < N4) {
+        write_split_output_x4(
+            out_tile.data[m][n4], n4_start + n4, m_start + m);
+      }
+    }
+  }
+}
+
+#endif // LINEAR_FP_OUTPUT_TILE_SPLIT_STORE_GLSLH

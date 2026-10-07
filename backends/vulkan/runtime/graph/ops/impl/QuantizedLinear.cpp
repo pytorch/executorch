@@ -12,10 +12,13 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/GemmCoopmat.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Split.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <algorithm>
+#include <deque>
 
 namespace vkcompute {
 
@@ -51,6 +54,34 @@ void resize_linear_qw_node(
   }
 
   graph->virtual_resize(output, new_out_sizes);
+}
+
+// Outputs of a linear split along the output channels: output i has the input's
+// leading dims followed by split_sizes[i], or by [split_sizes[i] / head_dims[i],
+// head_dims[i]] when head_dims[i] > 0.
+void resize_linear_split_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef fp_input = args.at(1).refs.at(0);
+  const std::vector<int64_t> split_sizes =
+      graph->extract_int_or_symint_list(extra_args.at(3));
+  const std::vector<int64_t> head_dims =
+      graph->extract_int_or_symint_list(extra_args.at(4));
+
+  std::vector<int64_t> lead_sizes = graph->sizes_of(fp_input);
+  VK_CHECK_COND(!lead_sizes.empty());
+  lead_sizes.pop_back();
+  for (size_t i = 0; i < args.at(0).refs.size(); ++i) {
+    std::vector<int64_t> new_out_sizes = lead_sizes;
+    if (head_dims.at(i) > 0) {
+      new_out_sizes.push_back(split_sizes.at(i) / head_dims.at(i));
+      new_out_sizes.push_back(head_dims.at(i));
+    } else {
+      new_out_sizes.push_back(split_sizes.at(i));
+    }
+    graph->virtual_resize(args.at(0).refs.at(i), new_out_sizes);
+  }
 }
 
 // Per-shader coopmat tile geometry (must match each shader's yaml).
@@ -104,9 +135,15 @@ GlobalWorkGrid quantized_linear_gwg(
 
   std::vector<int64_t> out_sizes = graph->sizes_of(out);
   // width
-  const uint32_t N = utils::val_at(-1, out_sizes);
+  uint32_t N = utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
   // height
-  const uint32_t M = utils::val_at(-2, out_sizes);
+  uint32_t M = utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
+  // A split output covers part of the channels; use the weight's (resize arg 1)
+  // and the input's (first read arg) sizes instead.
+  if (args.at(0).refs.size() > 1) {
+    N = graph->size_at<uint32_t>(-2, resize_args.at(1));
+    M = graph->size_at<uint32_t>(-2, args.at(1).refs.at(0));
+  }
 
   // Coopmat variants dispatch a 256-thread WG per 64x64 output tile.  Mirrors
   // GemmCoopmat.cpp's pick_linear_coopmat_gwg — the multiplication
@@ -323,6 +360,16 @@ vkapi::ShaderInfo pick_linear_dqa_qw_shader(
 
   const bool weight_is_4bit = resize_args.at(0) != kDummyValueRef;
   const bool is_gemv_case = is_gemv(graph, fp_input);
+
+  if (args.at(0).refs.size() > 1) {
+    std::string kernel_name = "linear_dq8ca_q4gsw";
+    kernel_name += is_gemv_case ? "_coop_split3" : "_tiled_split3";
+    add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+    add_storage_type_suffix(kernel_name, graph->storage_type_of(int_weight));
+    add_dtype_suffix(kernel_name, graph->dtype_of(out));
+    add_zp_dtype_mode_suffix(kernel_name, graph->dtype_of(input_zp));
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
 
   // Use the coopmat<int8> shader for 4-bit dq8ca dispatches when the device
   // enumerates VK_COMPONENT_TYPE_SINT8_KHR in its cooperative matrix property
@@ -660,7 +707,9 @@ void add_linear_dqa_qw_node(
     const ValueRef group_size,
     const ValueRef bias_data,
     const ValueRef packed_bias,
-    const ValueRef output) {
+    const std::vector<ValueRef>& outputs,
+    const ValueRef split_sizes,
+    const ValueRef head_dims) {
   VK_CHECK_COND(input_quant_config.granularity == kPerChannel);
   VK_CHECK_COND(input_quant_config.nbits == 8);
   VK_CHECK_COND(input_quant_config.is_dynamic);
@@ -670,7 +719,7 @@ void add_linear_dqa_qw_node(
   VK_CHECK_COND(weight_quant_config.nbits == 4);
 
   vkapi::ParamsBindList param_buffers = {
-      graph.sizes_ubo(output), graph.sizes_ubo(fp_input)};
+      graph.sizes_ubo(outputs.at(0)), graph.sizes_ubo(fp_input)};
 
   uint32_t apply_bias = 1;
   if (graph.val_is_none(bias_data)) {
@@ -691,13 +740,34 @@ void add_linear_dqa_qw_node(
   // 5th spec const: select the fp16 int4 dequantization of the coop GEMV.
   const uint32_t use_fp16_unpack = q4gsw_gemv_use_fp16_unpack(graph);
 
+  std::vector<PushConstantDataInfo> push_constants;
+  std::vector<ValueRef> resize_args = {is_4bit_flag, weight_data, bias_data};
+  ExecuteNode::ResizeFunction resize_fn = resize_linear_qw_node;
+  // The output channels are split into three outputs (fused q/k/v projections)
+  if (outputs.size() > 1) {
+    VK_CHECK_COND(outputs.size() == 3);
+    param_buffers.append(graph.sizes_ubo(outputs.at(1)));
+    param_buffers.append(graph.sizes_ubo(outputs.at(2)));
+    const std::vector<int64_t> sizes =
+        graph.extract_int_or_symint_list(split_sizes);
+    const utils::ivec4 split_sizes_vals = {
+        utils::safe_downcast<int32_t>(sizes.at(0)),
+        utils::safe_downcast<int32_t>(sizes.at(1)),
+        utils::safe_downcast<int32_t>(sizes.at(2)),
+        0};
+    push_constants.emplace_back(&split_sizes_vals, sizeof(split_sizes_vals));
+    resize_args.push_back(split_sizes);
+    resize_args.push_back(head_dims);
+    resize_fn = resize_linear_split_node;
+  }
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       pick_linear_dqa_qw_shader,
       quantized_linear_gwg,
       quantized_linear_lwg,
       // Inputs and Outputs
-      {{output, vkapi::kWrite},
+      {{outputs, vkapi::kWrite},
        {{fp_input,
          packed_int_input,
          int_input_sums,
@@ -711,19 +781,19 @@ void add_linear_dqa_qw_node(
       // Shader params buffers
       param_buffers,
       // Push Constants
-      {},
+      push_constants,
       // Specialization Constants
-      // 4th spec const: output width N for coopMatStore (see
-      // add_linear_qw_node).
+      // 4th spec const: output channels N, for coopMatStore (see
+      // add_linear_qw_node) and split outputs.
       {apply_bias,
        K4_per_group,
        coopmat_k_iters,
-       graph.size_at<int32_t>(-1, output),
+       graph.size_at<int32_t>(-2, weight_data),
        use_fp16_unpack},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
-      {is_4bit_flag, weight_data, bias_data},
+      resize_args,
       // Resizing Logic
-      resize_linear_qw_node));
+      resize_fn));
 }
 
 //
@@ -743,7 +813,11 @@ void quantized_linear_impl(
     const ValueRef weight_zeros_data,
     const ValueRef group_size,
     const ValueRef bias_data,
-    const ValueRef output) {
+    const std::vector<ValueRef>& outputs,
+    const ValueRef split_sizes = kDummyValueRef,
+    const ValueRef head_dims = kDummyValueRef) {
+  // Only the dynamically quantized input path supports split outputs
+  const ValueRef output = outputs.at(0);
   std::vector<int64_t> input_sizes = graph.sizes_of(fp_input);
   std::vector<int64_t> weight_sizes = graph.sizes_of(weight_data);
 
@@ -781,6 +855,7 @@ void quantized_linear_impl(
   // 2. Input is not quantized
   if (!graph.can_use_int8_dot_product() ||
       input_quant_config.granularity == kNoQuantization) {
+    VK_CHECK_COND(outputs.size() == 1);
     add_linear_qw_node(
         graph,
         weight_quant_config,
@@ -848,6 +923,7 @@ void quantized_linear_impl(
 
   // Non dynamically quantized input case
   if (!input_quant_config.is_dynamic) {
+    VK_CHECK_COND(outputs.size() == 1);
     add_quantize_and_pack_4h4w_node(
         graph,
         input_quant_config,
@@ -932,7 +1008,9 @@ void quantized_linear_impl(
       group_size,
       bias_data,
       packed_bias,
-      output);
+      outputs,
+      split_sizes,
+      head_dims);
 }
 
 void linear_q8ta_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -964,7 +1042,7 @@ void linear_q8ta_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       kDummyValueRef, // weight_zeros_data
       kDummyValueRef, // group_size
       bias_data,
-      output);
+      {output});
 }
 
 void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -993,7 +1071,7 @@ void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       kDummyValueRef, // weight zeros
       kDummyValueRef, // group size
       bias_data,
-      output);
+      {output});
 }
 
 // aten._weight_int8pack_mm is what the AOT weight-only int8 fusion
@@ -1027,7 +1105,7 @@ void weight_int8pack_mm(
       kDummyValueRef, // weight zeros
       kDummyValueRef, // group size
       kDummyValueRef, // bias
-      output);
+      {output});
 }
 
 void linear_dq8ca_q4gsw(
@@ -1062,7 +1140,164 @@ void linear_dq8ca_q4gsw(
       kDummyValueRef, // weight_zeros_data
       group_size, // group_size
       bias_data,
-      output);
+      {output});
+}
+
+// Output i of the fallback below is a copy of chunk i, reshaped into heads if
+// head_dim > 0. The split does not resize its outputs, so the leading dims are
+// taken from the linear's input.
+void resize_split_chunk_copy_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef chunk = args.at(1).refs.at(0);
+  const ValueRef fp_input = extra_args.at(0);
+  const int64_t head_dim = graph->get_int(extra_args.at(1));
+  const int64_t chunk_size = graph->size_at<int64_t>(-1, chunk);
+
+  std::vector<int64_t> new_out_sizes = graph->sizes_of(fp_input);
+  VK_CHECK_COND(!new_out_sizes.empty());
+  new_out_sizes.pop_back();
+  if (head_dim > 0) {
+    new_out_sizes.push_back(chunk_size / head_dim);
+    new_out_sizes.push_back(head_dim);
+  } else {
+    new_out_sizes.push_back(chunk_size);
+  }
+  graph->virtual_resize(out, new_out_sizes);
+}
+
+bool can_write_split_outputs(
+    ComputeGraph& graph,
+    const ValueRef fp_input,
+    const ValueRef input_zp,
+    const std::vector<ValueRef>& outputs,
+    const std::vector<int64_t>& split_sizes,
+    const std::vector<int64_t>& head_dims) {
+  if (!graph.can_use_int8_dot_product() || outputs.size() != 3 ||
+      graph.dtype_of(fp_input) != vkapi::kHalf) {
+    return false;
+  }
+  if (graph.val_is_not_none(input_zp) &&
+      graph.dtype_of(input_zp) != vkapi::kChar) {
+    return false;
+  }
+  // The shaders route each 4-channel texel to a single output.
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    if (graph.storage_type_of(outputs.at(i)) !=
+            graph.storage_type_of(fp_input) ||
+        graph.packed_dim_of(outputs.at(i)) != WHCN::kWidthDim ||
+        split_sizes.at(i) % 4 != 0 || head_dims.at(i) % 4 != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void linear_dq8ca_q4gsw_split(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int32_t idx = 0;
+  const ValueRef fp_input = args.at(idx++);
+  const ValueRef input_scale = args.at(idx++);
+  const ValueRef input_zp = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_sums_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef group_size = args.at(idx++);
+  const ValueRef split_sizes = args.at(idx++);
+  const ValueRef head_dims = args.at(idx++);
+  const ValueRef out_list = args.at(idx++);
+
+  const std::vector<ValueRef> outputs = *graph.get_value_list(out_list);
+  const std::vector<int64_t> split_sizes_vals =
+      graph.extract_int_or_symint_list(split_sizes);
+  const std::vector<int64_t> head_dims_vals =
+      graph.extract_int_or_symint_list(head_dims);
+
+  const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
+  QuantizationConfig input_quant_config(8, kPerChannel, {}, false, true);
+  QuantizationConfig weight_quant_config(4, kPerGroup, {group_size_val});
+
+  if (can_write_split_outputs(
+          graph,
+          fp_input,
+          input_zp,
+          outputs,
+          split_sizes_vals,
+          head_dims_vals)) {
+    quantized_linear_impl(
+        graph,
+        input_quant_config,
+        weight_quant_config,
+        fp_input,
+        input_scale,
+        input_zp,
+        weight_data,
+        weight_sums_data,
+        weight_scales_data,
+        kDummyValueRef, // weight_zeros_data
+        group_size,
+        graph.add_none(), // bias_data
+        outputs,
+        split_sizes,
+        head_dims);
+    return;
+  }
+
+  // Otherwise compute the unsplit output, then copy each chunk out of it.
+  std::vector<int64_t> fused_sizes = graph.sizes_of(fp_input);
+  VK_CHECK_COND(!fused_sizes.empty());
+  fused_sizes.back() = graph.size_at<int64_t>(-2, weight_data);
+  TmpTensor fused(
+      &graph,
+      fused_sizes,
+      graph.dtype_of(outputs.at(0)),
+      graph.storage_type_of(fp_input),
+      utils::kWidthPacked);
+  quantized_linear_impl(
+      graph,
+      input_quant_config,
+      weight_quant_config,
+      fp_input,
+      input_scale,
+      input_zp,
+      weight_data,
+      weight_sums_data,
+      weight_scales_data,
+      kDummyValueRef, // weight_zeros_data
+      group_size,
+      graph.add_none(), // bias_data
+      {fused.vref});
+
+  std::deque<TmpTensor> chunks;
+  std::vector<ValueRef> chunk_refs;
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    std::vector<int64_t> chunk_sizes = fused_sizes;
+    chunk_sizes.back() = split_sizes_vals.at(i);
+    chunks.emplace_back(
+        &graph,
+        chunk_sizes,
+        graph.dtype_of(outputs.at(i)),
+        graph.storage_type_of(fp_input),
+        utils::kWidthPacked);
+    chunk_refs.push_back(chunks.back().vref);
+  }
+  add_split_with_sizes_node(
+      graph,
+      fused.vref,
+      split_sizes_vals,
+      -1,
+      graph.add_value_list(std::vector<ValueRef>(chunk_refs)));
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    add_view_copy_node(
+        graph,
+        chunk_refs.at(i),
+        outputs.at(i),
+        {fp_input, graph.add_scalar<int64_t>(head_dims_vals.at(i))},
+        resize_split_chunk_copy_node);
+  }
 }
 
 REGISTER_OPERATORS {
@@ -1070,6 +1305,8 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
   VK_REGISTER_OP(aten._weight_int8pack_mm.default, weight_int8pack_mm);
   VK_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw);
+  VK_REGISTER_OP(
+      et_vk.linear_dq8ca_q4gsw_split.default, linear_dq8ca_q4gsw_split);
 }
 
 } // namespace vkcompute
