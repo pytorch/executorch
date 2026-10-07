@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import logging
+from typing import Any
 
 import torch
 from executorch.backends.qualcomm._passes.utils import copy_meta
@@ -15,6 +16,7 @@ from executorch.backends.qualcomm.builders.utils import (
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+from executorch.exir.passes.constant_prop_pass import _PRIMITIVE_TYPES
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from torch._guards import detect_fake_mode
 from torch.utils import _pytree as pytree
@@ -25,18 +27,6 @@ from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 _EDGE_QDQ_TARGETS = set(_QUANT_PRIMITIVES) | {
     aten_to_edge(op) for op in _QUANT_PRIMITIVES
 }
-
-# copied from executorch/exir/passes/const_prop_pass.py
-_PRIMITIVE_TYPES = (
-    float,
-    int,
-    bool,
-    str,
-    torch.Tensor,
-    torch.device,
-    torch.dtype,
-    torch.layout,
-)
 
 
 class ConstantFolding(ExportPass):
@@ -83,7 +73,7 @@ class ConstantFolding(ExportPass):
     def _propagate(  # noqa: C901
         self,
         graph_module: torch.fx.GraphModule,
-        node_to_tensor: dict[torch.fx.Node, torch.Tensor],
+        node_to_tensor: dict[torch.fx.Node, Any],
     ) -> None:
         """
         Iterate the call_function node. compute the output of that node if it can be constant folded,
@@ -93,15 +83,14 @@ class ConstantFolding(ExportPass):
         constant_value_1 -> upsample_bicubic2d ----\
                                                     add_1 --------------------------\
                               constant_value_2 ----/                                add_2 ----> output
-                                                      user_input(non-constant)------/    
-        
+                                                      user_input(non-constant)------/
+
         With graph above, when first enter this method, node_to_tensor dict looks like:
         node_to_tensor = {
             constant_value_1_node : constant_value_1_tensor,
             constant_value_2_node : constant_value_2_tensor,
         }
-        
-        
+
         At the end of the method, node_to_tensor dict looks like following:
         node_to_tensor = {
             constant_value_1_node : constant_value_1_tensor,
@@ -109,7 +98,7 @@ class ConstantFolding(ExportPass):
             upsample_bicubic2d_node : upsample_bicubic2d_output_tensor,
             add_1_node : add_1_output_tensor,
         }
-        
+
         Tensor in dict will be actual values instead of fake tensor.
         For example, add_1_output_tensor value would be the result of adding upsample_bicubic2d_output_tensor and constant_value_2.
         """
@@ -151,12 +140,15 @@ class ConstantFolding(ExportPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
+            # Avoid folding nodes like torch.rand since we shouldn't precompute.
+            if node.is_impure():
+                continue
             if not _is_const(node.args, node_to_tensor):
                 continue
             if not _is_const(node.kwargs, node_to_tensor):
                 continue
 
-            # Copied from executorch/exir/passes/const_prop_pass.py
+            # Copied from executorch/exir/passes/constant_prop_pass.py
             # Retrieves args and kwargs required for the node to perform inference.
             args_data, kwargs_data = pytree.tree_map(
                 lambda x: _get_data(x, node_to_tensor),
@@ -173,9 +165,6 @@ class ConstantFolding(ExportPass):
                     )
                     continue
 
-            if isinstance(result, torch.Tensor):
-                result = result.detach().clone(memory_format=torch.contiguous_format)
-
             # Save the node's result to the map.
             node_to_tensor[node] = result
 
@@ -188,6 +177,7 @@ class ConstantFolding(ExportPass):
         buffer_name = get_new_attr_name_with_prefix(self._TENSOR_CONSTANT_PREFIX)(
             graph_module
         )
+        tensor = tensor.detach().clone(memory_format=torch.contiguous_format)
         graph_module.register_buffer(buffer_name, tensor)
         val = node.meta.get("val")
         fake_mode = detect_fake_mode(val) if val is not None else None
@@ -212,17 +202,17 @@ class ConstantFolding(ExportPass):
     def _materialize(
         self,
         graph_module: torch.fx.GraphModule,
-        node_to_tensor: dict[torch.fx.Node, torch.Tensor],
+        node_to_tensor: dict[torch.fx.Node, Any],
     ) -> None:
         """
         The term "boundary" here refers to where node can no longer be folded.
-        Boundry will be before add for this graph is const -> relu1 -> sqrt --- > add -> output
-                                                                       input _|
+        Boundary will be before add for this graph is const -> relu1 -> sqrt --- > add -> output
+                                                                         input _|
 
         Rules:
         1) When creating buffer, start with reverse order, so just create the buffer before boundary.
         2) Only the boundary buffer will be created, won't recursive trace args and create unused buffer.
-        3) For nodes like conv2d with quantizer, preserve dq node right afer weight and bias.
+        3) For nodes like conv2d with quantizer, preserve dq node right after weight and bias.
         """
 
         # Reverse order: process later (more-derived) constants first, so a
@@ -230,6 +220,11 @@ class ConstantFolding(ExportPass):
         # Align with rule 1.
         for node, tensor in reversed(list(node_to_tensor.items())):
             if node.op == "placeholder":
+                continue
+
+            # A folded value can be a scalar, SymInt or tuple (`_local_scalar_dense`,
+            # `sym_size`, multi-output ops). Only a tensor can become a buffer.
+            if not isinstance(tensor, torch.Tensor):
                 continue
 
             # If all users can be constant folded, then don't need to fold at this level.

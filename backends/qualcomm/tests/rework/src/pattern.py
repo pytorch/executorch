@@ -611,6 +611,25 @@ class ConstantFolding:
         def forward(self, x):
             return self.conv(x)
 
+    class _ImpureOp(torch.nn.Module):
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(1, 3, 4, 4))
+            self.register_buffer("b", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x):
+            return x + (self.a * self.b) + torch.rand(1, 3, 4, 4)
+
+    class _NonTensorBoundary(torch.nn.Module):
+
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("a", torch.randn(1, 3, 4, 4))
+
+        def forward(self, x):
+            return torch.clamp(x, min=self.a.min().item())
+
     @staticmethod
     def _lower(pass_pipeline, module, inputs, backend_type, compile_spec, quantizer):
         return pass_pipeline.lower_edge_ep(
@@ -769,9 +788,29 @@ class ConstantFolding:
             module = ConstantFolding._UserInputChain()
             edge_ep = lower(module, inputs)
             gm = edge_ep.graph_module
-            # `a * x` depends on x, so neither it nor the following add is_fp.
+            # `a * x` depends on x, so neither it nor the following add is folded.
             assertions.assert_target_count(gm, exir_ops.edge.aten.mul.Tensor, 1)
             assertions.assert_target_count(gm, exir_ops.edge.aten.add.Tensor, 1)
+            ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+        with subtests.test(msg="impure_op_not_folded"):
+            inputs = (torch.randn(1, 3, 4, 4),)
+            module = ConstantFolding._ImpureOp()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assertions.assert_target_count(gm, exir_ops.edge.aten.rand.default, 1)
+            assertions.assert_no_target(gm, exir_ops.edge.aten.mul.Tensor)
+
+        with subtests.test(msg="non_tensor_boundary_not_materialized"):
+            inputs = (torch.randn(1, 3, 4, 4),)
+            module = ConstantFolding._NonTensorBoundary()
+            edge_ep = lower(module, inputs)
+            gm = edge_ep.graph_module
+            assert not [
+                n
+                for n in gm.graph.nodes
+                if _passes.ConstantFolding._TENSOR_CONSTANT_PREFIX in n.name
+            ], "the scalar boundary was materialized as a buffer"
             ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
 
         # --- Group 3: quantized-only invariant ---
@@ -786,6 +825,35 @@ class ConstantFolding:
                     gm, exir_ops.edge.aten.convolution.default, 1
                 )
                 ConstantFolding._assert_numeric_match(edge_ep, module, inputs, is_fp)
+
+            with subtests.test(msg="quantized_fold_boundary_keeps_quant_attrs"):
+                inputs = (torch.randn(1, 3, 8, 8),)
+                module = ConstantFolding._Bicubic()
+                edge_ep = lower(module, inputs)
+                gm = edge_ep.graph_module
+                # The boundary here is upsample_bicubic2d, not a dq, so the folded
+                # constant only stays quantized if it inherits the boundary's attrs.
+                user_inputs = set(edge_ep.graph_signature.user_inputs)
+                add_node = [
+                    n
+                    for n in gm.graph.nodes
+                    if n.op == "call_function"
+                    and n.target == exir_ops.edge.aten.add.Tensor
+                ][0]
+                folded = [
+                    a
+                    for a in add_node.args
+                    if isinstance(a, torch.fx.Node)
+                    and a.op == "placeholder"
+                    and a.name not in user_inputs
+                ]
+                assert (
+                    len(folded) == 1
+                ), f"expected one folded constant feeding add, got {folded}"
+                assert QCOM_QUANT_ATTRS in folded[0].meta, (
+                    f"folded constant {folded[0].name} lost its quant attrs; a float "
+                    f"value would reach add in a quantized graph"
+                )
 
     @staticmethod
     @unpack_pass_fixtures
