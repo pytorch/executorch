@@ -194,21 +194,23 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
                            ->data_ptr()
                            .get();
 
+  // Currently even 0 sized tensors receive a dataptr in pre_allocated
+  // memory planning so we can do this check.
+  // TODO(jakeszwe, shunting, gasoonjia): this should be clear in design if
+  // other people make their own memory plans
   ET_CHECK_OR_RETURN_ERROR(
-      t_dst.nbytes() == t_src.nbytes(),
-      InvalidArgument,
-      "t_dst.nbytes() %lu != t_src.nbytes(). %lu",
-      t_dst.nbytes(),
-      t_src.nbytes());
-
-  // A zero-sized planned tensor may legitimately have no allocated storage.
-  ET_CHECK_OR_RETURN_ERROR(
-      dst_data_ptr != nullptr || t_dst.nbytes() == 0,
+      dst_data_ptr != nullptr,
       InvalidArgument,
       "Destination tensor data pointer must not be null.");
 
   // Sources with a size 0 dimension can be nullptr
   if (t_src.const_data_ptr() != nullptr) {
+    ET_CHECK_OR_RETURN_ERROR(
+        t_dst.nbytes() == t_src.nbytes(),
+        InvalidArgument,
+        "t_dst.nbytes() %lu != t_src.nbytes(). %lu",
+        t_dst.nbytes(),
+        t_src.nbytes());
     // Copy the source data to the preallocated memory of the destination, which
     // must be the same size as the source.
     //
