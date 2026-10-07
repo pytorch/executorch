@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -32,6 +33,10 @@ namespace backends {
 namespace cuda {
 
 class CudaKVCache;
+
+// Prefix the lowering pass gives every off-graph KV constant, whose storage
+// the runtime supplies rather than loads.
+inline constexpr std::string_view kOffGraphKVFqnPrefix = "__et_offgraph_kv_";
 
 // Where a method's inputs carry the number of tokens a step writes: an index
 // into execute()'s inputs and a dimension of that tensor. Declared by the

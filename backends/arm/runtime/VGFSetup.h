@@ -23,6 +23,7 @@ using executorch::runtime::CompileSpec;
 
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
+#include <executorch/backends/arm/runtime/VGFZeroCopy.h>
 
 namespace executorch {
 namespace backends {
@@ -152,6 +153,11 @@ class VgfRepr {
   size_t model_output_count = 0;
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
+
+  // Metadata for each IO entry. The ExecuTorch argument index is assigned
+  // later from the model boundary mapping and
+  // must not be assumed from the IO index.
+  std::vector<VgfZeroCopyIoMetadata> zero_copy_io_metadata;
 
   // Mapping to persistent IO memory
   static bool map_io(IO* io, void** handle) {

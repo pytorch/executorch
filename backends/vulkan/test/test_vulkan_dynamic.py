@@ -15,6 +15,8 @@ import unittest
 
 import torch
 
+import torch.nn.functional as F
+
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
     parse_compile_options,
     VulkanPartitioner,
@@ -207,6 +209,125 @@ class TestVulkanDynamic(unittest.TestCase):
                     )
                 )
                 self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_nan_scalars_fall_back(self):
+        class NanScalar(torch.nn.Module):
+            def __init__(self, kind):
+                super().__init__()
+                self.kind = kind
+
+            def forward(self, x):
+                if self.kind == "where":
+                    return torch.where(x > 0, x, torch.nan)
+                if self.kind == "masked_fill":
+                    return x.masked_fill(x > 0, torch.nan)
+                if self.kind == "full":
+                    return torch.full_like(x, torch.nan)
+                if self.kind == "scalar_tensor":
+                    return torch.scalar_tensor(torch.nan)
+                if self.kind == "pow":
+                    return x**torch.nan
+                return torch.ops.aten.mul.Scalar(x, torch.nan)
+
+        inputs = [(torch.tensor([-1.0, 0.0, 1.0, 2.0]),)]
+        for kind in ("where", "masked_fill", "full", "scalar_tensor", "pow", "mul"):
+            with self.subTest(kind=kind):
+                model = NanScalar(kind)
+                edge = self._lower(model, inputs[0], fully_delegated=False)
+                self._run(edge, model, inputs, atol=0, rtol=0, equal_nan=True)
+
+    def test_dynamic_scalar_values_fall_back(self):
+        class DynamicScalars(torch.nn.Module):
+            def forward(self, x):
+                n = x.shape[0]
+                value = n * 2
+                return (
+                    x**value,
+                    torch.ops.aten.mul.Scalar(x, value),
+                    torch.full((n,), value),
+                    torch.scalar_tensor(value, dtype=torch.int64),
+                    torch.ops.aten.mul.Scalar(x, n * 0.5),
+                    x + torch.full((n,), n * 0.5),
+                    torch.full((n,), 0.5),
+                    F.gelu(x),
+                    torch.clamp(x, max=n * 0.5),
+                    F.leaky_relu(x, negative_slope=n * 0.1),
+                )
+
+        model = DynamicScalars()
+        inputs = [(torch.linspace(-0.9, 4.1, n),) for n in (4, 2, 7, 3, 4)]
+        edge = self._lower(
+            model, inputs[0], ({0: Dim("n", min=2, max=8)},), fully_delegated=False
+        )
+        self.assertTrue(_vulkan_graphs(edge))
+        self._run(edge, model, inputs)
+
+    def test_dynamic_compare_scalars_fall_back(self):
+        class Compare(torch.nn.Module):
+            def __init__(self, op):
+                super().__init__()
+                self.op = op
+
+            def forward(self, x):
+                return self.op(x, x.shape[1])
+
+        inputs = [
+            (torch.arange(2 * s, dtype=torch.float32).reshape(2, s),)
+            for s in (16, 3, 31, 2, 16)
+        ]
+        for op in (torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge):
+            with self.subTest(op=op):
+                model = Compare(op)
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=32)},),
+                    fully_delegated=False,
+                )
+                self.assertEqual(_vulkan_graphs(edge), [])
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_compare_scalar_values_fall_back(self):
+        class Compare(torch.nn.Module):
+            def __init__(self, op, value):
+                super().__init__()
+                self.op = op
+                self.value = value
+
+            def forward(self, x):
+                return self.op(x, self.value)
+
+        for op in (torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge):
+            for x, value in (
+                (torch.tensor([-1.0, 0.0, 1.0, 2.0]), torch.nan),
+                (torch.tensor([-3, 0, 1, 7], dtype=torch.int32), 2**40),
+                (torch.tensor([-(2**40), 0, 2**40, 2**40 + 1]), 2**40),
+            ):
+                with self.subTest(op=op, dtype=x.dtype, value=value):
+                    model = Compare(op, value)
+                    inputs = [(x,)]
+                    edge = self._lower(model, inputs[0], fully_delegated=False)
+                    self.assertEqual(_vulkan_graphs(edge), [])
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_compare_scalar_values(self):
+        class Compare(torch.nn.Module):
+            def __init__(self, op, value):
+                super().__init__()
+                self.op = op
+                self.value = value
+
+            def forward(self, x):
+                return self.op(x, self.value)
+
+        for op in (torch.eq, torch.ne, torch.lt, torch.le, torch.gt, torch.ge):
+            for dtype in (torch.int32, torch.float32):
+                for value in (2.0, 2.5, -1.5):
+                    with self.subTest(op=op, dtype=dtype, value=value):
+                        x = torch.arange(-7, 14, dtype=dtype).reshape(3, 7)
+                        model = Compare(op, value)
+                        edge = self._lower(model, (x,))
+                        self._run(edge, model, [(x,)], atol=0, rtol=0)
 
     def test_4d_reductions(self):
         class Reduce(torch.nn.Module):

@@ -169,13 +169,13 @@ inline runtime::Result<bool> requires_offgraph_kv_storage(
   size_t count = 0;
   ET_CHECK_OK_OR_RETURN_ERROR(
       handle.get_num_constants(handle.container_handle, &count));
-  constexpr std::string_view kPrefix = "__et_offgraph_kv_";
   for (size_t index = 0; index < count; ++index) {
     const char* fqn = nullptr;
     ET_CHECK_OK_OR_RETURN_ERROR(
         handle.get_constant_original_fqn(handle.container_handle, index, &fqn));
     if (fqn != nullptr &&
-        std::string_view(fqn).substr(0, kPrefix.size()) == kPrefix) {
+        std::string_view(fqn).substr(0, kOffGraphKVFqnPrefix.size()) ==
+            kOffGraphKVFqnPrefix) {
       return true;
     }
   }

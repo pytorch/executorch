@@ -198,7 +198,7 @@ These are the components the package provides:
 | `kernels_quantized` | The quantized operator kernels | Linux, macOS, Windows |
 | `kernels_torchao` | The TorchAO low-bit quantized kernels | Linux and macOS, aarch64 only |
 | `backend_cuda` | The CUDA delegate | Linux |
-| `extension_cuda` | The CUDA stream extension | Linux |
+| `extension_cuda` | Shared CUDA allocator, stream and device helpers. Allocator headers require the CUDA toolkit. A program that calls the CUDA runtime itself links `CUDA::cudart`. | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
 | `backend_coreml` | The Core ML delegate, for Apple GPU and Neural Engine execution | macOS |
 | `backend_mlx` | The MLX delegate, for Apple GPU execution | macOS, Apple Silicon |
