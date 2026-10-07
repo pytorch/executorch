@@ -114,11 +114,11 @@ void write_packed_block(
     const Int4WeightBlockPacked block,
     const int k4,
     const int n8,
-    const int nblocks_K) {
+    const int nblocks_N) {
 #ifdef USING_BUFFER
-  t_packed_int4_weight[n8 * nblocks_K + k4] = block.data;
+  t_packed_int4_weight[k4 * nblocks_N + n8] = block.data;
 #else
-  imageStore(t_packed_int4_weight, ivec2(k4, n8), block.data);
+  imageStore(t_packed_int4_weight, ivec2(n8, k4), block.data);
 #endif // USING_BUFFER
 }
 

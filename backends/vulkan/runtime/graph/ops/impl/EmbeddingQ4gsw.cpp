@@ -89,9 +89,14 @@ void add_embedding_q4gsw_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
+  // A linear-packed weight has sizes {K / 4, N8 * 4}.
+  const int32_t weight_n8 =
+      is_linear_weight ? graph.size_at<int32_t>(-1, weight) / 4 : 0;
+
   std::vector<PushConstantDataInfo> push_constants = {
       PushConstantDataInfo(&group_size, sizeof(group_size)),
       PushConstantDataInfo(&is_linear_weight, sizeof(is_linear_weight)),
+      PushConstantDataInfo(&weight_n8, sizeof(weight_n8)),
   };
 
   vkapi::ParamsBindList param_ubos = {graph.sizes_ubo(out)};
