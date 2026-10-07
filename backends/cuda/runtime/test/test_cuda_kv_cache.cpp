@@ -48,12 +48,14 @@ struct FakeContainer {
   int updates{0};
   // Compiled metadata the fake reports for a constant index. Unset entries
   // report what the most recent make_cache() geometry and config declare.
-  std::unordered_map<size_t, size_t> data_size_override{};
   std::unordered_map<size_t, int32_t> dtype_override{};
   size_t last_update_pairs{0};
   // Compiled dtype and bytes by FQN, for constants make_cache() cannot
-  // describe: storage built straight on a CudaKVPool, and side buffers.
+  // describe: storage built straight on a CudaKVPool, side buffers, and
+  // programs compiled for another geometry than the cache's.
   std::unordered_map<std::string, std::pair<int32_t, size_t>> declared{};
+  // Compiled shape by FQN, as the serialized FQN-weight metadata carries it.
+  std::unordered_map<std::string, std::vector<int64_t>> shapes{};
 };
 
 // Declares `fqn` as compiled with `dtype` and contiguous `sizes`.
@@ -67,6 +69,7 @@ void declare(
     bytes *= static_cast<size_t>(size);
   }
   container.declared[fqn] = {static_cast<int32_t>(dtype), bytes};
+  container.shapes[fqn] = sizes;
 }
 
 // What the program under test was "compiled" with, for the fake's defaults.
@@ -86,21 +89,54 @@ std::shared_ptr<cache::Cache> make_cache(
   return cu::make_cuda_sequence_kv_cache(geometry, cfg);
 }
 
+// Rows the compiled program declares for one layer's K or V: the capacity,
+// or window + max_write - 1 for a ring.
+int64_t declared_rows(
+    const cache::LayerGeometry& layer,
+    const cache::CacheConfig& cfg) {
+  return layer.policy.kind == cache::LayerPolicy::Kind::Ring
+      ? layer.policy.window + cfg.max_write.value_or(1) - 1
+      : cfg.capacity;
+}
+
 // Bytes the compiled program declares for one layer's K or V: BSHD at the
-// maximum rows, i.e. the capacity, or window + max_write - 1 for a ring.
+// declared rows.
 size_t declared_bytes(
     const cache::LayerGeometry& layer,
     const cache::CacheConfig& cfg) {
-  const int64_t rows = layer.policy.kind == cache::LayerPolicy::Kind::Ring
-      ? layer.policy.window + cfg.max_write.value_or(1) - 1
-      : cfg.capacity;
-  return static_cast<size_t>(rows) * layer.n_kv_heads * layer.head_dim *
+  return static_cast<size_t>(declared_rows(layer, cfg)) * layer.n_kv_heads *
+      layer.head_dim *
       slimc10::elementSize(static_cast<slimc10::ScalarType>(cfg.kv_dtype));
 }
 
 size_t layer_of(const std::string& fqn) {
   const std::string prefix = "__et_offgraph_kv_layer_";
   return std::stoul(fqn.substr(prefix.size()));
+}
+
+// The shapes the serialized metadata carries for the container's off-graph
+// constants: what declare() recorded, else what the most recent make_cache()
+// geometry and config declare for a layer.
+std::unordered_map<std::string, std::vector<int64_t>> compiled_shapes(
+    const FakeContainer& container) {
+  std::unordered_map<std::string, std::vector<int64_t>> shapes;
+  const auto& layers = compiled().geometry.layers;
+  for (const std::string& fqn : container.fqns) {
+    const auto declared = container.shapes.find(fqn);
+    if (declared != container.shapes.end()) {
+      shapes[fqn] = declared->second;
+    } else if (
+        fqn.rfind("__et_offgraph_kv_layer_", 0) == 0 &&
+        layer_of(fqn) < layers.size()) {
+      const auto& layer = layers[layer_of(fqn)];
+      shapes[fqn] = {
+          1,
+          declared_rows(layer, compiled().config),
+          layer.n_kv_heads,
+          layer.head_dim};
+    }
+  }
+  return shapes;
 }
 
 Error get_num_constants(
@@ -149,11 +185,6 @@ Error get_constant_data_size(
     size_t index,
     size_t* data_size) {
   auto* fake = reinterpret_cast<FakeContainer*>(container);
-  const auto it = fake->data_size_override.find(index);
-  if (it != fake->data_size_override.end()) {
-    *data_size = it->second;
-    return Error::Ok;
-  }
   const std::string& fqn = fake->fqns.at(index);
   const auto declared = fake->declared.find(fqn);
   if (declared != fake->declared.end()) {
@@ -196,6 +227,7 @@ cu::CudaDelegateHandle make_handle(FakeContainer& container) {
   handle.get_constant_dtype = get_constant_dtype;
   handle.get_constant_data_size = get_constant_data_size;
   handle.update_user_managed_constant_buffer_pairs = update_pairs;
+  handle.offgraph_kv_sizes = compiled_shapes(container);
   return handle;
 }
 
@@ -587,10 +619,40 @@ TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledRingIsRejected) {
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   auto container = flat_and_ring_container();
-  const size_t compiled_ring_bytes =
-      static_cast<size_t>(kWindow + 8 - 1) * kRow * sizeof(uint16_t);
-  container.data_size_override = {
-      {2, compiled_ring_bytes}, {3, compiled_ring_bytes}};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_1_k", "__et_offgraph_kv_layer_1_v"}) {
+    declare(
+        container,
+        fqn,
+        slimc10::ScalarType::BFloat16,
+        {1, kWindow + 8 - 1, kHeads, kDim});
+  }
+  auto handle = make_handle(container);
+
+  EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
+  EXPECT_EQ(container.updates, 0);
+}
+
+TEST_F(CudaKVCacheTest, RingWithinTheSamePaddedBytesIsRejected) {
+  // One bf16 head of 16: a ring compiled at window 2 spans 64 bytes, and one
+  // installed at window 1 allocates 32, which AOTI's 64-byte rounding also
+  // reports as 64. A step at position 1 would index the second row, past the
+  // allocation, so only the shape may decide.
+  cache::CacheGeometry geometry;
+  geometry.layers = {{{cache::LayerPolicy::Kind::Ring, 1}, 1, 16}};
+  auto cache_ptr = make_cache(geometry, config(64, 4, 1));
+  ASSERT_NE(cache_ptr, nullptr);
+  auto& kv = *cache_ptr->as<cu::CudaKVCache>();
+  FakeContainer container{
+      {"ring_k", "ring_v"},
+      {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"},
+      {},
+      0};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(container, fqn, slimc10::ScalarType::BFloat16, {1, 2, 1, 16});
+  }
+  ASSERT_EQ(container.declared["__et_offgraph_kv_layer_0_k"].second, 64u);
   auto handle = make_handle(container);
 
   EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
@@ -602,9 +664,11 @@ TEST_F(CudaKVCacheTest, CacheNotMatchingTheCompiledCapacityIsRejected) {
   ASSERT_NE(cache_ptr, nullptr);
   auto& kv = *cache_ptr->as<cu::CudaKVCache>();
   auto container = flat_and_ring_container();
-  const size_t compiled_flat_bytes = 128 * kRow * sizeof(uint16_t);
-  container.data_size_override = {
-      {0, compiled_flat_bytes}, {1, compiled_flat_bytes}};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(
+        container, fqn, slimc10::ScalarType::BFloat16, {1, 128, kHeads, kDim});
+  }
   auto handle = make_handle(container);
 
   EXPECT_EQ(kv.note_handle(&handle).error(), Error::InvalidProgram);
@@ -1180,8 +1244,8 @@ TEST_F(CudaKVPoolTest, GrowthCarriesLiveRowsAndCapsAtDeclaredRows) {
 
 TEST_F(CudaKVPoolTest, CompiledSizeRoundedUpBy64IsAccepted) {
   // AOTI reports constant bytes rounded up to 64 when the program also holds
-  // CPU constants: the 128-byte cells buffer stays 128, but a 16-byte one
-  // reads as 64. Both forms describe the same declared shape.
+  // CPU constants: a 16-byte read_len buffer reads as 64. Its serialized
+  // shape still matches what the pool declares.
   cu::CudaKVPool pool(
       {{kHeads, kDim, kDeclaredRows, /*growable=*/true}},
       {{"__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2}}},
@@ -1202,15 +1266,49 @@ TEST_F(CudaKVPoolTest, CompiledSizeRoundedUpBy64IsAccepted) {
         slimc10::ScalarType::BFloat16,
         {1, kDeclaredRows, kHeads, kDim});
   }
-  container.declared["__et_offgraph_kv_read_len"] = {
-      static_cast<int32_t>(slimc10::ScalarType::Long), 64};
+  declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2});
+  container.declared["__et_offgraph_kv_read_len"].second = 64;
   auto handle = make_handle(container);
   EXPECT_TRUE(pool.note_handle(&handle).get());
 
-  // Rounded past the next multiple of 64 is a different shape.
+  // Rounded past the next multiple of 64: the library and its metadata
+  // disagree.
   container.declared["__et_offgraph_kv_read_len"].second = 128;
   EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
   pool.forget_handle(&handle);
+}
+
+TEST_F(CudaKVPoolTest, ShapeHiddenByPaddingIsRejected) {
+  // A read_len compiled at {4} spans 32 bytes, and the pool's {2} spans 16;
+  // padded, both read as 64. The serialized shape tells them apart.
+  cu::CudaKVPool pool(
+      {{kHeads, kDim, kDeclaredRows, /*growable=*/true}},
+      {{"__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2}}},
+      slimc10::ScalarType::BFloat16,
+      4);
+  FakeContainer container{
+      {"k", "v", "read_len"},
+      {"__et_offgraph_kv_layer_0_k",
+       "__et_offgraph_kv_layer_0_v",
+       "__et_offgraph_kv_read_len"},
+      {},
+      0};
+  for (const char* fqn :
+       {"__et_offgraph_kv_layer_0_k", "__et_offgraph_kv_layer_0_v"}) {
+    declare(
+        container,
+        fqn,
+        slimc10::ScalarType::BFloat16,
+        {1, kDeclaredRows, kHeads, kDim});
+  }
+  declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {4});
+  container.declared["__et_offgraph_kv_read_len"].second = 64;
+  auto handle = make_handle(container);
+  EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
+
+  // Nor is a constant accepted without a serialized shape to check.
+  handle.offgraph_kv_sizes.erase("__et_offgraph_kv_read_len");
+  EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
 }
 
 TEST_F(CudaKVPoolTest, ConstantNotMatchingItsCompiledSizeIsRejected) {
@@ -1228,7 +1326,7 @@ TEST_F(CudaKVPoolTest, ConstantNotMatchingItsCompiledSizeIsRejected) {
 
   // And one compiled with another dtype.
   auto wrong_dtype = full_container();
-  declare(wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {32});
+  declare(wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {16});
   auto wrong_dtype_handle = make_handle(wrong_dtype);
   EXPECT_EQ(
       pool->note_handle(&wrong_dtype_handle).error(), Error::InvalidProgram);
@@ -1450,7 +1548,7 @@ TEST_F(CudaCellCacheTest, InterleavedSequencesWritePlacementAndMasks) {
 
 TEST_F(CudaCellCacheTest, SwitchingSequencesKeepsACapturedGraph) {
   // Room for every step below but the last: the pool grows ahead of placement
-  // to where the step could reach, used_end + width.
+  // to where the step could reach, occupied cells + width (no holes here).
   auto cache_ptr = make(/*initial=*/12);
   auto* control = cache_ptr->as<cache::BatchControl>();
   auto* kv = cache_ptr->as<cu::CudaKVCache>();
@@ -1494,6 +1592,63 @@ TEST_F(CudaCellCacheTest, SwitchingSequencesKeepsACapturedGraph) {
   EXPECT_EQ(decode_fake.bound["mask2"].data, bound.at("mask2").data);
   kv->forget_handle(&prefill);
   kv->forget_handle(&decode);
+}
+
+TEST_F(CudaCellCacheTest, StepIntoAFreedCellDoesNotGrow) {
+  // Four rows holding a, a, b, b. Once a goes, b's next token takes cell 0
+  // and read_len stays 4, so the pool must not grow, copy, or drop the graph.
+  auto cache_ptr = make(/*initial=*/4);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  const int32_t b = *control->seq_new();
+  ASSERT_EQ(step(*cache_ptr, handle, {a, a, b, b}), Error::Ok);
+  ASSERT_EQ(kv->metrics().flat_capacity, 4);
+  auto& graph = handle.cuda_graph_state;
+  graph.phase = cu::CudaGraphPhase::Replay;
+  const void* pool = fake.bound["f_k"].data;
+
+  ASSERT_TRUE(control->seq_rm(a));
+  ASSERT_EQ(step(*cache_ptr, handle, {b}), Error::Ok);
+
+  EXPECT_EQ(read_longs(fake.bound["cells"].data, 1), std::vector<int64_t>({0}));
+  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({4}));
+  const auto metrics = kv->metrics();
+  EXPECT_EQ(metrics.flat_capacity, 4);
+  EXPECT_EQ(metrics.growth_count, 0);
+  EXPECT_EQ(graph.phase, cu::CudaGraphPhase::Replay);
+  EXPECT_EQ(fake.bound["f_k"].data, pool);
+  kv->forget_handle(&handle);
+}
+
+TEST_F(CudaCellCacheTest, UploadsOutliveTheStepTheyWereBuiltFrom) {
+  // The base's step is invalidated by the next verb, which may run before
+  // the stream reaches the uploads. They must still deliver the step that
+  // was prepared.
+  auto cache_ptr = make(/*initial=*/8);
+  auto* control = cache_ptr->as<cache::BatchControl>();
+  auto* kv = cache_ptr->as<cu::CudaKVCache>();
+  auto fake = container();
+  auto handle = make_handle(fake);
+  ASSERT_TRUE(kv->note_handle(&handle).get());
+  const int32_t a = *control->seq_new();
+  const int32_t b = *control->seq_new();
+  ASSERT_TRUE(control->declare_step({a, a, b}));
+  ASSERT_EQ(kv->prepare_step(3, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_TRUE(control->seq_rm(b));
+  ASSERT_TRUE(control->declare_step({a}));
+
+  ASSERT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
+  EXPECT_EQ(read_longs(fake.bound["cells"].data, 3), std::vector<int64_t>({0, 1, 2}));
+  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({3}));
+  EXPECT_EQ(
+      read_mask(fake.bound["mask0"].data, 3, 3),
+      std::vector<std::vector<int>>({{1, 0, 0}, {1, 1, 0}, {0, 0, 1}}));
+  kv->forget_handle(&handle);
 }
 
 TEST_F(CudaCellCacheTest, ClonedSequenceSharesCellsUntilItsLastOwnerGoes) {
@@ -1542,10 +1697,17 @@ TEST_F(CudaCellCacheTest, RejectsStepsThatDisagreeWithTheDeclaration) {
   EXPECT_EQ(
       kv->prepare_step(kMaxWrite + 1, cudaStreamPerThread),
       Error::InvalidArgument);
-  // More tokens than free cells never declares.
+  // More tokens than free cells, or an id that was never handed out, never
+  // declares.
   EXPECT_FALSE(control->declare_step(std::vector<int32_t>(kCells + 1, a)));
+  EXPECT_FALSE(control->declare_step({-1}));
   // A rejected step leaves the table untouched.
   EXPECT_EQ(control->pos(a), 0);
+  // And the earlier accepted declaration still stands.
+  ASSERT_EQ(kv->prepare_step(2, cudaStreamPerThread), Error::Ok);
+  ASSERT_EQ(kv->rebind_for_execute(&handle), Error::Ok);
+  ASSERT_EQ(kv->commit_step(2), Error::Ok);
+  EXPECT_EQ(control->pos(a), 2);
   kv->forget_handle(&handle);
 }
 

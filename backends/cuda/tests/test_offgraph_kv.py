@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib
 import json
 import unittest
 import unittest.mock
@@ -42,6 +43,10 @@ from executorch.extension.llm.cache.reference_cache import (
 # Importing the op module registers kvcache::update_and_attend and exposes the
 # registry the eager implementation reads its cache from.
 from executorch.extension.llm.cache.update_and_attend import REGISTRY
+
+# The module, not the op the package re-exports under the same name: the tests
+# spy on which kernel its dispatch launches.
+_SDPA = importlib.import_module("executorch.backends.cuda.triton.kernels.sdpa")
 
 
 N_KV_HEADS = 2
@@ -700,29 +705,54 @@ class OffGraphKVCellDecompositionTest(unittest.TestCase):
             (together[:, :, 4:].float() - alone.float()).abs().max().item(), 1e-2
         )
 
-    def test_read_len_bounds_the_sweep(self) -> None:
+    def _assert_read_len_bounds(self, steps, max_cells: int, max_write: int) -> None:
         # The runtime writes only the mask's [:width, :read_len] each step and
-        # leaves stale columns past read_len from earlier, wider steps. Poison
-        # everything past read_len -- mask true, pool NaN -- and require the
-        # output unchanged, on both the plain and the split-K kernels.
-        for seed, (groups, max_cells) in enumerate(
-            ((((0, 0, 5), (1, 0, 3)), 64), (((0, 0, 290), (1, 0, 3)), 512))
-        ):
-            torch.manual_seed(20 + seed)
-            oracle = _CellOracle(max_cells)
-            self.addCleanup(oracle.close)
-            buffers = _CellBuffers(296, max_cells)
+        # leaves stale columns past read_len from earlier, wider steps. Before
+        # every step, poison everything past read_len -- mask true, pool NaN --
+        # and require the output unchanged.
+        oracle = _CellOracle(max_cells)
+        self.addCleanup(oracle.close)
+        buffers = _CellBuffers(max_write, max_cells)
+        k_pool, v_pool = buffers.pools[0]
+        for groups in steps:
             seq_ids, q, k, v, position = _batch(groups)
             (expected,) = oracle.step(seq_ids, q, k, v, position)
             plan = oracle.plan()
             buffers.load(plan)
             read_len = plan[1]
             buffers.masks[0][..., read_len:] = True
-            buffers.pools[0][0][:, read_len:] = float("nan")
-            buffers.pools[0][1][:, read_len:] = float("nan")
+            k_pool[:, read_len:] = float("nan")
+            v_pool[:, read_len:] = float("nan")
             out = buffers.step(0, q, k, v)
-            self.assertFalse(torch.isnan(out).any())
-            self.assertLess(_max_abs_diff(out, expected), 1e-2)
+            self.assertFalse(torch.isnan(out).any(), groups)
+            self.assertLess(_max_abs_diff(out, expected), 1e-2, groups)
+
+    def test_read_len_bounds_the_sweep(self) -> None:
+        torch.manual_seed(20)
+        self._assert_read_len_bounds(
+            (((0, 0, 5), (1, 0, 3)),), max_cells=64, max_write=16
+        )
+
+    def test_read_len_bounds_both_split_k_kernels(self) -> None:
+        # sdpa takes split-K only for one, or two to four, query rows over a
+        # pool past its threshold. After a long prefill, decode one token,
+        # then three, so each split-K kernel runs over a poisoned tail.
+        torch.manual_seed(21)
+        steps = (
+            ((0, 0, 290), (1, 0, 3)),
+            ((0, 290, 1),),
+            ((0, 291, 1), (1, 3, 2)),
+        )
+        with unittest.mock.patch.object(
+            _SDPA, "_launch_decode_splitk", wraps=_SDPA._launch_decode_splitk
+        ) as decode, unittest.mock.patch.object(
+            _SDPA,
+            "_launch_small_query_splitk",
+            wraps=_SDPA._launch_small_query_splitk,
+        ) as small_query:
+            self._assert_read_len_bounds(steps, max_cells=512, max_write=296)
+        self.assertEqual(decode.call_count, 1)
+        self.assertEqual(small_query.call_count, 1)
 
     def test_split_k_decodes_over_a_large_pool(self) -> None:
         # read_len past sdpa's split-K threshold, with one, then three, query
@@ -796,9 +826,17 @@ class LowerOffGraphKVCellPassTest(unittest.TestCase):
             dict(base, layout="paged"),
             {k: v for k, v in base.items() if k != "max_cells"},
             dict(base, max_cells=self.MAX_WRITE - 1),
+            # A sequence step writes into one sequence's capacity.
+            dict(sequence, max_write=sequence["maximum_capacity"] + 1),
         ):
             with self.assertRaises(ValueError):
                 parse_offgraph_kv_manifest(json.dumps(bad).encode())
+        # A cell step packs several sequences into the pool, so only the pool
+        # bounds its width: two six-token sequences of capacity 8 fit 16 cells.
+        packed = dict(base, maximum_capacity=8, max_cells=16, max_write=12)
+        self.assertEqual(
+            parse_offgraph_kv_manifest(json.dumps(packed).encode())["max_write"], 12
+        )
 
     def test_declares_one_pool_per_layer_and_shared_step_buffers(self) -> None:
         lowered = self._lowered()
@@ -947,9 +985,10 @@ class OffGraphKVCellCompileTest(unittest.TestCase):
                             CudaBackend.generate_method_name_compile_spec(name),
                             CompileSpec(OFFGRAPH_KV_COMPILE_SPEC, manifest),
                             # The step width names the delegate's input
-                            # order, which partitioning decides: position
-                            # comes first.
-                            CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"0:0"),
+                            # order, which partitioning decides: here the
+                            # method's own (q, k, v, position), so position
+                            # is input 3.
+                            CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"3:0"),
                             # Runtime-owned storage is declared without bytes;
                             # low-memory mode is what compiles such constants,
                             # as every off-graph export does.
