@@ -175,35 +175,28 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
   ET_CHECK_OK_OR_RETURN_ERROR(module->load());
 
   ET_ASSIGN_OR_RETURN(
-      max_context_length,
-      metadata::read_max_context_length(*module));
+      max_context_length, metadata::read_max_context_length(*module));
   ET_CHECK_OR_RETURN_ERROR(
       max_session_tokens <= max_context_length,
       InvalidArgument,
       "CudaExecutor: max session tokens %d exceeds model context length %" PRId64,
       max_session_tokens,
       max_context_length);
-  ET_ASSIGN_OR_RETURN(
-      logits_mode,
-      metadata::read_logits_to_keep_mode(*module));
+  ET_ASSIGN_OR_RETURN(logits_mode, metadata::read_logits_to_keep_mode(*module));
   // decode's selector is static at one row, so only a program whose logits
   // are selected per input fits.
   ET_CHECK_OR_RETURN_ERROR(
       logits_mode == LogitsToKeepMode::Selected,
       NotSupported,
       "CudaExecutor: the program must select its logits rows");
-  ET_ASSIGN_OR_RETURN(
-      geometry, metadata::read_cache_geometry(*module));
+  ET_ASSIGN_OR_RETURN(geometry, metadata::read_cache_geometry(*module));
   ET_ASSIGN_OR_RETURN(
       max_cells,
       metadata::detail::read_required_positive_int(*module, kMaxCellsMethod));
 
-  ET_ASSIGN_OR_RETURN(
-      decode_meta, module->method_meta(kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(
-      prefill_meta, module->method_meta(kPrefillMethod));
-  ET_ASSIGN_OR_RETURN(
-      decode_width, step_width(decode_meta, kDecodeMethod));
+  ET_ASSIGN_OR_RETURN(decode_meta, module->method_meta(kDecodeMethod));
+  ET_ASSIGN_OR_RETURN(prefill_meta, module->method_meta(kPrefillMethod));
+  ET_ASSIGN_OR_RETURN(decode_width, step_width(decode_meta, kDecodeMethod));
   ET_ASSIGN_OR_RETURN(
       max_step_tokens, step_width(prefill_meta, kPrefillMethod));
   ET_CHECK_OR_RETURN_ERROR(
@@ -215,25 +208,19 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
       kMinPrefillTokens,
       decode_width,
       max_step_tokens);
+  ET_ASSIGN_OR_RETURN(decode_vocab, logits_width(decode_meta, kDecodeMethod));
   ET_ASSIGN_OR_RETURN(
-      decode_vocab, logits_width(decode_meta, kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(
-      prefill_vocab,
-      logits_width(prefill_meta, kPrefillMethod));
+      prefill_vocab, logits_width(prefill_meta, kPrefillMethod));
   ET_CHECK_OR_RETURN_ERROR(
       decode_vocab == prefill_vocab,
       InvalidProgram,
       "CudaExecutor: decode and prefill disagree on the vocabulary");
+  ET_ASSIGN_OR_RETURN(published_vocab, metadata::read_vocab_size(*module));
   ET_ASSIGN_OR_RETURN(
-      published_vocab, metadata::read_vocab_size(*module));
+      vocab_size, metadata::check_vocab_size(published_vocab, decode_vocab));
+  ET_ASSIGN_OR_RETURN(backend_id, backend_of(decode_meta, kDecodeMethod));
   ET_ASSIGN_OR_RETURN(
-      vocab_size,
-      metadata::check_vocab_size(published_vocab, decode_vocab));
-  ET_ASSIGN_OR_RETURN(
-      backend_id, backend_of(decode_meta, kDecodeMethod));
-  ET_ASSIGN_OR_RETURN(
-      prefill_backend,
-      backend_of(prefill_meta, kPrefillMethod));
+      prefill_backend, backend_of(prefill_meta, kPrefillMethod));
   (void)prefill_backend;
 
   // Every resident session may fill its budget at once; the pool must hold

@@ -22,9 +22,9 @@ from executorch.backends.cuda.passes.lower_offgraph_kv import (
     OFFGRAPH_KV_CELLS_FQN,
     OFFGRAPH_KV_COMPILE_SPEC,
     OFFGRAPH_KV_FQN_PREFIX,
+    offgraph_kv_mask_fqn,
     OFFGRAPH_KV_READ_LEN_FQN,
     OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC,
-    offgraph_kv_mask_fqn,
     offgraph_step,
     parse_offgraph_kv_manifest,
     ring_attention_mask,
@@ -951,9 +951,7 @@ class OffGraphKVCellCompileTest(unittest.TestCase):
         ).encode()
         t = torch.export.Dim("t", min=2, max=self.MAX_WRITE)
         programs = {
-            "decode": torch.export.export(
-                _CellAttention(), _inputs(0, 1), strict=True
-            ),
+            "decode": torch.export.export(_CellAttention(), _inputs(0, 1), strict=True),
             "prefill": torch.export.export(
                 _CellAttention(),
                 _inputs(0, 8),

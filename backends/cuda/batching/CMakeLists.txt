@@ -29,8 +29,9 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
-install(FILES cuda_executor.h step_plan.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cuda/batching
+install(
+  FILES cuda_executor.h step_plan.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cuda/batching
 )
 
 if(BUILD_TESTING)
