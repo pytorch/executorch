@@ -39,6 +39,15 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "quantized_linear_packed",
+        exported_headers = ["quantized_linear_packed.h"],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        ]
+    )
+
+    runtime.cxx_library(
         name = "op_dequantize_per_tensor",
         srcs = ["op_dequantize_per_tensor.cpp"],
         exported_headers = ["op_dequantize_per_tensor.h"],
@@ -202,6 +211,21 @@ def define_common_targets():
             "//executorch/backends/cadence/generic/kernels:cadence_kernels",
             "//executorch/runtime/kernel:kernel_includes",
             ":quantized_linear",
+            ":quantized_op_macros",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
+    runtime.cxx_library(
+        name = "op_quantized_fully_connected_packed",
+        srcs = ["op_quantized_fully_connected_packed.cpp"],
+        exported_headers = ["op_quantized_fully_connected_packed.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+            "//executorch/runtime/kernel:kernel_includes",
+            ":quantized_linear",
+            ":quantized_linear_packed",
             ":quantized_op_macros",
         ],
         visibility = ["PUBLIC"],
