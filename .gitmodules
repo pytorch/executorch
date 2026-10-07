@@ -27,7 +27,7 @@
 	url = https://github.com/meta-pytorch/tokenizers.git
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
-	url = https://gitlab.com/libeigen/eigen.git
+	url = https://github.com/eigen-mirror/eigen.git
 [submodule "third-party/flatbuffers"]
 	path = third-party/flatbuffers
 	url = https://github.com/google/flatbuffers.git

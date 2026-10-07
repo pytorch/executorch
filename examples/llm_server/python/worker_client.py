@@ -32,7 +32,7 @@ import logging
 import os
 import subprocess
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
 logger = logging.getLogger(__name__)
@@ -69,11 +69,31 @@ class WorkerStats:
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
-    # a lossy chat-template re-render. Empty on older workers and cancelled turns.
-    generated_token_ids: list = field(default_factory=list)
+    # a lossy chat-template re-render. None means unknown/unsafe (including older
+    # workers); an explicit empty list is a known-empty, resumable token sequence.
+    generated_token_ids: Optional[list[int]] = None
     # True when an out-of-band cancellation ended this request. Older workers
     # omit the field and therefore report False.
     cancelled: bool = False
+
+    @classmethod
+    def from_message(cls, msg: dict) -> "WorkerStats":
+        return cls(
+            num_prompt_tokens=msg.get("prompt_tokens", 0),
+            num_generated_tokens=msg.get("completion_tokens", 0),
+            finish_reason=msg.get("finish_reason"),
+            reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
+            prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
+            session_reset_reason=msg.get("session_reset_reason"),
+            prefill_ms=msg.get("prefill_ms", 0.0),
+            decode_ms=msg.get("decode_ms", 0.0),
+            total_ms=msg.get("total_ms", 0.0),
+            prefill_tok_s=msg.get("prefill_tok_s", 0.0),
+            decode_tok_s=msg.get("decode_tok_s", 0.0),
+            vision_encoder_ms=msg.get("vision_encoder_ms"),
+            cancelled=bool(msg.get("cancelled", False)),
+            generated_token_ids=msg.get("generated_token_ids"),
+        )
 
 
 class WorkerError(RuntimeError):
@@ -164,6 +184,8 @@ class WorkerClient:
     reservation, cancellation, health, and shutdown use a separate state lock,
     so ``stop()`` never waits behind a blocking stdout read.
     """
+
+    supports_multiplexing = False
 
     def __init__(
         self,
@@ -419,24 +441,7 @@ class WorkerClient:
                 msg.get("prefilled_prompt_tokens", 0),
             )
         if stats_callback is not None:
-            stats_callback(
-                WorkerStats(
-                    num_prompt_tokens=msg.get("prompt_tokens", 0),
-                    num_generated_tokens=msg.get("completion_tokens", 0),
-                    finish_reason=msg.get("finish_reason"),
-                    reused_prompt_tokens=msg.get("reused_prompt_tokens", 0),
-                    prefilled_prompt_tokens=msg.get("prefilled_prompt_tokens", 0),
-                    session_reset_reason=reason,
-                    prefill_ms=msg.get("prefill_ms", 0.0),
-                    decode_ms=msg.get("decode_ms", 0.0),
-                    total_ms=msg.get("total_ms", 0.0),
-                    prefill_tok_s=msg.get("prefill_tok_s", 0.0),
-                    decode_tok_s=msg.get("decode_tok_s", 0.0),
-                    vision_encoder_ms=msg.get("vision_encoder_ms"),
-                    cancelled=bool(msg.get("cancelled", False)),
-                    generated_token_ids=msg.get("generated_token_ids", []),
-                )
-            )
+            stats_callback(WorkerStats.from_message(msg))
 
     def _generate_locked(self, request: dict, token_callback, stats_callback) -> None:
         self._ensure_usable()
@@ -581,12 +586,13 @@ def spawn_worker(
     cwd: Optional[str] = None,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
 ) -> WorkerClient:
-    """Start a worker and wait for its additive readiness negotiation.
+    """Start a sequential worker and wait for its readiness negotiation.
 
     POSIX workers inherit the read end of a cancellation pipe through
     ``EXECUTORCH_LLM_WORKER_CONTROL_FD``. The parent retains a nonblocking writer
     only when readiness includes ``{"supports_cancel": true}``; old workers keep
-    their original JSONL request shape and behavior.
+    their original JSONL request shape and behavior. Multiplexed workers require
+    the async ``spawn_multiplexed_worker`` factory instead.
     """
     logger.info("Starting model worker: %s", cmd[0])
     control_read_fd: Optional[int] = None
@@ -627,6 +633,10 @@ def spawn_worker(
         msg = _decode_worker_json(line)
         if not msg.get("ready"):
             raise WorkerError(f"worker did not report ready: {msg}")
+        if msg.get("multiplexed") is True:
+            raise WorkerError(
+                "multiplexed workers require await spawn_multiplexed_worker(...)"
+            )
         max_named = int(msg.get("max_named_sessions", 0))
         supports_cancel = msg.get("supports_cancel") is True
         if not supports_cancel:
