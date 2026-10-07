@@ -10,8 +10,8 @@
 # types; the runner owns a thread, so this is a static library rather than an
 # INTERFACE target.
 #
-# extension_llm_batching_util is what every executor over a multi-sequence
-# cache shares: the session table, batch packing and per-session sampling.
+# extension_llm_batching_util is what every executor over a multi-sequence cache
+# shares: the session table, batch packing and per-session sampling.
 # extension_llm_batching_module implements the seam against a program and a KV
 # cache, and so carries the runtime types the seam itself is kept clear of.
 

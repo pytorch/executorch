@@ -108,7 +108,6 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
       std::int32_t vocab_size,
       int max_step_tokens);
 
-
   // Ordered so the module dies first, releasing the delegates that resolved
   // the cache before the registry entry naming it goes.
   llm_cache::InstallGuard install_guard_;
