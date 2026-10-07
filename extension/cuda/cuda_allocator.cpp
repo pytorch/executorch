@@ -6,19 +6,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 
 #include <executorch/extension/cuda/caller_stream.h>
-#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/platform.h>
 
-#if !defined(EXECUTORCH_USE_HIP)
+#include <atomic>
+#include <limits>
 #include <mutex>
 #include <unordered_map>
+
+#if !defined(EXECUTORCH_USE_HIP)
 #include <vector>
 #endif
 
-namespace executorch::backends::cuda {
+namespace executorch::extension::cuda {
 
 using executorch::runtime::Error;
 using executorch::runtime::Result;
@@ -27,6 +30,28 @@ using executorch::runtime::etensor::DeviceType;
 
 namespace {
 
+struct PalInitializer final {
+  PalInitializer() {
+    // A static-runtime build gives this library its own platform state.
+    et_pal_init();
+  }
+};
+
+const PalInitializer kPalInitializer{};
+
+// deallocate() must free the address cudaMalloc returned, not the rounded one.
+struct RoundedAllocations {
+  std::mutex mutex;
+  std::unordered_map<void*, void*> original_by_rounded;
+  std::atomic<size_t> count{0};
+};
+
+RoundedAllocations& rounded_allocations() {
+  // Static destructors may still return rounded allocations.
+  static auto* state = new RoundedAllocations();
+  return *state;
+}
+
 #if !defined(EXECUTORCH_USE_HIP)
 // The stream ordered allocator hands physical memory back to the driver
 // whenever a synchronization observes a pending free, so with the default
@@ -34,13 +59,8 @@ namespace {
 // and every allocation has to map memory again, which measured three orders of
 // magnitude slower on an embedded board.
 //
-// The delegate allocates from a pool it creates rather than the device default
-// pool, because the default one is shared with every other user of the async
-// allocator in this process. Raising the threshold there would make that shared
-// pool hold on to memory on their behalf, and trimming it on teardown would
-// throw their cached blocks away. Owning the pool means the threshold and the
-// trim only ever affect this backend, with no attempt to remember and restore
-// somebody else's setting.
+// A separate pool leaves the device default pool's policy unchanged. Delegates
+// using this allocator share both its retention threshold and its cache trims.
 constexpr uint64_t kMemPoolReleaseThreshold = UINT64_MAX;
 
 struct MemPoolState {
@@ -49,8 +69,9 @@ struct MemPoolState {
 };
 
 MemPoolState& mem_pool_state() {
-  static MemPoolState state;
-  return state;
+  // Delegate teardown may trim pools during static destruction.
+  static auto* state = new MemPoolState();
+  return *state;
 }
 
 // Resolves the "current device" sentinel that callers are allowed to pass.
@@ -72,7 +93,7 @@ int resolve_device(DeviceIndex index) {
   return current;
 }
 
-// The pool this backend allocates from on a device, creating it on first use.
+// The shared allocator pool on a device, creating it on first use.
 // Returns nullptr when the pool cannot be created, in which case the caller
 // falls back to the device default pool and only loses speed.
 cudaMemPool_t mem_pool_for(int device) {
@@ -240,21 +261,18 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
       "CudaAllocator::allocate: alignment must be a power of 2, got %zu",
       alignment);
 
-  // cudaMalloc is documented to return memory aligned to at least 256 bytes,
-  // which trivially satisfies kDefaultAlignment (alignof(void*)). For any
-  // requested alignment <= 256 bytes, the returned pointer is already aligned.
-  // Stricter alignment would require over-allocation plus bookkeeping that
-  // deallocate() does not currently support, so reject that case.
+  // cudaMalloc guarantees 256 bytes. A larger alignment pads one allocation
+  // instead of retrying, because freeing a misaligned block would wait for all
+  // work queued on the device.
   constexpr size_t kCudaMallocAlignment = 256;
+  const size_t padding = alignment > kCudaMallocAlignment ? alignment - 1 : 0;
   ET_CHECK_OR_RETURN_ERROR(
-      alignment <= kCudaMallocAlignment,
-      NotSupported,
-      "CudaAllocator::allocate: requested alignment %zu exceeds cudaMalloc's "
-      "guaranteed alignment of %zu bytes; stricter alignment is not supported",
-      alignment,
-      kCudaMallocAlignment);
+      nbytes <= std::numeric_limits<size_t>::max() - padding,
+      InvalidArgument,
+      "CudaAllocator::allocate: size %zu with alignment %zu overflows",
+      nbytes,
+      alignment);
 
-  void* ptr = nullptr;
   int prev_device = 0;
   bool switch_device = false;
 
@@ -293,7 +311,8 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
     }
   }
 
-  cudaError_t err = cudaMalloc(&ptr, nbytes);
+  void* block = nullptr;
+  const cudaError_t err = cudaMalloc(&block, nbytes + padding);
 
   if (switch_device) {
     (void)cudaSetDevice(prev_device);
@@ -302,32 +321,59 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
   if (err != cudaSuccess) {
     ET_LOG(
         Error,
-        "cudaMalloc failed: %s (requested %zu bytes on device %d)",
+        "CudaAllocator::allocate: cudaMalloc of %zu bytes failed: %s "
+        "(requested %zu bytes with alignment %zu on device %d)",
+        nbytes + padding,
         cudaGetErrorString(err),
         nbytes,
+        alignment,
         static_cast<int>(index));
     return Error::MemoryAllocationFailed;
   }
 
-  // Sanity check: the pointer returned by cudaMalloc should already meet the
-  // requested alignment. If a future CUDA runtime weakens this guarantee, we
-  // want to fail loudly rather than silently return a misaligned pointer.
-  if ((reinterpret_cast<uintptr_t>(ptr) & (alignment - 1)) != 0) {
+  if (padding != 0) {
+    const size_t offset = -reinterpret_cast<uintptr_t>(block) & padding;
+    if (offset == 0) {
+      return block;
+    }
+    void* const ptr = static_cast<char*>(block) + offset;
+    auto& rounded = rounded_allocations();
+    const std::lock_guard<std::mutex> lock(rounded.mutex);
+    rounded.original_by_rounded.emplace(ptr, block);
+    rounded.count.fetch_add(1, std::memory_order_relaxed);
+    return ptr;
+  }
+
+  if ((reinterpret_cast<uintptr_t>(block) & (alignment - 1)) != 0) {
     ET_LOG(
         Error,
         "cudaMalloc returned pointer %p not aligned to %zu bytes",
-        ptr,
+        block,
         alignment);
-    (void)cudaFree(ptr);
-    return Error::MemoryAllocationFailed;
+    (void)cudaFree(block);
+    return Error::NotSupported;
   }
 
-  return ptr;
+  return block;
 }
 
 void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   if (ptr == nullptr) {
     return;
+  }
+
+  auto& rounded = rounded_allocations();
+  // Skips the lock while no rounded pointer is live. Relaxed is enough: a
+  // pointer reaches deallocate() through a handoff that orders it after the
+  // allocate() that counted it.
+  if (rounded.count.load(std::memory_order_relaxed) != 0) {
+    const std::lock_guard<std::mutex> lock(rounded.mutex);
+    const auto it = rounded.original_by_rounded.find(ptr);
+    if (it != rounded.original_by_rounded.end()) {
+      ptr = it->second;
+      rounded.original_by_rounded.erase(it);
+      rounded.count.fetch_sub(1, std::memory_order_relaxed);
+    }
   }
 
   int prev_device = 0;
@@ -396,8 +442,9 @@ DeviceType CudaAllocator::device_type() const {
 }
 
 CudaAllocator& CudaAllocator::instance() {
-  static CudaAllocator allocator;
-  return allocator;
+  // Registered allocators can be called until the process exits.
+  static auto* allocator = new CudaAllocator();
+  return *allocator;
 }
 
 Result<void*> CudaAllocator::allocate_async(
@@ -412,7 +459,7 @@ Result<void*> CudaAllocator::allocate_async(
 #if defined(EXECUTORCH_USE_HIP)
   err = cudaMallocAsync(&ptr, nbytes, stream);
 #else
-  // Allocating from this backend's own pool keeps its retained memory out of
+  // Allocating from this allocator's pool keeps its retained memory out of
   // the device default pool, which other users of the async allocator share.
   //
   // The pool has to belong to the device the stream runs on. A pool from
@@ -499,7 +546,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
       }
       targets.emplace_back(it->first, it->second);
     } else {
-      // A caller asking for everything gets every pool this backend created,
+      // A caller asking for everything gets every pool this allocator created,
       // not whichever device the calling thread happens to be current on, since
       // the delegate that ran is often not on that device.
       targets.assign(state.pools.begin(), state.pools.end());
@@ -530,7 +577,7 @@ void CudaAllocator::release_cached_memory(DeviceIndex index) {
     // to the device graph pool, which the pool trim cannot reach, so a
     // graph-enabled method would otherwise hold its footprint for the life of
     // the process. Outside the branch above because graph memory is a device
-    // resource and exists whether or not this backend has a pool here.
+    // resource and exists whether or not this allocator has a pool here.
     //
     // Device scoped, unlike everything else in this function: it releases
     // unused graph memory cached by every user of the device, so another
@@ -567,4 +614,4 @@ Error CudaAllocator::memcpy_async(
   return Error::Ok;
 }
 
-} // namespace executorch::backends::cuda
+} // namespace executorch::extension::cuda

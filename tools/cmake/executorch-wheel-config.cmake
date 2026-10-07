@@ -78,13 +78,17 @@
 # executorch::kernels_torchao    The TorchAO kernels. Linux and macOS on
 #                                aarch64 only.
 # executorch::backend_cuda       The CUDA delegate. Linux only.
-# executorch::extension_cuda     The CUDA stream and device helpers. Linux
-#                                only.
+# executorch::extension_cuda     The CUDA allocator, stream and device helpers.
+#                                Linux only. The allocator header requires a
+#                                CUDA toolkit, found through CUDAToolkit_ROOT
+#                                or CMake's standard toolkit search. A program
+#                                that calls the CUDA runtime itself links
+#                                CUDA::cudart.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
 #                                OpenVINO runtime by name, which a C++ program
 #                                installs and points OPENVINO_LIB_PATH at.
 # executorch::threadpool         The shared thread pool.
-# executorch::etdump             The profiler.
+# executorch::etdump             The profiler. Not on Windows.
 # ~~~
 #
 # EXECUTORCH_LIBRARIES carries every component except the quantized kernels,
@@ -219,6 +223,18 @@ set(EXECUTORCH_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
 # targets and would otherwise compile these headers with whatever its compiler
 # defaults to.
 set(EXECUTORCH_CXX_STANDARD 17)
+if(WIN32)
+  # The vendored c10 headers reach std::countl_zero on the MSVC branch, which is
+  # why executorch_core states cxx_std_20 on Windows.
+  set(EXECUTORCH_CXX_STANDARD 20)
+  # The DLLs use the C++ library of the configuration the wheel was built in,
+  # release for a normal build and debug for DEBUG=1, which packaging fills in
+  # here. A program built in the other configuration uses the other library,
+  # whose types are laid out differently, so the two mixed would corrupt memory
+  # rather than fail to link. This makes the runtime headers refuse that build
+  # at compile time; see runtime/platform/compiler.h.
+  list(APPEND EXECUTORCH_COMPILE_DEFINITIONS "@EXECUTORCH_CRT_DEFINITION@")
+endif()
 foreach(_required_include ${EXECUTORCH_INCLUDE_DIRS})
   if(NOT EXISTS "${_required_include}")
     message(
@@ -266,6 +282,10 @@ function(_executorch_find_library _output _base_name)
     file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.dylib"
          "${_executorch_package_root}/lib/${_base_name}.*.dylib"
     )
+  elseif(WIN32)
+    # PE names carry no lib prefix and no version.
+    string(REGEX REPLACE "^lib" "" _windows_name "${_base_name}")
+    file(GLOB _matches "${_executorch_package_root}/lib/${_windows_name}.dll")
   else()
     file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
          "${_executorch_package_root}/lib/${_base_name}.so.*"
@@ -321,7 +341,16 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # imported targets express the same thing through link options, which this
   # older-CMake route cannot use.
   set(EXECUTORCH_FOUND ON)
-  list(APPEND EXECUTORCH_LIBRARIES "${_executorch_runtime_library}")
+  if(WIN32)
+    # A consumer links the import library beside a DLL, not the DLL itself.
+    string(REGEX REPLACE "\\.dll$" ".lib" _executorch_runtime_link_file
+                         "${_executorch_runtime_library}"
+    )
+    list(APPEND EXECUTORCH_LIBRARIES "${_executorch_runtime_link_file}")
+    unset(_executorch_runtime_link_file)
+  else()
+    list(APPEND EXECUTORCH_LIBRARIES "${_executorch_runtime_library}")
+  endif()
   # Every shipped library, not only the kernels. A delegate registers itself
   # from a static initializer, so leaving one out gave a clean configure and
   # then a load failure saying the backend is not registered, which reads as a
@@ -347,6 +376,10 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
           libexecutorch_threadpool
           libexecutorch_etdump
   )
+    # Not offered on Windows, for the reason given at the component definition.
+    if(WIN32 AND _executorch_component STREQUAL "libexecutorch_etdump")
+      continue()
+    endif()
     _executorch_find_library(
       _executorch_component_library "${_executorch_component}"
     )
@@ -360,6 +393,18 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
           APPEND
           EXECUTORCH_LIBRARIES
           "-Wl,--push-state,--no-as-needed,${_executorch_component_library},--pop-state"
+        )
+      elseif(WIN32)
+        # The import library, plus a reference to the DLL's anchor so the linker
+        # keeps a registration-only DLL in the import table.
+        string(REGEX REPLACE "\\.dll$" ".lib" _executorch_component_link_file
+                             "${_executorch_component_library}"
+        )
+        string(REGEX REPLACE "^lib" "" _executorch_component_base
+                             "${_executorch_component}"
+        )
+        list(APPEND EXECUTORCH_LIBRARIES "${_executorch_component_link_file}"
+             "-INCLUDE:executorch_anchor_${_executorch_component_base}"
         )
       else()
         list(APPEND EXECUTORCH_LIBRARIES "${_executorch_component_library}")
@@ -390,6 +435,14 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
     # a registration-only library exports nothing the application references.
     set(EXECUTORCH_QUANTIZED_KERNELS_LIBRARY
         "-Wl,--push-state,--no-as-needed,${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY},--pop-state"
+    )
+  elseif(EXECUTORCH_QUANTIZED_KERNELS_LIBRARY AND WIN32)
+    string(REGEX REPLACE "\\.dll$" ".lib" EXECUTORCH_QUANTIZED_KERNELS_LIBRARY
+                         "${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY}"
+    )
+    set(EXECUTORCH_QUANTIZED_KERNELS_LIBRARY
+        "${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY}"
+        "-INCLUDE:executorch_anchor_executorch_kernels_quantized"
     )
   endif()
   message(
@@ -433,6 +486,22 @@ elseif(_executorch_runtime_library)
         INTERFACE_COMPILE_DEFINITIONS
         "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
     )
+    if(WIN32)
+      string(REGEX REPLACE "\\.dll$" ".lib" _executorch_runtime_implib
+                           "${_executorch_runtime_library}"
+      )
+      # The release C++ library check, see EXECUTORCH_COMPILE_DEFINITIONS.
+      set_target_properties(
+        executorch::runtime
+        PROPERTIES IMPORTED_IMPLIB "${_executorch_runtime_implib}"
+                   INTERFACE_COMPILE_FEATURES cxx_std_20
+      )
+      set_property(
+        TARGET executorch::runtime
+        APPEND
+        PROPERTY INTERFACE_COMPILE_DEFINITIONS "@EXECUTORCH_CRT_DEFINITION@"
+      )
+    endif()
     # $ORIGIN comes first so an application deployed beside its own copy of the
     # runtime finds that copy. The loader takes the first match, so leading with
     # the install directory would send a relocated application back to the
@@ -581,6 +650,21 @@ function(_executorch_define_component _suffix _library_name)
                "LINKER:-rpath,@loader_path/../lib"
                "LINKER:-rpath,${_executorch_package_root}/lib"
     )
+  elseif(WIN32)
+    # No search path to record; the DLL has to sit beside the application. The
+    # anchor reference is what keeps a registration-only DLL in the import
+    # table.
+    string(REGEX REPLACE "\\.dll$" ".lib" _implib "${_library}")
+    set_target_properties(
+      ${_target} PROPERTIES IMPORTED_IMPLIB "${_implib}"
+                            INTERFACE_COMPILE_FEATURES cxx_std_20
+    )
+    set_property(
+      TARGET ${_target}
+      APPEND
+      PROPERTY INTERFACE_LINK_OPTIONS
+               "LINKER:/INCLUDE:executorch_anchor_${_library_name}"
+    )
   endif()
   if(NOT _component_OPT_IN)
     set(EXECUTORCH_LIBRARIES
@@ -622,8 +706,12 @@ if(TARGET executorch::kernels_quantized)
 endif()
 # The profiler. A C++ application could not record timing data from an installed
 # package before, because the implementation shipped only inside the Python
-# extension.
-_executorch_define_component(etdump executorch_etdump)
+# extension. Not offered on Windows, where the wheel is built without the event
+# tracer and the library would record nothing; it ships there only because the
+# Python extension links it.
+if(NOT WIN32)
+  _executorch_define_component(etdump executorch_etdump)
+endif()
 
 # The switch a source build sets, on the runtime rather than on the thread pool
 # target. The guarded declaration lives in a runtime header that every component
@@ -682,11 +770,31 @@ if(EXISTS "${_executorch_mlx_metallib}")
   set(MLX_METALLIB_PATH "${_executorch_mlx_metallib}")
 endif()
 _executorch_define_component(backend_openvino executorch_backend_openvino)
-# The CUDA delegate and its stream helper, present only in a wheel built from a
-# CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
-# while configuring.
+# The CUDA delegate and shared allocator/stream/guard helpers are present only
+# in CUDA wheels. A CPU wheel reports either missing component at configure
+# time.
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
+if(TARGET executorch::extension_cuda)
+  # Keep toolkit-free stream/guard consumers working without a development kit.
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    get_target_property(
+      _executorch_cuda_includes executorch::extension_cuda
+      INTERFACE_INCLUDE_DIRECTORIES
+    )
+    # This file runs again for every find_package call in the same configure.
+    foreach(_executorch_cuda_include IN LISTS CUDAToolkit_INCLUDE_DIRS)
+      if(NOT _executorch_cuda_include IN_LIST _executorch_cuda_includes)
+        set_property(
+          TARGET executorch::extension_cuda
+          APPEND
+          PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${_executorch_cuda_include}"
+        )
+      endif()
+    endforeach()
+  endif()
+endif()
 # The Qualcomm delegate, present only in a wheel whose build found the QNN SDK,
 # which today means Linux x86_64. Like the OpenVINO delegate it carries no
 # undefined vendor symbols, so it links without the SDK present and resolves the
