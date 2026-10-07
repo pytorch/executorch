@@ -4,7 +4,7 @@ standard on-device iOS and Android mobile deployments. One of the main goals for
 ExecuTorch is to enable wider customization and deployment capabilities of the
 PyTorch programs.
 
-* Supported python versions: 3.10, 3.11, 3.12, 3.13, 3.14
+* Supported prebuilt-wheel Python versions: 3.11, 3.12, 3.13, 3.14, 3.15
 * Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64, Windows x86_64
 
 Backend export tools can require optional Python dependencies. For example,

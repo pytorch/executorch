@@ -251,10 +251,10 @@ class TestGates(unittest.TestCase):
                 matrix = _full_matrix()
                 for row in matrix["include"]:
                     if row["desired_cuda"] == cuda:
-                        row["python_version"] = "3.15"
+                        row["python_version"] = "3.16"
                 message = self._exit_message(matrix)
                 self.assertIn("incomplete train", message)
-                self.assertIn(f"3.10/{cuda}", message)
+                self.assertIn(f"3.11/{cuda}", message)
 
     def test_jetpack_not_published_exits_nonzero(self):
         # Refused explicitly rather than allowed to fall through to an empty result, so the reason a
@@ -362,7 +362,8 @@ class TestPublishedSets(unittest.TestCase):
 
     def test_published_python_versions(self):
         self.assertEqual(
-            FILTER.SUPPORTED_PYTHON_VERSIONS, ["3.10", "3.11", "3.12", "3.13", "3.14"]
+            FILTER.SUPPORTED_PYTHON_VERSIONS,
+            ["3.11", "3.12", "3.13", "3.14", "3.15"],
         )
 
     def test_the_workflows_offer_exactly_the_published_pythons(self):
