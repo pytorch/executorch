@@ -1,8 +1,6 @@
 """Dependency and wheel-train versions shared by installation and release tooling."""
 
-# The one PyTorch wheel train used by main. Its embedded nightly date also
-# selects the matching source commit and c10 headers; those are derived outputs,
-# not an independently chosen pin.
+# The newest complete PyTorch wheel train used by binary installs on main.
 PYTORCH_VERSION = "2.15.0.dev20260922"
 PYTORCH_INDEX_URL = "https://download.pytorch.org/whl/nightly"
 TORCHVISION_VERSION = "0.30.0.dev20260922"

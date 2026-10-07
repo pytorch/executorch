@@ -93,8 +93,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run Metal Backend Module Tests"
-        ${CONDA_RUN} python .ci/scripts/run_python_module_without_teardown.py \
-          unittest backends.apple.metal.tests.test_modules.TestMetalBackendModules
+        ${CONDA_RUN} python -m unittest backends.apple.metal.tests.test_modules.TestMetalBackendModules
         echo "::endgroup::"
 
   test-metal-qwen35-moe-tiny:
@@ -127,8 +126,7 @@ jobs:
         export TORCHINDUCTOR_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP}/inductor_cache_XXXXXX")
 
         echo "::group::Export Qwen 3.5 MoE (tiny model, Metal)"
-        ${CONDA_RUN} python .ci/scripts/run_python_module_without_teardown.py \
-          executorch.examples.models.qwen3_5_moe.export \
+        ${CONDA_RUN} python -m executorch.examples.models.qwen3_5_moe.export \
           --tiny-test \
           --backend metal \
           --qlinear fpa4w \

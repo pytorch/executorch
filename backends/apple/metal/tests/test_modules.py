@@ -319,7 +319,7 @@ MODULE_REGISTRY["linear_nobias_int4"] = {
     "description": "Linear layer without bias and int4 quantization",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
-    "compare_to_unquantized": True,
+    "compare_to_unquantized": False,
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
     "atol_bfloat16": 1e-1,
@@ -344,7 +344,7 @@ MODULE_REGISTRY["linear_bias_int4"] = {
     "description": "Linear layer with bias and int4 quantization",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
-    "compare_to_unquantized": True,
+    "compare_to_unquantized": False,
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
     "atol_bfloat16": 1e-1,
@@ -369,7 +369,7 @@ MODULE_REGISTRY["linear_int4_qmv_impl"] = {
     "description": "Linear int4 quantization dispatching to qmv_impl",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
-    "compare_to_unquantized": True,
+    "compare_to_unquantized": False,
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
     "atol_bfloat16": 1e-1,
@@ -394,7 +394,7 @@ MODULE_REGISTRY["linear_int4_qmv_impl_small_odd"] = {
     "description": "Linear int4 quantization dispatching to qmv_impl",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
-    "compare_to_unquantized": True,
+    "compare_to_unquantized": False,
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
     "atol_bfloat16": 1e-1,
@@ -419,7 +419,7 @@ MODULE_REGISTRY["linear_int4_qmv_impl_small_even"] = {
     "description": "Linear int4 quantization dispatching to qmv_impl",
     "qlinear": "fpa4w",
     "qlinear_group_size": 32,
-    "compare_to_unquantized": True,
+    "compare_to_unquantized": False,
     "atol_float32": 5e-2,
     "rtol_float32": 5e-2,
     "atol_bfloat16": 1e-1,
@@ -1248,7 +1248,6 @@ def export_model_to_pte(
     model_name: str,
     compare_to_unquantized: bool = False,
     model_config: Optional[Dict[str, Any]] = None,
-    reference_model: Optional[nn.Module] = None,
 ) -> Tuple[Path, torch.Tensor]:
     """
     Export model to .pte file and compute expected output.
@@ -1261,7 +1260,6 @@ def export_model_to_pte(
         compare_to_unquantized: If True and model has quantization config,
                                 compute expected output from unquantized model
         model_config: Model configuration from MODULE_REGISTRY
-        reference_model: Unquantized model with the same initialized weights
 
     Returns:
         Tuple of (pte_path, expected_output)
@@ -1271,8 +1269,11 @@ def export_model_to_pte(
 
     with torch.no_grad():
         if compare_to_unquantized and model_config and model_config.get("qlinear"):
-            if reference_model is None:
-                raise ValueError("An unquantized reference model is required")
+            # Create unquantized reference model for comparison
+            dtype = example_inputs[0].dtype if example_inputs else torch.float32
+            model_class = model_config["model_class"]
+            reference_model = model_class().eval()
+            reference_model = reference_model.to(dtype)
             expected_output = reference_model(*all_ones_input)
         else:
             # Use the quantized model's output
@@ -1516,31 +1517,22 @@ class TestMetalBackendModules(unittest.TestCase):
         if SKIP_RUNTIME_TESTS:
             self.skipTest(SKIP_RUNTIME_REASON)
 
-        model_config = MODULE_REGISTRY.get(model_name, {})
-        compare_to_unquantized = model_config.get(
-            "compare_to_unquantized", bool(model_config.get("qlinear"))
-        )
-
-        # Recreate the pre-quantized model with the same initialized weights.
-        # This gives quantized Metal programs a stable CPU reference without
-        # executing torchao's experimental eager MPS operator.
-        initial_rng_state = torch.get_rng_state()
         model, example_inputs = get_model_and_inputs(model_name, dtype=dtype)
-        final_rng_state = torch.get_rng_state()
-        reference_model = None
-        if compare_to_unquantized and model_config.get("qlinear"):
-            torch.set_rng_state(initial_rng_state)
-            reference_model = model_config["model_class"]().eval().to(dtype)
-            torch.set_rng_state(final_rng_state)
-
         dtype_name = DTYPE_NAMES[dtype]
         test_subdir_name = f"{model_name}_{dtype_name}"
+        model_config = MODULE_REGISTRY.get(model_name, {})
 
         def run_test_in_directory(test_dir: Path) -> None:
             """Run the actual test logic in the given directory."""
             # Create model output directory: metal_backend_module_outputs/<model_name>_<dtype>/
             model_output_dir = test_dir / test_subdir_name
             model_output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Determine if we should compare to unquantized reference
+            # Default to True for quantized models, False otherwise
+            compare_to_unquantized = model_config.get(
+                "compare_to_unquantized", bool(model_config.get("qlinear"))
+            )
 
             # Export model and get expected output
             pte_path, expected_output = export_model_to_pte(
@@ -1550,7 +1542,6 @@ class TestMetalBackendModules(unittest.TestCase):
                 model_name,
                 compare_to_unquantized=compare_to_unquantized,
                 model_config=model_config,
-                reference_model=reference_model,
             )
 
             self.assertTrue(
