@@ -3,12 +3,12 @@
 # related to a specific file path. Approvals from people in this
 # file are not required for merges.
 
-/backends/apple @shoumikhin
-/backends/arm @digantdesai
-/backends/cadence
+/backends/apple @shoumikhin @metascroy
+/backends/arm @digantdesai @rascani
+/backends/cadence @mcremon-meta @rascani
 /backends/cortex_m @rascani
 /backends/example @JacobSzwejbka @larryliu0820
-/backends/mediatek @neuropilot-captain
+/backends/mediatek @neuropilot-captain @psiddh
 /backends/qualcomm @haowhsu-quic @shewu-quic @winskuo-quic @psiddh @harshs-qti @qti-horodnic @qti-mmadhava
 /backends/test
 /backends/vulkan @SS-JIA
@@ -21,9 +21,9 @@
 
 /examples/apple @shoumikhin
 /examples/apple/coreml @metascroy @cymbalrush @YifanShenSZ
-/examples/arm @digantdesai
-/examples/cadence
-/examples/demo-apps @shoumikhin @kirklandsign
+/examples/arm @digantdesai @rascani
+/examples/cadence @mcremon-meta @rascani
+/examples/demo-apps @shoumikhin @kirklandsign @psiddh
 /examples/devtools @Gasoonjia
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
@@ -43,7 +43,7 @@
 /extension/aten_util @JacobSzwejbka
 /extension/benchmark @Gasoonjia
 /extension/data_loader @JacobSzwejbka
-/extension/gguf_util @larryliu0820
+/extension/gguf_util @larryliu0820 @metascroy
 /extension/llm @larryliu0820 @mergennachin
 /extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
@@ -52,6 +52,7 @@
 /extension/runner_util
 /extension/tensor @shoumikhin
 /extension/testing_util
+/extension/threadpool @digantdesai @JakeStevens
 /extension/training @JacobSzwejbka
 
 /profiler @Gasoonjia
@@ -72,8 +73,8 @@
 CMakeLists.txt @larryliu0820 @kirklandsign
 CMakePresets.json @larryliu0820 @kirklandsign
 
-/codegen @larryliu0820
+/codegen @larryliu0820 @JacobSzwejbka
 /tools/cmake @larryliu0820 @kirklandsign
 
 # Tribal knowledge base ---------------------------------------------------------
-/.claude/skills/ @psiddh
+/.claude/skills/ @psiddh @rascani @JakeStevens
