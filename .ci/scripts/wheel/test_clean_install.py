@@ -232,16 +232,14 @@ def test_release_declares_torch() -> None:
     from packaging.version import InvalidVersion, Version
 
     build_version = os.environ.get("BUILD_VERSION", "").strip()
+    if not build_version:
+        print("- BUILD_VERSION is not set, so the torch requirement check is skipped")
+        return
     try:
         parsed = Version(build_version.split("+", 1)[0])
         is_release = not (parsed.is_prerelease or parsed.is_devrelease)
     except InvalidVersion:
         is_release = False
-    if not is_release:
-        print(
-            f"BUILD_VERSION {build_version!r} is not a release, so no torch is declared"
-        )
-        return
 
     version = metadata.version("executorch")
     declared = [
@@ -249,6 +247,14 @@ def test_release_declares_torch() -> None:
         for requirement in map(Requirement, metadata.requires("executorch") or [])
         if requirement.name == "torch"
     ]
+    if not is_release:
+        assert not declared, (
+            f"executorch {version} is not a release (BUILD_VERSION {build_version!r}) but "
+            f"declares {declared[0]}. Only a release declares the torch it was built against."
+        )
+        print(f"✓ executorch {version} is not a release and declares no torch")
+        return
+
     assert declared, (
         f"executorch {version} is a release but declares no torch requirement, so pip will "
         "pair it with a torch its native code was not built against"
