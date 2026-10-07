@@ -107,6 +107,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     DecomposeStridedSliceCopyPass,
     DecomposeSumPass,
     DecomposeTanPass,
+    DecomposeTopKPass,
     DecomposeTOSAUnsupportedClampPass,
     DecomposeTrilPass,
     DecomposeUnfoldToGatherPass,
@@ -480,7 +481,9 @@ class ArmPassManager(ExportedProgramPassManager):
         if config.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.AUTO:
             passes.append(DecomposeSDPAWithRegularSoftmaxPass())
 
-        convert_pass = ConvertInt64OutputOpsToInt32Pass(convert_cast_ops=False)
+        convert_pass = ConvertInt64OutputOpsToInt32Pass(
+            convert_cast_ops=False, tosa_spec=self.tosa_spec
+        )
         if convert_pass.should_run(exported_program.graph_module):
             passes.append(convert_pass)
 
@@ -540,6 +543,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 NormalizeDelegateIOLayoutPass(exported_program),
                 FuseQuantizedActivationPass(),
                 RewriteBoolToFp32CastViaInt8Pass(),
+                DecomposeTopKPass(self.tosa_spec),
                 PrepareGatherIndicesPass(self.tosa_spec),
                 CanonicalizeGatherPass(),
                 ConvertToClampPass(),
