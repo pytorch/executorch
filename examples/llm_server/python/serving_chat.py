@@ -117,7 +117,13 @@ class _ChatStream:
 
 
 class StreamingResponseParser(Protocol):
-    """Request-local, append-only content/reasoning parser; no SSE or tool state."""
+    """Request-local, append-only content/reasoning parser; no SSE or tool state.
+
+    For parsed streams, replaces buffered reasoning extraction and content cleanup
+    (content_filter and _strip_specials). Raw stop-string handling still runs
+    before feed(). finish() runs only at successful logical EOF, including length
+    exhaustion and a drained stop, not on error, cancellation, or early close.
+    """
 
     def feed(self, text: str) -> Iterable[DeltaMessage]: ...
 

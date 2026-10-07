@@ -649,18 +649,26 @@ def load_mmproj_vision_model(  # noqa: C901
 
 def _gguf_native_context(gguf_path: str) -> int:
     """Read the context field qualified by the GGUF's declared architecture."""
-    from gguf import GGUFReader
+    from gguf import GGUFReader, GGUFValueType
 
     reader = GGUFReader(gguf_path)
-    field = reader.get_field("general.architecture")
-    architecture = field.contents() if field is not None else None
+
+    def read_scalar(key):
+        field = reader.get_field(key)
+        if field is None or field.types[0] == GGUFValueType.ARRAY:
+            return None
+        data = field.parts[field.data[0]]
+        if field.types[0] == GGUFValueType.STRING:
+            return data.tobytes().decode("utf-8")
+        return data.item()
+
+    architecture = read_scalar("general.architecture")
     if not isinstance(architecture, str) or not architecture.strip():
         raise ValueError(
             f"Native context requires a nonempty 'general.architecture' in {gguf_path}"
         )
     key = f"{architecture}.context_length"
-    field = reader.get_field(key)
-    value = field.contents() if field is not None else None
+    value = read_scalar(key)
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ValueError(
             f"Native context requires a positive non-boolean integer "

@@ -4,9 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Incremental MG framing. Truncated reserved headers are suppressed at EOF,
-unlike the legacy whole-text malformed-input fallback. Known standalone controls
-are suppressed, including in reasoning; unknown tokens remain body text.
+"""Incremental MG framing. Truncated <| headers are suppressed at EOF,
+unlike the legacy whole-text fallback; ambiguous bare to= suffixes remain text.
+Known standalone controls are suppressed, including in reasoning; unknown tokens
+remain body text. Control-only bodies do not add separators between blocks.
 No model stop is inferred.
 """
 
@@ -146,7 +147,7 @@ class MuseGlimmerStreamParser:
                 if not final:
                     break
                 suffix = text[pos:].lstrip()
-                if suffix.startswith(("to=", "<|")):
+                if suffix.startswith("<|"):
                     result.extend(self._body(text[body_start:pos]))
                     pos = body_start = len(text)
                     break

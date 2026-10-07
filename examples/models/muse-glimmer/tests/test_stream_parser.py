@@ -20,6 +20,21 @@ from executorch.examples.models.muse_glimmer.serving.stream_parser import (  # n
 )
 
 
+def _check_chunks(trace, expected):
+    chunks = [[trace[:split], trace[split:]] for split in range(len(trace) + 1)]
+    chunks.append(list(trace))
+    for parts in chunks:
+        parser = MuseGlimmerStreamParser()
+        deltas = [delta for part in parts for delta in parser.feed(part)]
+        deltas.extend(parser.finish())
+        assert all(isinstance(delta, DeltaMessage) for delta in deltas)
+        actual = (
+            "".join(delta.reasoning_content or "" for delta in deltas),
+            "".join(delta.content or "" for delta in deltas),
+        )
+        assert actual == expected, parts
+
+
 def test_batch_equivalence_across_chunk_boundaries():
     traces = [
         " to=self<|message|>  think\nthrough this \t<|eom|>  \n"
@@ -36,22 +51,39 @@ def test_batch_equivalence_across_chunk_boundaries():
         "keep <|unknown|> and goto=user verbatim \n"
         "<|start|>assistant to=self<|message|> next \t"
         "<|start|>assistant to=user<|message|>\nline one\nline two \n",
+        "set x to=value",
+        "set x to=",
+        "to=value",
+        "plain text to=self",
+        "to=user<|message|>set x to=value",
+        "to=self<|message|>set x to=value",
     ]
     for trace in traces:
         reasoning, visible = _extract_muse_glimmer_reasoning(trace)
         expected = (reasoning or "", _strip_muse_glimmer_header(visible))
-        chunks = [[trace[:split], trace[split:]] for split in range(len(trace) + 1)]
-        chunks.append(list(trace))
-        for parts in chunks:
-            parser = MuseGlimmerStreamParser()
-            deltas = [delta for part in parts for delta in parser.feed(part)]
-            deltas.extend(parser.finish())
-            assert all(isinstance(delta, DeltaMessage) for delta in deltas)
-            actual = (
-                "".join(delta.reasoning_content or "" for delta in deltas),
-                "".join(delta.content or "" for delta in deltas),
-            )
-            assert actual == expected, parts
+        _check_chunks(trace, expected)
+
+
+@pytest.mark.parametrize(
+    "trace, streamed, buffered",
+    [
+        ("answer <|sta", ("", "answer"), ("", "answer <|sta")),
+        (
+            "to=self<|message|>before<|eom|>after to=user<|message|>answer",
+            ("beforeafter ", "answer"),
+            ("before<|eom|>after ", "answer"),
+        ),
+        (
+            "to=user<|message|>A to=user<|message|><|start|> to=user<|message|>B",
+            ("", "A\n\nB"),
+            ("", "A\n\n\n\nB"),
+        ),
+    ],
+)
+def test_intentional_framing_differences(trace, streamed, buffered):
+    reasoning, visible = _extract_muse_glimmer_reasoning(trace)
+    assert (reasoning or "", _strip_muse_glimmer_header(visible)) == buffered
+    _check_chunks(trace, streamed)
 
 
 def test_immediate_emission_and_truncated_framing():
@@ -71,7 +103,6 @@ def test_immediate_emission_and_truncated_framing():
     assert list(parser.finish()) == []
 
     for suffix in (
-        " to=self",
         "<|start|>assistant to=tools.lookup constrain=js",
         "<|message",
     ):

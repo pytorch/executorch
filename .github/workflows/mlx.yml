@@ -10,11 +10,16 @@ on:
   pull_request:
     paths:
       - .github/workflows/mlx.yml
+      - Makefile
       - backends/mlx/**
       - extension/llm/batching/**
       - extension/llm/cache/**
       - extension/llm/export/**
+      - extension/llm/runner/**
+      - extension/llm/sampler/**
+      - extension/llm/serving/**
       - extension/audio/**
+      - examples/llm_server/cpp/**
       - examples/models/gemma4_31b/**
       - examples/models/muse-glimmer/**
       - examples/models/nemotron3_diarization/**

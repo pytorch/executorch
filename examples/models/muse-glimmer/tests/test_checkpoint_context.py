@@ -48,7 +48,7 @@ class CheckpointContextTest(unittest.TestCase):
         path = self.root / "metadata.gguf"
         writer = _require_gguf(self).GGUFWriter(path, architecture)
         for key, value, value_type in fields:
-            writer.add_key_value(key, value, value_type)
+            getattr(writer, f"add_{value_type.name.lower()}")(key, value)
         writer.write_header_to_file()
         writer.write_kv_data_to_file()
         writer.close()
@@ -105,10 +105,27 @@ class CheckpointContextTest(unittest.TestCase):
                 self.assertTrue(self.finalize.call_args.kwargs["defer_runtime_buffers"])
 
     def test_invalid_gguf_context_fails_before_weights(self):
-        with patch.object(loaders, "_atomic_sd_from_gguf") as weights:
-            with self.assertRaisesRegex(ValueError, "Native context"):
-                loaders.load_gguf_model(self.write_gguf([]), max_seq_len=None)
-            weights.assert_not_called()
+        GGUFValueType = _require_gguf(self).GGUFValueType
+        for value, value_type in (
+            (None, None),
+            (0, GGUFValueType.UINT32),
+            (-1, GGUFValueType.INT32),
+            (True, GGUFValueType.BOOL),
+            (4096.0, GGUFValueType.FLOAT32),
+            ("4096", GGUFValueType.STRING),
+            ([4096], GGUFValueType.ARRAY),
+        ):
+            fields = (
+                []
+                if value_type is None
+                else [("muse-glimmer.context_length", value, value_type)]
+            )
+            with self.subTest(value=value), patch.object(
+                loaders, "_atomic_sd_from_gguf"
+            ) as weights:
+                with self.assertRaisesRegex(ValueError, "Native context"):
+                    loaders.load_gguf_model(self.write_gguf(fields), max_seq_len=None)
+                weights.assert_not_called()
         self.finalize.assert_not_called()
 
     def test_invalid_context_fails_before_weights(self):
@@ -158,18 +175,18 @@ class BatchingExportContextTest(unittest.TestCase):
             patch.object(export_solo, "export_and_lower")
         )
 
-    def run_cli(self, source, *, offgraph=True, prefill=128):
+    def run_cli(self, source, *, offgraph=True, prefill=128, max_seq_len=32):
         argv = [
             "export_solo",
             source,
             "unused-checkpoint",
             "--backend",
             "mlx",
-            "--max-seq-len",
-            "32",
             "--max-prefill-chunk",
             str(prefill),
         ]
+        if max_seq_len is not None:
+            argv.extend(["--max-seq-len", str(max_seq_len)])
         if offgraph:
             argv.append("--use-offgraph-kv-cache")
         with patch.object(sys, "argv", argv):
@@ -179,7 +196,8 @@ class BatchingExportContextTest(unittest.TestCase):
         for source, name in self.SOURCES:
             with self.subTest(source=source):
                 self.export.reset_mock()
-                self.run_cli(source)
+                with self.assertWarnsRegex(UserWarning, "--max-seq-len=32.*ignored"):
+                    self.run_cli(source)
                 bound = self.loaders[name].call_args
                 # The params-loader wrappers pass max_seq_len positionally.
                 limit = (
@@ -194,6 +212,17 @@ class BatchingExportContextTest(unittest.TestCase):
                 self.assertEqual(self.export.call_args.kwargs["max_prefill_chunk"], 128)
                 self.assertTrue(self.export.call_args.kwargs["use_offgraph_kv_cache"])
 
+    def test_offgraph_default_context_is_silent(self):
+        for limit in (None, 131072):
+            with self.subTest(limit=limit), patch.object(
+                export_solo.warnings, "warn"
+            ) as warn:
+                self.run_cli("--gguf", max_seq_len=limit)
+                warn.assert_not_called()
+                self.assertIsNone(
+                    self.loaders["load_gguf_model"].call_args.kwargs["max_seq_len"]
+                )
+
     def test_invalid_prefill_stops_export(self):
         for prefill, message in (
             (0, "must be positive"),
@@ -201,7 +230,7 @@ class BatchingExportContextTest(unittest.TestCase):
         ):
             with self.subTest(prefill=prefill):
                 with self.assertRaises(SystemExit) as error:
-                    self.run_cli("--gguf", prefill=prefill)
+                    self.run_cli("--gguf", prefill=prefill, max_seq_len=None)
                 self.assertEqual(error.exception.code, 2)
                 self.assertIn(message, self.stderr.getvalue())
                 if prefill == 0:
@@ -209,7 +238,9 @@ class BatchingExportContextTest(unittest.TestCase):
         self.export.assert_not_called()
 
     def test_legacy_explicit_context(self):
-        self.run_cli("--gguf", offgraph=False)
+        with patch.object(export_solo.warnings, "warn") as warn:
+            self.run_cli("--gguf", offgraph=False)
+            warn.assert_not_called()
         bound = self.loaders["load_gguf_model"].call_args
         self.assertEqual(bound.kwargs["max_seq_len"], 32)
         self.assertFalse(bound.kwargs.get("defer_runtime_buffers", False))

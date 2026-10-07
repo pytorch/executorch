@@ -12,6 +12,7 @@ exports add ``vision_encoder`` and write ``pos_embed.bin``.
 
 import argparse
 import gc
+import warnings
 
 import torch
 import torch.nn as nn
@@ -773,6 +774,12 @@ def main() -> None:
     if args.use_offgraph_kv_cache and args.turboquant:
         parser.error("--use-offgraph-kv-cache cannot be combined with --turboquant.")
     use_native_context = args.backend == "mlx" and args.use_offgraph_kv_cache
+    if use_native_context and args.max_seq_len != parser.get_default("max_seq_len"):
+        warnings.warn(
+            f"--max-seq-len={args.max_seq_len} is ignored for MLX off-graph export; "
+            "using the checkpoint's native context limit.",
+            stacklevel=2,
+        )
     max_seq_len = None if use_native_context else args.max_seq_len
     loader_kwargs = {"defer_runtime_buffers": True} if use_native_context else {}
     if args.gguf:

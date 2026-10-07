@@ -27,8 +27,9 @@ This artifact supports packed batching execution and is not interchangeable with
 an artifact exported for the legacy runners.
 
 Off-graph MLX export uses the checkpoint's native context limit and ignores
-`--max-seq-len`, which remains a legacy export override. Missing or invalid native
-context metadata is an error. The three relevant limits are independent:
+`--max-seq-len`, which remains a legacy export override. Nondefault values emit a
+warning before checkpoint loading. Missing or invalid native context metadata is
+an error. The three relevant limits are independent:
 
 - The checkpoint's native context limit bounds token positions.
 - `--max-prefill-chunk` bounds positions processed per model forward.
@@ -92,6 +93,11 @@ framing and emits `reasoning_content` and `content` incrementally. Optional ATEM
 tool parsing is enabled with `--tool-parser atem`; tool-enabled responses
 currently remain buffered.
 
+Streaming intentionally differs from the legacy buffered fallback for incomplete
+`<|` headers, which are suppressed at EOF; bare `to=` suffixes remain literal text
+unless a complete addressed header resolves them. Streaming also removes known
+control tokens inside reasoning and omits separators for control-only bodies.
+
 Image requests use the OpenAI `image_url` content part with an inline base64 JPEG
 or PNG data URL. Remote URLs, file paths, `detail`, and more than one image across
 the entire history are rejected. Resubmit the image inline when it is part of the
@@ -132,7 +138,8 @@ apply. Text prefix snapshots are opt-in via `--prefix-cache-entries` (default 0)
   cache state remains active within each generation.
 - Metadata, options, and prompt preparation are validated before context
   replacement. A later engine or vision failure does not restore replaced state
-  and follows the shared batching failure contract.
+  and follows the shared batching failure contract: a runtime vision-encode error
+  fails every request in that execution batch, including text-only requests.
 
 ## Implementation
 
