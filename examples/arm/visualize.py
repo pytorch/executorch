@@ -48,7 +48,7 @@ def parse_tables(tables_path: Path) -> Tables:
         name = table.attrib.get("name")
         if name in required_tables:
             text = table.text or ""
-            tables[name] = pd.read_csv(io.StringIO(text))
+            tables[name] = pd.read_csv(io.StringIO(text))  # pyrefly: ignore [unsupported-operation]
 
     missing = required_tables - tables.keys()
     if missing:

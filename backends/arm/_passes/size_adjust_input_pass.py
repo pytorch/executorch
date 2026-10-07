@@ -383,7 +383,7 @@ class SizeAdjustInputPass(ArmPass):
                 # symints with shared sub-expressions get hash-consed into
                 # one subgraph. Plain ints pass through unchanged.
                 flat = [a for args in slice_args for a in args]
-                materialized = iter(graph.materialize_symints(flat))
+                materialized = iter(graph.materialize_symints(flat))  # pyrefly: ignore [missing-attribute]
                 # Pop exactly len(args) values from the materialized iterator
                 # and pack them back into a tuple -- regroups the flat list
                 # of lifted values into the original (dim, start, end) shape.

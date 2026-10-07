@@ -21,18 +21,18 @@ class IdentityVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.IDENTITY,
+            tosa_op=ts.Op.IDENTITY,  # pyrefly: ignore [missing-attribute]
             attr_method="IdentityAttribute",
             num_inputs=1,
             input_dtypes=[
-                ts.DType.BOOL,
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP16,
-                ts.DType.FP32,
-                ts.DType.BF16,
-                ts.DType.FP8E4M3,
-                ts.DType.FP8E5M2,
+                ts.DType.BOOL,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
             ],
         )

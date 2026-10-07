@@ -39,55 +39,55 @@ def binary_operator_factory(
 
 binary_operator_factory(
     "tosa.BITWISE_AND.default",
-    ts.Op.BITWISE_AND,
+    ts.Op.BITWISE_AND,  # pyrefly: ignore [missing-attribute]
     "BitwiseAndAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.BITWISE_OR.default",
-    ts.Op.BITWISE_OR,
+    ts.Op.BITWISE_OR,  # pyrefly: ignore [missing-attribute]
     "BitwiseOrAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.BITWISE_XOR.default",
-    ts.Op.BITWISE_XOR,
+    ts.Op.BITWISE_XOR,  # pyrefly: ignore [missing-attribute]
     "BitwiseXorAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.INTDIV.default",
-    ts.Op.INTDIV,
+    ts.Op.INTDIV,  # pyrefly: ignore [missing-attribute]
     "IntDivAttribute",
-    [ts.DType.INT32],
+    [ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.LOGICAL_AND.default",
-    ts.Op.LOGICAL_AND,
+    ts.Op.LOGICAL_AND,  # pyrefly: ignore [missing-attribute]
     "LogicalAndAttribute",
-    [ts.DType.BOOL],
+    [ts.DType.BOOL],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.LOGICAL_LEFT_SHIFT.default",
-    ts.Op.LOGICAL_LEFT_SHIFT,
+    ts.Op.LOGICAL_LEFT_SHIFT,  # pyrefly: ignore [missing-attribute]
     "LogicalLeftShiftAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.LOGICAL_OR.default",
-    ts.Op.LOGICAL_OR,
+    ts.Op.LOGICAL_OR,  # pyrefly: ignore [missing-attribute]
     "LogicalOrAttribute",
-    [ts.DType.BOOL],
+    [ts.DType.BOOL],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.LOGICAL_RIGHT_SHIFT.default",
-    ts.Op.LOGICAL_RIGHT_SHIFT,
+    ts.Op.LOGICAL_RIGHT_SHIFT,  # pyrefly: ignore [missing-attribute]
     "LogicalRightShiftAttribute",
-    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+    [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
 )
 binary_operator_factory(
     "tosa.LOGICAL_XOR.default",
-    ts.Op.LOGICAL_XOR,
+    ts.Op.LOGICAL_XOR,  # pyrefly: ignore [missing-attribute]
     "LogicalXorAttribute",
-    [ts.DType.BOOL],
+    [ts.DType.BOOL],  # pyrefly: ignore [missing-attribute]
 )

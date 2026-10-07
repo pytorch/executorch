@@ -20,7 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from transformers.models.gemma3n.modeling_gemma3n import (
+from transformers.models.gemma3n.modeling_gemma3n import (  # pyrefly: ignore [missing-import]
     Gemma3nAudioAttention,
     Gemma3nAudioConformerAttention,
     Gemma3nAudioConformerBlock,

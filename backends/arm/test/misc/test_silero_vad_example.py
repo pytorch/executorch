@@ -9,18 +9,18 @@ from pathlib import Path
 
 import pytest
 import torch
-from backends.arm.test.tester.arm_tester import count_program_io_kinds
-from examples.arm.silero_vad_example_ethos_u.model_export import (
+from backends.arm.test.tester.arm_tester import count_program_io_kinds  # pyrefly: ignore [missing-import]
+from examples.arm.silero_vad_example_ethos_u.model_export import (  # pyrefly: ignore [missing-import]
     export_silero_vad_ethos_u as export_module,
 )
-from examples.arm.silero_vad_example_ethos_u.model_export.export_silero_vad_ethos_u import (
+from examples.arm.silero_vad_example_ethos_u.model_export.export_silero_vad_ethos_u import (  # pyrefly: ignore [missing-import]
     calibrate_model,
     collect_inputs,
     get_state_qparams,
     quantize_model,
     StatefulSileroVAD,
 )
-from examples.arm.silero_vad_example_ethos_u.runtime.compare_vad_probs import compare
+from examples.arm.silero_vad_example_ethos_u.runtime.compare_vad_probs import compare  # pyrefly: ignore [missing-import]
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,

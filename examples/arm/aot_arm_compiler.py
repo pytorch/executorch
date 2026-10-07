@@ -22,7 +22,7 @@ _EXECUTORCH_DIR_STR = str(_EXECUTORCH_DIR)
 if _EXECUTORCH_DIR_STR not in sys.path:
     sys.path.insert(0, _EXECUTORCH_DIR_STR)
 
-from backends.arm.scripts.aot_arm_compiler import main as _main
+from backends.arm.scripts.aot_arm_compiler import main as _main  # pyrefly: ignore [missing-import]
 
 
 def main() -> None:

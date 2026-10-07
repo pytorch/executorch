@@ -23,7 +23,7 @@ from executorch.backends.arm.ao_ext.mxfp import (
     MXFPOpConfig,
 )
 from executorch.backends.arm.ao_ext.mxfp_tosa_lib import MXFP_TOSA_LIB
-from torchao.prototype.mx_formats.mx_tensor import to_dtype, to_mx
+from torchao.prototype.mx_formats.mx_tensor import to_dtype, to_mx  # pyrefly: ignore [missing-import]
 
 MXFP_TOSA_LIB.define(
     "conv2d("

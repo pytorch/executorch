@@ -36,16 +36,16 @@ class ReduceProductVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            [ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ReduceProductAttribute(node.kwargs["axis"])
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_PRODUCT,
+            ts.Op.REDUCE_PRODUCT,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,

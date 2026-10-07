@@ -51,7 +51,7 @@ from executorch.backends.test.harness.stages import StageType
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassType
 from torch.export.graph_signature import InputKind, OutputKind
-from torchao.quantization.pt2e.quantizer import QuantizationSpec
+from torchao.quantization.pt2e.quantizer import QuantizationSpec  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=Tuple[Any, ...])

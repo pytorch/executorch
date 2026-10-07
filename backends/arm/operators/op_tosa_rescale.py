@@ -150,8 +150,8 @@ def _create_const_ops_for_rescale(
     return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
 
 
-def _unsigned_dtype_offset(dtype: ts.DType) -> int:
-    if dtype == ts.DType.INT8:
+def _unsigned_dtype_offset(dtype: ts.DType) -> int:  # pyrefly: ignore [missing-attribute]
+    if dtype == ts.DType.INT8:  # pyrefly: ignore [missing-attribute]
         return 128
     raise ValueError(
         "Wide-to-unsigned RESCALE legalization only supports "
@@ -172,7 +172,7 @@ class RescaleVisitor(NodeVisitor):
         output: TosaArg,
         input_zp: list[int],
         output_zp: list[int],
-        rounding_mode: ts.RoundingMode,
+        rounding_mode: ts.RoundingMode,  # pyrefly: ignore [missing-attribute]
         per_channel: bool = False,
         input_unsigned: bool = False,
         output_unsigned: bool = False,
@@ -185,7 +185,7 @@ class RescaleVisitor(NodeVisitor):
         multipliers, otherwise 32-bit multipliers are used.
 
         """
-        if output_unsigned and input_node.dtype not in (ts.DType.INT8, ts.DType.INT16):
+        if output_unsigned and input_node.dtype not in (ts.DType.INT8, ts.DType.INT16):  # pyrefly: ignore [missing-attribute]
             unsigned_offset = _unsigned_dtype_offset(output.dtype)
             signed_output = tosa_graph.addIntermediate(output.shape, output.dtype)
             self._build_rescale(
@@ -215,8 +215,8 @@ class RescaleVisitor(NodeVisitor):
             )
             return
 
-        scale_width = 16 if input_node.dtype == ts.DType.INT48 else 32
-        is_scale32 = input_node.dtype != ts.DType.INT48
+        scale_width = 16 if input_node.dtype == ts.DType.INT48 else 32  # pyrefly: ignore [missing-attribute]
+        is_scale32 = input_node.dtype != ts.DType.INT48  # pyrefly: ignore [missing-attribute]
 
         multipliers, shifts = _compute_multiplier_and_shift(scale, scale_width)
 
@@ -233,7 +233,7 @@ class RescaleVisitor(NodeVisitor):
             ts,
         )
 
-        attr_rescale = ts.TosaSerializerAttribute()
+        attr_rescale = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr_rescale.RescaleAttribute(
             scale32=is_scale32,
             rounding_mode=rounding_mode,
@@ -245,7 +245,7 @@ class RescaleVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.RESCALE,
+            ts.Op.RESCALE,  # pyrefly: ignore [missing-attribute]
             [input_node.name, *rescale_inputs],
             [output.name],
             attr_rescale,
@@ -287,7 +287,7 @@ class RescaleVisitor(NodeVisitor):
             )
         if output_dtype not in [torch.int8, torch.int16] and output_zp != 0:
             raise ValueError(
-                f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
+                f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"  # pyrefly: ignore [missing-attribute]
             )
         self._build_rescale(
             node=node,
@@ -297,7 +297,7 @@ class RescaleVisitor(NodeVisitor):
             output=output,
             input_zp=[input_zp],
             output_zp=[output_zp],
-            rounding_mode=ts.RoundingMode.SINGLE_ROUND,
+            rounding_mode=ts.RoundingMode.SINGLE_ROUND,  # pyrefly: ignore [missing-attribute]
             per_channel=len(scales) > 1,
             input_unsigned=input_unsigned,
             output_unsigned=output_unsigned,

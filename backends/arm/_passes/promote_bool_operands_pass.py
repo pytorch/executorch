@@ -29,7 +29,7 @@ class PromoteBoolOperandsPass(ArmOpTargetedPass):
         exir_ops.edge.aten.mul.Tensor,
     }
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 

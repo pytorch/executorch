@@ -15,7 +15,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
-from .fuse_constant_ops_pass import ComputeConstantOpsAOTPass
+from .fuse_constant_ops_pass import ComputeConstantOpsAOTPass  # pyrefly: ignore [missing-import]
 
 
 class RewriteAvgPool2dPass(ArmOpTargetedPass):

@@ -35,22 +35,22 @@ from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
 
-from .activation_fusion_pass import ActivationFusionPass
-from .aten_to_cortex_m_pass import AtenToCortexMPass
-from .clamp_hardswish_pass import ClampHardswishPass
-from .decompose_hardswish_pass import DecomposeHardswishPass
-from .decompose_mean_pass import DecomposeMeanPass
-from .decompose_sdpa_pass import DecomposeSDPAPass
-from .explicit_layout_pass import (
+from .activation_fusion_pass import ActivationFusionPass  # pyrefly: ignore [missing-import]
+from .aten_to_cortex_m_pass import AtenToCortexMPass  # pyrefly: ignore [missing-import]
+from .clamp_hardswish_pass import ClampHardswishPass  # pyrefly: ignore [missing-import]
+from .decompose_hardswish_pass import DecomposeHardswishPass  # pyrefly: ignore [missing-import]
+from .decompose_mean_pass import DecomposeMeanPass  # pyrefly: ignore [missing-import]
+from .decompose_sdpa_pass import DecomposeSDPAPass  # pyrefly: ignore [missing-import]
+from .explicit_layout_pass import (  # pyrefly: ignore [missing-import]
     CortexMCanonicalizeViewCopyPermutePass,
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
-from .fuse_conv_padding_pass import FuseConvPaddingPass
-from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass
-from .matmul_to_bmm_pass import MatmulToBmmPass
-from .quantized_clamp_activation_pass import QuantizedClampActivationPass
-from .replace_quant_nodes_pass import ReplaceQuantNodesPass
+from .fuse_conv_padding_pass import FuseConvPaddingPass  # pyrefly: ignore [missing-import]
+from .initialize_scratch_buffers_pass import InitializeScratchBuffersPass  # pyrefly: ignore [missing-import]
+from .matmul_to_bmm_pass import MatmulToBmmPass  # pyrefly: ignore [missing-import]
+from .quantized_clamp_activation_pass import QuantizedClampActivationPass  # pyrefly: ignore [missing-import]
+from .replace_quant_nodes_pass import ReplaceQuantNodesPass  # pyrefly: ignore [missing-import]
 
 PassClass = Type[ExportPass]
 

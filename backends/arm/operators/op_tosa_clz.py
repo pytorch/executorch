@@ -23,8 +23,8 @@ class ClzVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.CLZ,
+            tosa_op=ts.Op.CLZ,  # pyrefly: ignore [missing-attribute]
             attr_method="ClzAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.INT32],
+            input_dtypes=[ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
         )

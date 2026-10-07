@@ -106,7 +106,7 @@ def make_tosa_reference_model_impl(
 
         tosa_spec = get_context_spec()
         version = tosa_spec.version
-        tosa_graph = ts.TosaSerializer(
+        tosa_graph = ts.TosaSerializer(  # pyrefly: ignore [missing-attribute]
             "",
             targetMajor=version.major,
             targetMinor=version.minor,
@@ -117,13 +117,13 @@ def make_tosa_reference_model_impl(
         for node in placeholder_nodes:
             arg = TosaArg(node, tosa_spec)
             tosa_graph.addInputTensor(
-                ts.TosaSerializerTensor(arg.name, list(arg.shape), arg.dtype, data=None)
+                ts.TosaSerializerTensor(arg.name, list(arg.shape), arg.dtype, data=None)  # pyrefly: ignore [bad-argument-type, missing-attribute]
             )
 
         output_arg = TosaArg(op_node, tosa_spec)
         tosa_graph.currRegion.currBasicBlock.addTensor(
             output_arg.name,
-            list(output_arg.shape),
+            list(output_arg.shape),  # pyrefly: ignore [bad-argument-type]
             output_arg.dtype,
         )
         from executorch.backends.arm.operators.node_visitor import get_node_visitor

@@ -102,8 +102,8 @@ from torch.export.graph_signature import (
 )
 from torch.fx import Graph
 
-from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer import QuantizationSpec, SharedQuantizationSpec  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger(__name__)
 
@@ -1223,7 +1223,7 @@ def _get_dtype_distribution(
         if node.op == "call_function":
             if "val" in node.meta and isinstance(node.meta["val"], torch.Tensor):
                 dtype, _ = extract_tensor_meta(node.meta)
-                call_function_dtypes.append(ts.DTypeNames[dtype])
+                call_function_dtypes.append(ts.DTypeNames[dtype])  # pyrefly: ignore [missing-attribute]
     return Counter(placeholder_dtypes), Counter(call_function_dtypes)
 
 
@@ -1346,7 +1346,7 @@ def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
 def _format_dict(to_print: dict, print_table: bool = True) -> str:
     if isinstance(list(to_print.items())[0], Iterable) and print_table:
         return tabulate(
-            to_print, headers="keys", tablefmt="fancy_grid", maxcolwidths=35
+            to_print, headers="keys", tablefmt="fancy_grid", maxcolwidths=35  # pyrefly: ignore [unexpected-keyword]
         )
     else:
         return pformat(to_print, compact=True, indent=1)

@@ -82,7 +82,7 @@ class DecomposeIndexSelectToGatherPass(ArmOpTargetedPass):
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 

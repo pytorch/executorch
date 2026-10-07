@@ -18,7 +18,7 @@ from executorch.backends.arm.tosa.mapping import TosaArg
 class SimpleNodeVisitorConfig:
     """Configuration bundle for ``SimpleNodeVisitor``."""
 
-    tosa_op: ts.Op
+    tosa_op: ts.Op  # pyrefly: ignore [missing-attribute]
     attr_method: str
     num_inputs: int | List[int]
     input_dtypes: List[Any]

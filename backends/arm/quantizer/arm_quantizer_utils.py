@@ -27,14 +27,14 @@ from executorch.backends.cortex_m.quantizer_reporter import (
 )
 from torch.fx import Node
 
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     DerivedQuantizationSpec,
     QuantizationAnnotation,
     QuantizationSpec,
     Quantizer,
     SharedQuantizationSpec,
 )
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ class PatternCheck:
 
     @classmethod
     def is_per_tensor(cls, qspec) -> bool:
-        from torchao.quantization.pt2e.quantizer import QuantizationSpecBase
+        from torchao.quantization.pt2e.quantizer import QuantizationSpecBase  # pyrefly: ignore [missing-import]
 
         if not isinstance(qspec, QuantizationSpecBase):
             return False
@@ -187,7 +187,7 @@ class PatternCheck:
 
     @classmethod
     def is_per_channel(cls, qspec) -> bool:
-        from torchao.quantization.pt2e.quantizer import QuantizationSpecBase
+        from torchao.quantization.pt2e.quantizer import QuantizationSpecBase  # pyrefly: ignore [missing-import]
 
         if not isinstance(qspec, QuantizationSpecBase):
             return False
@@ -202,7 +202,7 @@ class PatternCheck:
     ) -> bool:
         input_qspec = qconfig.get_input_act_qspec()
         output_qspec = qconfig.get_output_act_qspec(output_node)
-        from torchao.quantization.pt2e.quantizer import QuantizationSpecBase
+        from torchao.quantization.pt2e.quantizer import QuantizationSpecBase  # pyrefly: ignore [missing-import]
 
         if not isinstance(input_qspec, QuantizationSpecBase) or not isinstance(
             output_qspec, QuantizationSpecBase

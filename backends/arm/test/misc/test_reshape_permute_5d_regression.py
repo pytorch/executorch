@@ -15,7 +15,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 class ReshapePermuteVariantModel(torch.nn.Module):

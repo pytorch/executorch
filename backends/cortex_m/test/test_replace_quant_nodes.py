@@ -24,7 +24,7 @@ from executorch.exir.program._program import _transform
 
 from torch.export import export
 
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 class TestReplaceQuantOps(unittest.TestCase):

@@ -11,7 +11,7 @@ from executorch.backends.arm.operators.simple_node_visitor import (
     SimpleNodeVisitorConfig,
 )
 
-COMPARE_INPUT_DTYPES = [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16, ts.DType.FP16]
+COMPARE_INPUT_DTYPES = [ts.DType.INT32, ts.DType.FP32, ts.DType.BF16, ts.DType.FP16]  # pyrefly: ignore [missing-attribute]
 
 
 @register_node_visitor
@@ -21,11 +21,11 @@ class GreaterThanVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.GREATER,
+            tosa_op=ts.Op.GREATER,  # pyrefly: ignore [missing-attribute]
             attr_method="GreaterAttribute",
             num_inputs=2,
             input_dtypes=COMPARE_INPUT_DTYPES,
-            output_dtypes=[ts.DType.BOOL],
+            output_dtypes=[ts.DType.BOOL],  # pyrefly: ignore [missing-attribute]
             same_dtype_with_output=False,
             dtype_check_inputs_only=True,
         )

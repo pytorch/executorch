@@ -23,8 +23,8 @@ class RsqrtVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.RSQRT,
+            tosa_op=ts.Op.RSQRT,  # pyrefly: ignore [missing-attribute]
             attr_method="RsqrtAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
         )

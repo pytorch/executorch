@@ -35,13 +35,13 @@ def test_reverse_visitor_emits_tosa_reverse() -> None:
     visitor.define_node(
         cast(Node, SimpleNamespace(kwargs={"axis": 1})),
         tosa_graph,
-        [cast(TosaArg, _tensor_arg("input", ts.DType.FP32))],
-        cast(TosaArg, _tensor_arg("output", ts.DType.FP32)),
+        [cast(TosaArg, _tensor_arg("input", ts.DType.FP32))],  # pyrefly: ignore [missing-attribute]
+        cast(TosaArg, _tensor_arg("output", ts.DType.FP32)),  # pyrefly: ignore [missing-attribute]
     )
 
     assert len(tosa_graph.operators) == 1
     op, inputs, outputs, _attributes, _location = tosa_graph.operators[0]
-    assert op == ts.Op.REVERSE
+    assert op == ts.Op.REVERSE  # pyrefly: ignore [missing-attribute]
     assert inputs == ("input",)
     assert outputs == ("output",)
 
@@ -54,8 +54,8 @@ def test_reverse_visitor_rejects_bfloat16_without_extension() -> None:
         visitor.define_node(
             cast(Node, SimpleNamespace(kwargs={"axis": 0})),
             tosa_graph,
-            [cast(TosaArg, _tensor_arg("input", ts.DType.BF16))],
-            cast(TosaArg, _tensor_arg("output", ts.DType.BF16)),
+            [cast(TosaArg, _tensor_arg("input", ts.DType.BF16))],  # pyrefly: ignore [missing-attribute]
+            cast(TosaArg, _tensor_arg("output", ts.DType.BF16)),  # pyrefly: ignore [missing-attribute]
         )
 
     assert not tosa_graph.operators

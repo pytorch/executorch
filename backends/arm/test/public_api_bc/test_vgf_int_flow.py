@@ -16,7 +16,7 @@ from executorch.backends.arm import (
 )
 from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
 from executorch.extension.export_util.utils import save_pte_program
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 class TinyAddSigmoid(torch.nn.Module):

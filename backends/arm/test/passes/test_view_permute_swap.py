@@ -137,7 +137,7 @@ def test_view_permute_swap_expected_rewrites(
 
     assert swapped_args == expected
     _assert_swap_matches_tensor_behavior(
-        input_shape, view_shape, permute_dims, swapped_args
+        input_shape, view_shape, permute_dims, swapped_args  # pyrefly: ignore [bad-argument-type]
     )
 
 

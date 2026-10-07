@@ -78,7 +78,7 @@ class ConvertEluFamilyToEluPass(ArmOpTargetedPass):
     target_ops = selu_ops + celu_ops
     check_allowed_to_transform = True
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta, updated=False)
 
@@ -123,7 +123,7 @@ class DecomposeEluPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
     target_ops = edge_elu_family_ops
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated=False)
 

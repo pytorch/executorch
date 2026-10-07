@@ -111,15 +111,15 @@ def broadcast_tensors(tosa_fb, nodes: list[Node]) -> list[Any]:
         ]
         multiple_shapes = tosa_fb.addConst(
             (len(multipliers),),
-            ts.DType.SHAPE,
+            ts.DType.SHAPE,  # pyrefly: ignore [missing-attribute]
             multipliers,
             name=f"{node.name}_multiples",
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.TileAttribute()
         tosa_fb.addOperator(
-            ts.Op.TILE,
+            ts.Op.TILE,  # pyrefly: ignore [missing-attribute]
             [reshaped.name, multiple_shapes.name],
             [tiled.name],
             attr,

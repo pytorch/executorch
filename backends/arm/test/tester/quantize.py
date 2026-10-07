@@ -14,7 +14,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 )
 
 from torch.export import export
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import Quantizer  # pyrefly: ignore [missing-import]
 
 
 class ArmQuantize(Quantize):

@@ -18,14 +18,14 @@ from executorch.backends.cortex_m.quantizer_reporter import (
 )
 from executorch.exir.pass_base import ExportPass
 from torch._ops import OpOverload
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     FixedQParamsQuantizationSpec,
     QuantizationAnnotation,
     Quantizer,
 )
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
-from .passes import RewriteWarpDownsampleToTosaCustomPass
+from .passes import RewriteWarpDownsampleToTosaCustomPass  # pyrefly: ignore [missing-import]
 
 _RIFE_LIBRARY: torch.library.Library | None = None
 _RIFE_FAKE_IMPLS_REGISTERED = False

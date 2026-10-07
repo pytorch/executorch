@@ -36,11 +36,11 @@ class RshiftVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         round = False
         if self.tosa_spec.is_U55_subset:
             # U55 only supports INT32 and round == True
@@ -50,7 +50,7 @@ class RshiftVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.ARITHMETIC_RIGHT_SHIFT,
+            ts.Op.ARITHMETIC_RIGHT_SHIFT,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name],
             [output.name],
             attr,

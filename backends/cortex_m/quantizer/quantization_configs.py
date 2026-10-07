@@ -12,12 +12,12 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch.fx import Node
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     HistogramObserver,
     MinMaxObserver,
     PerChannelMinMaxObserver,
 )
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
     QuantizationSpecBase,

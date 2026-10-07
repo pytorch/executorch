@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from backends.arm.test.runtime._vgf_runtime_test_utils import (
+from backends.arm.test.runtime._vgf_runtime_test_utils import (  # pyrefly: ignore [missing-import]
     lower_sampler_vgf,
     make_identity_grid,
     make_input_tensor,

@@ -3,6 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .rewrite_warp_downsample_to_tosa_custom import (  # noqa: F401
+from .rewrite_warp_downsample_to_tosa_custom import (  # noqa: F401  # pyrefly: ignore [missing-import]
     RewriteWarpDownsampleToTosaCustomPass,
 )

@@ -8,7 +8,7 @@ import operator
 from typing import Set, Type
 
 import torch
-from examples.arm.QAT_example.rife_vgf.shaders import (
+from examples.arm.QAT_example.rife_vgf.shaders import (  # pyrefly: ignore [missing-import]
     build_warp_downsample_payload,
     warp_downsample_operator_name,
 )

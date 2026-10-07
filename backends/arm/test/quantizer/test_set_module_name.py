@@ -13,7 +13,7 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.quantizer.quantization_config import QuantizationSpec
 from executorch.backends.arm.tosa import TosaSpecification
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 DQ_PER_CHANNEL = torch.ops.quantized_decomposed.dequantize_per_channel.default
 DQ_PER_TENSOR = torch.ops.quantized_decomposed.dequantize_per_tensor.default

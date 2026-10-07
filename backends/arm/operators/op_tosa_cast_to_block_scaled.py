@@ -76,7 +76,7 @@ class CastToBlockScaledVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             input_tensor,
-            [ts.DType.FP32, ts.DType.BF16, ts.DType.FP16],
+            [ts.DType.FP32, ts.DType.BF16, ts.DType.FP16],  # pyrefly: ignore [missing-attribute]
             self.tosa_spec,
         )
 
@@ -96,19 +96,19 @@ class CastToBlockScaledVisitor(NodeVisitor):
         ):
             output_data_dtype = output_payload_dtype.get_tosa_dtype()
         elif output_data_tensor.dtype == torch.float8_e4m3fn:
-            output_data_dtype = ts.DType.FP8E4M3
+            output_data_dtype = ts.DType.FP8E4M3  # pyrefly: ignore [missing-attribute]
         elif output_data_tensor.dtype == torch.float8_e5m2:
-            output_data_dtype = ts.DType.FP8E5M2
+            output_data_dtype = ts.DType.FP8E5M2  # pyrefly: ignore [missing-attribute]
         else:
             raise ValueError(
                 f"{self.target}: unsupported payload dtype {output_data_tensor.dtype}"
             )
         if output_data_dtype not in (
-            ts.DType.FP4E2M1,
-            ts.DType.FP6E2M3,
-            ts.DType.FP6E3M2,
-            ts.DType.FP8E4M3,
-            ts.DType.FP8E5M2,
+            ts.DType.FP4E2M1,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP6E2M3,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP6E3M2,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP8E4M3,  # pyrefly: ignore [missing-attribute]
+            ts.DType.FP8E5M2,  # pyrefly: ignore [missing-attribute]
         ):
             raise ValueError(
                 f"{self.target}: unsupported payload dtype {output_data_dtype}"
@@ -118,12 +118,12 @@ class CastToBlockScaledVisitor(NodeVisitor):
                 f"{self.target}: unsupported scale dtype {output_scale_tensor.dtype}"
             )
 
-        if not hasattr(ts.Op, "CAST_TO_BLOCK_SCALED"):
+        if not hasattr(ts.Op, "CAST_TO_BLOCK_SCALED"):  # pyrefly: ignore [missing-attribute]
             raise NotImplementedError(
                 "tosa_serializer does not provide CAST_TO_BLOCK_SCALED yet"
             )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr_ctor = getattr(attr, "CastToBlockScaledAttribute", None)
         if attr_ctor is None:
             raise NotImplementedError(
@@ -134,7 +134,7 @@ class CastToBlockScaledVisitor(NodeVisitor):
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CAST_TO_BLOCK_SCALED,
+            ts.Op.CAST_TO_BLOCK_SCALED,  # pyrefly: ignore [missing-attribute]
             [input_tensor.name],
             output_names,
             attr,

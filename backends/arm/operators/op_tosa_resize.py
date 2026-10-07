@@ -36,16 +36,16 @@ class ResizeVisitor(NodeVisitor):
         x, scales, offset, border = inputs
         validate_num_inputs(self.target, inputs, [4])
         if node.kwargs.get("resize_mode") == "bilinear":
-            resize_mode = ts.ResizeMode.BILINEAR
+            resize_mode = ts.ResizeMode.BILINEAR  # pyrefly: ignore [missing-attribute]
         else:
-            resize_mode = ts.ResizeMode.NEAREST
-        attr = ts.TosaSerializerAttribute()
+            resize_mode = ts.ResizeMode.NEAREST  # pyrefly: ignore [missing-attribute]
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ResizeAttribute(resize_mode)
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.RESIZE,
+            ts.Op.RESIZE,  # pyrefly: ignore [missing-attribute]
             [
                 x.name,
                 scales.name,

@@ -12,7 +12,7 @@ from executorch.backends.cortex_m.test.tester import (
     McuTestCase,
     ramp_tensor,
 )
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 class CortexMSoftmax(torch.nn.Module):

@@ -57,7 +57,7 @@ def _cat_inputs(node: Node) -> list[Node] | None:
         return None
     inputs = list(node.args[0])
     return (
-        inputs if all(isinstance(input_node, Node) for input_node in inputs) else None
+        inputs if all(isinstance(input_node, Node) for input_node in inputs) else None  # pyrefly: ignore [bad-return]
     )
 
 

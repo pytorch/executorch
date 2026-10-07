@@ -30,8 +30,8 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util.utils import save_pte_program
-from PIL import Image
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from PIL import Image  # pyrefly: ignore [missing-import]
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -63,15 +63,15 @@ class MobileSAMFixedPrompt(torch.nn.Module):
                 torch.tensor([[POINT]], dtype=torch.float32),
                 torch.ones((1, 1), dtype=torch.int64),
             )
-            sparse, dense = sam.prompt_encoder(points=points, boxes=None, masks=None)
-            image_pe = sam.prompt_encoder.get_dense_pe()
+            sparse, dense = sam.prompt_encoder(points=points, boxes=None, masks=None)  # pyrefly: ignore [not-callable]
+            image_pe = sam.prompt_encoder.get_dense_pe()  # pyrefly: ignore [missing-attribute]
         self.register_buffer("sparse_prompt", sparse)
         self.register_buffer("dense_prompt", dense)
         self.register_buffer("image_pe", image_pe)
 
     def forward(self, image: torch.Tensor) -> torch.Tensor:
-        masks, _ = self.mask_decoder(
-            image_embeddings=self.image_encoder(image),
+        masks, _ = self.mask_decoder(  # pyrefly: ignore [not-callable]
+            image_embeddings=self.image_encoder(image),  # pyrefly: ignore [not-callable]
             image_pe=self.image_pe,
             sparse_prompt_embeddings=self.sparse_prompt,
             dense_prompt_embeddings=self.dense_prompt,
@@ -100,8 +100,8 @@ def prepare_image(sam: torch.nn.Module) -> tuple[Image.Image, torch.Tensor]:
     padded.paste(resized)
 
     sam = cast(Any, sam)
-    mean = sam.pixel_mean.detach().cpu().reshape(3).numpy()
-    std = sam.pixel_std.detach().cpu().reshape(3).numpy()
+    mean = sam.pixel_mean.detach().cpu().reshape(3).numpy()  # pyrefly: ignore [not-callable]
+    std = sam.pixel_std.detach().cpu().reshape(3).numpy()  # pyrefly: ignore [not-callable]
     tensor = torch.from_numpy((np.asarray(resized, dtype=np.float32) - mean) / std)
     tensor = tensor.permute(2, 0, 1).unsqueeze(0)
     tensor = F.pad(
@@ -149,7 +149,7 @@ def main() -> None:
     quantizer.set_global(get_symmetric_quantization_config())
     attention_type = next(
         type(module)
-        for module in model.image_encoder.modules()
+        for module in model.image_encoder.modules()  # pyrefly: ignore [missing-attribute]
         if type(module).__name__ == "Attention"
     )
     # Int16 attention activations preserve the segmentation mask quality.

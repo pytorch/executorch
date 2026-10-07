@@ -24,7 +24,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 
 pytest.importorskip("transformers.models.qwen2")
 
-from transformers.models.qwen2.modeling_qwen2 import (  # noqa: E402
+from transformers.models.qwen2.modeling_qwen2 import (  # noqa: E402  # pyrefly: ignore [missing-import]
     apply_rotary_pos_emb,
     Qwen2Attention,
     Qwen2DecoderLayer,

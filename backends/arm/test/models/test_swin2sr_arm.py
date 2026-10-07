@@ -14,7 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from transformers import Swin2SRConfig, Swin2SRForImageSuperResolution
+from transformers import Swin2SRConfig, Swin2SRForImageSuperResolution  # pyrefly: ignore [missing-import]
 
 input_t = Tuple[torch.Tensor]
 

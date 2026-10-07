@@ -19,8 +19,8 @@ class LogicalNotVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.LOGICAL_NOT,
+            tosa_op=ts.Op.LOGICAL_NOT,  # pyrefly: ignore [missing-attribute]
             attr_method="LogicalNotAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.BOOL],
+            input_dtypes=[ts.DType.BOOL],  # pyrefly: ignore [missing-attribute]
         )

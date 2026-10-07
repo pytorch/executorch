@@ -187,7 +187,7 @@ def build_grid_sampler_2d_payload(
         else GRID_SAMPLER_2D_SHADER_BINARY
     )
     shader_code = "".join(
-        files(__package__).joinpath(shader_file).read_text(encoding="utf-8").split()
+        files(__package__).joinpath(shader_file).read_text(encoding="utf-8").split()  # pyrefly: ignore [bad-argument-type]
     )
 
     payload = {
@@ -212,7 +212,7 @@ def build_grid_sampler_2d_payload(
         "output_0_descriptorset": 0,
     }
     if use_sampler:
-        payload.update(
+        payload.update(  # pyrefly: ignore [no-matching-overload]
             {
                 "input_0_type": "Image",
                 "input_0_vkformat": sampler_vk_format,
@@ -297,7 +297,7 @@ def _compile_flow_offset_grid_sampler_shader(
     flow_channel_offset: int,
 ) -> str:
     source = (
-        files(__package__)
+        files(__package__)  # pyrefly: ignore [bad-argument-type]
         .joinpath(FLOW_OFFSET_GRID_SAMPLER_SHADER_SOURCE)
         .read_text(encoding="utf-8")
         .replace("@INPUT_SCALE@", _format_float(input_scale))

@@ -6,8 +6,8 @@
 
 from executorch.export import recipe_registry
 
-from .arm_recipe_provider import ArmRecipeProvider
-from .arm_recipe_types import ArmRecipeType
+from .arm_recipe_provider import ArmRecipeProvider  # pyrefly: ignore [missing-import]
+from .arm_recipe_types import ArmRecipeType  # pyrefly: ignore [missing-import]
 
 recipe_registry.register_backend_recipe_provider(ArmRecipeProvider())
 

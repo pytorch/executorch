@@ -40,9 +40,9 @@ class ClampVisitor(NodeVisitor):
     ) -> None:
         validate_num_inputs(self.target, inputs, [2, 3])
         validate_same_dtype(self.target, [inputs[0], output], ts)
-        supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.BF16, ts.DType.FP32]
+        supported_dtypes = [ts.DType.INT8, ts.DType.FP16, ts.DType.BF16, ts.DType.FP32]  # pyrefly: ignore [missing-attribute]
         if self.tosa_spec.support_extension("int16"):
-            supported_dtypes.append(ts.DType.INT16)
+            supported_dtypes.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
@@ -54,17 +54,17 @@ class ClampVisitor(NodeVisitor):
         min_val = cast(int | float, node.args[1])
         max_val = cast(int | float, node.args[2])
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ClampAttribute(
             self._to_bytes(min_val, node_input_dtype),
             self._to_bytes(max_val, node_input_dtype),
-            nan_mode=ts.NanPropagationMode.PROPAGATE,
+            nan_mode=ts.NanPropagationMode.PROPAGATE,  # pyrefly: ignore [missing-attribute]
         )
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CLAMP,
+            ts.Op.CLAMP,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,

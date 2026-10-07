@@ -32,12 +32,12 @@ from torchgen.model import (
 from typing_extensions import assert_never
 
 from .types import (
-    ArrayRefCType,
-    BaseTypeToCppMapping,
-    OptionalCType,
-    scalarT,
-    tensorListT,
-    tensorT,
+    ArrayRefCType,  # pyrefly: ignore [missing-module-attribute]
+    BaseTypeToCppMapping,  # pyrefly: ignore [missing-module-attribute]
+    OptionalCType,  # pyrefly: ignore [missing-module-attribute]
+    scalarT,  # pyrefly: ignore [missing-module-attribute]
+    tensorListT,  # pyrefly: ignore [missing-module-attribute]
+    tensorT,  # pyrefly: ignore [missing-module-attribute]
 )
 
 if TYPE_CHECKING:

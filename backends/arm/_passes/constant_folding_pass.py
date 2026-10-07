@@ -8,7 +8,7 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
-from torchao.quantization.pt2e.constant_fold import constant_fold
+from torchao.quantization.pt2e.constant_fold import constant_fold  # pyrefly: ignore [missing-import]
 
 
 class ConstantFoldingPass(ArmPass):

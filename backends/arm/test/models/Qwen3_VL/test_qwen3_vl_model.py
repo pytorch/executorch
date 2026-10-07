@@ -21,7 +21,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     VgfPipeline,
 )
-from transformers.models.qwen3_vl.modeling_qwen3_vl import (
+from transformers.models.qwen3_vl.modeling_qwen3_vl import (  # pyrefly: ignore [missing-import]
     Qwen3VLTextModel,
     Qwen3VLVisionModel,
 )

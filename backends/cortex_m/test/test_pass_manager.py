@@ -16,7 +16,7 @@ from executorch.exir import to_edge, to_edge_transform_and_lower
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 
 def _quantize(model, inputs, use_explicit_layout=False):

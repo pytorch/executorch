@@ -188,9 +188,9 @@ def export_module_to_program(
         edge: exir.EdgeProgramManager = to_edge(exported_program)
         lowered_module = to_backend(  # type: ignore[call-arg]
             backend_id,
-            edge.exported_program(),
+            edge.exported_program(),  # pyrefly: ignore [bad-argument-count]
             # Just for the demo executor_backend.
-            compile_specs=[CompileSpec(key="external_constants", value=b"")],
+            compile_specs=[CompileSpec(key="external_constants", value=b"")],  # pyrefly: ignore [unexpected-keyword]
         )
 
         class CompositeModule(nn.Module):

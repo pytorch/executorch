@@ -4,8 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-from .backend import VgfBackend  # noqa: F401
-from .compile_spec import VgfCompileSpec  # noqa: F401
-from .partitioner import VgfPartitioner  # noqa: F401
+from .backend import VgfBackend  # noqa: F401  # pyrefly: ignore [missing-import]
+from .compile_spec import VgfCompileSpec  # noqa: F401  # pyrefly: ignore [missing-import]
+from .partitioner import VgfPartitioner  # noqa: F401  # pyrefly: ignore [missing-import]
 
 __all__ = ["VgfBackend", "VgfPartitioner", "VgfCompileSpec"]

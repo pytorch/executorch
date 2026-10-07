@@ -69,7 +69,7 @@ if ! git rev-parse HEAD^ >/dev/null 2>&1; then
     revision_flag=""
 fi
 
-lintrunner -a $revision_flag --skip MYPY
+lintrunner -a $revision_flag --skip PYREFLY
 lint_status=$?
 
 # Check if lintrunner modified any staged files. If so, block the commit

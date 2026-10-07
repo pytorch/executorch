@@ -36,7 +36,7 @@ class CapturingTosaGraph:
         self.operators.append((op, tuple(inputs), tuple(outputs)))
 
 
-def _tensor_arg(name: str, dtype: ts.DType) -> TosaArg:
+def _tensor_arg(name: str, dtype: ts.DType) -> TosaArg:  # pyrefly: ignore [missing-attribute]
     return cast(TosaArg, SimpleNamespace(name=name, dtype=dtype, shape=(7,)))
 
 
@@ -47,11 +47,11 @@ def _rescale_unsigned_output(output_zp: int) -> CapturingTosaGraph:
         node=cast(Node, SimpleNamespace()),
         tosa_graph=graph,
         scale=[1.0],
-        input_node=_tensor_arg("wide_input", ts.DType.INT32),
-        output=_tensor_arg("unsigned_output", ts.DType.INT8),
+        input_node=_tensor_arg("wide_input", ts.DType.INT32),  # pyrefly: ignore [missing-attribute]
+        output=_tensor_arg("unsigned_output", ts.DType.INT8),  # pyrefly: ignore [missing-attribute]
         input_zp=[0],
         output_zp=[output_zp],
-        rounding_mode=ts.RoundingMode.SINGLE_ROUND,
+        rounding_mode=ts.RoundingMode.SINGLE_ROUND,  # pyrefly: ignore [missing-attribute]
         input_unsigned=False,
         output_unsigned=True,
     )
@@ -68,11 +68,11 @@ def test_wide_to_unsigned_int16_rescale_is_rejected() -> None:
             node=cast(Node, SimpleNamespace()),
             tosa_graph=CapturingTosaGraph(),
             scale=[1.0],
-            input_node=_tensor_arg("wide_input", ts.DType.INT32),
-            output=_tensor_arg("unsigned_output", ts.DType.INT16),
+            input_node=_tensor_arg("wide_input", ts.DType.INT32),  # pyrefly: ignore [missing-attribute]
+            output=_tensor_arg("unsigned_output", ts.DType.INT16),  # pyrefly: ignore [missing-attribute]
             input_zp=[0],
             output_zp=[0],
-            rounding_mode=ts.RoundingMode.SINGLE_ROUND,
+            rounding_mode=ts.RoundingMode.SINGLE_ROUND,  # pyrefly: ignore [missing-attribute]
             input_unsigned=False,
             output_unsigned=True,
         )
@@ -98,16 +98,16 @@ def test_wide_to_unsigned_rescale_rebases_to_signed_domain() -> None:
     first_op, first_inputs, first_outputs = graph.operators[0]
     second_op, second_inputs, second_outputs = graph.operators[1]
 
-    assert first_op == ts.Op.RESCALE
-    assert second_op == ts.Op.RESCALE
+    assert first_op == ts.Op.RESCALE  # pyrefly: ignore [missing-attribute]
+    assert second_op == ts.Op.RESCALE  # pyrefly: ignore [missing-attribute]
     assert first_inputs[0] == "wide_input"
     assert first_outputs == ("intermediate_1",)
     assert second_inputs[0] == "intermediate_1"
     assert second_outputs == ("unsigned_output",)
 
-    assert graph.consts["intermediate_1_output_zp"] == (ts.DType.INT8, [-128])
-    assert graph.consts["unsigned_output_input_zp"] == (ts.DType.INT8, [-128])
-    assert graph.consts["unsigned_output_output_zp"] == (ts.DType.INT8, [0])
+    assert graph.consts["intermediate_1_output_zp"] == (ts.DType.INT8, [-128])  # pyrefly: ignore [missing-attribute]
+    assert graph.consts["unsigned_output_input_zp"] == (ts.DType.INT8, [-128])  # pyrefly: ignore [missing-attribute]
+    assert graph.consts["unsigned_output_output_zp"] == (ts.DType.INT8, [0])  # pyrefly: ignore [missing-attribute]
 
 
 @pytest.mark.parametrize("output_zp", [0, 17, 255])
@@ -115,11 +115,11 @@ def test_wide_to_unsigned_rescale_preserves_unsigned_range(output_zp: int) -> No
     graph = _rescale_unsigned_output(output_zp=output_zp)
 
     assert graph.consts["intermediate_1_output_zp"] == (
-        ts.DType.INT8,
+        ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
         [output_zp - 128],
     )
-    assert graph.consts["unsigned_output_input_zp"] == (ts.DType.INT8, [-128])
-    assert graph.consts["unsigned_output_output_zp"] == (ts.DType.INT8, [0])
+    assert graph.consts["unsigned_output_input_zp"] == (ts.DType.INT8, [-128])  # pyrefly: ignore [missing-attribute]
+    assert graph.consts["unsigned_output_output_zp"] == (ts.DType.INT8, [0])  # pyrefly: ignore [missing-attribute]
 
     for value in (-1, 0, 1, 126, 127, 128, 200, 254, 255, 256):
         assert _split_unsigned_rescale(value, output_zp) == _direct_unsigned_rescale(

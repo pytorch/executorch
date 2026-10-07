@@ -19,11 +19,11 @@ class EqualVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.EQUAL,
+            tosa_op=ts.Op.EQUAL,  # pyrefly: ignore [missing-attribute]
             attr_method="EqualAttribute",
             num_inputs=2,
-            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
-            output_dtypes=[ts.DType.BOOL],
+            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
+            output_dtypes=[ts.DType.BOOL],  # pyrefly: ignore [missing-attribute]
             same_dtype_with_output=False,
             dtype_check_inputs_only=True,
         )

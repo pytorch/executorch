@@ -21,7 +21,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 from executorch.examples.models.stable_diffusion_3_5_large.model import (
     SD3CLIPTextEncoderWrapper,
 )
-from transformers import CLIPTextModelWithProjection
+from transformers import CLIPTextModelWithProjection  # pyrefly: ignore [missing-import]
 
 input_t = Tuple[torch.Tensor]
 

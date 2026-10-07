@@ -14,7 +14,7 @@ from executorch.exir.graph_module import get_cond_while_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 from torch.fx.node import Argument
-from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix  # pyrefly: ignore [missing-import]
 
 
 class ScalarsToAttributePass(ArmPass):

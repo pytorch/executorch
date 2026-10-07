@@ -35,16 +35,16 @@ class AnyVisitor(NodeVisitor):
         validate_num_inputs(self.target, inputs, 1)
         validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
-            self.target, [inputs[0], output], ts.DType.BOOL, self.tosa_spec
+            self.target, [inputs[0], output], ts.DType.BOOL, self.tosa_spec  # pyrefly: ignore [missing-attribute]
         )
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ReduceAnyAttribute(node.kwargs["axis"])
 
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.REDUCE_ANY,
+            ts.Op.REDUCE_ANY,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,

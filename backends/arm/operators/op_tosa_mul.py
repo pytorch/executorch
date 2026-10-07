@@ -37,23 +37,23 @@ class MulVisitor(NodeVisitor):
             self.target,
             [*inputs, output],
             [
-                ts.DType.INT8,
-                ts.DType.INT16,
-                ts.DType.INT32,
-                ts.DType.FP32,
-                ts.DType.BF16,
-                ts.DType.FP16,
+                ts.DType.INT8,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.INT32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP32,  # pyrefly: ignore [missing-attribute]
+                ts.DType.BF16,  # pyrefly: ignore [missing-attribute]
+                ts.DType.FP16,  # pyrefly: ignore [missing-attribute]
             ],
             self.tosa_spec,
         )
 
-        shift = tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")
-        attr = ts.TosaSerializerAttribute()
+        shift = tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{output.name}_shift")  # pyrefly: ignore [missing-attribute]
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.MulAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.MUL,
+            ts.Op.MUL,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name, shift.name],
             [output.name],
             attr,

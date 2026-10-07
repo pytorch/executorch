@@ -8,7 +8,7 @@ import os
 from argparse import ArgumentParser
 
 import numpy as np
-from PIL import Image
+from PIL import Image  # pyrefly: ignore [missing-import]
 
 
 def resize_and_crop_center(img: Image.Image, target_size):

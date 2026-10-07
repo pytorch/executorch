@@ -20,7 +20,7 @@ def _expr_to_int(sym_expr: sympy.Basic) -> Optional[int]:
     if isinstance(sym_expr, sympy.Integer):
         return int(sym_expr)
     if getattr(sym_expr, "is_integer", False) and sym_expr.is_number:
-        return int(sym_expr)
+        return int(sym_expr)  # pyrefly: ignore [bad-argument-type]
     return None
 
 
@@ -43,7 +43,7 @@ def _expr_symbols_to_values(
     expr: sympy.Basic,
     shape_env: ShapeEnv,
 ) -> dict[sympy.Symbol, _ExactValues]:
-    return {symbol: _symbol_values(symbol, shape_env) for symbol in expr.free_symbols}
+    return {symbol: _symbol_values(symbol, shape_env) for symbol in expr.free_symbols}  # pyrefly: ignore [bad-argument-type, bad-return]
 
 
 def _try_expr_to_int(expr: sympy.Basic) -> Optional[int]:
@@ -73,7 +73,7 @@ def _evaluate_exact_values(
         return sympy_interp(
             _ExactValueAnalysis,
             _expr_symbols_to_values(expr, shape_env),
-            expr,
+            expr,  # pyrefly: ignore [bad-argument-type]
             missing_handler=lambda symbol: _symbol_values(symbol, shape_env),
         )
     except (RecursionError, TypeError):

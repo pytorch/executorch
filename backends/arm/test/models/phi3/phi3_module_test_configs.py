@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from transformers.models.phi3.configuration_phi3 import Phi3Config
+from transformers.models.phi3.configuration_phi3 import Phi3Config  # pyrefly: ignore [missing-import]
 
 
 def get_phi3_test_config() -> Phi3Config:

@@ -43,7 +43,7 @@ class DecomposeTOSAUnsupportedClampPass(ArmOpTargetedPass):
             updated=True,
         )
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         val = meta["val"]
 
         is_scalar_clamp = op in {

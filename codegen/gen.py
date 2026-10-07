@@ -863,7 +863,7 @@ def parse_yaml_files(
 
         combined_functions = translated_functions + custom_ops_functions
         combined_kernel_index = ETKernelIndex.merge_indices(
-            translated_indices, custom_ops_indices
+            translated_indices, custom_ops_indices  # pyrefly: ignore [bad-argument-type]
         )
         combined_yaml = ETParsedYaml(combined_functions, combined_kernel_index)
         custom_ops_parsed_yaml = ETParsedYaml(custom_ops_functions, custom_ops_indices)

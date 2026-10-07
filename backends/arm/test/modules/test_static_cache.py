@@ -28,8 +28,8 @@ from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 from torch.export.graph_signature import InputKind, OutputKind
 
-from transformers import LlamaConfig
-from transformers.cache_utils import StaticCache, StaticLayer
+from transformers import LlamaConfig  # pyrefly: ignore [missing-import]
+from transformers.cache_utils import StaticCache, StaticLayer  # pyrefly: ignore [missing-import]
 
 input_t = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 

@@ -79,7 +79,7 @@ class DecomposePermuteForU55Pass(ArmOpTargetedPass):
         with given shape, permutation and dtype.
         """
         version = get_context_spec().version
-        tosa_graph = ts.TosaSerializer(
+        tosa_graph = ts.TosaSerializer(  # pyrefly: ignore [missing-attribute]
             "",
             targetMajor=version.major,
             targetMinor=version.minor,
@@ -90,7 +90,7 @@ class DecomposePermuteForU55Pass(ArmOpTargetedPass):
         input_name = "probe_ifm"
         output_shape = [shape[idx] for idx in permutation]
 
-        input_tensor = ts.TosaSerializerTensor(
+        input_tensor = ts.TosaSerializerTensor(  # pyrefly: ignore [missing-attribute]
             input_name,
             list(shape),
             tosa_dtype,
@@ -99,10 +99,10 @@ class DecomposePermuteForU55Pass(ArmOpTargetedPass):
         tosa_graph.addInputTensor(input_tensor)
         output_tensor = tosa_graph.addIntermediate(output_shape, tosa_dtype)
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.TransposeAttribute(list(permutation))
         tosa_graph.addOperator(
-            ts.Op.TRANSPOSE,
+            ts.Op.TRANSPOSE,  # pyrefly: ignore [missing-attribute]
             inputs=[input_name],
             outputs=[output_tensor.name],
             attributes=attr,
@@ -329,7 +329,7 @@ class DecomposePermuteForU55Pass(ArmOpTargetedPass):
 
         return recurse(input_node, 0)
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 

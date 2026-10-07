@@ -77,7 +77,7 @@ class FuseConsecutiveRescalesPass(ArmPass):
 
             node_fused = False
             for user in list(node.users):
-                if _try_fuse_identity_pair(node, user, r1_input, r1_input_zp, r1_scale):
+                if _try_fuse_identity_pair(node, user, r1_input, r1_input_zp, r1_scale):  # pyrefly: ignore [bad-argument-type]
                     node_fused = True
                     identity_pairs_fused += 1
 

@@ -19,9 +19,9 @@ class MinimumVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.MINIMUM,
+            tosa_op=ts.Op.MINIMUM,  # pyrefly: ignore [missing-attribute]
             attr_method="MinimumAttribute",
-            attr_kwargs={"nan_mode": ts.NanPropagationMode.PROPAGATE},
+            attr_kwargs={"nan_mode": ts.NanPropagationMode.PROPAGATE},  # pyrefly: ignore [missing-attribute]
             num_inputs=2,
-            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
         )

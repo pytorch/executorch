@@ -58,7 +58,7 @@ class DecomposeMaxPool2dPass(ArmOpTargetedPass):
     }
     target_ops = EDGE_MAXPOOL2D
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         # Only intercept EXIR edge max_pool2d ops
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)

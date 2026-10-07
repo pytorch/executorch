@@ -8,7 +8,7 @@ import torch
 from executorch.backends.arm.ao_ext.mxfp import MXFPOpConfig
 from executorch.backends.arm.ao_ext.ops.mxfp_conv2d_op import transform_conv2d_to_mxfp
 from executorch.backends.arm.ao_ext.ops.mxfp_linear_op import transform_linear_to_mxfp
-from torchao.quantization.transform_module import register_quantize_module_handler
+from torchao.quantization.transform_module import register_quantize_module_handler  # pyrefly: ignore [missing-import]
 
 
 @register_quantize_module_handler(MXFPOpConfig)  # type: ignore[misc]

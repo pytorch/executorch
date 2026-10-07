@@ -9,7 +9,7 @@ registered via decorators and discovered at runtime.
 
 """
 
-from . import (  # noqa
+from . import (  # noqa  # pyrefly: ignore [missing-import]
     node_visitor,
     op_cond_if,
     op_to_dim_order_copy,

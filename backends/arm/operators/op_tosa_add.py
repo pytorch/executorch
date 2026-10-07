@@ -19,8 +19,8 @@ class AddVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.ADD,
+            tosa_op=ts.Op.ADD,  # pyrefly: ignore [missing-attribute]
             attr_method="AddAttribute",
             num_inputs=2,
-            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.INT32, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
         )

@@ -310,7 +310,7 @@ def test_add_known_vkml_validation_filters_uses_platform_separator() -> None:
         )
     }
 
-    runner_utils._add_known_vkml_validation_filters(env)
+    runner_utils._add_known_vkml_validation_filters(env)  # pyrefly: ignore [bad-argument-type]
 
     filters = env[runner_utils.VULKAN_VALIDATION_MESSAGE_FILTER_ENV].split(
         os.path.pathsep

@@ -523,7 +523,7 @@ command = [
 ]
 
 [[linter]]
-code = 'MYPY'
+code = 'PYREFLY'
 include_patterns = [
     # TODO(https://github.com/pytorch/executorch/issues/7441): Gradually start enabling all folders.
     # 'backends/**/*.py',
@@ -554,18 +554,17 @@ exclude_patterns = [
     'scripts/check_binary_dependencies.py',
     'profiler/test/test_profiler_e2e.py',
     'backends/arm/test/ops/*.py',
+    'backends/arm/scripts/TOSA_minimal_example.ipynb',
+    'examples/arm/cortex_m_mv2_example.ipynb',
+    'examples/arm/ethos_u_cmsis_nn_fallback_example.ipynb',
+    'examples/arm/ethos_u_minimal_example.ipynb',
+    'examples/arm/pruning_minimal_example.ipynb',
+    'examples/arm/quantizer_tutorial.ipynb',
+    'examples/arm/vgf_minimal_example.ipynb',
 ]
 command = [
     'python',
-    '-m',
-    'lintrunner_adapters',
-    'run',
-    'mypy_linter',
-    '--config=.mypy.ini',
-    '--show-disable',
-    '--',
-    '--explicit-package-bases',
-    '@{{PATHSFILE}}'
+    'scripts/pyrefly_lintrunner.py',
 ]
 init_command = [
     'python',

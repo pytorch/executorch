@@ -10,7 +10,7 @@ from typing import Tuple
 
 import torch
 from executorch.extension.llm.export.builder import LLMEdgeManager
-from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.pt2e.quantizer import Quantizer  # pyrefly: ignore [missing-import]
 
 try:
     import nncf  # type: ignore[import-untyped]

@@ -18,7 +18,7 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
-from examples.models.silero_vad.export_silero_vad import (  # noqa: E402
+from examples.models.silero_vad.export_silero_vad import (  # noqa: E402  # pyrefly: ignore [missing-import]
     CONTEXT_SIZE,
     HIDDEN_DIM,
     INPUT_SIZE,
@@ -44,7 +44,7 @@ from executorch.exir.passes.init_mutable_pass import (  # noqa: E402
     InitializedMutableBufferPass,
 )
 from executorch.extension.export_util.utils import save_pte_program  # noqa: E402
-from torchao.quantization.pt2e.quantize_pt2e import (  # noqa: E402
+from torchao.quantization.pt2e.quantize_pt2e import (  # noqa: E402  # pyrefly: ignore [missing-import]
     convert_pt2e,
     prepare_pt2e,
 )

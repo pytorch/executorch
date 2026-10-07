@@ -64,7 +64,7 @@ from torch.export import ExportedProgram
 from torch.fx import GraphModule
 
 # Quantize model if required using the standard export quantizaion flow.
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 # Maximum number of samples to use for calibration when quantizing.
 CALIBRATION_MAX_SAMPLES = 1000
@@ -535,7 +535,7 @@ def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
     graph_module = edge.exported_program().graph_module
     delegation_info = get_delegation_info(graph_module)
     df = delegation_info.get_operator_delegation_dataframe()
-    table = tabulate(df, headers="keys", tablefmt="fancy_grid")
+    table = tabulate(df, headers="keys", tablefmt="fancy_grid")  # pyrefly: ignore [bad-argument-type]
     delegation_info_string = f"Delegation info:\n{delegation_info.get_summary()}\nDelegation table:\n{table}\n"
     logging.info(delegation_info_string)
     if intermediate_files_folder is not None:

@@ -132,7 +132,7 @@ class CortexMTester(TesterBase):
         stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
             target_config=target_config, timeout=timeout
         )
-        super().__init__(module, resolved_example_inputs, stage_classes)
+        super().__init__(module, resolved_example_inputs, stage_classes)  # pyrefly: ignore [bad-argument-type]
 
     def test_dialect(
         self,

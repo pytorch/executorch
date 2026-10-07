@@ -20,7 +20,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
 from executorch.backends.arm.tosa.mapping import TosaArg
 
 
-if hasattr(ts.Op, "AVG_POOL2D_ADAPTIVE"):
+if hasattr(ts.Op, "AVG_POOL2D_ADAPTIVE"):  # pyrefly: ignore [missing-attribute]
 
     @register_node_visitor
     class AvgPool2dAdaptiveVisitor(NodeVisitor):
@@ -40,24 +40,24 @@ if hasattr(ts.Op, "AVG_POOL2D_ADAPTIVE"):
 
             input_tensor, input_zp, output_zp, kernel, stride, pad, acc_arg = inputs
 
-            supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]
+            supported = [ts.DType.INT8, ts.DType.FP16, ts.DType.FP32, ts.DType.BF16]  # pyrefly: ignore [missing-attribute]
             if self.tosa_spec.support_extension("int16"):
-                supported.append(ts.DType.INT16)
+                supported.append(ts.DType.INT16)  # pyrefly: ignore [missing-attribute]
             if self.tosa_spec.support_extension("fp8e4m3"):
-                supported.append(ts.DType.FP8E4M3)
+                supported.append(ts.DType.FP8E4M3)  # pyrefly: ignore [missing-attribute]
             if self.tosa_spec.support_extension("fp8e5m2"):
-                supported.append(ts.DType.FP8E5M2)
+                supported.append(ts.DType.FP8E5M2)  # pyrefly: ignore [missing-attribute]
             validate_valid_dtype(
                 self.target, [input_tensor, output], supported, self.tosa_spec
             )
 
-            attr = ts.TosaSerializerAttribute()
+            attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
             attr.AvgPool2dAdaptiveAttribute(acc_type=acc_arg.dtype)
 
             self._serialize_operator(
                 node,
                 tosa_graph,
-                ts.Op.AVG_POOL2D_ADAPTIVE,
+                ts.Op.AVG_POOL2D_ADAPTIVE,  # pyrefly: ignore [missing-attribute]
                 [
                     input_tensor.name,
                     input_zp.name,

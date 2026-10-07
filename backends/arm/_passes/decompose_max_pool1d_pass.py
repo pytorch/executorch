@@ -46,7 +46,7 @@ class DecomposeMaxPool1dPass(ArmOpTargetedPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(self, op, args, kwargs, meta):  # pyrefly: ignore [bad-override]
         if op != torch.ops.aten.max_pool1d.default or not self.allowed_to_transform(
             meta
         ):

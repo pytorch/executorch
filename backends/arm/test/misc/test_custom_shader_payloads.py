@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from backends.arm.test._custom_vgf_test_utils import (
+from backends.arm.test._custom_vgf_test_utils import (  # pyrefly: ignore [missing-import]
     EncodeSamplerGridSampleToTosaCustomPass,
     register_test_shader_library_ops,
     rewrite_aten_grid_sample_to_test_shader,

@@ -54,12 +54,12 @@ from executorch.exir.graph_module import (
 
 from torch._ops import OpOverload
 
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     ComposableQuantizer,
     QuantizationAnnotation,
     Quantizer,
 )
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
@@ -76,7 +76,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
 from executorch.backends.arm.vgf import VgfCompileSpec
 from executorch.exir._warnings import experimental
 from torch.fx import GraphModule, Node
-from torchao.quantization.pt2e import (
+from torchao.quantization.pt2e import (  # pyrefly: ignore [missing-import]
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
     HistogramObserver,
@@ -86,20 +86,20 @@ from torchao.quantization.pt2e import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-from torchao.quantization.pt2e.quantize_pt2e import (
+from torchao.quantization.pt2e.quantize_pt2e import (  # pyrefly: ignore [missing-import]
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
 
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     annotate_input_qspec_map,
     annotate_output_qspec,
     get_module_name_filter,
     QuantizationSpec,
 )
 
-from .quantization_annotator import annotate_graph
+from .quantization_annotator import annotate_graph  # pyrefly: ignore [missing-import]
 
 
 __all__ = [

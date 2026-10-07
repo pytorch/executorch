@@ -184,7 +184,7 @@ class FoldDyTAffineIntoConvPass(ArmPass):
                 return None
             view_shape = tuple(shape)
             node = node.args[0]
-        return node, view_shape
+        return node, view_shape  # pyrefly: ignore [bad-return]
 
     def _operand(self, node: Node) -> _Operand | None:
         unwrapped = self._unwrap_views(node)

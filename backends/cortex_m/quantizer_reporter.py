@@ -20,14 +20,14 @@ from importlib import import_module
 from typing import Any, Callable, cast, Dict, List, NamedTuple, Optional
 
 from torch.fx import GraphModule, Node
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     DerivedQuantizationSpec,
     QuantizationAnnotation,
     QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
 )
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY  # pyrefly: ignore [missing-import]
 
 logger = logging.getLogger(__name__)
 tabulate = cast(Callable[..., str], import_module("tabulate").tabulate)
@@ -37,20 +37,20 @@ def qspec_repr(qspec: Optional[QuantizationSpecBase]) -> str:
     """Get a human-readable representation of a QuantizationSpec."""
 
     if isinstance(qspec, SharedQuantizationSpec):
-        return f"SharedQuantizationSpec(edge_or_node={qspec.edge_or_node})"
+        return f"SharedQuantizationSpec(edge_or_node={qspec.edge_or_node})"  # pyrefly: ignore [missing-attribute]
     elif isinstance(qspec, DerivedQuantizationSpec):
-        return f"DerivedQuantizationSpec(derived_from={qspec.derived_from}, dtype={qspec.dtype})"
+        return f"DerivedQuantizationSpec(derived_from={qspec.derived_from}, dtype={qspec.dtype})"  # pyrefly: ignore [missing-attribute]
     elif isinstance(qspec, QuantizationSpec):
 
         def _fmt(obj: Any) -> str:
             return str(obj).removeprefix("torch.").upper()
 
         q_range_fmt = (
-            f", range=({qspec.quant_min},{qspec.quant_max})"
-            if (qspec.quant_min is not None or qspec.quant_max is not None)
+            f", range=({qspec.quant_min},{qspec.quant_max})"  # pyrefly: ignore [missing-attribute]
+            if (qspec.quant_min is not None or qspec.quant_max is not None)  # pyrefly: ignore [missing-attribute]
             else ""
         )
-        return f"QuantizationSpec(dtype={_fmt(qspec.dtype)}{q_range_fmt})"
+        return f"QuantizationSpec(dtype={_fmt(qspec.dtype)}{q_range_fmt})"  # pyrefly: ignore [missing-attribute]
     elif qspec is None:
         return "None"
     else:

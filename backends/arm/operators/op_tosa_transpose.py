@@ -47,12 +47,12 @@ class PermuteVisitor(NodeVisitor):
 
         permutation_vector = inputs[1].special
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.TransposeAttribute(permutation_vector)
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.TRANSPOSE,
+            ts.Op.TRANSPOSE,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,

@@ -19,9 +19,9 @@ from executorch.backends.transforms.propagate_view_copy_permute_pass import (
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
-from .arm_pass import ArmPass
-from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS
-from .remove_permutes_around_elementwise_tosa_ops import (
+from .arm_pass import ArmPass  # pyrefly: ignore [missing-import]
+from .fuse_duplicate_users_pass import TOSA_EXCLUDED_TARGETS  # pyrefly: ignore [missing-import]
+from .remove_permutes_around_elementwise_tosa_ops import (  # pyrefly: ignore [missing-import]
     RemovePermutesAroundElementwiseTosaOps,
 )
 

@@ -23,8 +23,8 @@ class FloorVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.FLOOR,
+            tosa_op=ts.Op.FLOOR,  # pyrefly: ignore [missing-attribute]
             attr_method="FloorAttribute",
             num_inputs=1,
-            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
         )

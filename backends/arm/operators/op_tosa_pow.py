@@ -23,8 +23,8 @@ class PowVisitor(SimpleNodeVisitor):
     @classmethod
     def get_config(cls) -> SimpleNodeVisitorConfig:
         return SimpleNodeVisitorConfig(
-            tosa_op=ts.Op.POW,
+            tosa_op=ts.Op.POW,  # pyrefly: ignore [missing-attribute]
             attr_method="PowAttribute",
             num_inputs=2,
-            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],
+            input_dtypes=[ts.DType.FP16, ts.DType.FP32, ts.DType.BF16],  # pyrefly: ignore [missing-attribute]
         )

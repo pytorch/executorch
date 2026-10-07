@@ -11,9 +11,9 @@ import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset  # type: ignore[import]
 from evaluate import load as load_metric  # type: ignore[import]
-from transformers import AutoImageProcessor, set_seed, Trainer, TrainingArguments
+from transformers import AutoImageProcessor, set_seed, Trainer, TrainingArguments  # pyrefly: ignore [missing-import]
 
-from transformers.models.vit.modeling_vit import ViTForImageClassification
+from transformers.models.vit.modeling_vit import ViTForImageClassification  # pyrefly: ignore [missing-import]
 
 
 def make_transform(preprocessor):

@@ -31,7 +31,7 @@ def _serialized_operator_count(serializer):
     return region.Blocks(0).OperatorsLength()
 
 
-@pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])
+@pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])  # pyrefly: ignore [missing-attribute]
 def test_identical_constants_are_reused(dtype):
     serializer = _serializer()
 
@@ -47,7 +47,7 @@ def test_identical_constants_are_reused(dtype):
     assert list(constants.keys()) == ["first"]
 
 
-@pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])
+@pytest.mark.parametrize("dtype", [ts.DType.INT8, ts.DType.SHAPE])  # pyrefly: ignore [missing-attribute]
 def test_constant_pool_does_not_keep_serializer_alive(dtype):
     serializer = _serializer()
     serializer.addConst([1], dtype, [0], name="first")
@@ -86,9 +86,9 @@ def test_unnamed_constant_uses_serializer_generated_name():
 @pytest.mark.parametrize(
     "first,second",
     [
-        (([1], ts.DType.INT8, [0]), ([1], ts.DType.INT16, [0])),
-        (([1], ts.DType.INT8, [0]), ([2], ts.DType.INT8, [0, 0])),
-        (([1], ts.DType.INT8, [0]), ([1], ts.DType.INT8, [1])),
+        (([1], ts.DType.INT8, [0]), ([1], ts.DType.INT16, [0])),  # pyrefly: ignore [missing-attribute]
+        (([1], ts.DType.INT8, [0]), ([2], ts.DType.INT8, [0, 0])),  # pyrefly: ignore [missing-attribute]
+        (([1], ts.DType.INT8, [0]), ([1], ts.DType.INT8, [1])),  # pyrefly: ignore [missing-attribute]
     ],
 )
 def test_constants_with_different_keys_remain_separate(first, second):

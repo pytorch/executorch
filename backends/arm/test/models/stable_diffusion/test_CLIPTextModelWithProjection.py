@@ -22,7 +22,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from transformers import CLIPTextModelWithProjection
+from transformers import CLIPTextModelWithProjection  # pyrefly: ignore [missing-import]
 
 input_t = Tuple[torch.Tensor]
 

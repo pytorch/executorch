@@ -20,7 +20,7 @@ from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetCon
 from executorch.exir import save as save_exported_program, to_edge
 from executorch.exir.passes.quantize_io_pass import QuantizeInputs, QuantizeOutputs
 from torch.utils.data import DataLoader
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e  # pyrefly: ignore [missing-import]
 
 EXAMPLE_DIR = Path(__file__).resolve().parent.parent
 TRAINING_DIR = EXAMPLE_DIR / "training"

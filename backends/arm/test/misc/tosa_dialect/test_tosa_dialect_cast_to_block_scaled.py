@@ -13,7 +13,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses.fake_tensor import FakeTensorMode
-from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2
+from torchao.prototype.mx_formats.mx_tensor import DTYPE_FP6_E2M3, DTYPE_FP6_E3M2  # pyrefly: ignore [missing-import]
 
 
 def test_cast_to_block_scaled_requires_mxfp_extension() -> None:

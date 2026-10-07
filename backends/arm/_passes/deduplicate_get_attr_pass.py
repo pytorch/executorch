@@ -10,7 +10,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 from torch.fx.node import map_arg
-from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
+from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix  # pyrefly: ignore [missing-import]
 
 
 class DeduplicateGetAttrPass(ArmPass):

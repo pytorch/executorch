@@ -16,9 +16,9 @@ from typing import Any, Callable, cast, Optional
 
 import torch
 from torch.fx import Node
-from torchao.quantization.pt2e import ObserverOrFakeQuantize
+from torchao.quantization.pt2e import ObserverOrFakeQuantize  # pyrefly: ignore [missing-import]
 
-from torchao.quantization.pt2e.quantizer import (
+from torchao.quantization.pt2e.quantizer import (  # pyrefly: ignore [missing-import]
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
     QuantizationSpec,
@@ -281,7 +281,7 @@ class QuantizationConfig:
         # point and add it after dynamic accumulator rescaling.
         if (
             isinstance(self.input_activation, QuantizationSpec)
-            and self.input_activation.is_dynamic
+            and self.input_activation.is_dynamic  # pyrefly: ignore [missing-attribute]
         ):
             return None
 

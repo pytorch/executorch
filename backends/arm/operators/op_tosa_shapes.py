@@ -40,7 +40,7 @@ class TosaConstShapeVisitor(NodeVisitor):
             [
                 rank,
             ],
-            dtype=ts.DType.SHAPE,
+            dtype=ts.DType.SHAPE,  # pyrefly: ignore [missing-attribute]
             vals=vals,
             name=output.name,
         )
@@ -57,15 +57,15 @@ class TosaShapeNodeVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-        tosa_graph = cast(ts.TosaSerializer, tosa_graph)
+        tosa_graph = cast(ts.TosaSerializer, tosa_graph)  # pyrefly: ignore [missing-attribute]
         tosa_graph.currRegion.currBasicBlock.addShape(
             output.name,
-            output.shape[0],
+            output.shape[0],  # pyrefly: ignore [unsupported-operation]
         )
 
 
 class TosaBasicShapeVisitor(TosaShapeNodeVisitor):
-    tosa_op: ts.Op
+    tosa_op: ts.Op  # pyrefly: ignore [missing-attribute]
     attr_method: str
 
     def define_node(
@@ -99,12 +99,12 @@ class TosaDimShapeVisitor(TosaShapeNodeVisitor):
     ) -> None:
         super().define_node(node, tosa_graph, inputs, output)
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.DimAttribute(axis=node.kwargs["axis"])
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.DIM,
+            ts.Op.DIM,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name],
             [output.name],
             attr,
@@ -115,7 +115,7 @@ class TosaDimShapeVisitor(TosaShapeNodeVisitor):
 class TosaAddShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.ADD_SHAPE.default"
 
-    tosa_op = ts.Op.ADD_SHAPE
+    tosa_op = ts.Op.ADD_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "AddShapeAttribute"
 
 
@@ -123,7 +123,7 @@ class TosaAddShapeVisitor(TosaBasicShapeVisitor):
 class TosaSubShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.SUB_SHAPE.default"
 
-    tosa_op = ts.Op.SUB_SHAPE
+    tosa_op = ts.Op.SUB_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "SubShapeAttribute"
 
 
@@ -139,13 +139,13 @@ class TosaAssertEqualShapeVisitor(TosaShapeNodeVisitor):
         output: TosaArg,
     ) -> None:
         super().define_node(node, tosa_graph, inputs, output)
-        tosa_graph = cast(ts.TosaSerializer, tosa_graph)
-        attr = ts.TosaSerializerAttribute()
+        tosa_graph = cast(ts.TosaSerializer, tosa_graph)  # pyrefly: ignore [missing-attribute]
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.AssertEqualShapeAttribute(allow_broadcast=node.kwargs["allow_broadcast"])
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.ASSERT_EQUAL_SHAPE,
+            ts.Op.ASSERT_EQUAL_SHAPE,  # pyrefly: ignore [missing-attribute]
             [inputs[0].name, inputs[1].name],
             [output.name],
             attr,
@@ -164,16 +164,16 @@ class TosaCatShapeVisitor(TosaShapeNodeVisitor):
         output: TosaArg,
     ) -> None:
         super().define_node(node, tosa_graph, inputs, output)
-        tosa_graph = cast(ts.TosaSerializer, tosa_graph)
+        tosa_graph = cast(ts.TosaSerializer, tosa_graph)  # pyrefly: ignore [missing-attribute]
 
         input_shape_list = [input.name for input in inputs[0].special]
 
-        attr = ts.TosaSerializerAttribute()
+        attr = ts.TosaSerializerAttribute()  # pyrefly: ignore [missing-attribute]
         attr.ConcatShapeAttribute()
         self._serialize_operator(
             node,
             tosa_graph,
-            ts.Op.CONCAT_SHAPE,
+            ts.Op.CONCAT_SHAPE,  # pyrefly: ignore [missing-attribute]
             input_shape_list,
             [output.name],
             attr,
@@ -184,7 +184,7 @@ class TosaCatShapeVisitor(TosaShapeNodeVisitor):
 class TosaDivCeilShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.DIV_CEIL_SHAPE.default"
 
-    tosa_op = ts.Op.DIV_CEIL_SHAPE
+    tosa_op = ts.Op.DIV_CEIL_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "DivCeilShapeAttribute"
 
 
@@ -192,7 +192,7 @@ class TosaDivCeilShapeVisitor(TosaBasicShapeVisitor):
 class TosaDivShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.DIV_FLOOR_SHAPE.default"
 
-    tosa_op = ts.Op.DIV_FLOOR_SHAPE
+    tosa_op = ts.Op.DIV_FLOOR_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "DivFloorShapeAttribute"
 
 
@@ -200,7 +200,7 @@ class TosaDivShapeVisitor(TosaBasicShapeVisitor):
 class TosaExp2ShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.EXP2_SHAPE.default"
 
-    tosa_op = ts.Op.EXP2_SHAPE
+    tosa_op = ts.Op.EXP2_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "Exp2ShapeAttribute"
 
 
@@ -208,7 +208,7 @@ class TosaExp2ShapeVisitor(TosaBasicShapeVisitor):
 class TosaLog2CeilShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.LOG2_CEIL_SHAPE.default"
 
-    tosa_op = ts.Op.LOG2_CEIL_SHAPE
+    tosa_op = ts.Op.LOG2_CEIL_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "Log2CeilShapeAttribute"
 
 
@@ -216,7 +216,7 @@ class TosaLog2CeilShapeVisitor(TosaBasicShapeVisitor):
 class TosaLog2FloorShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.LOG2_FLOOR_SHAPE.default"
 
-    tosa_op = ts.Op.LOG2_FLOOR_SHAPE
+    tosa_op = ts.Op.LOG2_FLOOR_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "Log2FloorShapeAttribute"
 
 
@@ -224,7 +224,7 @@ class TosaLog2FloorShapeVisitor(TosaBasicShapeVisitor):
 class TosaMaxShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.MAX_SHAPE.default"
 
-    tosa_op = ts.Op.MAX_SHAPE
+    tosa_op = ts.Op.MAX_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "MaxShapeAttribute"
 
 
@@ -232,7 +232,7 @@ class TosaMaxShapeVisitor(TosaBasicShapeVisitor):
 class TosaMinShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.MIN_SHAPE.default"
 
-    tosa_op = ts.Op.MIN_SHAPE
+    tosa_op = ts.Op.MIN_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "MinShapeAttribute"
 
 
@@ -240,7 +240,7 @@ class TosaMinShapeVisitor(TosaBasicShapeVisitor):
 class TosaMulShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.MUL_SHAPE.default"
 
-    tosa_op = ts.Op.MUL_SHAPE
+    tosa_op = ts.Op.MUL_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "MulShapeAttribute"
 
 
@@ -248,7 +248,7 @@ class TosaMulShapeVisitor(TosaBasicShapeVisitor):
 class TosaSliceShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.SLICE_SHAPE.default"
 
-    tosa_op = ts.Op.SLICE_SHAPE
+    tosa_op = ts.Op.SLICE_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "SliceShapeAttribute"
 
 
@@ -256,5 +256,5 @@ class TosaSliceShapeVisitor(TosaBasicShapeVisitor):
 class TosaModShapeVisitor(TosaBasicShapeVisitor):
     target = "tosa.MOD_SHAPE.default"
 
-    tosa_op = ts.Op.MOD_SHAPE
+    tosa_op = ts.Op.MOD_SHAPE  # pyrefly: ignore [missing-attribute]
     attr_method = "ModShapeAttribute"

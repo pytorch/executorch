@@ -123,7 +123,7 @@ _UNSHIPPABLE_HEADERS = frozenset(
 )
 
 try:
-    from tools.cmake.cmake_cache import CMakeCache
+    from tools.cmake.cmake_cache import CMakeCache  # pyrefly: ignore [missing-import]
 except ImportError:
     sys.path.insert(
         0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "cmake")
@@ -1578,7 +1578,7 @@ class BuiltFile(_BaseExtension):
         if not relative.endswith("/"):
             relative = os.path.dirname(relative)
         build_py = installer.get_finalized_command("build_py")
-        package_dir = os.path.abspath(build_py.get_package_dir("executorch"))
+        package_dir = os.path.abspath(build_py.get_package_dir("executorch"))  # pyrefly: ignore [missing-attribute]
         return Path(package_dir) / relative
 
 
@@ -1661,7 +1661,7 @@ class BuiltExtension(_BaseExtension):
         build_py = installer.get_finalized_command("build_py")
         modpath = self.name.split(".")
         package = ".".join(modpath[:-1])
-        package_dir = os.path.abspath(build_py.get_package_dir(package))
+        package_dir = os.path.abspath(build_py.get_package_dir(package))  # pyrefly: ignore [missing-attribute]
 
         return Path(package_dir)
 
@@ -1732,7 +1732,7 @@ class InstallerBuildExt(build_ext):
             # that the right extensions for the current Python/platform are
             # used.
             if os.path.exists(regular_file) or not ext.optional:
-                self.copy_file(regular_file, inplace_file, level=self.verbose)
+                self.copy_file(regular_file, inplace_file, level=self.verbose)  # pyrefly: ignore [missing-attribute]
                 # A copied extension still names its libraries by soname, and the entries that
                 # reach them are relative to where it was built. The wheel path repairs that
                 # from build_extension, and the editable copy needs the same repair or the
@@ -1748,8 +1748,8 @@ class InstallerBuildExt(build_ext):
                 )
 
             if ext._needs_stub:
-                inplace_stub = self._get_equivalent_stub(ext, inplace_file)
-                self._write_stub_file(inplace_stub, ext, compile=True)
+                inplace_stub = self._get_equivalent_stub(ext, inplace_file)  # pyrefly: ignore [missing-attribute]
+                self._write_stub_file(inplace_stub, ext, compile=True)  # pyrefly: ignore [missing-attribute]
                 # Always compile stub and remove the original (leave the cache behind)
                 # (this behaviour was observed in previous iterations of the code)
 
@@ -1760,7 +1760,7 @@ class InstallerBuildExt(build_ext):
             return
 
         src_file: Path = ext.src_path(self)
-        dst_file: Path = ext.dst_path(self)
+        dst_file: Path = ext.dst_path(self)  # pyrefly: ignore [missing-attribute]
 
         # Ensure that the destination directory exists.
         if not dst_file.parent.exists():
@@ -3260,5 +3260,5 @@ setup(
             ]
         ),
     ],
-    **setup_kwargs,
+    **setup_kwargs,  # pyrefly: ignore [bad-argument-type]
 )

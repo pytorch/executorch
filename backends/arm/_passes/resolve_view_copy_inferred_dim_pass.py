@@ -17,7 +17,7 @@ from executorch.exir.pass_base import PassResult
 class ResolveViewCopyInferredDimPass(ArmPass):
     """Materialize inferred view dimensions before TOSA shape lowering."""
 
-    _passes_required_after = {SymbolicToTosaShapesPass}
+    _passes_required_after = {SymbolicToTosaShapesPass}  # pyrefly: ignore [bad-override]
     target_ops = {
         torch.ops.aten.view.default,
         exir_ops.edge.aten.view_copy.default,

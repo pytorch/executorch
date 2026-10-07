@@ -20,7 +20,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 
-from transformers import AutoTokenizer, T5ForConditionalGeneration
+from transformers import AutoTokenizer, T5ForConditionalGeneration  # pyrefly: ignore [missing-import]
 
 input_t3 = Tuple[
     torch.LongTensor, torch.LongTensor, torch.LongTensor
