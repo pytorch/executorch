@@ -99,7 +99,7 @@ void main() {
       const int k4 = group_i * K4_per_group + k4_inner;
 
       load_input_tile_no_checks(in_tile, k4, m, K4, M);
-      load_int4_weight_tile(int4_weight_tile, k4, n8, K4);
+      load_int4_weight_tile(int4_weight_tile, k4, n8, N8);
 
       fp_accumulate_with_int4_weight(
           out_tile,

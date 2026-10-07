@@ -21,26 +21,25 @@
 
 #include "linear_int4_weight_tile.glslh"
 
-ivec4 load_int4_weight_block(
-    const int block_x,
-    const int block_y,
-    const int nblocks_x) {
+// Packed int4 weight blocks are stored [k4][n8], so that threads owning
+// adjacent n8 read adjacent blocks.
+ivec4 load_int4_weight_block(const int k4, const int n8, const int N8) {
 #ifdef WEIGHT_BUFFER
-  return t_packed_int4_weight[(block_y * nblocks_x) + block_x];
+  return t_packed_int4_weight[k4 * N8 + n8];
 #else
-  return texelFetch(t_packed_int4_weight, ivec2(block_x, block_y), 0);
+  return texelFetch(t_packed_int4_weight, ivec2(n8, k4), 0);
 #endif
 }
 
 void load_int4_weight_tile(
     out Int4WeightTile weight_tile,
-    const int block_x,
-    const int block_y,
-    const int nblocks_x) {
-  [[unroll]] for (int y = 0; y < TILE_K4; ++y) {
-    [[unroll]] for (int x = 0; x < TILE_N8; ++x) {
-      weight_tile.data[y][x] =
-          load_int4_weight_block(block_x + x, block_y + y, nblocks_x);
+    const int k4_start,
+    const int n8_start,
+    const int N8) {
+  [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+    [[unroll]] for (int n8 = 0; n8 < TILE_N8; ++n8) {
+      weight_tile.data[k4][n8] =
+          load_int4_weight_block(k4_start + k4, n8_start + n8, N8);
     }
   }
 }

@@ -35,7 +35,6 @@ void main() {
   const int N = orig_sizes.y;
 
   // Each shader invocation processes a 4x8 block of the input data.
-  const int K4 = div_up_4(K);
   const int K8 = div_up_8(K);
   const int N8 = div_up_8(N);
 
@@ -63,6 +62,6 @@ void main() {
   create_packed_blocks(packed_block_1, packed_block_2, src_data);
 
   const int k4 = mul_2(k8);
-  write_packed_block(packed_block_1, k4, n8, K4);
-  write_packed_block(packed_block_2, k4 + 1, n8, K4);
+  write_packed_block(packed_block_1, k4, n8, N8);
+  write_packed_block(packed_block_2, k4 + 1, n8, N8);
 }

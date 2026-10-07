@@ -15,6 +15,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
+
 namespace vkcompute {
 
 //
@@ -83,6 +85,16 @@ static CoopmatTileDims coopmat_tile_dims(const std::string& kernel_name) {
   return {kCoopmatTileM, kCoopmatTileN, kCoopmatTileK, kCoopmatInvocations};
 }
 
+// Mali sustains far more fp16 than int-to-float conversion throughput, so the
+// coop GEMV dequantizes int4 weights in fp16 there; fp32 is faster elsewhere.
+static uint32_t q4gsw_gemv_use_fp16_unpack(ComputeGraph& graph) {
+  return graph.device_is_mali() ? 1u : 0u;
+}
+
+// Must match MAX_WG_SIZE in linear_q4gsw_coop.yaml (sizes the shared
+// reduction).
+constexpr uint32_t kQ4gswCoopMaxWgSize = 256;
+
 GlobalWorkGrid quantized_linear_gwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -128,12 +140,34 @@ GlobalWorkGrid quantized_linear_gwg(
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
-  // Otherwise, each output tile contains 4 columns and 4 rows
+  // Coop GEMV: workgroup = (n8 tiles, K slices); each K slice accumulates an
+  // interleaved subset of the quantization groups.
   if (shader.kernel_name.find("_coop") != std::string::npos) {
+    const ValueRef fp_input = args.at(1).refs.at(0);
+    const int32_t group_size =
+        graph->extract_scalar<int32_t>(resize_args.at(0));
+    const uint32_t num_groups = utils::safe_downcast<uint32_t>(
+        graph->size_at<int32_t>(-1, fp_input) / group_size);
+
+    // Split K until enough threads are in flight to saturate memory; Adreno
+    // needs about twice as many as Mali. Slices beyond num_groups idle, but
+    // measured faster than the next smaller split for small N.
+    const bool is_mali = graph->device_is_mali();
+    const uint32_t target_threads = is_mali ? 2048u : 4096u;
+    uint32_t max_k_slices = 1u;
+    while (max_k_slices < num_groups && max_k_slices < (is_mali ? 32u : 64u)) {
+      max_k_slices *= 2u;
+    }
+    uint32_t k_slices = std::min(is_mali ? 4u : 8u, max_k_slices);
+    while (k_slices < max_k_slices && num_N_tiles * k_slices < target_threads) {
+      k_slices *= 2u;
+    }
+    const uint32_t n8_lanes = std::min(16u, kQ4gswCoopMaxWgSize / k_slices);
+
     return GlobalWorkGrid(
-        {num_N_tiles, num_M_tiles, 1u},
+        {num_N_tiles, k_slices, num_M_tiles},
         kTiledWorkGrid,
-        LocalWorkGroup(1u, 1u, 64u));
+        LocalWorkGroup(n8_lanes, k_slices, 1u));
   }
   return GlobalWorkGrid({num_N_tiles, num_M_tiles, 1u}, kTiledWorkGrid);
 }
@@ -382,24 +416,14 @@ ValueRef prepack_quantized_linear_weight(
   const int64_t num_blocks_N = utils::div_up(N, N_per_block);
 
   // The blocks are arranged in a transposed manner, such that the transposed
-  // weight block is indexed like packed_weights[k4][n4] - this is to allow for
-  // optimal memory coalescing when computing GEMM.
-  int64_t output_height = num_blocks_K;
+  // weight block is indexed like packed_weights[k4][n4] (or [k4][n8] for 4-bit)
+  // - this is to allow for optimal memory coalescing when adjacent threads
+  // compute adjacent output channels.
+  const int64_t output_height = num_blocks_K;
   // The base dtype of the packed tensor is int32 (each int32 contains 4x 8bit
   // values) and each block is represented as a ivec4. Therefore the width dim
   // of the packed tensor is multiplied by 4.
-  int64_t output_width = num_blocks_N * 4;
-
-  // For 4 bit quantization, The blocks are arranged without the transposition,
-  // such that a weight block is accessed like packed_weights[n8][k4]. This is
-  // an optimization targeted for LLMs, which need to compute GEMV as well as
-  // GEMM. This memory layout provides better performance for the co-operative
-  // algorithm used to compute GEMV, at the cost of slightly reducing GEMM
-  // performance.
-  if (weight_quant_config.nbits == 4) {
-    output_height = num_blocks_N;
-    output_width = num_blocks_K * 4;
-  }
+  const int64_t output_width = num_blocks_N * 4;
 
   // Store the original sizes of the weight data to pass to the shader
   utils::ivec2 orig_sizes = {
@@ -514,6 +538,8 @@ void add_linear_qw_node(
 
   const ValueRef is_4bit_flag =
       weight_quant_config.nbits == 4 ? group_size : kDummyValueRef;
+  // 5th spec const: select the fp16 int4 dequantization of the coop GEMV.
+  const uint32_t use_fp16_unpack = q4gsw_gemv_use_fp16_unpack(graph);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -535,7 +561,8 @@ void add_linear_qw_node(
       {apply_bias,
        K4_per_group,
        num_groups,
-       graph.size_at<int32_t>(-1, output)},
+       graph.size_at<int32_t>(-1, output),
+       use_fp16_unpack},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
       {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic
@@ -661,6 +688,8 @@ void add_linear_dqa_qw_node(
 
   const ValueRef is_4bit_flag =
       weight_quant_config.nbits == 4 ? group_size : kDummyValueRef;
+  // 5th spec const: select the fp16 int4 dequantization of the coop GEMV.
+  const uint32_t use_fp16_unpack = q4gsw_gemv_use_fp16_unpack(graph);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -689,7 +718,8 @@ void add_linear_dqa_qw_node(
       {apply_bias,
        K4_per_group,
        coopmat_k_iters,
-       graph.size_at<int32_t>(-1, output)},
+       graph.size_at<int32_t>(-1, output),
+       use_fp16_unpack},
       // Resize args (resize_args.at(2) = bias_data, read by the coopmat gate)
       {is_4bit_flag, weight_data, bias_data},
       // Resizing Logic
@@ -769,10 +799,33 @@ void quantized_linear_impl(
   // Otherwise, use input and weight quantized linear computed with integer
   // accumulation
 
-  // Input scale/zero point only used for activation & weight quantized linear
+  // Input scale/zero point only used for activation & weight quantized linear.
+  // Without precomputed ones, the per-row qparams of a dynamically quantized
+  // input are computed here, and skipped for GEMV.
+  const int64_t M = graph.size_at<int64_t>(-2, fp_input);
+  TmpTensor computed_input_scale(
+      &graph,
+      {1, M},
+      graph.dtype_of(fp_input),
+      utils::kTexture3D,
+      utils::kWidthPacked);
+  TmpTensor computed_input_zp(
+      &graph, {1, M}, vkapi::kChar, utils::kTexture3D, utils::kWidthPacked);
   ValueRef packed_input_scale = input_scale;
   ValueRef packed_input_zp = input_zp;
-  if (graph.val_is_tref(input_scale)) {
+  if (graph.val_is_none(input_scale)) {
+    VK_CHECK_COND(input_quant_config.is_dynamic);
+    packed_input_scale = computed_input_scale.vref;
+    packed_input_zp = computed_input_zp.vref;
+    add_choose_qparams_per_row_node(
+        graph,
+        fp_input,
+        graph.add_none(),
+        graph.add_none(),
+        packed_input_scale,
+        packed_input_zp,
+        /*skip_for_gemv=*/true);
+  } else if (graph.val_is_tref(input_scale)) {
     VK_CHECK_COND(graph.val_is_tref(packed_input_zp));
     packed_input_scale = prepack_standard(
         graph, input_scale, utils::kTexture3D, utils::kWidthPacked);
@@ -843,7 +896,6 @@ void quantized_linear_impl(
   // num_groups * M4 ivec4 texels, sized by the input row count M -- NOT K.
   // dtype is kInt to match the shaders' `int`/ivec4 binding (each texel is 4
   // int32 sums = 16 bytes).
-  const int64_t M = utils::val_at(-2, input_sizes);
   const int64_t M4 = utils::div_up(M, int64_t(4));
   TmpTensor int_input_sums(
       &graph,
