@@ -24,6 +24,7 @@ from executorch.exir.memory_planning import (
     get_node_tensor_specs,
     MemoryPlanningAlgorithmSuite,
     Verifier,
+    verify_inplace_result_aliases,
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
 from executorch.exir.pass_base import PassBase, PassResult
@@ -285,6 +286,7 @@ class MemoryPlanningPass(PassBase):
         A pass for memory planning. The actual algorithm used will be picked by
         memory_planning_algo
         """
+        verify_inplace_result_aliases(graph_module)
         self._set_alloc_node_spec(graph_module)
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our

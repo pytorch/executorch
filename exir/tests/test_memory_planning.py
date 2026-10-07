@@ -28,6 +28,7 @@ import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.error import InternalError
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
     _extend_storage_base_lifetimes,
@@ -1871,6 +1872,71 @@ class TestStorageBaseMemoryPlanning(unittest.TestCase):
 
 
 class TestInPlaceElemWise(unittest.TestCase):
+    @parameterized.expand(itertools.product([greedy, naive], [False, True]))
+    def test_inplace_result_lifetime(
+        self, algo: Callable[..., MemoryAlgoResult], return_cache: bool
+    ) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x, indices, values):
+                cache = torch.zeros_like(x).index_put((indices,), values)
+                scratch = x + 10
+                result = cache + scratch
+                return (result, cache) if return_cache else result
+
+        inputs = (
+            torch.arange(8, dtype=torch.float32),
+            torch.tensor([0, 3]),
+            torch.tensor([9.0, 17.0]),
+        )
+        program = to_edge(export(Model(), inputs, strict=True)).to_executorch(
+            ExecutorchBackendConfig(
+                run_reinplace_pass=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    memory_planning_algo=MemoryPlanningAlgorithmSuite(algo_list=[algo])
+                ),
+            )
+        )
+        nodes = list(program.exported_program().graph.nodes)
+        inplace_node = next(node for node in nodes if _is_inplace_node(node))
+        cache_spec = inplace_node.meta["spec"]
+        self.assertIs(cache_spec, inplace_node.args[0].meta["spec"])
+        last_use = max(nodes.index(user) for user in inplace_node.users)
+        self.assertEqual(cache_spec.lifetime[1], last_use)
+        if return_cache:
+            self.assertIs(nodes[-1].meta["spec"][1], cache_spec)
+
+        scratch, result = [
+            node for node in nodes if node.target == torch.ops.aten.add.out
+        ]
+        self.assertGreaterEqual(cache_spec.lifetime[1], nodes.index(result))
+        self.assertFalse(Verifier.storage_overlap(cache_spec, scratch.meta["spec"]))
+
+    def test_unaliased_inplace_result_fails_planning(self) -> None:
+        class UnaliasingPlanner(MemoryPlanningPass):
+            def run(self, graph_module, graph_signature=None):
+                for node in graph_module.graph.nodes:
+                    if _is_inplace_node(node):
+                        node.meta["spec"] = TensorSpec.from_tensor(node.meta["val"])
+                return super().run(graph_module, graph_signature)
+
+        class Model(torch.nn.Module):
+            def forward(self, x, indices, values):
+                return torch.zeros_like(x).index_put((indices,), values) + x
+
+        inputs = (
+            torch.arange(8, dtype=torch.float32),
+            torch.tensor([0, 3]),
+            torch.tensor([9.0, 17.0]),
+        )
+        edge = to_edge(export(Model(), inputs, strict=True))
+        with self.assertRaisesRegex(InternalError, "does not share the TensorSpec"):
+            edge.to_executorch(
+                ExecutorchBackendConfig(
+                    run_reinplace_pass=True,
+                    memory_planning_pass=UnaliasingPlanner(),
+                )
+            )
+
     def _run_inplace_pipeline(
         self,
         model: torch.nn.Module,

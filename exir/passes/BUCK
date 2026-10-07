@@ -289,6 +289,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "//caffe2:torch",
         "//executorch/exir:delegate",
+        "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",
         "//executorch/exir:tensor",
     ],
