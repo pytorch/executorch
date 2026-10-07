@@ -9,6 +9,7 @@
 package org.pytorch.executorch
 
 import android.util.Log
+import com.facebook.jni.HybridData
 import com.facebook.jni.annotations.DoNotStrip
 import java.nio.Buffer
 import java.nio.ByteBuffer
@@ -49,6 +50,8 @@ abstract class Tensor internal constructor(shape: LongArray) {
   }
 
   @DoNotStrip @JvmField protected val shape: LongArray = shape.copyOf()
+
+  @DoNotStrip private var mHybridData: HybridData? = null
 
   /** Returns the number of elements in this tensor. */
   fun numel(): Long = numel(shape)
@@ -688,7 +691,21 @@ abstract class Tensor internal constructor(shape: LongArray) {
       return result
     }
 
-    // Called from native
+    // Called from native via fbjni.
+    @DoNotStrip
+    @JvmStatic
+    private fun nativeNewTensor(
+        data: ByteBuffer,
+        shape: LongArray,
+        dtype: Int,
+        hybridData: HybridData,
+    ): Tensor {
+      val tensor = nativeNewTensor(data, shape, dtype)
+      tensor.mHybridData = hybridData
+      return tensor
+    }
+
+    // Called from native via generic JNI.
     @DoNotStrip
     @JvmStatic
     private fun nativeNewTensor(

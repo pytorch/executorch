@@ -14,16 +14,29 @@
 
 namespace executorch::extension {
 
+#ifdef EXECUTORCH_USE_GENERIC_JNI
 class JTensor : public facebook::jni::JavaClass<JTensor> {
+#else
+class JTensor : public facebook::jni::HybridClass<JTensor> {
+#endif
  public:
   constexpr static const char* kJavaDescriptor =
       "Lorg/pytorch/executorch/Tensor;";
+
+#ifndef EXECUTORCH_USE_GENERIC_JNI
+  explicit JTensor(executorch::aten::Tensor tensor) {}
+#endif
 
   static facebook::jni::local_ref<JTensor::javaobject> newJTensorFromTensor(
       const executorch::aten::Tensor& tensor);
 
   static TensorPtr newTensorFromJTensor(
       facebook::jni::alias_ref<JTensor::javaobject> jtensor);
+
+#ifndef EXECUTORCH_USE_GENERIC_JNI
+ private:
+  friend HybridBase;
+#endif
 };
 
 class JEValue : public facebook::jni::JavaClass<JEValue> {
