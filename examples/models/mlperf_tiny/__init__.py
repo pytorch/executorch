@@ -7,6 +7,7 @@ from .deep_autoencoder import DeepAutoEncoder, DeepAutoEncoderModel
 from .ds_cnn import DSCNNKWS, DSCNNKWSModel
 from .mobilenet_v1_025 import MobileNetV1025, MobileNetV1025Model
 from .resnet8 import ResNet8, ResNet8Model
+from .streaming_wakeword import StreamingWakeWord, StreamingWakeWordModel
 
 __all__ = [
     "DeepAutoEncoder",
@@ -17,4 +18,6 @@ __all__ = [
     "MobileNetV1025Model",
     "ResNet8",
     "ResNet8Model",
+    "StreamingWakeWord",
+    "StreamingWakeWordModel",
 ]
