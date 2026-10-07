@@ -72,7 +72,7 @@ def _read_qnn_config() -> Dict[str, str]:
 
 
 _QNN_CONFIG = _read_qnn_config()
-QNN_VERSION = _QNN_CONFIG.get("QNN_VERSION", "2.37.0.250724")
+QNN_VERSION = _QNN_CONFIG.get("QNN_VERSION", "2.50.0.260828")
 QNN_ZIP_URL = _QNN_CONFIG.get(
     "QNN_ZIP_URL",
     f"https://softwarecenter.qualcomm.com/api/download/software/sdks/"  # @lint-ignore only half of a URL, the rest is on the next line
@@ -81,7 +81,7 @@ QNN_ZIP_URL = _QNN_CONFIG.get(
 
 
 def _get_sdk_dir() -> pathlib.Path:
-    """Get the versioned SDK cache directory (e.g. ~/.cache/executorch/qnn/sdk-2.37.0.250724/)."""
+    """Get the versioned SDK cache directory (e.g. ~/.cache/executorch/qnn/sdk-2.50.0.260828/)."""
     try:
         return _get_staging_dir(f"sdk-{QNN_VERSION}")
     except ValueError:
