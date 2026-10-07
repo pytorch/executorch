@@ -85,9 +85,10 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
       return Error::InvalidArgument;
     }
     const std::int32_t seq_id = seq_it->second.seq_id;
-    if (input.size == 0 || !input.tokens ||
-        input.offset > input.tokens->size() ||
-        input.size > input.tokens->size() - input.offset) {
+    const auto* tokens = std::get_if<TokenInputPtr>(&input.payload);
+    const auto* token_input = tokens && *tokens ? tokens->get() : nullptr;
+    if (input.size == 0 || !token_input || input.offset > token_input->size() ||
+        input.size > token_input->size() - input.offset) {
       ET_LOG(
           Error,
           "build_step: session %" PRId64 " gave a slice its tokens do not hold",
@@ -145,7 +146,7 @@ Result<ModuleExecutor::Step> ModuleExecutor::build_step(
       return Error::OutOfResources;
     }
 
-    const Token* slice = input.tokens->data() + input.offset;
+    const Token* slice = token_input->data() + input.offset;
     for (std::size_t k = 0; k < input.size; ++k) {
       step.tokens.push_back(static_cast<std::int64_t>(slice[k]));
     }

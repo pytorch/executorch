@@ -97,6 +97,8 @@ fbcode_target(_kind = runtime.python_library,
     ],
     deps = [
         ":fuse_ops",
+        ":pass_utils",
+        ":weight_packing",
         ":remove_ops",
         ":reorder_ops",
         ":replace_ops",
@@ -131,6 +133,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         "fbcode//caffe2:torch",
         "fbcode//executorch/backends/cadence/aot:utils",
+        "fbcode//executorch/backends/cadence/aot:weight_packing",
         "fbcode//executorch/exir:scalar_type",
         "fbcode//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
@@ -157,6 +160,7 @@ fbcode_target(_kind = executorch_generated_lib,
         "//executorch/backends/cadence/generic/operators:op_quantized_depthwise_conv1d_ncl",
         "//executorch/backends/cadence/generic/operators:op_quantized_depthwise_conv1d_nlc",
         "//executorch/backends/cadence/generic/operators:op_quantized_fully_connected",
+        "//executorch/backends/cadence/generic/operators:op_quantized_fully_connected_packed",
         "//executorch/backends/cadence/generic/operators:op_quantized_layer_norm",
         "//executorch/backends/cadence/generic/operators:op_quantized_linear",
         "//executorch/backends/cadence/generic/operators:op_quantized_matmul",
@@ -637,6 +641,37 @@ fbcode_target(_kind = python_unittest,
     ],
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "weight_packing",
+    srcs = [
+        "weight_packing.py",
+    ],
+    deps = [
+        "fbcode//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:pattern_utils",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = python_unittest,
+    name = "test_weight_packing",
+    srcs = [
+        "tests/test_weight_packing.py",
+    ],
+    supports_static_listing = False,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot:compiler",
+        "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:pass_utils",
+        "//executorch/backends/cadence/aot:weight_packing",
+        "//executorch/backends/cadence/aot:graph_builder",
+        "//executorch/backends/cadence/aot/quantizer:fusion_pass",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//pytorch/ao:torchao",
+    ]
+)
+
 fbcode_target(_kind = python_unittest,
     name = "test_ref_implementations",
     srcs = [
@@ -646,6 +681,7 @@ fbcode_target(_kind = python_unittest,
     deps = [
         ":typing_stubs",
         "//executorch/backends/cadence/aot:ops_registrations",
+        "//executorch/backends/cadence/aot:weight_packing",
         "//executorch/backends/cadence/aot/quantizer:utils",
         "//caffe2:torch",
     ]
