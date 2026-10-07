@@ -131,6 +131,20 @@ Error vela_bin_read(
       const uint32_t* scratch_size_ptr =
           reinterpret_cast<const uint32_t*>(payload.data);
       handles->scratch_data_size = *scratch_size_ptr;
+#ifdef ETHOSU_PERSISTENT_REGION
+    } else if (!strncmp(
+                   b->name, "persistent_size", strlen("persistent_size"))) {
+      if (payload.size < sizeof(uint32_t)) {
+        return Error::InvalidProgram;
+      }
+      const uint32_t* persistent_size_ptr =
+          reinterpret_cast<const uint32_t*>(payload.data);
+      handles->persistent_data_size = *persistent_size_ptr;
+    } else if (!strncmp(
+                   b->name, "persistent_init", strlen("persistent_init"))) {
+      handles->persistent_init_data = payload.data;
+      handles->persistent_init_size = payload.size;
+#endif
     } else if (!strncmp(b->name, "inputs", strlen("inputs"))) {
       handles->inputs =
           reinterpret_cast<VelaIOs*>(const_cast<char*>(payload.data));
