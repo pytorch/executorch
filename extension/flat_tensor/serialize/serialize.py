@@ -21,15 +21,13 @@ from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
-from executorch.exir._serialize._program import (
-    _extract_named_data_segments,
-    _insert_flatbuffer_header,
-    AlignedData,
-)
+from executorch.exir._serialize._program import _insert_flatbuffer_header
 from executorch.exir._serialize.data_serializer import (
+    AlignedData,
     DataEntry,
     DataPayload,
     DataSerializer,
+    extract_named_data_segments,
 )
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 from executorch.extension.flat_tensor.serialize.flat_tensor_schema import (
@@ -241,7 +239,7 @@ def _extract_named_data(
         A list of NamedData describing the offsets to the opaque blob data.
     """
 
-    name_to_segment_index = _extract_named_data_segments(
+    name_to_segment_index = extract_named_data_segments(
         segments, data_payload.buffers, data_payload.named_data
     )
 

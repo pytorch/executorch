@@ -19,10 +19,7 @@ from typing import Dict, List, Sequence
 from unittest.mock import patch
 
 from executorch.exir._serialize._flatbuffer_program import _flatbuffer_to_program
-from executorch.exir._serialize._named_data_store import (
-    NamedDataStore,
-    NamedDataStoreOutput,
-)
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import (
     _ExtendedHeader,
     _get_extended_header,
@@ -1197,14 +1194,19 @@ class TestProgram(unittest.TestCase):
         self._check_named_data_store_output(deserialized2.named_data, named_data)
 
     def test_named_data_aliases_combine_alignment(self) -> None:
-        store = NamedDataStore()
-        store.add_named_data("weak", b"abcd", alignment=16)
-        store.add_named_data("strong", b"abcd", alignment=256)
+        named_data = NamedDataStoreOutput(
+            buffers=[b"abcd"],
+            pte_data={
+                "weak": DataEntry(0, 16, None),
+                "strong": DataEntry(0, 256, None),
+            },
+            external_data={},
+        )
         pte_data = bytes(
             serialize_pte_binary(
                 PTEFile(
                     program=get_test_program(),
-                    named_data=store.get_named_data_store_output(),
+                    named_data=named_data,
                 ),
                 segment_alignment=128,
             )

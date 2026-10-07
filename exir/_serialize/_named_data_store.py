@@ -65,8 +65,8 @@ class NamedDataStore:
         in the PTE or externally.
     - Multiple keys can point to the same buffer entry.
     - The same data can be added multiple times and all keys will point to one
-        buffer. If a duplicate blob is added with a different alignment, the
-        lcm of the current and new alignment is taken for that blob.
+        buffer. Within each output file, duplicate blobs use the lcm of every
+        requested alignment for that blob.
     """
 
     # List of unique blobs.
@@ -83,8 +83,6 @@ class NamedDataStore:
     buffer_sha256: Dict[int, bytes]
     # Cache of key to buffer idx to detect duplicate key registration.
     key_to_buffer_idx: Dict[str, int]
-    # Data entries grouped by buffer index, used to keep alias alignments in sync.
-    buffer_to_data_entries: Dict[int, List[DataEntry]]
 
     def __init__(self) -> None:
         """
@@ -96,7 +94,6 @@ class NamedDataStore:
         self.fingerprint_to_buffer_idx = {}
         self.buffer_sha256 = {}
         self.key_to_buffer_idx = {}
-        self.buffer_to_data_entries = {}
 
     @staticmethod
     def _sha256(data: CordBuffer) -> bytes:
@@ -178,15 +175,6 @@ class NamedDataStore:
             )
             local_key_to_buffer_idx[key] = data_entry
             self.key_to_buffer_idx[key] = buffer_idx
-
-            self.buffer_to_data_entries.setdefault(buffer_idx, []).append(data_entry)
-
-        data_entries = self.buffer_to_data_entries[buffer_idx]
-        combined_alignment = math.lcm(
-            alignment, *(data_entry.alignment for data_entry in data_entries)
-        )
-        for data_entry in data_entries:
-            data_entry.alignment = combined_alignment
 
     def add_named_data(
         self,
@@ -302,10 +290,34 @@ class NamedDataStore:
         self.external_data = external_data
         self.pte_data = {}
 
+    @staticmethod
+    def _snapshot_data_entries(
+        entries: Dict[str, DataEntry],
+    ) -> Dict[str, DataEntry]:
+        buffer_alignments: Dict[int, int] = {}
+        for entry in entries.values():
+            buffer_alignments[entry.buffer_index] = math.lcm(
+                buffer_alignments.get(entry.buffer_index, 1), entry.alignment
+            )
+        return {
+            key: DataEntry(
+                buffer_index=entry.buffer_index,
+                alignment=buffer_alignments[entry.buffer_index],
+                tensor_layout=entry.tensor_layout,
+            )
+            for key, entry in entries.items()
+        }
+
     def get_named_data_store_output(self) -> NamedDataStoreOutput:
-        # Clean up empty maps inside self.external_data
-        self.external_data = {k: v for k, v in self.external_data.items() if len(v) > 0}
-        return NamedDataStoreOutput(self.buffers, self.pte_data, self.external_data)
+        return NamedDataStoreOutput(
+            buffers=list(self.buffers),
+            pte_data=self._snapshot_data_entries(self.pte_data),
+            external_data={
+                tag: self._snapshot_data_entries(entries)
+                for tag, entries in self.external_data.items()
+                if entries
+            },
+        )
 
     def merge_named_data_store(self, other: NamedDataStoreOutput) -> None:
         """

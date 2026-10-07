@@ -262,15 +262,14 @@ class TestSerialize(unittest.TestCase):
         self._serialize_with_alignment(config)
 
     def test_serialize_aliases_combine_alignment(self) -> None:
-        store = NamedDataStore()
-        store.add_named_data("weak", b"abcd", alignment=16)
-        store.add_named_data("strong", b"abcd", alignment=256)
-        output = store.get_named_data_store_output()
-        serialized_data = bytes(
-            FlatTensorSerializer().serialize(
-                DataPayload(output.buffers, output.pte_data)
-            )
+        data_payload = DataPayload(
+            buffers=[b"abcd"],
+            named_data={
+                "weak": DataEntry(0, 16, None),
+                "strong": DataEntry(0, 256, None),
+            },
         )
+        serialized_data = bytes(FlatTensorSerializer().serialize(data_payload))
 
         header = FlatTensorHeader.from_bytes(serialized_data[8:])
         self.assertEqual(header.segment_base_offset % 256, 0)

@@ -37,16 +37,15 @@ class TestNamedDataStore(unittest.TestCase):
         store.add_named_data("key_a", b"aaaaaa", 16, None, layout)
         store.add_named_data("key_a_alias", b"aaaaaa", 32, None, layout)
         store.add_named_data("key_b", b"bbbb", 16, None, layout)
-        expected_buffers = list(store.buffers)
-        expected_entries = copy.deepcopy(store.pte_data)
+        expected = store.get_named_data_store_output()
 
         store.externalize_pte_data(10, "test_constants")
         output = store.get_named_data_store_output()
 
-        self.assertEqual(output.buffers, expected_buffers)
+        self.assertEqual(output.buffers, expected.buffers)
         self.assertEqual(output.pte_data, {})
         self.assertEqual(len(output.external_data), 1)
-        self.assertEqual(next(iter(output.external_data.values())), expected_entries)
+        self.assertEqual(next(iter(output.external_data.values())), expected.pte_data)
 
     def test_externalize_pte_data_rollover_is_insertion_order_independent(
         self,
@@ -259,15 +258,27 @@ class TestNamedDataStore(unittest.TestCase):
     def test_add_same_data_with_different_alignment(self) -> None:
         store = NamedDataStore()
         store.add_named_data("key", b"data", 3, None)
-        store.add_named_data("key1", b"data", 4, "file1")
+        first_output = store.get_named_data_store_output()
+        store.add_named_data("key1", b"data", 4, None)
+        second_output = store.get_named_data_store_output()
+
+        self.assertEqual(len(first_output.buffers), 1)
+        self.assertEqual(first_output.pte_data, {"key": DataEntry(0, 3, None)})
+
+        self.assertEqual(len(second_output.buffers), 1)
+        self.assertEqual(second_output.buffers[0], b"data")
+        self.assertEqual(len(second_output.pte_data), 2)
+        self.assertEqual(second_output.pte_data["key"], DataEntry(0, 12, None))
+        self.assertEqual(second_output.pte_data["key1"], DataEntry(0, 12, None))
+
+    def test_alignment_does_not_leak_between_files(self) -> None:
+        store = NamedDataStore()
+        store.add_named_data("pte", b"data", 8)
+        store.add_named_data("ptd", b"data", 16, "file1")
 
         output = store.get_named_data_store_output()
-
-        self.assertEqual(len(output.buffers), 1)
-        self.assertEqual(output.buffers[0], b"data")
-
-        self.assertEqual(output.pte_data["key"], DataEntry(0, 12, None))
-        self.assertEqual(output.external_data["file1"]["key1"], DataEntry(0, 12, None))
+        self.assertEqual(output.pte_data["pte"], DataEntry(0, 8, None))
+        self.assertEqual(output.external_data["file1"]["ptd"], DataEntry(0, 16, None))
 
     def test_add_duplicate_key_fail(self) -> None:
         store = NamedDataStore()

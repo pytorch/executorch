@@ -27,7 +27,11 @@ from executorch.exir._serialize._named_data_store import (
     NamedDataStoreOutput,
 )
 
-from executorch.exir._serialize.data_serializer import DataEntry
+from executorch.exir._serialize.data_serializer import (
+    AlignedData,
+    DataEntry,
+    extract_named_data_segments,
+)
 
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 
@@ -61,24 +65,6 @@ class PTEFile:
     # TODO(lfq): update this to List[bytes]
     mutable_data: Optional[List[Buffer]] = None
     named_data: Optional[NamedDataStoreOutput] = None
-
-
-@dataclass
-class AlignedData:
-    """
-    Holds data that should be aligned, for serialization.
-
-    Attributes:
-        data: The data to serialize, as a cord.
-        alignment: The alignment required for the data.
-    """
-
-    data: Cord
-    alignment: int
-
-    def __init__(self, data: Cord, alignment: Optional[int] = None) -> None:
-        self.data = data
-        self.alignment = alignment or 1
 
 
 def _program_to_json(program: Program) -> str:
@@ -375,38 +361,6 @@ def _extract_constant_segment(
     return constant_segment_data, constant_segment_offsets
 
 
-def _extract_named_data_segments(
-    segments: List[AlignedData],
-    buffers: Sequence[CordBuffer],
-    name_to_data_entry: Dict[str, DataEntry],
-) -> Dict[str, int]:
-    """Appends unique named-data buffers to segments and returns their indices.
-
-    Args:
-        segments: A list of buffers to append extracted segments to. Modified in-place.
-        buffers: A list of unique buffers and the information required to
-            serialize them. Not modified.
-        name_to_data_entry: A map from the blob name to DataEntry.
-            Not modified.
-    """
-    # Map from buffer_idx to segment_idx.
-    segment_index_map: Dict[int, int] = {}
-
-    name_to_segment_index: Dict[str, int] = {}
-    for name, data_entry in name_to_data_entry.items():
-        segment_index = segment_index_map.get(data_entry.buffer_index, None)
-        if segment_index is None:
-            segment_index = len(segments)
-            segment_index_map[data_entry.buffer_index] = segment_index
-            segments.append(
-                AlignedData(
-                    Cord(buffers[data_entry.buffer_index]), data_entry.alignment
-                )
-            )
-        name_to_segment_index[name] = segment_index
-    return name_to_segment_index
-
-
 def _extract_named_data(
     program: Program,
     segments: List[AlignedData],
@@ -417,7 +371,7 @@ def _extract_named_data(
     if program.named_data is not None and len(program.named_data) > 0:
         raise ValueError("Program already has named data.")
 
-    name_to_segment_index = _extract_named_data_segments(
+    name_to_segment_index = extract_named_data_segments(
         segments, buffers, name_to_data_entry
     )
     program.named_data = [

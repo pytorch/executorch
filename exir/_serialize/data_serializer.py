@@ -1,6 +1,7 @@
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from executorch.exir._serialize._cord import Cord, CordBuffer
 from executorch.exir.tensor_layout import TensorLayout
@@ -38,6 +39,43 @@ class DataPayload:
 
     buffers: Sequence[CordBuffer]
     named_data: Dict[str, DataEntry]
+
+
+@dataclass
+class AlignedData:
+    """Data and its required alignment for serialization."""
+
+    data: Cord
+    alignment: int
+
+    def __init__(self, data: Cord, alignment: Optional[int] = None) -> None:
+        self.data = data
+        self.alignment = alignment or 1
+
+
+def extract_named_data_segments(
+    segments: List[AlignedData],
+    buffers: Sequence[CordBuffer],
+    name_to_data_entry: Dict[str, DataEntry],
+) -> Dict[str, int]:
+    """Appends unique named-data buffers to segments and returns their indices."""
+    segment_index_map: Dict[int, int] = {}
+    name_to_segment_index: Dict[str, int] = {}
+    for name, data_entry in name_to_data_entry.items():
+        alignment = data_entry.alignment or 1
+        segment_index = segment_index_map.get(data_entry.buffer_index)
+        if segment_index is None:
+            segment_index = len(segments)
+            segment_index_map[data_entry.buffer_index] = segment_index
+            segments.append(
+                AlignedData(Cord(buffers[data_entry.buffer_index]), alignment)
+            )
+        else:
+            segments[segment_index].alignment = math.lcm(
+                segments[segment_index].alignment, alignment
+            )
+        name_to_segment_index[name] = segment_index
+    return name_to_segment_index
 
 
 class DataSerializer(ABC):
