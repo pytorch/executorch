@@ -1762,9 +1762,9 @@ struct PyMethod final {
         buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
         const auto& buffer = buffer_inputs.back();
         validate_buffer_input(method_->method_meta(), i, *buffer);
-        const auto input_meta =
-            method_->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned() && buffer->borrows_data()) {
+        const auto input_meta = method_->method_meta().input_tensor_meta(i);
+        if (input_meta.ok() && !input_meta->is_memory_planned() &&
+            buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
         }
 #ifdef USE_ATEN_LIB
