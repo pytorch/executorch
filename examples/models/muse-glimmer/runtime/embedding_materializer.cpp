@@ -80,13 +80,16 @@ runtime::Result<TensorPtr> MuseGlimmerMaterializer::materialize(
           offset - prepared->image_span_.offset < prepared->image_span_.size;
       if (image_row) {
         if (prepared->image_embeddings_.empty()) {
-          ET_ASSIGN_OR_RETURN(image, encode_image(prepared->image_));
+          if (!prepared->image_)
+            return Error::InvalidProgram;
+          ET_ASSIGN_OR_RETURN(image, encode_image(*prepared->image_));
           if (image.hidden_dim != spec_->hidden_dim ||
               image.num_soft_tokens != prepared->grid_.soft_tokens ||
               image.embeddings.size() != prepared->image_span_.size * hidden) {
             return Error::InvalidProgram;
           }
           prepared->image_embeddings_ = std::move(image.embeddings);
+          prepared->image_.reset();
         }
         const size_t source_row = offset - prepared->image_span_.offset;
         std::memcpy(

@@ -40,7 +40,8 @@ MuseGlimmerPreparedInput::MuseGlimmerPreparedInput(
       tokens_(std::move(tokens)),
       image_(std::move(image)),
       grid_(grid),
-      image_span_(image_span) {}
+      image_span_(image_span),
+      valid_(spec_ && validate_structure()) {}
 
 const void* MuseGlimmerPreparedInput::kind_tag() {
   return &prepared_kind;
@@ -51,7 +52,13 @@ const void* MuseGlimmerPreparedInput::kind() const {
 
 bool MuseGlimmerPreparedInput::compatible(
     const MuseGlimmerPreparationSpec& spec) const {
-  if (spec_.get() != &spec || !spec.has_vision || spec.hidden_dim <= 0 ||
+  return spec_.get() == &spec && valid_;
+}
+
+bool MuseGlimmerPreparedInput::validate_structure() const {
+  const auto& spec = *spec_;
+  const auto& image = *image_;
+  if (!spec.has_vision || spec.hidden_dim <= 0 ||
       (spec.activation_dtype != aten::ScalarType::Half &&
        spec.activation_dtype != aten::ScalarType::BFloat16) ||
       tokens_.empty() ||
@@ -59,18 +66,17 @@ bool MuseGlimmerPreparedInput::compatible(
       image_span_.offset > tokens_.size() || image_span_.size == 0 ||
       image_span_.size > tokens_.size() - image_span_.offset ||
       grid_.soft_tokens != static_cast<int64_t>(image_span_.size) ||
-      grid_.soft_tokens > spec.max_soft_tokens || image_.width <= 0 ||
-      image_.height <= 0 ||
-      image_.width > spec.image_limits.max_image_dimension ||
-      image_.height > spec.image_limits.max_image_dimension ||
-      static_cast<int64_t>(image_.width) * image_.height >
+      grid_.soft_tokens > spec.max_soft_tokens || image.width <= 0 ||
+      image.height <= 0 ||
+      image.width > spec.image_limits.max_image_dimension ||
+      image.height > spec.image_limits.max_image_dimension ||
+      static_cast<int64_t>(image.width) * image.height >
           spec.image_limits.max_image_pixels ||
-      image_.rgb.size() !=
-          static_cast<size_t>(image_.width) * image_.height * 3) {
+      image.rgb.size() != static_cast<size_t>(image.width) * image.height * 3) {
     return false;
   }
-  auto grid = muse_glimmer_image_grid(
-      image_.width, image_.height, spec.max_soft_tokens);
+  auto grid =
+      muse_glimmer_image_grid(image.width, image.height, spec.max_soft_tokens);
   if (!grid.ok() || grid->height != grid_.height ||
       grid->width != grid_.width || grid->soft_tokens != grid_.soft_tokens ||
       !valid_tokens(tokens_, spec)) {

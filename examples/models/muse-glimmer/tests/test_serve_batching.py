@@ -43,7 +43,9 @@ def arguments(tmp_path):
 
 
 def test_worker_forwards_mg_options(arguments):
-    args = serve_batching._parse_args(arguments + ["--max-inflight-requests", "17"])
+    args = serve_batching._parse_args(
+        arguments + ["--max-inflight-requests", "17", "--max-vision-patches", "2048"]
+    )
     command = serve_batching._worker_command(args)
     flags = dict(zip(command[1::2], command[2::2]))
     assert flags["--pte"] == args.model_path
@@ -51,15 +53,24 @@ def test_worker_forwards_mg_options(arguments):
     assert flags["--backend"] == "mlx"
     assert flags["--max_session_tokens"] == "4096"
     assert flags["--max_inflight_requests"] == "17"
+    assert flags["--max_vision_patches"] == "2048"
     assert flags["--max_image_bytes"] == str(20 * 1024 * 1024)
     assert flags["--max_input_frame_bytes"] == str(32 * 1024 * 1024)
     assert flags["--bos_id"] == "200000"
     assert flags["--eos_id"] == "200001"
 
 
-def test_launcher_requires_mlx(arguments):
+@pytest.mark.parametrize(
+    "flag,value",
+    [
+        ("--backend", "cuda"),
+        ("--max-vision-patches", "3"),
+        ("--max-vision-patches", str(1 << 31)),
+    ],
+)
+def test_launcher_rejects_invalid_options(arguments, flag, value):
     with pytest.raises(SystemExit) as error:
-        serve_batching._parse_args(arguments + ["--backend", "cuda"])
+        serve_batching._parse_args(arguments + [flag, value])
     assert error.value.code == 2
 
 

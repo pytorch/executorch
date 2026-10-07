@@ -222,8 +222,19 @@ void unsafe_inputs() {
   auto identity = spec();
   batch::PreparedInputPtr backing = image_input(identity);
   llm::MuseGlimmerMaterializer materializer(identity);
-  auto encode = [](const llm::MuseGlimmerRGBImage&)
+  require(!image_input(nullptr)->compatible(*identity), "null spec accepted");
+  llm::MuseGlimmerPreparedInput malformed(
+      identity,
+      std::vector<batch::Token>{200000, 11, 200092, 12, 12},
+      llm::MuseGlimmerRGBImage{std::vector<uint8_t>(56 * 28 * 3, 1), 56, 28},
+      llm::MuseGlimmerImageGrid{28, 56, 2},
+      llm::MuseGlimmerImageSpan{2, 2});
+  require(!malformed.compatible(*identity), "malformed patch layout accepted");
+  int encodes = 0;
+  auto encode = [&](const llm::MuseGlimmerRGBImage& image)
       -> Result<llm::PreparedMuseGlimmerImage> {
+    require(!image.rgb.empty(), "RGB missing on retry");
+    ++encodes;
     return llm::PreparedMuseGlimmerImage{{1, 2, 3, 4}, 2, 2, 0};
   };
   auto embed =
@@ -265,8 +276,9 @@ void unsafe_inputs() {
            .materialize({{1, false, 0, 2, backing, 0}}, encode, strided_embed)
            .ok(),
       "strided embedding output accepted as contiguous storage");
-  auto bad_encode = [](const llm::MuseGlimmerRGBImage&)
+  auto bad_encode = [](const llm::MuseGlimmerRGBImage& image)
       -> Result<llm::PreparedMuseGlimmerImage> {
+    require(!image.rgb.empty(), "RGB missing before failed encode");
     return llm::PreparedMuseGlimmerImage{{1, 2}, 1, 2, 0};
   };
   require(
@@ -274,6 +286,16 @@ void unsafe_inputs() {
            .materialize({{1, false, 2, 1, backing, 0}}, bad_encode, embed)
            .ok(),
       "wrong vision row count accepted");
+  require(
+      materializer.materialize({{1, false, 2, 1, backing, 0}}, encode, embed)
+              .ok() &&
+          encodes == 1,
+      "vision retry failed");
+  require(
+      materializer.materialize({{1, false, 2, 1, backing, 0}}, encode, embed)
+              .ok() &&
+          encodes == 1,
+      "vision replay failed or re-encoded");
 
   namespace vision = executorch::examples::muse_glimmer_vision;
   const int64_t elements = static_cast<int64_t>(vision::kPosGrid) *

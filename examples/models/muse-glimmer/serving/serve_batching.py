@@ -30,10 +30,10 @@ from executorch.examples.models.muse_glimmer.serving.stream_parser import (
     MuseGlimmerStreamParser,
 )
 
-
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _MAX_REQUEST_BYTES = 32 * 1024 * 1024
 _MAX_MESSAGE_BYTES = 1024 * 1024
+_INT32_MAX = (1 << 31) - 1
 _UINT64_MAX = (1 << 64) - 1
 
 
@@ -57,6 +57,7 @@ def _parse_args(argv=None):
         default=0,
         help="Opt-in text snapshots; requires batching executor cache-clone support.",
     )
+    parser.add_argument("--max-vision-patches", type=int, default=4096)
     parser.add_argument("--max-image-bytes", type=int, default=_MAX_IMAGE_BYTES)
     parser.add_argument(
         "--max-request-bytes",
@@ -71,6 +72,8 @@ def _parse_args(argv=None):
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
     _validate_limits(parser, args)
+    if not 4 <= args.max_vision_patches <= _INT32_MAX:
+        parser.error(f"--max-vision-patches must be between 4 and {_INT32_MAX}")
     if args.max_context <= 1:
         parser.error("--max-context must be greater than 1")
     for name, maximum in (
@@ -123,6 +126,7 @@ def _worker_command(args):
         ("max_decode_sequences", args.max_decode_sequences),
         ("max_inflight_requests", args.max_inflight_requests),
         ("prefix_cache_entries", args.prefix_cache_entries),
+        ("max_vision_patches", args.max_vision_patches),
         ("max_image_bytes", args.max_image_bytes),
         ("max_input_frame_bytes", args.max_request_bytes),
         ("bos_id", args.bos_id),

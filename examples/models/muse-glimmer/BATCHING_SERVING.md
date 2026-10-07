@@ -106,6 +106,10 @@ submitted history; server-side image references are not supported.
   build-time concurrency ceiling. The worker advertises its capacity to the client.
 - `--max-context` must be greater than 1, fit a signed 32-bit integer, and be
   supported by the exported model.
+- `--max-vision-patches` defaults to 4096, versus the export CLI default of 16384.
+  It accepts 4 through 2147483647; the worker clips to the artifact's capacity and
+  complete four-patch groups. Higher caps can improve image detail at the cost of
+  more vision compute and memory; lower caps can reduce image quality.
 - `--max-image-bytes` is 1 byte through 20 MiB (default 20 MiB), measured on the
   compressed image after base64 decoding, not on decoded pixels.
 - `--max-request-bytes` is positive and at most 32 MiB (default 32 MiB), including
@@ -138,6 +142,8 @@ materialization. The worker reuses the shared batching, serving, and multiplexed
 transport infrastructure.
 
 CPU prompt preparation runs after admission on the control thread. Vision
-encoding, text embeddings, and decoder calls run on the engine thread. Image
-embeddings are computed once per prepared input and can be sliced across model
-forwards.
+encoding, text embeddings, and decoder calls run on the engine thread, so vision
+encoding delays other co-batched requests. Prepared image inputs are validated
+once at construction. Image embeddings are computed once per prepared input and
+can be sliced across model forwards or replayed. Decoded RGB is released after
+validated embeddings are cached; failed encoding retains it for retry.

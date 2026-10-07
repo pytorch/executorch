@@ -11,6 +11,7 @@
 #include <executorch/extension/llm/serving/types.h>
 #include <nlohmann/json_fwd.hpp>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace executorch::extension::llm {
@@ -61,13 +62,17 @@ class MuseGlimmerPreparedInput final : public batching::PreparedInput {
 
  private:
   friend class MuseGlimmerMaterializer;
+  bool validate_structure() const;
+
   const std::shared_ptr<const MuseGlimmerPreparationSpec> spec_;
   const std::vector<batching::Token> tokens_;
-  const MuseGlimmerRGBImage image_;
+  // Validated at construction; unchanged until reset after cache commit.
+  mutable std::optional<MuseGlimmerRGBImage> image_;
   const MuseGlimmerImageGrid grid_;
   const MuseGlimmerImageSpan image_span_;
-  // Only the bound executor's engine thread may read/write this host cache.
-  // Its destruction is independent of Module, delegates, and engine lifetime.
+  const bool valid_;
+  // Only the bound executor's engine thread may access the mutable image/cache.
+  // Their destruction is independent of Module, delegates, and engine lifetime.
   mutable std::vector<uint16_t> image_embeddings_;
 };
 

@@ -260,8 +260,6 @@ def _export_cuda(
     # Always applied: bounds global-attention SDPA to the valid context via a
     # runtime kv_len (O(context) decode). With use_turboquant=True it also swaps
     # the global KV caches for TurboQuant TQ4.
-    if use_offgraph_kv_cache and use_turboquant:
-        raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
 
     # A prefill chunk is one write step, so the ring must hold the union of the
     # step's per-query windows. enable_offgraph_kv_cache sizes it from this.
@@ -498,8 +496,6 @@ def _export_mlx(
     has_vision = vision_model is not None
 
     max_prefill = max_prefill_chunk
-    if use_offgraph_kv_cache and not 1 <= max_prefill <= config.max_seq_len:
-        raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
     # Trace dynamic axes with an example >= 2 to avoid specializing them to 1.
     # min=1 still admits decode; a width-one artifact is deliberately static.
     seq_dim = Dim.STATIC if max_prefill == 1 else Dim("seq_len", min=1, max=max_prefill)
