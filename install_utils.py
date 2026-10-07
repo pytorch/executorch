@@ -18,7 +18,6 @@ from typing import List, Optional, Tuple
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
 SUPPORTED_CUDA_VERSIONS = (
-    (12, 6),
     (13, 0),
     (13, 2),
     (13, 4),

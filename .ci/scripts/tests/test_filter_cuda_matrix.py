@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import runpy
 import subprocess
 import unittest
 from pathlib import Path
@@ -37,6 +38,7 @@ FILTER = _load_module(
     "filter_cuda_matrix", ROOT / ".github" / "scripts" / "filter_cuda_matrix.py"
 )
 INSTALL_UTILS = _load_module("install_utils", ROOT / "install_utils.py")
+DEPENDENCY_CONFIG = runpy.run_path(str(ROOT / "torch_pin.py"))
 
 
 def _full_matrix():
@@ -284,7 +286,14 @@ class TestPublishedSets(unittest.TestCase):
     """
 
     def test_published_cuda_versions(self):
-        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu132", "cu134"])
+        self.assertEqual(
+            DEPENDENCY_CONFIG["CUDA_WHEEL_VERSIONS"],
+            ["cu132", "cu134"],
+        )
+        self.assertEqual(
+            FILTER.SUPPORTED_CUDA_VERSIONS,
+            DEPENDENCY_CONFIG["CUDA_WHEEL_VERSIONS"],
+        )
 
     def test_published_cuda_versions_are_documented(self):
         # The install table on the getting started page is the only place a user is told

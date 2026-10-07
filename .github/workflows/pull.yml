@@ -91,6 +91,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/flat_tensor') ||
       contains(needs.changed-files.outputs.changed-files, 'extension/pytree') ||
       contains(needs.changed-files.outputs.changed-files, 'pyproject.toml') ||
+      contains(needs.changed-files.outputs.changed-files, 'torch_pin.py') ||
       contains(needs.changed-files.outputs.changed-files, 'schema/') ||
       contains(needs.changed-files.outputs.changed-files, 'setup.py') ||
       contains(needs.changed-files.outputs.changed-files, 'tools/cmake/')

@@ -836,7 +836,7 @@ jobs:
           # Gemma 4 requires a newer Transformers build than the CI-wide
           # optimum-executorch pin currently brings in. Keep this pinned to the
           # locally validated commit instead of floating on Transformers HEAD.
-          GEMMA4_TRANSFORMERS_COMMIT=61461a7bcb458db7cf6eeea49678b9ab776a7821
+          GEMMA4_TRANSFORMERS_COMMIT=5a4b70f87c7f5c3bae783b2de27fbdb93d6defb1
           ${CONDA_RUN} pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@${GEMMA4_TRANSFORMERS_COMMIT}"
         fi
         echo "::endgroup::"
@@ -1070,7 +1070,7 @@ jobs:
         if [ "${MODEL_ID}" = "google/gemma-4-E2B-it" ]; then
           # Gemma 4 needs a newer Transformers than the CI-wide pin. Keep this
           # on the same commit test-mlx-llm validated against.
-          GEMMA4_TRANSFORMERS_COMMIT=61461a7bcb458db7cf6eeea49678b9ab776a7821
+          GEMMA4_TRANSFORMERS_COMMIT=5a4b70f87c7f5c3bae783b2de27fbdb93d6defb1
           ${CONDA_RUN} pip install -U "transformers @ git+https://github.com/huggingface/transformers.git@${GEMMA4_TRANSFORMERS_COMMIT}"
         fi
         echo "::endgroup::"

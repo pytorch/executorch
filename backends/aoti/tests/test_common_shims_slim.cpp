@@ -669,6 +669,9 @@ TEST_F(CommonShimsSlimTest, DTypeConstants) {
   EXPECT_EQ(aoti_torch_dtype_int16(), 2); // ScalarType::Short
   EXPECT_EQ(aoti_torch_dtype_int8(), 1); // ScalarType::Char
   EXPECT_EQ(aoti_torch_dtype_bool(), 11); // ScalarType::Bool
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_float32()), 4);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bfloat16()), 2);
+  EXPECT_EQ(aoti_torch_dtype_element_size(aoti_torch_dtype_bool()), 1);
 }
 
 // ============================================================================

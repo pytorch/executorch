@@ -21,14 +21,20 @@ The x86_64 rows run a model as part of their smoke test, because their runner ha
 The aarch64 rows have no accelerator, so that check skips there and prints why. This filter
 decides only which rows exist, not what each one checks.
 
-The values below are the current answers to those questions. They are written out rather
-than derived because each one is an external fact that can change independently.
+The values are configured in torch_pin.py rather than derived because each one is an
+external fact that can change independently.
 """
 
 import argparse
 import json
+import runpy
 import sys
+from pathlib import Path
 from typing import Any, Dict, List
+
+_DEPENDENCY_CONFIG = runpy.run_path(
+    str(Path(__file__).resolve().parents[2] / "torch_pin.py")
+)
 
 # Python versions that are deliberately NOT published, with the reason, so a row naming one
 # is rejected for a stated cause rather than for merely being absent from the supported list.
@@ -61,13 +67,14 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 #
 # cu130 is not published. PyTorch keeps it on its nightly builds only as a temporary hold for
 # other projects, and its release-candidate builds do not carry it, so a release would have
-# no cu130 train even while nightlies do.
+# no cu130 train even while nightlies do. See the PyTorch 2.15 support-matrix RFC:
+# https://github.com/pytorch/pytorch/issues/190385
 #
 # cu132 is included because omitting it would leave a published consumer row with no
 # ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
 # minor versions are compatible, so a cu132 wheel has been run end to end on a CUDA 13.0
 # device. The packaging properties are checked on every row regardless.
-SUPPORTED_CUDA_VERSIONS: List[str] = ["cu132", "cu134"]
+SUPPORTED_CUDA_VERSIONS: List[str] = _DEPENDENCY_CONFIG["CUDA_WHEEL_VERSIONS"]
 
 # Python versions to publish, stated rather than derived for the same reason the CUDA
 # versions are. Deriving them from the rows that survived the filter made the release

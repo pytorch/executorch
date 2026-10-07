@@ -52,7 +52,7 @@ function write_sccache_stub() {
   OUTPUT=$1
   BINARY=$(basename "${OUTPUT}")
 
-  printf "#!/bin/sh\nif [ \$(ps auxc \$(ps auxc -o ppid \$\$ | grep \$\$ | rev | cut -d' ' -f1 | rev) | tr '\\\\n' ' ' | rev | cut -d' ' -f2 | rev) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${BINARY}")" "$(which "${BINARY}")" > "${OUTPUT}"
+  printf "#!/bin/sh\nif [ \$(ps auxc \$(ps auxc -o ppid \$\$ | grep \$\$ | rev | cut -d' ' -f1 | rev) | tr '\\\\n' ' ' | rev | cut -d' ' -f2 | rev) != sccache ]; then\n  sccache %s \"\$@\" || exec %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${BINARY}")" "$(which "${BINARY}")" "$(which "${BINARY}")" > "${OUTPUT}"
   chmod a+x "${OUTPUT}"
 }
 
@@ -61,6 +61,9 @@ install_sccache() {
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
   export SCCACHE_S3_KEY_PREFIX=executorch
   export SCCACHE_IDLE_TIMEOUT=0
+  # A cache-server timeout should fall back to the local compiler instead of
+  # failing an otherwise valid source build.
+  export SCCACHE_IGNORE_SERVER_IO_ERROR=1
   export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
   export RUST_LOG=sccache::server=error
 

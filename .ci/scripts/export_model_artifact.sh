@@ -84,6 +84,15 @@ HF_MODEL="$2"
 QUANT_NAME="${3:-non-quantized}"
 OUTPUT_DIR="${4:-.}"
 MODE="${5:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+run_python_module() {
+  if [ "$DEVICE" = "metal" ]; then
+    python "${SCRIPT_DIR}/run_python_module_without_teardown.py" "$@"
+  else
+    python -m "$@"
+  fi
+}
 
 # Validate mode if specified
 if [ -n "$MODE" ]; then
@@ -333,7 +342,7 @@ if [ "$MODEL_NAME" = "parakeet" ]; then
     DTYPE_ARG="--dtype bf16"
   fi
 
-  python -m executorch.examples.models.parakeet.export_parakeet_tdt \
+  run_python_module executorch.examples.models.parakeet.export_parakeet_tdt \
       --backend "$DEVICE" \
       --output-dir "${OUTPUT_DIR}" \
       ${DTYPE_ARG} \
@@ -370,7 +379,7 @@ if [ "$MODEL_NAME" = "sortformer" ]; then
     SORTFORMER_BACKEND="portable"
   fi
 
-  python -m executorch.examples.models.sortformer.export_sortformer \
+  run_python_module executorch.examples.models.sortformer.export_sortformer \
       --hf-model "${HF_MODEL}" \
       --backend "${SORTFORMER_BACKEND}" \
       --output-dir "${OUTPUT_DIR}"
@@ -390,7 +399,7 @@ fi
 if [ "$MODEL_NAME" = "dinov2" ]; then
   pip install -r examples/models/dinov2/install_requirements.txt
 
-  python -m executorch.examples.models.dinov2.export_dinov2 \
+  run_python_module executorch.examples.models.dinov2.export_dinov2 \
       --backend "$DEVICE" \
       --output-dir "${OUTPUT_DIR}"
 
@@ -439,7 +448,7 @@ if [ "$MODEL_NAME" = "voxtral_realtime" ]; then
     PREPROCESSOR_ARGS="$PREPROCESSOR_ARGS --stack_output --max_audio_len 300"
   fi
 
-  python -m executorch.examples.models.voxtral_realtime.export_voxtral_rt \
+  run_python_module executorch.examples.models.voxtral_realtime.export_voxtral_rt \
       --model-path "$LOCAL_MODEL_DIR" \
       --backend "$DEVICE" \
       ${STREAMING_ARG} \
@@ -674,15 +683,30 @@ elif [ "$DEVICE" = "metal" ]; then
   DEVICE_ARG="--device mps"
 fi
 
-optimum-cli export executorch \
-    --model "$HF_MODEL" \
-    --task "$TASK" \
-    --recipe "$DEVICE" \
-    --dtype bfloat16 \
-    ${DEVICE_ARG} \
-    ${MAX_SEQ_LEN_ARG} \
-    ${EXTRA_ARGS} \
-    --output_dir ./
+if [ "$DEVICE" = "metal" ]; then
+  # Use the same registered command path as the optimum-cli executable. The
+  # optimum.exporters.executorch module has a stale standalone parser that is
+  # missing arguments expected by its entry point (for example cache_dir).
+  run_python_module optimum.commands.optimum_cli export executorch \
+      --model "$HF_MODEL" \
+      --task "$TASK" \
+      --recipe "$DEVICE" \
+      --dtype bfloat16 \
+      ${DEVICE_ARG} \
+      ${MAX_SEQ_LEN_ARG} \
+      ${EXTRA_ARGS} \
+      --output_dir ./
+else
+  optimum-cli export executorch \
+      --model "$HF_MODEL" \
+      --task "$TASK" \
+      --recipe "$DEVICE" \
+      --dtype bfloat16 \
+      ${DEVICE_ARG} \
+      ${MAX_SEQ_LEN_ARG} \
+      ${EXTRA_ARGS} \
+      --output_dir ./
+fi
 
 if [ -n "$PREPROCESSOR_OUTPUT" ]; then
   python -m executorch.extension.audio.mel_spectrogram \

@@ -113,6 +113,36 @@ def _keep_triton_reduction_loads_loop_scoped():
         IndexingOptions.has_rmask = orig_has_rmask
 
 
+@contextlib.contextmanager
+def _fall_back_on_inductor_zero_mask_analysis_bug():
+    """Treat a failed zero-mask analysis as inconclusive.
+
+    The pinned PyTorch nightly can pass ``NotImplemented`` from a low-precision
+    cast into a second symbolic cast while deciding whether a fused prologue
+    preserves zeros. Returning ``False`` is the conservative answer: Inductor
+    emits the normal mask instead of applying that optimization.
+
+    TODO: remove after the pinned PyTorch handles nested unsupported casts.
+    """
+    from torch._inductor.codegen import simd
+
+    original = simd.prologue_preserves_zero_mask
+
+    def _safe_prologue_preserves_zero_mask(prologue):
+        try:
+            return original(prologue)
+        except AttributeError as error:
+            if "'NotImplementedType' object has no attribute 'expr'" not in str(error):
+                raise
+            return False
+
+    simd.prologue_preserves_zero_mask = _safe_prologue_preserves_zero_mask
+    try:
+        yield
+    finally:
+        simd.prologue_preserves_zero_mask = original
+
+
 _SMALL_GPU_GUARD = threading.local()
 
 
@@ -968,6 +998,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # `ReplaceEdgeOpWithTritonOpPass` are unaffected.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
                 stack.enter_context(target_smem_context())
+                stack.enter_context(_fall_back_on_inductor_zero_mask_analysis_bug())
                 # On ROCm, is_big_gpu gates on architecture, not SM count.
                 if torch.version.hip is None:
                     stack.enter_context(_allow_triton_templates_on_small_gpus())

@@ -164,6 +164,10 @@ int32_t aoti_torch_dtype_bool() {
   return 11; // ScalarType::Bool
 }
 
+size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  return slim::c10::elementSize(static_cast<slim::c10::ScalarType>(dtype));
+}
+
 // ============================================================
 // Device Type Constants - Implementations
 // ============================================================

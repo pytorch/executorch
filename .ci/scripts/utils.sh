@@ -141,7 +141,9 @@ install_pytorch_and_domains() {
     python -m venv --system-site-packages "${build_venv}"
     "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" ninja \
       "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six numpy
-    USE_DISTRIBUTED=1 "${build_venv}/bin/python" -m build --wheel --no-isolation
+    # The wheel does not need PyTorch's C++ test targets, and the pinned
+    # Kineto tests do not compile with the Xcode 15 runner toolchain.
+    BUILD_TEST=0 USE_DISTRIBUTED=1 "${build_venv}/bin/python" -m build --wheel --no-isolation
     rm -rf "${build_venv}"
     pip install "$(echo dist/*.whl)"
     # A build with no BLAS succeeds silently, so check rather than assume.
