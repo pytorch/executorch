@@ -233,6 +233,42 @@ TestCase create_test_case_from_config(
   return test_case;
 }
 
+// Fused projections (e.g. q/k/v) through et_vk.linear_dq8ca_q4gsw_split: the
+// 128 output channels are split into three outputs, output i reshaped into
+// heads of head_dims[i] channels unless that is 0.
+TestCase create_split_test_case(
+    const int64_t M,
+    utils::StorageType storage_type,
+    vkapi::ScalarType input_dtype,
+    const std::vector<int32_t>& split_sizes,
+    const std::vector<int32_t>& head_dims) {
+  LinearConfig config = {M, 128, 128, 32};
+  config.runtime_qparams = true;
+  TestCase test_case =
+      create_test_case_from_config(config, storage_type, input_dtype);
+  test_case.set_name(test_case.name() + " split3");
+  test_case.set_operator_name("test_etvk.linear_dq8ca_q4gsw_split3.default");
+
+  // Replace the bias with the split sizes and head dims
+  test_case.inputs().pop_back();
+  test_case.add_input_spec(ValueSpec(split_sizes));
+  test_case.add_input_spec(ValueSpec(head_dims));
+
+  test_case.outputs().clear();
+  for (size_t i = 0; i < split_sizes.size(); ++i) {
+    const std::vector<int64_t> sizes = head_dims[i] > 0
+        ? std::vector<int64_t>{M, split_sizes[i] / head_dims[i], head_dims[i]}
+        : std::vector<int64_t>{M, split_sizes[i]};
+    test_case.add_output_spec(ValueSpec(
+        sizes,
+        input_dtype,
+        storage_type,
+        utils::kWidthPacked,
+        DataGenType::ZEROS));
+  }
+  return test_case;
+}
+
 // Generate easy test cases for quantized linear operation (for debugging)
 std::vector<TestCase> generate_quantized_linear_easy_cases() {
   std::vector<TestCase> test_cases;
@@ -361,6 +397,18 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
         test_cases.push_back(create_test_case_from_config(
             wo_quant_config, storage_type, input_dtype));
       }
+    }
+  }
+
+  for (const int64_t M : {1, 4}) {
+    for (const auto& storage_type : storage_types) {
+      for (const auto& input_dtype : {vkapi::kFloat, vkapi::kHalf}) {
+        test_cases.push_back(create_split_test_case(
+            M, storage_type, input_dtype, {64, 32, 32}, {32, 0, 16}));
+      }
+      // Chunks that do not start on a 4-channel texel take the fallback
+      test_cases.push_back(create_split_test_case(
+          M, storage_type, vkapi::kHalf, {66, 30, 32}, {0, 0, 16}));
     }
   }
 
@@ -496,21 +544,19 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   const ValueSpec& weight_sums_spec = test_case.inputs()[idx++];
   const ValueSpec& weight_scales_spec = test_case.inputs()[idx++];
   const ValueSpec& group_size_spec = test_case.inputs()[idx++];
-  const ValueSpec& bias_spec = test_case.inputs()[idx++];
-
-  // Extract output specification (mutable reference)
-  ValueSpec& output_spec = test_case.outputs()[0];
+  // The split variant has no bias; its outputs are consecutive chunks of the
+  // output channels.
+  const bool is_split = test_case.num_outputs() > 1;
+  const bool has_bias = !is_split && !test_case.inputs()[idx].is_none();
 
   // Get tensor dimensions
   auto input_sizes = input_spec.get_tensor_sizes(); // [batch_size, in_features]
   auto weight_sizes =
       weight_spec.get_tensor_sizes(); // [out_features, in_features/2]
-  auto output_sizes =
-      output_spec.get_tensor_sizes(); // [batch_size, out_features]
 
   int64_t batch_size = input_sizes[0];
   int64_t in_features = input_sizes[1];
-  int64_t out_features = output_sizes[1];
+  int64_t out_features = weight_sizes[0];
   int64_t group_size = group_size_spec.get_int_value();
 
   // Skip for large tensors since computation time will be extremely slow
@@ -528,7 +574,7 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   // (round(x/scale)+zp), but the GPU does the dynamic int8 activation quant in
   // fp16, so the round-trip diverges. dq8ca_q4gsw coopmat half-validation needs
   // an fp16-accurate reference (Step 2). Perf timings still run.
-  if (input_spec.dtype == vkapi::kHalf && !fp_activation) {
+  if (input_spec.dtype == vkapi::kHalf && !fp_activation && !is_split) {
     throw std::invalid_argument(
         "dq8ca_q4gsw reference skipped for kHalf (fp16 dyn-act quant diverges)");
   }
@@ -548,8 +594,7 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   // Calculate number of output elements
   int64_t num_output_elements = batch_size * out_features;
 
-  auto& ref_data = output_spec.get_ref_float_data();
-  ref_data.resize(num_output_elements);
+  std::vector<float> ref_data(num_output_elements);
 
   // Perform quantized linear transformation (matrix multiplication) with
   // integer accumulation
@@ -611,12 +656,27 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
       }
 
       // Add bias and store result
-      if (!bias_spec.is_none()) {
-        float_result += bias_spec.get_element(out_f);
+      if (has_bias) {
+        float_result += test_case.inputs()[7].get_element(out_f);
       }
       int64_t output_idx = b * out_features + out_f;
       ref_data[output_idx] = float_result;
     }
+  }
+
+  int64_t chunk_start = 0;
+  for (size_t i = 0; i < test_case.num_outputs(); ++i) {
+    ValueSpec& output_spec = test_case.outputs()[i];
+    const int64_t chunk_size = output_spec.numel() / batch_size;
+    auto& out_ref = output_spec.get_ref_float_data();
+    out_ref.resize(batch_size * chunk_size);
+    for (int64_t b = 0; b < batch_size; ++b) {
+      for (int64_t n = 0; n < chunk_size; ++n) {
+        out_ref[b * chunk_size + n] =
+            ref_data[b * out_features + chunk_start + n];
+      }
+    }
+    chunk_start += chunk_size;
   }
 }
 

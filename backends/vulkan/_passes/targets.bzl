@@ -149,6 +149,23 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_library(
+        name = "fuse_sibling_q4_linears",
+        srcs = ["fuse_sibling_q4_linears.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/transforms:utils",
+            "//executorch/backends/vulkan:custom_ops_lib",
+            "//executorch/backends/vulkan:utils_lib",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "vulkan_passes",
         srcs = [
             "__init__.py",
@@ -162,6 +179,7 @@ def define_common_targets(is_fbcode = False):
             ":fold_qdq",
             ":fuse_patterns",
             ":fuse_quantized_ops",
+            ":fuse_sibling_q4_linears",
             ":insert_dtype_promotion",
             ":insert_prepack_nodes",
             ":remove_asserts",

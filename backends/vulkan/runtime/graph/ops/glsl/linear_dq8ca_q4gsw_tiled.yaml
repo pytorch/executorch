@@ -14,6 +14,7 @@ linear_dq8ca_q4gsw_tiled:
     TILE_K4: 1
     TILE_N8: 1
     ZP_DTYPE_MODE: zpint8
+    NUM_OUTPUTS: 1
   generate_variant_forall:
     DTYPE:
       - VALUE: float
@@ -31,3 +32,36 @@ linear_dq8ca_q4gsw_tiled:
     - NAME: linear_dq8ca_q4gsw_tiled_buffer_buffer
       IO_STORAGE: buffer
       WEIGHT_STORAGE: buffer
+    # Output split into three tensors (fused q/k/v projections)
+    - NAME: linear_dq8ca_q4gsw_tiled_split3_texture3d_texture2d
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8
+    - NAME: linear_dq8ca_q4gsw_tiled_split3_texture3d_buffer
+      WEIGHT_STORAGE: buffer
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8
+    - NAME: linear_dq8ca_q4gsw_tiled_split3_buffer_texture2d
+      IO_STORAGE: buffer
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8
+    - NAME: linear_dq8ca_q4gsw_tiled_split3_buffer_buffer
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8

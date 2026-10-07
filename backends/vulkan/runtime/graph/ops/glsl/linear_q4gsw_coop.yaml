@@ -11,6 +11,7 @@ linear_q4gsw_coop:
     WEIGHT_STORAGE: texture2d
     PACKED_INPUT_STORAGE: buffer
     MAX_WG_SIZE: 256
+    NUM_OUTPUTS: 1
     DYNAMIC_QUANT_VARIANT: false
     ZP_DTYPE_MODE: zpint8
   generate_variant_forall:
@@ -67,3 +68,40 @@ linear_q4gsw_coop:
         ZP_DTYPE_MODE:
           - VALUE: zpint8
           - VALUE: zpinherit
+    # Output split into three tensors (fused q/k/v projections)
+    - NAME: linear_dq8ca_q4gsw_coop_split3_texture3d_texture2d
+      DYNAMIC_QUANT_VARIANT: true
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8
+    - NAME: linear_dq8ca_q4gsw_coop_split3_texture3d_buffer
+      WEIGHT_STORAGE: buffer
+      DYNAMIC_QUANT_VARIANT: true
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8
+    - NAME: linear_dq8ca_q4gsw_coop_split3_buffer_texture2d
+      IO_STORAGE: buffer
+      DYNAMIC_QUANT_VARIANT: true
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8
+    - NAME: linear_dq8ca_q4gsw_coop_split3_buffer_buffer
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
+      DYNAMIC_QUANT_VARIANT: true
+      NUM_OUTPUTS: 3
+      generate_variant_forall:
+        DTYPE:
+          - VALUE: half
+        ZP_DTYPE_MODE:
+          - VALUE: zpint8

@@ -42,6 +42,9 @@ layout(std430) buffer;
 #include "common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
+$if NUM_OUTPUTS == 3:
+  ${layout_declare_tensor(B, "w", "t_output1", DTYPE, IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "w", "t_output2", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", PACKED_INT8_INPUT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_int8_input_sums", "int", "buffer", is_scalar_array=False)}
@@ -54,11 +57,20 @@ ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
+$if NUM_OUTPUTS == 3:
+  ${layout_declare_ubo(B, "ivec4", "output1_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "output2_sizes")}
+  layout(push_constant) uniform restrict Block {
+    ivec4 split_sizes;
+  };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "int", "apply_bias", "0")}
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
+$if NUM_OUTPUTS == 3:
+  ${layout_declare_spec_const(C, "int", "num_groups_arg", "0")}
+  ${layout_declare_spec_const(C, "int", "out_N_arg", "0")}
 
 #include "linear_fp_input_tile_load.glslh"
 #include "linear_int8_input_tile_load.glslh"
@@ -72,6 +84,8 @@ ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 #include "linear_fp_output_tile_fp_int4_compute.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
+$if NUM_OUTPUTS == 3:
+  #include "linear_fp_output_tile_split_store.glslh"
 #include "linear_fp_bias_load.glslh"
 
 void main() {
@@ -85,15 +99,20 @@ void main() {
   const int n4 = div_4(n);
   const int m4 = div_4(m);
 
-  if (n >= output_sizes.x || m >= output_sizes.y) {
+  $if NUM_OUTPUTS == 3:
+    const int N = out_N_arg;
+  $else:
+    const int N = output_sizes.x;
+  const int M = input_sizes.y;
+
+  if (n >= N || m >= M) {
     return;
   }
 
-  const int M = input_sizes.y;
   const int K4 = div_up_4(input_sizes.x);
   const int M4 = div_up_4(M);
-  const int N4 = div_up_4(output_sizes.x);
-  const int N8 = div_up_8(output_sizes.x);
+  const int N4 = div_up_4(N);
+  const int N8 = div_up_8(N);
 
   FPOutTile out_tile;
   initialize(out_tile);
@@ -150,5 +169,8 @@ void main() {
     add_bias_to_out_tile(out_tile, bias_tile);
   }
 
-  write_output_tile_with_checks(out_tile, n4, m, N4, M);
+  $if NUM_OUTPUTS == 3:
+    write_output_tile_split_with_checks(out_tile, n4, m, N4, M);
+  $else:
+    write_output_tile_with_checks(out_tile, n4, m, N4, M);
 }

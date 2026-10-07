@@ -12,6 +12,9 @@ from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.fuse_quantized_ops import (
     FuseQuantizedOpsTransform,
 )
+from executorch.backends.vulkan._passes.fuse_sibling_q4_linears import (
+    FuseSiblingQ4LinearsPass,
+)
 from executorch.backends.vulkan._passes.insert_dtype_promotion import (
     InsertDtypePromotionPass,
 )
@@ -33,6 +36,7 @@ __all__ = [
     "FoldQDQPass",
     "FusePatternsPass",
     "FuseQuantizedOpsTransform",
+    "FuseSiblingQ4LinearsPass",
     "InsertDtypePromotionPass",
     "insert_prepack_nodes",
     "remove_asserts",

@@ -367,6 +367,48 @@ lib.define(
 lib.impl(name, linear_dq8ca_q4gsw, "CompositeExplicitAutograd")
 linear_dq8ca_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 
+
+# Splits the output channels of linear_dq8ca_q4gsw into split_sizes chunks; chunk
+# i is reshaped to [..., split_sizes[i] / head_dims[i], head_dims[i]] unless
+# head_dims[i] is 0.
+def linear_dq8ca_q4gsw_split(
+    x: torch.Tensor,
+    input_scale: Optional[torch.Tensor],
+    input_zero_point: Optional[torch.Tensor],
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    split_sizes: list[int],
+    head_dims: list[int],
+):
+    out = linear_q4gsw(x, weights, weight_scales, group_size)
+    outs = []
+    for chunk, head_dim in zip(torch.split(out, split_sizes, dim=-1), head_dims):
+        if head_dim > 0:
+            chunk = chunk.reshape(*chunk.shape[:-1], -1, head_dim)
+        outs.append(chunk.clone())
+    return outs
+
+
+name = "linear_dq8ca_q4gsw_split"
+lib.define(
+    f"""
+            {name}(
+                Tensor input,
+                Tensor? input_scales,
+                Tensor? input_zp,
+                Tensor weights,
+                Tensor weight_sums,
+                Tensor weight_scales,
+                int group_size,
+                int[] split_sizes,
+                int[] head_dims) -> Tensor[]
+            """
+)
+lib.impl(name, linear_dq8ca_q4gsw_split, "CompositeExplicitAutograd")
+linear_dq8ca_q4gsw_split_op = getattr(getattr(torch.ops, namespace), name)
+
 #################
 ## qaqw_linear ##
 #################
