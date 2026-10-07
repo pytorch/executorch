@@ -460,6 +460,13 @@
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out
 
+- func: cadence::quantized_fully_connected_packed.out(Tensor src, Tensor weight, Tensor bias, int in_dim, int weight_bits, int src_zero_point, Tensor? weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      # No packed kernel on this backend yet: fall back to the generic one
+      # rather than failing to resolve the operator.
+      kernel_name: impl::generic::quantized_fully_connected_packed_out
+
 - func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null

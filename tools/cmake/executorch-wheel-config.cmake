@@ -78,8 +78,12 @@
 # executorch::kernels_torchao    The TorchAO kernels. Linux and macOS on
 #                                aarch64 only.
 # executorch::backend_cuda       The CUDA delegate. Linux only.
-# executorch::extension_cuda     The CUDA stream and device helpers. Linux
-#                                only.
+# executorch::extension_cuda     The CUDA allocator, stream and device helpers.
+#                                Linux only. The allocator header requires a
+#                                CUDA toolkit, found through CUDAToolkit_ROOT
+#                                or CMake's standard toolkit search. A program
+#                                that calls the CUDA runtime itself links
+#                                CUDA::cudart.
 # executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
 #                                OpenVINO runtime by name, which a C++ program
 #                                installs and points OPENVINO_LIB_PATH at.
@@ -766,11 +770,31 @@ if(EXISTS "${_executorch_mlx_metallib}")
   set(MLX_METALLIB_PATH "${_executorch_mlx_metallib}")
 endif()
 _executorch_define_component(backend_openvino executorch_backend_openvino)
-# The CUDA delegate and its stream helper, present only in a wheel built from a
-# CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
-# while configuring.
+# The CUDA delegate and shared allocator/stream/guard helpers are present only
+# in CUDA wheels. A CPU wheel reports either missing component at configure
+# time.
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
+if(TARGET executorch::extension_cuda)
+  # Keep toolkit-free stream/guard consumers working without a development kit.
+  find_package(CUDAToolkit QUIET)
+  if(CUDAToolkit_FOUND)
+    get_target_property(
+      _executorch_cuda_includes executorch::extension_cuda
+      INTERFACE_INCLUDE_DIRECTORIES
+    )
+    # This file runs again for every find_package call in the same configure.
+    foreach(_executorch_cuda_include IN LISTS CUDAToolkit_INCLUDE_DIRS)
+      if(NOT _executorch_cuda_include IN_LIST _executorch_cuda_includes)
+        set_property(
+          TARGET executorch::extension_cuda
+          APPEND
+          PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${_executorch_cuda_include}"
+        )
+      endif()
+    endforeach()
+  endif()
+endif()
 # The Qualcomm delegate, present only in a wheel whose build found the QNN SDK,
 # which today means Linux x86_64. Like the OpenVINO delegate it carries no
 # undefined vendor symbols, so it links without the SDK present and resolves the
