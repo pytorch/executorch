@@ -8,6 +8,7 @@
 
 import ctypes
 import functools
+import operator
 import unittest
 from typing import Tuple
 
@@ -16,6 +17,10 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
+    get_symmetric_quantization_config as get_vulkan_quantization_config,
+    VulkanQuantizer,
+)
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -2753,6 +2758,43 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
         )
+
+    def test_vulkan_backend_pt2e_quantized_linear_without_downcasting(self):
+        torch.manual_seed(0)
+        sample_inputs = (torch.randn(4, 64),)
+        quantizer = VulkanQuantizer().set_global(get_vulkan_quantization_config())
+        model = prepare_pt2e(
+            export(torch.nn.Linear(64, 32).eval(), sample_inputs, strict=True).module(),
+            quantizer,
+        )
+        model(*sample_inputs)
+        model = convert_pt2e(model)
+        self.assertTrue(any(buffer.dtype == torch.int64 for buffer in model.buffers()))
+
+        for downcast in (False, True):
+            with self.subTest(downcast=downcast):
+                edge = lower_module(
+                    model,
+                    sample_inputs,
+                    compile_options={"downcast_64_bit": downcast},
+                )
+                self.assertEqual(
+                    [
+                        node.target
+                        for node in edge.exported_program().graph.nodes
+                        if node.op == "call_function"
+                        and node.target != operator.getitem
+                    ],
+                    [torch.ops.higher_order.executorch_call_delegate],
+                )
+                program_buffer = edge.to_executorch().buffer
+                module = _load_for_executorch_from_buffer(program_buffer)
+                self.assert_outputs_equal(
+                    module.run_method("forward", sample_inputs),
+                    model(*sample_inputs),
+                    atol=1e-5,
+                    rtol=1e-5,
+                )
 
     @disable_test("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):
