@@ -108,9 +108,16 @@ xcodebuild test \
 # NB: https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest-ui.html
 say "Package The Test Suite"
 
+DERIVED_DATA_PATH="$(pwd)/cmake-out/ios-demo-derived-data"
+BUILD_DIR="${DERIVED_DATA_PATH}/Build/Products"
+MODE="Debug"
+PLATFORM="iphoneos"
+
 xcodebuild build-for-testing \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
+  -configuration "${MODE}" \
+  -derivedDataPath "${DERIVED_DATA_PATH}" \
   -destination "generic/platform=iOS" \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM=78E7V7QP35 \
@@ -120,12 +127,7 @@ xcodebuild build-for-testing \
   CODE_SIGNING_REQUIRED=No \
   CODE_SIGNING_ALLOWED=No
 
-# The hack to figure out where the xctest package locates
-BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
-
 # Prepare the demo app
-MODE="Debug"
-PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
 rm -rf Payload && mkdir Payload
