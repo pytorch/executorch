@@ -19,10 +19,9 @@ To use ExecuTorch, you will need to install both the Python package and the appr
 
 Install PyTorch in the same command. A release of ExecuTorch declares the
 PyTorch versions it works with, but not which build of PyTorch to use, because
-that depends on your hardware. The package index you install from picks the CPU
-or CUDA build. Nightly builds of ExecuTorch declare no PyTorch at all, so
-installing one on its own gives an environment where exporting a model stops
-with `No module named 'torch'`.
+that depends on your hardware. Nightly builds of ExecuTorch declare no PyTorch
+at all, so installing one on its own gives an environment where exporting a model
+stops with `No module named 'torch'`.
 
 Both packages come from the same package index. Find your machine in the table
 below and put the name from it in place of `<variant>`:

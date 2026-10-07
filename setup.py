@@ -1261,8 +1261,9 @@ def _minimal_dependencies() -> List[str]:
 def _torch_dependencies() -> List[str]:
     """The torch requirement of a release wheel, or nothing for any other build.
 
-    Reads the BUILD_VERSION environment variable rather than Version.string(), which appends the git
-    hash to version.txt when it is unset and so makes a local build look like a release.
+    Reads the BUILD_VERSION environment variable rather than Version.string(), which adds the git
+    hash to the version from version.txt when it is unset and so makes a local build look like a
+    release.
     """
     requirement = install_utils.release_torch_requirement(os.getenv("BUILD_VERSION"))
     return [requirement] if requirement else []
@@ -3000,7 +3001,8 @@ if _is_minimal_build():
 else:
     setup_kwargs["packages"] = _full_packages()
     # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
-    # carry it are declared here. A CPU wheel adds nothing.
+    # carry it are declared here. A CPU wheel adds none of these. A release of either
+    # kind also declares the torch it was built against.
     setup_kwargs["install_requires"] = (
         _base_dependencies() + _cuda_dependencies() + _torch_dependencies()
     )
