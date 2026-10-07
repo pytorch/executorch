@@ -188,6 +188,7 @@ void main() {
   const uint K = uint(input_sizes.x);
   const uint N = uint(output_sizes.x);
   const uint N4 = (N + 3u) / 4u;
+  const uint N8 = (N + 7u) / 8u;
   const uint nblocks_x_A = (K + 3u) >> 2u;
 
 #ifdef WEIGHT_INT4
@@ -310,9 +311,9 @@ void main() {
     const uint k4_blk = block_in_chunk / N8_PER_TILE;
     const uint n8_blk = (tile_n_start >> 3u) + (block_in_chunk % N8_PER_TILE);
 #ifdef WEIGHT_BUFFER
-    temp_B[si] = t_packed_weight[(n8_blk * nblocks_x_A) + k4_blk];
+    temp_B[si] = t_packed_weight[(k4_blk * N8) + n8_blk];
 #else
-    temp_B[si] = texelFetch(t_packed_weight, ivec2(k4_blk, n8_blk), 0);
+    temp_B[si] = texelFetch(t_packed_weight, ivec2(n8_blk, k4_blk), 0);
 #endif
   }
 #else
@@ -412,9 +413,9 @@ void main() {
           const uint k4_blk = (chunkK_nxt >> 2u) + block_in_chunk / N8_PER_TILE;
           const uint n8_blk = (tile_n_start >> 3u) + (block_in_chunk % N8_PER_TILE);
 #ifdef WEIGHT_BUFFER
-          temp_B[si] = t_packed_weight[(n8_blk * nblocks_x_A) + k4_blk];
+          temp_B[si] = t_packed_weight[(k4_blk * N8) + n8_blk];
 #else
-          temp_B[si] = texelFetch(t_packed_weight, ivec2(k4_blk, n8_blk), 0);
+          temp_B[si] = texelFetch(t_packed_weight, ivec2(n8_blk, k4_blk), 0);
 #endif
         }
         if (group_crossing && gl_LocalInvocationID.x < WG_TILE_N) {

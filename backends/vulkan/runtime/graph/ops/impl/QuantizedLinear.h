@@ -14,6 +14,12 @@
 
 namespace vkcompute {
 
+GlobalWorkGrid quantized_linear_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
 LocalWorkGroup quantized_linear_lwg(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,

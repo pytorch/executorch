@@ -218,6 +218,7 @@ void main() {
   const uint K = uint(input_sizes.x);
   const uint K4 = (K + 3u) / 4u;
   const uint N4 = (uint(output_sizes.x) + 3u) / 4u;
+  const uint N8 = (uint(output_sizes.x) + 7u) / 8u;
 
 #ifdef WEIGHT_INT4
   const uint CHUNKS_PER_GROUP = uint(K4_per_group) * 4u / WG_TILE_K;
@@ -243,8 +244,8 @@ void main() {
 
 #ifdef WEIGHT_INT4
   // INT4 weight block grid (see pack_q4_linear_weight.glsl): block (k4, n8)
-  // covers K=[k4*4, k4*4+3] x N=[n8*8, n8*8+7]; buffer pitch = K4 blocks per
-  // n8 row, texture coord = ivec2(x=k4, y=n8). This thread's 8 N-values at
+  // covers K=[k4*4, k4*4+3] x N=[n8*8, n8*8+7]; buffer pitch = N8 blocks per
+  // k4 row, texture coord = ivec2(x=n8, y=k4). This thread's 8 N-values at
   // any K-row live in column n8_blk of the block grid:
   const uint n8_blk = (tile_n_start + b_col * 8u) >> 3u;
 
@@ -300,9 +301,9 @@ void main() {
     [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
       const uint k_row = p * B_ROWS_PER_PASS + b_row_offset;
 #ifdef WEIGHT_BUFFER
-      temp_B[p] = t_packed_weight[n8_blk * K4 + (k_row >> 2u)];
+      temp_B[p] = t_packed_weight[(k_row >> 2u) * N8 + n8_blk];
 #else
-      temp_B[p] = texelFetch(t_packed_weight, ivec2(k_row >> 2u, n8_blk), 0);
+      temp_B[p] = texelFetch(t_packed_weight, ivec2(n8_blk, k_row >> 2u), 0);
 #endif
     }
     cached_group = 0u;
@@ -369,9 +370,9 @@ void main() {
       [[unroll]] for (uint p = 0; p < B_PASSES; ++p) {
         const uint k_row = chunkK_nxt + p * B_ROWS_PER_PASS + b_row_offset;
 #ifdef WEIGHT_BUFFER
-        temp_B[p] = t_packed_weight[n8_blk * K4 + (k_row >> 2u)];
+        temp_B[p] = t_packed_weight[(k_row >> 2u) * N8 + n8_blk];
 #else
-        temp_B[p] = texelFetch(t_packed_weight, ivec2(k_row >> 2u, n8_blk), 0);
+        temp_B[p] = texelFetch(t_packed_weight, ivec2(n8_blk, k_row >> 2u), 0);
 #endif
       }
       const uint group_nxt = (chunk + 1u) / CHUNKS_PER_GROUP;
