@@ -137,7 +137,7 @@ bool is_supported_device_type(int32_t device_type) {
 }
 
 bool is_offgraph_kv_fqn(const std::string& fqn) {
-  return fqn.rfind("__et_offgraph_kv_", 0) == 0;
+  return fqn.rfind(kOffGraphKVFqnPrefix, 0) == 0;
 }
 
 } // namespace

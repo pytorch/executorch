@@ -43,7 +43,6 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/utils.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
@@ -51,6 +50,7 @@
 #include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 
 namespace executorch::backends::cuda {
@@ -1132,6 +1132,7 @@ class ET_EXPERIMENTAL CudaBackend final
             cudaGetErrorString(sync_err));
         (void)cudaGetLastError();
       }
+      // This also releases unused blocks cached by other allocator users.
       CudaAllocator::release_cached_memory(-1);
     }
   }
