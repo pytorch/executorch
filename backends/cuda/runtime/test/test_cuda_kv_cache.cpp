@@ -1134,7 +1134,8 @@ class CudaKVPoolTest : public CudaKVCacheTest {
          {"__et_offgraph_kv_layer_1_k", "__et_offgraph_kv_layer_1_v"}) {
       declare(container, fqn, bf16, {1, kFixedRows, kHeads, kDim});
     }
-    declare(container, "__et_offgraph_kv_cells", slimc10::ScalarType::Long, {16});
+    declare(
+        container, "__et_offgraph_kv_cells", slimc10::ScalarType::Long, {16});
     declare(
         container,
         "__et_offgraph_kv_mask_w0",
@@ -1263,7 +1264,8 @@ TEST_F(CudaKVPoolTest, CompiledSizeRoundedUpBy64IsAccepted) {
         slimc10::ScalarType::BFloat16,
         {1, kDeclaredRows, kHeads, kDim});
   }
-  declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2});
+  declare(
+      container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2});
   container.declared["__et_offgraph_kv_read_len"].second = 64;
   auto handle = make_handle(container);
   EXPECT_TRUE(pool.note_handle(&handle).get());
@@ -1298,7 +1300,8 @@ TEST_F(CudaKVPoolTest, ShapeHiddenByPaddingIsRejected) {
         slimc10::ScalarType::BFloat16,
         {1, kDeclaredRows, kHeads, kDim});
   }
-  declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {4});
+  declare(
+      container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {4});
   container.declared["__et_offgraph_kv_read_len"].second = 64;
   auto handle = make_handle(container);
   EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
@@ -1323,7 +1326,8 @@ TEST_F(CudaKVPoolTest, ConstantNotMatchingItsCompiledSizeIsRejected) {
 
   // And one compiled with another dtype.
   auto wrong_dtype = full_container();
-  declare(wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {16});
+  declare(
+      wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {16});
   auto wrong_dtype_handle = make_handle(wrong_dtype);
   EXPECT_EQ(
       pool->note_handle(&wrong_dtype_handle).error(), Error::InvalidProgram);
