@@ -12,6 +12,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Preprocess.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Q4gswLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizedLinear.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
@@ -289,50 +290,6 @@ void legacy_q4gsw_resize_linear_node(
   graph->virtual_resize(output, new_out_sizes);
 }
 
-GlobalWorkGrid legacy_q4gsw_gwg(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-
-  std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  // width
-  const uint32_t N =
-      utils::safe_downcast<uint32_t>(utils::val_at(-1, out_sizes));
-  // height
-  const uint32_t M =
-      utils::safe_downcast<uint32_t>(utils::val_at(-2, out_sizes));
-
-  // For 4-bit weights, each output tile contains 8 columns
-  uint32_t N_per_tile = 8;
-  uint32_t M_per_tile = 4;
-  if (shader.kernel_name.find("coop") != std::string::npos) {
-    M_per_tile = 1;
-  }
-
-  const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
-  const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
-
-  return GlobalWorkGrid({num_N_tiles, num_M_tiles, 1u}, kTiledWorkGrid);
-}
-
-LocalWorkGroup legacy_q4gsw_lwg(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const GlobalWorkGrid& gwg,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  const bool use_coop_algorithm =
-      shader.kernel_name.find("_coop") != std::string::npos;
-
-  if (use_coop_algorithm) {
-    return LocalWorkGroup(1u, 1u, 64u);
-  }
-  return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
-}
-
 vkapi::ShaderInfo legacy_q4gsw_pick_shader(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -355,7 +312,7 @@ vkapi::ShaderInfo legacy_q4gsw_pick_shader(
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-// Legacy 4-bit weight prepack — populates the [num_blocks_N, num_blocks_K * 4]
+// Legacy 4-bit weight prepack — populates the [num_blocks_K, num_blocks_N * 4]
 // tensor used by linear_q4gsw_tiled / linear_q4gsw_coop. Uses
 // pack_q4_linear_weight, NOT the W_4X8 nc-pair prepack.
 ValueRef legacy_prepack_q4gsw_weight(
@@ -381,9 +338,9 @@ ValueRef legacy_prepack_q4gsw_weight(
   const int64_t num_blocks_K = utils::div_up(K, K_per_block);
   const int64_t num_blocks_N = utils::div_up(N, N_per_block);
 
-  // Layout for the coop GEMV path: packed_weights[n8][k4] (no transposition).
-  const int64_t output_height = num_blocks_N;
-  const int64_t output_width = num_blocks_K * 4;
+  // Blocks are stored packed_weights[k4][n8].
+  const int64_t output_height = num_blocks_K;
+  const int64_t output_width = num_blocks_N * 4;
 
   utils::ivec2 orig_sizes = {
       utils::safe_downcast<int32_t>(K), utils::safe_downcast<int32_t>(N)};
@@ -469,6 +426,7 @@ void add_legacy_q4gsw_linear_node(
 
   const int32_t group_size_val = graph.extract_scalar<int32_t>(group_size_ref);
   const int32_t K4_per_group = utils::div_up(group_size_val, int32_t(4));
+  const int32_t num_groups = static_cast<int32_t>(K) / group_size_val;
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(output), graph.sizes_ubo(fp_input)};
@@ -476,8 +434,8 @@ void add_legacy_q4gsw_linear_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       legacy_q4gsw_pick_shader,
-      legacy_q4gsw_gwg,
-      legacy_q4gsw_lwg,
+      quantized_linear_gwg,
+      quantized_linear_lwg,
       // Inputs and Outputs (legacy 5-binding layout)
       {{output, vkapi::kWrite},
        {{fp_input, packed_weight, packed_weight_scales, packed_bias},
@@ -486,12 +444,15 @@ void add_legacy_q4gsw_linear_node(
       param_buffers,
       // Push Constants
       {},
-      // Specialization Constants
-      {apply_bias, K4_per_group},
-      // Resize args. extra_args.at(0) is unused (was the "is_4bit_flag"
-      // gate in the legacy multi-precision dispatcher); keep
-      // weight_data at index 1 so resize logic can read sizes_of(weight_data).
-      {kDummyValueRef, weight_data},
+      // Specialization Constants: the same as the production dispatch, with
+      // fp32 int4 dequantization.
+      {apply_bias,
+       K4_per_group,
+       num_groups,
+       graph.size_at<int32_t>(-1, output),
+       0},
+      // Resize args, as read by the production work group pickers
+      {group_size_ref, weight_data},
       legacy_q4gsw_resize_linear_node));
 }
 

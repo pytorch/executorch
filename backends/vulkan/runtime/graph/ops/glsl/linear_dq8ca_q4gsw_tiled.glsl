@@ -123,7 +123,7 @@ void main() {
       const int k4 = group_i * K4_per_group + k4_inner;
 
       load_int8_input_tile(int8_in_tile, k4, m4, K4);
-      load_int4_weight_tile(int4_weight_tile, k4, n8, K4);
+      load_int4_weight_tile(int4_weight_tile, k4, n8, N8);
 
       int_accumulate_with_int4_weight(
           out_accum, int8_in_tile, int4_weight_tile);

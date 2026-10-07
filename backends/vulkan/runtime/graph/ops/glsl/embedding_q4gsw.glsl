@@ -51,6 +51,8 @@ ${layout_declare_ubo(B, "ivec4", "out_sizes")}
 layout(push_constant) uniform PushConstants {
   int group_size;
   int is_linear_weight;
+  // Number of 8-row blocks along the embedding dim of a linear-packed weight.
+  int weight_n8;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -61,8 +63,8 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #ifdef LINEAR_WEIGHT
 
 // Linear-packed block format: weight is stored as blocks indexed by
-// t_weight[n8 * K4 + k4], where each ivec4 element contains 8 interleaved
-// 4-bit values from 2 sub-rows of an 8-row block.
+// t_weight[k4 * weight_n8 + n8], where each ivec4 element contains 8
+// interleaved 4-bit values from 2 sub-rows of an 8-row block.
 VEC4_T load_embedding_weights(
     const int embedding_idx,
     const int dim,
@@ -72,13 +74,12 @@ VEC4_T load_embedding_weights(
   const int n_local = embedding_idx & 7;
   const int row_in_block = n_local < 4 ? n_local : n_local - 4;
   const int shift_base = n_local < 4 ? 0 : 4;
-  const int K4 = embed_dim >> 2;
   const int k4 = dim >> 2;
 
 #ifdef WEIGHT_BUFFER
-  const ivec4 block = t_weight[n8 * K4 + k4];
+  const ivec4 block = t_weight[k4 * weight_n8 + n8];
 #else
-  const ivec4 block = texelFetch(t_weight, ivec2(k4, n8), 0);
+  const ivec4 block = texelFetch(t_weight, ivec2(n8, k4), 0);
 #endif
 
   const uint packed_uint = uint(block[row_in_block]);

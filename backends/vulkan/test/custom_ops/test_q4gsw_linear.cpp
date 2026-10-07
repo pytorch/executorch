@@ -259,9 +259,12 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
   std::vector<TestCase> test_cases;
 
   std::vector<LinearConfig> configs = {
-      // // Gemv test cases
-      // {1, 128, 64, 32},
-      // {1, 256, 128, 64},
+      // Gemv
+      {1, 64, 32, 16},
+      {1, 128, 64, 32},
+      {1, 256, 128, 64},
+      {1, 128, 36, 32},
+      {1, 128, 64, 32, true},
       // Gemm
       {4, 64, 32, 16},
       {4, 128, 64, 32},
@@ -463,11 +466,15 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
         "One or more dimensions (batch_size, in_features, out_features) exceed the allowed limit for reference implementation.");
   }
 
+  // At M = 1 the operator dispatches a GEMV that consumes the fp activation
+  // directly, so the activation is not quantized.
+  const bool fp_activation = batch_size == 1;
+
   // Skip correctness for kHalf: this reference quantizes the activation in fp32
   // (round(x/scale)+zp), but the GPU does the dynamic int8 activation quant in
   // fp16, so the round-trip diverges. dq8ca_q4gsw coopmat half-validation needs
   // an fp16-accurate reference (Step 2). Perf timings still run.
-  if (input_spec.dtype == vkapi::kHalf) {
+  if (input_spec.dtype == vkapi::kHalf && !fp_activation) {
     throw std::invalid_argument(
         "dq8ca_q4gsw reference skipped for kHalf (fp16 dyn-act quant diverges)");
   }
@@ -526,9 +533,12 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
         float weight_scale = weight_scales_spec.get_element(scales_idx);
 
         // Compute the contribution with proper scaling
+        const float activation = fp_activation
+            ? input_val
+            : static_cast<float>(quantized_input - input_zero_point) *
+                input_scale;
         float contribution =
-            static_cast<float>(quantized_input - input_zero_point) *
-            static_cast<float>(quantized_weight) * input_scale * weight_scale;
+            activation * static_cast<float>(quantized_weight) * weight_scale;
 
         float_result += contribution;
       }
