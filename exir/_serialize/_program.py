@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
-from executorch.exir._serialize._cord import Cord
+from executorch.exir._serialize._cord import Cord, CordBuffer
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 from executorch.exir._serialize._flatbuffer import _FlatbufferResult
 from executorch.exir._serialize._flatbuffer_program import (
@@ -375,30 +375,24 @@ def _extract_constant_segment(
     return constant_segment_data, constant_segment_offsets
 
 
-def _extract_named_data(
-    program: Program,
+def _extract_named_data_segments(
     segments: List[AlignedData],
-    buffers: Sequence[bytes],
+    buffers: Sequence[CordBuffer],
     name_to_data_entry: Dict[str, DataEntry],
-) -> None:
-    """Modifies the program in-place to add references to the named data
-        segments.
+) -> Dict[str, int]:
+    """Appends unique named-data buffers to segments and returns their indices.
 
     Args:
-        program: The program to extract segments from. Modified in-place.
         segments: A list of buffers to append extracted segments to. Modified in-place.
         buffers: A list of unique buffers and the information required to
             serialize them. Not modified.
         name_to_data_entry: A map from the blob name to DataEntry.
             Not modified.
     """
-    if program.named_data is not None and len(program.named_data) > 0:
-        raise ValueError("Program already has named data.")
-
     # Map from buffer_idx to segment_idx.
     segment_index_map: Dict[int, int] = {}
 
-    named_data: List[NamedData] = []
+    name_to_segment_index: Dict[str, int] = {}
     for name, data_entry in name_to_data_entry.items():
         segment_index = segment_index_map.get(data_entry.buffer_index, None)
         if segment_index is None:
@@ -409,12 +403,27 @@ def _extract_named_data(
                     Cord(buffers[data_entry.buffer_index]), data_entry.alignment
                 )
             )
-        else:
-            segments[segment_index].alignment = math.lcm(
-                segments[segment_index].alignment, data_entry.alignment or 1
-            )
-        named_data.append(NamedData(key=name, segment_index=segment_index))
-    program.named_data = named_data
+        name_to_segment_index[name] = segment_index
+    return name_to_segment_index
+
+
+def _extract_named_data(
+    program: Program,
+    segments: List[AlignedData],
+    buffers: Sequence[CordBuffer],
+    name_to_data_entry: Dict[str, DataEntry],
+) -> None:
+    """Adds named-data segments and references to the program."""
+    if program.named_data is not None and len(program.named_data) > 0:
+        raise ValueError("Program already has named data.")
+
+    name_to_segment_index = _extract_named_data_segments(
+        segments, buffers, name_to_data_entry
+    )
+    program.named_data = [
+        NamedData(key=name, segment_index=segment_index)
+        for name, segment_index in name_to_segment_index.items()
+    ]
 
 
 def serialize_pte_binary(
@@ -499,6 +508,10 @@ def serialize_pte_binary(
             program, segments, pte_file.named_data.buffers, pte_file.named_data.pte_data
         )
 
+    segment_base_alignment = math.lcm(
+        segment_alignment, *(segment.alignment for segment in segments)
+    )
+
     # Append all segments into a single Cord, adding any necessary padding to ensure that
     # each segment begins at the required alignment.
     # Update program.segments with the offsets to each segment.
@@ -544,7 +557,7 @@ def serialize_pte_binary(
     program_size: int = padded_header_length + len(result.data)
     # Offset to the first segment, or zero if there are no segments.
     segment_base_offset: int = (
-        aligned_size(input_size=program_size, alignment=segment_alignment)
+        aligned_size(input_size=program_size, alignment=segment_base_alignment)
         if len(segments_data) > 0
         else 0
     )
@@ -577,10 +590,10 @@ def serialize_pte_binary(
 
     # Construct the final pte file containing:
     # - program data; written to offset 0.
-    # - segments data (optional); aligned to segment_alignment.
+    # - segments data (optional); aligned to every segment requirement.
     pte_data = Cord(program_data)
     if len(segments_data) > 0:
-        padding_length = padding_required(len(pte_data), segment_alignment)
+        padding_length = padding_required(len(pte_data), segment_base_alignment)
         pte_data.append(b"\x00" * padding_length)
         # The first segment after program data should start at the segment base offset.
         assert (

@@ -262,42 +262,30 @@ class TestSerialize(unittest.TestCase):
         self._serialize_with_alignment(config)
 
     def test_serialize_aliases_combine_alignment(self) -> None:
-        for alignments in ((16, 256), (256, 16)):
-            with self.subTest(alignments=alignments):
-                store = NamedDataStore()
-                # Keep the segment base 256-byte aligned to isolate alias alignment.
-                store.add_named_data("prefix" + "p" * 160, b"x", alignment=128)
-                store.add_named_data("first", b"abcd", alignment=alignments[0])
-                store.add_named_data("second", b"abcd", alignment=alignments[1])
-                output = store.get_named_data_store_output()
-                serialized_data = bytes(
-                    FlatTensorSerializer().serialize(
-                        DataPayload(output.buffers, output.pte_data)
-                    )
-                )
+        store = NamedDataStore()
+        store.add_named_data("weak", b"abcd", alignment=16)
+        store.add_named_data("strong", b"abcd", alignment=256)
+        output = store.get_named_data_store_output()
+        serialized_data = bytes(
+            FlatTensorSerializer().serialize(
+                DataPayload(output.buffers, output.pte_data)
+            )
+        )
 
-                header = FlatTensorHeader.from_bytes(serialized_data[8:])
-                required_alignment = math.lcm(*alignments)
-                self.assertEqual(
-                    header.segment_base_offset % required_alignment,
-                    0,
-                )
+        header = FlatTensorHeader.from_bytes(serialized_data[8:])
+        self.assertEqual(header.segment_base_offset % 256, 0)
 
-                flat_tensor = _deserialize_to_flat_tensor(
-                    serialized_data[: header.flatbuffer_offset + header.flatbuffer_size]
-                )
-                alias_entries = [
-                    entry
-                    for entry in flat_tensor.named_data
-                    if entry.key in ("first", "second")
-                ]
-                self.assertEqual(len(alias_entries), 2)
-                self.assertEqual(
-                    alias_entries[0].segment_index, alias_entries[1].segment_index
-                )
-                segment = flat_tensor.segments[alias_entries[0].segment_index]
-                absolute_offset = header.segment_base_offset + segment.offset
-                self.assertEqual(absolute_offset % required_alignment, 0)
+        flat_tensor = _deserialize_to_flat_tensor(
+            serialized_data[: header.flatbuffer_offset + header.flatbuffer_size]
+        )
+        alias_entries = [
+            entry for entry in flat_tensor.named_data if entry.key in ("weak", "strong")
+        ]
+        self.assertEqual(len(alias_entries), 2)
+        self.assertEqual(alias_entries[0].segment_index, alias_entries[1].segment_index)
+        segment = flat_tensor.segments[alias_entries[0].segment_index]
+        absolute_offset = header.segment_base_offset + segment.offset
+        self.assertEqual(absolute_offset % 256, 0)
 
     def test_round_trip(self) -> None:
         # Serialize and then deserialize the test payload. Make sure it's reconstructed

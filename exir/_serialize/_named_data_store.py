@@ -7,6 +7,7 @@
 # pyre-strict
 
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -82,6 +83,8 @@ class NamedDataStore:
     buffer_sha256: Dict[int, bytes]
     # Cache of key to buffer idx to detect duplicate key registration.
     key_to_buffer_idx: Dict[str, int]
+    # Data entries grouped by buffer index, used to keep alias alignments in sync.
+    buffer_to_data_entries: Dict[int, List[DataEntry]]
 
     def __init__(self) -> None:
         """
@@ -93,6 +96,7 @@ class NamedDataStore:
         self.fingerprint_to_buffer_idx = {}
         self.buffer_sha256 = {}
         self.key_to_buffer_idx = {}
+        self.buffer_to_data_entries = {}
 
     @staticmethod
     def _sha256(data: CordBuffer) -> bytes:
@@ -167,12 +171,22 @@ class NamedDataStore:
                     buffer_idx
                 )
 
-            local_key_to_buffer_idx[key] = DataEntry(
+            data_entry = DataEntry(
                 buffer_index=buffer_idx,
                 alignment=alignment,
                 tensor_layout=tensor_layout,
             )
+            local_key_to_buffer_idx[key] = data_entry
             self.key_to_buffer_idx[key] = buffer_idx
+
+            self.buffer_to_data_entries.setdefault(buffer_idx, []).append(data_entry)
+
+        data_entries = self.buffer_to_data_entries[buffer_idx]
+        combined_alignment = math.lcm(
+            alignment, *(data_entry.alignment for data_entry in data_entries)
+        )
+        for data_entry in data_entries:
+            data_entry.alignment = combined_alignment
 
     def add_named_data(
         self,

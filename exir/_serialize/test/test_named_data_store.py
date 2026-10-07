@@ -259,18 +259,15 @@ class TestNamedDataStore(unittest.TestCase):
     def test_add_same_data_with_different_alignment(self) -> None:
         store = NamedDataStore()
         store.add_named_data("key", b"data", 3, None)
-        store.add_named_data("key1", b"data", 4, None)
+        store.add_named_data("key1", b"data", 4, "file1")
 
         output = store.get_named_data_store_output()
 
         self.assertEqual(len(output.buffers), 1)
         self.assertEqual(output.buffers[0], b"data")
 
-        self.assertEqual(len(output.pte_data), 2)
-        self.assertEqual(output.pte_data["key"], DataEntry(0, 3, None))
-        self.assertEqual(output.pte_data["key1"], DataEntry(0, 4, None))
-
-        self.assertEqual(len(output.external_data), 0)
+        self.assertEqual(output.pte_data["key"], DataEntry(0, 12, None))
+        self.assertEqual(output.external_data["file1"]["key1"], DataEntry(0, 12, None))
 
     def test_add_duplicate_key_fail(self) -> None:
         store = NamedDataStore()
