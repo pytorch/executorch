@@ -878,6 +878,10 @@ if(EXECUTORCH_BUILD_COREML)
   list(APPEND _executorch_backends coremldelegate)
 endif()
 
+if(EXECUTORCH_BUILD_COREAI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreai)
+endif()
+
 if(EXECUTORCH_BUILD_MLX)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mlx)
   list(APPEND _executorch_backends mlxdelegate)

@@ -23,3 +23,41 @@ python -m pytest backends/apple/coreai
 
 `CoreAIAOTCompileTest` needs `xcrun coreai-build` from the Metal Toolchain
 (`xcodebuild -downloadComponent MetalToolchain`) and skips without it.
+
+## Runtime
+
+The delegate manifest describes `.aimodel` source bundles, which require
+`inline` packaging, and AOT-compiled `.aimodelc` bundles, which require
+`aot_compiled_inline`. Both formats require a `function` name, and ordered
+`input_names` and `output_names` matching the converter's bindings. Dictionary
+iteration order is not a binding contract. The `files` object maps relative
+filenames to byte sizes; `bundle_digests` maps each bundle basename to its
+export-time SHA-256 digest.
+
+### AOT architecture selection
+
+Configure AOT export with `AOTCompileConfig`, including the target `platform` and
+optional `architectures` list. For example, `AOTCompileConfig(platform="iOS",
+architectures=["h17p"])` requests that compiler architecture; omitting the list
+lets the compiler emit its supported architectures for the target platform.
+These are Core AI architecture names, not CPU names such as `arm64`.
+
+## Host Tests
+
+`EXECUTORCH_BUILD_COREAI=ON` with `EXECUTORCH_BUILD_TESTS=ON` registers the
+standalone `coreai_host_test` executable with CTest. It compiles the runtime
+sources without Swift or CoreAI, routing any SDK calls through a fake bridge, so
+it also runs on macOS 26. Host tests do not establish real SDK behavior.
+
+From the repository root:
+
+```bash
+cmake -S . -B <build-dir> -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+  -DEXECUTORCH_BUILD_COREAI=ON -DEXECUTORCH_BUILD_TESTS=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_ENABLE_PROGRAM_VERIFICATION=ON \
+  -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF
+cmake --build <build-dir> --target coreai_host_test
+ctest --test-dir <build-dir> -R '^coreai_host_test$' --output-on-failure
+```
