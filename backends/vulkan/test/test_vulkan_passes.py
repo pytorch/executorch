@@ -5,6 +5,9 @@ import torch
 
 from executorch.backends.vulkan._passes.conv1d_as_conv2d import Conv1dAsConv2dPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
+from executorch.backends.vulkan._passes.fuse_sibling_q4_linears import (
+    FuseSiblingQ4LinearsPass,
+)
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
@@ -983,3 +986,65 @@ class TestVulkanPasses(unittest.TestCase):
         self.assertEqual(len(linears), 1)
         self.assertIsNone(linears[0].args[1])
         self.assertIsNone(linears[0].args[2])
+
+    def test_fuse_sibling_q4_linears(self):
+        """Dynamically quantized q4 linears that share an input and are no wider
+        than it (attention q/k/v) fuse into one linear writing all of their outputs,
+        absorbing reshapes into heads; a wider sibling (an MLP up projection) is
+        left alone.
+        """
+        from torchao.quantization import (
+            Int8DynamicActivationIntxWeightConfig,
+            quantize_,
+        )
+        from torchao.quantization.granularity import PerGroup
+        from torchao.utils import unwrap_tensor_subclass
+
+        K = 128
+
+        class AttentionAndMlpModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.q = torch.nn.Linear(K, K, bias=False)
+                self.k = torch.nn.Linear(K, K // 4, bias=False)
+                self.v = torch.nn.Linear(K, K // 4, bias=False)
+                self.up = torch.nn.Linear(K, 4 * K, bias=False)
+
+            def forward(self, x):
+                q = self.q(x).view(1, 2, -1, 32)
+                k = self.k(x).view(1, 2, -1, 32)
+                return q, k, self.v(x), self.up(x)
+
+        model = AttentionAndMlpModule()
+        quantize_(
+            model,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(model)
+
+        inputs = (torch.randn(1, 2, K),)
+        program = torch.export.export(model, inputs, strict=True)
+        edge_program = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep = edge_program._edge_programs["forward"]
+
+        fuse_patterns = FusePatternsPass()
+        fuse_patterns._exported_program = ep
+        fuse_patterns.call(ep.graph_module)
+        self.assertEqual(op_node_count(ep.graph_module, "linear_dq8ca_q4gsw.default"), 4)
+        unfused = ep.module()(*inputs)
+
+        fuse_siblings = FuseSiblingQ4LinearsPass()
+        fuse_siblings._exported_program = ep
+        result = fuse_siblings.call(ep.graph_module)
+
+        self.assertTrue(result.modified)
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "linear_dq8ca_q4gsw.default"), 1)
+        self.assertEqual(op_node_count(gm, "linear_dq8ca_q4gsw_split.default"), 1)
+        self.assertEqual(op_node_count(gm, "view_copy.default"), 0)
+        for fused, expected in zip(ep.module()(*inputs), unfused):
+            self.assertTrue(torch.allclose(fused, expected))

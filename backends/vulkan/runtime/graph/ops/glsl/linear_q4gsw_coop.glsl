@@ -38,6 +38,9 @@ layout(std430) buffer;
 
 $if DYNAMIC_QUANT_VARIANT:
   ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
+  $if NUM_OUTPUTS == 3:
+    ${layout_declare_tensor(B, "w", "t_output1", DTYPE, IO_STORAGE, is_scalar_array=False)}
+    ${layout_declare_tensor(B, "w", "t_output2", DTYPE, IO_STORAGE, is_scalar_array=False)}
   ${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
   ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", PACKED_INPUT_STORAGE, is_scalar_array=False)}
   ${layout_declare_tensor(B, "r", "t_int_input_sums", "int", "buffer", is_scalar_array=False)}
@@ -56,6 +59,12 @@ $else:
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
+$if NUM_OUTPUTS == 3:
+  ${layout_declare_ubo(B, "ivec4", "output1_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "output2_sizes")}
+  layout(push_constant) uniform restrict Block {
+    ivec4 split_sizes;
+  };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -71,6 +80,8 @@ ${layout_declare_spec_const(C, "int", "use_fp16_unpack", "0")}
 #include "linear_fp_weight_scales_load.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
+$if NUM_OUTPUTS == 3:
+  #include "linear_fp_output_tile_split_store.glslh"
 #include "linear_fp_bias_load.glslh"
 
 shared FPOutTile partial_sums[MAX_WG_SIZE];
@@ -218,6 +229,9 @@ void main() {
       load_bias_tile(bias_tile, n4);
       add_bias_to_out_tile(out_tile, bias_tile);
     }
-    write_output_tile_with_checks(out_tile, n4, 0, N4, 1);
+    $if NUM_OUTPUTS == 3:
+      write_output_tile_split_with_checks(out_tile, n4, 0, N4, 1);
+    $else:
+      write_output_tile_with_checks(out_tile, n4, 0, N4, 1);
   }
 }
