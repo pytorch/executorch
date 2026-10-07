@@ -116,7 +116,14 @@ class MLXExportTest(unittest.TestCase):
             self.assertNotIn("decode_from_embedding", program.method_names)
 
     def test_vision_export_produces_pte(self) -> None:
-        """Vision is additive to the shared embeddings-input contract."""
+        """Vision is additive to the legacy embeddings-input contract."""
+        self._export_vision()
+
+    def test_offgraph_vision_export_produces_pte(self) -> None:
+        """The same vision method is additive to the selected-logits ABI."""
+        self._export_vision(use_offgraph_kv_cache=True)
+
+    def _export_vision(self, use_offgraph_kv_cache: bool = False) -> None:
         try:
             import gguf  # noqa: F401
         except (ImportError, ModuleNotFoundError):  # noqa: B014
@@ -158,9 +165,66 @@ class MLXExportTest(unittest.TestCase):
                 vision_model=vision_model,
                 pos_embed_table=pos_table,
                 max_vision_patches=1024,
+                use_offgraph_kv_cache=use_offgraph_kv_cache,
+                # The off-graph API must align the separately loaded BF16 tower
+                # with an FP16 decoder; the legacy test keeps its original dtype.
+                activation_dtype=(
+                    torch.float16 if use_offgraph_kv_cache else torch.bfloat16
+                ),
             )
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
             self.assertTrue(os.path.exists(os.path.join(out_dir, "pos_embed.bin")))
+            from executorch.runtime import Runtime, Verification
+
+            program = Runtime.get().load_program(
+                os.path.join(out_dir, "model.pte"), verification=Verification.Minimal
+            )
+            self.assertIn("vision_encoder", program.method_names)
+            vision_meta = program.metadata("vision_encoder")
+            self.assertEqual(vision_meta.num_inputs(), 9)
+            self.assertEqual(vision_meta.num_outputs(), 1)
+            self.assertEqual(
+                vision_meta.output_tensor_meta(0).sizes(), (1, 256, MLX_CONFIG.dim)
+            )
+            self.assertEqual(
+                vision_meta.output_tensor_meta(0).dtype(),
+                5 if use_offgraph_kv_cache else 15,
+            )
+            self.assertEqual(
+                program.load_method("get_max_vision_patches").execute([]), [1024]
+            )
+            if use_offgraph_kv_cache:
+                self.assertNotIn("get_mutable_buffer_metadata", program.method_names)
+                self.assertNotIn("draft_forward", program.method_names)
+                self.assertEqual(
+                    program.load_method("get_logits_to_keep_mode").execute([]), [2]
+                )
+                self.assertEqual(
+                    program.load_method("get_activation_dtype").execute([]), [5]
+                )
+                self.assertEqual(
+                    program.load_method("get_vision_hidden_size").execute([]),
+                    [MLX_CONFIG.dim],
+                )
+                self.assertEqual(
+                    program.load_method("get_max_seq_len").execute([]), [512]
+                )
+                self.assertEqual(
+                    program.load_method("get_max_context_len").execute([]),
+                    [MLX_CONFIG.max_seq_len],
+                )
+                decoder_meta = program.metadata("forward_from_embeddings")
+                self.assertEqual(decoder_meta.num_inputs(), 3)
+                self.assertEqual(decoder_meta.num_outputs(), 1)
+                self.assertEqual(
+                    [decoder_meta.input_tensor_meta(i).dtype() for i in range(3)],
+                    [5, 4, 4],
+                )
+                self.assertEqual(decoder_meta.output_tensor_meta(0).dtype(), 6)
+                self.assertEqual(
+                    decoder_meta.output_tensor_meta(0).sizes(),
+                    (1, 512, MLX_CONFIG.vocab_size),
+                )
 
 
 class MLXVisionLoaderTest(unittest.TestCase):

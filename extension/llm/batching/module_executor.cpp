@@ -14,10 +14,10 @@
 #include <random>
 #include <utility>
 
+#include <executorch/extension/llm/batching/executor_utils.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/sampler/util.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
@@ -32,18 +32,6 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::Result;
 
 namespace {
-
-struct SequenceGuard {
-  cache::BatchControl& control;
-  std::int32_t seq_id;
-  bool owned = true;
-
-  ~SequenceGuard() {
-    if (owned) {
-      control.seq_rm(seq_id);
-    }
-  }
-};
 
 bool is_supported_logits_type(::executorch::aten::ScalarType type) {
   using ScalarType = ::executorch::aten::ScalarType;
@@ -405,21 +393,14 @@ Result<std::unique_ptr<ModuleExecutor>> ModuleExecutor::create(
 }
 
 bool ModuleExecutor::initialize() {
-  // The delegate resolves the cache from this key while the method loads.
-  ::executorch::runtime::BackendOptions<1> options;
-  ::executorch::runtime::LoadBackendOptionsMap options_map;
-  if (install_guard_.set_option(options) != Error::Ok ||
-      options_map.set_options(backend_id_.c_str(), options.view()) !=
-          Error::Ok) {
-    ET_LOG(Error, "ModuleExecutor: could not name the cache to the backend");
-    return false;
-  }
-  if (module_->load_method(
-          method_,
-          /*planned_memory=*/nullptr,
-          /*event_tracer=*/nullptr,
-          &options_map) != Error::Ok) {
-    ET_LOG(Error, "ModuleExecutor: could not load %s", method_.c_str());
+  const auto error = load_method_with_cache(
+      *module_, method_, backend_id_.c_str(), install_guard_);
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "ModuleExecutor: could not load %s with cache binding (0x%x)",
+        method_.c_str(),
+        static_cast<unsigned int>(error));
     return false;
   }
   return true;
@@ -445,18 +426,15 @@ std::optional<SessionId> ModuleExecutor::open_session() {
 std::optional<SessionId> ModuleExecutor::publish_session(
     std::int32_t seq_id,
     Position position) {
-  SequenceGuard guard{*ctl_, seq_id};
-  if (ctl_->pos(seq_id) != position) {
-    return std::nullopt;
-  }
-  const SessionId session = next_session_;
-  if (!sessions_.emplace(session, SessionState{seq_id, nullptr}).second) {
-    return std::nullopt;
-  }
-  guard.owned = false;
-  next_session_ =
-      session == std::numeric_limits<SessionId>::max() ? 0 : session + 1;
-  return session;
+  return publish_sequence(
+      *ctl_,
+      seq_id,
+      position,
+      next_session_,
+      [&](SessionId session, std::int32_t sequence) {
+        return sessions_.emplace(session, SessionState{sequence, nullptr})
+            .second;
+      });
 }
 
 void ModuleExecutor::close_session(SessionId session) {
@@ -634,19 +612,11 @@ std::optional<Token> ModuleExecutor::sample_row(
         session);
     return std::nullopt;
   }
-  if (row >= logits.numel() / vocab_size_) {
-    ET_LOG(Error, "ModuleExecutor: logits hold no row %d", row);
-    return std::nullopt;
+  const auto token = sample_from_row(logits, row, *it->second.sampler);
+  if (!token) {
+    ET_LOG(Error, "ModuleExecutor: could not sample logits row %d", row);
   }
-  // A one-row view over the model's own output: sample_from_logits reduces in
-  // place and reads the last dimension.
-  auto one_row = make_tensor_ptr(
-      {vocab_size_},
-      static_cast<std::uint8_t*>(logits.mutable_data_ptr()) +
-          static_cast<std::size_t>(row) * vocab_size_ *
-              ::executorch::runtime::elementSize(logits.scalar_type()),
-      logits.scalar_type());
-  return static_cast<Token>(sample_from_logits(*one_row, *it->second.sampler));
+  return token;
 }
 
 } // namespace batching

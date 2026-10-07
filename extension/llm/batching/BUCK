@@ -4,6 +4,21 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 oncall("executorch")
 
 fbcode_target(_kind = runtime.cxx_library,
+    name = "executor_utils",
+    exported_headers = ["executor_utils.h"],
+    header_namespace = "executorch/extension/llm/batching",
+    exported_deps = [
+        ":batching",
+        "//executorch/extension/llm/cache:kv_cache",
+        "//executorch/extension/llm/sampler:sampler",
+        "//executorch/extension/tensor:tensor",
+        "//executorch/runtime/backend:backend_options_map",
+        "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.cxx_library,
     name = "batching",
     srcs = [
         "metrics.cpp",

@@ -419,7 +419,14 @@ def _atomic_sd_from_bf16(
 # Shared tail: fuse -> build fused model -> assign -> backend pass.
 
 
-def _finalize(atomic_sd: dict, backend: str, config, activation_dtype: torch.dtype):
+def _finalize(
+    atomic_sd: dict,
+    backend: str,
+    config,
+    activation_dtype: torch.dtype,
+    *,
+    defer_runtime_buffers: bool = False,
+):
     from executorch.examples.models.muse_glimmer.model.model import (
         materialize_runtime_buffers,
         MuseGlimmerModel,
@@ -488,7 +495,10 @@ def _finalize(atomic_sd: dict, backend: str, config, activation_dtype: torch.dty
         print("Converting quantized tensors for CUDA...")
         convert_quantized_tensors_for_cuda(model)
 
-    materialize_runtime_buffers(model, dtype=activation_dtype)
+    # The off-graph MLX export replaces attention before materialization, so
+    # the original meta KV buffers must not allocate their full context here.
+    if not defer_runtime_buffers:
+        materialize_runtime_buffers(model, dtype=activation_dtype)
     model.eval()
     print(f"Model: {config.n_layers} layers, dim={config.dim}")
     return model
@@ -646,6 +656,8 @@ def load_gguf_model(
     max_seq_len: int = 131072,
     config=None,
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load a GGUF checkpoint into a Muse Glimmer model packed for ``backend``."""
     _validate_backend(backend)
@@ -655,7 +667,16 @@ def load_gguf_model(
         config = MuseGlimmerConfig(max_seq_len=max_seq_len)
     print(f"Loading GGUF from {gguf_path}...")
     atomic_sd = _atomic_sd_from_gguf(gguf_path, activation_dtype)
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )
 
 
 def load_prequantized_model(
@@ -663,6 +684,8 @@ def load_prequantized_model(
     max_seq_len: int = 16384,
     backend: str = "cuda",
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load an atomic quantized safetensors checkpoint, packed for ``backend``."""
     _validate_backend(backend)
@@ -673,7 +696,16 @@ def load_prequantized_model(
     safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
     print(f"Loading quantized checkpoint from {safetensors_path}...")
     atomic_sd = _atomic_sd_from_safetensors(safetensors_path, activation_dtype)
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )
 
 
 def load_and_quantize(
@@ -682,6 +714,8 @@ def load_and_quantize(
     max_seq_len: int = 16384,
     backend: str = "cuda",
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load a bf16 consolidated checkpoint, quantize, and pack for ``backend``."""
     _validate_backend(backend)
@@ -689,7 +723,16 @@ def load_and_quantize(
     atomic_sd, config = _atomic_sd_from_bf16(
         checkpoint_dir, recipe, max_seq_len, activation_dtype
     )
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )
 
 
 # Muse Glimmer ET ``RMSNorm`` applies its weight as an absolute gain, but the HF
@@ -728,6 +771,8 @@ def load_mlx_model(
     max_seq_len: int = 131072,
     config=None,
     activation_dtype: torch.dtype = torch.bfloat16,
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple:
     """Load an MLX-quantized safetensors checkpoint (e.g. mlx_lm output).
 
@@ -756,4 +801,13 @@ def load_mlx_model(
             dtype=activation_dtype,
         )
     )
-    return _finalize(atomic_sd, backend, config, activation_dtype), config
+    return (
+        _finalize(
+            atomic_sd,
+            backend,
+            config,
+            activation_dtype,
+            defer_runtime_buffers=defer_runtime_buffers,
+        ),
+        config,
+    )

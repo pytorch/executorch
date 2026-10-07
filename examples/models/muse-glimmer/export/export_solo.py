@@ -35,13 +35,20 @@ def load_prequantized_model(
     prequantized_dir: str,
     max_seq_len: int = 16384,
     backend: str = "cuda",
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple[MuseGlimmerModel, MuseGlimmerConfig]:
     """Load an atomic quantized checkpoint and pack for the target backend."""
     from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
         load_prequantized_model as _load_prequantized_model,
     )
 
-    return _load_prequantized_model(prequantized_dir, max_seq_len, backend)
+    return _load_prequantized_model(
+        prequantized_dir,
+        max_seq_len,
+        backend,
+        defer_runtime_buffers=defer_runtime_buffers,
+    )
 
 
 def load_and_quantize(
@@ -49,6 +56,8 @@ def load_and_quantize(
     recipe_name: str,
     max_seq_len: int = 16384,
     backend: str = "cuda",
+    *,
+    defer_runtime_buffers: bool = False,
 ) -> tuple[MuseGlimmerModel, MuseGlimmerConfig]:
     """Load bf16 checkpoint, quantize, pack — one shot."""
     from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
@@ -59,7 +68,13 @@ def load_and_quantize(
     )
 
     recipe = build_recipes()[recipe_name]
-    return _load_and_quantize(checkpoint_dir, recipe, max_seq_len, backend)
+    return _load_and_quantize(
+        checkpoint_dir,
+        recipe,
+        max_seq_len,
+        backend,
+        defer_runtime_buffers=defer_runtime_buffers,
+    )
 
 
 # Backend dispatch helpers
@@ -86,6 +101,19 @@ def export_and_lower(
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
 ) -> None:
+    if use_offgraph_kv_cache:
+        if backend != "mlx":
+            raise ValueError(
+                "use_offgraph_kv_cache is only supported with backend='mlx'"
+            )
+        if use_turboquant:
+            raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+        if activation_dtype not in (torch.float16, torch.bfloat16):
+            raise ValueError(
+                "off-graph MLX export requires float16 or bfloat16 activations"
+            )
+        if not 1 <= max_prefill_chunk <= config.max_seq_len:
+            raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
     if backend == "cuda":
         _export_cuda(
             model,
@@ -100,19 +128,13 @@ def export_and_lower(
             vision_fp32_mm=vision_fp32_mm,
         )
     elif backend == "mlx":
-        # The off-graph cache is lowered by the CUDA backend only, and dropping
-        # the flag silently would hand back an in-graph model that looks like
-        # what was asked for.
-        if use_offgraph_kv_cache:
-            raise ValueError(
-                "--use-offgraph-kv-cache is not supported by the mlx backend"
-            )
         _export_mlx(
             model,
             config,
             output_dir,
             activation_dtype=activation_dtype,
             max_prefill_chunk=max_prefill_chunk,
+            use_offgraph_kv_cache=use_offgraph_kv_cache,
             vision_model=vision_model,
             pos_embed_table=pos_embed_table,
             max_vision_patches=max_vision_patches,
@@ -131,6 +153,7 @@ def _solo_constant_methods(
     mutable_buffer_metadata: str | None,
     has_vision: bool,
     max_vision_patches: int,
+    use_offgraph_kv_cache: bool = False,
 ) -> dict[str, object]:
     """Constant methods baked into the .pte and read back by the runners.
 
@@ -144,14 +167,42 @@ def _solo_constant_methods(
         "get_max_seq_len": config.max_seq_len,
         "get_vocab_size": config.vocab_size,
         "get_max_prefill_chunk": max_prefill,
-        "get_activation_dtype": common.activation_dtype_tag(activation_dtype),
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
         "has_vision_encoder": bool(has_vision),
     }
-    if mutable_buffer_metadata is not None:
-        constant_methods["get_mutable_buffer_metadata"] = mutable_buffer_metadata
+    if use_offgraph_kv_cache:
+        from executorch.extension.llm.export.model_metadata import (
+            write_activation_dtype,
+            write_cache_geometry,
+            write_logits_to_keep_mode,
+            write_max_context_len,
+            write_max_seq_len,
+        )
+
+        dtype_names = {torch.float16: "fp16", torch.bfloat16: "bf16"}
+        if activation_dtype not in dtype_names:
+            raise ValueError(
+                "off-graph MLX export requires float16 or bfloat16 activations"
+            )
+        constant_methods.update(write_activation_dtype(dtype_names[activation_dtype]))
+        constant_methods.update(write_max_context_len(config.max_seq_len))
+        constant_methods.update(write_max_seq_len(max_prefill))
+        constant_methods.update(write_logits_to_keep_mode("selected"))
+        constant_methods.update(
+            write_cache_geometry(
+                [config.n_kv_heads] * config.n_layers,
+                [config.head_dim] * config.n_layers,
+                [config.layer_window_size(i) for i in range(config.n_layers)],
+            )
+        )
+    else:
+        constant_methods["get_activation_dtype"] = common.activation_dtype_tag(
+            activation_dtype
+        )
+        if mutable_buffer_metadata is not None:
+            constant_methods["get_mutable_buffer_metadata"] = mutable_buffer_metadata
     if has_vision:
         constant_methods["get_vision_hidden_size"] = config.dim
         constant_methods["get_max_vision_patches"] = int(max_vision_patches)
@@ -394,12 +445,16 @@ def _export_mlx(
     vision_model: nn.Module | None = None,
     pos_embed_table: torch.Tensor | None = None,
     max_vision_patches: int = 4096,
+    use_offgraph_kv_cache: bool = False,
 ) -> None:
     """Export to .pte via torch.export + MLX backend.
 
     MLX exports ``embed_text`` and dynamic ``forward_from_embeddings``. The
     latter handles both prefill and single-token decode so one delegated method
     owns the KV cache, and returns last-token logits for host-side sampling.
+    With ``use_offgraph_kv_cache``, the runtime owns the cache and the decoder
+    takes a third Long[R] selected-row input, returning Float[1, R, V]. Its
+    metadata separates forward width from context and uses integer ScalarType.
 
     Vision (``vision_model`` given) is purely additive: it appends a third
     ``vision_encoder`` method (the 9-input host-precompute graph). The runner
@@ -447,12 +502,21 @@ def _export_mlx(
     has_vision = vision_model is not None
 
     max_prefill = max_prefill_chunk
-    seq_dim = Dim("seq_len", min=1, max=max_prefill)
+    if use_offgraph_kv_cache and not 1 <= max_prefill <= config.max_seq_len:
+        raise ValueError("max_prefill_chunk must be within [1, max_seq_len]")
+    # Trace dynamic axes with an example >= 2 to avoid specializing them to 1.
+    # min=1 still admits decode; a width-one artifact is deliberately static.
+    seq_dim = Dim.STATIC if max_prefill == 1 else Dim("seq_len", min=1, max=max_prefill)
 
     # Size sliding-window ring buffers to the prefill chunk (window +
     # max_write_len - 1) rather than 2*window, since the runner chunks prefill
     # to get_max_prefill_chunk == max_prefill.
-    mlx_source_transformations(model, dtype=activation_dtype, max_write_len=max_prefill)
+    mlx_source_transformations(
+        model,
+        dtype=activation_dtype,
+        max_write_len=max_prefill,
+        use_offgraph_kv_cache=use_offgraph_kv_cache,
+    )
     materialize_runtime_buffers(model, dtype=activation_dtype)
 
     # Convert everything to the activation dtype: unquantized floating params +
@@ -464,7 +528,9 @@ def _export_mlx(
     # in quantized_matmul, which would otherwise feed float32 into the fused
     # q5_k/q6_k kernels that are templated on the activation dtype.
     model.to(activation_dtype)
-    mutable_buffer_metadata = common.mutable_buffer_metadata(model)
+    mutable_buffer_metadata = (
+        None if use_offgraph_kv_cache else common.mutable_buffer_metadata(model)
+    )
 
     programs: dict[str, "torch.export.ExportedProgram"] = {}
 
@@ -474,7 +540,9 @@ def _export_mlx(
     # the gemma4 MLX vision export.
     hidden = config.dim
 
-    et_seq = Dim("embed_seq_len", min=1, max=max_prefill)
+    et_seq = (
+        Dim.STATIC if max_prefill == 1 else Dim("embed_seq_len", min=1, max=max_prefill)
+    )
     print(f"Exporting embed_text (T in [1, {max_prefill}])...")
     with common.BoundMethodForward(model, model.mlx_embed_text), torch.no_grad():
         programs["embed_text"] = export(
@@ -485,18 +553,34 @@ def _export_mlx(
         )
 
     print(f"Exporting forward_from_embeddings (T in [1, {max_prefill}], embeds)...")
+    forward_args = (
+        torch.zeros((1, max_prefill, hidden), dtype=activation_dtype),
+        torch.arange(max_prefill, dtype=torch.long),
+    )
+    forward_dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+    if use_offgraph_kv_cache:
+        selected_dim = (
+            Dim.STATIC
+            if max_prefill == 1
+            else Dim("selected_len", min=1, max=max_prefill)
+        )
+        # R is independent of T: callers may select reordered/repeated rows.
+        # Both are nonempty and bounded by the advertised forward width.
+        forward_args += (torch.arange(max_prefill, dtype=torch.long),)
+        forward_dynamic_shapes += ({0: selected_dim},)
     with common.BoundMethodForward(model, model.mlx_prefill_forward), torch.no_grad():
         programs["forward_from_embeddings"] = export(
             model,
-            (
-                torch.zeros((1, max_prefill, hidden), dtype=activation_dtype),
-                torch.arange(max_prefill, dtype=torch.long),
-            ),
-            dynamic_shapes=({1: seq_dim}, {0: seq_dim}),
+            forward_args,
+            dynamic_shapes=forward_dynamic_shapes,
             strict=True,
         )
 
     if has_vision:
+        if use_offgraph_kv_cache:
+            # API callers can supply a tower loaded in a different dtype.
+            # Native image embeddings must match embed_text and the decoder.
+            vision_model.to(activation_dtype)
         programs["vision_encoder"] = common.export_vision_encoder(
             vision_model, pos_embed_table, max_vision_patches
         )
@@ -513,6 +597,7 @@ def _export_mlx(
         mutable_buffer_metadata=mutable_buffer_metadata,
         has_vision=bool(has_vision),
         max_vision_patches=max_vision_patches,
+        use_offgraph_kv_cache=use_offgraph_kv_cache,
     )
     constant_methods["use_sampling"] = False
 
@@ -618,7 +703,8 @@ def main() -> None:
     parser.add_argument(
         "--use-offgraph-kv-cache",
         action="store_true",
-        help="Allocate CUDA KV cache at runtime instead of storing it in the PTE/PTD.",
+        help="MLX only: allocate KV cache at runtime instead of storing it in the "
+        "PTE/PTD, and export the native selected-logits decoder contract.",
     )
     parser.add_argument(
         "--activation-dtype",
@@ -663,6 +749,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.use_offgraph_kv_cache and args.backend != "mlx":
+        parser.error("--use-offgraph-kv-cache is only supported with --backend mlx.")
+    if (
+        args.use_offgraph_kv_cache
+        and not 1 <= args.max_prefill_chunk <= args.max_seq_len
+    ):
+        parser.error("--max-prefill-chunk must be within [1, --max-seq-len].")
+
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
 
@@ -673,10 +767,13 @@ def main() -> None:
         parser.error("--activation-dtype is only supported with --backend mlx.")
     if args.backend != "mlx" and args.max_prefill_chunk != 512:
         parser.error("--max-prefill-chunk is only supported with --backend mlx.")
-    if args.use_offgraph_kv_cache and args.backend != "cuda":
-        parser.error("--use-offgraph-kv-cache requires --backend cuda.")
     if args.use_offgraph_kv_cache and args.turboquant:
         parser.error("--use-offgraph-kv-cache cannot be combined with --turboquant.")
+    loader_kwargs = (
+        {"defer_runtime_buffers": True}
+        if args.backend == "mlx" and args.use_offgraph_kv_cache
+        else {}
+    )
     if args.gguf:
         from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
             load_gguf_model,
@@ -687,6 +784,7 @@ def main() -> None:
             max_seq_len=args.max_seq_len,
             backend=args.backend,
             activation_dtype=activation_dtype,
+            **loader_kwargs,
         )
     elif args.mlx:
         from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
@@ -698,12 +796,14 @@ def main() -> None:
             backend=args.backend,
             max_seq_len=args.max_seq_len,
             activation_dtype=activation_dtype,
+            **loader_kwargs,
         )
     elif args.prequantized:
         model, config = load_prequantized_model(
             args.prequantized,
             max_seq_len=args.max_seq_len,
             backend=args.backend,
+            **loader_kwargs,
         )
     else:
         model, config = load_and_quantize(
@@ -711,6 +811,7 @@ def main() -> None:
             args.quant_recipe,
             max_seq_len=args.max_seq_len,
             backend=args.backend,
+            **loader_kwargs,
         )
 
     vision_model = None
