@@ -101,13 +101,9 @@ def export_and_lower(
     max_vision_patches: int = 16384,
     vision_fp32_mm: str = "none",
 ) -> None:
-    if use_offgraph_kv_cache:
-        if backend != "mlx":
-            raise ValueError(
-                "use_offgraph_kv_cache is only supported with backend='mlx'"
-            )
-        if use_turboquant:
-            raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+    if use_offgraph_kv_cache and use_turboquant:
+        raise ValueError("off-graph KV cache and TurboQuant are mutually exclusive")
+    if backend == "mlx" and use_offgraph_kv_cache:
         if activation_dtype not in (torch.float16, torch.bfloat16):
             raise ValueError(
                 "off-graph MLX export requires float16 or bfloat16 activations"
@@ -641,7 +637,7 @@ def _validate_offgraph_prefill(
     args: argparse.Namespace,
     native_context: int | None = None,
 ) -> None:
-    if not args.use_offgraph_kv_cache:
+    if args.backend != "mlx" or not args.use_offgraph_kv_cache:
         return
     if args.max_prefill_chunk < 1:
         parser.error("--max-prefill-chunk must be positive.")
@@ -691,7 +687,7 @@ def main() -> None:
         "--max-seq-len",
         type=int,
         default=131072,
-        help="Context/KV cache size for legacy export. Ignored for MLX off-graph "
+        help="Context/KV cache size for CUDA and legacy MLX export. Ignored for MLX off-graph "
         "export, which uses the checkpoint's native context limit.",
     )
     parser.add_argument(
@@ -720,8 +716,8 @@ def main() -> None:
     parser.add_argument(
         "--use-offgraph-kv-cache",
         action="store_true",
-        help="MLX only: allocate KV cache at runtime instead of storing it in the "
-        "PTE/PTD, and export the batching selected-logits decoder contract.",
+        help="CUDA and MLX: allocate KV cache at runtime instead of storing it in "
+        "the PTE/PTD. MLX also exports the batching selected-logits decoder contract.",
     )
     parser.add_argument(
         "--activation-dtype",
@@ -766,8 +762,6 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.use_offgraph_kv_cache and args.backend != "mlx":
-        parser.error("--use-offgraph-kv-cache is only supported with --backend mlx.")
     _validate_offgraph_prefill(parser, args)
 
     if args.backend == "cuda" and not torch.cuda.is_available():

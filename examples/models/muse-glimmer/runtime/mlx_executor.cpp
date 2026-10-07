@@ -163,6 +163,25 @@ struct MuseGlimmerMLXExecutor::EngineEmbeddings {
         materializer(this->spec),
         pos_embed_path(std::move(path)) {}
 
+  Error initialize(Module& module) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module.load_method("embed_text"));
+    if (spec->has_vision) {
+      ET_CHECK_OK_OR_RETURN_ERROR(module.load_method("vision_encoder"));
+      MuseGlimmerVisionRuntimeConfig config;
+      config.module = &module;
+      config.execution_mutex = &vision_mutex;
+      config.pos_embed_path = pos_embed_path;
+      config.activation_dtype = spec->activation_dtype;
+      config.expected_hidden_dim = spec->hidden_dim;
+      config.max_image_tokens = spec->max_soft_tokens;
+      config.max_encoded_bytes = spec->image_limits.max_encoded_bytes;
+      config.max_image_dimension = spec->image_limits.max_image_dimension;
+      config.max_image_pixels = spec->image_limits.max_image_pixels;
+      vision = std::make_unique<MuseGlimmerVisionRuntime>(std::move(config));
+    }
+    return Error::Ok;
+  }
+
   runtime::Result<TensorPtr> materialize(
       Module& module,
       const std::vector<batching::Input>& inputs) {
@@ -170,26 +189,10 @@ struct MuseGlimmerMLXExecutor::EngineEmbeddings {
         inputs,
         [&](const MuseGlimmerRGBImage& image)
             -> runtime::Result<PreparedMuseGlimmerImage> {
-          if (!vision) {
-            ET_CHECK_OK_OR_RETURN_ERROR(module.load_method("vision_encoder"));
-            MuseGlimmerVisionRuntimeConfig config;
-            config.module = &module;
-            config.execution_mutex = &vision_mutex;
-            config.pos_embed_path = pos_embed_path;
-            config.activation_dtype = spec->activation_dtype;
-            config.expected_hidden_dim = spec->hidden_dim;
-            config.max_image_tokens = spec->max_soft_tokens;
-            config.max_encoded_bytes = spec->image_limits.max_encoded_bytes;
-            config.max_image_dimension = spec->image_limits.max_image_dimension;
-            config.max_image_pixels = spec->image_limits.max_image_pixels;
-            vision =
-                std::make_unique<MuseGlimmerVisionRuntime>(std::move(config));
-          }
           return vision->prepare_decoded_image(
               image.rgb.data(), image.width, image.height);
         },
         [&](const std::vector<int64_t>& tokens) -> runtime::Result<TensorPtr> {
-          ET_CHECK_OK_OR_RETURN_ERROR(module.load_method("embed_text"));
           auto input = make_tensor_ptr(
               {1, static_cast<aten::SizesType>(tokens.size())}, tokens);
           ET_ASSIGN_OR_RETURN(
@@ -283,7 +286,15 @@ runtime::Result<MuseGlimmerBackend> MuseGlimmerMLXExecutor::create(
         context > std::numeric_limits<int32_t>::max() ||
         vocab > std::numeric_limits<int32_t>::max() || vocab <= 200092 ||
         config.bos_id >= static_cast<uint64_t>(vocab) || width != prefill ||
-        width > context || config.max_session_tokens > context) {
+        width > context) {
+      return Error::InvalidProgram;
+    }
+    if (config.max_session_tokens > context) {
+      ET_LOG(
+          Error,
+          "Muse Glimmer requested context %d exceeds exported context %lld",
+          config.max_session_tokens,
+          static_cast<long long>(context));
       return Error::InvalidProgram;
     }
     ET_ASSIGN_OR_RETURN(meta, module->method_meta(kDecoder));
@@ -402,10 +413,20 @@ bool MuseGlimmerMLXExecutor::initialize() {
 #if ET_HAS_EXCEPTIONS
   try {
 #endif
-    initialized_ =
-        batching::load_method_with_cache(
-            *module_, kDecoder, kBackend, install_guard_) == Error::Ok;
-    return initialized_;
+    auto error = batching::load_method_with_cache(
+        *module_, kDecoder, kBackend, install_guard_);
+    if (error == Error::Ok) {
+      error = embeddings_->initialize(*module_);
+    }
+    if (error != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Muse Glimmer initialization failed: %d",
+          static_cast<int>(error));
+      return false;
+    }
+    initialized_ = true;
+    return true;
 #if ET_HAS_EXCEPTIONS
   } catch (const std::exception& error) {
     ET_LOG(Error, "Muse Glimmer initialization failed: %s", error.what());

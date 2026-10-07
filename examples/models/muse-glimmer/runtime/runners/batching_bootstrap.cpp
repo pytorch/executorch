@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <string>
 
 DEFINE_string(pte, "", "Muse Glimmer solo off-graph program");
 DEFINE_string(tokenizer, "", "Matching Hugging Face tokenizer JSON");
@@ -82,7 +83,8 @@ create_muse_glimmer_batching_runtime() {
   auto created = create_muse_glimmer_backend(backend);
   if (!created.ok())
     throw std::runtime_error(
-        "could not create batching Muse Glimmer executor; export the solo off-graph ABI");
+        "could not create batching Muse Glimmer executor: error " +
+        std::to_string(static_cast<int>(created.error())));
   result->backend = std::move(*created);
   const size_t width = result->backend.executor->preferred_batch_tokens();
   // A width-one artifact still works: the core physically splits the batch.

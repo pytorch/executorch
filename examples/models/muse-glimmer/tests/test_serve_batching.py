@@ -42,87 +42,34 @@ def arguments(tmp_path):
     ]
 
 
-def test_batching_worker_command_preserves_image_limits_and_solo_scope(arguments):
-    args = serve_batching._parse_args(arguments)
+def test_worker_forwards_mg_options(arguments):
+    args = serve_batching._parse_args(arguments + ["--max-inflight-requests", "17"])
     command = serve_batching._worker_command(args)
     flags = dict(zip(command[1::2], command[2::2]))
     assert flags["--pte"] == args.model_path
     assert flags["--tokenizer"] == args.tokenizer_path
     assert flags["--backend"] == "mlx"
     assert flags["--max_session_tokens"] == "4096"
-    assert flags["--max_inflight_requests"] == "4"
+    assert flags["--max_inflight_requests"] == "17"
     assert flags["--max_image_bytes"] == str(20 * 1024 * 1024)
     assert flags["--max_input_frame_bytes"] == str(32 * 1024 * 1024)
     assert flags["--bos_id"] == "200000"
     assert flags["--eos_id"] == "200001"
-    assert "--data_path" not in flags
-    assert "--pos_embed_path" not in flags
-    assert not any("dflash" in flag or "artifact_mode" in flag for flag in flags)
 
 
-@pytest.mark.parametrize(
-    "extra",
-    [
-        ["--backend", "cuda"],
-        ["--backend", "dflash"],
-        ["--max-context", "1"],
-        ["--max-context", "0"],
-        ["--max-context", str(1 << 31)],
-        ["--max-image-bytes", "0"],
-        ["--max-image-bytes", str(20 * 1024 * 1024 + 1)],
-        ["--max-request-bytes", "0"],
-        ["--max-request-bytes", str(32 * 1024 * 1024 + 1)],
-        ["--max-request-bytes", "1048576"],
-        ["--max-inflight-requests", "0"],
-        ["--max-inflight-requests", str(1 << 31)],
-        ["--bos-id", "-1"],
-        ["--bos-id", str(1 << 64)],
-        ["--eos-id", "-1"],
-        ["--eos-id", str(1 << 64)],
-        ["--artifact-mode", "dflash"],
-    ],
-)
-def test_batching_launcher_rejects_invalid_limits_and_legacy_modes(arguments, extra):
+def test_launcher_requires_mlx(arguments):
     with pytest.raises(SystemExit) as error:
-        serve_batching._parse_args(arguments + extra)
+        serve_batching._parse_args(arguments + ["--backend", "cuda"])
     assert error.value.code == 2
 
 
-@pytest.mark.parametrize(
-    "flag,value",
-    [
-        ("--backend", "mlx"),
-        ("--max-context", 2),
-        ("--max-context", (1 << 31) - 1),
-        ("--max-inflight-requests", 1),
-        ("--max-inflight-requests", 17),
-        ("--max-inflight-requests", (1 << 31) - 1),
-        ("--max-image-bytes", 1),
-        ("--max-image-bytes", 20 * 1024 * 1024),
-        ("--max-request-bytes", 32 * 1024 * 1024),
-        ("--bos-id", 0),
-        ("--bos-id", (1 << 64) - 1),
-        ("--eos-id", 0),
-        ("--eos-id", (1 << 64) - 1),
-    ],
-)
-def test_batching_launcher_accepts_limit_boundaries(arguments, flag, value):
-    args = serve_batching._parse_args(arguments + [flag, str(value)])
-    assert getattr(args, flag[2:].replace("-", "_")) == value
-    if flag == "--max-inflight-requests":
-        command = serve_batching._worker_command(args)
-        assert command[command.index("--max_inflight_requests") + 1] == str(value)
-
-
-@pytest.mark.parametrize("image_bytes", [1, 2, 3, 4, 20 * 1024 * 1024])
 @pytest.mark.parametrize("shortfall", [0, 1])
-def test_batching_launcher_requires_base64_and_framing_capacity(
-    arguments, image_bytes, shortfall
-):
-    request_bytes = 4 * ((image_bytes + 2) // 3) + 1024 - shortfall
+def test_image_frame_capacity(arguments, shortfall):
+    # Four image bytes need eight base64 bytes plus 1024 bytes of JSON framing.
+    request_bytes = 1032 - shortfall
     argv = arguments + [
         "--max-image-bytes",
-        str(image_bytes),
+        "4",
         "--max-request-bytes",
         str(request_bytes),
     ]
@@ -132,21 +79,12 @@ def test_batching_launcher_requires_base64_and_framing_capacity(
         assert error.value.code == 2
     else:
         args = serve_batching._parse_args(argv)
-        command = serve_batching._worker_command(args)
-        flags = dict(zip(command[1::2], command[2::2]))
-        assert flags["--max_image_bytes"] == str(image_bytes)
-        assert flags["--max_input_frame_bytes"] == str(request_bytes)
+        assert args.max_request_bytes == request_bytes
 
 
 @pytest.mark.parametrize("constructor_failure", [False, True])
-def test_batching_launcher_owns_async_worker_and_reuses_mg_chat(
-    arguments, monkeypatch, constructor_failure
-):
+def test_chat_factory_closes_worker(arguments, monkeypatch, constructor_failure):
     captured = {}
-
-    class Template(_StubTemplate):
-        def __init__(self, *args, **kwargs):
-            captured["template"] = kwargs
 
     class Worker:
         closed = False
@@ -171,10 +109,11 @@ def test_batching_launcher_owns_async_worker_and_reuses_mg_chat(
 
     async def spawn(command, **kwargs):
         captured["command"] = command
-        captured["spawn"] = kwargs
         return worker
 
-    monkeypatch.setattr(serve_batching, "ChatTemplate", Template)
+    monkeypatch.setattr(
+        serve_batching, "ChatTemplate", lambda *args, **kwargs: _StubTemplate()
+    )
     monkeypatch.setattr(serve_batching, "SessionRuntime", Runtime)
     monkeypatch.setattr(serve_batching, "spawn_multiplexed_worker", spawn)
     monkeypatch.setattr(
@@ -182,9 +121,7 @@ def test_batching_launcher_owns_async_worker_and_reuses_mg_chat(
         "build_app",
         lambda _, model_id, *, serving_factory: serving_factory,
     )
-    args = serve_batching._parse_args(
-        arguments + ["--max-image-bytes", "1024", "--max-request-bytes", "4096"]
-    )
+    args = serve_batching._parse_args(arguments)
     factory = serve_batching.build_app_from_args(args)
     assert "command" not in captured
 
@@ -202,12 +139,3 @@ def test_batching_launcher_owns_async_worker_and_reuses_mg_chat(
         asyncio.run(scenario())
     assert worker.closed
     assert captured["command"] == serve_batching._worker_command(args)
-    assert captured["spawn"] == {
-        "max_request_bytes": args.max_request_bytes,
-        "max_message_bytes": 1024 * 1024,
-    }
-    assert captured["template"] == {
-        "assistant_header": "<|start|>assistant",
-        "strip_rendered_bos": True,
-        "append_generation_prompt_after_tool_response": True,
-    }

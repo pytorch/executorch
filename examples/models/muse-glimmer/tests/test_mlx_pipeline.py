@@ -35,11 +35,12 @@ from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
 MLX_CONFIG = replace(TINY_CONFIG, max_seq_len=1024, global_attn_cfg="[512,512,512,0]")
 
 
-def _require_mlx(testcase: unittest.TestCase) -> None:
+def _require_mlx(testcase: unittest.TestCase):
     try:
-        import executorch.backends.mlx.custom_ops  # noqa: F401
-    except Exception as e:  # noqa: BLE001 — any import failure means MLX is absent
+        from executorch.examples.models.muse_glimmer.source_transformations import mlx
+    except ImportError as e:
         testcase.skipTest(f"MLX backend required (OSS-only): {e}")
+    return mlx
 
 
 class MLXSourceTransformTest(unittest.TestCase):
@@ -92,7 +93,11 @@ class MLXExportTest(unittest.TestCase):
         )
         from executorch.extension.llm.export.load import assign_state_dict
         from executorch.extension.llm.export.quant import quantize_model, to_default
-        from executorch.runtime import Runtime, Verification
+
+        try:
+            from executorch.runtime import Runtime, Verification
+        except ImportError as e:
+            self.skipTest(f"ExecuTorch runtime required: {e}")
 
         model = build_random_tiny_model()
         state_dict = quantize_model(model, DEFAULT_RECIPE)
@@ -143,6 +148,11 @@ class MLXExportTest(unittest.TestCase):
         from executorch.extension.llm.export.load import assign_state_dict
         from executorch.extension.llm.export.quant import quantize_model, to_default
 
+        try:
+            from executorch.runtime import Runtime, Verification
+        except ImportError as e:
+            self.skipTest(f"ExecuTorch runtime required: {e}")
+
         model = build_random_tiny_model()
         state_dict = quantize_model(model, DEFAULT_RECIPE)
         with torch.device("meta"):
@@ -174,7 +184,6 @@ class MLXExportTest(unittest.TestCase):
             )
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
             self.assertTrue(os.path.exists(os.path.join(out_dir, "pos_embed.bin")))
-            from executorch.runtime import Runtime, Verification
 
             program = Runtime.get().load_program(
                 os.path.join(out_dir, "model.pte"), verification=Verification.Minimal
