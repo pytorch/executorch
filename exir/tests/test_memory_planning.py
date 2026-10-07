@@ -26,7 +26,7 @@ except ModuleNotFoundError:
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
-from executorch.exir.capture._capture import patch_forward
+from executorch.exir.capture._utils import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
