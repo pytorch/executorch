@@ -1620,12 +1620,21 @@ def register_full_cpp_ops():
 # =============================================================================
 
 
-@update_features(exir_ops.edge.aten.scalar_tensor.default)
+@update_features(
+    [
+        exir_ops.edge.aten.scalar_tensor.default,
+        # EXIR deliberately keeps scalar_tensor in the ATen dialect.
+        torch.ops.aten.scalar_tensor.default,
+    ]
+)
 def register_scalar_tensor():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
+        are_node_inputs_supported_fn=lambda node: is_scalar_value_supported(
+            node.args[0], node.meta["val"].dtype
+        ),
     )
 
 
