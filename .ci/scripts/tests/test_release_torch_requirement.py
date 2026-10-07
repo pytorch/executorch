@@ -61,6 +61,15 @@ class TestReleaseTorchRequirement(unittest.TestCase):
             with self.subTest(build_version=build_version):
                 self.assertIsNone(self.requirement(build_version))
 
+    def test_a_release_without_torch_names_build_version(self):
+        with mock.patch.object(
+            INSTALL_UTILS.importlib.metadata,
+            "version",
+            side_effect=INSTALL_UTILS.importlib.metadata.PackageNotFoundError("torch"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "BUILD_VERSION=1.6.0"):
+                INSTALL_UTILS.release_torch_requirement("1.6.0")
+
     def test_the_range_follows_the_installed_torch(self):
         self.assertEqual(
             self.requirement("1.7.0+cpu", "2.15.0"), "torch>=2.15.0a0,<2.16"

@@ -328,7 +328,14 @@ def release_torch_requirement(build_version: Optional[str]) -> Optional[str]:
         return None
     if version.is_prerelease or version.is_devrelease:
         return None
-    torch_version = importlib.metadata.version("torch").split("+", 1)[0]
+    try:
+        torch_version = importlib.metadata.version("torch").split("+", 1)[0]
+    except importlib.metadata.PackageNotFoundError:
+        raise RuntimeError(
+            f"BUILD_VERSION={build_version} marks this as a release build, which declares the "
+            "torch it is built against, but torch is not installed. Install torch first, and "
+            "build with --no-build-isolation so the build can see it."
+        ) from None
     major, minor = (int(part) for part in torch_version.split(".")[:2])
     snapshot = re.fullmatch(rf"{major}\.{minor}\.0\.dev\d+", torch_version)
     floor = snapshot.group(0) if snapshot else f"{major}.{minor}.0a0"
