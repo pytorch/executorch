@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/QuantizeDequantize.h>
 
 namespace vkcompute {
 
@@ -50,13 +51,26 @@ GlobalWorkGrid pick_choose_qparams_per_row_gwg(
       LocalWorkGroup(64u, 1u, 1u));
 }
 
+GlobalWorkGrid pick_choose_qparams_per_row_skip_gemv_gwg(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  if (is_gemv(graph, args.at(1).refs.at(0))) {
+    return GlobalWorkGrid(
+        {0u, 0u, 0u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
+  }
+  return pick_choose_qparams_per_row_gwg(graph, shader, args, resize_args);
+}
+
 void add_choose_qparams_per_row_node(
     ComputeGraph& graph,
     const ValueRef& input,
     const ValueRef& quant_min,
     const ValueRef& quant_max,
     const ValueRef& input_scales,
-    const ValueRef& input_zps) {
+    const ValueRef& input_zps,
+    const bool skip_for_gemv) {
   int32_t quant_min_val = -128;
   int32_t quant_max_val = 127;
 
@@ -89,7 +103,8 @@ void add_choose_qparams_per_row_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      pick_choose_qparams_per_row_gwg,
+      skip_for_gemv ? pick_choose_qparams_per_row_skip_gemv_gwg
+                    : pick_choose_qparams_per_row_gwg,
       pick_required_lwg,
       // Inputs and Outputs
       {{{input_scales, input_zps}, vkapi::kWrite}, {input, vkapi::kRead}},

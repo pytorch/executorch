@@ -437,14 +437,27 @@ def make_linear_dq8ca_q4gsw_op(
             data=sum_per_quant_group,
         )
 
+    # Without input qparams, the runtime computes the default int8 per-row qparams
+    # itself, and skips them for GEMV, which consumes the fp input directly.
+    input_scales_node = match.input_scales_node
+    input_zeros_node = match.input_zeros_node
+    choose_qparams_node = input_scales_node.args[0]
+    # (target_dtype, quant_min, quant_max) of choose_qparams_affine
+    qparams_range = (list(choose_qparams_node.args[3:6]) + [None, None])[:3]
+    if choose_qparams_node.target == (
+        exir_ops.edge.torchao.choose_qparams_affine.default
+    ) and qparams_range in ([torch.int8, None, None], [torch.int8, -128, 127]):
+        input_scales_node = None
+        input_zeros_node = None
+
     with graph_module.graph.inserting_before(match.output_node):
         qlinear_node = graph_module.graph.create_node(
             "call_function",
             exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default,
             args=(
                 match.pattern_input_node,
-                match.input_scales_node,
-                match.input_zeros_node,
+                input_scales_node,
+                input_zeros_node,
                 match.weight_node,
                 weight_sums_node,
                 match.weight_scales_node,

@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <tuple>
+#include <utility>
 #include <vector>
 #include "utils.h"
 
@@ -29,6 +31,9 @@ struct LinearConfig {
   bool has_bias = false;
   std::string test_case_name = "placeholder";
   std::string op_name = "linear_dq8ca_q4gsw";
+  // linear_dq8ca_q4gsw only: pass no input qparams, so the operator computes
+  // them itself
+  bool runtime_qparams = false;
 };
 
 // Helper function to unpack 4-bit values from uint8
@@ -65,6 +70,9 @@ TestCase create_test_case_from_config(
   if (!config.has_bias) {
     suffix += " no_bias";
   }
+  if (config.runtime_qparams) {
+    suffix += " runtime_qparams";
+  }
   std::string test_name = make_test_label(
       prefix, dtype_str, dtype_str, shape_str, storage_str, suffix);
   test_case.set_name(test_name);
@@ -76,12 +84,14 @@ TestCase create_test_case_from_config(
   // Derive sizes from M, K, N
   std::vector<int64_t> input_size = {config.M, config.K};
   // Input tensor (float/half) - [M, K]
+  // Integer inputs make the zero points computed from them land on rounding
+  // ties, whose direction is implementation defined on the GPU.
   ValueSpec input_tensor(
       input_size,
       input_dtype,
       storage_type,
       utils::kWidthPacked,
-      DataGenType::RANDINT);
+      config.runtime_qparams ? DataGenType::RANDOM : DataGenType::RANDINT);
 
   if (debugging()) {
     print_valuespec_data(input_tensor, "input_tensor");
@@ -104,6 +114,10 @@ TestCase create_test_case_from_config(
       utils::kWidthPacked,
       DataGenType::RANDINT);
   input_zero_point.set_constant(true);
+  if (config.runtime_qparams) {
+    input_scale.set_none(true);
+    input_zero_point.set_none(true);
+  }
 
   // For 4-bit weights, packed size is [N, K/2] since 2 weights per byte
   std::vector<int64_t> weight_size = {config.N, config.K / 2};
@@ -258,6 +272,11 @@ std::vector<TestCase> generate_quantized_linear_easy_cases() {
 std::vector<TestCase> generate_quantized_linear_test_cases() {
   std::vector<TestCase> test_cases;
 
+  const auto with_runtime_qparams = [](LinearConfig config) {
+    config.runtime_qparams = true;
+    return config;
+  };
+
   std::vector<LinearConfig> configs = {
       // Gemv
       {1, 64, 32, 16},
@@ -265,6 +284,9 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
       {1, 256, 128, 64},
       {1, 128, 36, 32},
       {1, 128, 64, 32, true},
+      with_runtime_qparams({1, 128, 64, 32}),
+      with_runtime_qparams({4, 128, 64, 32}),
+      with_runtime_qparams({32, 256, 128, 64}),
       // Gemm
       {4, 64, 32, 16},
       {4, 128, 64, 32},
@@ -431,6 +453,38 @@ void linear_q4gsw_reference_impl(TestCase& test_case) {
   }
 }
 
+// Mirrors choose_qparams_per_row.glsl for int8 [-128, 127].
+std::pair<float, int8_t> per_row_qparams(const float min_val, const float max_val) {
+  constexpr float kSmallScaleThreshold = 6.1e-5f;
+  constexpr float qmin = -128.0f;
+  constexpr float qmax = 127.0f;
+  float lo = std::min(min_val, 0.0f);
+  float hi = std::max(max_val, 0.0f);
+  float scale = (hi - lo) / (qmax - qmin);
+  if (scale == 0.0f || std::isinf(1.0f / scale)) {
+    scale = 0.1f;
+  }
+  if (scale < kSmallScaleThreshold) {
+    const float org_scale = scale;
+    scale = kSmallScaleThreshold;
+    if (lo == 0.0f) {
+      hi = kSmallScaleThreshold * (qmax - qmin);
+    } else if (hi == 0.0f) {
+      lo = -kSmallScaleThreshold * (qmax - qmin);
+    } else {
+      lo *= kSmallScaleThreshold / org_scale;
+      hi *= kSmallScaleThreshold / org_scale;
+    }
+  }
+  const float zp_from_min = qmin - lo / scale;
+  const float zp_from_max = qmax - hi / scale;
+  const float zp = std::abs(qmin) - std::abs(lo / scale) <
+          std::abs(qmax) - std::abs(hi / scale)
+      ? zp_from_min
+      : zp_from_max;
+  return {scale, static_cast<int8_t>(std::round(std::clamp(zp, qmin, qmax)))};
+}
+
 // Reference implementation for activation+weight quantized linear (dq8ca_q4gsw)
 void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   // Extract input specifications
@@ -485,7 +539,7 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
 
   // Activation, input_scale, weight_scales, and bias may be kFloat or kHalf
   // depending on input_dtype; ValueSpec::get_element handles both.
-  auto& input_zero_point_data = input_zeros_spec.get_int8_data(); // Always int8
+  const bool runtime_qparams = input_scale_spec.is_none();
 
   auto& weight_data = weight_spec.get_uint8_data();
   auto& weight_sums_data = weight_sums_spec.get_int32_data();
@@ -501,8 +555,21 @@ void linear_dq8ca_q4gsw_reference_impl(TestCase& test_case) {
   // integer accumulation
   for (int64_t b = 0; b < batch_size; ++b) {
     // Use per-input channel scale and zero point - index by batch dimension
-    float input_scale = input_scale_spec.get_element(b); // {1, M}
-    int8_t input_zero_point = input_zero_point_data[b];
+    float input_scale;
+    int8_t input_zero_point;
+    if (runtime_qparams) {
+      float row_min = INFINITY;
+      float row_max = -INFINITY;
+      for (int64_t in_f = 0; in_f < in_features; ++in_f) {
+        const float val = input_spec.get_element(b * in_features + in_f);
+        row_min = std::min(row_min, val);
+        row_max = std::max(row_max, val);
+      }
+      std::tie(input_scale, input_zero_point) = per_row_qparams(row_min, row_max);
+    } else {
+      input_scale = input_scale_spec.get_element(b); // {1, M}
+      input_zero_point = input_zeros_spec.get_int8_data()[b];
+    }
 
     for (int64_t out_f = 0; out_f < out_features; ++out_f) {
       // For group symmetric quantization, compute with proper grouping for

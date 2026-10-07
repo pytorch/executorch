@@ -937,3 +937,49 @@ class TestVulkanPasses(unittest.TestCase):
         before = op_node_count(ep.graph_module, "view_copy.default")
         RemoveRedundantOpsTransform().call(ep.graph_module)
         self.assertEqual(op_node_count(ep.graph_module, "view_copy.default"), before)
+
+    def test_fuse_dq8ca_linear_drops_default_input_qparams(self):
+        """With default int8 activation qparams, the dynamically quantized q4 linear
+        is emitted without input qparams (the runtime computes them only when
+        needed), so the choose_qparams node is removed.
+        """
+        from torchao.quantization import (
+            Int8DynamicActivationIntxWeightConfig,
+            quantize_,
+        )
+        from torchao.quantization.granularity import PerGroup
+        from torchao.utils import unwrap_tensor_subclass
+
+        model = SingleLinearModule(K=128, N=64)
+        quantize_(
+            model,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4, weight_granularity=PerGroup(32)
+            ),
+        )
+        unwrap_tensor_subclass(model)
+
+        inputs = model.get_sample_inputs()
+        program = torch.export.export(model, inputs, strict=True)
+        edge_program = to_edge(
+            program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        ep = edge_program._edge_programs["forward"]
+        self.assertEqual(
+            op_node_count(ep.graph_module, "choose_qparams_affine.default"), 1
+        )
+
+        fuse_patterns = FusePatternsPass()
+        fuse_patterns._exported_program = ep
+        fuse_patterns.call(ep.graph_module)
+
+        gm = ep.graph_module
+        self.assertEqual(op_node_count(gm, "choose_qparams_affine.default"), 0)
+        linears = [
+            n
+            for n in gm.graph.nodes
+            if get_target_canonical_name(n) == "linear_dq8ca_q4gsw.default"
+        ]
+        self.assertEqual(len(linears), 1)
+        self.assertIsNone(linears[0].args[1])
+        self.assertIsNone(linears[0].args[2])
