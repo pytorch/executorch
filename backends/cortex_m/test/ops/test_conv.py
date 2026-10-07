@@ -329,7 +329,6 @@ test_cases = {
 
 
 xfails_dialect: dict[str, xfail_type] = {
-    "conv2d_dilation": "NotImplementedError: 'slow_conv_dilated<>' not implemented for 'Int'",
     "conv1d": "Currently not supported.",
     "conv2d_nchw": "Currently not supported.",
 }
@@ -391,6 +390,11 @@ def test_grouped_conv2d_bias_is_populated(test_case, cortex_m_target):
         for n in module.graph.nodes
         if n.op == "call_function" and n.target in grouped_convs
     ]
+    if (
+        conv_node.target == exir_ops.edge.cortex_m.quantized_conv2d.default
+        and cortex_m_target.backend == cmsis_nn.Backend.MVE
+    ):
+        assert conv_node.kwargs["packed_weights"]
     assert conv_node.args[2] is not None
 
 

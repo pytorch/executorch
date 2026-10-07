@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -51,9 +52,10 @@ def test_unsupported_four_value_padding(
         127,
         torch.empty(0, dtype=torch.uint8),
     )
+    kwargs = {} if depthwise else {"filter_shape": weight.shape}
     with FakeTensorMode(allow_non_fake_inputs=True) if fake else nullcontext():
         with pytest.raises(ValueError, match=error):
-            ops[depthwise, nhwc](*args)
+            ops[depthwise, nhwc](*args, **kwargs)
 
 
 class PaddedConv(torch.nn.Module):

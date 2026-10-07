@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any, cast
 
@@ -96,6 +96,9 @@ def cmsis_nn_conv_buffer_size(
     ) = _get_common_conv_buffer_size_inputs(
         conv_node=conv_node, nhwc_logical=nhwc_logical
     )
+    filter_shape = conv_node.kwargs.get("filter_shape")
+    if filter_shape is not None:
+        weight_shape = list(cast(Sequence[int], filter_shape))
     input_offset = cast(int, conv_node.args[6])
     output_offset = cast(int, conv_node.args[7])
     output_qmin = cast(int, conv_node.args[10])
@@ -120,6 +123,9 @@ def cmsis_nn_conv_buffer_size(
                 output_offset=output_offset,
                 activation_min=output_qmin,
                 activation_max=output_qmax,
+                weights_packed=cast(
+                    bool, conv_node.kwargs.get("packed_weights", False)
+                ),
             )
         )
     ]
