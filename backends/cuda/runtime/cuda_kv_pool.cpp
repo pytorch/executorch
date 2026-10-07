@@ -16,7 +16,7 @@
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/aoti/slim/util/array_ref_util.h>
 #include <executorch/backends/aoti/slim/util/size_util.h>
-#include <executorch/backends/cuda/runtime/cuda_allocator.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/platform/log.h>
@@ -122,9 +122,8 @@ bool CudaKVPool::serves(CudaDelegateHandle* handle) const {
 Error CudaKVPool::validate() const {
   for (size_t index = 0; index < layers_.size(); ++index) {
     for (const char* suffix : {"k", "v"}) {
-      if (discovered_fqns_.count(
-              offgraph_kv_layer_fqn(static_cast<int64_t>(index), suffix)) ==
-          0) {
+      if (discovered_fqns_.count(offgraph_kv_layer_fqn(
+              static_cast<int64_t>(index), suffix)) == 0) {
         ET_LOG(
             Error,
             "offgraph_kv: missing AOTI storage for layer %zu (%s)",
@@ -156,8 +155,8 @@ Error CudaKVPool::prepare(
     ET_CHECK_OK_OR_RETURN_ERROR(allocate_initial(required_rows, stream));
   }
   if (required_rows > rows_) {
-    const int64_t next =
-        std::min<int64_t>(max_rows_, std::max<int64_t>(required_rows, rows_ * 2));
+    const int64_t next = std::min<int64_t>(
+        max_rows_, std::max<int64_t>(required_rows, rows_ * 2));
     ET_CHECK_OK_OR_RETURN_ERROR(grow(next, live_rows, stream));
   }
   return Error::Ok;
@@ -195,7 +194,8 @@ size_t CudaKVPool::side_buffer_bytes(size_t index) const {
 
 size_t CudaKVPool::row_bytes(const Layer& layer) const {
   return static_cast<size_t>(layer.n_kv_heads) *
-      static_cast<size_t>(layer.head_dim) * slimc10::elementSize(storage_dtype_);
+      static_cast<size_t>(layer.head_dim) *
+      slimc10::elementSize(storage_dtype_);
 }
 
 // BSHD at the declared rows: no stride depends on the rows, so the storage
@@ -232,7 +232,8 @@ void CudaKVPool::discard(
     const Layer& layer,
     Allocation& allocation,
     cudaStream_t stream) {
-  allocated_bytes_ -= static_cast<int64_t>(2 * row_bytes(layer) * allocation.rows);
+  allocated_bytes_ -=
+      static_cast<int64_t>(2 * row_bytes(layer) * allocation.rows);
   release(allocation.k, stream);
   release(allocation.v, stream);
   allocation = Allocation{};
@@ -335,7 +336,10 @@ Error CudaKVPool::allocate_side_buffers(cudaStream_t stream) {
 // storage is released. A failure on any layer frees the replacements and
 // leaves the pool exactly as it was -- storage, bindings, rows -- so the step
 // fails but the pool stays usable.
-Error CudaKVPool::grow(int64_t new_rows, int64_t live_rows, cudaStream_t stream) {
+Error CudaKVPool::grow(
+    int64_t new_rows,
+    int64_t live_rows,
+    cudaStream_t stream) {
   const int64_t old_rows = rows_;
   std::vector<std::pair<size_t, Allocation>> replacements;
   auto roll_back = [&]() {
@@ -559,9 +563,8 @@ Error CudaKVPool::check_compiled(
       static_cast<int>(dtype));
   constexpr size_t kAotiConstantAlignment = 64;
   const size_t bytes = contiguous_nbytes(sizes, dtype);
-  const size_t aligned =
-      (bytes + kAotiConstantAlignment - 1) / kAotiConstantAlignment *
-      kAotiConstantAlignment;
+  const size_t aligned = (bytes + kAotiConstantAlignment - 1) /
+      kAotiConstantAlignment * kAotiConstantAlignment;
   ET_CHECK_OR_RETURN_ERROR(
       compiled_bytes == bytes || compiled_bytes == aligned,
       InvalidProgram,

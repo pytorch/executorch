@@ -22,8 +22,8 @@
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
-#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
+#include <executorch/extension/cuda/cuda_allocator.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
@@ -245,7 +245,6 @@ class CudaSequenceKVCache final : public cache::SequenceCache,
   Error error_{Error::Ok};
 };
 
-
 // The window each layer attends over, 0 = its whole history. Layers agreeing
 // on a window read one mask, as the lowering pass declares it.
 int layer_window(const cache::LayerGeometry& layer) {
@@ -429,8 +428,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     // cell below it is occupied: at most occupied + width.
     const int64_t live = used_end();
     const int64_t occupied = capacity() - free_cells();
-    ET_CHECK_OK_OR_RETURN_ERROR(pool_.prepare(
-        std::max<int64_t>(live, occupied + width), live, stream));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        pool_.prepare(std::max<int64_t>(live, occupied + width), live, stream));
 
     std::vector<const cache::CellStep*> steps;
     steps.reserve(windows_.size());
@@ -531,7 +530,9 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     uint8_t* masks = staging_ + cells_bytes + sizeof(int64_t);
     for (size_t index = 0; index < steps.size(); ++index) {
       std::memcpy(
-          masks + index * mask_bytes, steps[index]->mask_bits.data(), mask_bytes);
+          masks + index * mask_bytes,
+          steps[index]->mask_bits.data(),
+          mask_bytes);
     }
     const Error enqueued =
         enqueue_uploads(steps.size(), width, read_len, stream);
