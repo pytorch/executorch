@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Native launcher wiring; model formatting is shared with the legacy launcher."""
+"""Batching launcher wiring; model formatting is shared with the legacy launcher."""
 
 import asyncio
 import sys
@@ -15,7 +15,7 @@ pytest.importorskip("pydantic", reason="requires llm_server serving dependencies
 
 from executorch.examples.models.muse_glimmer.serving import (  # noqa: E402
     serve,
-    serve_native,
+    serve_batching,
 )
 from executorch.examples.models.muse_glimmer.tests.test_serve import (  # noqa: E402
     _StubTemplate,
@@ -42,9 +42,9 @@ def arguments(tmp_path):
     ]
 
 
-def test_native_worker_command_preserves_image_limits_and_solo_scope(arguments):
-    args = serve_native._parse_args(arguments)
-    command = serve_native._worker_command(args)
+def test_batching_worker_command_preserves_image_limits_and_solo_scope(arguments):
+    args = serve_batching._parse_args(arguments)
+    command = serve_batching._worker_command(args)
     flags = dict(zip(command[1::2], command[2::2]))
     assert flags["--pte"] == args.model_path
     assert flags["--tokenizer"] == args.tokenizer_path
@@ -74,7 +74,7 @@ def test_native_worker_command_preserves_image_limits_and_solo_scope(arguments):
         ["--max-request-bytes", str(32 * 1024 * 1024 + 1)],
         ["--max-request-bytes", "1048576"],
         ["--max-inflight-requests", "0"],
-        ["--max-inflight-requests", "9"],
+        ["--max-inflight-requests", str(1 << 31)],
         ["--bos-id", "-1"],
         ["--bos-id", str(1 << 64)],
         ["--eos-id", "-1"],
@@ -82,9 +82,9 @@ def test_native_worker_command_preserves_image_limits_and_solo_scope(arguments):
         ["--artifact-mode", "dflash"],
     ],
 )
-def test_native_launcher_rejects_invalid_limits_and_legacy_modes(arguments, extra):
+def test_batching_launcher_rejects_invalid_limits_and_legacy_modes(arguments, extra):
     with pytest.raises(SystemExit) as error:
-        serve_native._parse_args(arguments + extra)
+        serve_batching._parse_args(arguments + extra)
     assert error.value.code == 2
 
 
@@ -95,7 +95,8 @@ def test_native_launcher_rejects_invalid_limits_and_legacy_modes(arguments, extr
         ("--max-context", 2),
         ("--max-context", (1 << 31) - 1),
         ("--max-inflight-requests", 1),
-        ("--max-inflight-requests", 8),
+        ("--max-inflight-requests", 17),
+        ("--max-inflight-requests", (1 << 31) - 1),
         ("--max-image-bytes", 1),
         ("--max-image-bytes", 20 * 1024 * 1024),
         ("--max-request-bytes", 32 * 1024 * 1024),
@@ -105,14 +106,17 @@ def test_native_launcher_rejects_invalid_limits_and_legacy_modes(arguments, extr
         ("--eos-id", (1 << 64) - 1),
     ],
 )
-def test_native_launcher_accepts_limit_boundaries(arguments, flag, value):
-    args = serve_native._parse_args(arguments + [flag, str(value)])
+def test_batching_launcher_accepts_limit_boundaries(arguments, flag, value):
+    args = serve_batching._parse_args(arguments + [flag, str(value)])
     assert getattr(args, flag[2:].replace("-", "_")) == value
+    if flag == "--max-inflight-requests":
+        command = serve_batching._worker_command(args)
+        assert command[command.index("--max_inflight_requests") + 1] == str(value)
 
 
 @pytest.mark.parametrize("image_bytes", [1, 2, 3, 4, 20 * 1024 * 1024])
 @pytest.mark.parametrize("shortfall", [0, 1])
-def test_native_launcher_requires_base64_and_framing_capacity(
+def test_batching_launcher_requires_base64_and_framing_capacity(
     arguments, image_bytes, shortfall
 ):
     request_bytes = 4 * ((image_bytes + 2) // 3) + 1024 - shortfall
@@ -124,18 +128,18 @@ def test_native_launcher_requires_base64_and_framing_capacity(
     ]
     if shortfall:
         with pytest.raises(SystemExit) as error:
-            serve_native._parse_args(argv)
+            serve_batching._parse_args(argv)
         assert error.value.code == 2
     else:
-        args = serve_native._parse_args(argv)
-        command = serve_native._worker_command(args)
+        args = serve_batching._parse_args(argv)
+        command = serve_batching._worker_command(args)
         flags = dict(zip(command[1::2], command[2::2]))
         assert flags["--max_image_bytes"] == str(image_bytes)
         assert flags["--max_input_frame_bytes"] == str(request_bytes)
 
 
 @pytest.mark.parametrize("constructor_failure", [False, True])
-def test_native_launcher_owns_async_worker_and_reuses_mg_chat(
+def test_batching_launcher_owns_async_worker_and_reuses_mg_chat(
     arguments, monkeypatch, constructor_failure
 ):
     captured = {}
@@ -170,18 +174,18 @@ def test_native_launcher_owns_async_worker_and_reuses_mg_chat(
         captured["spawn"] = kwargs
         return worker
 
-    monkeypatch.setattr(serve_native, "ChatTemplate", Template)
-    monkeypatch.setattr(serve_native, "SessionRuntime", Runtime)
-    monkeypatch.setattr(serve_native, "spawn_multiplexed_worker", spawn)
+    monkeypatch.setattr(serve_batching, "ChatTemplate", Template)
+    monkeypatch.setattr(serve_batching, "SessionRuntime", Runtime)
+    monkeypatch.setattr(serve_batching, "spawn_multiplexed_worker", spawn)
     monkeypatch.setattr(
-        serve_native,
+        serve_batching,
         "build_app",
         lambda _, model_id, *, serving_factory: serving_factory,
     )
-    args = serve_native._parse_args(
+    args = serve_batching._parse_args(
         arguments + ["--max-image-bytes", "1024", "--max-request-bytes", "4096"]
     )
-    factory = serve_native.build_app_from_args(args)
+    factory = serve_batching.build_app_from_args(args)
     assert "command" not in captured
 
     async def scenario():
@@ -197,7 +201,7 @@ def test_native_launcher_owns_async_worker_and_reuses_mg_chat(
     else:
         asyncio.run(scenario())
     assert worker.closed
-    assert captured["command"] == serve_native._worker_command(args)
+    assert captured["command"] == serve_batching._worker_command(args)
     assert captured["spawn"] == {
         "max_request_bytes": args.max_request_bytes,
         "max_message_bytes": 1024 * 1024,

@@ -18,11 +18,12 @@ DECLARE_uint64(max_input_frame_bytes);
 namespace executorch::extension::llm {
 
 // Shared startup only: execution and scheduling remain in the generic runtime.
-struct MuseGlimmerNativeRuntime {
+struct MuseGlimmerBatchingRuntime {
   std::unique_ptr<tokenizers::Tokenizer> tokenizer;
   MuseGlimmerBackend backend;
   std::unique_ptr<serving::ServingRuntime> runtime;
 };
-std::unique_ptr<MuseGlimmerNativeRuntime> create_muse_glimmer_native_runtime();
+std::unique_ptr<MuseGlimmerBatchingRuntime>
+create_muse_glimmer_batching_runtime();
 
 } // namespace executorch::extension::llm

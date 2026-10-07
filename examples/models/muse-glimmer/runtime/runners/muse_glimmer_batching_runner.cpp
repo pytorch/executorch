@@ -5,7 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include <executorch/examples/models/muse-glimmer/runtime/runners/native_bootstrap.h>
+#include <executorch/examples/models/muse-glimmer/runtime/runners/batching_bootstrap.h>
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -43,14 +43,14 @@ int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   try {
     namespace llm = executorch::extension::llm;
-    auto native = llm::create_muse_glimmer_native_runtime();
+    auto batching_runtime = llm::create_muse_glimmer_batching_runtime();
     nlohmann::json request{{"prompt", FLAGS_prompt}};
     if (!FLAGS_image_path.empty()) {
       std::ifstream file(FLAGS_image_path, std::ios::binary | std::ios::ate);
       const auto count = file.tellg();
       if (!file || count <= 0 ||
-          static_cast<uint64_t>(count) >
-              native->backend.preparation->image_limits.max_encoded_bytes) {
+          static_cast<uint64_t>(count) > batching_runtime->backend.preparation
+                                             ->image_limits.max_encoded_bytes) {
         throw std::runtime_error("image file missing, empty, or oversized");
       }
       std::vector<uint8_t> bytes(static_cast<size_t>(count));
@@ -70,15 +70,17 @@ int main(int argc, char** argv) {
         static_cast<float>(FLAGS_top_p),
         FLAGS_top_k};
     // Opening waits for executor initialization without running model methods.
-    if (auto error = native->runtime->open_session_async("solo").get()) {
+    if (auto error =
+            batching_runtime->runtime->open_session_async("solo").get()) {
       throw std::runtime_error(error->message);
     }
     llm::serving::PromptPreparation prepare =
-        [request = std::move(request), spec = native->backend.preparation](
+        [request = std::move(request),
+         spec = batching_runtime->backend.preparation](
             const llm::serving::PromptPreparationContext& context) {
           return llm::prepare_muse_glimmer_prompt(request, context, spec);
         };
-    auto generated = native->runtime->generate(
+    auto generated = batching_runtime->runtime->generate(
         "solo",
         std::move(prepare),
         options,
@@ -97,7 +99,7 @@ int main(int argc, char** argv) {
     std::cout << '\n';
     return 0;
   } catch (const std::exception& error) {
-    std::cerr << "native solo failed: " << error.what() << '\n';
+    std::cerr << "batching runner failed: " << error.what() << '\n';
     return 1;
   }
 }

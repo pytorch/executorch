@@ -5,7 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include <executorch/examples/models/muse-glimmer/runtime/runners/native_bootstrap.h>
+#include <executorch/examples/models/muse-glimmer/runtime/runners/batching_bootstrap.h>
 #include <executorch/extension/llm/batching/decode_first_scheduler.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <algorithm>
@@ -42,23 +42,24 @@ DEFINE_uint64(bos_id, 200000, "BOS token ID");
 DEFINE_uint64(eos_id, 200001, "Additional EOS token ID (never eom)");
 
 namespace executorch::extension::llm {
-std::unique_ptr<MuseGlimmerNativeRuntime> create_muse_glimmer_native_runtime() {
+std::unique_ptr<MuseGlimmerBatchingRuntime>
+create_muse_glimmer_batching_runtime() {
   if (FLAGS_pte.empty() || FLAGS_tokenizer.empty() || FLAGS_max_sessions <= 0 ||
-      FLAGS_max_inflight_requests <= 0 || FLAGS_max_inflight_requests > 8 ||
-      FLAGS_max_decode_sequences <= 0 || FLAGS_prefix_cache_entries < 0 ||
-      FLAGS_max_image_bytes == 0 || FLAGS_max_image_bytes > 20 * 1024 * 1024 ||
+      FLAGS_max_inflight_requests <= 0 || FLAGS_max_decode_sequences <= 0 ||
+      FLAGS_prefix_cache_entries < 0 || FLAGS_max_image_bytes == 0 ||
+      FLAGS_max_image_bytes > 20 * 1024 * 1024 ||
       FLAGS_max_input_frame_bytes == 0 ||
       FLAGS_max_input_frame_bytes > 32 * 1024 * 1024 ||
       FLAGS_max_image_pixels <= 0 ||
       FLAGS_max_image_pixels > 16 * 1024 * 1024) {
     throw std::invalid_argument(
-        "required model/tokenizer or bounded native limits are invalid");
+        "required model/tokenizer or bounded batching limits are invalid");
   }
   const int64_t physical = static_cast<int64_t>(FLAGS_max_sessions) +
       FLAGS_prefix_cache_entries + (FLAGS_prefix_cache_entries > 0 ? 1 : 0);
   if (physical > std::numeric_limits<int>::max())
     throw std::invalid_argument("too many physical sessions");
-  auto result = std::make_unique<MuseGlimmerNativeRuntime>();
+  auto result = std::make_unique<MuseGlimmerBatchingRuntime>();
   result->tokenizer = std::make_unique<tokenizers::HFTokenizer>();
   if (result->tokenizer->load(FLAGS_tokenizer) != tokenizers::Error::Ok) {
     throw std::runtime_error("could not load Hugging Face tokenizer");
@@ -81,7 +82,7 @@ std::unique_ptr<MuseGlimmerNativeRuntime> create_muse_glimmer_native_runtime() {
   auto created = create_muse_glimmer_backend(backend);
   if (!created.ok())
     throw std::runtime_error(
-        "could not create native Muse Glimmer executor; export the solo off-graph ABI");
+        "could not create batching Muse Glimmer executor; export the solo off-graph ABI");
   result->backend = std::move(*created);
   const size_t width = result->backend.executor->preferred_batch_tokens();
   // A width-one artifact still works: the core physically splits the batch.

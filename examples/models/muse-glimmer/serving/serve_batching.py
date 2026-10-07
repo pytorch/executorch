@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Serve Muse Glimmer solo text/images with the native multiplexed worker.
+"""Serve Muse Glimmer solo text/images with the batching multiplexed worker.
 
 Requires an off-graph solo export. The legacy launcher and runners remain
 separate; this entry point does not select or fall back to DFlash.
@@ -26,9 +26,11 @@ from executorch.examples.llm_server.python.serve import _validate_limits
 from executorch.examples.llm_server.python.server import build_app
 from executorch.examples.llm_server.python.session_runtime import SessionRuntime
 from executorch.examples.models.muse_glimmer.serving import serve as legacy
+from executorch.examples.models.muse_glimmer.serving.stream_parser import (
+    MuseGlimmerStreamParser,
+)
 
 
-_MAX_INFLIGHT_REQUESTS = 8
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _MAX_REQUEST_BYTES = 32 * 1024 * 1024
 _MAX_MESSAGE_BYTES = 1024 * 1024
@@ -53,7 +55,7 @@ def _parse_args(argv=None):
         "--prefix-cache-entries",
         type=int,
         default=0,
-        help="Opt-in text snapshots; requires native executor cache-clone support.",
+        help="Opt-in text snapshots; requires batching executor cache-clone support.",
     )
     parser.add_argument("--max-image-bytes", type=int, default=_MAX_IMAGE_BYTES)
     parser.add_argument(
@@ -72,7 +74,6 @@ def _parse_args(argv=None):
     if args.max_context <= 1:
         parser.error("--max-context must be greater than 1")
     for name, maximum in (
-        ("max_inflight_requests", _MAX_INFLIGHT_REQUESTS),
         ("max_image_bytes", _MAX_IMAGE_BYTES),
         ("max_request_bytes", _MAX_REQUEST_BYTES),
     ):
@@ -82,6 +83,11 @@ def _parse_args(argv=None):
         parser.error("BOS and EOS IDs must be uint64 values")
     if 4 * ((args.max_image_bytes + 2) // 3) + 1024 > args.max_request_bytes:
         parser.error("--max-request-bytes must fit the base64 image plus JSON framing")
+    _validate_paths(parser, args)
+    return args
+
+
+def _validate_paths(parser, args):
     args.worker_bin = os.path.expanduser(args.worker_bin)
     if shutil.which(args.worker_bin) is None:
         parser.error("--worker-bin must name an executable file or command on PATH")
@@ -104,7 +110,6 @@ def _parse_args(argv=None):
         elif not path.is_file():
             parser.error(f"--{name.replace('_', '-')} must name an existing file")
         setattr(args, name, str(path))
-    return args
 
 
 def _worker_command(args):
@@ -160,6 +165,7 @@ def build_app_from_args(args):
                 content_filter=legacy._strip_muse_glimmer_header,
                 content_filter_specials=legacy._MUSE_GLIMMER_HEADER_SPECIALS,
                 reasoning_extractor=legacy._extract_muse_glimmer_reasoning,
+                streaming_parser_factory=MuseGlimmerStreamParser,
             )
         finally:
             if runtime is None:

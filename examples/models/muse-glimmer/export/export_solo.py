@@ -33,7 +33,7 @@ _CUDA_MIN_PREFILL_CHUNK = 5
 
 def load_prequantized_model(
     prequantized_dir: str,
-    max_seq_len: int = 16384,
+    max_seq_len: int | None = 16384,
     backend: str = "cuda",
     *,
     defer_runtime_buffers: bool = False,
@@ -54,7 +54,7 @@ def load_prequantized_model(
 def load_and_quantize(
     checkpoint_dir: str,
     recipe_name: str,
-    max_seq_len: int = 16384,
+    max_seq_len: int | None = 16384,
     backend: str = "cuda",
     *,
     defer_runtime_buffers: bool = False,
@@ -579,7 +579,7 @@ def _export_mlx(
     if has_vision:
         if use_offgraph_kv_cache:
             # API callers can supply a tower loaded in a different dtype.
-            # Native image embeddings must match embed_text and the decoder.
+            # Batching image embeddings must match embed_text and the decoder.
             vision_model.to(activation_dtype)
         programs["vision_encoder"] = common.export_vision_encoder(
             vision_model, pos_embed_table, max_vision_patches
@@ -636,6 +636,22 @@ def _export_mlx(
     print("Done.")
 
 
+def _validate_offgraph_prefill(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    native_context: int | None = None,
+) -> None:
+    if not args.use_offgraph_kv_cache:
+        return
+    if args.max_prefill_chunk < 1:
+        parser.error("--max-prefill-chunk must be positive.")
+    if native_context is not None and args.max_prefill_chunk > native_context:
+        parser.error(
+            "--max-prefill-chunk must not exceed the checkpoint's native "
+            f"context limit ({native_context})."
+        )
+
+
 def main() -> None:
     from executorch.examples.models.muse_glimmer.loaders.quantize_and_save import (
         RECIPE_NAMES,
@@ -675,7 +691,8 @@ def main() -> None:
         "--max-seq-len",
         type=int,
         default=131072,
-        help="KV cache size.",
+        help="Context/KV cache size for legacy export. Ignored for MLX off-graph "
+        "export, which uses the checkpoint's native context limit.",
     )
     parser.add_argument(
         "--quant-recipe",
@@ -704,7 +721,7 @@ def main() -> None:
         "--use-offgraph-kv-cache",
         action="store_true",
         help="MLX only: allocate KV cache at runtime instead of storing it in the "
-        "PTE/PTD, and export the native selected-logits decoder contract.",
+        "PTE/PTD, and export the batching selected-logits decoder contract.",
     )
     parser.add_argument(
         "--activation-dtype",
@@ -751,11 +768,7 @@ def main() -> None:
 
     if args.use_offgraph_kv_cache and args.backend != "mlx":
         parser.error("--use-offgraph-kv-cache is only supported with --backend mlx.")
-    if (
-        args.use_offgraph_kv_cache
-        and not 1 <= args.max_prefill_chunk <= args.max_seq_len
-    ):
-        parser.error("--max-prefill-chunk must be within [1, --max-seq-len].")
+    _validate_offgraph_prefill(parser, args)
 
     if args.backend == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA is required for the cuda backend.")
@@ -769,11 +782,9 @@ def main() -> None:
         parser.error("--max-prefill-chunk is only supported with --backend mlx.")
     if args.use_offgraph_kv_cache and args.turboquant:
         parser.error("--use-offgraph-kv-cache cannot be combined with --turboquant.")
-    loader_kwargs = (
-        {"defer_runtime_buffers": True}
-        if args.backend == "mlx" and args.use_offgraph_kv_cache
-        else {}
-    )
+    use_native_context = args.backend == "mlx" and args.use_offgraph_kv_cache
+    max_seq_len = None if use_native_context else args.max_seq_len
+    loader_kwargs = {"defer_runtime_buffers": True} if use_native_context else {}
     if args.gguf:
         from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
             load_gguf_model,
@@ -781,7 +792,7 @@ def main() -> None:
 
         model, config = load_gguf_model(
             args.gguf,
-            max_seq_len=args.max_seq_len,
+            max_seq_len=max_seq_len,
             backend=args.backend,
             activation_dtype=activation_dtype,
             **loader_kwargs,
@@ -794,14 +805,14 @@ def main() -> None:
         model, config = load_mlx_model(
             args.mlx,
             backend=args.backend,
-            max_seq_len=args.max_seq_len,
+            max_seq_len=max_seq_len,
             activation_dtype=activation_dtype,
             **loader_kwargs,
         )
     elif args.prequantized:
         model, config = load_prequantized_model(
             args.prequantized,
-            max_seq_len=args.max_seq_len,
+            max_seq_len=max_seq_len,
             backend=args.backend,
             **loader_kwargs,
         )
@@ -809,10 +820,12 @@ def main() -> None:
         model, config = load_and_quantize(
             args.checkpoint_dir,
             args.quant_recipe,
-            max_seq_len=args.max_seq_len,
+            max_seq_len=max_seq_len,
             backend=args.backend,
             **loader_kwargs,
         )
+
+    _validate_offgraph_prefill(parser, args, config.max_seq_len)
 
     vision_model = None
     pos_embed_table = None

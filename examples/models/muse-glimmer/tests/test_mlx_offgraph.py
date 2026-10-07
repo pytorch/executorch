@@ -166,7 +166,7 @@ class MLXOffgraphTest(unittest.TestCase):
             patch.object(export_solo, "_export_cuda") as lower_cuda,
         ):
             for override, error in cases:
-                kwargs = dict(backend="mlx", max_prefill_chunk=8)
+                kwargs = {"backend": "mlx", "max_prefill_chunk": 8}
                 kwargs.update(override)
                 with self.subTest(**override), self.assertRaisesRegex(
                     ValueError, error
@@ -354,7 +354,7 @@ class MLXOffgraphTest(unittest.TestCase):
                 with self.subTest(max_width=max_width, dtype=dtype):
                     programs = {}
 
-                    def capture(exported, **kwargs):
+                    def capture(exported, programs=programs, **kwargs):
                         programs.update(exported)
                         raise StopBeforeLowering
 
@@ -412,14 +412,14 @@ class MLXOffgraphTest(unittest.TestCase):
 
     def test_metadata_is_opt_in_and_geometry_uses_actual_config(self):
         config = replace(CONFIG, n_layers=5, global_attn_cfg="[3,7,5,0]")
-        kwargs = dict(
-            config=config,
-            max_prefill=8,
-            activation_dtype=torch.float16,
-            mutable_buffer_metadata="legacy",
-            has_vision=True,
-            max_vision_patches=256,
-        )
+        kwargs = {
+            "config": config,
+            "max_prefill": 8,
+            "activation_dtype": torch.float16,
+            "mutable_buffer_metadata": "legacy",
+            "has_vision": True,
+            "max_vision_patches": 256,
+        }
         legacy = export_solo._solo_constant_methods(**kwargs)
         self.assertEqual(legacy["get_activation_dtype"], "float16")
         self.assertEqual(legacy["get_max_seq_len"], config.max_seq_len)

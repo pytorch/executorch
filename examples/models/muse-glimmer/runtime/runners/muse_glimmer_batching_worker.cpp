@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/examples/llm_server/cpp/multiplexed_worker.h>
-#include <executorch/examples/models/muse-glimmer/runtime/runners/native_bootstrap.h>
+#include <executorch/examples/models/muse-glimmer/runtime/runners/batching_bootstrap.h>
 #include <unistd.h>
 #include <csignal>
 #include <iostream>
@@ -25,21 +25,21 @@ int main(int argc, char** argv) {
   int status = 1;
   try {
     namespace llm = executorch::extension::llm;
-    auto native = llm::create_muse_glimmer_native_runtime();
+    auto batching_runtime = llm::create_muse_glimmer_batching_runtime();
     executorch::examples::llm_server::MultiplexedWorkerConfig transport;
     transport.max_inflight_requests = FLAGS_max_inflight_requests;
     transport.max_input_frame_bytes = FLAGS_max_input_frame_bytes;
     transport.max_frame_bytes = 1024 * 1024;
     transport.prompt_preparer =
-        [spec = native->backend.preparation](
+        [spec = batching_runtime->backend.preparation](
             const nlohmann::json& request,
             const llm::serving::PromptPreparationContext& context) {
           return llm::prepare_muse_glimmer_prompt(request, context, spec);
         };
     status = executorch::examples::llm_server::run_multiplexed_worker(
-        *native->runtime, STDIN_FILENO, output, std::move(transport));
+        *batching_runtime->runtime, STDIN_FILENO, output, std::move(transport));
   } catch (const std::exception& error) {
-    std::cerr << "native worker failed: " << error.what() << '\n';
+    std::cerr << "batching worker failed: " << error.what() << '\n';
   }
   close(output);
   return status;

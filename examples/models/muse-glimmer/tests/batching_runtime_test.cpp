@@ -419,7 +419,7 @@ int main() {
     preparation();
     vision_input_validation();
     std::cout
-        << "Muse Glimmer native preparation/materialization tests passed\n";
+        << "Muse Glimmer batching preparation/materialization tests passed\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

@@ -1,9 +1,9 @@
-# Native Solo Serving
+# Batching Solo Serving
 
-The native solo runner and multiplexed worker are additive, opt-in entry points
+The batching solo runner and multiplexed worker are additive, opt-in entry points
 for MLX autoregressive generation with text only or text plus one image across
 the entire submitted history. Existing solo, DFlash, legacy worker, launcher,
-and export defaults remain unchanged. Native CUDA and DFlash execution are not
+and export defaults remain unchanged. Batching CUDA and DFlash execution are not
 implemented; there is no fallback to either.
 
 ## Executor Ownership
@@ -16,7 +16,7 @@ factory API remains unchanged; runners use the shared batching and serving
 interfaces. A future DFlash executor would be a separate implementation, not a
 feature of this path.
 
-The native runtime links the batching, cache, sampler, module, tensor, and
+The batching runtime links the batching, cache, sampler, module, tensor, and
 serving targets directly, without `extension_llm_batching_module`. Transport
 reuses `multiplexed_worker` if that target already exists; otherwise an MG-local
 library compiles the shared transport source and publishes its JSON include
@@ -24,7 +24,7 @@ headers. It does not import the shared worker example/test CMake tree.
 
 ## Export
 
-Opt in to the native off-graph cache ABI. Include the vision projector for image
+Opt in to the batching off-graph cache ABI. Include the vision projector for image
 support. All paths below are portable placeholders to replace with local paths;
 these commands are for the user to run, not evidence of completed validation.
 
@@ -35,23 +35,39 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
   --mmproj /path/to/models/mg/projector.gguf \
   --use-offgraph-kv-cache \
   --activation-dtype float16 \
-  --max-seq-len 16384 \
   --max-prefill-chunk 512 \
   --max-vision-patches 4096 \
-  --output-dir /path/to/models/mg-native
+  --output-dir /path/to/models/mg-batching
 ```
 
 The default export remains compatible with the legacy runners. The opt-in
 artifact instead provides per-token positions, selected logits, and neutral
-cache geometry for packed native execution. It requires a cache-aware native
+cache geometry for packed batching execution. It requires a cache-aware batching
 runner; it is not a replacement artifact for the legacy execution path.
+
+Off-graph MLX export uses the checkpoint's native context limit and ignores
+`--max-seq-len`, which remains a legacy export override. The native limit comes
+from the GGUF architecture's `context_length`, MLX `max_position_embeddings`
+(preferentially under `text_config`), or consolidated/prequantized params'
+`max_seq_len`. Missing or invalid native context metadata is an error.
+`--max-prefill-chunk` independently bounds the positions processed per forward.
+The runtime's `--max-context` controls the serving/cache budget and may be lower
+than the exported native limit; exporting the full context does not require
+allocating that full KV capacity at runtime.
 
 ## Build
 
-Both `MUSE_GLIMMER_BUILD_NATIVE` and `MUSE_GLIMMER_BUILD_NATIVE_TESTS` default to
+On Apple Silicon, run `make muse-glimmer-batching-mlx` from the ExecuTorch
+checkout. This builds and installs the MLX dependencies, then builds
+`muse_glimmer_batching_runner` and `muse_glimmer_batching_worker` under
+`cmake-out/examples/models/muse-glimmer-batching`. It does not run tests or model
+exports. The existing `make muse-glimmer-mlx` target continues to build the
+legacy runners.
+
+Both `MUSE_GLIMMER_BUILD_BATCHING` and `MUSE_GLIMMER_BUILD_BATCHING_TESTS` default to
 `OFF`. Either requires `EXECUTORCH_BUILD_MLX=ON`, an MLX-enabled ExecuTorch CMake
 installation, and CUDA disabled. Preparation/materialization tests can be built
-without the native executor, but still require the MLX configuration.
+without the batching executor, but still require the MLX configuration.
 
 Build and install ExecuTorch with the example's dependencies enabled. Both LLM
 flags are necessary: the LLM option supplies batching/cache/serving, while the
@@ -75,17 +91,17 @@ cmake -S /path/to/executorch -B /path/to/build/executorch \
 cmake --build /path/to/build/executorch --target install --parallel
 
 cmake -S /path/to/executorch/examples/models/muse-glimmer \
-  -B /path/to/build/mg-native \
+  -B /path/to/build/mg-batching \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="/path/to/install/executorch;/path/to/gflags" \
   -DEXECUTORCH_BUILD_MLX=ON \
   -DEXECUTORCH_BUILD_CUDA=OFF \
-  -DMUSE_GLIMMER_BUILD_NATIVE=ON \
-  -DMUSE_GLIMMER_BUILD_NATIVE_TESTS=OFF \
+  -DMUSE_GLIMMER_BUILD_BATCHING=ON \
+  -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=OFF \
   -DMUSE_GLIMMER_STB_INCLUDE_DIR=/path/to/stb \
   -DMLX_METALLIB_PATH=/path/to/mlx.metallib
-cmake --build /path/to/build/mg-native \
-  --target muse_glimmer_native_solo muse_glimmer_native_worker --parallel
+cmake --build /path/to/build/mg-batching \
+  --target muse_glimmer_batching_runner muse_glimmer_batching_worker --parallel
 ```
 
 Use a gflags CMake package prefix and an stb checkout containing both image and
@@ -96,17 +112,17 @@ build so the copy helper runs. Set `MLX_METALLIB_PATH` to the built metallib if
 the installed package does not supply it.
 
 To opt in to preparation/materialization tests, configure the example with
-`-DMUSE_GLIMMER_BUILD_NATIVE_TESTS=ON` and build `muse_glimmer_native_test`.
+`-DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON` and build `muse_glimmer_batching_test`.
 Building that target does not run it; test execution is a separate user step.
 
 ## Serve
 
 ```sh
-python -m executorch.examples.models.muse_glimmer.serving.serve_native \
-  --worker-bin /path/to/build/mg-native/muse_glimmer_native_worker \
-  --model-path /path/to/models/mg-native/model.pte \
-  --data-path /path/to/models/mg-native/model.ptd \
-  --pos-embed-path /path/to/models/mg-native/pos_embed.bin \
+python -m executorch.examples.models.muse_glimmer.serving.serve_batching \
+  --worker-bin /path/to/build/mg-batching/muse_glimmer_batching_worker \
+  --model-path /path/to/models/mg-batching/model.pte \
+  --data-path /path/to/models/mg-batching/model.ptd \
+  --pos-embed-path /path/to/models/mg-batching/pos_embed.bin \
   --tokenizer-path /path/to/models/mg/tokenizer.json \
   --hf-tokenizer /path/to/models/mg \
   --backend mlx \
@@ -126,7 +142,10 @@ part of the submitted history; no server-side image reference is supported.
 
 Launcher limits mirror worker admission limits:
 
-- `--max-inflight-requests` is 1 through 8 (default 4).
+- `--max-inflight-requests` is a positive 32-bit integer (default 4), configuring
+  admission capacity without a build-time concurrency ceiling. The worker advertises
+  this capacity to the Python client. Session and decode-batch limits remain separate;
+  choose all three according to available memory and desired concurrency.
 - `--max-image-bytes` is 1 byte through 20 MiB (default 20 MiB), measured on the
   compressed image after base64 decoding, not on decoded pixels.
 - `--max-request-bytes` is positive and at most 32 MiB (default 32 MiB), including
@@ -143,7 +162,7 @@ and model context limits still apply. Session and decode capacities default to
 
 ## Semantics
 
-- Text-only prompts keep ordinary native token-history/prefix reuse.
+- Text-only prompts keep ordinary batching token-history/prefix reuse.
 - Image prompts have immutable text/image layout and count image rows as decoder
   positions. They replace the whole session context and bypass prompt-prefix
   caching, rather than appending image bytes to a warm text prefix.
@@ -154,7 +173,7 @@ and model context limits still apply. Session and decode capacities default to
   Prepared image embeddings are computed once per backing and may be sliced
   across physical forwards.
 - Metadata/options/preparation validation occurs before replacement. A later
-  engine/vision failure does not restore replaced state and follows the native
+  engine/vision failure does not restore replaced state and follows the batching
   batch failure contract.
 
 ## Validation Status
@@ -162,11 +181,11 @@ and model context limits still apply. Session and decode capacities default to
 Implementation validation is limited to static checks and C++ source
 syntax/compile checks; these do not establish installed-package linking,
 registration at runtime, metallib discovery, or model correctness. The current
-handoff environment has no installed ExecuTorch CMake package, so a full native
+handoff environment has no installed ExecuTorch CMake package, so a full batching
 configure/build has not been validated there.
 
 Launcher tests cover rejected limits, accepted boundaries, base64 framing, and
 mocked worker lifecycle/input-output size wiring. They have not been run in this
-handoff. No MG tests, exports, lowering, runtime, or native binaries were run;
+handoff. No MG tests, exports, lowering, runtime, or batching binaries were run;
 model-backed text/image generation and the commands above remain user-run
 validation steps.
