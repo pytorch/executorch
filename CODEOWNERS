@@ -28,7 +28,6 @@
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
 /examples/mediatek
-/examples/models @jackzhxng
 /examples/portable @larryliu0820 @manuelcandales
 /examples/qualcomm @psiddh
 /examples/selective_build @larryliu0820 @JacobSzwejbka
@@ -46,7 +45,7 @@
 /extension/data_loader @JacobSzwejbka
 /extension/gguf_util @larryliu0820
 /extension/kernel_util @manuelcandales
-/extension/llm @jackzhxng @larryliu0820 @mergennachin
+/extension/llm @larryliu0820 @mergennachin
 /extension/memory_allocator @JacobSzwejbka
 /extension/module @shoumikhin
 /extension/pybindings @JacobSzwejbka @larryliu0820
