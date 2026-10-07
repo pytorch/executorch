@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
+
 import torch
 from executorch.backends.qualcomm.utils.constants import DEFAULT_EPS_FP32
 from torchao.quantization.pt2e import UniformQuantizationObserverBase
@@ -47,6 +49,19 @@ class ConcatObserver(UniformQuantizationObserverBase):
         self.concat_node = [node for node in graph.nodes if node.name == node_name][0]
         self.input_nodes = self.concat_node.args[0]
         self.input_observers = []
+
+    def __deepcopy__(self, memo):
+        # Share the live-graph fx.Nodes: copying them walks the whole node list
+        # (RecursionError on large graphs) and its FakeTensor metadata.
+        new = type(self).__new__(type(self))
+        memo[id(self)] = new
+        for key, value in self.__dict__.items():
+            new.__dict__[key] = (
+                value
+                if key in ("concat_node", "input_nodes")
+                else copy.deepcopy(value, memo)
+            )
+        return new
 
     def forward(self, x_orig):
         # calculate the min / max first
