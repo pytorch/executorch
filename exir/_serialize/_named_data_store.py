@@ -149,6 +149,14 @@ class NamedDataStore:
                     f"Existing data size: {len(self.buffers[buffer_idx])} bytes. "
                     f"New data size: {len(data)} bytes."
                 )
+            data_entry = self.pte_data.get(key)
+            if data_entry is None:
+                for entries in self.external_data.values():
+                    data_entry = entries.get(key)
+                    if data_entry is not None:
+                        break
+            assert data_entry is not None
+            data_entry.alignment = math.lcm(data_entry.alignment, alignment)
         else:
             # Two-level dedup: cheap fingerprint rejects non-matches fast,
             # SHA-256 confirms matches without full byte comparison.

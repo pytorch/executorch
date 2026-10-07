@@ -242,16 +242,18 @@ class TestNamedDataStore(unittest.TestCase):
 
     def test_add_duplicate_name_and_data(self) -> None:
         store = NamedDataStore()
-        store.add_named_data("key", b"data", None, None)
-        store.add_named_data("key", b"data", None, None)
+        store.add_named_data("key", b"data", 3, None)
+        first_output = store.get_named_data_store_output()
+        store.add_named_data("key", b"data", 4, None)
 
         output = store.get_named_data_store_output()
 
+        self.assertEqual(first_output.pte_data["key"], DataEntry(0, 3, None))
         self.assertEqual(len(output.buffers), 1)
         self.assertEqual(output.buffers[0], b"data")
 
         self.assertEqual(len(output.pte_data), 1)
-        self.assertEqual(output.pte_data["key"], DataEntry(0, 1, None))
+        self.assertEqual(output.pte_data["key"], DataEntry(0, 12, None))
 
         self.assertEqual(len(output.external_data), 0)
 
