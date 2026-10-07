@@ -874,6 +874,16 @@ class PybindingsTest(unittest.TestCase):
                 ),
             )
         )
+        # Without this the test would quietly stop covering the unplanned path if the planner
+        # started placing these outputs: a planned device arena is device memory too, so the
+        # pointer check below would still pass.
+        plan = exported_program.executorch_program.execution_plan[0]
+        for index in plan.outputs:
+            output_tensor = plan.values[index].val
+            self.assertIsNone(output_tensor.allocation_info)
+            self.assertEqual(
+                output_tensor.extra_tensor_info.device_type, DeviceType.CUDA
+            )
         with tempfile.TemporaryDirectory() as directory:
             pte_path = os.path.join(directory, "program.pte")
             with open(pte_path, "wb") as pte_file:
