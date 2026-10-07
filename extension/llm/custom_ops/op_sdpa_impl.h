@@ -1409,8 +1409,7 @@ void cpu_flash_attention(
           accum_t* const qk_row = qk_data + row * kvBlockSize;
           const int64_t num_valid = is_causal
               ? std::min(
-                    std::max<int64_t>(
-                        m_start_pos + row + 1 - kvBlockStart, 0),
+                    std::max<int64_t>(m_start_pos + row + 1 - kvBlockStart, 0),
                     kvBlockSize)
               : kvBlockSize;
           if (num_valid == 0) {
