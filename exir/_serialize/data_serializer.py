@@ -71,6 +71,8 @@ def extract_named_data_segments(
                 AlignedData(Cord(buffers[data_entry.buffer_index]), alignment)
             )
         else:
+            # Different keys with identical bytes share this segment, so it
+            # must satisfy every alias's alignment requirement.
             segments[segment_index].alignment = math.lcm(
                 segments[segment_index].alignment, alignment
             )
