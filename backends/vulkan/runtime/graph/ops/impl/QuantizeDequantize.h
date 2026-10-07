@@ -20,6 +20,22 @@ namespace vkcompute {
 bool is_gemv(ComputeGraph* graph, const ValueRef& fp_input);
 
 //
+// Choose qparams
+//
+
+// With skip_for_gemv, nothing is dispatched while the input has a single row;
+// for qparams that only quantized linears consume, whose GEMV path reads the fp
+// input directly.
+void add_choose_qparams_per_row_node(
+    ComputeGraph& graph,
+    const ValueRef& input,
+    const ValueRef& quant_min,
+    const ValueRef& quant_max,
+    const ValueRef& input_scales,
+    const ValueRef& input_zps,
+    const bool skip_for_gemv = false);
+
+//
 // Quantize, Dequantize for Linear/Matmul
 //
 

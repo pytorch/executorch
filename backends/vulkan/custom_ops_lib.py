@@ -264,8 +264,8 @@ def linear_q4gsw(
 
 def linear_dq8ca_q4gsw(
     x: torch.Tensor,
-    input_scale: torch.Tensor,
-    input_zero_point: torch.Tensor,
+    input_scale: Optional[torch.Tensor],
+    input_zero_point: Optional[torch.Tensor],
     weights: torch.Tensor,
     weight_sums: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -355,8 +355,8 @@ lib.define(
     f"""
             {name}(
                 Tensor input,
-                Tensor input_scales,
-                Tensor input_zp,
+                Tensor? input_scales,
+                Tensor? input_zp,
                 Tensor weights,
                 Tensor weight_sums,
                 Tensor weight_scales,
