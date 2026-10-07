@@ -29,10 +29,10 @@ from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
 from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import InternalError
+from executorch.exir.inplace_aliasing import is_inplace_node
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
     _extend_storage_base_lifetimes,
-    _is_inplace_node,
     apply_algo,
     collect_specs_from_nodes,
     filter_nodes,
@@ -684,7 +684,7 @@ class TestMisc(unittest.TestCase):
         # The mutable buffer (5x5 float32 = 100 bytes) should not be
         # double allocated. After the upstream emit dedup
         # (`_emit_spec` reusing value_id when two FX nodes share a
-        # TensorSpec via the planner's `_alias_inplace_result_specs`),
+        # TensorSpec via `alias_inplace_result_specs`),
         # the `copy_` writeback's "out" arg uses the SAME value_id as
         # its "self" arg (the buffer), rather than creating a separate
         # Value at the same (mem_id, offset).
@@ -803,7 +803,7 @@ class TestMisc(unittest.TestCase):
 
         Then assert that no other planned tensor's allocation overlaps
         either buffer's storage region. This pins the schema-driven
-        ``_alias_inplace_result_specs`` path for non-default ops: the
+        ``alias_inplace_result_specs`` path for non-default ops: the
         ``index_copy_`` result spec must be aliased to the buffer's
         spec, otherwise the planner would carve out a separate
         allocation that could land inside the buffer's slot.
@@ -873,7 +873,7 @@ class TestMisc(unittest.TestCase):
         # Lower with run_reinplace_pass=False — the pass already ran
         # with our custom set above. Memory planning should now
         # correctly alias the index_copy_ result spec onto the buffer
-        # placeholder spec via _alias_inplace_result_specs.
+        # placeholder spec via alias_inplace_result_specs.
         et = edge.to_executorch(
             ExecutorchBackendConfig(
                 emit_mutable_buffer_names=True,
@@ -1897,7 +1897,7 @@ class TestInPlaceElemWise(unittest.TestCase):
             )
         )
         nodes = list(program.exported_program().graph.nodes)
-        inplace_node = next(node for node in nodes if _is_inplace_node(node))
+        inplace_node = next(node for node in nodes if is_inplace_node(node))
         cache_spec = inplace_node.meta["spec"]
         self.assertIs(cache_spec, inplace_node.args[0].meta["spec"])
         last_use = max(nodes.index(user) for user in inplace_node.users)
@@ -1915,7 +1915,7 @@ class TestInPlaceElemWise(unittest.TestCase):
         class UnaliasingPlanner(MemoryPlanningPass):
             def run(self, graph_module, graph_signature=None):
                 for node in graph_module.graph.nodes:
-                    if _is_inplace_node(node):
+                    if is_inplace_node(node):
                         node.meta["spec"] = TensorSpec.from_tensor(node.meta["val"])
                 return super().run(graph_module, graph_signature)
 
@@ -1980,7 +1980,7 @@ class TestInPlaceElemWise(unittest.TestCase):
                 continue
             if node.target == torch.ops.aten.add.out:
                 add_spec = node.meta["spec"]
-            if _is_inplace_node(node):
+            if is_inplace_node(node):
                 inplace_node_found = True
                 self.assertIs(node.meta["spec"], add_spec)
 
@@ -2025,7 +2025,7 @@ class TestInPlaceElemWise(unittest.TestCase):
         inplace_nodes = [
             node
             for node in gm.graph.nodes
-            if node.op == "call_function" and _is_inplace_node(node)
+            if node.op == "call_function" and is_inplace_node(node)
         ]
         self.assertEqual(len(inplace_nodes), 2)
 
@@ -2072,7 +2072,7 @@ class TestInPlaceElemWise(unittest.TestCase):
         )
 
         has_inplace = any(
-            _is_inplace_node(node)
+            is_inplace_node(node)
             for node in gm.graph.nodes
             if node.op == "call_function"
         )

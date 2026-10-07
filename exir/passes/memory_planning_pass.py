@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import torch
 from executorch.exir._warnings import deprecated
 from executorch.exir.error import internal_assert
+from executorch.exir.inplace_aliasing import verify_inplace_result_aliases
 from executorch.exir.memory import alloc
 from executorch.exir.memory_planning import (
     _is_out_var_node,
@@ -24,7 +25,6 @@ from executorch.exir.memory_planning import (
     get_node_tensor_specs,
     MemoryPlanningAlgorithmSuite,
     Verifier,
-    verify_inplace_result_aliases,
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
 from executorch.exir.pass_base import PassBase, PassResult
