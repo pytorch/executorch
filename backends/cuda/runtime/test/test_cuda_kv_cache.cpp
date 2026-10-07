@@ -7,9 +7,9 @@
  */
 
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
+#include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_pool.h>
-#include <executorch/backends/cuda/runtime/backend_options.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
 #include <executorch/runtime/core/evalue.h>
@@ -1137,7 +1137,8 @@ class CudaKVPoolTest : public CudaKVCacheTest {
          {"__et_offgraph_kv_layer_1_k", "__et_offgraph_kv_layer_1_v"}) {
       declare(container, fqn, bf16, {1, kFixedRows, kHeads, kDim});
     }
-    declare(container, "__et_offgraph_kv_cells", slimc10::ScalarType::Long, {16});
+    declare(
+        container, "__et_offgraph_kv_cells", slimc10::ScalarType::Long, {16});
     declare(
         container,
         "__et_offgraph_kv_mask_w0",
@@ -1266,7 +1267,8 @@ TEST_F(CudaKVPoolTest, CompiledSizeRoundedUpBy64IsAccepted) {
         slimc10::ScalarType::BFloat16,
         {1, kDeclaredRows, kHeads, kDim});
   }
-  declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2});
+  declare(
+      container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {2});
   container.declared["__et_offgraph_kv_read_len"].second = 64;
   auto handle = make_handle(container);
   EXPECT_TRUE(pool.note_handle(&handle).get());
@@ -1301,7 +1303,8 @@ TEST_F(CudaKVPoolTest, ShapeHiddenByPaddingIsRejected) {
         slimc10::ScalarType::BFloat16,
         {1, kDeclaredRows, kHeads, kDim});
   }
-  declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {4});
+  declare(
+      container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {4});
   container.declared["__et_offgraph_kv_read_len"].second = 64;
   auto handle = make_handle(container);
   EXPECT_EQ(pool.note_handle(&handle).error(), Error::InvalidProgram);
@@ -1326,7 +1329,8 @@ TEST_F(CudaKVPoolTest, ConstantNotMatchingItsCompiledSizeIsRejected) {
 
   // And one compiled with another dtype.
   auto wrong_dtype = full_container();
-  declare(wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {16});
+  declare(
+      wrong_dtype, "__et_offgraph_kv_cells", slimc10::ScalarType::Int, {16});
   auto wrong_dtype_handle = make_handle(wrong_dtype);
   EXPECT_EQ(
       pool->note_handle(&wrong_dtype_handle).error(), Error::InvalidProgram);
@@ -1433,12 +1437,20 @@ class CudaCellCacheTest : public CudaKVCacheTest {
           slimc10::ScalarType::BFloat16,
           {1, kCells, kHeads, kDim});
     }
-    declare(container, "__et_offgraph_kv_cells", slimc10::ScalarType::Long, {kMaxWrite});
-    declare(container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {1});
+    declare(
+        container,
+        "__et_offgraph_kv_cells",
+        slimc10::ScalarType::Long,
+        {kMaxWrite});
+    declare(
+        container, "__et_offgraph_kv_read_len", slimc10::ScalarType::Long, {1});
     for (const char* mask :
          {"__et_offgraph_kv_mask_w0", "__et_offgraph_kv_mask_w2"}) {
       declare(
-          container, mask, slimc10::ScalarType::Bool, {1, 1, kMaxWrite, kCells});
+          container,
+          mask,
+          slimc10::ScalarType::Bool,
+          {1, 1, kMaxWrite, kCells});
     }
     return container;
   }
@@ -1456,7 +1468,8 @@ class CudaCellCacheTest : public CudaKVCacheTest {
   }
 
   // Rows [0, rows) over columns [0, cols) of a [kMaxWrite, kCells] mask.
-  static std::vector<std::vector<int>> read_mask(void* device, int rows, int cols) {
+  static std::vector<std::vector<int>>
+  read_mask(void* device, int rows, int cols) {
     std::vector<uint8_t> flat(static_cast<size_t>(kMaxWrite) * kCells);
     EXPECT_EQ(
         cudaMemcpy(flat.data(), device, flat.size(), cudaMemcpyDeviceToHost),
@@ -1504,36 +1517,45 @@ TEST_F(CudaCellCacheTest, InterleavedSequencesWritePlacementAndMasks) {
 
   // Both prefill in one forward.
   ASSERT_EQ(step(*cache_ptr, handle, {a, a, a, b, b}), Error::Ok);
-  EXPECT_EQ(read_longs(fake.bound["cells"].data, 5),
-            std::vector<int64_t>({0, 1, 2, 3, 4}));
-  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({5}));
+  EXPECT_EQ(
+      read_longs(fake.bound["cells"].data, 5),
+      std::vector<int64_t>({0, 1, 2, 3, 4}));
+  EXPECT_EQ(
+      read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({5}));
   using Mask = std::vector<std::vector<int>>;
   EXPECT_EQ(
       read_mask(fake.bound["mask0"].data, 5, 5),
-      Mask({{1, 0, 0, 0, 0},
-            {1, 1, 0, 0, 0},
-            {1, 1, 1, 0, 0},
-            {0, 0, 0, 1, 0},
-            {0, 0, 0, 1, 1}}));
+      Mask(
+          {{1, 0, 0, 0, 0},
+           {1, 1, 0, 0, 0},
+           {1, 1, 1, 0, 0},
+           {0, 0, 0, 1, 0},
+           {0, 0, 0, 1, 1}}));
   // The window-2 layer drops a's position 0 for its position-2 query.
   EXPECT_EQ(
       read_mask(fake.bound["mask2"].data, 5, 5),
-      Mask({{1, 0, 0, 0, 0},
-            {1, 1, 0, 0, 0},
-            {0, 1, 1, 0, 0},
-            {0, 0, 0, 1, 0},
-            {0, 0, 0, 1, 1}}));
-  EXPECT_EQ(fake.bound["mask0"].sizes, std::vector<int64_t>({1, 1, kMaxWrite, kCells}));
+      Mask(
+          {{1, 0, 0, 0, 0},
+           {1, 1, 0, 0, 0},
+           {0, 1, 1, 0, 0},
+           {0, 0, 0, 1, 0},
+           {0, 0, 0, 1, 1}}));
+  EXPECT_EQ(
+      fake.bound["mask0"].sizes,
+      std::vector<int64_t>({1, 1, kMaxWrite, kCells}));
   EXPECT_EQ(fake.bound["cells"].dtype, slimc10::ScalarType::Long);
   EXPECT_EQ(fake.bound["mask0"].dtype, slimc10::ScalarType::Bool);
   // Pools are declared at every cell; allocated past the first step's reach.
-  EXPECT_EQ(fake.bound["r_k"].sizes, std::vector<int64_t>({1, kCells, kHeads, kDim}));
+  EXPECT_EQ(
+      fake.bound["r_k"].sizes, std::vector<int64_t>({1, kCells, kHeads, kDim}));
   EXPECT_EQ(kv->metrics().flat_capacity, 5);
 
   // Then they decode together, in the other order.
   ASSERT_EQ(step(*cache_ptr, handle, {b, a}), Error::Ok);
-  EXPECT_EQ(read_longs(fake.bound["cells"].data, 2), std::vector<int64_t>({5, 6}));
-  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({7}));
+  EXPECT_EQ(
+      read_longs(fake.bound["cells"].data, 2), std::vector<int64_t>({5, 6}));
+  EXPECT_EQ(
+      read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({7}));
   EXPECT_EQ(
       read_mask(fake.bound["mask0"].data, 2, 7),
       Mask({{0, 0, 0, 1, 1, 1, 0}, {1, 1, 1, 0, 0, 0, 1}}));
@@ -1615,7 +1637,8 @@ TEST_F(CudaCellCacheTest, StepIntoAFreedCellDoesNotGrow) {
   ASSERT_EQ(step(*cache_ptr, handle, {b}), Error::Ok);
 
   EXPECT_EQ(read_longs(fake.bound["cells"].data, 1), std::vector<int64_t>({0}));
-  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({4}));
+  EXPECT_EQ(
+      read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({4}));
   const auto metrics = kv->metrics();
   EXPECT_EQ(metrics.flat_capacity, 4);
   EXPECT_EQ(metrics.growth_count, 0);
@@ -1643,8 +1666,10 @@ TEST_F(CudaCellCacheTest, UploadsOutliveTheStepTheyWereBuiltFrom) {
   ASSERT_TRUE(control->declare_step({a}));
 
   ASSERT_EQ(cudaStreamSynchronize(cudaStreamPerThread), cudaSuccess);
-  EXPECT_EQ(read_longs(fake.bound["cells"].data, 3), std::vector<int64_t>({0, 1, 2}));
-  EXPECT_EQ(read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({3}));
+  EXPECT_EQ(
+      read_longs(fake.bound["cells"].data, 3), std::vector<int64_t>({0, 1, 2}));
+  EXPECT_EQ(
+      read_longs(fake.bound["read_len"].data, 1), std::vector<int64_t>({3}));
   EXPECT_EQ(
       read_mask(fake.bound["mask0"].data, 3, 3),
       std::vector<std::vector<int>>({{1, 0, 0}, {1, 1, 0}, {0, 0, 1}}));
@@ -1714,14 +1739,19 @@ TEST_F(CudaCellCacheTest, RejectsStepsThatDisagreeWithTheDeclaration) {
 TEST_F(CudaCellCacheTest, BuilderValidatesAndIsRegisteredForBatchedKinds) {
   auto no_max_write = config(kCells, 4, kMaxWrite);
   no_max_write.max_write.reset();
-  EXPECT_EQ(cu::make_cuda_cell_kv_cache(flat_and_ring(kWindow), no_max_write), nullptr);
+  EXPECT_EQ(
+      cu::make_cuda_cell_kv_cache(flat_and_ring(kWindow), no_max_write),
+      nullptr);
   EXPECT_EQ(
       cu::make_cuda_cell_kv_cache(
           flat_and_ring(kWindow), config(kCells, 4, kCells + 1)),
       nullptr);
   for (const char* kind : {cache::kind::kBatchedCell, cache::kind::kBatched}) {
     auto built = cache::CacheFactory::global().build(
-        cu::kCudaBackendId, kind, flat_and_ring(kWindow), config(kCells, 4, kMaxWrite));
+        cu::kCudaBackendId,
+        kind,
+        flat_and_ring(kWindow),
+        config(kCells, 4, kMaxWrite));
     ASSERT_TRUE(built.ok()) << kind;
     EXPECT_NE(built.get()->as<cache::BatchControl>(), nullptr) << kind;
     EXPECT_NE(built.get()->as<cu::CudaKVCache>(), nullptr) << kind;
