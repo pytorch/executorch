@@ -249,7 +249,9 @@ Result<std::unique_ptr<CudaExecutor>> CudaExecutor::create(
 
   // The pool is the program's: its size and widest step fix the shapes the
   // program declared for the step buffers.
-  llm_cache::CacheConfig cfg{static_cast<int>(max_cells), kv_dtype};
+  llm_cache::CacheConfig cfg{};
+  cfg.capacity = static_cast<int>(max_cells);
+  cfg.kv_dtype = kv_dtype;
   cfg.max_write = max_step_tokens;
   if (initial_capacity >= 0) {
     cfg.initial_capacity = std::min(initial_capacity, cfg.capacity);

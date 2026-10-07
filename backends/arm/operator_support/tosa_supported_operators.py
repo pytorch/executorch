@@ -24,6 +24,13 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     is_submodule_node,
 )
+from executorch.backends.arm._passes.decompose_topk_pass import (
+    get_static_topk_config,
+    is_topk_indices_getitem,
+    is_topk_indices_int32_cast,
+    topk_indices_only_feed_int32_casts,
+    TOPK_OPS,
+)
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
 )
@@ -1230,12 +1237,24 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             return False
         if node.target in _ARGMAX_OPS:
             return not self._is_tosa_argmax_supported(node)
+        if self._is_prepared_topk_index(node):
+            return False
 
         return any(
             tensor.dtype == torch.int64
             for tensor in tensor_list
             if isinstance(tensor, FakeTensor)
         )
+
+    def _is_prepared_topk_index(self, node: torch.fx.Node) -> bool:
+        if node.target in TOPK_OPS:
+            source = node
+        elif is_topk_indices_getitem(node):
+            source = typing.cast(torch.fx.Node, node.args[0])
+        else:
+            return False
+        config, _ = get_static_topk_config(source, self.tosa_spec)
+        return config is not None and topk_indices_only_feed_int32_casts(source)
 
     def _is_argmax_int32_cast(
         self,
@@ -1365,6 +1384,10 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             # Allow the explicit argmax -> int32 narrowing pattern so both nodes
             # can be placed in the same delegate.
             if self._is_argmax_int32_cast(node, input_node):
+                continue
+            if is_topk_indices_int32_cast(node) and self._is_prepared_topk_index(
+                input_node
+            ):
                 continue
 
             # Constant placeholder

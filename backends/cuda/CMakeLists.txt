@@ -240,7 +240,7 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
-set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
+set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
@@ -354,11 +354,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _aoti_cuda_backend_sources runtime/cuda_kv_cache.cpp
        runtime/cuda_kv_pool.cpp
   )
-endif()
-if(_cuda_is_msvc_toolchain)
-  # MSVC links aoti_cuda_backend into portable_lib without relying on C++
-  # symbols exported from aoti_cuda_shims.dll.
-  list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
 endif()
 
 # Build the delegate as a shared library for the wheel so a process has one copy
