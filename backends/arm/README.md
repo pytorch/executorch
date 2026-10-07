@@ -199,6 +199,24 @@ compilation.
 Reach for the step-by-step flow above when a recipe does not fit -- a custom
 quantization scheme, extra passes, or a compile spec the recipe does not expose.
 
+#### TopK support
+
+The `to_edge_transform_and_lower` flow handles supported `torch.topk` calls
+automatically. Supported configurations are:
+
+- FP16 or FP32 input with positive static shape `[T, E]`, where
+  `E <= 2^31 - 1`.
+- Constant `1 <= K <= min(4, E)`, `dim=-1` or `dim=1`, `largest=True`, and
+  `sorted=True`.
+- The TOSA FP profile for K=1, or FP+INT for K>1. The scores remain
+  floating-point in both cases.
+
+**Input scores must be finite.** This condition is not checked at runtime;
+non-finite scores can produce incorrect results without triggering automatic
+fallback. Equal scores are selected in increasing index order, so tied indices
+may differ from PyTorch's results. Dynamic shapes or K, BF16, and quantized TopK
+are unsupported.
+
 ### Direct Drive (experimental, Ethos-U85 on Linux) workflow
 
 Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
@@ -419,6 +437,10 @@ List of model specific and optional passes:
        - Inserts int64 boundary casts where converted paths reach unsafe
          consumers or model outputs.
        - Keeps gather indices int64 so an undelegated gather remains valid.
+       - Prepares supported static TopK for delegation with int32 indices,
+         preserving int64 model outputs and consumers that require int64.
+       - For TopK configurations that cannot be delegated, downstream index
+         operations can still use int32 where range analysis proves it safe.
        - Supported Ops:
          - torch.ops.aten.topk.default
          - exir_ops.edge.aten.topk.default

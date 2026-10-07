@@ -270,6 +270,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.pad.default,
     exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.argmax.default,
+    exir_ops.edge.aten.topk.default,
     exir_ops.edge.aten.amax.default,
     exir_ops.edge.aten.amin.default,
     exir_ops.edge.aten.eye.default,
