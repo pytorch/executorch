@@ -99,6 +99,17 @@ class ModuleAddSingleInput(torch.nn.Module):
         return (torch.ones(2, 2),)
 
 
+class ModuleAddEmpty(torch.nn.Module):
+    def forward(self, x):
+        return x + x
+
+    def get_methods_to_export(self):
+        return ("forward",)
+
+    def get_inputs(self):
+        return (torch.zeros(3, 0),)
+
+
 class ModuleAddScalar(torch.nn.Module):
     def forward(self, x, alpha: float):
         return x + alpha

@@ -23,6 +23,7 @@ from executorch.extension.pybindings.test.make_test import (
     create_program,
     ModuleAdd,
     ModuleAddConstReturn,
+    ModuleAddEmpty,
     ModuleAddScalar,
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
@@ -77,6 +78,16 @@ class PybindingsTest(unittest.TestCase):
         output = executorch_module.forward([value.numpy() for value in inputs])[0]
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_empty_numpy_buffer_input(self):
+        exported_program, inputs = create_program(ModuleAddEmpty())
+        array = np.zeros((3, 0), dtype=np.float32)
+
+        module = self.load_fn(exported_program.buffer)
+        self.assertTrue(torch.equal(module(array)[0], inputs[0] + inputs[0]))
+
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+        self.assertTrue(torch.equal(method(array)[0], inputs[0] + inputs[0]))
 
     def test_default_numpy_integer_dtype_error_is_descriptive(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
@@ -506,6 +517,34 @@ class PybindingsTest(unittest.TestCase):
         method.execute()
         output = method.get_outputs()[0]
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
+
+    def test_method_rejects_resized_borrowed_input(self):
+        exported_program, inputs = create_program(
+            ModuleAdd(),
+            et_config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            ),
+        )
+        protocol_inputs = {
+            "torch": [value.clone() for value in inputs],
+            "numpy": [value.numpy().copy() for value in inputs],
+        }
+
+        for protocol, values in protocol_inputs.items():
+            with self.subTest(protocol=protocol):
+                method = self.load_prog_fn(exported_program.buffer).load_method(
+                    "forward"
+                )
+                method.set_inputs(values)
+                if protocol == "torch":
+                    values[0].resize_(64, 64)
+                else:
+                    values[0].resize((64, 64), refcheck=False)
+
+                with self.assertRaisesRegex(
+                    ValueError, "Input 0 storage changed.*call set_inputs"
+                ):
+                    method.execute()
 
     def test_method_callable(self):
         exported_program, inputs = create_program(ModuleAdd())
