@@ -6,7 +6,9 @@
 
 import contextlib
 import hashlib
+import logging
 import struct
+from contextvars import Context
 from unittest.mock import patch
 
 import numpy as np
@@ -21,8 +23,10 @@ from executorch.backends.arm.arm_vela import (
 )
 from executorch.backends.arm.ethosu import (
     EthosUCompileSpec,
+    observe_ethosu_preprocess,
     VelaExternalBlockPlacements,
 )
+from executorch.backends.arm.ethosu import backend as ethosu_backend
 from executorch.backends.arm.ethosu.backend import EthosUBackend
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.exir._serialize.padding import aligned_size
@@ -201,3 +205,212 @@ def test_ethosu_preprocess_outputs_external_blocks_as_named_data(tmp_path):
     key, entry = next(iter(external_data["mem1"].items()))
     assert key == hashlib.sha256(b"mem1\0" + _COMMAND_DATA).hexdigest()
     assert result.data_store_output.buffers[entry.buffer_index] == _COMMAND_DATA
+
+
+def test_ethosu_preprocess_observer_substitutes_only_compiler_arguments():
+    tosa_bytes = b"exact-tosa"
+    external_block = VelaExternalBlock("external-key", b"external", 16, "mem1")
+    compiled = VelaCompileResult(b"exact-stream", (external_block,))
+    metadata = object()
+    compiler_calls = []
+    observed = []
+    compile_spec = EthosUCompileSpec(
+        "ethos-u85-256",
+        config_ini="logical.ini",
+        external_block_placements=VelaExternalBlockPlacements(cmd_data="mem1"),
+        max_scratch_size=4096,
+    ).dump_intermediate_artifacts_to("intermediates")
+    compile_specs = compile_spec._to_list()
+    original_specs = [(spec.key, spec.value) for spec in compile_specs]
+    original_flags = tuple(compile_spec.compiler_flags)
+
+    def vela_compile(tosa, args, **kwargs):
+        compiler_calls.append((tosa, tuple(args), kwargs))
+        args.append("--compiler-mutated-its-private-copy")
+        return compiled
+
+    def observer(tosa, args, compiler):
+        observed.append((tosa, args))
+        replacement = tuple(
+            "--config=/materialized/vela.ini"
+            if arg == "--config=logical.ini"
+            else arg
+            for arg in args
+        )
+        return compiler(replacement), metadata
+
+    with (
+        patch.object(
+            TOSABackend,
+            TOSABackend._preprocess.__name__,
+            return_value=PreprocessResult(processed_bytes=tosa_bytes),
+        ),
+        patch.object(ethosu_backend, "vela_compile", side_effect=vela_compile),
+        observe_ethosu_preprocess(observer),
+    ):
+        result = EthosUBackend.preprocess(None, compile_specs)
+
+    expected_args = tuple(
+        "--config=/materialized/vela.ini"
+        if arg == "--config=logical.ini"
+        else arg
+        for arg in original_flags
+    )
+    assert observed == [(tosa_bytes, original_flags)]
+    assert compiler_calls == [
+        (
+            tosa_bytes,
+            expected_args,
+            {
+                "verbose": ethosu_backend.logger.getEffectiveLevel() <= logging.INFO,
+                "intermediate_path": "intermediates",
+                "block_placements": {"cmd_data": "mem1"},
+                "max_scratch_size": 4096,
+            },
+        )
+    ]
+    assert [(spec.key, spec.value) for spec in compile_specs] == original_specs
+    assert tuple(compile_spec.compiler_flags) == original_flags
+    assert result.processed_bytes == compiled.processed_bytes
+    assert result._delegate_info_meta is metadata
+    assert result.data_store_output is not None
+    assert result.data_store_output.buffers == [external_block.payload]
+
+
+def test_ethosu_preprocess_observer_compiler_callback_is_one_call():
+    compiled = VelaCompileResult(b"compiled")
+    compiler_calls = []
+
+    def vela_compile(tosa, args, **kwargs):
+        compiler_calls.append((tosa, tuple(args), kwargs))
+        return compiled
+
+    def calls_twice(tosa, args, compiler):
+        result = compiler(args)
+        compiler(args)
+        return result, None
+
+    def skips_compiler(_tosa, _args, _compiler):
+        return compiled, None
+
+    def replaces_result(_tosa, args, compiler):
+        compiler(args)
+        return VelaCompileResult(b"replacement"), None
+
+    def passes_generator(_tosa, args, compiler):
+        return compiler((arg for arg in args)), None
+
+    compile_specs = EthosUCompileSpec("ethos-u85-256")._to_list()
+    with (
+        patch.object(
+            TOSABackend,
+            TOSABackend._preprocess.__name__,
+            return_value=PreprocessResult(processed_bytes=b"tosa"),
+        ),
+        patch.object(ethosu_backend, "vela_compile", side_effect=vela_compile),
+    ):
+        with raises(RuntimeError, match="only once"):
+            with observe_ethosu_preprocess(calls_twice):
+                EthosUBackend.preprocess(None, compile_specs)
+        with raises(RuntimeError, match="did not call"):
+            with observe_ethosu_preprocess(skips_compiler):
+                EthosUBackend.preprocess(None, compile_specs)
+        with raises(RuntimeError, match="must return"):
+            with observe_ethosu_preprocess(replaces_result):
+                EthosUBackend.preprocess(None, compile_specs)
+        with raises(TypeError, match="sequence of strings"):
+            with observe_ethosu_preprocess(passes_generator):
+                EthosUBackend.preprocess(None, compile_specs)
+
+    assert len(compiler_calls) == 2
+
+
+def test_ethosu_preprocess_observer_exception_propagates_and_scope_resets():
+    class ObserverFailure(Exception):
+        pass
+
+    compiled = VelaCompileResult(b"compiled")
+    compiler_calls = []
+
+    def vela_compile(tosa, args, **kwargs):
+        compiler_calls.append((tosa, tuple(args), kwargs))
+        return compiled
+
+    def observer(tosa, args, compiler):
+        compiler(args)
+        raise ObserverFailure("observer failed")
+
+    compile_specs = EthosUCompileSpec("ethos-u85-256")._to_list()
+    with (
+        patch.object(
+            TOSABackend,
+            TOSABackend._preprocess.__name__,
+            return_value=PreprocessResult(processed_bytes=b"tosa"),
+        ),
+        patch.object(ethosu_backend, "vela_compile", side_effect=vela_compile),
+    ):
+        with raises(ObserverFailure, match="observer failed"):
+            with observe_ethosu_preprocess(observer):
+                EthosUBackend.preprocess(None, compile_specs)
+        result = EthosUBackend.preprocess(None, compile_specs)
+
+    assert len(compiler_calls) == 2
+    assert result.processed_bytes == compiled.processed_bytes
+    assert result._delegate_info_meta is None
+
+
+def test_ethosu_preprocess_observer_is_nested_and_context_local():
+    compiler_args = []
+
+    def vela_compile(_tosa, args, **_kwargs):
+        compiler_args.append(tuple(args))
+        return VelaCompileResult(" ".join(args).encode())
+
+    def observer(label):
+        def observe(_tosa, args, compiler):
+            replacement = tuple(
+                f"--config={label}.ini" if arg == "--config=logical.ini" else arg
+                for arg in args
+            )
+            return compiler(replacement), label
+
+        return observe
+
+    compile_specs = EthosUCompileSpec(
+        "ethos-u85-256", config_ini="logical.ini"
+    )._to_list()
+    with (
+        patch.object(
+            TOSABackend,
+            TOSABackend._preprocess.__name__,
+            return_value=PreprocessResult(processed_bytes=b"tosa"),
+        ),
+        patch.object(ethosu_backend, "vela_compile", side_effect=vela_compile),
+    ):
+        with observe_ethosu_preprocess(observer("outer")):
+            outer_before = EthosUBackend.preprocess(None, compile_specs)
+            isolated = Context().run(
+                lambda: EthosUBackend.preprocess(None, compile_specs)
+            )
+            with observe_ethosu_preprocess(observer("inner")):
+                inner = EthosUBackend.preprocess(None, compile_specs)
+            outer_after = EthosUBackend.preprocess(None, compile_specs)
+        unobserved = EthosUBackend.preprocess(None, compile_specs)
+
+    assert [
+        outer_before._delegate_info_meta,
+        isolated._delegate_info_meta,
+        inner._delegate_info_meta,
+        outer_after._delegate_info_meta,
+        unobserved._delegate_info_meta,
+    ] == ["outer", None, "inner", "outer", None]
+    assert [
+        next(arg for arg in args if arg.startswith("--config="))
+        for args in compiler_args
+    ] == [
+        "--config=outer.ini",
+        "--config=logical.ini",
+        "--config=inner.ini",
+        "--config=outer.ini",
+        "--config=logical.ini",
+    ]
