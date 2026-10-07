@@ -832,6 +832,73 @@ class PybindingsTest(unittest.TestCase):
         # A failed load must leave the method that already loaded usable.
         self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
 
+    def test_unplanned_device_output_is_device_memory(self):
+        # With alloc_graph_output=False the caller owns the outputs, and a device-resident program
+        # tags them for the device. A host buffer there works only on a GPU that can read pageable
+        # host memory, so the bindings must give such an output device memory.
+        if "CudaBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs a build with the CUDA backend linked in")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        import ctypes
+
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+        from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
+        from executorch.runtime import Runtime
+
+        class Delegated(torch.nn.Module):
+            def forward(self, x, y):
+                return (x + y) * 2.0
+
+        inputs = (torch.ones(4, 4), torch.ones(4, 4))
+        edge = to_edge_transform_and_lower(
+            {"forward": export(Delegated(), inputs, strict=True)},
+            partitioner={
+                "forward": [CudaPartitioner([CompileSpec("method_name", b"forward")])]
+            },
+        )
+        exported_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            pte_path = os.path.join(directory, "program.pte")
+            with open(pte_path, "wb") as pte_file:
+                exported_program.write_to_file(pte_file)
+            data_names = sorted(exported_program._tensor_data or {})
+            exported_program.write_tensor_data_to_file(directory)
+            data_path = (
+                os.path.join(directory, data_names[0] + ".ptd") if data_names else None
+            )
+            method = (
+                Runtime.get()
+                .load_program(pte_path, data_path=data_path)
+                .load_method("forward")
+            )
+            cuda_inputs = [tensor.cuda() for tensor in inputs]
+            output = method._method(cuda_inputs, clone_outputs=False)[0]
+            # CU_POINTER_ATTRIBUTE_MEMORY_TYPE is 2 and CU_MEMORYTYPE_DEVICE is 2. The driver does
+            # not know a pageable host pointer at all, and returns an error for it.
+            memory_type = ctypes.c_uint(0)
+            status = ctypes.CDLL("libcuda.so.1").cuPointerGetAttribute(
+                ctypes.byref(memory_type), 2, ctypes.c_uint64(output.data_ptr())
+            )
+            self.assertEqual((status, memory_type.value), (0, 2))
+            torch.testing.assert_close(
+                method.execute(cuda_inputs)[0].cpu(), torch.full((4, 4), 4.0)
+            )
+
     def test_device_planned_method_allocates_on_the_device(self):
         # The other device test covers the refusal. This one covers what the
         # refusal is protecting: on a build that does have a device allocator,

@@ -1382,8 +1382,10 @@ struct PyMethod final {
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
     for (int i = 0; i < output_storages_.size(); ++i) {
-      output_storage_spans[i] =
-          Span<uint8_t>(output_storages_[i].data(), output_storages_[i].size());
+      output_storage_spans[i] = device_output_storages_[i].size() > 0
+          ? device_output_storages_[i].as_span()
+          : Span<uint8_t>(
+                output_storages_[i].data(), output_storages_[i].size());
     }
 #ifdef USE_ATEN_LIB
     // [TLS handling] This is to workaround an assertion failure
@@ -1464,6 +1466,9 @@ struct PyMethod final {
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
+  // Backs the outputs the program places on a device without planning them,
+  // indexed like output_storages_. Empty for every other output.
+  std::vector<DeviceMemoryBuffer> device_output_storages_;
 
   void allocate_output_storages() {
     const auto num_outputs = method_->outputs_size();
@@ -1474,6 +1479,7 @@ struct PyMethod final {
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
     output_storages_.reserve(num_outputs);
+    device_output_storages_.resize(num_outputs);
     auto meta = method_->method_meta();
     for (size_t i = 0; i < num_outputs; ++i) {
       auto output_type = meta.output_tag(i);
@@ -1497,6 +1503,26 @@ struct PyMethod final {
       }
       // Allocate storage for the output tensor.
       const size_t output_size = output_tensor_meta.get().nbytes();
+#ifndef USE_ATEN_LIB
+      // The delegate and the output clone treat a device-tagged output as
+      // device memory. A host buffer there only works on a device that can
+      // read pageable host memory, and fails everywhere else.
+      const auto device = method_->get_output(i).toTensor().device();
+      if (!device.is_cpu()) {
+        auto buffer = DeviceMemoryBuffer::create(
+            output_size, device.type(), device.index());
+        THROW_IF_ERROR(
+            buffer.error(),
+            "Failed to allocate %zu bytes on device %d:%d for output %zu",
+            output_size,
+            static_cast<int>(device.type()),
+            static_cast<int>(device.index()),
+            i);
+        device_output_storages_[i] = std::move(buffer.get());
+        output_storages_.emplace_back();
+        continue;
+      }
+#endif
       output_storages_.emplace_back(output_size);
     }
   }
