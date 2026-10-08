@@ -157,6 +157,29 @@ def define_common_targets(is_fbcode = False):
     )
 
     python_unittest(
+        name = "test_quantized_gemm_family",
+        srcs = [
+            "test_quantized_gemm_family.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:triton_kernels",
+        ],
+    )
+
+    python_unittest(
+        name = "test_gemm_family_dispatch",
+        srcs = [
+            "test_gemm_family_dispatch.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:quantize_op_dispatch",
+            "//executorch/backends/cuda:triton_kernels",
+        ],
+    )
+
+    python_unittest(
         name = "test_cuda_partitioner",
         srcs = [
             "test_cuda_partitioner.py",
