@@ -64,6 +64,10 @@ class CudaGraphTimingTest(unittest.TestCase):
             )
         self.assertGreater(t_large, 10 * t_small)
 
+    @unittest.skipIf(
+        torch.version.hip is not None,
+        "a failed capture invalidates the HIP stream",
+    )
     def test_uncapturable_candidate_falls_back(self) -> None:
         x = torch.zeros(16, device="cuda")
 
@@ -141,11 +145,13 @@ class CudaGraphTimingTest(unittest.TestCase):
 
     def test_compile_spec_turns_it_off(self) -> None:
         before = benchmarking._BENCHMARK_DISPATCH.get("cuda")
+        default = (
+            before
+            if torch.version.hip is not None
+            else cgt._time_candidate_with_cuda_graph
+        )
         with CudaBackend.get_extra_aoti_compile_context_manager([]):
-            self.assertIs(
-                benchmarking._BENCHMARK_DISPATCH["cuda"],
-                cgt._time_candidate_with_cuda_graph,
-            )
+            self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), default)
         off = [CompileSpec(CUDA_GRAPH_AUTOTUNE_TIMING_COMPILE_SPEC, b"OFF")]
         with CudaBackend.get_extra_aoti_compile_context_manager(off):
             self.assertIs(benchmarking._BENCHMARK_DISPATCH.get("cuda"), before)
@@ -209,6 +215,9 @@ def _export_and_lower(extra_specs) -> None:
     )
 
 
+@unittest.skipIf(
+    torch.version.hip is not None, "CUDA-graph autotune timing is off on ROCm"
+)
 class SaturatedCpuExportTest(unittest.TestCase):
     # Picks may differ from the paused-CPU reference within measurement noise.
     MAX_REGRET = 1.20

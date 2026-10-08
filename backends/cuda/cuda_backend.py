@@ -931,7 +931,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Parse compile_specs for low_memory_mode (default OFF). compile_specs
         # may be None when called without specs (parity with base default).
         low_memory_mode = "OFF"
-        cuda_graph_autotune_timing = True
+        # On ROCm a failed capture invalidates the stream the rest of the
+        # compile runs on (hipErrorStreamCaptureInvalidated).
+        cuda_graph_autotune_timing = torch.version.hip is None
         for spec in compile_specs or []:
             if spec.key == "low_memory_mode":
                 mode = spec.value.decode("utf-8").upper()
