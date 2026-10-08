@@ -100,9 +100,10 @@ for _ in range(2):
         probabilities = forward.execute((frame,))[0]
 ```
 
-Each input is one LFBE frame of shape `(1, 40, 1, 1)`. The first 29 outputs are
-warmup outputs after each load. The random frames above illustrate the calling
-convention; the example model also uses randomly initialized weights.
+Each input is one log filterbank energy (LFBE) frame of shape `(1, 40, 1, 1)`.
+The first 29 outputs are warmup outputs after each load. The random frames above
+illustrate the calling convention; the example model also uses randomly
+initialized weights.
 
 Run the portable export and streaming tests with:
 
