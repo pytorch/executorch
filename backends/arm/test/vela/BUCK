@@ -1,0 +1,10 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+load(":targets.bzl", "define_vela_tests")
+
+oncall("executorch")
+
+define_vela_tests()
