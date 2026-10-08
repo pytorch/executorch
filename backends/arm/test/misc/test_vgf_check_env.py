@@ -156,7 +156,7 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "if '--version' in sys.argv:\n"
-        "    print('model-converter 0.10.0')\n"
+        "    print('model-converter 0.11.0')\n"
         "    raise SystemExit(0)\n"
         "raise SystemExit(1)\n",
     )
@@ -168,7 +168,7 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
 
     assert result.status == check_env.STATUS_OK
     assert str(converter) in result.detail
-    assert "0.10.0" in result.detail
+    assert "0.11.0" in result.detail
 
 
 def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
@@ -177,7 +177,7 @@ def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
         "#!/usr/bin/env python3\n"
         "import sys\n"
         "if '--version' in sys.argv:\n"
-        "    print('model-converter 0.9.0')\n"
+        "    print('model-converter 0.10.0')\n"
         "    raise SystemExit(0)\n"
         "raise SystemExit(1)\n",
     )
@@ -188,8 +188,8 @@ def test_model_converter_check_fails_below_minimum(monkeypatch, tmp_path):
     result = check_env._check_model_converter()
 
     assert result.status == check_env.STATUS_FAIL
-    assert "0.9.0" in result.detail
     assert "0.10.0" in result.detail
+    assert "0.11.0" in result.detail
     assert result.action is not None
 
 
@@ -212,7 +212,7 @@ def test_model_converter_check_fails_when_version_is_unparseable(monkeypatch, tm
     assert result.status == check_env.STATUS_FAIL
     assert "could not be parsed" in result.detail
     assert result.action is not None
-    assert "0.10.0" in result.action
+    assert "0.11.0" in result.action
 
 
 def test_get_model_converter_version_text(monkeypatch, tmp_path):
@@ -279,7 +279,7 @@ def test_below_minimum_model_converter_reason(monkeypatch, tmp_path):
         requirement_name="the copied RIFE VGF quant tests",
     ) == (
         "model-converter d8c1b8e is below the minimum supported version "
-        "0.10.0 required for the copied RIFE VGF quant tests"
+        "0.11.0 required for the copied RIFE VGF quant tests"
     )
 
 
