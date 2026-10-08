@@ -500,6 +500,18 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
             self.assertTrue(torch.equal(cache, expected))
             self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
 
+    def test_index_copy_rejects_negative_index(self):
+        # ATen raises on negative indices, so the delegate must not wrap them.
+        model = self.IndexCopyInput(0).eval()
+        inputs = (torch.randn(4, 8), torch.tensor([1]), torch.randn(1, 8))
+        program = _lower(model, inputs)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pte"
+            path.write_bytes(program.buffer)
+            method = Runtime.get().load_program(path).load_method("forward")
+            with self.assertRaises(RuntimeError):
+                method.execute([inputs[0], torch.tensor([-1]), inputs[2]])
+
 
 if __name__ == "__main__":
     unittest.main()

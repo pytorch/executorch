@@ -1321,7 +1321,7 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   const size_t uaxis = static_cast<size_t>(axis);
   const int dst_dim = static_cast<int>(dst.shape()[uaxis]);
 
-  // Get indices as a vector of ints, handling negative indices
+  // Like ATen, negative indices are rejected rather than wrapped.
   // Note: PyTorch uses int64 for indices, so we read as int64_t
   eval(indices); // Ensure indices are materialized before accessing data
   if (indices.dtype() != ::mlx::core::int64) {
@@ -1332,15 +1332,12 @@ exec_index_copy(const IndexCopyNode& n, ExecutionState& st, StreamOrDevice s) {
   std::vector<int32_t> idx_vec(indices.size());
   auto idx_data = indices.data<int64_t>();
   for (size_t i = 0; i < indices.size(); ++i) {
-    int64_t idx = idx_data[i];
-    if (idx < 0) {
-      idx += dst_dim;
-    }
+    const int64_t idx = idx_data[i];
     if (idx < 0 || idx >= dst_dim) {
       throw std::out_of_range(
-          "IndexCopyNode: index " + std::to_string(idx_data[i]) +
-          " out of range for axis " + std::to_string(axis) + " with size " +
-          std::to_string(dst_dim));
+          "index_copy: index " + std::to_string(idx) +
+          " is out of bounds for dimension " + std::to_string(axis) +
+          " with size " + std::to_string(dst_dim));
     }
     if (idx > std::numeric_limits<int32_t>::max()) {
       throw std::out_of_range(
