@@ -6,9 +6,10 @@
 
 # pyre-strict
 
-import executorch.backends.vulkan.utils as utils
-
 import torch
+from executorch.backends.vulkan.op_registry import (
+    can_rewrite_batch_norm_as_group_norm,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
@@ -29,7 +30,7 @@ class ReplaceInstanceNormPass(ExportPass):
         modified = False
 
         for node in list(graph_module.graph.nodes):
-            if not utils.node_is_instance_norm(node):
+            if not can_rewrite_batch_norm_as_group_norm(node):
                 continue
 
             input_node = node.args[0]
