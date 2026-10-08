@@ -12,5 +12,6 @@ slice_scatter:
       - VALUE: half
       - VALUE: float
       - VALUE: int32
+      - VALUE: uint8
   shader_variants:
     - NAME: slice_scatter_texture3d
