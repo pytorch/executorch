@@ -169,19 +169,6 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
-    name = "inplace_aliasing",
-    srcs = [
-        "inplace_aliasing.py",
-    ],
-    deps = [
-        ":error",
-        ":tensor",
-        "//caffe2:torch",
-        "//executorch/exir/operator:convert",
-    ],
-)
-
-fbcode_target(_kind = runtime.python_library,
     name = "memory_planning",
     srcs = [
         "memory_planning.py",
@@ -190,7 +177,6 @@ fbcode_target(_kind = runtime.python_library,
         ":control_flow",
         ":delegate",
         ":error",
-        ":inplace_aliasing",
         ":memory",
         ":schema",
         ":tensor",

@@ -233,6 +233,27 @@ class TestVulkanDynamic(unittest.TestCase):
                 edge = self._lower(model, inputs[0])
                 self._run(edge, model, inputs, atol=0, rtol=0)
 
+    def test_dynamic_full(self):
+        class Full(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.full(x.shape, 2.5),
+                    torch.zeros(x.shape),
+                    torch.ones(x.shape),
+                    torch.full_like(x, -1.5),
+                    torch.zeros_like(x),
+                    torch.ones_like(x),
+                )
+
+        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage=storage):
+                model = Full()
+                inputs = [(torch.randn(2, s, 3),) for s in (16, 3, 31, 2, 16)]
+                edge = self._lower(
+                    model, inputs[0], ({1: Dim("s", min=2, max=32)},), storage
+                )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
     def test_dynamic_logical_not(self):
         class LogicalNot(torch.nn.Module):
             def forward(self, x):
@@ -242,7 +263,12 @@ class TestVulkanDynamic(unittest.TestCase):
         inputs = [
             ((torch.arange(3 * s).reshape(3, s) % 3 == 0),) for s in (7, 2, 15, 3, 7)
         ]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(
                     model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
@@ -252,7 +278,12 @@ class TestVulkanDynamic(unittest.TestCase):
     def test_constant_bool_mask(self):
         model = ConstantMask()
         inputs = [(torch.linspace(-1, 1, 21).reshape(3, 7),)]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(model, inputs[0], storage=storage)
                 self.assertTrue(
@@ -307,6 +338,29 @@ class TestVulkanDynamic(unittest.TestCase):
                 model = NanScalar(kind)
                 edge = self._lower(model, inputs[0], fully_delegated=False)
                 self._run(edge, model, inputs, atol=0, rtol=0, equal_nan=True)
+
+    def test_integer_fill_values(self):
+        class IntegerFill(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (
+                    torch.full(x.shape, 16777217, dtype=self.dtype),
+                    torch.full_like(x, -(2**31), dtype=self.dtype),
+                    torch.full(x.shape, 2**31 - 1, dtype=self.dtype),
+                )
+
+        inputs = [(torch.randn(2, s, 3),) for s in (7, 2, 15, 7)]
+        for dtype in (torch.int32, torch.int64):
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(dtype=dtype, storage=storage):
+                    model = IntegerFill(dtype)
+                    edge = self._lower(
+                        model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
+                    )
+                    self._run(edge, model, inputs, atol=0, rtol=0)
 
     def test_integer_scalar_range_fallback(self):
         class LargeScalar(torch.nn.Module):
@@ -367,6 +421,90 @@ class TestVulkanDynamic(unittest.TestCase):
                             )
                 self._run(edge, model, inputs, atol=0, rtol=0)
 
+    def test_integer_factories_without_downcasting(self):
+        class IntegerFactories(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.dtype = dtype
+
+            def forward(self, x):
+                return (
+                    torch.scalar_tensor(16777217, dtype=self.dtype),
+                    torch.full(x.shape, 2**31 - 1, dtype=self.dtype),
+                    torch.full_like(x, -(2**31), dtype=self.dtype),
+                )
+
+        inputs = [(torch.zeros(3, s),) for s in (7, 2, 15, 7)]
+        for dtype in (torch.int32, torch.int64):
+            for downcast in (True, False):
+                with self.subTest(dtype=dtype, downcast=downcast):
+                    model = IntegerFactories(dtype)
+                    delegated = dtype == torch.int32 or downcast
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({1: Dim("s", min=2, max=16)},),
+                        fully_delegated=delegated,
+                        downcast_64_bit=downcast,
+                    )
+                    self.assertEqual(bool(_vulkan_graphs(edge)), delegated)
+                    self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_64_bit_inputs_without_downcasting(self):
+        class Input64Bit(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    x + x,
+                    torch.full_like(x, 3, dtype=torch.int32),
+                    torch.ones(x.shape, dtype=torch.float32),
+                )
+
+        model = Input64Bit()
+        for dtype in (torch.int64, torch.float64):
+            with self.subTest(dtype=dtype):
+                inputs = [
+                    (torch.arange(3 * s, dtype=dtype).reshape(3, s),)
+                    for s in (7, 2, 15, 7)
+                ]
+                edge = self._lower(
+                    model,
+                    inputs[0],
+                    ({1: Dim("s", min=2, max=16)},),
+                    fully_delegated=False,
+                    downcast_64_bit=False,
+                )
+                graphs = _vulkan_graphs(edge)
+                self.assertTrue(graphs)
+                for graph in graphs:
+                    for value in graph.values:
+                        if isinstance(value.value, VkTensor):
+                            self.assertNotIn(
+                                value.value.datatype,
+                                (VkDataType.INT64, VkDataType.FLOAT64),
+                            )
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
+    def test_bool_fill_values(self):
+        class BoolFill(torch.nn.Module):
+            def forward(self, x):
+                return (
+                    torch.full_like(x, 0.5, dtype=torch.bool),
+                    torch.full_like(x, -1.5, dtype=torch.bool),
+                    torch.full(x.shape, 0, dtype=torch.bool),
+                )
+
+        model = BoolFill()
+        inputs = [(torch.zeros(3, 7),)]
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
+            with self.subTest(storage=storage):
+                edge = self._lower(model, inputs[0], storage=storage)
+                self._run(edge, model, inputs, atol=0, rtol=0)
+
     def test_64_bit_fusion_inputs_without_downcasting(self):
         class SelectScalar(torch.nn.Module):
             def __init__(self, narrow):
@@ -415,10 +553,12 @@ class TestVulkanDynamic(unittest.TestCase):
         )
         unwrap_tensor_subclass(model)
         inputs = [(torch.tensor(indices),) for indices in ([0, 5, 63, 7], [3, 3, 1, 0])]
-        for downcast in (False, True):
+        downcast_modes = [False]
+        # Quantized embedding requires 8-bit storage buffers.
+        if not USING_SWIFTSHADER:
+            downcast_modes.append(True)
+        for downcast in downcast_modes:
             with self.subTest(downcast=downcast):
-                if downcast and USING_SWIFTSHADER:
-                    self.skipTest("Quantized embedding requires 8-bit storage buffers")
                 edge = self._lower(
                     model,
                     inputs[0],
@@ -635,6 +775,40 @@ class TestVulkanDynamic(unittest.TestCase):
                         edge = self._lower(model, (x,), fully_delegated=False)
                         self.assertEqual(_vulkan_graphs(edge), [])
                         self._run(edge, model, [(x,)])
+
+    def test_fp16_scalar_rounding(self):
+        class CreateTensor(torch.nn.Module):
+            def __init__(self, value, scalar):
+                super().__init__()
+                self.value = value
+                self.scalar = scalar
+
+            def forward(self, x):
+                if self.scalar:
+                    return torch.scalar_tensor(self.value, dtype=x.dtype)
+                return torch.full_like(x, self.value)
+
+        x = torch.ones(3, 7, dtype=torch.float16)
+        for value in (
+            0.3,
+            -1.00075,
+            2**-24,
+            -(2**-24),
+            2**-25,
+            3 * 2**-25,
+            65519.0,
+            65520.0,
+            1e5,
+            -1e5,
+        ):
+            for scalar in (False, True):
+                if not scalar and abs(value) > 65504:
+                    continue
+                for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                    with self.subTest(value=value, scalar=scalar, storage=storage):
+                        model = CreateTensor(value, scalar)
+                        edge = self._lower(model, (x,), storage=storage)
+                        self._run(edge, model, [(x,)], atol=0, rtol=0)
 
     def test_int32_buffer_reduction_shader_range(self):
         from executorch.extension.pybindings.portable_lib import (

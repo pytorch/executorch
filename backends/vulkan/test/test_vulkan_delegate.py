@@ -1280,6 +1280,48 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_grid_sampler_2d(self):
+        class GridSampler2d(torch.nn.Module):
+            def __init__(self, padding_mode, align_corners):
+                super().__init__()
+                self.padding_mode = padding_mode
+                self.align_corners = align_corners
+
+            def forward(self, x, grid):
+                return torch.nn.functional.grid_sample(
+                    x,
+                    grid,
+                    mode="bilinear",
+                    padding_mode=self.padding_mode,
+                    align_corners=self.align_corners,
+                )
+
+        # Deliberately push the grid past [-1, 1] on every side so the zeros
+        # and border paths actually diverge; an in-range grid is identical
+        # under both and would pass even with the padding branch broken.
+        grid = torch.stack(
+            torch.meshgrid(
+                torch.linspace(-1.6, 1.6, 7),
+                torch.linspace(-1.6, 1.6, 5),
+                indexing="ij",
+            )[::-1],
+            dim=-1,
+        ).unsqueeze(0)
+        sample_inputs = (
+            torch.rand(size=(1, 4, 6, 8), dtype=torch.float32),
+            grid.contiguous(),
+        )
+
+        for padding_mode in ("zeros", "border"):
+            for align_corners in (True, False):
+                with self.subTest(
+                    padding_mode=padding_mode, align_corners=align_corners
+                ):
+                    self.lower_module_and_test_output(
+                        GridSampler2d(padding_mode, align_corners),
+                        sample_inputs,
+                    )
+
     def test_vulkan_backend_minimum(self):
         class MinimumModule(torch.nn.Module):
             def __init__(self):
@@ -1565,6 +1607,23 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             TestModule(),
             sample_inputs,
+        )
+
+    def test_vulkan_backend_split_with_sizes_dynamic(self):
+        class TestModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.split(x, (3, 6, 1, 3), dim=-1)
+
+        sample_inputs = (torch.randn(size=(1, 8, 13), dtype=torch.float32),)
+        seq_len = Dim("seq_len", min=2, max=16)
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            dynamic_shapes={"x": {1: seq_len}},
+            test_inputs=[
+                (torch.randn(size=(1, 3, 13), dtype=torch.float32),),
+                (torch.randn(size=(1, 16, 13), dtype=torch.float32),),
+            ],
         )
 
     def test_vulkan_backend_split_tensor(self):
@@ -2087,6 +2146,23 @@ class TestVulkanBackend(unittest.TestCase):
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
             (torch.tensor([[0, 1, 0], [4, 2, 0]]),),
+        )
+
+    def test_vulkan_backend_embedding_large_vocab(self):
+        # Past 16384 entries the output of the embedding is laid out as a height
+        # packed texture, so each texel holds 4 different weight rows instead of
+        # 4 elements of the same row. See #22333.
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(16385, 4)),
+            (torch.tensor([[0, 1, 16384], [7, 16000, 12345]]),),
         )
 
     def test_vulkan_backend_embedding_3d(self):
