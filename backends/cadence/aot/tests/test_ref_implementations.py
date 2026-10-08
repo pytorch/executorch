@@ -1015,6 +1015,20 @@ class TestRefImplementations(unittest.TestCase):
                 torch.int8,  # dtype
                 torch.tensor([[-19, 4]], dtype=torch.int8),  # expected_output
             ),
+            # Test case 4: int16 input and output values outside the int8 range
+            (
+                torch.tensor([[-2, 2]], dtype=torch.int16),
+                0.1,  # X_scale
+                0,  # X_zero_point
+                [2],  # normalized_shape (last dimension)
+                torch.tensor([1.0, 1.0]),  # weight
+                torch.tensor([0.0, 0.0]),  # bias
+                1e-5,  # eps
+                0.001,  # output_scale
+                0,  # output_zero_point
+                torch.int16,  # dtype
+                torch.tensor([[-1000, 1000]], dtype=torch.int16),
+            ),
         ]
     )
     def test_quantized_layer_norm_per_tensor(
@@ -3272,6 +3286,7 @@ class TestRefImplementations(unittest.TestCase):
             # X=5, zp=4 → dequant=0.8*(5-4)=0.8; Y=5, zp=4 → dequant=0.8
             # mul=0.64; quantize: round(0.64/0.8)+4=1+4=5
             ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int8),
+            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.int16),
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 5, torch.uint8),
         ]
     )
