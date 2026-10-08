@@ -1052,3 +1052,89 @@ class TestVulkanPasses(unittest.TestCase):
         before = op_node_count(ep.graph_module, "view_copy.default")
         RemoveRedundantOpsTransform().call(ep.graph_module)
         self.assertEqual(op_node_count(ep.graph_module, "view_copy.default"), before)
+
+
+class _NamedOpStub:
+    """Stands in for a llama custom op, which may not be registered here."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self.__name__ = name.replace("::", "_")
+
+    def name(self) -> str:
+        return self._name
+
+    def __call__(self, *args):
+        raise NotImplementedError
+
+
+class TestLLMSDPAPartitionerCheck(unittest.TestCase):
+    """
+    check_llm_sdpa_node keeps llama::custom_sdpa / update_cache configurations
+    that the Vulkan SDPA cannot run on CPU, instead of failing at load time. The
+    causal_sdpa pattern must not match them either, since a matched node is
+    delegated without the per-op checks.
+    """
+
+    S, C, H, D = 4, 16, 2, 8
+
+    def _build(
+        self,
+        mask_shape=None,
+        mask_dtype=torch.float32,
+        q_dtype=torch.float32,
+        is_causal=False,
+    ):
+        from executorch.backends.vulkan.op_registry import check_llm_sdpa_node
+        from executorch.backends.vulkan.patterns.sdpa import find_causal_sdpa_patterns
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        graph = torch.fx.Graph()
+
+        def placeholder(name, shape, dtype):
+            node = graph.placeholder(name)
+            node.meta["val"] = fake_mode.from_tensor(torch.empty(shape, dtype=dtype))
+            return node
+
+        q = placeholder("q", (1, self.S, self.H, self.D), q_dtype)
+        k = placeholder("k", (1, self.S, self.H, self.D), q_dtype)
+        k_cache = placeholder("k_cache", (1, self.C, self.H, self.D), q_dtype)
+        v_cache = placeholder("v_cache", (1, self.C, self.H, self.D), q_dtype)
+        mask = None
+        if mask_shape is not None:
+            mask = placeholder("mask", mask_shape, mask_dtype)
+
+        update_cache = graph.call_function(
+            _NamedOpStub("llama::update_cache"), (k, k_cache, 0)
+        )
+        custom_sdpa = graph.call_function(
+            _NamedOpStub("llama::custom_sdpa"),
+            (q, k_cache, v_cache, 0, mask, 0.0, is_causal),
+        )
+        supported = check_llm_sdpa_node(custom_sdpa)
+        self.assertEqual(check_llm_sdpa_node(update_cache), supported)
+        self.assertEqual(find_causal_sdpa_patterns(custom_sdpa) is not None, supported)
+        return supported
+
+    def test_causal_without_mask_is_supported(self):
+        self.assertTrue(self._build(is_causal=True))
+
+    def test_non_causal_without_mask_is_rejected(self):
+        self.assertFalse(self._build(is_causal=False))
+
+    def test_mask_is_supported(self):
+        self.assertTrue(self._build(mask_shape=(self.S, self.C)))
+
+    def test_mask_with_is_causal_is_rejected(self):
+        self.assertFalse(self._build(mask_shape=(self.S, self.C), is_causal=True))
+
+    def test_mask_dtype_mismatch_is_rejected(self):
+        # The CPU op requires an fp32 mask, also for an fp16 query.
+        self.assertFalse(
+            self._build(mask_shape=(self.S, self.C), q_dtype=torch.float16)
+        )
+
+    def test_mask_shape_mismatch_is_rejected(self):
+        self.assertFalse(self._build(mask_shape=(1, self.S, self.C)))
+        self.assertFalse(self._build(mask_shape=(self.S, self.C - 1)))
