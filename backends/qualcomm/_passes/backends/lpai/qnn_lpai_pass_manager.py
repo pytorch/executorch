@@ -56,6 +56,10 @@ class QnnLpaiPassManager(QnnPassManager):
         )
         return deps
 
+    @classmethod
+    def _get_terminal_passes(cls):
+        return [ResolveDebugHandle, LpaiPartitionFallbackSupport]
+
     def _validate_edge_passes(self) -> None:
         assert isinstance(
             self.passes[-2], ResolveDebugHandle
