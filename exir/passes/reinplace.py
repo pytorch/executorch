@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import operator
 from typing import Any, Dict, FrozenSet, Iterable, Optional, Set, Tuple, Union
 
 import torch
@@ -15,6 +16,7 @@ from executorch.exir.operator.convert import (
     unwrap_op_overload,
 )
 from torch.export import ExportedProgram
+from torch.export.graph_signature import ExportGraphSignature
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +532,56 @@ def reinplace_pass(  # noqa: C901
                 spec.arg.name = arg.name
 
     return ep
+
+
+def reinplace_delegate_input_mutations(
+    graph_module: torch.fx.GraphModule, graph_signature: ExportGraphSignature
+) -> None:
+    """Let a delegate write an input it mutates in place.
+
+    The method writes a mutated input back with ``copy_(input, output)`` once
+    the delegate that computed ``output`` returns. When that delegate also
+    reads ``input`` and its backend sets ``writes_mutated_inputs_in_place``,
+    give ``output`` the input's TensorSpec, so the two are one value the
+    delegate writes directly, and drop the copy.
+
+    Runs on a graph with tensor specs, before memory planning.
+    """
+    from executorch.exir.backend.backend_details import BackendDetails
+    from executorch.exir.delegate import executorch_call_delegate
+
+    backends = {cls.__name__: cls for cls in BackendDetails.__subclasses__()}
+    graph = graph_module.graph
+    position = {node: i for i, node in enumerate(graph.nodes)}
+    for node in list(graph.nodes):
+        if node.target != torch.ops.aten.copy_.default:
+            continue
+        mutated, update = node.args[0], node.args[1]
+        if mutated.op != "placeholder" or update.target != operator.getitem:
+            continue
+        delegate = update.args[0]
+        if delegate.target != executorch_call_delegate or mutated not in delegate.args:
+            continue
+        backend = backends.get(
+            getattr(graph_module, delegate.args[0].target).backend_id
+        )
+        if backend is None or not backend.writes_mutated_inputs_in_place:
+            continue
+        # The input now changes while the delegate runs, not at the copy, so
+        # nothing in between may read it.
+        if any(
+            position[delegate] < position[user] < position[node]
+            for user in mutated.users
+        ):
+            continue
+        # The emitter takes the delegate's outputs from its own specs.
+        delegate_specs = list(delegate.meta["spec"])
+        delegate_specs[update.args[1]] = mutated.meta["spec"]
+        delegate.meta["spec"] = type(delegate.meta["spec"])(delegate_specs)
+        update.meta["spec"] = mutated.meta["spec"]
+        for spec in graph_signature.output_specs:
+            if spec.arg.name == node.name:
+                spec.arg.name = update.name
+        node.replace_all_uses_with(update)
+        graph.erase_node(node)
+    graph_module.recompile()

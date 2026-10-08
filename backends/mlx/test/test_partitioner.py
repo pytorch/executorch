@@ -19,7 +19,12 @@ from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 from executorch.backends.mlx.partitioner import MLXPartitioner
 from executorch.backends.mlx.passes import get_default_passes
 from executorch.backends.mlx.test.test_utils import get_mlx_node_counts
-from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 from executorch.runtime import Runtime
 from torch.export import export
 
@@ -469,6 +474,31 @@ class TestMLXPartitionerMutatedUserInput(unittest.TestCase):
                 self.assertEqual(counts.get("IndexCopyNode", 0), 1)
                 self.assertTrue(torch.allclose(data, expected))
                 self.assertTrue(torch.allclose(summed, expected_sum, atol=1e-5))
+
+    def test_index_copy_into_input_written_in_place_with_reinplace(self):
+        # With run_reinplace_pass the delegate writes the mutated input itself:
+        # the method has no write-back copy_, and returns the input value.
+        model = self.IndexCopyInput(0).eval()
+        cache = torch.zeros(16, 8)
+        program = to_edge_transform_and_lower(
+            export(model, (cache, torch.tensor([1]), torch.randn(1, 8)), strict=False),
+            partitioner=[MLXPartitioner()],
+        ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+        graph = program.exported_program().graph
+        self.assertFalse(
+            any(n.target == torch.ops.aten.copy_.default for n in graph.nodes)
+        )
+        plan = program.executorch_program.execution_plan[0]
+        self.assertEqual(plan.outputs[0], plan.inputs[0])
+
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        expected = cache.clone()
+        for row in (3, 7, 11):
+            indices, update = torch.tensor([row]), torch.randn(1, 8)
+            expected.index_copy_(0, indices, update)
+            cache, summed = method.execute([cache, indices, update])
+            self.assertTrue(torch.equal(cache, expected))
+            self.assertTrue(torch.allclose(summed, expected.sum(0), atol=1e-5))
 
 
 if __name__ == "__main__":

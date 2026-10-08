@@ -320,6 +320,10 @@ struct ExecutionState {
     return idx;
   }
 
+  void release_tensor(Tid id) {
+    tensors[tensor_index(id)] = std::nullopt;
+  }
+
   void reset() {
     // Clear per-execution tensors (inputs, outputs, temps)
     // Constants and mutable buffers are not in this vector

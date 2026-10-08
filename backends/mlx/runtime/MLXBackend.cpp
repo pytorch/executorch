@@ -32,6 +32,7 @@
 
 #include <executorch/backends/mlx/runtime/backend_options.h>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -176,7 +177,11 @@ void write_output(array& arr, ETTensor& out) {
     throw std::runtime_error(
         "write_output: arr.data<void>() is null after wait()");
   }
-  std::memcpy(out.mutable_data_ptr(), src, out_nbytes);
+  // An output that is also an input can be computed into the input's own
+  // memory when MLX donates its buffer, and is then already in place.
+  if (src != out.const_data_ptr()) {
+    std::memcpy(out.mutable_data_ptr(), src, out_nbytes);
+  }
 }
 
 } // namespace
@@ -472,6 +477,7 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       };
 
       std::vector<OutputInfo> tensor_output_info;
+      std::vector<Tid> inputs_written_in_place;
       size_t arg_idx = 0;
 
       auto* h = static_cast<MLXHandle*>(handle);
@@ -504,6 +510,13 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
                 ")");
           }
           if (slot.slot_type == SlotType::TensorSlot) {
+            // The method passes an input it mutates in place as the output
+            // that carries the mutation too, as one and the same EValue.
+            EValue* arg = args[arg_idx];
+            if (std::find(args.begin() + n_inputs, args.end(), arg) !=
+                args.end()) {
+              inputs_written_in_place.push_back(Tid{slot.idx});
+            }
             const ETTensor& tensor = args[arg_idx++]->toTensor();
             Tid tid{slot.idx};
             std::optional<TensorMeta> expected_meta = std::nullopt;
@@ -572,6 +585,12 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
           }
         }
 
+        // With nothing but the graph left holding an input that is written in
+        // place, MLX can donate the input's buffer to its update.
+        for (Tid tid : inputs_written_in_place) {
+          h->state.release_tensor(tid);
+        }
+
         // Submit all output work to GPU asynchronously
         // async_eval encodes Metal commands and returns immediately.
         // The GPU will signal events on completion.
@@ -580,6 +599,14 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
         }
 
       } // Lock released — GPU is still executing
+
+      // An output written into an input's memory must not land while work
+      // still reading that input is in flight.
+      if (!inputs_written_in_place.empty()) {
+        for (auto& arr : prepared_outputs) {
+          arr.wait();
+        }
+      }
 
       for (auto& info : tensor_output_info) {
         ETTensor& out_tensor = args[info.arg_idx]->toTensor();

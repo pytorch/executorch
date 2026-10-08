@@ -10,8 +10,13 @@ import unittest
 from typing import List, Optional
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.canonical_partitioners.all_node_partitioner import (
+    AllNodePartitioner,
+)
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as edge_ops
 from executorch.exir.passes.reinplace import DEFAULT_INPLACEABLE_OPS, reinplace_pass
 from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
@@ -38,6 +43,20 @@ def _find_nodes(
         and contains in str(n.target)
         and (excludes is None or excludes not in str(n.target))
     ]
+
+
+class _InPlaceDemoBackend(BackendDetails):
+    writes_mutated_inputs_in_place = True
+
+    @staticmethod
+    def preprocess(edge_program, compile_specs) -> PreprocessResult:
+        return PreprocessResult(processed_bytes=b"")
+
+
+class _CopyingDemoBackend(BackendDetails):
+    @staticmethod
+    def preprocess(edge_program, compile_specs) -> PreprocessResult:
+        return PreprocessResult(processed_bytes=b"")
 
 
 class TestReinplacePass(unittest.TestCase):
@@ -772,6 +791,42 @@ class TestReinplacePass(unittest.TestCase):
         # (the in-place rewrite must serialize cleanly into the ET
         # program).
         edge.to_executorch()
+
+    def test_delegate_writes_mutated_input_in_place(self) -> None:
+        """A delegate that mutates one of its inputs writes it in place when
+        its backend opts in: its output shares the input's spec and the
+        write-back copy_ is gone. Other backends keep the copy_."""
+
+        class CacheUpdate(torch.nn.Module):
+            def forward(
+                self, k: torch.Tensor, k_cache: torch.Tensor, pos: torch.Tensor
+            ) -> torch.Tensor:
+                k_cache.index_copy_(2, pos, k)
+                return k_cache.sum(-1)
+
+        inputs = (torch.ones(1, 2, 1, 4), torch.zeros(1, 2, 8, 4), torch.tensor([3]))
+        for backend, in_place in (
+            ("_InPlaceDemoBackend", True),
+            ("_CopyingDemoBackend", False),
+        ):
+            with self.subTest(backend=backend):
+                program = to_edge_transform_and_lower(
+                    export(CacheUpdate(), inputs, strict=True),
+                    partitioner=[AllNodePartitioner(backend, [])],
+                ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+                graph = program.exported_program().graph
+                k_cache = next(n for n in graph.nodes if n.name == "k_cache")
+                delegate = next(
+                    n for n in graph.nodes if n.target == executorch_call_delegate
+                )
+                self.assertEqual(
+                    len(_find_nodes(program.exported_program(), "copy_")),
+                    0 if in_place else 1,
+                )
+                self.assertEqual(
+                    any(spec is k_cache.meta["spec"] for spec in delegate.meta["spec"]),
+                    in_place,
+                )
 
     def test_chain_of_inplaceable_ops(self) -> None:
         """A chain of safe-to-reinplace ops gets fully rewritten in
