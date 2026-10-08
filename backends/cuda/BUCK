@@ -93,6 +93,23 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_library,
+    name = "autotune",
+    srcs = [
+        "autotune/__init__.py",
+        "autotune/cuda_graph_timing.py",
+        "autotune/inputs.py",
+        "autotune/launch_params.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
@@ -101,6 +118,7 @@ fbcode_target(
     ],
     visibility = ["PUBLIC"],
     deps = [
+        ":autotune",
         ":cuda_passes",
         ":triton_replacement_pass",
         "//caffe2:torch",
@@ -156,6 +174,7 @@ fbcode_target(
         "//executorch/backends/cuda/...",
     ],
     deps = [
+        ":autotune",
         "//caffe2:torch",
     ],
 )
