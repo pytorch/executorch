@@ -11,16 +11,18 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.tests.comparators.accuracy_comparator import (
+    AccuracyOutputComparator,
+)
+from executorch.backends.nxp.tests.comparators.numerical_stats_comparator import (
+    NumericalStatsOutputComparator,
+)
 
 from executorch.backends.nxp.tests.dataset_creator import (
     FromCalibrationDataDatasetCreator,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    ClassificationAccuracyOutputComparator,
-    NumericalStatsOutputComparator,
-)
 from executorch.backends.nxp.tests.nsys_testing import (
     get_test_name,
     lower_run_compare,
@@ -105,7 +107,7 @@ def test_mlperf_tiny_anomaly_detection_ptq_qat_equivalence(request):
         "dataset/calibration/",
     )
 
-    comparator = ClassificationAccuracyOutputComparator(
+    comparator = AccuracyOutputComparator(
         class_dict=labels,
         postprocess_fn=partial(
             anomaly_detection.get_class_from_reconstruction_error,

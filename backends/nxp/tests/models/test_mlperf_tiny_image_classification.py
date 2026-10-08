@@ -10,16 +10,18 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.tests.comparators.accuracy_comparator import (
+    AccuracyOutputComparator,
+)
+from executorch.backends.nxp.tests.comparators.numerical_stats_comparator import (
+    NumericalStatsOutputComparator,
+)
 
 from executorch.backends.nxp.tests.dataset_creator import (
     FromCalibrationDataDatasetCreator,
 )
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    ClassificationAccuracyOutputComparator,
-    NumericalStatsOutputComparator,
-)
 
 from executorch.backends.nxp.tests.nsys_testing import (
     lower_run_compare,
@@ -116,7 +118,7 @@ def test_mlperf_tiny_image_classification_ptq_qat_equivalence(request):
     dataset_creator = FromCalibrationDataDatasetCreator(
         dataset, num_examples=num_samples, idx_to_label=labels
     )
-    comparator = ClassificationAccuracyOutputComparator(class_dict=labels)
+    comparator = AccuracyOutputComparator(class_dict=labels)
 
     input_spec = ModelInputSpec(img_classification.input_shape)
     model_verifier = BaseGraphVerifier(1, [])
