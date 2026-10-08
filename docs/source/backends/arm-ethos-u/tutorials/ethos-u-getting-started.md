@@ -164,8 +164,10 @@ cmake -S examples/arm/executor_runner/standalone \
       -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
       -DMEMORY_MODE=Shared_Sram \
       -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded
-cmake --build ethos_u_minimal_example -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) -- arm_executor_runner
+cmake --build ethos_u_minimal_example -- arm_executor_runner
 ```
+
+Adding `-j<N>` to `cmake --build` runs `<N>` jobs in parallel and tends to speed up the build significantly.
 
 ```{tip}
 For a quick start, you can use the script `backends/arm/scripts/build_executor_runner.sh` to configure and build the standalone runner.
