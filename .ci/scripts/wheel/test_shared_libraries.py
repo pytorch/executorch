@@ -99,7 +99,6 @@ _AOTI_SHIM_SYMBOLS = (
     # kernel shim is listed rather than a sample, because a partially built library is exactly the
     # failure this row exists to catch.
     "aoti_torch_cuda__weight_int4pack_mm",
-    "aoti_torch_cuda_int5_plain_mm",
     "aoti_torch_cuda_rand",
     "aoti_torch_cuda_randint_low_out",
     "aoti_torch_cuda_sort_stable",

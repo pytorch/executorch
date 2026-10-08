@@ -251,7 +251,7 @@ def _export_cuda(
     inductor_config.coordinate_descent_tuning = False
     inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
-    # Register Int4/Int8 dispatch → executorch_cuda::int{4,8}_plain_mm shims
+    # Register the quantized F.linear dispatch (decode GEMMs → Triton ops)
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 
     materialize_runtime_buffers(model, dtype=torch.bfloat16)
