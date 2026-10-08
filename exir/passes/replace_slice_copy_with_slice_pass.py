@@ -24,6 +24,7 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+from torch.utils import _pytree as pytree
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -130,6 +131,7 @@ class ReplaceSliceCopyWithSlicePass(PassBase):
 
             updated_specs = set()
             for node in module.graph.nodes:
+                old_spec = node.meta.get("spec")
                 if node in replacements:
                     node.meta["spec"] = _ViewSpec(
                         node.args[0].meta["spec"],
@@ -142,6 +144,18 @@ class ReplaceSliceCopyWithSlicePass(PassBase):
                         node.args[0].meta["spec"], list(node.meta["spec"].shape)
                     )
                     updated_specs.add(node)
+                else:
+                    continue
+                # Preserve specs shared with in-place consumers and outputs.
+                new_spec = node.meta["spec"]
+                for other_node in module.graph.nodes:
+                    if "spec" in other_node.meta:
+                        other_node.meta["spec"] = pytree.tree_map(
+                            lambda spec, old=old_spec, new=new_spec: (
+                                new if spec is old else spec
+                            ),
+                            other_node.meta["spec"],
+                        )
             module.recompile()
 
         logger.debug("Replaced %d slice_copy nodes with memory.slice", n_replaced)
