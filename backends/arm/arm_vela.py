@@ -32,6 +32,83 @@ _STREAM_HEADER = "vela_bin_stream"
 _STREAM_FOOTER = "vela_end_stream"
 _EXTERNAL_REFERENCE = 1
 _RESERVED_BYTES = b"\x00" * 11
+# Vela region of persistent state with --separate-persistent-region. Must match
+# PERSISTENT_REGION in regor/compiler/raw_writer.cpp.
+_PERSISTENT_REGION = 5
+
+
+def _persistent_region_size(data: Mapping) -> int:
+    """Size in bytes of the persistent region (base address 5).
+
+    The highest (offset + byte size) over the region-5 variables, rounded up to
+    the 16-byte block alignment. 0 when the model has no persistent state, in
+    which case Vela omits the variable_* keys entirely.
+
+    """
+    keys = (
+        "variable_offset",
+        "variable_shape",
+        "variable_elem_size",
+        "variable_region",
+    )
+    if any(k not in data for k in keys):
+        return 0
+    size = 0
+    for offset, shape, elem_size, region in zip(
+        data["variable_offset"],
+        data["variable_shape"],
+        data["variable_elem_size"],
+        data["variable_region"],
+    ):
+        if int(region) != _PERSISTENT_REGION:
+            continue
+        nbytes = int(np.prod(np.asarray(shape))) * int(elem_size)
+        size = max(size, int(offset) + nbytes)
+    return (size + _BLOCK_ALIGNMENT - 1) & ~(_BLOCK_ALIGNMENT - 1)
+
+
+def _persistent_init_image(data: Mapping, persistent_size: int) -> bytes | None:
+    """Initial contents of the persistent region, or None when it is all zero.
+
+    Vela gives each variable its own initial data: variable_data[i], to be
+    copied to variable_offset[i], empty for variables without initial data.
+    Empty entries are skipped rather than zero-filled, as a variable's read and
+    write tensors share an address and only one of them carries the data.
+    np.savez stores the entries as fixed-width byte strings, which drop
+    trailing zero bytes on load, so each is padded back to
+    variable_data_size[i]. None when there is no initial data or it is all
+    zero, in which case the runtime's own zeroing is equivalent and the block
+    is left out.
+
+    """
+    if "variable_data" not in data or "variable_data_size" not in data:
+        return None
+    image = bytearray(persistent_size)
+    for offset, region, entry, nbytes in zip(
+        data["variable_offset"],
+        data["variable_region"],
+        data["variable_data"],
+        data["variable_data_size"],
+    ):
+        nbytes = int(nbytes)
+        if nbytes == 0:
+            continue
+        if int(region) != _PERSISTENT_REGION:
+            raise ValueError(
+                f"Variable at offset {int(offset)} has initial data in region "
+                f"{int(region)}; only the persistent region (region "
+                f"{_PERSISTENT_REGION}) is initialised"
+            )
+        start = int(offset)
+        if start + nbytes > persistent_size:
+            raise ValueError(
+                f"Variable initial data at {start}+{nbytes} exceeds the "
+                f"{persistent_size} byte persistent region"
+            )
+        image[start : start + nbytes] = bytes(entry).ljust(nbytes, b"\x00")
+    if not any(image):
+        return None
+    return bytes(image)
 
 
 @dataclass(frozen=True)
@@ -154,6 +231,41 @@ def vela_compile(
                     "ethos-u-vela/-/blob/main/OPTIONS.md"
                 )
             bin_blocks["scratch_size"] = struct.pack("<I", block_length)
+
+            # Delegate-owned streaming (persistent/variable) state lives in its
+            # own region (region 5), with 0-based offsets independent of scratch
+            # and weights. The runtime allocates a buffer of this size for base
+            # address 5. Assumes a single model owns the persistent region.
+            #
+            # Only emitted when the model actually has persistent state. The
+            # block name is unknown to older runtimes, and VelaBinStream rejects
+            # unrecognised names outright rather than skipping them, so emitting
+            # it unconditionally would break every model on any runtime that
+            # predates it. A model without streaming state must keep producing
+            # the byte-identical blob it produced before.
+            persistent_size = _persistent_region_size(data)
+            if persistent_size:
+                bin_blocks["persistent_size"] = struct.pack("<I", persistent_size)
+
+                # Initial contents of the region, when the state does not start
+                # from the all-zero bit pattern. Vela gives each variable its own
+                # initial data; it is laid out here at the variables' offsets as
+                # one image, so the runtime installs it with a single copy and
+                # never needs to know the layout.
+                #
+                # Zeroing is only the right initial value when every state's
+                # quantized zero point is 0. Under asymmetric quantization a
+                # real-valued zero encodes as the zero point, not as 0, and a
+                # state may legitimately start from a non-zero value in any
+                # case. Both are just "the buffer's contents", which is what
+                # this carries.
+                #
+                # Skipped when the image is all zeroes: the runtime already
+                # zeroes the region, so the block would cost blob size to say
+                # nothing.
+                persistent_init = _persistent_init_image(data, persistent_size)
+                if persistent_init is not None:
+                    bin_blocks["persistent_init"] = persistent_init
 
             # Capture inputs and outputs
             bin_blocks["inputs"] = vela_bin_pack_io("input", data)
