@@ -263,7 +263,12 @@ class TestVulkanDynamic(unittest.TestCase):
         inputs = [
             ((torch.arange(3 * s).reshape(3, s) % 3 == 0),) for s in (7, 2, 15, 3, 7)
         ]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(
                     model, inputs[0], ({1: Dim("s", min=2, max=16)},), storage
@@ -273,7 +278,12 @@ class TestVulkanDynamic(unittest.TestCase):
     def test_constant_bool_mask(self):
         model = ConstantMask()
         inputs = [(torch.linspace(-1, 1, 21).reshape(3, 7),)]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(model, inputs[0], storage=storage)
                 self.assertTrue(
@@ -485,7 +495,12 @@ class TestVulkanDynamic(unittest.TestCase):
 
         model = BoolFill()
         inputs = [(torch.zeros(3, 7),)]
-        for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+        storages = [VkStorageType.TEXTURE_3D]
+        # SwiftShader lacks 8-bit storage buffers, and skipping inside a
+        # subTest confuses the test runner.
+        if not USING_SWIFTSHADER:
+            storages.append(VkStorageType.BUFFER)
+        for storage in storages:
             with self.subTest(storage=storage):
                 edge = self._lower(model, inputs[0], storage=storage)
                 self._run(edge, model, inputs, atol=0, rtol=0)
