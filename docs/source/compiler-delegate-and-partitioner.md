@@ -132,6 +132,42 @@ number in the program, lets the planner reuse the bytes for tensors whose
 lifetimes do not overlap the delegate call, and makes the requirement visible to
 the memory planning inspection tools.
 
+### Declaring persistent state
+
+A backend that keeps state across `execute()` calls, typically because it has
+taken over a model's mutable buffers, declares it the same way:
+
+```python
+from executorch.exir.backend.backend_details import (
+    DelegateStateSpec,
+    PreprocessResult,
+)
+
+return PreprocessResult(
+    processed_bytes=blob,
+    state_specs=[
+        DelegateStateSpec(nbytes=state_size, label="history", initial_data=image),
+    ],
+)
+```
+
+The planner gives state bytes that nothing else in the plan shares, so they
+survive from one execution to the next, and the runtime installs
+`initial_data` there once when the method loads. Leave `initial_data` unset for
+state that starts zero-filled. The backend supplies the image because it chose
+the layout: quantized state, for example, starts at its zero point rather than
+at zero. Labels work as they do for scratch.
+
+To take a mutable buffer over, the partitioner must claim every operator that
+reads the buffer and the one that computes its new value. `tag_owned_mutated_buffers`
+in `executorch.exir.backend.utils` tags exactly the buffers a partition owns
+outright and leaves the rest as mutable buffers of the outer program. Call it
+after tagging all other nodes.
+
+State is not supported on non-CPU delegates, inside control-flow submodules, on
+a lowered module called from more than one place, or with
+`share_mutable_buffers`; each is rejected during `to_executorch()`.
+
 ## Backend Interfaces: Runtime Initialization and Execution
 
 During the runtime, the compiled blob from the `preprocess` function will be
@@ -211,6 +247,26 @@ if (scratch.size() == kNumScratchBuffers &&
 The doc comment on `scratch_buffers()` is the normative contract: it covers why
 `size()` must be checked before indexing, what the bytes may and may not be
 used for across calls, and what alignment is and is not guaranteed.
+
+### Receiving persistent state
+
+State arrives separately from scratch, through `context.state_buffers()`, in
+the order it was declared and already holding what the previous call left
+there. Unlike scratch there is nothing to fall back to, so check the buffers
+against what your own blob expects and fail if they are missing or too small:
+
+```cpp
+Span<const Span<uint8_t>> state = context.state_buffers();
+ET_CHECK_OR_RETURN_ERROR(
+    state.size() >= 1 && state[0].size() >= required_state_bytes,
+    InvalidProgram,
+    "Program does not provide the state this delegate was compiled for");
+uint8_t* history = state[0].data();
+```
+
+The initial image starts at the beginning of each buffer, so use the pointer
+as given rather than aligning it further; state gets the plan's alignment like
+every tensor in its pool.
 
 ## Developer Tools Integration: Debuggability
 
