@@ -68,7 +68,7 @@ bool needs_scratch_allocation() {
 
 Error platform_execute(
     BackendExecutionContext& /*context*/,
-    const ExecutionHandle* /*execution_handle*/,
+    [[maybe_unused]] const ExecutionHandle* execution_handle,
     const VelaHandles& handles,
     int input_count,
     int output_count,
@@ -102,6 +102,28 @@ Error platform_execute(
   // Ethos-U low level driver expected order for Ethos U-55, we have
   // constant weight data, then scratch (which contains input and output)
   // scratch is written above in this function.
+#ifdef ETHOSU_PERSISTENT_REGION
+  // Regions 3 (input) and 4 (output) are unused by this flow (network-wide
+  // addressing keeps I/O in scratch), so they are left null/zero. Region 5 is
+  // the dedicated persistent (delegate-owned streaming state) buffer,
+  // allocated and initialised once at init().
+  char* persistent_region =
+      execution_handle ? execution_handle->persistent_region : nullptr;
+  uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>((handles.weight_data))),
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_fast_scratch)),
+      0,
+      0,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(persistent_region))};
+  size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
+      handles.weight_data_size,
+      handles.scratch_data_size,
+      ethosu_fast_scratch_size,
+      0,
+      0,
+      handles.persistent_data_size};
+#else
   uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>((handles.weight_data))),
       static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
@@ -110,6 +132,7 @@ Error platform_execute(
       handles.weight_data_size,
       handles.scratch_data_size,
       ethosu_fast_scratch_size};
+#endif
   int result = ethosu_invoke_v3(
       driver.get(),
       static_cast<const void*>(handles.cmd_data),

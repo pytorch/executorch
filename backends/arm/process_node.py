@@ -231,6 +231,20 @@ def process_inputs_to_parameters(
     _add_const(tosa_graph, parameter_values, tosa_arg, name=tosa_arg.name)
 
 
+def is_mutable_buffer(node: torch.fx.Node, edge_program: ExportedProgram) -> bool:
+    """Is this placeholder a buffer the graph mutates (streaming state)?"""
+    signature = edge_program.graph_signature
+    target = signature.inputs_to_buffers.get(node.name)
+    if target is None:
+        return False
+    return target in set(signature.buffers_to_mutate.values())
+
+
+def _variable_tensor_name(buffer_name: str) -> str:
+    """Name of the TOSA variable tensor that holds a mutable buffer."""
+    return f"{buffer_name}_variable"
+
+
 def process_inputs_to_buffers(
     node: torch.fx.Node,
     tosa_graph: Any,
@@ -245,6 +259,34 @@ def process_inputs_to_buffers(
             f"Failed processing buffer placeholder: {node.name}. "
             "Is the original torch function supported?"
         ) from e
+    if is_mutable_buffer(node, edge_program):
+        # Streaming state. A CONST would freeze it, so the buffer becomes a TOSA
+        # variable that the delegate owns and keeps between invocations. The
+        # variable carries the buffer's contents as its initial value: the
+        # memory belongs to the delegate, so ExecuTorch cannot initialise it.
+        # Consumers read the variable through VARIABLE_READ into a tensor named
+        # after the placeholder, so they need no special handling.
+        initial = get_buffer(edge_program, node)
+        initial_values = (
+            _tensor_to_numpy(initial) if isinstance(initial, torch.Tensor) else None
+        )
+        shape = normalize_symint(tosa_arg.shape)
+        block = tosa_graph.currRegion.currBasicBlock
+        variable = _variable_tensor_name(tosa_arg.name)
+        block.addTensor(
+            variable,
+            shape,
+            tosa_arg.dtype,
+            data=initial_values,
+            variable=True,
+            variable_name=tosa_arg.name,
+        )
+        block.addTensor(tosa_arg.name, shape, tosa_arg.dtype)
+        attr = ts.TosaSerializerAttribute()
+        attr.setAttribute(ts.Op.VARIABLE_READ)
+        tosa_graph.addOperator(ts.Op.VARIABLE_READ, [variable], [tosa_arg.name], attr)
+        return
+
     buffer_data = get_buffer(edge_program, node)
 
     if not isinstance(buffer_data, torch.Tensor):
@@ -324,9 +366,47 @@ def process_placeholder(
         raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
 
 
-def process_output(node: torch.fx.Node, tosa_graph: Any, tosa_spec: TosaSpecification):
+def process_output(
+    node: torch.fx.Node,
+    tosa_graph: Any,
+    tosa_spec: TosaSpecification,
+    edge_program: ExportedProgram | None = None,
+):
+    mutated = _buffer_mutation_targets(edge_program)
     for output in cast(tuple[torch.fx.Node, ...], node.args[0]):
         output_arg = TosaArg(output, tosa_spec)
+        variable_name = mutated.get(output.name)
+        if variable_name is not None:
+            # A buffer mutation is a write into the variable, not a graph output,
+            # so the update happens on the NPU rather than as an aten.copy_ on
+            # the MCU.
+            attr = ts.TosaSerializerAttribute()
+            attr.setAttribute(ts.Op.VARIABLE_WRITE)
+            tosa_graph.addOperator(
+                ts.Op.VARIABLE_WRITE,
+                [output_arg.name],
+                [_variable_tensor_name(variable_name)],
+                attr,
+            )
+            continue
         tosa_graph.addOutputTensor(
             tosa_graph.currRegion.currBasicBlock.tensors[output_arg.name]
         )
+
+
+def _buffer_mutation_targets(
+    edge_program: ExportedProgram | None,
+) -> dict[str, str]:
+    """Map producing-node name to the buffer placeholder it writes into."""
+    if edge_program is None:
+        return {}
+    signature = edge_program.graph_signature
+    buffer_to_placeholder = {
+        target: name for name, target in signature.inputs_to_buffers.items()
+    }
+    targets: dict[str, str] = {}
+    for output_name, buffer_target in signature.buffers_to_mutate.items():
+        placeholder = buffer_to_placeholder.get(buffer_target)
+        if placeholder is not None:
+            targets[output_name] = placeholder
+    return targets

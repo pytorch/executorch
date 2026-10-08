@@ -70,12 +70,17 @@ class EthosUCompileSpec(ArmCompileSpec):
         max_scratch_size (int | None): Maximum delegate scratch arena size in
             bytes for the deployment platform. Checked against Vela's output;
             independent of Vela's arena cache size. None disables the check.
+        delegate_mutable_buffers (bool): Let the delegate own mutable buffers
+            (streaming state) as variables in a persistent region kept across
+            invocations, instead of passing them as program inputs and outputs.
+            The firmware must be built with ETHOSU_PERSISTENT_REGION.
 
     """
 
     _TARGET_KEY = "target"
     _EXTERNAL_BLOCK_PLACEMENTS_KEY = "external_block_placements"
     _MAX_SCRATCH_SIZE_KEY = "max_scratch_size"
+    _SEPARATE_PERSISTENT_REGION_FLAG = "--separate-persistent-region"
 
     @staticmethod
     def _default_system_config_and_memory_mode(
@@ -115,6 +120,7 @@ class EthosUCompileSpec(ArmCompileSpec):
         extra_flags: list[str] | None,
         system_config: str,
         memory_mode: str,
+        delegate_mutable_buffers: bool,
     ) -> list[str]:
         compiler_flags = [] if extra_flags is None else list(extra_flags)
         compiler_flags.extend(
@@ -126,6 +132,11 @@ class EthosUCompileSpec(ArmCompileSpec):
                 f"--memory-mode={memory_mode}",
             ]
         )
+        if (
+            delegate_mutable_buffers
+            and EthosUCompileSpec._SEPARATE_PERSISTENT_REGION_FLAG not in compiler_flags
+        ):
+            compiler_flags.append(EthosUCompileSpec._SEPARATE_PERSISTENT_REGION_FLAG)
         return compiler_flags
 
     @staticmethod
@@ -148,9 +159,11 @@ class EthosUCompileSpec(ArmCompileSpec):
         config_ini: str | None = "Arm/vela.ini",
         external_block_placements: VelaExternalBlockPlacements | None = None,
         max_scratch_size: int | None = None,
+        delegate_mutable_buffers: bool = False,
     ):
         self.target = target
         self.max_scratch_size = max_scratch_size
+        self.delegate_mutable_buffers = delegate_mutable_buffers
         self.external_block_placements = (
             VelaExternalBlockPlacements()
             if external_block_placements is None
@@ -171,6 +184,7 @@ class EthosUCompileSpec(ArmCompileSpec):
             extra_flags=extra_flags,
             system_config=resolved_system_config,
             memory_mode=resolved_memory_mode,
+            delegate_mutable_buffers=delegate_mutable_buffers,
         )
         tosa_spec = self._tosa_spec_for_target(target_lower)
         self._set_compile_specs(tosa_spec, compiler_flags)
@@ -206,6 +220,9 @@ class EthosUCompileSpec(ArmCompileSpec):
     def _from_list_hook(cls, compile_spec, specs: dict[str, str]):
         """Restore target-specific metadata from serialized compile specs."""
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
+        compile_spec.delegate_mutable_buffers = (
+            cls._SEPARATE_PERSISTENT_REGION_FLAG in compile_spec.compiler_flags
+        )
         max_scratch_size = specs.get(cls._MAX_SCRATCH_SIZE_KEY)
         compile_spec.max_scratch_size = (
             int(max_scratch_size) if max_scratch_size is not None else None

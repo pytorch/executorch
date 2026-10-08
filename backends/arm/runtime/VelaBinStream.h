@@ -67,6 +67,14 @@ typedef struct {
   size_t weight_data_size;
   char* scratch_data;
   size_t scratch_data_size;
+  // Size in bytes of the dedicated persistent (delegate-owned streaming state)
+  // region (Vela region 5). Zero when the model has no persistent state.
+  size_t persistent_data_size;
+  // Initial contents of the persistent region, laid out at the variables' own
+  // offsets. Null when the state starts from the all-zero bit pattern, in
+  // which case the backend zeroes the region instead.
+  const char* persistent_init_data;
+  size_t persistent_init_size;
   VelaIOs* inputs;
   VelaIOs* outputs;
 } VelaHandles;

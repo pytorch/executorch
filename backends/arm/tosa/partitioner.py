@@ -53,7 +53,11 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
+from executorch.exir.backend.utils import (
+    tag_constant_data,
+    tag_mutated_buffer,
+    WhyNoPartitionReporter,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_cond_while_submodules
 from torch._export.utils import _get_shape_env_from_gm
@@ -453,6 +457,8 @@ class TOSAPartitioner(Partitioner):
     """
 
     compile_spec: ArmCompileSpec
+    # Only backends whose runtime keeps a persistent region can own mutable buffers.
+    delegate_mutable_buffers: bool = False
 
     def __init__(
         self,
@@ -836,6 +842,11 @@ class TOSAPartitioner(Partitioner):
         partition_tags = {tag: self.delegation_spec for tag in tags}
 
         tag_constant_data(exported_program)
+        if self.delegate_mutable_buffers:
+            # Pull mutated buffers into the partition that reads them, so
+            # streaming state is owned by the delegate rather than passed
+            # across the boundary and written back with an aten.copy_.
+            tag_mutated_buffer(exported_program)
         if (
             self.intermediate_path is not None
             and logger.getEffectiveLevel() <= logging.INFO

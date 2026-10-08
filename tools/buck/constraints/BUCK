@@ -62,6 +62,19 @@ fb_native.constraint_value(
     visibility = ["PUBLIC"],
 )
 
+# Enables the Ethos-U delegate's dedicated persistent region (Vela region 5)
+# for delegate-owned streaming state. Off by default so flash-constrained
+# images that never run stateful models do not carry the code.
+fb_native.constraint_setting(
+    name = "executorch-ethosu-persistent-region",
+)
+
+fb_native.constraint_value(
+    name = "ethosu-persistent-region-enabled",
+    constraint_setting = ":executorch-ethosu-persistent-region",
+    visibility = ["PUBLIC"],
+)
+
 fb_native.config_setting(
     name = "executorch-program-verification-disabled",
     constraint_values = [

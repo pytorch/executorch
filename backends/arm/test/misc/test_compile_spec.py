@@ -164,3 +164,13 @@ def test_ethosu_scratch_capacity_roundtrip(max_scratch_size):
 def test_ethosu_scratch_capacity_rejects_invalid_values(max_scratch_size):
     with raises(ValueError, match="max_scratch_size must be a positive integer"):
         EthosUCompileSpec("ethos-u55-128", max_scratch_size=max_scratch_size)
+
+
+@mark.parametrize("enabled", [False, True])
+def test_ethosu_delegate_mutable_buffers_roundtrip_u85_INT(enabled):
+    compile_spec = EthosUCompileSpec("ethos-u85-256", delegate_mutable_buffers=enabled)
+    flag = "--separate-persistent-region"
+    assert (flag in compile_spec.compiler_flags) == enabled
+    roundtripped = EthosUCompileSpec._from_list(compile_spec._to_list())
+    assert roundtripped.delegate_mutable_buffers == enabled
+    assert roundtripped.compiler_flags.count(flag) == int(enabled)

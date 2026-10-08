@@ -211,6 +211,60 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       return platform_status;
     }
 
+#ifdef ETHOSU_PERSISTENT_REGION
+    // Delegate-owned streaming state lives in its own region (Vela region 5,
+    // base address 5), separate from scratch (base 1) and the read-only weights
+    // (base 0). Allocate it from the runtime allocator so it lives for the
+    // model lifetime, and install its initial contents once here. Assumes a
+    // single model owns the persistent region.
+    //
+    // An init image must cover the region exactly. This also rejects an image
+    // with no persistent_size block, which would otherwise be dropped silently.
+    if (handle->handles.persistent_init_data != nullptr &&
+        handle->handles.persistent_init_size !=
+            handle->handles.persistent_data_size) {
+      ET_LOG(
+          Error,
+          "Persistent init image is %u bytes but the region is %u bytes",
+          static_cast<unsigned>(handle->handles.persistent_init_size),
+          static_cast<unsigned>(handle->handles.persistent_data_size));
+      handle->~ExecutionHandle();
+      return Error::InvalidProgram;
+    }
+    if (handle->handles.persistent_data_size > 0) {
+      handle->persistent_region = static_cast<char*>(
+          allocator->allocate(handle->handles.persistent_data_size, 16UL));
+      if (handle->persistent_region == nullptr) {
+        ET_LOG(
+            Error,
+            "Failed to allocate %u bytes of persistent state region",
+            static_cast<unsigned>(handle->handles.persistent_data_size));
+        handle->~ExecutionHandle();
+        return Error::MemoryAllocationFailed;
+      }
+      // Install the initial state. Vela supplies an image only when the state
+      // does not start from the all-zero bit pattern, which is the case
+      // whenever a state has a non-zero initial value or a non-zero quantized
+      // zero point. Otherwise zeroing is equivalent and the blob stays smaller.
+      if (handle->handles.persistent_init_data != nullptr) {
+        std::memcpy(
+            handle->persistent_region,
+            handle->handles.persistent_init_data,
+            handle->handles.persistent_init_size);
+      } else {
+        std::memset(
+            handle->persistent_region, 0, handle->handles.persistent_data_size);
+      }
+      ET_LOG(
+          Info,
+          "Persistent state region: %u bytes at %p, %s",
+          static_cast<unsigned>(handle->handles.persistent_data_size),
+          handle->persistent_region,
+          handle->handles.persistent_init_data != nullptr ? "initialised"
+                                                          : "zeroed");
+    }
+#endif
+
     // Return the same buffer we were passed - this data will be
     // executed directly
     return handle;

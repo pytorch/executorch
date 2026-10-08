@@ -74,6 +74,7 @@ def define_arm_tests():
         "misc/test_version_xfail.py",
         "misc/test_compile_spec.py",
         "misc/test_external_vela_blocks.py",
+        "misc/test_vela_persistent_region.py",
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_constant_pool.py",

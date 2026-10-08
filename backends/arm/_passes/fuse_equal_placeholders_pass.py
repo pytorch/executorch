@@ -42,6 +42,21 @@ class FuseEqualPlaceholdersPass(ArmPass):
         if not is_param_node(self.exported_program, node):
             return None
 
+        # Never fuse mutable buffers. Two pieces of streaming state that happen
+        # to start from the same value (all-zero at the start of a stream, say)
+        # are still independent: each is written back separately every
+        # invocation, so aliasing them to one placeholder makes the states
+        # shadow each other. It also strands the BUFFER_MUTATION entries that
+        # still name the removed placeholders, and export fails its own
+        # verifier with "Buffer output ... does not point to a buffer that
+        # exists". Only genuinely constant data is safe to share.
+        signature = self.exported_program.graph_signature
+        buffer_target = signature.inputs_to_buffers.get(node.name)
+        if buffer_target is not None and buffer_target in set(
+            signature.buffers_to_mutate.values()
+        ):
+            return None
+
         tensor = get_param_tensor(self.exported_program, node)
         if tensor is None:
             return None

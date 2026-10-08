@@ -1,10 +1,21 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _persistent_region_flags():
+    if native.read_config("executorch", "ethosu_persistent_region", "false") == "true":
+        return ["-DETHOSU_PERSISTENT_REGION"]
+    if runtime.is_oss:
+        return []
+    return select({
+        "DEFAULT": [],
+        "fbsource//xplat/executorch/tools/buck/constraints:ethosu-persistent-region-enabled": ["-DETHOSU_PERSISTENT_REGION"],
+    })
+
 def define_common_targets():
     runtime.cxx_library(
         name = "vela_bin_stream",
         srcs = ["VelaBinStream.cpp"],
         exported_headers = ["VelaBinStream.h"],
+        preprocessor_flags = _persistent_region_flags(),
         visibility = ["PUBLIC"],
         exported_deps = [
             "//executorch/runtime/core:core",
@@ -28,6 +39,7 @@ def define_common_targets():
         supports_python_dlopen = True,
         # Constructor needed for backend registration.
         compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
