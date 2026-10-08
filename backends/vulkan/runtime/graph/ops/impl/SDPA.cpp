@@ -80,7 +80,7 @@ bool is_single_token(ComputeGraph* graph, const ValueRef& q_projected) {
 
 // Largest attn_weights row, in texels, that the fused QK+softmax shader can
 // hold in shared memory. Must match MAX_CONTEXT_TEXEL_LEN in
-// sdpa_compute_attn_weights_coop_softmax.glsl.
+// sdpa_compute_attn_weights_coop.glsl.
 constexpr int64_t kFusedSoftmaxMaxContextTexels = 1024;
 
 // Context length past which the separate attn-weights and softmax pair is
