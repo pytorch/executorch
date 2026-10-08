@@ -648,9 +648,31 @@ void add_sdpa_compute_out_node(
       resize_sdpa_out_node));
 }
 
+void check_attn_mask_sizes(
+    ComputeGraph& graph,
+    const ValueRef attn_mask,
+    const ValueRef q,
+    const ValueRef k) {
+  VK_CHECK_COND(
+      graph.size_at<int64_t>(-2, attn_mask) == graph.size_at<int64_t>(-3, q) &&
+          graph.size_at<int64_t>(-1, attn_mask) ==
+              graph.size_at<int64_t>(-3, k),
+      "attn_mask must have shape [S, C] = [",
+      graph.size_at<int64_t>(-3, q),
+      ", ",
+      graph.size_at<int64_t>(-3, k),
+      "], got [",
+      graph.size_at<int64_t>(-2, attn_mask),
+      ", ",
+      graph.size_at<int64_t>(-1, attn_mask),
+      "]");
+}
+
 // For a masked LLM SDPA, sets out_symint = C - S (the number of keys in k
 // minus the number of queries), which the SDPA shaders read in place of
-// input_pos so that they attend to every key.
+// input_pos so that they attend to every key. Also checks that the mask still
+// has shape [S, C] after a resize, since the shaders would otherwise silently
+// skip its missing rows or columns.
 void resize_attn_mask_input_pos_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -658,7 +680,9 @@ void resize_attn_mask_input_pos_node(
   (void)args;
   const ValueRef q = resize_args.at(0);
   const ValueRef k = resize_args.at(1);
-  const ValueRef out_symint = resize_args.at(2);
+  const ValueRef attn_mask = resize_args.at(2);
+  const ValueRef out_symint = resize_args.at(3);
+  check_attn_mask_sizes(*graph, attn_mask, q, k);
   graph->set_symint(
       out_symint,
       graph->size_at<int32_t>(-3, k) - graph->size_at<int32_t>(-3, q));
@@ -667,11 +691,12 @@ void resize_attn_mask_input_pos_node(
 ValueRef add_attn_mask_input_pos_node(
     ComputeGraph& graph,
     const ValueRef q,
-    const ValueRef k) {
+    const ValueRef k,
+    const ValueRef attn_mask) {
   const ValueRef out_symint = graph.add_symint(
       graph.size_at<int32_t>(-3, k) - graph.size_at<int32_t>(-3, q));
-  graph.execute_nodes().emplace_back(
-      new ExecuteNode(resize_attn_mask_input_pos_node, {q, k, out_symint}));
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      resize_attn_mask_input_pos_node, {q, k, attn_mask, out_symint}));
   return out_symint;
 }
 
@@ -734,26 +759,42 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   // As in the CPU op, an attn_mask replaces the causal mask: it is a 2D
   // [S, C] additive mask over every key in k_cache, and cannot be combined
-  // with is_causal. Without one, the attention is assumed to be causal.
+  // with is_causal. Without one, the attention is assumed to be causal. The
+  // partitioner (op_registry.py) keeps other configurations on CPU.
   const bool has_mask = graph.val_is_not_none(attn_mask);
+  ValueRef mask = kDummyValueRef;
   if (has_mask) {
     VK_CHECK_COND(
         graph.val_is_none(is_causal) || !graph.extract_scalar<bool>(is_causal),
         "attn_mask and is_causal cannot both be set");
-    VK_CHECK_COND(graph.dim_of(attn_mask) == 2);
+    VK_CHECK_COND(graph.dim_of(attn_mask) == 2, "attn_mask must be 2D");
     VK_CHECK_COND(
-        graph.size_at<int64_t>(-2, attn_mask) ==
-        graph.size_at<int64_t>(-3, q_projected));
+        graph.dtype_of(attn_mask) == graph.dtype_of(q_projected),
+        "attn_mask must have the same dtype as q");
+    // A constant mask arrives as a TensorRef, since the fused op handles its
+    // own prepacking.
+    mask = graph.val_is_tref(attn_mask)
+        ? prepack_standard(
+              graph,
+              attn_mask,
+              graph.storage_type_of(q_projected),
+              utils::kWidthPacked)
+        : attn_mask;
+    check_attn_mask_sizes(graph, mask, q_projected, k_cache);
     VK_CHECK_COND(
-        graph.size_at<int64_t>(-1, attn_mask) ==
-        graph.size_at<int64_t>(-3, k_cache));
-    VK_CHECK_COND(graph.dtype_of(attn_mask) == graph.dtype_of(q_projected));
+        graph.storage_type_of(mask) == graph.storage_type_of(q_projected),
+        "attn_mask must have the same storage type as q");
+    // The shaders index a buffer mask as contiguous [S, C] rows, and a
+    // texture mask with the standard axis map.
     VK_CHECK_COND(
-        graph.storage_type_of(attn_mask) == graph.storage_type_of(q_projected));
-    VK_CHECK_COND(graph.packed_dim_of(attn_mask) == WHCN::kWidthDim);
+        graph.storage_type_of(mask) == utils::kBuffer
+            ? graph.is_contiguous_buffer_tensor(mask)
+            : graph.is_contiguous_texture_tensor(mask),
+        "attn_mask must be contiguous and width packed");
   } else {
     VK_CHECK_COND(
-        graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
+        graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal),
+        "attention without an attn_mask must be causal");
   }
 
   const int64_t num_q_heads = graph.size_at<int64_t>(-2, q_projected);
@@ -823,9 +864,10 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   // The SDPA shaders attend to the first input_pos + S keys. A masked
   // attention attends to all C keys in k_cache, so give them C - S in place of
-  // input_pos.
+  // input_pos. No key tile can be skipped, so with a mask every step costs
+  // O(C) rather than O(input_pos + S).
   const ValueRef attn_input_pos = has_mask
-      ? add_attn_mask_input_pos_node(graph, q_projected, k_cache)
+      ? add_attn_mask_input_pos_node(graph, q_projected, k_cache, mask)
       : input_pos_symint;
 
   add_sdpa_compute_attn_weights_node(
@@ -833,7 +875,7 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       q_projected,
       k_cache,
       attn_input_pos,
-      has_mask ? attn_mask : kDummyValueRef,
+      mask,
       scale_val,
       attn_weights,
       SDPAMode::LLM);
