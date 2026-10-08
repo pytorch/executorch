@@ -112,7 +112,7 @@ void add_binary_scalar_op_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      {int32_t(graph.original_dtype_of(out) == vkapi::kHalf)},
       // Resize Args
       {},
       // Resizing Logic
