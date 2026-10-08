@@ -486,12 +486,13 @@ void add_sdpa_kv_cache_update_node(
 }
 
 // Unified QK node (attn_weights = scale * Q @ K^T [+ bias]).
-// LLM: pass input_pos_symint (real symint), and attn_mask = a 2D [S, C]
-//      additive mask that replaces the causal mask, or kDummyValueRef.
+// LLM: pass input_pos_symint, and attn_mask = a 2D [S, C] additive mask that
+//      replaces the causal mask, or kDummyValueRef. With a mask, sdpa_impl
+//      passes a C - S symint in place of the real input_pos.
 // FUSED: pass input_pos_symint = kDummyValueRef, attn_mask = valid ref or
-//        kDummyValueRef to indicate no bias. scale_val is always passed as
-//        a spec const; both modes default it to 1/sqrt(head_dim) and use the
-//        caller-supplied scale when there is one.
+//        kDummyValueRef to indicate no bias.
+// scale_val is always passed as a spec const; callers default it to
+// 1/sqrt(head_dim) and use the op's scale argument when there is one.
 void add_sdpa_compute_attn_weights_node(
     ComputeGraph& graph,
     const ValueRef q,
@@ -912,13 +913,15 @@ void compute_attn_weight_with_kv_cache_impl(
   const ValueRef input_pos_symint = args[arg_idx++];
   const ValueRef sequence_len = args[arg_idx++];
   const ValueRef attn_mask = args[arg_idx++];
-  (void)attn_mask;
   const ValueRef dropout_p = args[arg_idx++];
   (void)dropout_p;
   const ValueRef is_causal = args[arg_idx++];
   (void)is_causal;
   const ValueRef scale = args[arg_idx++];
-  (void)scale;
+
+  VK_CHECK_COND(
+      graph.val_is_none(attn_mask),
+      "attn_mask is not supported by compute_attn_weight_with_kv_cache");
 
   // Output tensors
   const ValueRef out = args[arg_idx++];
@@ -935,7 +938,9 @@ void compute_attn_weight_with_kv_cache_impl(
   update_cache_impl(graph, {v_projected, v_cache, input_pos_symint, -1});
 
   const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
-  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+  const float scale_val = graph.val_is_none(scale)
+      ? 1.0f / std::sqrt(static_cast<float>(head_dim_size))
+      : graph.extract_scalar<float>(scale);
 
   add_sdpa_compute_attn_weights_node(
       graph,
