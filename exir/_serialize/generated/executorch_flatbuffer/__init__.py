@@ -14,6 +14,7 @@ from . import DataLocation
 from . import DataSegment
 from . import DelegateCall
 from . import DelegateScratch
+from . import DelegateState
 from . import DeviceType
 from . import Double
 from . import DoubleList
@@ -60,6 +61,7 @@ __all__ = [
     "DataSegment",
     "DelegateCall",
     "DelegateScratch",
+    "DelegateState",
     "DeviceType",
     "Double",
     "DoubleList",

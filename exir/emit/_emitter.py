@@ -60,6 +60,7 @@ from executorch.exir.schema import (
     DataLocation,
     DelegateCall,
     DelegateScratch,
+    DelegateState,
     Double,
     DoubleList,
     EValue,
@@ -1498,6 +1499,19 @@ class _Emitter(torch.fx.Interpreter):
                     "that declares scratch.",
                 )
             )
+        state = memory.delegate_state(self.node)
+        declared_state = [spec.nbytes for spec in lowered_module.state_specs]
+        if [entry.spec.nbytes() for entry in state] != declared_state:
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Backend {lowered_module.backend_id} declared state buffers of "
+                    f"{declared_state} bytes but the graph carries "
+                    f"{[entry.spec.nbytes() for entry in state]}. "
+                    "DelegateScratchSpecPass must run before emission for a backend "
+                    "that declares state.",
+                )
+            )
 
         backend_delegate = BackendDelegate(
             id=lowered_module.backend_id,
@@ -1524,6 +1538,7 @@ class _Emitter(torch.fx.Interpreter):
                     delegate_index=len(self.emitter_state.delegates) - 1,
                     args=delegate_args,
                     scratch=self._emit_delegate_scratch(scratch_specs) or None,
+                    state=self._emit_delegate_state(state) or None,
                 )
             )
         )
@@ -1553,6 +1568,39 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
         return scratch
+
+    def _emit_delegate_state(
+        self, state: List[memory.PlannedState]
+    ) -> List[DelegateState]:
+        """Describes the delegate's state allocations for the instruction.
+
+        An initial image goes into the mutable data segment that planned
+        mutable buffers use, so the runtime installs it the same way.
+        """
+        emitted = []
+        for index, entry in enumerate(state):
+            spec = entry.spec
+            if spec.mem_id is None or spec.mem_offset is None:
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Delegate state buffer {index} was not memory planned.",
+                    )
+                )
+            initial_data_idx = 0
+            if entry.initial_data is not None:
+                initial_data_idx = len(self.program_state.mutable_buffer)
+                self.program_state.mutable_buffer.append(
+                    Buffer(storage=entry.initial_data)
+                )
+            emitted.append(
+                DelegateState(
+                    allocation=make_allocation_info(spec.mem_id, spec.mem_offset),
+                    size=spec.nbytes(),
+                    initial_data_idx=initial_data_idx,
+                )
+            )
+        return emitted
 
     def _get_operator(self, name: str, overload: str = "") -> Tuple[int, Operator]:
         """Given a fully qualified name, lookups the operator in the ExecuTorch Program, or adds it

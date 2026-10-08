@@ -4,16 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import io
 import unittest
 from typing import Dict, final, List
 
 import torch
+from executorch import exir
 from executorch.exir import (
     EdgeCompileConfig,
+    EdgeProgramManager,
     ExecutorchBackendConfig,
     memory,
     to_edge_transform_and_lower,
 )
+from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     DelegateScratchSpec,
@@ -28,12 +32,16 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.emit import emit_program
+from executorch.exir.error import InternalError
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.memory_planning import get_node_tensor_specs
 from executorch.exir.passes.delegate_scratch_pass import DelegateScratchSpecPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.print_program import print_program
 from executorch.exir.program._program import _transform
+from executorch.exir.schema import DelegateCall
 from executorch.exir.tensor import TensorSpec
 from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -156,6 +164,15 @@ def _lower(module: torch.nn.Module, inputs, backend_id: str, config=None):
     )
 
 
+def _delegate_calls(plan) -> List[DelegateCall]:
+    return [
+        instruction.instr_args
+        for chain in plan.chains
+        for instruction in chain.instructions
+        if isinstance(instruction.instr_args, DelegateCall)
+    ]
+
+
 def _single_delegate_call(lowered) -> torch.fx.Node:
     (call,) = [
         node
@@ -231,6 +248,70 @@ class TestDelegateState(unittest.TestCase):
             for rhs in second:
                 self.assertFalse(_overlaps(lhs, rhs))
 
+    def test_emitted_state_matches_the_planner(self):
+        lowered = _lower(
+            SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend"
+        )
+        (delegate_call,) = _delegate_calls(lowered.executorch_program.execution_plan[0])
+        specs = memory.delegate_state_specs(_single_delegate_call(lowered))
+
+        self.assertEqual(
+            [
+                (s.allocation.memory_id, s.allocation.memory_offset, s.size)
+                for s in delegate_call.state
+            ],
+            [(spec.mem_id, spec.mem_offset, spec.nbytes()) for spec in specs],
+        )
+
+    def test_initial_image_lands_in_the_mutable_data_segment(self):
+        lowered = _lower(
+            SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend"
+        )
+        pte = deserialize_pte_binary(lowered.buffer)
+        (delegate_call,) = _delegate_calls(pte.program.execution_plan[0])
+        initialised, zero_filled = delegate_call.state
+
+        self.assertGreater(initialised.initial_data_idx, 0)
+        self.assertEqual(
+            pte.mutable_data[initialised.initial_data_idx].storage, INITIAL_STATE
+        )
+        # Zero-filling is the runtime's job, so no image is stored for it.
+        self.assertEqual(zero_filled.initial_data_idx, 0)
+        self.assertEqual(len(pte.mutable_data), 2)
+
+    def test_scratch_and_state_stay_in_their_own_lists(self):
+        lowered = _lower(
+            SingleDelegateModule(), SINGLE_INPUTS, "StateAndScratchTestBackend"
+        )
+        (delegate_call,) = _delegate_calls(lowered.executorch_program.execution_plan[0])
+        self.assertEqual([s.size for s in delegate_call.scratch], [SCRATCH_BYTES])
+        self.assertEqual(
+            [s.size for s in delegate_call.state], [ZERO_FILLED_STATE_BYTES]
+        )
+
+        call = _single_delegate_call(lowered)
+        (scratch,) = memory.delegate_scratch_specs(call)
+        (state,) = memory.delegate_state_specs(call)
+        self.assertLess(scratch.lifetime[1] - scratch.lifetime[0], state.lifetime[1])
+        self.assertFalse(_overlaps(scratch, state))
+
+    def test_state_survives_a_serde_round_trip(self):
+        edge = _edge(SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend")
+        buffer = io.BytesIO()
+        exir.save(edge.exported_program(), buffer)
+        buffer.seek(0)
+        reloaded = EdgeProgramManager(exir.load(buffer))
+
+        pte = deserialize_pte_binary(
+            reloaded.to_executorch(ExecutorchBackendConfig()).buffer
+        )
+        (delegate_call,) = _delegate_calls(pte.program.execution_plan[0])
+        initialised, zero_filled = delegate_call.state
+        self.assertEqual(
+            pte.mutable_data[initialised.initial_data_idx].storage, INITIAL_STATE
+        )
+        self.assertEqual(zero_filled.size, ZERO_FILLED_STATE_BYTES)
+
     def test_labels_reach_the_planner(self):
         edge = _edge(SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend")
         program = _transform(
@@ -245,6 +326,24 @@ class TestDelegateState(unittest.TestCase):
             [state.label for state in memory.delegate_state(call)],
             ["history", "counters"],
         )
+
+    def test_emitting_without_the_pass_is_an_error_not_a_silent_drop(self):
+        edge = _edge(SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend")
+        program = _transform(
+            edge.exported_program(), SpecPropPass(), MemoryPlanningPass()
+        )
+
+        with self.assertRaisesRegex(InternalError, "declared state buffers"):
+            emit_program(program)
+
+    def test_print_program_shows_the_state(self):
+        lowered = _lower(
+            SingleDelegateModule(), SINGLE_INPUTS, "DelegateStateTestBackend"
+        )
+        out = io.StringIO()
+        print_program(lowered.executorch_program, out=out)
+        self.assertIn(f"[{len(INITIAL_STATE)}]", out.getvalue())
+        self.assertIn("state=[", out.getvalue())
 
     def test_state_inside_control_flow_is_rejected(self):
         inputs = (torch.tensor(True), torch.randn(3, 4), torch.randn(3, 4))
