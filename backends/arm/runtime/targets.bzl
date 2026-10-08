@@ -40,18 +40,21 @@ def define_common_targets():
         name = "vgf_backend",
         srcs = [
             "VGFBackend.cpp",
+            "VGFExecutionStats.cpp",
             "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
             # Volk must be compiled directly into this target so its global
             # function-pointer variables live in the same linkage unit.
             # Linking from a separate static library causes the linker to
             # drop the symbols when building a shared library.
-            "fbsource//third-party/volk:volk_src",
+            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
         exported_headers = [
+            "VGFExecutionStats.h",
             "VGFNeuralStatistics.h",
             "VGFSetup.h",
             "VGFVulkanFeatures.h",
+            "VGFZeroCopy.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
@@ -69,7 +72,7 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
-            "fbsource//third-party/volk:volk-header",
-            "fbsource//third-party/khronos:vulkan-headers",
+            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
         ],
     )

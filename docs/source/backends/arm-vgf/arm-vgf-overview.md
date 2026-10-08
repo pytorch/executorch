@@ -41,7 +41,7 @@ To extract the VGF file for integration into applications without the ExecuTorch
 The full user-facing API is documented below.
 
 ```python
-class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None)
+class VgfCompileSpec(tosa_spec: executorch.backends.arm.tosa.specification.TosaSpecification | str | None = None, compiler_flags: list[str] | None = None, emit_debug_info: bool = False)
 ```
 Normalise inputs and populate the underlying Arm compile spec.
 
@@ -50,6 +50,8 @@ Args:
         target. Strings are parsed via ``TosaSpecification.create_from_string``.
         Defaults to ``"TOSA-1.0+FP+INT+int4+int16"``.
 - **compiler_flags (list[str] | None)**: Optional converter-backend flags.
+- **emit_debug_info (bool)**: Preserve Model Converter debug information in
+        the generated VGF. Defaults to ``False``.
 
 ```python
 def VgfCompileSpec.dump_debug_info(self, debug_mode: executorch.backends.arm.common.arm_compile_spec.ArmCompileSpec.DebugMode | None):
@@ -142,6 +144,7 @@ described in the rest of this guide but with a concrete end-to-end sample.
 
 **→{doc}`/backends/arm-vgf/VGF_op_support` — VGF supported operators.**
 
+**→{doc}`/backends/arm-vgf/tutorials/vgf-dynamic-w8a8-quantization` — Dynamic W8A8 quantization tutorial.**
 
 ```{toctree}
 :maxdepth: 2
@@ -153,4 +156,5 @@ arm-vgf-quantization
 arm-vgf-troubleshooting
 tutorials/vgf-getting-started
 VGF_op_support
+tutorials/vgf-dynamic-w8a8-quantization
 ```

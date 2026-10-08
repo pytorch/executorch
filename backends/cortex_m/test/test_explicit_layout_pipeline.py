@@ -1,18 +1,20 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from functools import partial
-
 import pytest
 import torch
-from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-from executorch.backends.cortex_m.test.tester import CortexMTester
-from executorch.backends.test.harness.stages import Quantize, RunPasses, StageType
+from executorch.backends.cortex_m.test.tester import (
+    CortexMQuantize,
+    CortexMRunPasses,
+    CortexMTester,
+)
+from executorch.backends.test.harness.stages import Quantize, StageType
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
 
@@ -75,13 +77,9 @@ def _count(exported_program, target) -> int:
 def _run_explicit_layout_pass_manager(tester: CortexMTester) -> CortexMTester:
     target_config = CortexMTargetConfig(cpu=CortexM.M55)
     tester.run_passes(
-        RunPasses(
-            partial(
-                CortexMPassManager,
-                target_config=target_config,
-                use_explicit_layout=True,
-            ),  # type: ignore[arg-type]
-            CortexMPassManager.explicit_layout_pass_list,  # type: ignore[arg-type]
+        CortexMRunPasses(
+            target_config=target_config,
+            use_explicit_layout=True,
         )
     )
     return tester
@@ -91,6 +89,57 @@ def _run_explicit_layout_passes(tester: CortexMTester) -> CortexMTester:
     tester.quantize(Quantize(CortexMQuantizer(use_explicit_layout=True)))
     tester.export().to_edge()
     return _run_explicit_layout_pass_manager(tester)
+
+
+@pytest.mark.parametrize("use_explicit_layout", [False, True])
+@pytest.mark.parametrize("test_method", ["test_dialect", "test_implementation"])
+def test_pipeline_uses_configured_stages(monkeypatch, test_method, use_explicit_layout):
+    class CustomQuantize(CortexMQuantize):
+        pass
+
+    class CustomRunPasses(CortexMRunPasses):
+        pass
+
+    inputs = (torch.randn(1, 3, 8, 8),)
+    if not use_explicit_layout:
+        inputs = (inputs[0].to(memory_format=torch.channels_last),)
+    tester = CortexMTester(Conv2d().eval(), inputs)
+    tester.stage_classes[StageType.QUANTIZE] = CustomQuantize
+    if use_explicit_layout:
+        tester.stage_classes[StageType.RUN_PASSES] = lambda use_explicit_layout: (
+            CustomRunPasses(
+                target_config=tester.target_config,
+                use_explicit_layout=use_explicit_layout,
+            )
+        )
+    else:
+        tester.stage_classes[StageType.RUN_PASSES] = lambda: CustomRunPasses(
+            target_config=tester.target_config
+        )
+    if test_method == "test_dialect":
+        tester.test_dialect(
+            {}, {}, use_explicit_layout=use_explicit_layout, compare_outputs=False
+        )
+    else:
+        monkeypatch.setattr(tester, "to_executorch", lambda: tester)
+        monkeypatch.setattr(tester, "serialize", lambda: tester)
+        tester.test_implementation(
+            use_explicit_layout=use_explicit_layout, compare_outputs=False
+        )
+
+    assert isinstance(tester.stages[StageType.QUANTIZE], CustomQuantize)
+    assert isinstance(tester.stages[StageType.RUN_PASSES], CustomRunPasses)
+    assert (
+        _count(
+            tester.get_artifact(StageType.RUN_PASSES).exported_program(),
+            (
+                exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default
+                if use_explicit_layout
+                else exir_ops.edge.cortex_m.quantized_conv2d.default
+            ),
+        )
+        == 1
+    )
 
 
 def test_layout_pipelines_select_distinct_spatial_operators():
@@ -216,5 +265,7 @@ def test_explicit_layout_rejects_unsupported_spatial_operator():
     with pytest.raises(Exception) as caught:
         _run_explicit_layout_passes(tester)
 
-    assert caught.value.__cause__ is not None
-    assert "NHWC-eligible" in str(caught.value.__cause__)
+    error = caught.value
+    while error.__cause__ is not None:
+        error = error.__cause__
+    assert "NHWC-eligible" in str(error)

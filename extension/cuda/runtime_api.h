@@ -15,6 +15,7 @@
 #include <hip/hip_runtime.h>
 
 using cudaError_t = hipError_t;
+using cudaEvent_t = hipEvent_t;
 using cudaGraph_t = hipGraph_t;
 using cudaGraphExec_t = hipGraphExec_t;
 using cudaMemcpyKind = hipMemcpyKind;
@@ -23,6 +24,7 @@ using cudaStreamCaptureMode = hipStreamCaptureMode;
 using cudaStream_t = hipStream_t;
 
 inline constexpr cudaError_t cudaSuccess = hipSuccess;
+inline constexpr unsigned int cudaEventDisableTiming = hipEventDisableTiming;
 inline constexpr cudaMemcpyKind cudaMemcpyDeviceToDevice =
     hipMemcpyDeviceToDevice;
 inline constexpr cudaMemcpyKind cudaMemcpyDeviceToHost = hipMemcpyDeviceToHost;
@@ -48,6 +50,20 @@ struct cudaPointerAttributes {
 
 inline cudaError_t cudaDeviceSynchronize() {
   return hipDeviceSynchronize();
+}
+
+inline cudaError_t cudaEventCreateWithFlags(
+    cudaEvent_t* event,
+    unsigned int flags) {
+  return hipEventCreateWithFlags(event, flags);
+}
+
+inline cudaError_t cudaEventDestroy(cudaEvent_t event) {
+  return hipEventDestroy(event);
+}
+
+inline cudaError_t cudaEventRecord(cudaEvent_t event, cudaStream_t stream) {
+  return hipEventRecord(event, stream);
 }
 
 inline cudaError_t cudaFree(void* ptr) {
@@ -122,6 +138,11 @@ inline cudaError_t cudaMemGetInfo(size_t* free, size_t* total) {
   return hipMemGetInfo(free, total);
 }
 
+inline cudaError_t
+cudaMemsetAsync(void* ptr, int value, size_t size, cudaStream_t stream) {
+  return hipMemsetAsync(ptr, value, size, stream);
+}
+
 inline cudaError_t cudaPointerGetAttributes(
     cudaPointerAttributes* attributes,
     const void* ptr) {
@@ -160,6 +181,13 @@ inline cudaError_t cudaStreamEndCapture(
 
 inline cudaError_t cudaStreamSynchronize(cudaStream_t stream) {
   return hipStreamSynchronize(stream);
+}
+
+inline cudaError_t cudaStreamWaitEvent(
+    cudaStream_t stream,
+    cudaEvent_t event,
+    unsigned int flags) {
+  return hipStreamWaitEvent(stream, event, flags);
 }
 
 #else

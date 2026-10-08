@@ -766,3 +766,15 @@ def test_upsample_nearest2d_vec_tosa_INT_dynamic_upsample(test_data: torch.Tenso
         pipeline.pop_stage(-1)
 
     pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+def test_upsample_nearest2d_vec_u85_INT():
+    input_tensor = torch.rand(1, 4, 8, 3)
+    pipeline = EthosU85PipelineINT[input_t1](
+        Upsample(size=None, scale_factor=2.0),
+        (input_tensor,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()

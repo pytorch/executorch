@@ -23,6 +23,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -31,12 +32,15 @@ using executorch::extension::llm::batching::BatchInput;
 using executorch::extension::llm::batching::DecodeFirstScheduler;
 using executorch::extension::llm::batching::Input;
 using executorch::extension::llm::batching::Position;
+using executorch::extension::llm::batching::PreparedInput;
+using executorch::extension::llm::batching::PreparedInputPtr;
 using executorch::extension::llm::batching::Scheduler;
 using executorch::extension::llm::batching::SessionId;
 using executorch::extension::llm::batching::Task;
 using executorch::extension::llm::batching::TaskId;
 using executorch::extension::llm::batching::to_batch_input;
 using executorch::extension::llm::batching::Token;
+using executorch::extension::llm::batching::TokenInputPtr;
 
 namespace {
 
@@ -327,7 +331,7 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   auto tokens = std::make_shared<std::vector<Token>>(
       std::initializer_list<Token>{10, 11, 12, 13, 14, 15});
   Task task = prefill(1, 40, 4, 90, /*produce_output=*/false);
-  task.input.tokens = tokens;
+  task.input.payload = TokenInputPtr{tokens};
   task.input.offset = 1;
   EXPECT_TRUE(submit(*scheduler, std::move(task)));
 
@@ -337,8 +341,60 @@ TEST(PayloadTest, CarriesPayloadUninspected) {
   EXPECT_FALSE(work[0].input.produce_output);
   EXPECT_EQ(work[0].input.offset, 1u);
   EXPECT_EQ(work[0].input.size, 4u);
-  EXPECT_EQ(work[0].input.tokens.get(), tokens.get());
+  EXPECT_EQ(std::get<TokenInputPtr>(work[0].input.payload).get(), tokens.get());
   EXPECT_EQ(work[0].input.position, 90);
+}
+
+TEST(PayloadTest, RawPendingTokenRemainsPrefillAndKeepsIdentity) {
+  SchedulerPtr scheduler = make_scheduler(1, 8);
+  TokenInputPtr tokens = std::make_shared<const std::vector<Token>>(1, 42);
+  auto pending = prefill(1, 40, 1, 7, false);
+  pending.input.payload = tokens;
+  ASSERT_TRUE(submit(*scheduler, std::move(pending)));
+  ASSERT_TRUE(submit(*scheduler, decode(2, 50)));
+
+  auto work = scheduler->get_work();
+  ASSERT_EQ(work.size(), 2u);
+  EXPECT_EQ(ids(work), (std::vector<TaskId>{2, 1}));
+  EXPECT_FALSE(work[1].is_decode);
+  EXPECT_FALSE(work[1].input.produce_output);
+  EXPECT_EQ(std::get<TokenInputPtr>(work[1].input.payload), tokens);
+  EXPECT_EQ(work[1].input.position, 7);
+}
+
+TEST(PayloadTest, OpaqueChunksKeepSharedBackingAndSlices) {
+  class OpaqueInput final : public PreparedInput {
+   public:
+    const void* kind() const override {
+      static char kKind = 0;
+      return &kKind;
+    }
+    std::size_t size() const override {
+      return 6;
+    }
+  };
+  PreparedInputPtr backing = std::make_shared<OpaqueInput>();
+  SchedulerPtr scheduler = make_scheduler(1, 4);
+  Task first{1, false, Input{40, false, 0, 4, backing, 7}, false};
+  Task last{2, false, Input{40, true, 4, 2, backing, 7}, false};
+  ASSERT_TRUE(scheduler->submit({first, last, decode(3, 50)}));
+
+  auto work = scheduler->get_work();
+  EXPECT_EQ(ids(work), (std::vector<TaskId>{3, 1, 2}));
+  BatchInput batch = to_batch_input(work);
+  ASSERT_EQ(batch.inputs.size(), 3u);
+  EXPECT_EQ(batch.size(), 7u);
+  for (std::size_t i : {1u, 2u}) {
+    EXPECT_EQ(std::get<PreparedInputPtr>(batch.inputs[i].payload), backing);
+    EXPECT_EQ(batch.inputs[i].sid, 40);
+    EXPECT_EQ(batch.inputs[i].position, 7);
+  }
+  EXPECT_EQ(batch.inputs[1].offset, 0u);
+  EXPECT_EQ(batch.inputs[1].size, 4u);
+  EXPECT_FALSE(batch.inputs[1].produce_output);
+  EXPECT_EQ(batch.inputs[2].offset, 4u);
+  EXPECT_EQ(batch.inputs[2].size, 2u);
+  EXPECT_TRUE(batch.inputs[2].produce_output);
 }
 
 TEST(PayloadTest, BatchInputKeepsTaskOrderAndSlices) {

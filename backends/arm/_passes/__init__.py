@@ -27,9 +27,6 @@ from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
 from .convert_int64_const_ops_to_int32 import ConvertInt64ConstOpsToInt32Pass  # noqa
 from .convert_int64_output_ops_to_int32 import ConvertInt64OutputOpsToInt32Pass  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
-from .convert_permute_singleton_to_view_pass import (  # noqa
-    ConvertPermuteSingletonToViewPass,
-)
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
 from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp_pass import ConvertToClampPass  # noqa
@@ -91,10 +88,12 @@ from .decompose_logit_pass import DecomposeLogitPass  # noqa
 from .decompose_lstm_pass import DecomposeLstmPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
 from .decompose_matmul import DecomposeMatmulPass  # noqa
+from .decompose_max_pool1d_pass import DecomposeMaxPool1dPass  # noqa
 from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # noqa
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
+from .decompose_pow_tensor_tensor_pass import DecomposePowTensorTensorPass  # noqa
 from .decompose_prelu_pass import DecomposePReLUPass  # noqa
 from .decompose_prod_pass import DecomposeProdPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
@@ -116,6 +115,7 @@ from .decompose_sqrt_pass import DecomposeSqrtPass  # noqa
 from .decompose_strided_slice_copy_pass import DecomposeStridedSliceCopyPass  # noqa
 from .decompose_sum_pass import DecomposeSumPass  # noqa
 from .decompose_tan_pass import DecomposeTanPass  # noqa
+from .decompose_topk_pass import DecomposeTopKPass  # noqa
 from .decompose_tosa_unsupported_clamp_pass import (  # noqa
     DecomposeTOSAUnsupportedClampPass,
 )
@@ -186,6 +186,7 @@ from .normalize_max_pool2d_input_rank_pass import (  # noqa
     NormalizeMaxPool2dInputRankPass,
 )
 from .normalize_while_initial_args_pass import NormalizeWhileInitialArgsPass  # noqa
+from .prepare_gather_indices_pass import PrepareGatherIndicesPass  # noqa
 from .promote_bool_operands_pass import PromoteBoolOperandsPass  # noqa
 from .propagate_view_copy_permute_pass import (  # noqa
     PropagateViewCopyPermuteDownPass,
@@ -197,6 +198,7 @@ from .remove_noop_pass import RemoveNoopPass  # noqa
 from .remove_permutes_around_elementwise_tosa_ops import (  # noqa
     RemovePermutesAroundElementwiseTosaOps,
 )
+from .remove_redundant_type_as_pass import RemoveRedundantTypeAsPass  # noqa
 from .remove_safe_softmax_guard_pass import RemoveSafeSoftmaxGuardPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorByProfilePass,
