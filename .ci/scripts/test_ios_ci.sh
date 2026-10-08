@@ -100,10 +100,13 @@ xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"
 
 say "Running Tests"
 
+# Parallel testing runs on cloned simulators, which intermittently fail to
+# launch the app on hosted runners.
 xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
-  -destination name="$SIMULATOR_NAME"
+  -destination name="$SIMULATOR_NAME" \
+  -parallel-testing-enabled NO
 
 # NB: https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest-ui.html
 say "Package The Test Suite"
