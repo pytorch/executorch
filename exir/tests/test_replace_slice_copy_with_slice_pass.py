@@ -11,7 +11,8 @@ import unittest
 from typing import List
 
 import torch
-from executorch.exir import memory, to_edge
+from executorch.exir import ExecutorchBackendConfig, memory, to_edge
+from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
@@ -260,6 +261,16 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
                     actual = gm(*copy.deepcopy(inputs))
                     assert_close(
                         actual, expected if isinstance(expected, tuple) else (expected,)
+                    )
+                    ToOutVarPass()(gm)
+                    MemoryPlanningPass()(gm)
+                    program = to_edge(
+                        export(model, copy.deepcopy(inputs), strict=True)
+                    ).to_executorch(ExecutorchBackendConfig(run_reinplace_pass=True))
+                    runtime = _load_for_executorch_from_buffer(program.buffer)
+                    assert_close(
+                        tuple(runtime.forward(copy.deepcopy(inputs))),
+                        expected if isinstance(expected, tuple) else (expected,),
                     )
 
     def test_view_of_slice_uses_updated_spec(self) -> None:
