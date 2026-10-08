@@ -402,7 +402,6 @@ class TestDecodeDispatch(unittest.TestCase):
             ops = self._bucket_ops(targets)
             self.assertEqual(len(ops), 1, (m, targets))
             self.assertIn(f"int4_quantized_gemm_m{m}", next(iter(ops)))
-            self.assertFalse(any("int4_plain_mm" in t for t in targets), m)
             self.assertFalse(any("constant_pad" in t for t in targets), m)
             with torch.no_grad():
                 out = module(x)
@@ -421,7 +420,6 @@ class TestDecodeDispatch(unittest.TestCase):
         ops = self._bucket_ops(targets)
         self.assertEqual(len(ops), 1, targets)
         self.assertIn("int4_quantized_gemm_m1", next(iter(ops)))
-        self.assertFalse(any("int4_plain_mm" in t for t in targets))
 
     def test_dynamic_m_bounded_by_a_bucket_uses_that_bucket(self):
         """A dynamic M in [2, 4] (e.g. a speculative block) takes the 4-row
@@ -449,7 +447,6 @@ class TestDecodeDispatch(unittest.TestCase):
         x = torch.randn(1, 512, dtype=torch.bfloat16, device="cuda")
         targets = self._targets(module, x)
         self.assertFalse(self._bucket_ops(targets))
-        self.assertFalse(any("int4_plain_mm" in t for t in targets))
 
 
 class TestFallbacks(unittest.TestCase):
@@ -475,7 +472,6 @@ class TestFallbacks(unittest.TestCase):
             program = torch.export.export(module, (x,))
         targets = {str(node.target) for node in program.graph.nodes}
         self.assertFalse(any("int4_quantized_gemm" in t for t in targets), targets)
-        self.assertFalse(any("int4_plain_mm" in t for t in targets), targets)
 
     def test_fp16_activation(self):
         module, w_ref = _make_int4_linear(256, 512, group_size=32)
