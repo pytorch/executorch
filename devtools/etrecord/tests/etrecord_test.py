@@ -17,7 +17,12 @@ from executorch import exir
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.core import BundledProgram
-from executorch.devtools.etrecord import generate_etrecord, parse_etrecord
+from executorch.devtools.etrecord import (
+    DelegatePartitionProvenance,
+    generate_etrecord,
+    get_delegate_partition_provenance,
+    parse_etrecord,
+)
 from executorch.devtools.etrecord._etrecord import (
     _get_reference_outputs,
     _get_representative_inputs,
@@ -440,6 +445,102 @@ class TestETRecord(unittest.TestCase):
         # ETRecord stores data directly (not JSON serialized), so compare with original data
         self.assertEqual(etrecord._debug_handle_map, et_manager.debug_handle_map)
         self.assertEqual(etrecord._delegate_map, et_manager.delegate_map)
+
+    def test_get_delegate_partition_provenance(self):
+        """Partition provenance is derived without exposing private ETRecord maps."""
+        etrecord = ETRecord(
+            _debug_handle_map={
+                "forward": {
+                    "7": [101, 102, 101],
+                    "9": [102, 103],
+                },
+                "encode": {},
+            },
+            _delegate_map={
+                "forward": {
+                    "9": {"name": "VgfBackend", "delegate_map": {}},
+                    "7": {"name": "VgfBackend", "delegate_map": {}},
+                },
+                "encode": {},
+            },
+        )
+
+        provenance = get_delegate_partition_provenance(etrecord)
+
+        self.assertEqual(
+            provenance["forward"],
+            (
+                DelegatePartitionProvenance(
+                    method_name="forward",
+                    instruction_id=7,
+                    backend_id="VgfBackend",
+                    source_debug_handles=(101, 102),
+                ),
+                DelegatePartitionProvenance(
+                    method_name="forward",
+                    instruction_id=9,
+                    backend_id="VgfBackend",
+                    source_debug_handles=(102, 103),
+                ),
+            ),
+        )
+        self.assertEqual(provenance["encode"], ())
+
+        # Debug handle 102 intentionally belongs to two partitions. The public
+        # representation must preserve that relation instead of overwriting it.
+        self.assertIn(102, provenance["forward"][0].source_debug_handles)
+        self.assertIn(102, provenance["forward"][1].source_debug_handles)
+
+    def test_get_delegate_partition_provenance_rejects_inconsistent_maps(self):
+        """Malformed delegate/debug metadata fails clearly instead of guessing."""
+        etrecord = ETRecord(
+            _debug_handle_map={"forward": {}},
+            _delegate_map={
+                "forward": {
+                    7: {"name": "VgfBackend", "delegate_map": {}},
+                }
+            },
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "no matching debug-handle entry",
+        ):
+            get_delegate_partition_provenance(etrecord)
+
+    def test_get_delegate_partition_provenance_round_trip(self):
+        """Provenance is stable across ETRecord save/parse JSON key conversion."""
+
+        class LinearRelu(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 4)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.relu(self.linear(x))
+
+        model = LinearRelu().eval()
+        inputs = (torch.randn(1, 4),)
+        aten_program = export(model, inputs, strict=True)
+        edge_manager = to_edge_transform_and_lower(
+            aten_program,
+            partitioner=[XnnpackPartitioner()],
+            generate_etrecord=True,
+        )
+        et_manager = edge_manager.to_executorch()
+        etrecord = et_manager.get_etrecord()
+
+        before = get_delegate_partition_provenance(etrecord)
+        self.assertIn("forward", before)
+        self.assertGreater(len(before["forward"]), 0)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            etrecord_path = tmpdirname + "/delegate_provenance.etrecord"
+            etrecord.save(etrecord_path)
+            parsed_etrecord = parse_etrecord(etrecord_path)
+
+        after = get_delegate_partition_provenance(parsed_etrecord)
+        self.assertEqual(after, before)
 
     def test_get_etrecord_from_executorch_program_manager_without_generation(self):
         """Test getting ETRecord from ExecutorchProgramManager when ETRecord was not generated."""
