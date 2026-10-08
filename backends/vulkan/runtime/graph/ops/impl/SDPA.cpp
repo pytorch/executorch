@@ -322,7 +322,10 @@ GlobalWorkGrid pick_sdpa_qk_gwg(
   // Decode is served by the single fused QK+softmax node.
   if (mode == SDPAMode::LLM &&
       use_fused_qk_softmax(graph, q, k, input_pos_symint)) {
-    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
+    // The zero grid still carries the coop shader's local work group, since
+    // the lwg picker requires one.
+    return GlobalWorkGrid(
+        {0u, 0u, 0u}, kTiledWorkGrid, LocalWorkGroup(1u, 64u, 1u));
   }
 
   const SDPADims d = compute_sdpa_dims(*graph, q, k, input_pos_symint, mode);
@@ -380,7 +383,8 @@ GlobalWorkGrid pick_sdpa_qk_softmax_gwg(
 
   // Prefill, and decode past the cutoff, are served by the separate nodes.
   if (!use_fused_qk_softmax(graph, q, k, resize_args.at(2))) {
-    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
+    return GlobalWorkGrid(
+        {0u, 0u, 0u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
   }
 
   const uint32_t num_q_heads = graph->size_at<uint32_t>(-2, q);
@@ -401,7 +405,8 @@ GlobalWorkGrid pick_sdpa_softmax_gwg(
   // Decode folds this into the fused QK+softmax node.
   if (mode == SDPAMode::LLM &&
       use_fused_qk_softmax(graph, q, resize_args.at(1), resize_args.at(2))) {
-    return GlobalWorkGrid({0u, 0u, 0u}, kTiledWorkGrid);
+    return GlobalWorkGrid(
+        {0u, 0u, 0u}, kTiledWorkGrid, LocalWorkGroup(64u, 1u, 1u));
   }
 
   // LLM reads H from axis -2, fused from axis -3 (handled by
@@ -612,8 +617,9 @@ void add_sdpa_compute_attn_weights_with_softmax_node(
       {scale_val},
       // Resize Args: [q, k, input_pos_symint, mode]
       {q, k, input_pos_symint, mode_ref},
-      // Resizing Logic
-      resize_sdpa_attn_weights_softmax_node));
+      // Resizing Logic: the output has the attn_weights shape, and args[1]
+      // holds {q, k}, not an attn_weights tensor to copy the shape from.
+      resize_sdpa_attn_weights_node));
 }
 
 void add_sdpa_compute_attn_weights_node(
