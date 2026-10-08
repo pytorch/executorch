@@ -32,6 +32,7 @@ def define_arm_tests():
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
         "ops/test_softmax.py",
+        "ops/test_softplus.py",
         "ops/test_sub.py",
         "ops/test_sum.py",
         "ops/test_tanh.py",
@@ -49,6 +50,11 @@ def define_arm_tests():
         "ops/test_gelu.py",
         "ops/test_bmm.py",
         "ops/test_split.py",
+    ]
+
+    # Modules
+    test_files += [
+        "modules/test_qwen_delta_gate.py",
     ]
 
     # Export recipes
