@@ -156,6 +156,62 @@ compile specs, see:
 
 Additional examples are available in `examples/arm`.
 
+#### Fast model operator-support pre-check
+
+For a quick pre-backend operator-list comparison before running the full Arm
+export and backend toolchain, use `backends/arm/scripts/check_model_support.py`.
+The script exports the model to ATen and compares operators visible in the
+`torch.export` graph with the generated support table committed in the
+**current checkout**.
+
+It uses the same external-model convention as `aot_arm_compiler.py`: the model
+file defines `ModelUnderTest` and `ModelInputs`, with optional `ModelKwargs`.
+Choose the backend with `--backend vgf`, `--backend u55`, or `--backend u85`:
+
+```bash
+python backends/arm/scripts/check_model_support.py \
+  --backend u85 \
+  --model examples/arm/example_modules/add.py
+```
+
+The backend tables used by the checker are:
+
+- VGF: `docs/source/backends/arm-vgf/VGF_op_support.md`
+- Ethos-U55: `docs/source/backends/arm-ethos-u/U55_op_support.md`
+- Ethos-U85: `docs/source/backends/arm-ethos-u/U85_op_support.md`
+
+A small demo deliberately combines table-matched operators with `torch.sort`,
+which is not in these support lists at the time the example is added:
+
+```bash
+python backends/arm/scripts/check_model_support.py \
+  --backend u85 \
+  --model backends/arm/scripts/examples/fast_model_support_demo.py
+```
+
+The expected result is inconclusive rather than a hard backend rejection:
+
+```text
+Unmatched pre-backend export operators (1):
+  - torch.sort [torch.ops.aten.sort.default]
+
+Result: INCONCLUSIVE
+```
+
+**Important:** A `PASS` only means that no operator-list gap was found in the
+pre-backend export graph. It does **not** guarantee that the model is supported
+end to end: the fast checker does not validate shapes, ranks, dtypes,
+quantization configuration, operator attributes, partitioning constraints,
+backend compiler constraints, memory requirements, or runtime behavior.
+
+`INCONCLUSIVE` means that one or more operators visible in the pre-backend
+`torch.export` graph are absent from the generated support table. This is not a
+definitive unsupported result because normal ExecuTorch/Arm lowering may
+decompose, rewrite, canonicalize, or remove those operators before backend
+support checking. Known export-only infrastructure operators, such as
+`aten._assert_tensor_metadata.default`, are ignored when they are known to be
+removed before backend lowering.
+
 #### Export recipes
 
 An `ExportRecipe` bundles those steps for a target, so a standard export needs
