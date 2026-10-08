@@ -102,6 +102,15 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "method_meta_factory_test",
+        srcs = ["method_meta_factory_test.cpp"],
+        deps = [
+            "//executorch/runtime/executor:program",
+            "//executorch/schema:program",
+        ],
+    )
+
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
@@ -209,7 +218,9 @@ def define_common_targets(is_fbcode = False):
                 "program_validation_test.cpp",
             ],
             deps = [
+                ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/schema:program",

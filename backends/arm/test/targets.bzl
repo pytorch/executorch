@@ -32,12 +32,14 @@ def define_arm_tests():
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
         "ops/test_softmax.py",
+        "ops/test_softplus.py",
         "ops/test_sub.py",
         "ops/test_sum.py",
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
         "ops/test_to_copy.py",
+        "ops/test_topk.py",
         "ops/test_exp.py",
         "ops/test_fft.py",
         "ops/test_flip.py",
@@ -48,6 +50,11 @@ def define_arm_tests():
         "ops/test_gelu.py",
         "ops/test_bmm.py",
         "ops/test_split.py",
+    ]
+
+    # Modules
+    test_files += [
+        "modules/test_qwen_delta_gate.py",
     ]
 
     # Export recipes
@@ -70,6 +77,7 @@ def define_arm_tests():
         # "misc/test_evaluate_model.py",
         "misc/test_pass_pipeline_config.py",
         "misc/test_tosa_constant_pool.py",
+        "misc/test_tosa_operator_support.py",
         "misc/tosa_dialect/test_tosa_dialect_cast_to_block_scaled.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_conv2d.py",
         "misc/tosa_dialect/test_tosa_dialect_mxfp_linear.py",
@@ -82,6 +90,7 @@ def define_arm_tests():
         "misc/test_mxfp_linear_ao.py",
         "misc/test_post_quant_device_switch.py",
         "misc/test_vgf_check_env.py",
+        "misc/test_vulkan_validation_layer.py",
         "misc/test_vgf_backend.py",
         "misc/test_vgf_smoke.py",
         # "misc/test_dim_order.py", (TODO - T238390249)
@@ -160,7 +169,7 @@ def define_arm_tests():
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
             ] if runtime.is_oss else []) + ([
-                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
+                "//executorch/backends/arm/scripts/docgen:generate_op_support",
             ] if test_file == "misc/test_docgen_op_support.py" else []) + ([
                 "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
                 "fbsource//third-party/pypi/packaging:packaging",

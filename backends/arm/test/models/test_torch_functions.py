@@ -21,11 +21,13 @@ requiring randomness.
 from typing import Callable
 
 import torch
+
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
 )
+from torch.utils import _pytree
 
 
 def module_add_factory(function: Callable) -> torch.nn.Module:
@@ -93,15 +95,22 @@ input_t = tuple[torch.Tensor]
 
 test_parameters = {test[0]: test[1:] for test in module_tests}
 
+# For torch versions < 1.15.0, xfail these tests due to missing functionality.
+return_type_serialization_xfails: dict[str, tuple[str, type[Exception]]] = {}
+for name, result in (
+    ("topk", torch.topk(torch.arange(2), 1)),
+    ("sort", torch.sort(torch.arange(2))),
+):
+    try:
+        _pytree.treespec_dumps(_pytree.tree_structure(result))
+    except NotImplementedError:
+        return_type_serialization_xfails[name] = (
+            f"torch.return_types.{name} cannot be serialized",
+            NotImplementedError,
+        )
 
-@parametrize(
-    "test_data",
-    test_parameters,
-    xfails={
-        "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
-        "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-    },
-)
+
+@parametrize("test_data", test_parameters, xfails=return_type_serialization_xfails)
 def test_torch_functions_tosa_FP(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineFP[input_t](
@@ -119,15 +128,7 @@ def test_torch_functions_tosa_FP(test_data):
             raise e
 
 
-@parametrize(
-    "test_data",
-    test_parameters,
-    xfails={
-        "topk": "NotImplementedError: No registered serialization name for <class 'torch.return_types.topk'> found",
-        "sort": "NotImplementedError: No registered serialization name for <class 'torch.return_types.sort'> found",
-    },
-    strict=True,
-)
+@parametrize("test_data", test_parameters, xfails=return_type_serialization_xfails)
 def test_torch_functions_tosa_INT(test_data):
     module, inputs = test_data
     pipeline = TosaPipelineINT[input_t](

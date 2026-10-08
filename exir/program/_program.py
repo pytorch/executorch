@@ -208,7 +208,9 @@ def _update_exported_program_graph_module(
             exported_program.graph_signature, gm
         ),
         state_dict=exported_program.state_dict,
-        range_constraints=_get_updated_range_constraints(gm),
+        range_constraints=_get_updated_range_constraints(
+            gm, exported_program.range_constraints
+        ),
         module_call_graph=copy.deepcopy(exported_program._module_call_graph),
         example_inputs=exported_program.example_inputs,
         constants=exported_program.constants,
@@ -817,6 +819,13 @@ def _generate_edge_program(
     # Remove unused parameters
     program = remove_unused_parameters_pass(program)
 
+    if not config._skip_dim_order:
+        # Normalize constants and buffers before MemoryFormatOpsPass rewrites
+        # preserve-format copies, which cannot represent arbitrary dim orders.
+        program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
+            program
+        )
+
     pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
     passes = [
@@ -858,7 +867,7 @@ def _generate_edge_program(
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
 
-    # Normalize constant tensor dim order on the unlifted graph
+    # Normalize tensor constants introduced by the preceding passes.
     edge_program = convert_constant_dim_order_pass.convert_constant_dim_order_pass(
         edge_program
     )

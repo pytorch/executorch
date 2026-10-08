@@ -10,8 +10,16 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.qualcomm.builders import node_visitor_manager
+from executorch.backends.qualcomm.builders.node_visitor import (
+    PER_CHANNEL_GROUP_ENCODING,
+)
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    HtpArch,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPrecision,
+)
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
 )
@@ -43,7 +51,12 @@ from .common_defs import (
     not_supported_operator,
     to_be_implemented_operator,
 )
-from .utils import filter_fn, generate_qnn_executorch_option, get_skip_decomp_table
+from .utils import (
+    filter_fn,
+    generate_qnn_executorch_option,
+    get_skip_decomp_table,
+    warn_if_dilated_conv_may_not_fit_vtcm,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -73,6 +86,19 @@ class QnnOperatorSupport(OperatorSupportBase):
         # Label prefixed to op-support log lines so callers that reuse this
         # checker (e.g. the LPAI fallback pass) are distinguishable in the logs.
         self.phase = phase
+        self.soc_info = python_options.soc_info
+        self.backend_type = python_options.backend_options.backend_type
+        htp_options = python_options.backend_options.htp_options
+        # Gate for the VTCM diagnostic in is_node_supported. Only fp16 HTP: the
+        # quantized path rejects an untileable dilated conv at finalize, so it
+        # needs no warning. Not gated on log level, unlike the backend's other
+        # diagnostics -- the failure it points at is a silent unresponsive DSP
+        # with no other clue in the log, so it has to be visible by default.
+        self.warn_dilated_conv_vtcm = (
+            self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            and htp_options is not None
+            and htp_options.precision == QnnExecuTorchHtpPrecision.kHtpFp16
+        )
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = get_current_qnn_manager(
             python_options.backend_options.backend_type, compiler_specs
@@ -80,6 +106,22 @@ class QnnOperatorSupport(OperatorSupportBase):
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         if node.op != "call_function" or node.target in not_supported_operator:
+            return False
+
+        # Per-channel-group lowers to blockwise expansion (the encoding LPBQ
+        # uses), which requires HTP >= V69. Pre-quantized weights bypass the
+        # quantizer's validate_lpbq_support check, so gate the delegation here.
+        # Scoped to HTP: other backends reusing this checker have no htp_arch.
+        if (
+            node.target in PER_CHANNEL_GROUP_ENCODING
+            and self.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            and self.soc_info.htp_info.htp_arch < HtpArch.V69
+        ):
+            logger.warning(
+                f"[{self.phase}] {node.target.__name__} | Skipped: blockwise "
+                f"(per-channel-group) encoding requires HTP arch >= V69, got "
+                f"{self.soc_info.htp_info.htp_arch!r}"
+            )
             return False
 
         if node.target in to_be_implemented_operator:
@@ -108,6 +150,14 @@ class QnnOperatorSupport(OperatorSupportBase):
         ):
             logger.info(f"[{self.phase}] {node.target.__name__} | Skipped")
             return False
+
+        # TODO: workaround for https://github.com/pytorch/executorch/issues/23096.
+        # Remove this once the fp16 path performs the TCM-fit check the quantized
+        # path does.
+        if self.warn_dilated_conv_vtcm:
+            warn_if_dilated_conv_may_not_fit_vtcm(
+                node, self.soc_info.htp_info.vtcm_size_in_mb, self.phase
+            )
 
         supported = False
         if node.target.__name__ not in self.node_visitors:

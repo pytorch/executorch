@@ -231,6 +231,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir/passes:constant_prop_pass",
             "//executorch/exir/passes:cse_pass",
             "//executorch/exir/passes:debug_handle_generator_pass",
+            "//executorch/exir/passes:fold_redundant_qdq_pass",
             "//executorch/exir/passes:insert_write_back_for_buffers_pass",
             "//executorch/exir/passes:lib",
             "//executorch/exir/passes:memory_format_ops_pass",

@@ -56,6 +56,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.native_group_norm.default,
         exir_ops.edge.aten.pixel_shuffle.default,
         exir_ops.edge.aten.pixel_unshuffle.default,
+        exir_ops.edge.qnn_custom.space_to_depth.default,
         exir_ops.edge.aten.upsample_bicubic2d.default,
         exir_ops.edge.aten.upsample_bicubic2d.vec,
         exir_ops.edge.aten.upsample_bilinear2d.default,
@@ -352,6 +353,14 @@ class LayoutTransform(ExportPass):
                     self.mark_as_transformed(node)
                     self.traverse(node, graph_module)
             self.insert_permute, self.transformed_tag = True, QCOM_AXIS_ORDER
+
+            for node in graph.nodes:
+                if hasattr(node, "meta"):
+                    # Pop QCOM_AXIS_ORDER written by the to-edge LayoutTransform pass.
+                    # Without this, the main for-loop below would see is_transformed_node=True
+                    # for every sensitive node (deepcopy carries the tag from to-edge) and
+                    # skip them entirely, so no permute nodes would ever be inserted.
+                    node.meta.pop(QCOM_AXIS_ORDER, "")
 
         for node in sensitive_nodes:
             if not self.is_transformed_node(node):
