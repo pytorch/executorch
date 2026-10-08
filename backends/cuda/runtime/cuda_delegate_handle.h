@@ -142,6 +142,13 @@ struct CudaGraphState {
 
   CudaGraphState() = default;
 
+  // Starts the warmup that leads to capture, when the current device can
+  // capture: without memory pools the allocator falls back to cudaMalloc,
+  // which a captured graph cannot own, so the phase stays Disabled there.
+  // Returns whether it started. Defined with the backend, which owns the
+  // warmup length.
+  bool start_warmup();
+
   ~CudaGraphState() {
     release();
   }
