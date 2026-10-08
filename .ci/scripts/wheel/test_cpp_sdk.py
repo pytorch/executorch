@@ -1349,8 +1349,10 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     )
 
 
-def test_cuda_allocator_component(work_dir: Path) -> None:
-    """The CUDA target must supply everything needed to use its allocator."""
+def test_cuda_allocator_component(
+    work_dir: Path, *, late_toolkit: bool = False
+) -> None:
+    """Supply allocator headers without making consumers link another CUDA runtime."""
     package = _installed_package_dir()
     if not any(
         (package / "lib").glob(_library_file_name("libexecutorch_extension_cuda") + "*")
@@ -1358,9 +1360,12 @@ def test_cuda_allocator_component(work_dir: Path) -> None:
         print("- no CUDA extension is shipped; skipping its allocator consumer")
         return
 
-    source_dir = work_dir / "cuda-allocator-consumer"
+    name = "cuda-allocator-late-toolkit" if late_toolkit else "cuda-allocator-consumer"
+    source_dir = work_dir / name
     source_dir.mkdir(parents=True, exist_ok=True)
-    (source_dir / "consumer.cpp").write_text(
+    allocator_dir = source_dir / "child" if late_toolkit else source_dir
+    allocator_dir.mkdir(exist_ok=True)
+    (allocator_dir / "consumer.cpp").write_text(
         "#include <executorch/extension/cuda/cuda_allocator.h>\n"
         "using namespace executorch::extension::cuda;\n"
         "int main() {\n"
@@ -1368,8 +1373,28 @@ def test_cuda_allocator_component(work_dir: Path) -> None:
         "      executorch::runtime::etensor::DeviceType::CUDA ? 0 : 1;\n"
         "}\n"
     )
-    (source_dir / "CMakeLists.txt").write_text(_consumer_cmake(["extension_cuda"]))
-    build_dir = work_dir / "cuda-allocator-consumer-build"
+    consumer_cmake = _consumer_cmake(["extension_cuda"])
+    if late_toolkit:
+        (allocator_dir / "CMakeLists.txt").write_text(
+            "set(CMAKE_DISABLE_FIND_PACKAGE_CUDAToolkit FALSE)\n" + consumer_cmake
+        )
+        consumer_cmake = (
+            "cmake_minimum_required(VERSION 3.28)\n"
+            "project(consumer CXX)\n"
+            "set(CMAKE_DISABLE_FIND_PACKAGE_CUDAToolkit TRUE)\n"
+            "find_package(executorch REQUIRED COMPONENTS extension_cuda)\n"
+            "add_subdirectory(child)\n"
+        )
+    (source_dir / "empty.cpp").write_text("int main() { return 0; }\n")
+    consumer_cmake += (
+        "add_executable(empty empty.cpp)\n"
+        "target_link_libraries(empty PRIVATE executorch::extension_cuda)\n"
+        'if(CMAKE_SYSTEM_NAME STREQUAL "Linux")\n'
+        '  target_link_options(empty PRIVATE "-Wl,--no-as-needed")\n'
+        "endif()\n"
+    )
+    (source_dir / "CMakeLists.txt").write_text(consumer_cmake)
+    build_dir = work_dir / f"{name}-build"
     configure = [
         _tool("cmake"),
         "-S",
@@ -1386,13 +1411,26 @@ def test_cuda_allocator_component(work_dir: Path) -> None:
             "a consumer linking only executorch::extension_cuda could not build:\n"
             f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
         )
+    allocator_build = build_dir / "child" if late_toolkit else build_dir
     subprocess.run(
-        [str(_executable(build_dir, "consumer"))],
+        [str(_executable(allocator_build, "consumer"))],
         env=_loader_clean_environment(),
         check=True,
         timeout=_RUN_TIMEOUT,
     )
-    print("CUDA allocator compiles, links and runs through executorch::extension_cuda")
+    if sys.platform.startswith("linux"):
+        empty = _executable(build_dir, "empty")
+        dynamic = _recorded_dependencies(empty)
+        assert not any(
+            "NEEDED" in line and "libcudart" in line for line in dynamic.splitlines()
+        ), f"an empty CUDA component consumer directly links the toolkit runtime:\n{dynamic}"
+        subprocess.run(
+            [str(empty)],
+            env=_loader_clean_environment(),
+            check=True,
+            timeout=_RUN_TIMEOUT,
+        )
+    print(f"✓ CUDA allocator consumer passes (late toolkit: {late_toolkit})")
 
 
 def test_shipped_headers_have_implementations(work_dir: Path) -> None:
@@ -1703,11 +1741,13 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         "target_link_libraries(consumer PRIVATE ${EXECUTORCH_LIBRARIES})\n"
         "set_target_properties(consumer PROPERTIES CXX_STANDARD ${EXECUTORCH_CXX_STANDARD})\n"
         # No imported targets on this route, so no TARGET_RUNTIME_DLLS either. A Windows
-        # consumer copies the DLLs from the directory the package reports.
+        # consumer copies the DLLs from the directory the package reports, plus any the
+        # package lists separately because they ship elsewhere.
         "if(WIN32)\n"
         '  file(GLOB _dlls "${EXECUTORCH_RUNTIME_LIBRARY_DIR}/*.dll")\n'
         "  add_custom_command(TARGET consumer POST_BUILD COMMAND ${CMAKE_COMMAND} -E "
-        "copy_if_different ${_dlls} $<TARGET_FILE_DIR:consumer>)\n"
+        "copy_if_different ${_dlls} ${EXECUTORCH_RUNTIME_DLLS_EXTRA} "
+        "$<TARGET_FILE_DIR:consumer>)\n"
         "endif()\n"
     )
     build_dir = work_dir / "pre-328-build"
@@ -2005,6 +2045,7 @@ def run_tests(work_dir: Path) -> None:
     test_profiler_component_is_usable(work_dir)
     test_every_shipped_header_compiles(work_dir)
     test_cuda_allocator_component(work_dir)
+    test_cuda_allocator_component(work_dir, late_toolkit=True)
     test_shipped_headers_have_implementations(work_dir)
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_cannot_compute(work_dir)

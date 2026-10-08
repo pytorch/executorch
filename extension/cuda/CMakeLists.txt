@@ -46,16 +46,15 @@ if(EXECUTORCH_BUILD_SHARED)
   # Ships beside libexecutorch.so in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(extension_cuda)
 endif()
-# device_guard.cpp calls into the runtime, so this needs it. Only built under an
-# accelerator build, where the toolkit is present by definition.
-# caller_stream.cpp still calls nothing and treats its handle as opaque.
+# The allocator and device guard call the runtime. The caller-stream helper
+# treats its handle as opaque. The toolkit is present in accelerator builds.
 if(EXECUTORCH_BUILD_ROCM)
   target_link_libraries(extension_cuda PUBLIC hip::host)
 else()
   target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 endif()
-# device_guard.cpp logs, so this needs the ExecuTorch runtime. Where one shared
-# runtime exists, the helper retains it, so a process has a single registry.
+# The allocator and device guard log through the ExecuTorch runtime. Where one
+# shared runtime exists, the helper retains it so there is a single registry.
 # Where it does not, the helper does nothing, and this library carries the parts
 # of the static core it needs instead.
 if(EXECUTORCH_BUILD_SHARED)
@@ -74,6 +73,18 @@ target_compile_definitions(
 )
 if(EXECUTORCH_BUILD_ROCM)
   target_compile_definitions(extension_cuda PUBLIC EXECUTORCH_USE_HIP=1)
+endif()
+
+if(BUILD_TESTING
+   AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND NOT EXECUTORCH_BUILD_ROCM
+)
+  # Interposes CUDA allocation calls and must not load the backend's registrar.
+  add_executable(test_cuda_allocator_exit test/cuda_allocator_exit.cpp)
+  target_link_libraries(
+    test_cuda_allocator_exit PRIVATE extension_cuda executorch_core
+  )
+  add_test(NAME test_cuda_allocator_exit COMMAND test_cuda_allocator_exit)
 endif()
 
 install(

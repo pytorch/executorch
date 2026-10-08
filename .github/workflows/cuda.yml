@@ -496,25 +496,28 @@ jobs:
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
         # The pybindings loader only asks for device memory on a build that has
-        # a device allocator registered, so this test cannot run in the CPU
-        # jobs. It needs the install above and nothing built below, so run it
+        # a device allocator registered, so these tests cannot run in the CPU
+        # jobs. They need the install above and nothing built below, so run them
         # here and fail before the long builds.
         #
-        # unittest exits 0 when a test skips, and this test skips when the CUDA
+        # unittest exits 0 when a test skips, and these tests skip when the CUDA
         # backend is missing or no GPU is visible. Both are the prerequisites
         # this job exists to provide, so treat a skip as a failure rather than
         # let a packaging regression pass silently. `tee` would otherwise hide
         # the real exit status behind its own, so read it back explicitly.
         set +e
-        python -m unittest -v executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device 2>&1 | tee /tmp/pybindings_device_test.log
+        python -m unittest -v \
+          executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_device_planned_method_allocates_on_the_device \
+          executorch.extension.pybindings.test.test_pybindings.PybindingsTest.test_unplanned_device_output_is_device_memory \
+          2>&1 | tee /tmp/pybindings_device_test.log
         pybindings_device_status=${PIPESTATUS[0]}
         set -e
         if [ "${pybindings_device_status}" -ne 0 ]; then
-          echo "::error::the pybindings device test failed"
+          echo "::error::a pybindings device test failed"
           exit "${pybindings_device_status}"
         fi
         if grep -qE "^OK \(skipped=|skipped=[1-9]" /tmp/pybindings_device_test.log; then
-          echo "::error::the pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
+          echo "::error::a pybindings device test skipped in the CUDA job, which means the CUDA backend or a visible GPU is missing"
           exit 1
         fi
 
@@ -577,10 +580,11 @@ jobs:
           -v -o "addopts="
 
         cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_TESTS=ON
-        cmake --build cmake-out --target test_cuda_allocator test_cuda_mutable_state test_cuda_weight_cache test_cuda_guard test_cuda_stream_guard -j$(nproc)
+        cmake --build cmake-out --target test_cuda_allocator test_cuda_allocator_exit test_cuda_mutable_state test_cuda_weight_cache test_cuda_sort_rand test_cuda_guard test_cuda_stream_guard -j$(nproc)
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_weight_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R test_cuda_sort_rand --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_guard --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_stream_guard --output-on-failure -V
 

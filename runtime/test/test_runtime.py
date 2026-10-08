@@ -162,7 +162,7 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(torch.equal(second, torch.ones(1, 4)))
         self.assertTrue(torch.equal(first, torch.zeros(1, 4)))
 
-    def test_execute_refused_after_failed_set_inputs(self):
+    def test_failed_set_inputs_returns_installed_input(self):
         x, cache, pos = _cache_inputs()
         method, _buffer = _load_cache_update_method()
         method._method.set_inputs((x, cache, pos))
@@ -170,10 +170,10 @@ class RuntimeTest(unittest.TestCase):
         new_cache = torch.zeros(3, 4)
         with self.assertRaises(RuntimeError):
             method._method.set_inputs((x, new_cache, torch.tensor([1.0])))
-        with self.assertRaises(RuntimeError):
-            method._method.execute()
-        outputs = method.execute((x, new_cache, pos))
-        self.assertIs(outputs[0], new_cache)
+        method._method.execute()
+        outputs = method._method.get_outputs()
+        self.assertIsNot(outputs[0], cache)
+        self.assertTrue(torch.equal(outputs[0], new_cache))
         self.assertTrue(torch.equal(cache, torch.zeros(3, 4)))
 
     def test_caller_backed_outputs_are_not_cloned(self):

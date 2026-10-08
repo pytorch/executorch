@@ -12,10 +12,6 @@
 #include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/device_allocator.h>
 
-#include <atomic>
-#include <mutex>
-#include <unordered_map>
-
 namespace executorch::extension::cuda {
 
 /**
@@ -32,7 +28,13 @@ namespace executorch::extension::cuda {
 class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
     : public executorch::runtime::DeviceAllocator {
  public:
-  /// Alignments above 256 bytes add up to alignment minus one bytes of padding.
+  /**
+   * Allocates device memory aligned to `alignment`, a power of two. Above 256
+   * bytes, the one cudaMalloc call reserves alignment minus one extra bytes
+   * and the result is rounded up. Free the result with deallocate(), not
+   * cudaFree() or deallocate_async(), since it may not be the pointer
+   * cudaMalloc returned.
+   */
   executorch::runtime::Result<void*> allocate(
       size_t nbytes,
       executorch::runtime::etensor::DeviceIndex index,
@@ -61,7 +63,10 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
   // --- Async (stream-based) operations for SlimTensor/Storage layer ---
 
   /**
-   * Allocate device memory asynchronously on the given CUDA stream.
+   * Allocate device memory asynchronously on the given CUDA stream, from this
+   * allocator's pool for the device. On a device without memory pools it falls
+   * back to cudaMalloc, which the caller's stream ordering still covers, and
+   * refuses while `stream` is capturing a CUDA graph.
    */
   static executorch::runtime::Result<void*> allocate_async(
       size_t nbytes,
@@ -69,9 +74,48 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
       cudaStream_t stream);
 
   /**
-   * Deallocate device memory asynchronously on the given CUDA stream.
+   * Deallocate device memory asynchronously on the given CUDA stream. Memory on
+   * a device without memory pools is released with cudaFree instead, except
+   * while `stream` is capturing a CUDA graph, when it is kept because the graph
+   * may still use it.
    */
   static void deallocate_async(
+      void* ptr,
+      executorch::runtime::etensor::DeviceIndex index,
+      cudaStream_t stream);
+
+  /**
+   * Whether a device supports the stream-ordered allocator (memory pools).
+   * Data-center GPUs in TCC mode on Windows do not; there cudaMallocAsync and
+   * CUDA graph memory are unavailable, and allocations fall back to cudaMalloc.
+   * Always true on ROCm.
+   *
+   * @param index Device to query, or a negative value for the current one.
+   */
+  static bool memory_pools_supported(
+      executorch::runtime::etensor::DeviceIndex index);
+
+  /**
+   * Stream-ordered scratch from the device default pool, which is what
+   * cudaMallocAsync on `stream` gives, for callers that do not want this
+   * allocator's retaining pool. On a device without memory pools it falls back
+   * to cudaMalloc, and refuses while `stream` is capturing a CUDA graph, since
+   * a synchronous allocation cannot be recorded into one.
+   *
+   * @param index The device `stream` belongs to.
+   */
+  static executorch::runtime::Result<void*> allocate_stream_ordered(
+      size_t nbytes,
+      executorch::runtime::etensor::DeviceIndex index,
+      cudaStream_t stream);
+
+  /**
+   * Frees memory from allocate_stream_ordered on the same device and stream.
+   * Returns Error::Internal when the free fails (cudaFreeAsync, or cudaFree on
+   * a device without memory pools), and Error::NotSupported when such a device
+   * keeps the block because `stream` is capturing a CUDA graph.
+   */
+  static executorch::runtime::Error deallocate_stream_ordered(
       void* ptr,
       executorch::runtime::etensor::DeviceIndex index,
       cudaStream_t stream);
@@ -80,9 +124,10 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
    * Return unused memory from this allocator's shared pools to the driver.
    *
    * All delegates using this allocator share its pools and retention threshold.
-   * Trimming may release cached blocks from any of them, making their next
-   * allocation slower. Live allocations are unaffected. The device default
-   * pool is not trimmed, but unused graph memory is trimmed device-wide.
+   * Trimming may release any delegate's cached blocks, making its next
+   * allocation slower. Live allocations and the device default pool are
+   * unaffected. Unused graph memory is trimmed device-wide only on devices
+   * this allocator has a pool entry for.
    *
    * Call after device work has finished. This function does not synchronize;
    * only frees already observed by the driver can be released. The CUDA
@@ -131,9 +176,11 @@ class EXECUTORCH_EXTENSION_CUDA_API CudaAllocator final
       cudaStream_t stream);
 
  private:
-  std::mutex padded_allocations_mutex_;
-  std::unordered_map<void*, void*> padded_allocations_;
-  std::atomic<size_t> padded_allocation_count_{0};
+  CudaAllocator() = default;
+  CudaAllocator(const CudaAllocator&) = delete;
+  CudaAllocator& operator=(const CudaAllocator&) = delete;
+  CudaAllocator(CudaAllocator&&) = delete;
+  CudaAllocator& operator=(CudaAllocator&&) = delete;
 };
 
 } // namespace executorch::extension::cuda
