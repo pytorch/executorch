@@ -251,6 +251,21 @@ class BufferTensor final {
     return info.item_type_is_equivalent_to<T>();
   }
 
+  static bool has_half_format(const py::buffer_info& info) {
+    if (info.itemsize != 2) {
+      return false;
+    }
+    if (info.format == "e" || info.format == "@e" || info.format == "=e") {
+      return true;
+    }
+    const uint16_t one = 1;
+    const bool native_is_little_endian =
+        *reinterpret_cast<const uint8_t*>(&one) == 1;
+    return (native_is_little_endian && info.format == "<e") ||
+        (!native_is_little_endian &&
+         (info.format == ">e" || info.format == "!e"));
+  }
+
   static executorch::aten::ScalarType scalar_type_from_buffer(
       const py::buffer_info& info) {
     if (has_format<uint8_t>(info)) {
@@ -268,7 +283,7 @@ class BufferTensor final {
     if (has_format<int64_t>(info)) {
       return executorch::aten::ScalarType::Long;
     }
-    if (info.itemsize == 2 && info.format == "e") {
+    if (has_half_format(info)) {
       return executorch::aten::ScalarType::Half;
     }
     if (has_format<float>(info)) {
@@ -318,9 +333,14 @@ class BufferTensor final {
 };
 
 bool is_torch_tensor(const py::handle& value) {
-  static const py::object tensor_type =
-      py::module_::import("torch").attr("Tensor");
-  return py::isinstance(value, tensor_type);
+  const py::str module_name("torch");
+  py::object torch_module =
+      py::reinterpret_steal<py::object>(PyImport_GetModule(module_name.ptr()));
+  if (!torch_module) {
+    PyErr_Clear();
+    return false;
+  }
+  return py::isinstance(value, torch_module.attr("Tensor"));
 }
 
 void validate_tensor_input(
@@ -1141,10 +1161,6 @@ struct PyModule final {
             at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
-            at_tensor.dim() == 5) {
-          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
@@ -1678,9 +1694,8 @@ struct PyMethod final {
         }
         saw_torch = true;
         auto at_tensor = python_input.cast<at::Tensor>();
-        const auto input_meta =
-            method_->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned()) {
+        const auto input_meta = method_->method_meta().input_tensor_meta(i);
+        if (input_meta.ok() && !input_meta->is_memory_planned()) {
           borrowed_inputs.emplace_back(i, at_tensor);
         }
 #ifdef USE_ATEN_LIB
@@ -1709,10 +1724,6 @@ struct PyMethod final {
             at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast) &&
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
-        } else if (
-            at_tensor.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
-            at_tensor.dim() == 5) {
-          dim_order = decltype(dim_order)({0, 2, 3, 4, 1});
         } else {
           auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
@@ -1766,9 +1777,9 @@ struct PyMethod final {
         buffer_inputs.push_back(std::make_shared<BufferTensor>(python_input));
         const auto& buffer = buffer_inputs.back();
         validate_buffer_input(method_->method_meta(), i, *buffer);
-        const auto input_meta =
-            method_->method_meta().input_tensor_meta(i).get();
-        if (!input_meta.is_memory_planned() && buffer->borrows_data()) {
+        const auto input_meta = method_->method_meta().input_tensor_meta(i);
+        if (input_meta.ok() && !input_meta->is_memory_planned() &&
+            buffer->borrows_data()) {
           borrowed_inputs.emplace_back(i, buffer);
         }
 #ifdef USE_ATEN_LIB
@@ -1846,8 +1857,10 @@ struct PyMethod final {
     allocate_output_storages();
     std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
     for (int i = 0; i < output_storages_.size(); ++i) {
-      output_storage_spans[i] =
-          Span<uint8_t>(output_storages_[i].data(), output_storages_[i].size());
+      output_storage_spans[i] = device_output_storages_[i].size() > 0
+          ? device_output_storages_[i].as_span()
+          : Span<uint8_t>(
+                output_storages_[i].data(), output_storages_[i].size());
     }
 #ifdef USE_ATEN_LIB
     // [TLS handling] This is to workaround an assertion failure
@@ -1934,6 +1947,9 @@ struct PyMethod final {
   // Need to keep-alive output storages until they can be compared in case of
   // bundled programs.
   std::vector<std::vector<uint8_t>> output_storages_;
+  // Backs the outputs the program places on a device without planning them,
+  // indexed like output_storages_. Empty for every other output.
+  std::vector<DeviceMemoryBuffer> device_output_storages_;
 
   void allocate_output_storages() {
     const auto num_outputs = method_->outputs_size();
@@ -1941,9 +1957,14 @@ struct PyMethod final {
     if (output_storages_.size() == num_outputs) {
       return;
     }
+    // Built in locals and moved in only once every output has its buffer, so
+    // an allocation that throws partway leaves nothing behind for the next
+    // call to append to.
+    std::vector<std::vector<uint8_t>> output_storages;
+    std::vector<DeviceMemoryBuffer> device_output_storages(num_outputs);
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
-    output_storages_.reserve(num_outputs);
+    output_storages.reserve(num_outputs);
     auto meta = method_->method_meta();
     for (size_t i = 0; i < num_outputs; ++i) {
       auto output_type = meta.output_tag(i);
@@ -1951,7 +1972,7 @@ struct PyMethod final {
           output_type.error(), "Failed to get output type for output %zu", i);
       if (output_type.get() != Tag::Tensor) {
         // Skip allocating storage for non-tensor outputs.
-        output_storages_.emplace_back();
+        output_storages.emplace_back();
         continue;
       }
       const auto& output_tensor_meta =
@@ -1962,13 +1983,38 @@ struct PyMethod final {
           i);
       if (output_tensor_meta.get().is_memory_planned()) {
         // Skip allocating storage for planned memory outputs.
-        output_storages_.emplace_back();
+        output_storages.emplace_back();
         continue;
       }
       // Allocate storage for the output tensor.
       const size_t output_size = output_tensor_meta.get().nbytes();
-      output_storages_.emplace_back(output_size);
+#ifndef USE_ATEN_LIB
+      // The delegate and the output clone treat a device-tagged output as
+      // device memory. A host buffer there only works on a device that can
+      // read pageable host memory, and fails everywhere else. An empty output
+      // needs no memory on any device, and whether an allocator accepts a zero
+      // size is up to the allocator, so it keeps the empty host buffer below,
+      // which setup_output_storage skips.
+      const auto device = method_->get_output(i).toTensor().device();
+      if (!device.is_cpu() && output_size > 0) {
+        auto buffer = DeviceMemoryBuffer::create(
+            output_size, device.type(), device.index());
+        THROW_IF_ERROR(
+            buffer.error(),
+            "Failed to allocate %zu bytes on device %d:%d for output %zu",
+            output_size,
+            static_cast<int>(device.type()),
+            static_cast<int>(device.index()),
+            i);
+        device_output_storages[i] = std::move(buffer.get());
+        output_storages.emplace_back();
+        continue;
+      }
+#endif
+      output_storages.emplace_back(output_size);
     }
+    output_storages_ = std::move(output_storages);
+    device_output_storages_ = std::move(device_output_storages);
   }
 
   py::list get_outputs_as_py_list(

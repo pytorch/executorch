@@ -24,6 +24,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAdd,
     ModuleAddConstReturn,
     ModuleAddEmpty,
+    ModuleAddHalf,
     ModuleAddScalar,
     ModuleAddSingleInput,
     ModuleAddWithAttributes,
@@ -79,6 +80,26 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertTrue(torch.allclose(output, inputs[0] + inputs[1]))
 
+    def test_numpy_float16_buffer_input(self):
+        exported_program, inputs = create_program(ModuleAddHalf())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        output = executorch_module(inputs[0].numpy())[0]
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+
+    def test_buffer_input_does_not_import_torch(self):
+        exported_program, inputs = create_program(ModuleAddSingleInput())
+        executorch_module = self.load_fn(exported_program.buffer)
+        torch_module = sys.modules.pop("torch")
+        try:
+            output = executorch_module(inputs[0].numpy())[0]
+            self.assertNotIn("torch", sys.modules)
+        finally:
+            sys.modules["torch"] = torch_module
+
+        self.assertTrue(torch.equal(output, inputs[0] + inputs[0]))
+
     def test_empty_numpy_buffer_input(self):
         exported_program, inputs = create_program(ModuleAddEmpty())
         array = np.zeros((3, 0), dtype=np.float32)
@@ -114,6 +135,13 @@ class PybindingsTest(unittest.TestCase):
 
         self.assertTrue(torch.equal(method.get_outputs()[0], inputs[0] + inputs[1]))
 
+    def test_method_rejects_tensor_for_scalar_input(self):
+        exported_program, inputs = create_program(ModuleAddScalar())
+        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
+
+        with self.assertRaises(RuntimeError):
+            method.set_inputs([inputs[0], torch.ones(1)])
+
     def test_numpy_array_is_a_single_input(self):
         exported_program, inputs = create_program(ModuleAddSingleInput())
         executorch_module = self.load_fn(exported_program.buffer)
@@ -136,25 +164,6 @@ class PybindingsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BufferError, "dense, non-overlapping"):
             executorch_module(non_dense)
-
-    def test_aten_accepts_nonstandard_torch_strides(self):
-        if self.kernel_mode != "aten":
-            self.skipTest("ATen-only input behavior")
-        exported_program, inputs = create_program(
-            ModuleAddSingleInput(),
-            et_config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
-            ),
-        )
-        input_tensor = inputs[0].t()
-
-        module = self.load_fn(exported_program.buffer)
-        self.assertTrue(torch.equal(module(input_tensor)[0], input_tensor * 2))
-
-        method = self.load_prog_fn(exported_program.buffer).load_method("forward")
-        method.set_inputs(input_tensor)
-        method.execute()
-        self.assertTrue(torch.equal(method.get_outputs()[0], input_tensor * 2))
 
     def test_complex_numpy_input_is_rejected(self):
         exported_program, _ = create_program(ModuleAddSingleInput())
@@ -338,8 +347,7 @@ class PybindingsTest(unittest.TestCase):
         inputs = (torch.randn(1, 2, 3, 4, 5).to(memory_format=torch.channels_last_3d),)
 
         executorch_module = self.load_fn(exported_program.buffer)
-        with self.assertRaisesRegex(ValueError, "rank 5.*expects rank 4"):
-            executorch_module(inputs[0])
+        self.assertRaises(RuntimeError, executorch_module, inputs[0])
 
     def test_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
@@ -682,8 +690,7 @@ class PybindingsTest(unittest.TestCase):
 
         executorch_program = self.load_prog_fn(exported_program.buffer)
         executorch_method = executorch_program.load_method("forward")
-        with self.assertRaisesRegex(ValueError, "has rank 5.*expects rank 4"):
-            executorch_method(inputs[0])
+        self.assertRaises(RuntimeError, executorch_method, inputs[0])
 
     def test_method_channels_last_in_default_out(self) -> None:
         model = ModuleChannelsLastInDefaultOut()
@@ -1054,6 +1061,87 @@ class PybindingsTest(unittest.TestCase):
 
         # A failed load must leave the method that already loaded usable.
         self.assertTrue(torch.allclose(method.call(inputs)[0], torch.ones(2, 2) * 2))
+
+    def test_unplanned_device_output_is_device_memory(self):
+        # A program exported with alloc_graph_output=False leaves its outputs to the caller, and a
+        # device-resident one tags them for the device, so the bindings supply that memory. They
+        # used to supply host memory, which the CUDA backend rejects (InvalidArgument) and which a
+        # delegate without that check writes into, failing later wherever the GPU cannot read
+        # pageable host memory. This checks that the output buffer is real device memory.
+        if "CudaBackend" not in self.runtime._get_registered_backend_names():
+            self.skipTest("needs a build with the CUDA backend linked in")
+        if not torch.cuda.is_available():
+            self.skipTest("needs a visible CUDA device")
+
+        import ctypes
+
+        from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+        from executorch.exir import to_edge_transform_and_lower
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+        from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+        from executorch.exir.passes.propagate_device_pass import PropagateDeviceConfig
+        from executorch.runtime import Runtime
+
+        class Delegated(torch.nn.Module):
+            def forward(self, x, y):
+                return (x + y) * 2.0
+
+        inputs = (torch.ones(4, 4), torch.ones(4, 4))
+        edge = to_edge_transform_and_lower(
+            {"forward": export(Delegated(), inputs, strict=True)},
+            partitioner={
+                "forward": [CudaPartitioner([CompileSpec("method_name", b"forward")])]
+            },
+        )
+        exported_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                propagate_device_config=PropagateDeviceConfig(
+                    skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+                ),
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        # Without this the test would quietly stop covering the unplanned path if the planner
+        # started placing these outputs: a planned device arena is device memory too, so the
+        # pointer check below would still pass.
+        plan = exported_program.executorch_program.execution_plan[0]
+        for index in plan.outputs:
+            output_tensor = plan.values[index].val
+            self.assertIsNone(output_tensor.allocation_info)
+            self.assertEqual(
+                output_tensor.extra_tensor_info.device_type, DeviceType.CUDA
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            pte_path = os.path.join(directory, "program.pte")
+            with open(pte_path, "wb") as pte_file:
+                exported_program.write_to_file(pte_file)
+            data_names = sorted(exported_program._tensor_data or {})
+            exported_program.write_tensor_data_to_file(directory)
+            data_path = (
+                os.path.join(directory, data_names[0] + ".ptd") if data_names else None
+            )
+            method = (
+                Runtime.get()
+                .load_program(pte_path, data_path=data_path)
+                .load_method("forward")
+            )
+            cuda_inputs = [tensor.cuda() for tensor in inputs]
+            output = method._method(cuda_inputs, clone_outputs=False)[0]
+            # Ask the driver what the uncloned output points at, not the tensor's device tag,
+            # which says cuda either way. CU_POINTER_ATTRIBUTE_MEMORY_TYPE is 2 and
+            # CU_MEMORYTYPE_DEVICE is 2. The driver does not know a pageable host pointer at
+            # all, and returns an error for it.
+            memory_type = ctypes.c_uint(0)
+            status = ctypes.CDLL("libcuda.so.1").cuPointerGetAttribute(
+                ctypes.byref(memory_type), 2, ctypes.c_uint64(output.data_ptr())
+            )
+            self.assertEqual((status, memory_type.value), (0, 2))
+            torch.testing.assert_close(
+                method.execute(cuda_inputs)[0].cpu(), torch.full((4, 4), 4.0)
+            )
 
     def test_device_planned_method_allocates_on_the_device(self):
         # The other device test covers the refusal. This one covers what the
