@@ -30,6 +30,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from executorch.exir.backend.utils import tag_mutated_buffer, tag_owned_mutated_buffers
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program
@@ -401,6 +402,126 @@ class TestDelegateState(unittest.TestCase):
             DelegateStateSpec(nbytes=0)
         with self.assertRaisesRegex(ValueError, "initial data is 3 bytes"):
             DelegateStateSpec(nbytes=4, initial_data=b"abc")
+
+
+class ReadThenReplaceStateModule(torch.nn.Module):
+    """``state`` is read by the add and replaced by the sin, which does not read it."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.zeros(3))
+
+    def forward(self, x):
+        out = x + self.state
+        self.state.copy_(torch.sin(x))
+        return out
+
+
+class TwoReadersStateModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.zeros(3))
+
+    def forward(self, x):
+        out = (x + self.state) * (x - self.state)
+        self.state.copy_(torch.sin(x))
+        return out
+
+
+class TagOpsPartitioner(Partitioner):
+    """Tags the named edge ops, then the buffers their partitions own outright."""
+
+    def __init__(self, tags_by_op) -> None:
+        self.tags_by_op = tags_by_op
+        self.delegation_spec = DelegationSpec("DelegateStateTestBackend", [])
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        for node in exported_program.graph.nodes:
+            if node.op == "call_function" and node.target in self.tags_by_op:
+                node.meta["delegation_tag"] = self.tags_by_op[node.target]
+        tag_owned_mutated_buffers(exported_program)
+        return PartitionResult(
+            tagged_exported_program=exported_program,
+            partition_tags={
+                tag: self.delegation_spec for tag in set(self.tags_by_op.values())
+            },
+        )
+
+
+def _edge_program(module: torch.nn.Module) -> ExportedProgram:
+    return exir.to_edge(
+        torch.export.export(module, (torch.ones(3),), strict=True)
+    ).exported_program()
+
+
+def _state_placeholder(exported_program: ExportedProgram) -> torch.fx.Node:
+    return next(
+        node
+        for node in exported_program.graph.nodes
+        if exported_program.graph_signature.inputs_to_buffers.get(node.name) == "state"
+    )
+
+
+def _tag(exported_program: ExportedProgram, tags_by_op) -> None:
+    for node in exported_program.graph.nodes:
+        if node.op == "call_function" and node.target in tags_by_op:
+            node.meta["delegation_tag"] = tags_by_op[node.target]
+
+
+ADD = exir_ops.edge.aten.add.Tensor
+SUB = exir_ops.edge.aten.sub.Tensor
+SIN = exir_ops.edge.aten.sin.default
+
+
+class TestTagOwnedMutatedBuffers(unittest.TestCase):
+    def test_a_buffer_whose_readers_and_writer_share_a_partition_is_tagged(self):
+        program = _edge_program(ReadThenReplaceStateModule())
+        _tag(program, {ADD: "p", SIN: "p"})
+
+        tag_owned_mutated_buffers(program)
+
+        self.assertEqual(_state_placeholder(program).meta.get("delegation_tag"), "p")
+
+    def test_a_buffer_updated_on_the_cpu_is_left_to_the_graph(self):
+        # Every reader is delegated, which is all tag_mutated_buffer checks,
+        # but the new value is computed outside the partition.
+        program = _edge_program(ReadThenReplaceStateModule())
+        _tag(program, {ADD: "p"})
+
+        tag_owned_mutated_buffers(program)
+        self.assertNotIn("delegation_tag", _state_placeholder(program).meta)
+
+        tag_mutated_buffer(program)
+        self.assertEqual(_state_placeholder(program).meta.get("delegation_tag"), "p")
+
+    def test_a_buffer_read_by_two_partitions_is_left_to_the_graph(self):
+        program = _edge_program(TwoReadersStateModule())
+        _tag(program, {ADD: "p0", SUB: "p1", SIN: "p0"})
+
+        tag_owned_mutated_buffers(program)
+
+        self.assertNotIn("delegation_tag", _state_placeholder(program).meta)
+
+    def test_lowering_moves_an_owned_buffer_into_the_delegate(self):
+        edge = exir.to_edge(
+            torch.export.export(
+                ReadThenReplaceStateModule(), (torch.ones(3),), strict=True
+            )
+        ).to_backend(TagOpsPartitioner({ADD: "p", SIN: "p"}))
+
+        self.assertEqual(edge.exported_program().graph_signature.buffers_to_mutate, {})
+
+    def test_lowering_keeps_a_cpu_updated_buffer_in_the_graph(self):
+        edge = exir.to_edge(
+            torch.export.export(
+                ReadThenReplaceStateModule(), (torch.ones(3),), strict=True
+            )
+        ).to_backend(TagOpsPartitioner({ADD: "p"}))
+
+        self.assertEqual(
+            list(edge.exported_program().graph_signature.buffers_to_mutate.values()),
+            ["state"],
+        )
 
 
 if __name__ == "__main__":
