@@ -9,13 +9,19 @@ from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
+from executorch.backends.vulkan._passes.replace_instance_norm import (
+    ReplaceInstanceNormPass,
+)
+from executorch.backends.vulkan.op_registry import can_rewrite_batch_norm_as_group_norm
 from executorch.backends.vulkan.patterns.swiglu import find_swiglu_pattern
+from executorch.backends.vulkan.utils import get_constant_nodes
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -225,6 +231,28 @@ def run_conv1d_as_conv2d(
     conv_pass = Conv1dAsConv2dPass()
     conv_pass._exported_program = exported
     return conv_pass(exported.graph_module).graph_module
+
+
+def export_to_edge(
+    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor, ...]
+) -> torch.export.ExportedProgram:
+    program = torch.export.export(model, sample_inputs, strict=True)
+    return to_edge(
+        program,
+        compile_config=EdgeCompileConfig(
+            _skip_dim_order=False, _check_ir_validity=False
+        ),
+    ).exported_program()
+
+
+def batch_norm_no_stats_nodes(
+    graph_module: torch.fx.GraphModule,
+) -> List[torch.fx.Node]:
+    return [
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten._native_batch_norm_legit.no_stats
+    ]
 
 
 def conv_input_ranks(graph_module: torch.fx.GraphModule) -> List[int]:
@@ -1052,3 +1080,129 @@ class TestVulkanPasses(unittest.TestCase):
         before = op_node_count(ep.graph_module, "view_copy.default")
         RemoveRedundantOpsTransform().call(ep.graph_module)
         self.assertEqual(op_node_count(ep.graph_module, "view_copy.default"), before)
+
+    def test_remove_identity_repeat(self):
+        """A repeat is dropped only when every repeat factor is 1."""
+
+        class RepeatModule(torch.nn.Module):
+            def __init__(self, repeats):
+                super().__init__()
+                self.repeats = repeats
+
+            def forward(self, x):
+                return x.repeat(*self.repeats) + 1.0
+
+        # [1] keeps the shape, [2] doubles it, and [1, 1] raises [8] to [1, 8].
+        for repeats, expected in (([1], 0), ([2], 1), ([1, 1], 1)):
+            with self.subTest(repeats=repeats):
+                ep = export_to_edge(RepeatModule(repeats), (torch.rand(8),))
+                RemoveRedundantOpsTransform().call(ep.graph_module)
+                self.assertEqual(
+                    op_node_count(ep.graph_module, "repeat.default"), expected
+                )
+
+    def test_can_rewrite_batch_norm_as_group_norm(self):
+        class InstanceNormModule(torch.nn.Module):
+            def __init__(self, affine=True):
+                super().__init__()
+                self.norm = torch.nn.InstanceNorm2d(8, affine=affine)
+
+            def forward(self, x):
+                return self.norm(x)
+
+        class InputAffineModule(torch.nn.Module):
+            def forward(self, x, weight, bias):
+                return torch.nn.functional.instance_norm(x, weight=weight, bias=bias)
+
+        class ComputedWeightModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(8))
+                self.bias = torch.nn.Parameter(torch.randn(8))
+
+            def forward(self, x):
+                return torch.nn.functional.instance_norm(
+                    x, weight=self.weight * 2, bias=self.bias
+                )
+
+        class BatchNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.nn.Parameter(torch.randn(8))
+                self.bias = torch.nn.Parameter(torch.randn(8))
+
+            def forward(self, x):
+                return torch.nn.functional.batch_norm(
+                    x, None, None, self.weight, self.bias, training=True
+                )
+
+        class SavedStatsModule(BatchNormModule):
+            def forward(self, x):
+                out, mean, _ = torch.ops.aten._native_batch_norm_legit.no_stats(
+                    x, self.weight, self.bias, True, 0.1, 1e-5
+                )
+                return out, mean
+
+        x1 = torch.randn(1, 8, 5, 6)
+        x2 = torch.randn(2, 8, 5, 6)
+        affine = (torch.randn(8), torch.randn(8))
+        cases = [
+            ("instance_norm", InstanceNormModule(), (x1,), True),
+            # F.instance_norm folds the batch into the channels, so the batch
+            # norm input has a batch of 1 either way. The batch shows up as a
+            # repeat of the affine args, which group norm cannot prepack.
+            ("instance_norm_batch_2", InstanceNormModule(), (x2,), False),
+            ("no_affine", InstanceNormModule(affine=False), (x1,), False),
+            ("input_affine", InputAffineModule(), (x1, *affine), False),
+            ("computed_weight", ComputedWeightModule(), (x1,), False),
+            ("batch_norm_batch_1", BatchNormModule(), (x1,), True),
+            ("batch_norm_batch_2", BatchNormModule(), (x2,), False),
+            ("saved_stats", SavedStatsModule(), (x1,), False),
+        ]
+        for name, model, inputs, expected in cases:
+            with self.subTest(name):
+                ep = export_to_edge(model, inputs)
+                nodes = batch_norm_no_stats_nodes(ep.graph_module)
+                self.assertEqual(len(nodes), 1)
+                self.assertEqual(
+                    can_rewrite_batch_norm_as_group_norm(
+                        nodes[0], get_constant_nodes(ep)
+                    ),
+                    expected,
+                )
+
+    def test_replace_instance_norm(self):
+        class InstanceNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.norm = torch.nn.InstanceNorm2d(13, affine=True)
+                torch.nn.init.normal_(self.norm.weight)
+                torch.nn.init.normal_(self.norm.bias)
+
+            def forward(self, x):
+                return self.norm(x)
+
+        model = InstanceNormModule().eval()
+        inputs = (torch.randn(1, 13, 7, 9),)
+        ep = export_to_edge(model, inputs)
+
+        RemoveRedundantOpsTransform().call(ep.graph_module)
+        replace_pass = ReplaceInstanceNormPass()
+        replace_pass._exported_program = ep
+        gm = replace_pass(ep.graph_module).graph_module
+
+        self.assertEqual(batch_norm_no_stats_nodes(gm), [])
+        group_norms = [
+            node
+            for node in gm.graph.nodes
+            if node.target == exir_ops.edge.aten.native_group_norm.default
+        ]
+        self.assertEqual(len(group_norms), 1)
+        group_norm = group_norms[0]
+        # One group per channel.
+        self.assertEqual(group_norm.args[6], 13)
+        # The affine args are the parameters themselves, not repeats of them.
+        for affine_arg in group_norm.args[1:3]:
+            self.assertEqual(affine_arg.op, "placeholder")
+
+        self.assertTrue(torch.allclose(ep.module()(*inputs), model(*inputs), atol=1e-5))
