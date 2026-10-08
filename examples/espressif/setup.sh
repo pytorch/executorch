@@ -60,7 +60,11 @@ PY
     fi
     mkdir -p "${IDF_TOOLS_PATH}"
     IDF_TOOLS_PATH=$(cd "${IDF_TOOLS_PATH}" && pwd)
-    "${IDF_PATH}/install.sh" esp32s3
+    python "${IDF_PATH}/tools/python_version_checker.py"
+    python "${IDF_PATH}/tools/idf_tools.py" install --targets esp32s3 \
+        xtensa-esp-elf xtensa-esp-elf-gdb riscv32-esp-elf esp32ulp-elf \
+        esp-rom-elfs esp-clangd
+    python "${IDF_PATH}/tools/idf_tools.py" install-python-env
 fi
 
 if "${install_emulator}"; then
@@ -79,7 +83,8 @@ if "${install_idf}" || [[ ! -f "${tools_dir}/setup_path.sh" ]]; then
             printf 'export IDF_PATH=%q\nexport IDF_TOOLS_PATH=%q\nexport IDF_PYTHON_ENV_PATH=%q\n' \
                 "${IDF_PATH}" "${IDF_TOOLS_PATH}" "${IDF_PYTHON_ENV_PATH}"
             cat <<'EOF'
-source "${IDF_PATH}/export.sh" || return
+# OpenOCD is intentionally omitted for emulator builds.
+IDF_SKIP_TOOLS_CHECK=1 source "${IDF_PATH}/export.sh" || return
 export IDF_TARGET=esp32s3
 EOF
         fi

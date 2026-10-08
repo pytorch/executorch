@@ -207,6 +207,10 @@ ExecuTorch share the same Python. The generated `setup_path.sh` adds the install
 tools to `PATH` and selects the ESP32-S3 target. In a new shell, activate the same
 Python environment and source this file. Installation only needs to be done once.
 
+Setup omits OpenOCD, the hardware JTAG debugger, so emulator builds do not require
+its USB libraries. If you need JTAG debugging, install OpenOCD separately with
+`python "$IDF_PATH/tools/idf_tools.py" install openocd-esp32`.
+
 Set `ESPRESSIF_TOOLS_DIR` to choose another installation directory. The installer
 prints the corresponding activation command. It also accepts `IDF_PATH` and
 `IDF_TOOLS_PATH` for an existing ESP-IDF v6.1 installation. The setup script checks
